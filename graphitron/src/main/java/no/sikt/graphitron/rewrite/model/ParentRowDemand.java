@@ -16,9 +16,7 @@ import java.util.Map;
  * {@link BatchKeyField}. Generators receive {@link GraphitronField} and pattern-match with
  * {@code instanceof ParentRowDemand}.
  *
- * <p>Implementers: {@link ChildField.TableMethodField} (its single-FK-hop source-side columns,
- * read off {@code parentRecord} by {@code TypeFetcherGenerator}'s child table-method fetcher)
- * and the multi-table polymorphic {@link ChildField.InterfaceField} /
+ * <p>Implementers: the multi-table polymorphic {@link ChildField.InterfaceField} /
  * {@link ChildField.UnionField}, whose demand {@link #polymorphicParentRowColumns} derives.
  *
  * <p>Record-backed parents never carry a parent-row demand: their single-fetch accessor reads a
@@ -31,9 +29,8 @@ public interface ParentRowDemand {
 
     /**
      * The columns this child field's generated fetcher reads off the parent's already-materialized
-     * row by base name. Possibly empty (a {@link ChildField.TableMethodField} whose path is not a
-     * single FK hop demands nothing; a single-cardinality polymorphic field with only unbound
-     * participants demands nothing). Never {@code null}.
+     * row by base name. Possibly empty (a single-cardinality polymorphic field with only
+     * unbound participants demands nothing). Never {@code null}.
      */
     List<ColumnRef> parentRowColumns();
 

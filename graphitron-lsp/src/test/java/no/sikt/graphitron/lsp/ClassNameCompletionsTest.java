@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Class-name completion against the actual {@code ExternalCodeReference}
  * shape in {@code directives.graphqls}: {@code @service} / {@code @condition} /
- * {@code @enum} (and the flat {@code @sourceRow} / {@code @tableMethod}) each
+ * {@code @enum} (and the flat {@code @sourceRow}) each
  * carry a className slot whose value is an FQN, completed from the catalog.
  * {@code @record} shares the same {@code ExternalCodeReference.className}
  * coordinate but is deprecated and ignored, so its className slot is
@@ -109,16 +109,6 @@ class ClassNameCompletionsTest {
         Point cursor = new Point(0, source.indexOf('"') + 1);
 
         var items = run(source, cursor, "enum");
-
-        assertThat(items).hasSize(2);
-    }
-
-    @Test
-    void tableMethodClassNameCompletesFqns() {
-        String source = "type Query { x: Int @tableMethod(className: \"\", method: \"foo\") }\n";
-        Point cursor = new Point(0, source.indexOf('"') + 1);
-
-        var items = run(source, cursor, "tableMethod");
 
         assertThat(items).hasSize(2);
     }

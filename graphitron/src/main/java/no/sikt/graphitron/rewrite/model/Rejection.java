@@ -97,7 +97,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
         /**
          * Two or more producers reach the same SDL type with disagreeing reflected backing
          * classes. The reflection walk grounds at root producers ({@code @service},
-         * {@code @table}, {@code @tableMethod}) and extends through parent accessor returns;
+         * {@code @table}) and extends through parent accessor returns;
          * when the same SDL type accumulates more than one distinct class in its collection
          * set, this rejection surfaces with every disagreeing site listed.
          *

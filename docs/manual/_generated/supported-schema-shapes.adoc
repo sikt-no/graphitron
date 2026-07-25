@@ -35,7 +35,6 @@ Supported schema shapes are enumerated below by output sealed-leaf class. Each s
 * *QueryServiceTableInterfaceField*: A root `@service` field returning a single-table discriminated interface
 * *QueryTableField*
 * *QueryTableInterfaceField*
-* *QueryTableMethodTableField*: A root query field using `@tableMethod`. The developer provides a pre-filtered
 * *QueryUnionField*: A root query field returning a multi-table `GraphitronType.UnionType`
 
 === ChildField
@@ -61,7 +60,6 @@ Supported schema shapes are enumerated below by output sealed-leaf class. Each s
 * *SingleRecordIdFieldFromReturning*: The single data field on a payload-returning DELETE carrier: an ID-typed scalar encoding
 * *TableField*
 * *TableInterfaceField*
-* *TableMethodField*: A child field using `@tableMethod`: the developer provides a pre-filtered
 * *UnionField*: A child field on a `GraphitronType.TableBackedType` parent returning a multi-table
 
 === InputField
@@ -86,11 +84,11 @@ Supported schema shapes are enumerated below by output sealed-leaf class. Each s
 * _(not yet supported)_ *JooqRecordInputType*: A non-table input type backed by a jOOQ `Record<?>` (not table-bound)
 * _(not yet supported)_ *JooqRecordType*: A result type whose producer's reflected return is a jOOQ `Record<?>` (not table-bound)
 * *JooqTableRecordInputType*: A non-table input type backed by a jOOQ `TableRecord<?>`
-* *JooqTableRecordType*: A result type whose producer's reflected return is a jOOQ `TableRecord<?>`
+* *JooqTableRecordType*: A result type whose runtime carrier is a jOOQ record of a resolved table
 * *NestingType*: A nesting projection: a directiveless SDL object type embedded under a `@table`-bound
 * *NodeType*: A GraphQL object type annotated with both `@table` and `@node`
 * *PageInfoType*: The Relay `PageInfo` object type. Exactly one instance per schema; the classifier
-* *PojoInputType*: A non-table input type backed by a plain Java class (POJO), or one whose backing class
+* *PojoInputType*: A non-table input type backed by a plain Java class (POJO), or one for which no producer
 * *RootType*: A root operation type (Query or Mutation). Unmapped — no source context, no SQL until
 * *ScalarType*: A GraphQL scalar type whose Java type and `GraphQLScalarType` constant (or inline
 * *TableInputType*: A GraphQL input object type annotated with `@table`

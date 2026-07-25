@@ -12,12 +12,9 @@ package no.sikt.graphitron.rewrite.model;
  * <li>{@link RoutineCall} — a table-valued function call: the node's rows are produced
  *       by invoking the schema's generated {@code Routines} convenience method with the bound
  *       IN parameters, then aliased like any table.</li>
- *   <li>{@link MethodCall} — the developer's static {@code @tableMethod} call: the node's rows
- *       come from invoking a consumer-authored method returning a generated jOOQ table, then
- *       aliased like any table.</li>
  * </ul>
  */
-public sealed interface TableExpr permits TableExpr.Catalog, TableExpr.RoutineCall, TableExpr.MethodCall {
+public sealed interface TableExpr permits TableExpr.Catalog, TableExpr.RoutineCall {
 
     /**
      * A statically generated jOOQ catalog table. {@code table} carries the resolved
@@ -53,27 +50,6 @@ public sealed interface TableExpr permits TableExpr.Catalog, TableExpr.RoutineCa
             }
             if (resultTable == null) {
                 throw new NullPointerException("TableExpr.RoutineCall.resultTable must not be null");
-            }
-        }
-    }
-
-    /**
-     * A consumer-authored static {@code @tableMethod} call returning a generated jOOQ table.
-     * Like {@link RoutineCall}, the node has a real {@link TableRef} identity
-     * ({@code resultTable}, the method's declared return-table binding) that answers
-     * {@link JoinStep.Hop#targetTable()}, so alias generation, terminus checks, and
-     * {@code $fields} projection read it uniformly with {@link Catalog} nodes; only the
-     * materialization differs ({@code MethodClass.method(<args>)} instead of
-     * {@code Tables.<T>}). {@code method} carries the call surface; argument assembly walks
-     * {@link MethodRef#params()} at the emit site.
-     */
-    record MethodCall(MethodRef method, TableRef resultTable) implements TableExpr {
-        public MethodCall {
-            if (method == null) {
-                throw new NullPointerException("TableExpr.MethodCall.method must not be null");
-            }
-            if (resultTable == null) {
-                throw new NullPointerException("TableExpr.MethodCall.resultTable must not be null");
             }
         }
     }

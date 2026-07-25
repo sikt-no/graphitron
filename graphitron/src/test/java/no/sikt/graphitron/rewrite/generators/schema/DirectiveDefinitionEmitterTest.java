@@ -19,7 +19,7 @@ class DirectiveDefinitionEmitterTest {
         names.forEach(n -> assertThat(n)
             .isNotIn("table", "record", "field", "reference", "condition",
                      "externalField", "notGenerated", "splitQuery", "service",
-                     "tableMethod", "asConnection", "discriminate", "discriminator",
+                     "asConnection", "discriminate", "discriminator",
                      "node", "nodeId", "mutation", "orderBy", "lookupKey", "error",
                      "defaultOrder", "multitableReference", "enum", "index", "order",
                      "experimental_constructType"));

@@ -517,13 +517,7 @@ public class TypeClassGenerator {
      *       acquiring the wrap gets the right projection for free.</li>
      *   <li>{@link ParentRowDemand} implementers on a table-bound parent: their
      *       {@link ParentRowDemand#parentRowColumns()} columns, read off the parent's
-     *       already-materialized row by base name. {@link ChildField.TableMethodField}'s fetcher
-     *       ({@code TypeFetcherGenerator.buildChildTableMethodFetcher}) correlates the developer's
-     *       returned table against the parent via {@code parentRecord.get(DSL.name("<src>"), …)}
-     *       on the resolved FK's source-side columns (only the single-hop FK-derived
-     *       {@link JoinStep.Hop} shape demands columns; multi-hop and condition-join paths surface
-     *       a runtime {@code UnsupportedOperationException} in the emitter, so the capability
-     *       returns none for them rather than synthesising dead columns). The multi-table
+     *       already-materialized row by base name. The multi-table
      *       polymorphic children ({@link ChildField.InterfaceField} / {@link ChildField.UnionField})
      *       demand the parent-side correlation columns their single-fetch form reads, or the parent
      *       key their batched key extraction reads at list/connection cardinality.</li>

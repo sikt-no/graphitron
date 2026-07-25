@@ -307,7 +307,6 @@ public class TypeFetcherGenerator {
         QueryField.QueryNodesField.class,
         QueryField.QueryLookupTableField.class,
         QueryField.QueryTableField.class,
-        QueryField.QueryTableMethodTableField.class,
         QueryField.QueryRoutineTableField.class,
         QueryField.QueryServiceTableField.class,
         QueryField.QueryServiceRecordField.class,
@@ -337,7 +336,6 @@ public class TypeFetcherGenerator {
         ChildField.RecordCompositeField.class,
         ChildField.SingleRecordIdField.class,
         ChildField.SingleRecordIdFieldFromReturning.class,
-        ChildField.TableMethodField.class,
         QueryField.QueryTableInterfaceField.class,
         ChildField.TableInterfaceField.class,
         ChildField.ParticipantColumnReferenceField.class,
@@ -595,7 +593,6 @@ public class TypeFetcherGenerator {
                 }
                 case QueryField.QueryNodeField f              -> builder.addMethod(buildQueryNodeFetcher(ctx, f, outputPackage));
                 case QueryField.QueryNodesField f             -> builder.addMethod(buildQueryNodesFetcher(ctx, f, outputPackage));
-                case QueryField.QueryTableMethodTableField f  -> builder.addMethod(buildQueryTableMethodFetcher(ctx, f, outputPackage));
                 case QueryField.QueryRoutineTableField f      -> builder.addMethod(buildQueryRoutineFetcher(ctx, f, outputPackage));
                 case QueryField.QueryServiceTableField f      -> builder.addMethod(buildQueryServiceTableFetcher(ctx, f, outputPackage));
                 case QueryField.QueryServiceRecordField f     -> builder.addMethod(buildQueryServiceRecordFetcher(ctx, f, outputPackage));
@@ -678,7 +675,6 @@ public class TypeFetcherGenerator {
                 // back is reified by FetcherEmitter.bind into a named source-only method (wrapped in
                 // LightFetcher), collected below. No-op arm here.
                 case ChildField.ParticipantColumnReferenceField ignored -> { }
-                case ChildField.TableMethodField f              -> builder.addMethod(buildChildTableMethodFetcher(ctx, f, outputPackage));
                 // SingleRecordIdFieldFromReturning: the PK column read (+ optional NodeId
                 // encode) is reified by FetcherEmitter.bind into a named (DataFetchingEnvironment
                 // env) method, collected below. No-op arm here.
@@ -1641,67 +1637,6 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Emits the fetcher for a {@link QueryField.QueryTableMethodTableField}: declares the
-     * developer-returned table local with the specific jOOQ table class (e.g. {@code Film}),
-     * then projects via {@code $fields} over that table. The developer method's parameter
-     * list is reproduced in declaration order via {@link ArgCallEmitter#buildMethodBackedCallArgs};
-     * the method receives GraphQL field arguments and context values only, with no
-     * leading Table parameter (graphitron derives the target table from the method's return type).
-     *
-     * <p>The local is declared with the specific table class (e.g. {@code Film}, not
-     * {@code Table<?>}). Type-strictness is enforced at classifier time:
-     * {@link no.sikt.graphitron.rewrite.ServiceCatalog#reflectTableMethod} rejects developer
-     * methods whose return type is wider than the generated jOOQ table class for the
-     * field's {@code @table}-bound return type, so no downcast is needed in the emitter.
-     */
-    private static MethodSpec buildQueryTableMethodFetcher(TypeFetcherEmissionContext ctx, QueryField.QueryTableMethodTableField qtmtf,
-                                                            String outputPackage) {
-        var tableRef = qtmtf.returnType().table();
-        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtmtf.returnType().returnTypeName(), outputPackage);
-        boolean isList = qtmtf.returnType().wrapper().isList();
-
-        TypeName valueType = isList ? ParameterizedTypeName.get(RESULT, RECORD) : RECORD;
-
-        var methodClass = ClassName.bestGuess(qtmtf.method().className());
-        String conditionsClassName = outputPackage + ".conditions."
-            + qtmtf.parentTypeName() + QueryConditionsGenerator.CLASS_NAME_SUFFIX;
-
-        var builder = MethodSpec.methodBuilder(qtmtf.name())
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(syncResultType(valueType))
-            .addParameter(ENV, "env");
-
-        builder.beginControlFlow("try");
-        // <SpecificTableClass> table = MethodClass.method(<args>);
-        // No cast: the classifier-time return-type check (ServiceCatalog.reflectTableMethod) guarantees the developer's
-        // method returns the specific table class. A wider return type fails classification.
-        // No leading Table arg: @tableMethod methods are passed GraphQL field args
-        // and context values only; graphitron derives the target table from the return type.
-        builder.addStatement("$T table = $T.$L($L)",
-            names.jooqTableClass(),
-            methodClass,
-            qtmtf.method().methodName(),
-            ArgCallEmitter.buildMethodBackedCallArgs(ctx, qtmtf.method(), null, conditionsClassName));
-
-        var tenantDsl = TenantDslEmitter.resolve(ctx, qtmtf, outputPackage);
-        builder.addCode(tenantDsl.declaration());
-        builder.addCode(CodeBlock.builder()
-            .add("$T payload = dsl\n", valueType)
-            .indent()
-            .add(".select($T.$$fields(env.getSelectionSet(), table, env))\n", names.typeClass())
-            .add(".from(table)\n")
-            .add(isList ? ".fetch();\n" : ".fetchOne();\n")
-            .unindent()
-            .build());
-        builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.localContextTail()));
-        builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(catchArm(outputPackage, qtmtf.errorChannel()));
-        builder.endControlFlow();
-
-        return builder.build();
-    }
-
-    /**
      * Generates a fetcher for a root-query {@code @routine} table chain (single-node and
      * routine-then-hops). Mirrors {@link #buildQueryTableFetcher}, with one difference: the
      * {@code FROM} source is the schema's global {@code Routines} convenience method (which
@@ -1971,119 +1906,6 @@ public class TypeFetcherGenerator {
         return builder.build();
     }
 
-
-    /**
-     * Emits the fetcher for a {@link ChildField.TableMethodField}: per-row call to the developer's
-     * static {@code @tableMethod} returning the target table, joined back to the parent record via
-     * the resolved {@link JoinStep} chain.
-     *
-     * <p>Modelled on {@link #buildQueryTableMethodFetcher} (the root-site cognate) with one
-     * difference: a parent-correlation predicate built from {@code field.joinPath()} is added to
-     * the WHERE so the child fetch is scoped to the parent row. Unlike the record-sourced {@code BatchedTableField} arm
-     * this is per-row, not DataLoader-keyed — {@code TableMethodField} carries no
-     * {@code parentSourceKey} / {@code loaderRegistration}.
-     *
-     * <p>The single-hop FK-derived {@link JoinStep.Hop} is the shipped emit shape — the common case in
-     * practice and the only one exercised by the pipeline + execution coverage.
-     * Multi-hop FK paths and condition-join arms surface a runtime
-     * {@link UnsupportedOperationException} so classification stays permissive (the schema is
-     * still emittable) but the runtime gap is explicit.
-     */
-    private static MethodSpec buildChildTableMethodFetcher(TypeFetcherEmissionContext ctx, ChildField.TableMethodField tmf,
-                                                            String outputPackage) {
-        var tableRef = tmf.returnType().table();
-        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, tmf.returnType().returnTypeName(), outputPackage);
-        boolean isList = tmf.returnType().wrapper().isList();
-
-        TypeName valueType = isList ? ParameterizedTypeName.get(RESULT, RECORD) : RECORD;
-
-        var methodClass = ClassName.bestGuess(tmf.method().className());
-        String conditionsClassName = outputPackage + ".conditions."
-            + tmf.parentTypeName() + QueryConditionsGenerator.CLASS_NAME_SUFFIX;
-
-        var builder = MethodSpec.methodBuilder(tmf.name())
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(syncResultType(valueType))
-            .addParameter(ENV, "env");
-
-        builder.beginControlFlow("try");
-
-        List<JoinStep> path = tmf.joinPath();
-        boolean unsupportedPath = path.isEmpty() || path.size() > 1
-            || !(path.get(0) instanceof JoinStep.Hop hop0 && hop0.on() instanceof On.ColumnPairs);
-        if (unsupportedPath) {
-            // Surfacing the gap as a runtime throw rather than an empty fetcher keeps the failure
-            // mode loud and pointable.
-            String shapeLabel = path.isEmpty()
-                ? "empty joinPath"
-                : path.size() > 1 ? "multi-hop join path" : "condition-join path";
-            builder.addStatement("throw new $T($S)",
-                UnsupportedOperationException.class,
-                "child @tableMethod with " + shapeLabel + " is not yet emitted — only single-hop FK "
-                    + "paths ship (multi-hop and condition-join emit are follow-ups)");
-            builder.nextControlFlow("catch ($T e)", Exception.class);
-            builder.addCode(catchArm(outputPackage, tmf.errorChannel()));
-            builder.endControlFlow();
-            return builder.build();
-        }
-
-        builder.addStatement("$T parentRecord = ($T) env.getSource()", RECORD, RECORD);
-        // Developer-authored static method returning the specific generated jOOQ table class.
-        // No cast: classifier-time return-type strictness (ServiceCatalog.reflectTableMethod) guarantees the precise type.
-        builder.addStatement("$T table = $T.$L($L)",
-            names.jooqTableClass(),
-            methodClass,
-            tmf.method().methodName(),
-            ArgCallEmitter.buildMethodBackedCallArgs(ctx, tmf.method(), null, conditionsClassName));
-
-        builder.addCode(TenantDslEmitter.resolve(ctx, tmf, outputPackage).declaration());
-
-        // Parent-row correlation. For each slot in the single FK hop, target-side column on the
-        // developer's table equals source-side column from the parent record. AND across composite FKs.
-        var fkJoin = (On.ColumnPairs) ((JoinStep.Hop) path.get(0)).on();
-        builder.addCode(buildTableMethodParentCorrelation(fkJoin));
-
-        builder.addCode(CodeBlock.builder()
-            .add("$T payload = dsl\n", valueType)
-            .indent()
-            .add(".select($T.$$fields(env.getSelectionSet(), table, env))\n", names.typeClass())
-            .add(".from(table)\n")
-            .add(".where(condition)\n")
-            .add(isList ? ".fetch();\n" : ".fetchOne();\n")
-            .unindent()
-            .build());
-        builder.addCode(returnSyncSuccess(valueType, "payload"));
-        builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(catchArm(outputPackage, tmf.errorChannel()));
-        builder.endControlFlow();
-
-        return builder.build();
-    }
-
-    /**
-     * Builds the {@code Condition condition = ...} declaration for a child {@code @tableMethod}
-     * fetcher's parent-correlation WHERE clause. ANDs target-side-equals-source-side equality
-     * predicates across every slot of the single FK hop. The target side reads off the
-     * {@code table} local (the developer's returned table), the source side reads off
-     * {@code parentRecord.get(...)} via the column's SQL name.
-     *
-     * <p>Composite FKs (more than one slot) are uncommon for {@code @tableMethod} fields in
-     * practice, but the emitter handles them uniformly via {@code DSL.and(...)} composition.
-     */
-    private static CodeBlock buildTableMethodParentCorrelation(On.ColumnPairs fkJoin) {
-        var slots = fkJoin.slots();
-        var code = CodeBlock.builder().add("$T condition = ", CONDITION);
-        for (int i = 0; i < slots.size(); i++) {
-            var slot = slots.get(i);
-            TypeName columnType = slot.sourceSide().columnType();
-            if (i > 0) code.add(".and(");
-            code.add("table.$L.eq(parentRecord.get($T.name($S), $T.class))",
-                slot.targetSide().javaName(), DSL, slot.sourceSide().sqlName(), columnType);
-            if (i > 0) code.add(")");
-        }
-        code.add(";\n");
-        return code.build();
-    }
 
     /**
      * Emits the fetcher for a {@link QueryField.QueryServiceTableField}: a direct call to
@@ -6837,8 +6659,7 @@ public class TypeFetcherGenerator {
 
     /**
      * The one batched-field DataFetcher builder: both source shapes of the merged
-     * batched leaves share the framing (including the dissolved {@code @tableMethod} DTO-parent
-     * shape, whose terminal hop carries a {@code TableExpr.MethodCall} target) — loader
+     * batched leaves share the framing — loader
      * registration, batch lambda, dispatch, async wrap/catch tails — and the stored source-shape
      * fact gates exactly the two facts it owns:
      *

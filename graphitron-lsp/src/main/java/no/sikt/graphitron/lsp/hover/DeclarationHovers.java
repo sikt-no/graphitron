@@ -197,10 +197,6 @@ public final class DeclarationHovers {
                 appendJoinPath(sb, t.joinPath());
                 if (t.hasLookupKey()) sb.append("\n- lookup-key mapping");
             }
-            case FieldClassification.TableMethod t ->
-                sb.append("\n\nTable method `").append(nullSafe(t.methodClassName())).append("#")
-                  .append(nullSafe(t.methodName())).append("` → `")
-                  .append(nullSafe(t.tableName())).append("`");
             case FieldClassification.TableInterface t -> {
                 sb.append("\n\nInterface table: `").append(nullSafe(t.tableName())).append("`");
                 sb.append("\n\nDiscriminator: `").append(nullSafe(t.discriminatorColumn())).append("`");
@@ -249,7 +245,7 @@ public final class DeclarationHovers {
             case FieldClassification.QueryTable q ->
                 sb.append("\n\nQuery table: `").append(nullSafe(q.tableName())).append("`")
                   .append(q.isLookup() ? "\n\nLookup helper." : "");
-            case FieldClassification.QueryTableMethod q ->
+            case FieldClassification.RoutineBacked q ->
                 sb.append("\n\nMethod `").append(nullSafe(q.methodClassName())).append("#")
                   .append(nullSafe(q.methodName())).append("` → `")
                   .append(nullSafe(q.tableName())).append("`");

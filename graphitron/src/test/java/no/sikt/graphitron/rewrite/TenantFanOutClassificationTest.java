@@ -129,32 +129,10 @@ class TenantFanOutClassificationTest {
     }
 
     @Test
-    void markerOnTableMethodFieldRejects() {
-        var schema = build("""
-            type Film @table(name: "film") {
-                title: String
-                language: Language
-                    @tableMethod(
-                        className: "no.sikt.graphitron.rewrite.TestTableMethodStub",
-                        method: "getLanguage")
-                    @reference(path: [{key: "film_language_id_fkey"}])
-                    @tenantFanOut
-            }
-            type Language @table(name: "language") { name: String }
-            type Query {
-                films(filmId: Int @field(name: "film_id")): [Film!]!
-            }
-            """);
-
-        assertFanOutRejection(schema, "Film.language",
-            "the consumer-SQL fan-out combination is deferred", "tenantFanOut", "tableMethod");
-    }
-
-    @Test
     void markerOnRoutineFieldRejects() {
         // Without this rung a marked routine field (table-returning, tenant-scoped, unbound)
         // escapes every other rejection, classifies FanOut, and dies only at the
-        // generation-time DSL-site throw — the same located-rejection gap the @tableMethod
+        // generation-time DSL-site throw — the same located-rejection gap the @service
         // rung closes.
         var schema = build("""
             type Film @table(name: "film") { title: String }

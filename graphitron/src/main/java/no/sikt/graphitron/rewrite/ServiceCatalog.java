@@ -181,8 +181,7 @@ class ServiceCatalog {
                     && !actualReturnType.equals(expectedReturnType)) {
                 return new ServiceReflectionResult(null,
                     new ReflectionError.ReturnTypeMismatch(className, methodName,
-                        TypeNames.simple(expectedReturnType), TypeNames.simple(actualReturnType),
-                        ReflectionError.ReturnContext.SERVICE));
+                        TypeNames.simple(expectedReturnType), TypeNames.simple(actualReturnType)));
             }
             boolean isStatic = java.lang.reflect.Modifier.isStatic(javaMethod.getModifiers());
             List<MethodRef.Param> ctorParams = List.of();
@@ -480,46 +479,25 @@ class ServiceCatalog {
     }
 
     /**
-     * Table-parameter policy for {@link #reflectTableMethod}, distinguishing the two callers.
-     *
-     * <ul>
-     *   <li>{@link #REQUIRED} ({@code @condition}): reflection must find exactly one
-     *       {@code Table<?>} parameter and emits it as {@link ParamSource.Table}; argMapping
-     *       entries targeting the Table slot are rejected.</li>
-     *   <li>{@link #FORBIDDEN} ({@code @tableMethod}): the method receives GraphQL field
-     *       arguments and context values only; graphitron derives the target table from the
-     *       return type, so any {@code Table<?>} parameter is rejected.</li>
-     * </ul>
-     */
-    enum TableSlotPolicy { REQUIRED, FORBIDDEN }
-
-    /**
-     * Loads the table-method class and method via reflection and classifies each parameter:
-     * binding-map keys become {@link ParamSource.Arg}, context keys {@link ParamSource.Context},
-     * and {@code Table<?>} parameters follow the {@link TableSlotPolicy}. Any other parameter
-     * shape is an error.
+     * Reflects a static, table-parameterised developer method: the {@code @condition} call
+     * surface. Loads the class and method through the codegen classloader and classifies each
+     * parameter — binding-map keys become {@link ParamSource.Arg}, context keys
+     * {@link ParamSource.Context}, and the single required {@code Table<?>} parameter becomes
+     * {@link ParamSource.Table}. Any other parameter shape is an error, as is a method with no
+     * {@code Table<?>} parameter at all.
      *
      * <p>{@code argBindings} carries the Java-target to GraphQL-arg-name mapping per
-     * {@link #reflectServiceMethod}, with the same override typo guard. Under {@code REQUIRED},
-     * an override entry targeting the Table parameter is additionally rejected by
+     * {@link #reflectServiceMethod}, with the same override typo guard; an override entry
+     * targeting the reserved Table slot is additionally rejected by
      * {@link #checkConditionOverrideTargets}.
      *
      * <p>If the compiler was not invoked with {@code -parameters}, a warning is logged as soon
      * as any nameless parameter is detected, even if type-based classification would otherwise
      * succeed.
-     *
-     * <p>The method's return type must match {@code expectedReturnClass} exactly (the
-     * {@link ClassName} of the generated jOOQ table class for the field's {@code @table}-bound
-     * return type). Wider return types like {@code Table<R>} are rejected; the emitter relies
-     * on the strict type so the generated fetcher's local can carry the specific table class
-     * (e.g. {@code Film table = Service.method(...)}) and feed it into
-     * {@code FilmType.$fields(...)} without a downcast.
      */
     ServiceReflectionResult reflectTableMethod(String className, String methodName,
-            ArgBindingMap argBindings, Set<String> ctxKeys, ClassName expectedReturnClass,
-            TableSlotPolicy tableSlotPolicy) {
-        return reflectTableMethod(className, methodName, argBindings, ctxKeys,
-            expectedReturnClass, tableSlotPolicy, Map.of());
+            ArgBindingMap argBindings, Set<String> ctxKeys) {
+        return reflectTableMethod(className, methodName, argBindings, ctxKeys, Map.of());
     }
 
     /**
@@ -530,8 +508,7 @@ class ServiceCatalog {
      * single unclaimed slot binds positionally without requiring an {@code argMapping} entry.
      */
     ServiceReflectionResult reflectTableMethod(String className, String methodName,
-            ArgBindingMap argBindings, Set<String> ctxKeys, ClassName expectedReturnClass,
-            TableSlotPolicy tableSlotPolicy, Map<String, GraphQLInputType> slotTypes) {
+            ArgBindingMap argBindings, Set<String> ctxKeys, Map<String, GraphQLInputType> slotTypes) {
         var argByJavaName = argBindings.byJavaName();
         if (className == null || methodName == null) {
             return new ServiceReflectionResult(null, Rejection.structural("table method reference is incomplete"));
@@ -546,23 +523,13 @@ class ServiceCatalog {
             if (!java.lang.reflect.Modifier.isStatic(javaMethod.getModifiers())) {
                 return new ServiceReflectionResult(null,
                     Rejection.structural("method '" + methodName + "' in class '" + className
-                    + "' must be declared 'static' for @tableMethod — instance @tableMethod methods are not supported;"
+                    + "' must be declared 'static' — instance condition methods are not supported;"
                     + " the call site emits 'ClassName.method(...)' which requires a static method"));
-            }
-            ClassName actualReturnClass = ClassName.get(javaMethod.getReturnType());
-            if (expectedReturnClass != null
-                    && !actualReturnClass.equals(expectedReturnClass)) {
-                return new ServiceReflectionResult(null,
-                    new ReflectionError.ReturnTypeMismatch(className, methodName,
-                        TypeNames.simple(expectedReturnClass), TypeNames.simple(actualReturnClass),
-                        ReflectionError.ReturnContext.TABLE_METHOD));
             }
             if (Arrays.stream(javaMethod.getParameters()).anyMatch(p -> !p.isNamePresent())) {
                 emitParametersWarning();
             }
-            String tableTypoGuard = tableSlotPolicy == TableSlotPolicy.REQUIRED
-                ? checkConditionOverrideTargets(argByJavaName, javaMethod, methodName, className)
-                : checkOverrideTargets(argByJavaName, javaMethod, methodName, className);
+            String tableTypoGuard = checkConditionOverrideTargets(argByJavaName, javaMethod, methodName, className);
             if (tableTypoGuard != null) {
                 return new ServiceReflectionResult(null, Rejection.structural(tableTypoGuard));
             }
@@ -571,14 +538,6 @@ class ServiceCatalog {
             boolean foundTable = false;
             for (var p : javaMethod.getParameters()) {
                 if (org.jooq.Table.class.isAssignableFrom(p.getType())) {
-                    if (tableSlotPolicy == TableSlotPolicy.FORBIDDEN) {
-                        String paramName = p.isNamePresent() ? p.getName() : "<unnamed>";
-                        return new ServiceReflectionResult(null,
-                            Rejection.structural("parameter '" + paramName + "' in method '" + methodName
-                            + "' in class '" + className + "' is a Table<?> — @tableMethod must not declare"
-                            + " a Table parameter; graphitron derives the target table from the method's return type"
-                            + " and parent-table filtering is handled via @reference"));
-                    }
                     String paramName = p.isNamePresent() ? p.getName() : "table";
                     params.add(new MethodRef.Param.Typed(paramName,
                         p.getParameterizedType().getTypeName(),
@@ -596,7 +555,7 @@ class ServiceCatalog {
                 TypeName javaType = TypeName.get(p.getParameterizedType());
                 PathExpr resolvedPath = argByJavaName.get(pName);
                 if (resolvedPath != null) {
-                    // No wire-coercion check on this path: @tableMethod / @condition arguments
+                    // No wire-coercion check on this path: @condition arguments
                     // use legacyArgExtraction; only the @service caller rejects, via
                     // argExtraction.
                     params.add(new MethodRef.Param.Typed(pName, typeName, javaType,
@@ -609,7 +568,7 @@ class ServiceCatalog {
                         + "' is not a GraphQL argument and not a context key"));
                 }
             }
-            if (tableSlotPolicy == TableSlotPolicy.REQUIRED && !foundTable) {
+            if (!foundTable) {
                 return new ServiceReflectionResult(null,
                     Rejection.structural("method '" + methodName + "' in class '" + className
                     + "' has no Table<?> parameter — the directive requires exactly one Table<?> parameter"));
@@ -696,7 +655,7 @@ class ServiceCatalog {
     }
 
     /**
-     * Override-target check for {@link TableSlotPolicy#REQUIRED} callers ({@code @condition}):
+     * Override-target check for {@link #reflectTableMethod}'s {@code @condition} callers:
      * rejects argMapping entries that target the reserved {@code Table<?>} parameter slot, then
      * defers to {@link #checkOverrideTargets} for missing-parameter detection.
      */
@@ -751,7 +710,7 @@ class ServiceCatalog {
     /**
      * Extraction without the wire-coercion check: a jOOQ enum gets
      * {@link CallSiteExtraction.EnumValueOf}, everything else {@link CallSiteExtraction.Direct}.
-     * Used by the {@code @tableMethod} / {@code @condition} argument path, which has no
+     * Used by the {@code @condition} argument path, which has no
      * dimensional wire-coercion channel to surface a rejection; only the {@code @service} path
      * rejects, via {@link #argExtraction}.
      */

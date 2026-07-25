@@ -73,15 +73,15 @@ final class DirectiveSupportReport {
 
     /**
      * Directives the rewrite declares and implements (or partially wires) but that are
-     * deliberately not advertised in the first release: {@code @tableMethod} and
-     * {@code @sourceRow} work but are not in use by any consumer schema, and
+     * deliberately not advertised in the first release: {@code @sourceRow} works but is
+     * not in use by any consumer schema, and
      * {@code @experimental_constructType} has no emitter yet (R69). They are withheld from the
      * supported list with no migration note, because using them is neither an error nor
      * something a migrating consumer must remove; they are simply outside the v1 surface. See
      * roadmap item R400. Re-advertising one later is a one-line edit here.
      */
     static final java.util.Set<String> WITHHELD_FROM_V1 =
-        java.util.Set.of("tableMethod", "sourceRow", "experimental_constructType");
+        java.util.Set.of("sourceRow", "experimental_constructType");
 
     /**
      * CLI entry. Three positional args (legacy directives file, rewrite directives file,

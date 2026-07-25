@@ -139,12 +139,12 @@ class SourceWalkerTest {
         assertThat(table.location().uri()).endsWith("Actor.java");
         // The shared simple name `as(String)` exists under both FQNs, neither dropped to
         // ambiguous, because the package prefixes differ.
-        var tableMethod = new SourceWalker.MethodKey("com.example.jooq.tables.Actor", "as", 1);
+        var tableAsMethod = new SourceWalker.MethodKey("com.example.jooq.tables.Actor", "as", 1);
         var resolverMethod = new SourceWalker.MethodKey("com.example.generated.ActorResolver", "as", 1);
-        assertThat(index.methods()).containsKey(tableMethod).containsKey(resolverMethod);
+        assertThat(index.methods()).containsKey(tableAsMethod).containsKey(resolverMethod);
         assertThat(index.ambiguousMethods())
             .as("disjoint output / jOOQ packages keep method keys distinct")
-            .doesNotContain(tableMethod, resolverMethod);
+            .doesNotContain(tableAsMethod, resolverMethod);
     }
 
     @Test

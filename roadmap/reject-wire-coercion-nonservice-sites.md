@@ -22,8 +22,8 @@ same defect on the two non-`@service` arg-classification sites the Slice 1 spec 
 
 - **C — `@condition` nested input field.** `ConditionResolver.rewrapForNested` builds a 2-arg
   `NestedInputField` whose leaf is `Direct`; `ArgCallEmitter` then emits `(Long) _m.get("filmId")`
-  for a nested `ID`/enum. The `@tableMethod` / `@condition` argument path in
-  `ServiceCatalog.reflectServiceMethod` (the slot-types-aware `reflectTableMethod`) also still uses
+  for a nested `ID`/enum. The `@condition` argument path in
+  `ServiceCatalog.reflectTableMethod` (the slot-types-aware overload) also still uses
   `ServiceCatalog.legacyArgExtraction` (no wire-coercion check) — Slice 1 deliberately scoped the
   reject to the `@service` caller only.
 - **D — `@externalField` / accessor arg.** `FetcherEmitter` emits a `(ReflectedParamType) env.getArgument(...)`

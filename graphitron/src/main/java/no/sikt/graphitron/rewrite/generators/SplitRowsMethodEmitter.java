@@ -353,9 +353,7 @@ public final class SplitRowsMethodEmitter {
             body.addStatement("$T $L = $L.as($S)",
                 jooqTableClass, aliases.get(i),
                 JoinPathEmitter.emitTableExpression(joinPath.get(i), previousNode,
-                    new ArgumentValueSource.Env(), ctx,
-                    outputPackage + ".conditions." + ctx.parentTypeName()
-                        + QueryConditionsGenerator.CLASS_NAME_SUFFIX),
+                    new ArgumentValueSource.Env()),
                 fieldName + "_" + aliases.get(i));
         }
 

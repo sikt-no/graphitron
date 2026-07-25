@@ -15,8 +15,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@link TestSchemaHelper#buildSchema} and asserts the resulting field variant + reason.
  *
  * <p>Service-method fixtures live in {@link TestServiceStub}; the check sits inside
- * {@link FieldBuilder#buildServiceField} (and parallel sites for child {@code @service} and
- * root/child {@code @tableMethod}). The match-rule unit tests live in
+ * {@link FieldBuilder#buildServiceField} (and the parallel child {@code @service} site).
+ * The match-rule unit tests live in
  * {@link CheckedExceptionMatcherTest}; this class covers the wiring path end-to-end.
  */
 @UnitTier

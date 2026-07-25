@@ -8,7 +8,7 @@ import no.sikt.graphitron.javapoet.ClassName;
  *
  * <p>Sibling of {@link MethodRef} and {@link HelperRef}. {@code MethodRef} models user-authored
  * methods reached via the {@code ParamSource} indirection ({@code @service}, {@code @condition},
- * {@code @tableMethod}); {@code HelperRef} models methods Graphitron itself emits;
+ * {@code @condition}); {@code HelperRef} models methods Graphitron itself emits;
  * {@code LifterRef} models the narrow case of a {@code @sourceRow} static method whose
  * call-site signature is exactly {@code (ParentBackingClass) -> RowN<...>}. Reusing
  * {@code MethodRef.StaticOnly} would force {@code params}/{@code returnType} slots that are

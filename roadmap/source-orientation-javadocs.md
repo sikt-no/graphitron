@@ -38,7 +38,7 @@ indicates room to grow):
 - `BuildContext` (~20 words) — shared state for builders; directive helpers;
   warnings channel.
 - `JooqCatalog` — raw-jOOQ boundary; lazy resolution.
-- `ServiceCatalog` — reflection boundary for `@service` / `@tableMethod`.
+- `ServiceCatalog` — reflection boundary for `@service` / `@condition` / `@externalField`.
 - `TypeFetcherGenerator`, `TypeClassGenerator`, `TypeConditionsGenerator`,
   `GraphitronSchemaClassGenerator`, `GraphitronFacadeGenerator` — each
   states what file it emits and the input model shape.

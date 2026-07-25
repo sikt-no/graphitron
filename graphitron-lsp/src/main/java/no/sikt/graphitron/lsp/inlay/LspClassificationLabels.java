@@ -39,7 +39,6 @@ public final class LspClassificationLabels {
             case FieldClassification.CompositeColumnReference x -> FieldClassification.CompositeColumnReference.class.getSimpleName();
             case FieldClassification.TableTarget x -> FieldClassification.TableTarget.class.getSimpleName();
             case FieldClassification.RecordTableTarget x -> FieldClassification.RecordTableTarget.class.getSimpleName();
-            case FieldClassification.TableMethod x -> FieldClassification.TableMethod.class.getSimpleName();
             case FieldClassification.TableInterface x -> FieldClassification.TableInterface.class.getSimpleName();
             case FieldClassification.Polymorphic x -> FieldClassification.Polymorphic.class.getSimpleName();
             case FieldClassification.Nesting x -> FieldClassification.Nesting.class.getSimpleName();
@@ -52,7 +51,7 @@ public final class LspClassificationLabels {
             case FieldClassification.SingleRecordId x -> FieldClassification.SingleRecordId.class.getSimpleName();
             case FieldClassification.SingleRecordIdFromReturning x -> FieldClassification.SingleRecordIdFromReturning.class.getSimpleName();
             case FieldClassification.QueryTable x -> FieldClassification.QueryTable.class.getSimpleName();
-            case FieldClassification.QueryTableMethod x -> FieldClassification.QueryTableMethod.class.getSimpleName();
+            case FieldClassification.RoutineBacked x -> FieldClassification.RoutineBacked.class.getSimpleName();
             case FieldClassification.QueryNode x -> FieldClassification.QueryNode.class.getSimpleName();
             case FieldClassification.QueryTableInterface x -> FieldClassification.QueryTableInterface.class.getSimpleName();
             case FieldClassification.QueryPolymorphic x -> FieldClassification.QueryPolymorphic.class.getSimpleName();

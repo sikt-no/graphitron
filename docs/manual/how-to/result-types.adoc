@@ -15,7 +15,7 @@ The sealed `GraphitronType.ResultType` hierarchy has four permits (`GraphitronTy
 
 The classification check order is `isRecord` → `TableRecord` → `Record` → fallback to `PojoResultType`. `TableRecord` is checked before `Record` because every `TableRecord` is also a `Record`; the more specific match wins.
 
-Input-side class-backed types follow the same shape with parallel permits on `InputType` (`GraphitronType.java:282-340`): `JavaRecordInputType`, `PojoInputType`, `JooqRecordInputType`, `JooqTableRecordInputType`. The backing class is reflected from the `@service` / `@condition` / `@tableMethod` method parameter the input flows into. The Maven plugin can scaffold a Java record matching the input's field shape; binding flows through setters or the canonical constructor.
+Input-side class-backed types follow the same shape with parallel permits on `InputType` (`GraphitronType.java:282-340`): `JavaRecordInputType`, `PojoInputType`, `JooqRecordInputType`, `JooqTableRecordInputType`. The backing class is reflected from the `@service` / `@condition` method parameter the input flows into. The Maven plugin can scaffold a Java record matching the input's field shape; binding flows through setters or the canonical constructor.
 
 === Error-channel payload construction and `@field(name:)`
 

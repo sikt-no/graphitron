@@ -39,7 +39,7 @@ public sealed interface DeclTarget {
 
     /**
      * A Java method the field binds to (a POJO bean accessor, or a
-     * {@code @service} / {@code @externalField} / {@code @tableMethod} method),
+     * {@code @service} / {@code @externalField} method),
      * keyed by class, method name, and the bound parameter count.
      */
     record SourceMethod(String fqClassName, String methodName, int paramCount) implements DeclTarget {}
@@ -99,7 +99,7 @@ public sealed interface DeclTarget {
     static DeclTarget ofField(
         String parentTypeName, String memberName, LspSchemaSnapshot.Built built, CompletionData catalog
     ) {
-        // A method-backed field (@service / @externalField / @tableMethod) is
+        // A method-backed field (@service / @externalField / @routine) is
         // bound to its Java method, not to a column on the parent's table, so the
         // classification takes precedence over the parent-type backing below.
         var methodBacked = methodBackedTarget(parentTypeName, memberName, built, catalog);
@@ -142,9 +142,8 @@ public sealed interface DeclTarget {
         return switch (classOpt.get()) {
             case FieldClassification.ServiceBacked s -> Optional.of(sourceMethod(catalog, s.methodClassName(), s.methodName()));
             case FieldClassification.Computed c -> Optional.of(sourceMethod(catalog, c.methodClassName(), c.methodName()));
-            case FieldClassification.TableMethod t -> Optional.of(sourceMethod(catalog, t.methodClassName(), t.methodName()));
             case FieldClassification.QueryService q -> Optional.of(sourceMethod(catalog, q.methodClassName(), q.methodName()));
-            case FieldClassification.QueryTableMethod q -> Optional.of(sourceMethod(catalog, q.methodClassName(), q.methodName()));
+            case FieldClassification.RoutineBacked q -> Optional.of(sourceMethod(catalog, q.methodClassName(), q.methodName()));
             case FieldClassification.MutationService m -> Optional.of(sourceMethod(catalog, m.methodClassName(), m.methodName()));
             default -> Optional.empty();
         };

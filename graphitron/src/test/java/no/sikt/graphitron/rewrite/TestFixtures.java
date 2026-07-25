@@ -39,8 +39,8 @@ public final class TestFixtures {
     // ===== MethodRef factories =====
 
     /**
-     * Builds a {@link MethodRef.StaticOnly} for the {@code @tableMethod} / {@code @externalField}
-     * / condition-join populations. Mirrors the {@code tableRef(...)} factory pattern: tests
+     * Builds a {@link MethodRef.StaticOnly} for the {@code @externalField} / condition-join
+     * populations. Mirrors the {@code tableRef(...)} factory pattern: tests
      * that don't care about declared exceptions or call shape stay on this concise overload.
      */
     public static MethodRef.StaticOnly staticOnlyMethodRef(String className, String methodName, TypeName returnType) {

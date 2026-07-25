@@ -734,20 +734,6 @@ class DiagnosticsTest {
     }
 
     @Test
-    void unknownTableMethodClassProducesError() {
-        var file = file("""
-            type Foo {
-                bar: Int @tableMethod(className: "com.example.Missing", method: "foo")
-            }
-            """);
-
-        var diags = compute(file, catalogWithKnownClass("com.example.RealTableMethod"), LspSchemaSnapshot.unavailable());
-
-        assertThat(diags).hasSize(1);
-        assertThat(diags.get(0).getMessage()).contains("Missing");
-    }
-
-    @Test
     void unknownSourceRowClassProducesError() {
         // @sourceRow has flat className/method directive args; the canonical
         // overlay binds @sourceRow(className:) → ClassNameBinding so the
@@ -789,20 +775,6 @@ class DiagnosticsTest {
         var diags = compute(file, catalogWithKnownClass("com.example.RealService"), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
-    }
-
-    @Test
-    void unknownTableMethodMethodOnKnownClassProducesError() {
-        var file = file("""
-            type Foo {
-                bar: Int @tableMethod(className: "com.example.FilmService", method: "ghost")
-            }
-            """);
-
-        var diags = compute(file, classWithListMethod(), LspSchemaSnapshot.unavailable());
-
-        assertThat(diags).hasSize(1);
-        assertThat(diags.get(0).getMessage()).contains("ghost");
     }
 
     @Test
@@ -888,9 +860,6 @@ class DiagnosticsTest {
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("'Ghost'");
     }
-
-    // No legacy-name fixture for @tableMethod: the directive is flat (className: + method:
-    // directly on the directive) and carries no deprecated `name:` alias.
 
     @Test
     void legacyName_record_carveOut_producesNoError() {

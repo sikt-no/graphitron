@@ -311,7 +311,7 @@ public record TenantBindingIndex(
         /**
          * The {@code @tenantFanOut} rejection ladder, closed and validate-time: a marked field
          * either survives every rung and classifies {@link TenantBinding.FanOut}, or rejects with
-         * a fan-out-specific message. The {@code @service}/{@code @tableMethod} rung runs ahead of
+         * a fan-out-specific message. The {@code @service} rung runs ahead of
          * the reach-derived rungs because a plain service return's reach is structurally empty and
          * would misreport as "nothing to fan out over".
          */
@@ -329,13 +329,6 @@ public record TenantBindingIndex(
                     "'" + coordinate + "' combines @tenantFanOut with @service: fan-out generates"
                         + " the field's SQL itself, and the service fan-out combination is"
                         + " deferred. Remove one of the directives.");
-            }
-            if (fieldDef.hasAppliedDirective(BuildContext.DIR_TABLE_METHOD)) {
-                return rejectFanOut(coordinate,
-                    List.of(BuildContext.DIR_TENANT_FAN_OUT, BuildContext.DIR_TABLE_METHOD),
-                    "'" + coordinate + "' combines @tenantFanOut with @tableMethod: fan-out"
-                        + " generates the field's SQL itself, and the consumer-SQL fan-out"
-                        + " combination is deferred. Remove one of the directives.");
             }
             if (fieldDef.hasAppliedDirective(BuildContext.DIR_ROUTINE)) {
                 return rejectFanOut(coordinate,

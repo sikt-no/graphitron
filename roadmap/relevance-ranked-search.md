@@ -330,7 +330,7 @@ Per R333's additive-facts discipline, no new field leaf is minted:
   re-checking: `0 < maxFirst`, non-empty `tiebreak`.
 - The spec rides the classified root leaf (`QueryTableField`,
   `QueryField.java:108`) as a 0..1 slot (an `Optional` component; the idiom
-  exists on other leaves, e.g. `QueryTableMethodTableField`'s
+  exists on other leaves, e.g. `QueryServiceTableField`'s
   `Optional<ErrorChannel>`, though `QueryTableField` itself carries none
   today). `operation()` stays `Fetch`: the match predicate is a filter
   contribution and the ranked order + limit are read from the `TypeaheadSpec`
@@ -512,7 +512,7 @@ matrix:
 
 - **Carrier shape**: `@typeahead` only on a root `Query` field returning a bare
   non-null list of a `@table`-backed object type. Everything else rejects
-  (child fields, interfaces/unions, `@service` / `@tableMethod` /
+  (child fields, interfaces/unions, `@service` /
   `@routine` / `@reference` / `@asConnection` co-occurrence, `@orderBy`
   arguments and `@defaultOrder` on the carrier: ordering is the search's
   contract).

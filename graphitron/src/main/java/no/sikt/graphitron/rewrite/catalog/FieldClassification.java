@@ -46,7 +46,6 @@ public sealed interface FieldClassification
             FieldClassification.ParticipantCrossTable,
             FieldClassification.TableTarget,
             FieldClassification.RecordTableTarget,
-            FieldClassification.TableMethod,
             FieldClassification.TableInterface,
             FieldClassification.Polymorphic,
             FieldClassification.Nesting,
@@ -59,7 +58,7 @@ public sealed interface FieldClassification
             FieldClassification.SingleRecordId,
             FieldClassification.SingleRecordIdFromReturning,
             FieldClassification.QueryTable,
-            FieldClassification.QueryTableMethod,
+            FieldClassification.RoutineBacked,
             FieldClassification.QueryNode,
             FieldClassification.QueryTableInterface,
             FieldClassification.QueryPolymorphic,
@@ -132,8 +131,7 @@ public sealed interface FieldClassification
             case RecordTableTarget c            -> new LspColumnDispatch.Resolve(c.tableName());
             case InputUnbound _                 -> new LspColumnDispatch.Silent();
             case Unclassified _                 -> new LspColumnDispatch.Silent();
-            case TableMethod _,
-                 TableInterface _,
+            case TableInterface _,
                  Polymorphic _,
                  Nesting _,
                  Pivot _,
@@ -144,7 +142,7 @@ public sealed interface FieldClassification
                  SingleRecordId _,
                  SingleRecordIdFromReturning _,
                  QueryTable _,
-                 QueryTableMethod _,
+                 RoutineBacked _,
                  QueryNode _,
                  QueryTableInterface _,
                  QueryPolymorphic _,
@@ -252,17 +250,6 @@ public sealed interface FieldClassification
             joinPath = List.copyOf(joinPath);
         }
     }
-
-    /**
-     * A child field using {@code @tableMethod}. Covers {@code ChildField.TableMethodField}
-     * and the dissolved DTO-parent {@code @tableMethod} shape (a record-sourced
-     * {@code ChildField.BatchedTableField} whose terminal hop carries a
-     * {@code TableExpr.MethodCall} target); the {@code recordParent} flag
-     * encodes the parent-shape axis.
-     */
-    record TableMethod(
-        String tableName, String methodClassName, String methodName, boolean recordParent
-    ) implements FieldClassification {}
 
     // ===== Polymorphic =====
 
@@ -381,10 +368,13 @@ public sealed interface FieldClassification
     record QueryTable(String tableName, boolean isLookup) implements FieldClassification {}
 
     /**
-     * A root query field bound to a developer-authored {@code @tableMethod}. Covers
-     * {@code QueryField.QueryTableMethodTableField}.
+     * A root field whose rows come from a generated jOOQ {@code Routines}-class method call.
+     * Covers {@code QueryField.QueryRoutineTableField} on the read side and
+     * {@code MutationField.MutationRoutineWriteField} on the write side; {@code methodClassName}
+     * is the generated {@code Routines} class, so hover and jump-to-source route to the
+     * routine's call surface.
      */
-    record QueryTableMethod(
+    record RoutineBacked(
         String tableName, String methodClassName, String methodName
     ) implements FieldClassification {}
 

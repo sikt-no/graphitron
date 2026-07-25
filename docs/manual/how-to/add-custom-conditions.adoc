@@ -127,7 +127,7 @@ type Query {
 }
 ----
 
-The Java method `argConditionRenamed(Table<?> table, String city)` receives the GraphQL argument `cityNames` as its `city` parameter. Whitespace around `:` and `,` is tolerated, multi-line text-block input is accepted for long mappings, and an empty `argMapping:` is identity. `argMapping:` is supported on `@condition`, `@service`, and `@tableMethod`, the directives whose Java targets receive GraphQL arguments. It is structurally inert on `@externalField`, `@enum`, and `@sourceRow`; applying it on those is rejected at parse time.
+The Java method `argConditionRenamed(Table<?> table, String city)` receives the GraphQL argument `cityNames` as its `city` parameter. Whitespace around `:` and `,` is tolerated, multi-line text-block input is accepted for long mappings, and an empty `argMapping:` is identity. `argMapping:` is supported on `@condition` and `@service`, the directives whose Java targets receive GraphQL arguments. It is structurally inert on `@externalField`, `@enum`, and `@sourceRow`; applying it on those is rejected at parse time.
 
 Field-level placement mirrors the argument-level shape, `argMapping:` rebinds every parameter that needs a different Java name:
 
@@ -183,7 +183,7 @@ Two consequences worth pinning:
 
 * xref:../reference/directives/condition.adoc[`@condition`] is the directive's reference page; the parameter list, the `ExternalCodeReference` shape, and the per-site rejection messages live there.
 * xref:condition-cascade.adoc[How-to: Stacking and overriding conditions] covers the override flag, the implicit-vs-explicit cascade, the input-carrier rules for nested inputs, and the regression-fenced divergence from the legacy generator's "outer owns everything" semantics.
-* xref:external-code.adoc[How-to: Wire external Java code] covers the rewrite-plugin classpath, the FQCN requirement, and the `argMapping:` syntax that `@condition` shares with `@service` and `@tableMethod`.
+* xref:external-code.adoc[How-to: Wire external Java code] covers the rewrite-plugin classpath, the FQCN requirement, and the `argMapping:` syntax that `@condition` shares with `@service`.
 * xref:../reference/directives/field.adoc[`@field(name: ...)`] supplies the implicit equality predicate that `@condition` either stacks with or replaces.
 * xref:handle-services.adoc[How-to: Handle services] covers the alternative when the *whole* fetcher is custom code, `@condition` is for adjusting a single predicate inside an otherwise generated query.
 * xref:../reference/directives/lookupKey.adoc[`@lookupKey`] is exempt from the implicit-predicate path; `@condition` on a lookup-key arg runs alongside the `VALUES + JOIN` lookup but does not interact with it.

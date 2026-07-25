@@ -28,7 +28,7 @@ Apply the same lookup at every consumer:
 
 - `ServiceCatalog.reflectServiceMethod` (`@service`)
 - `ServiceCatalog.reflectExternalField` (`@externalField`, when R48 ships)
-- `ServiceCatalog.reflectTableMethod` (`@tableMethod`)
+- `ServiceCatalog.reflectTableMethod` (`@condition`)
 - Any other `Class.forName` site that loads a developer-supplied class name from a directive argument.
 
 A single helper `ExternalClassResolver.resolve(String name)` lives next to `ServiceCatalog`; the Mojo wires the `externalReferenceImports` list into it at generator startup.

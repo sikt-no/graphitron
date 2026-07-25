@@ -252,7 +252,7 @@ class TestServiceStub {
         throw new UnsupportedOperationException();
     }
 
-    // ===== argMapping override on @service / @tableMethod directive =====
+    // ===== argMapping override on the @service directive =====
 
     /**
      * Takes parameters {@code inputs} (plural) and {@code dryRun}. Used by override tests where

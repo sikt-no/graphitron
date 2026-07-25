@@ -45,14 +45,13 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_MUTATION;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_NODE_ID;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_SERVICE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE;
-import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE_METHOD;
 import static no.sikt.graphitron.rewrite.BuildContext.argString;
 import static no.sikt.graphitron.rewrite.BuildContext.asMap;
 import static no.sikt.graphitron.rewrite.BuildContext.locationOf;
 
 /**
  * Derives SDL → backing-class bindings from reflection alone. The walk grounds at root producers
- * ({@code @service} method returns, {@code @table} resolutions, {@code @tableMethod} returns) and
+ * ({@code @service} method returns, {@code @table} resolutions) and
  * extends through parent-accessor return types. Bindings accumulate into a per-SDL-type collection
  * set on each axis (result + input); after the walk, each per-type set folds into a single agreed
  * {@link Class}, an empty resolution, or a
@@ -246,7 +245,7 @@ final class RecordBindingResolver {
             }
         });
 
-        // @service, @externalField (ComputedField), @tableMethod, and @mutation (DmlEmitted)
+        // @service, @externalField (ComputedField), and @mutation (DmlEmitted)
         // on field definitions.
         ctx.schema.getAllTypesAsList().forEach(named -> {
             if (!(named instanceof GraphQLObjectType obj)) return;
@@ -254,7 +253,6 @@ final class RecordBindingResolver {
             for (GraphQLFieldDefinition field : obj.getFieldDefinitions()) {
                 groundServiceField(obj, field);
                 groundComputedField(obj, field);
-                groundTableMethodField(obj, field);
                 groundDmlMutationField(obj, field);
             }
         });
@@ -568,41 +566,6 @@ final class RecordBindingResolver {
             className, methodName, loc));
     }
 
-    private void groundTableMethodField(GraphQLObjectType parent, GraphQLFieldDefinition field) {
-        if (!field.hasAppliedDirective(DIR_TABLE_METHOD)) return;
-        // @tableMethod returns a jOOQ Table subclass; the SDL return type is @table-bound and its
-        // binding comes from @table already. Deriving the record type from the bare Table-class
-        // return would need jOOQ's TableImpl.recordType() at instantiation time, machinery that
-        // adds nothing over the @table observation. The walker therefore grounds @tableMethod
-        // input-arg bindings only (mirror of groundServiceField's input loop), no result-axis
-        // observation.
-        GraphQLAppliedDirective dir = field.getAppliedDirective(DIR_TABLE_METHOD);
-        String className = argString(field, DIR_TABLE_METHOD, ARG_CLASS_NAME).orElse(null);
-        String methodName = argString(field, DIR_TABLE_METHOD, ARG_METHOD).orElse(null);
-        if (className == null || methodName == null) return;
-
-        Method method = findUniqueMethod(className, methodName);
-        if (method == null) return;
-        SourceLocation loc = locationOf(field);
-
-        // Ground input-axis bindings from method parameters → SDL arg types.
-        String rawArgMapping = argString(field, DIR_TABLE_METHOD, BuildContext.ARG_ARG_MAPPING).orElse("");
-        Map<String, String> overrides = parseArgMapping(rawArgMapping);
-        for (var p : method.getParameters()) {
-            if (!p.isNamePresent()) continue;
-            String paramName = p.getName();
-            String sdlArgName = overrides.getOrDefault(paramName, paramName);
-            GraphQLArgument arg = field.getArgument(sdlArgName);
-            if (arg == null) continue;
-            String inputSdl = unwrappedTypeName(arg.getType());
-            if (inputSdl == null) continue;
-            Class<?> paramElement = peelReturnElement(p.getParameterizedType());
-            if (paramElement == null || !shouldBind(paramElement)) continue;
-            addInputObservation(inputSdl, new ProducerBinding.RootTableMethod(
-                paramElement, parent.getName(), field.getName(), className, methodName, loc));
-        }
-    }
-
     /**
      * Grounds a {@link ProducerBinding.DmlEmitted} result-axis observation for the payload SDL
      * type of every DML {@code @mutation} field whose payload is a non-{@code @table} SDL Object.
@@ -749,7 +712,6 @@ final class RecordBindingResolver {
         for (GraphQLFieldDefinition field : obj.getFieldDefinitions()) {
             // Skip directive-driven fields: their return type is already bound via root producer.
             if (field.hasAppliedDirective(DIR_SERVICE)) continue;
-            if (field.hasAppliedDirective(DIR_TABLE_METHOD)) continue;
             String childSdl = unwrappedTypeName(field.getType());
             if (childSdl == null) continue;
             // Don't re-ground a child SDL type that already has a binding (e.g. an @table type

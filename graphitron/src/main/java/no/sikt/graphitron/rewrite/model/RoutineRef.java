@@ -9,7 +9,7 @@ import java.util.List;
  * Provenance carrier for a field backed by a jOOQ database <em>routine</em> ({@code @routine}).
  *
  * <p>The database twin of {@link MethodRef} (which carries a developer-authored Java method): where
- * {@code @tableMethod} rides a {@code MethodRef.StaticOnly}, {@code @routine} rides this. A read
+ * {@code @condition} rides a {@code MethodRef.StaticOnly}, {@code @routine} rides this. A read
  * routine is a catalog handle rather than a reflected developer method, so folding it under
  * {@link MethodRef} would be the "god accessor whose meaning depends on the variant" smell; it gets
  * its own sibling carrier.
@@ -26,7 +26,7 @@ import java.util.List;
  *   <li>{@code argBindings} — the routine IN parameters in declaration order, each bound to the
  *       GraphQL field argument supplying its value. Argument binding lives here, at the target
  *       endpoint, because routine inputs parameterise the projected table expression (the same role
- *       {@code @tableMethod}'s args play), not an operation payload.</li>
+ *       a developer method's args play), not an operation payload.</li>
  * </ul>
  */
 public record RoutineRef(ClassName routinesClass, String methodName, List<ArgBinding> argBindings) {

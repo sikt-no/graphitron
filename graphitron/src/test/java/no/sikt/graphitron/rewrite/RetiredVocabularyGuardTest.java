@@ -61,7 +61,7 @@ class RetiredVocabularyGuardTest {
         new Retired("SplitTableField", "the table-sourced BatchedTableField arm"),
         new Retired("RecordLookupTableField", "the record-sourced BatchedLookupTableField arm"),
         new Retired("SplitLookupTableField", "the table-sourced BatchedLookupTableField arm"),
-        new Retired("RecordTableMethodField", "a batched leaf with a TableExpr.MethodCall table"),
+        new Retired("RecordTableMethodField", "the record-sourced BatchedTableField arm"),
         new Retired("LifterLeafKeyed", "KeyLift.Lifter"),
         new Retired("AccessorKeyedSingle", "KeyLift.Accessor with Arity.ONE"),
         new Retired("AccessorKeyedMany", "KeyLift.Accessor with Arity.MANY"),

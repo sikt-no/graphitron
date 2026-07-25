@@ -1,8 +1,6 @@
 package no.sikt.graphitron.rewrite.test.services;
 
 import no.sikt.graphitron.rewrite.test.jooq.Tables;
-import no.sikt.graphitron.rewrite.test.jooq.tables.Film;
-import no.sikt.graphitron.rewrite.test.jooq.tables.Language;
 import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
 import org.jooq.DSLContext;
 import org.jooq.Result;
@@ -10,11 +8,9 @@ import org.jooq.Result;
 import java.util.List;
 
 /**
- * Fixture for service-backed and method-backed root fetchers. Three methods, one per leaf:
+ * Fixture for service-backed root fetchers:
  *
  * <ul>
- *   <li>{@link #popularFilms} — returns a specific-typed {@link Film} for {@code @tableMethod};
- *       the framework wraps with a projection SELECT via {@code FilmType.$fields(...)}.</li>
  *   <li>{@link #filmsByService} — returns {@code Result<FilmRecord>} for {@code @service}
  *       with a {@code @table}-bound return type. Service hands records straight to graphql-java;
  *       no framework projection.</li>
@@ -28,20 +24,6 @@ import java.util.List;
 public final class SampleQueryService {
 
     private SampleQueryService() {}
-
-    /**
-     * Filters the FILM table by minimum rental rate. The {@code @tableMethod} contract
-     * passes only GraphQL field arguments to the method (no parent or return-type table), so the
-     * fixture method derives the {@code FILM} table itself. The generated jOOQ {@code Film} class
-     * overrides {@code where(...)} to return {@code Film} (not {@code Table<R>}), so the filtered
-     * derived table preserves the specific table type required by the strict
-     * {@code @tableMethod} return-type check in {@code ServiceCatalog.reflectTableMethod}, and
-     * feeds {@code FilmType.$fields(...)} directly without a downcast. See
-     * {@code development-principles.adoc} ("Acceptances: classifier guarantees shape emitter assumptions").
-     */
-    public static Film popularFilms(Double minRentalRate) {
-        return Tables.FILM.where(Tables.FILM.RENTAL_RATE.ge(java.math.BigDecimal.valueOf(minRentalRate)));
-    }
 
     /**
      * Returns FilmRecords directly — no framework projection. Demonstrates that
@@ -118,26 +100,4 @@ public final class SampleQueryService {
             .fetch();
     }
 
-    /**
-     * Fixture: child {@code @tableMethod} on a {@code @table} parent
-     * ({@code Inventory.filmViaTableMethod: Film}). The classifier auto-infers the unique FK
-     * {@code inventory.film_id -> film.film_id} and the generated fetcher correlates the
-     * developer-returned table on that FK. Returning the unfiltered {@code Tables.FILM} is the
-     * minimal valid shape; downstream tests assert the parent-row correlation projects the
-     * single matching Film for each Inventory row.
-     */
-    public static Film tableMethodFilm() {
-        return Tables.FILM;
-    }
-
-    /**
-     * Fixture: child {@code @tableMethod} on a {@code @table} parent
-     * ({@code Film.languageViaTableMethod: Language}) with an explicit
-     * {@code @reference(path: [{key: "film_language_id_fkey"}])}. The single FK is named
-     * explicitly to disambiguate from {@code film_original_language_id_fkey}; the generated
-     * fetcher correlates the developer-returned Language table on that FK.
-     */
-    public static Language tableMethodLanguage() {
-        return Tables.LANGUAGE;
-    }
 }

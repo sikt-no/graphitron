@@ -8,8 +8,8 @@ import java.util.List;
  *
  * <p>Java parameters bind to GraphQL slots either by single name or by dot-path walking into
  * nested input fields (e.g. {@code input.kvotesporsmalId}). The head names a slot at the
- * directive's scope (a GraphQL argument for {@code @service} / {@code @tableMethod} /
- * argument-level {@code @condition}; an input field for input-field-level {@code @condition});
+ * directive's scope (a GraphQL argument for {@code @service} / argument-level
+ * {@code @condition}; an input field for input-field-level {@code @condition});
  * each subsequent segment names a field on the resolved input-object type at that depth.
  *
  * <p>{@code PathExpr} is a sub-taxonomy of the value side of {@link ArgBindingMap#byJavaName()}.

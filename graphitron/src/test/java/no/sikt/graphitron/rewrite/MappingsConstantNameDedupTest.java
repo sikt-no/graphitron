@@ -2,7 +2,6 @@ package no.sikt.graphitron.rewrite;
 
 import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.DefaultedSlot;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
@@ -12,7 +11,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionHandle
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.SqlStateHandler;
 import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.rewrite.model.MethodRef;
-import no.sikt.graphitron.rewrite.model.QueryField;
+import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.WithErrorChannel;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
@@ -129,8 +128,8 @@ class MappingsConstantNameDedupTest {
     void fieldsWithoutErrorChannel_passThroughUnchanged() {
         // Fields that don't carry a channel pass through by reference. The dedup must not crash
         // on such fields and must not invent a channel for them.
-        var withoutChannel = tableMethodField("noChannel", Optional.empty());
-        var withChannel = tableMethodField("withChannel",
+        var withoutChannel = routedField("noChannel", Optional.empty());
+        var withChannel = routedField("withChannel",
             Optional.of(filmPayloadChannel(exceptionHandler("java.lang.RuntimeException"))));
         var fields = new LinkedHashMap<FieldCoordinates, GraphitronField>();
         fields.put(FieldCoordinates.coordinates("Query", "noChannel"), withoutChannel);
@@ -173,25 +172,28 @@ class MappingsConstantNameDedupTest {
     }
 
     /**
-     * A {@code @tableMethod} root field: the lightest {@link WithErrorChannel} variant whose
+     * A DML-record mutation field: the lightest {@link WithErrorChannel} variant whose
      * channel slot carries the {@link ErrorChannel.RouterDispatched} partition the dedup's
      * grouping rules cover (root {@code @service} variants carry {@link ErrorChannel.Mapped},
      * which dedups by bare constant name only).
      */
-    private static QueryField.QueryTableMethodTableField tableMethodField(
+    private static MutationField.MutationDmlRecordField routedField(
             String fieldName, Optional<ErrorChannel.RouterDispatched> channel) {
-        var method = TestFixtures.staticServiceMethodRef("com.example.SvcStub", "doStuff", TypeName.OBJECT, List.of());
-        return new QueryField.QueryTableMethodTableField(
+        var tableInputArg = new no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg(
+            "in", "FilmInput", true, false, TestFixtures.filmTable(), List.of(), Optional.empty(),
+            List.of(), List.of(), List.of());
+        return new MutationField.MutationDmlRecordField(
             "Query",
             fieldName,
             null,
-            new ReturnTypeRef.TableBoundReturnType("Film", TestFixtures.filmTable(), new FieldWrapper.Single(true)),
-            method,
+            new ReturnTypeRef.ResultReturnType("FilmPayload", new FieldWrapper.Single(true), null),
+            tableInputArg,
+            no.sikt.graphitron.rewrite.model.DmlKind.INSERT,
             channel);
     }
 
     private static Map<FieldCoordinates, GraphitronField> oneFetcher(String fieldName, ErrorChannel.PayloadClass channel) {
-        var field = tableMethodField(fieldName, Optional.of(channel));
+        var field = routedField(fieldName, Optional.of(channel));
         var fields = new LinkedHashMap<FieldCoordinates, GraphitronField>();
         fields.put(FieldCoordinates.coordinates("Query", fieldName), field);
         return fields;
@@ -199,8 +201,8 @@ class MappingsConstantNameDedupTest {
 
     private static Map<FieldCoordinates, GraphitronField> twoFetchers(String n0, ErrorChannel.PayloadClass c0,
                                                                       String n1, ErrorChannel.PayloadClass c1) {
-        var f0 = tableMethodField(n0, Optional.of(c0));
-        var f1 = tableMethodField(n1, Optional.of(c1));
+        var f0 = routedField(n0, Optional.of(c0));
+        var f1 = routedField(n1, Optional.of(c1));
         var fields = new LinkedHashMap<FieldCoordinates, GraphitronField>();
         fields.put(FieldCoordinates.coordinates("Query", n0), f0);
         fields.put(FieldCoordinates.coordinates("Query", n1), f1);

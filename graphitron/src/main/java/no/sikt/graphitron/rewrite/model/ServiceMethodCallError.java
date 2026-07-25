@@ -19,7 +19,7 @@ import java.util.stream.Collectors;
  * follow-up work; per the "documentation names only live tests/code" principle this seal carries only
  * arms a producer actually instantiates.
  *
- * <p>Subsequent walker slices (condition, tableMethod, externalField) each add their own sibling
+ * <p>Subsequent walker slices (condition, externalField) each add their own sibling
  * sub-seal alongside this one, rather than piling typed arms under a single flat
  * {@link Rejection.AuthorError.Structural}.
  */

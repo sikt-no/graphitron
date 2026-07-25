@@ -862,90 +862,6 @@ class GraphQLQueryTest {
     }
 
     @Test
-    void inventoryById_filmViaTableMethod_correlatesParentRowViaInjectedFkProjection() {
-        // FK-projection sub-commit: the child @tableMethod fetcher reads
-        // parentRecord.get(DSL.name("film_id"), …) for the parent-row correlation. Without
-        // TypeClassGenerator.collectRequiredProjectionColumns injecting Inventory.film_id into
-        // the parent SELECT, the read throws IllegalArgumentException because the user's SDL
-        // selection (inventoryId, filmViaTableMethod { ... }) doesn't request inventory.film_id.
-        // Seed: inventory_id N -> film_id N for N in {1, 2, 3}, with film_id N's title pinned
-        // by the sakila init seed.
-        Map<String, Object> data = execute(
-            "{ inventoryById(inventory_id: [1, 2, 3]) { inventoryId filmViaTableMethod { filmId title } } }");
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("inventoryById");
-        assertThat(rows).hasSize(3);
-        Map<Integer, String> expectedTitleByFilmId = Map.of(
-            1, "ACADEMY DINOSAUR",
-            2, "ACE GOLDFINGER",
-            3, "ADAPTATION HOLES");
-        for (var row : rows) {
-            int inventoryId = (Integer) row.get("inventoryId");
-            @SuppressWarnings("unchecked")
-            Map<String, Object> film = (Map<String, Object>) row.get("filmViaTableMethod");
-            assertThat(film).extractingByKey("filmId").isEqualTo(inventoryId);
-            assertThat(film).extractingByKey("title").isEqualTo(expectedTitleByFilmId.get(inventoryId));
-        }
-    }
-
-    @Test
-    void filmById_languageViaTableMethod_correlatesParentRowViaExplicitReferencePathFk() {
-        // FK-projection sub-commit (explicit @reference path arm): Film.languageViaTableMethod
-        // uses @reference(path: [{key: "film_language_id_fkey"}]); the resolved FK's source-side
-        // column is film.language_id. The same projection-injection mechanism applies — the parent
-        // SELECT must carry language_id even when the user's SDL selection omits it.
-        // All seeded films have language_id=1; seeded language with language_id=1 has name "English".
-        Map<String, Object> data = execute(
-            "{ filmById(film_id: [\"1\", \"2\"]) { filmId languageViaTableMethod { languageId name } } }");
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("filmById");
-        assertThat(rows).hasSize(2);
-        for (var row : rows) {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> language = (Map<String, Object>) row.get("languageViaTableMethod");
-            assertThat(language).extractingByKey("languageId").isEqualTo(1);
-            // language.name is char(20) in Sakila; PostgreSQL pads with spaces — strip before compare.
-            assertThat(((String) language.get("name")).strip()).isEqualTo("English");
-        }
-    }
-
-    @Disabled("R277 (tablemethod-under-nested-type): @tableMethod under a table-bound NestingField "
-        + "is not yet wired in the generator. The languageViaTableMethod child was removed from "
-        + "FilmDetailsForMethod (now a same-table NestingField after R276 dropped @record binding). "
-        + "Re-enable as the execution-tier fixture when R277 lands.")
-    @Test
-    void filmById_detailsForMethod_languageViaTableMethod_routesThroughDtoParentTableMethodEmit() {
-        // Execution-tier fixture: child @tableMethod on a @record (DTO) parent.
-        // Film.detailsForMethod is a same-table NestingField passthrough to FilmDetailsForMethod,
-        // a @record(FilmRecord)-backed type (JooqTableRecordType). FilmDetailsForMethod's
-        // languageViaTableMethod field classifies as a record-sourced ChildField.BatchedTableField
-        // with a TableExpr.MethodCall target; the FK-auto-derive arm of the @tableMethod branch in
-        // FieldBuilder.classifyChildFieldOnResultType produces it with SourceKey columns =
-        // [film.language_id] (FK source side). The emit
-        // (SplitRowsMethodEmitter.buildForBatchedTable) uses the
-        // DataLoader-keyed batch skeleton with the developer's static @tableMethod call
-        // (SampleQueryService.tableMethodLanguage) substituted for the direct Tables.LANGUAGE
-        // reference. languageId is declared on FilmDetailsForMethod so the parent SELECT
-        // projects film.language_id; the DataFetcher reads parentRecord.get(film.LANGUAGE_ID)
-        // for the DataLoader key. All seeded films have language_id=1; language_id=1 has
-        // name "English".
-        Map<String, Object> data = execute(
-            "{ filmById(film_id: [\"1\", \"2\"]) { filmId detailsForMethod { filmId languageId languageViaTableMethod { languageId name } } } }");
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("filmById");
-        assertThat(rows).hasSize(2);
-        for (var row : rows) {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> details = (Map<String, Object>) row.get("detailsForMethod");
-            @SuppressWarnings("unchecked")
-            Map<String, Object> language = (Map<String, Object>) details.get("languageViaTableMethod");
-            assertThat(language).extractingByKey("languageId").isEqualTo(1);
-            // language.name is char(20) in Sakila; PostgreSQL pads with spaces — strip before compare.
-            assertThat(((String) language.get("name")).strip()).isEqualTo("English");
-        }
-    }
-
-    @Test
     void filmCardWrapper_recordExample_resolvesAllThreeAccessorArms() {
         // Execution-tier fixture: a @record-Java-backed type whose three SDL fields each
         // exercise a different accessor-resolution arm — bare-name (Java record component
@@ -2585,7 +2501,7 @@ class GraphQLQueryTest {
     }
 
     // ===== Unmasked @service-child SourceKey projection =====
-    // City carries no @splitQuery/@tableMethod sibling, so its @service children are the only
+    // City carries no @splitQuery sibling, so its @service children are the only
     // reason CITY_ID lands in the parent SELECT. Both queries deliberately select NO field that
     // maps to CITY_ID; if the BatchKeyField arm in
     // TypeClassGenerator.collectRequiredProjectionColumns regresses, cityUppercase resolves to
@@ -3930,25 +3846,7 @@ class GraphQLQueryTest {
         conn2.extractingByKey("pageInfo", as(MAP)).containsEntry("hasNextPage", false);
     }
 
-    // ===== Service / tableMethod root fetchers =====
-
-    @Test
-    @SuppressWarnings("unchecked")
-    void queryTableMethod_popularFilms_filtersAndProjectsSelectedColumns() {
-        // SampleQueryService.popularFilms returns filmTable.where(RENTAL_RATE >= minRentalRate).
-        // The generated jOOQ Film overrides where() to return Film (not Table<R>), so the
-        // filtered derived table preserves the specific type — no downcast needed when the
-        // framework projects via FilmType.$fields(...). Of the 5 seeded films, only
-        // ACE GOLDFINGER (rental_rate=4.99) clears the >= 3.0 threshold.
-        QUERY_COUNT.set(0);
-        Map<String, Object> data = execute("{ popularFilms(minRentalRate: 3.0) { title } }");
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("popularFilms");
-        assertThat(films).extracting(f -> f.get("title"))
-            .containsExactly("ACE GOLDFINGER");
-        // tableMethod path runs exactly one SQL query (the projection SELECT over the
-        // developer-returned filtered Table).
-        assertThat(QUERY_COUNT.get()).isEqualTo(1);
-    }
+    // ===== Service root fetchers =====
 
     @Test
     @SuppressWarnings("unchecked")

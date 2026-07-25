@@ -46,7 +46,7 @@ class DeclarationDefinitionsTest {
     private static final int PRICE_LINE = 11;
     private static final int DISCOUNT_LINE = 13;
     private static final int COMPUTED_LINE = 15;
-    private static final int TABLEMETHOD_LINE = 17;
+    private static final int ROUTINE_LINE = 17;
     private static final int GREET0_LINE = 19;
     private static final int GREET2_LINE = 21;
 
@@ -172,11 +172,11 @@ class DeclarationDefinitionsTest {
     }
 
     @Test
-    void tableMethodChildFieldNameJumpsToMethod() {
-        var file = file("type FilmTable @table(name: \"film\") { viaMethod: Int }");
+    void routineBackedFieldNameJumpsToMethod() {
+        var file = file("type Query { viaMethod: Int }");
         var loc = compute(file, pointAt(file, 0, "viaMethod")).orElseThrow();
         assertThat(loc.getUri()).isEqualTo(SVC_URI);
-        assertThat(loc.getRange().getStart().getLine()).isEqualTo(TABLEMETHOD_LINE);
+        assertThat(loc.getRange().getStart().getLine()).isEqualTo(ROUTINE_LINE);
     }
 
     @Test
@@ -285,7 +285,7 @@ class DeclarationDefinitionsTest {
                 Map.entry(new SourceWalker.MethodKey(SVC_FQN, "price", 1), svcMethod(PRICE_LINE)),
                 Map.entry(new SourceWalker.MethodKey(SVC_FQN, "discount", 1), svcMethod(DISCOUNT_LINE)),
                 Map.entry(new SourceWalker.MethodKey(SVC_FQN, "computeCol", 1), svcMethod(COMPUTED_LINE)),
-                Map.entry(new SourceWalker.MethodKey(SVC_FQN, "viaMethod", 1), svcMethod(TABLEMETHOD_LINE)),
+                Map.entry(new SourceWalker.MethodKey(SVC_FQN, "viaMethod", 1), svcMethod(ROUTINE_LINE)),
                 // greet is arity-overloaded: both keys resolve, so the bound arity
                 // (not the name fallback) selects which overload goto lands on.
                 Map.entry(new SourceWalker.MethodKey(SVC_FQN, "greet", 0), svcMethod(GREET0_LINE)),
@@ -315,7 +315,7 @@ class DeclarationDefinitionsTest {
             "Query.price", new FieldClassification.QueryService(SVC_FQN, "price", false, null, null),
             "FilmTable.discount", new FieldClassification.ServiceBacked(SVC_FQN, "discount", false, null, null),
             "FilmTable.computed", new FieldClassification.Computed(SVC_FQN, "computeCol"),
-            "FilmTable.viaMethod", new FieldClassification.TableMethod("film", SVC_FQN, "viaMethod", false));
+            "Query.viaMethod", new FieldClassification.RoutineBacked("film", SVC_FQN, "viaMethod"));
         return new LspSchemaSnapshot.Built.Current(List.of(), types, Map.of(), classifications, Map.of());
     }
 

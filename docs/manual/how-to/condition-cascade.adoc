@@ -127,7 +127,7 @@ The same fixture pattern mirrors the `@table` case: `filmsOuterOverridePlainInpu
 
 The `@condition` reference page lists the carrier rules in two lines; here's the operational shape, with the carriers spelled out.
 
-GraphQL input types classify into one of five carriers in the rewrite. For class-backed carriers, the backing class is reflected from the `@service` / `@condition` / `@tableMethod` method parameter the input flows into:
+GraphQL input types classify into one of five carriers in the rewrite. For class-backed carriers, the backing class is reflected from the `@service` / `@condition` method parameter the input flows into:
 
 * *xref:../reference/directives/table.adoc[`@table`]-bound* (`TableInputType`): Graphitron owns the column projection and DML. Most `@condition` fixtures sit here.
 * *Class-backed by a Java record* (`JavaRecordInputType`): the producer's parameter is a record class; the rewrite binds GraphQL fields to its components.

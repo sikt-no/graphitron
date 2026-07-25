@@ -86,7 +86,7 @@ public sealed interface GraphitronType
      * return type. Runtime wiring only; no SQL until a new scope starts.
      *
      * <p>The sub-type identifies the backing Java representation. The builder reflects on the
-     * producer's return type (a {@code @service} method return, {@code @tableMethod} return, or a
+     * producer's return type (a {@code @service} method return or a
      * parent-accessor chain) at build time.
      */
     sealed interface ResultType extends GraphitronType, EmitsPerTypeFile
@@ -348,7 +348,7 @@ public sealed interface GraphitronType
      *
      * <p>The sub-type identifies the backing Java representation. The backing class comes from
      * the record-binding fold over the input's producers, reflected at build time: the method
-     * parameter type the input flows into (a {@code @service} or {@code @tableMethod} parameter),
+     * parameter type the input flows into (a {@code @service} parameter),
      * or the enclosing bound input class's accessor for a nested input. When no producer binds a
      * class the type is classified as {@link PojoInputType} with a {@code null} backing class:
      * backed-vs-unbacked is carried by that nullable slot, not by permit identity the way the

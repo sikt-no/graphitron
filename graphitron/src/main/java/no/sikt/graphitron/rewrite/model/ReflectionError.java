@@ -12,7 +12,7 @@ import java.util.stream.Collectors;
  * an overloaded method name are all properties of the reflected Java method regardless of which
  * directive references it. Per the spec's shared-vs-service partition, these arms live in their own
  * sub-seal under {@code graphitron.reflect.} rather than forcing
- * {@link ServiceMethodCallError} to carry a {@code @tableMethod} failure.
+ * {@link ServiceMethodCallError} to carry a reflection failure.
  *
  * <p>Sibling to {@link ServiceMethodCallError} / {@link UpdateRowsError} / {@link DeleteRowsError}:
  * each typed arm carries the structural data its diagnostic message needs and a stable
@@ -37,13 +37,6 @@ public sealed interface ReflectionError extends Rejection.AuthorError permits
     }
 
     /**
-     * Which reflect helper produced a {@link ReturnTypeMismatch}; specialises the message prose
-     * (the {@code @service} return-type rule vs. the {@code @tableMethod} generated-table-class
-     * rule) without splitting the shared arm into two.
-     */
-    enum ReturnContext { SERVICE, TABLE_METHOD }
-
-    /**
      * The referenced class could not be loaded through the codegen classloader (a
      * {@link ClassNotFoundException} at the reflect site). Carries the binary class name the
      * author wrote.
@@ -58,25 +51,18 @@ public sealed interface ReflectionError extends Rejection.AuthorError permits
     /**
      * The reflected method's return type does not equal the type the field's declared return
      * requires. Carries the class/method coordinate, the expected vs. actual type rendered in the
-     * simple form the message surfaces, and the {@link ReturnContext} that selects the prose.
+     * simple form the message surfaces.
      */
     record ReturnTypeMismatch(
         String className,
         String methodName,
         String expectedTypeSimple,
-        String actualTypeSimple,
-        ReturnContext context
+        String actualTypeSimple
     ) implements ReflectionError {
         @Override public String message() {
-            return switch (context) {
-                case SERVICE -> "method '" + methodName + "' in class '" + className
-                    + "' must return '" + expectedTypeSimple
-                    + "' to match the field's declared return type — got '" + actualTypeSimple + "'";
-                case TABLE_METHOD -> "method '" + methodName + "' in class '" + className
-                    + "' must return the generated jOOQ table class '" + expectedTypeSimple
-                    + "' for @tableMethod with a @table-bound return type — got '"
-                    + actualTypeSimple + "'";
-            };
+            return "method '" + methodName + "' in class '" + className
+                + "' must return '" + expectedTypeSimple
+                + "' to match the field's declared return type — got '" + actualTypeSimple + "'";
         }
         @Override public String lspCode() { return "graphitron.reflect.return-type-mismatch"; }
     }

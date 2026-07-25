@@ -50,7 +50,7 @@ The type on which a field is defined.
 
 | *Unmapped* | *(none ; Query, Mutation)* | Entry point. No SQL yet.
 | *Table-mapped* | `@table` | Full SQL generation ; queries, joins, projections.
-| *Result-mapped* | producer's reflected return is a Java/jOOQ class | Runtime wiring only. The type's backing class is derived by reflection from its producing field (a `@service` return, a `@tableMethod` return, or a parent-accessor chain). Graphitron validates types and wires data fetchers, but generates no SQL until a new scope starts.
+| *Result-mapped* | producer's reflected return is a Java/jOOQ class | Runtime wiring only. The type's backing class is derived by reflection from its producing field (a `@service` return or a parent-accessor chain). Graphitron validates types and wires data fetchers, but generates no SQL until a new scope starts.
 |===
 
 === Target type
@@ -80,7 +80,7 @@ stateDiagram-v2
     [*] --> NoScope
     NoScope --> InScope : enter<br/>(unmapped root field<br/>reaches target-table type)
     InScope --> InScope : split<br/>(@splitQuery on table-mapped source<br/>→ new scope via DataLoader, parent PK key)
-    InScope --> InScope : record handoff<br/>(target-table field on result-mapped source<br/>or @service/@tableMethod returning target-table type<br/>→ new scope via DataLoader, parent PK or custom batch key)
+    InScope --> InScope : record handoff<br/>(target-table field on result-mapped source<br/>or @service returning target-table type<br/>→ new scope via DataLoader, parent PK or custom batch key)
     InScope --> Private : exit<br/>(@service field creates private scope<br/>independent of any Graphitron-managed scope)
     Private --> InScope : (private scope ends, caller continues)
     InScope --> [*]
@@ -91,7 +91,7 @@ stateDiagram-v2
 
 | *Enter* | An unmapped root field reaches a target-table type ; the first scope starts
 | *Split* | `@splitQuery` on a table-mapped source ; a new scope via DataLoader, keyed by the parent's PK
-| *Record handoff* | A target-table field on a result-mapped source, or any user-provided return (`@service`, `@tableMethod`) reaching a target-table type ; new scope via DataLoader, keyed by the parent's PK or a custom batch key
+| *Record handoff* | A target-table field on a result-mapped source, or any user-provided return (`@service`) reaching a target-table type ; new scope via DataLoader, keyed by the parent's PK or a custom batch key
 | *Exit* | `@service` fields create a *private scope* ; their SQL statement is independent of any Graphitron-managed scope
 |===
 
@@ -101,7 +101,7 @@ stateDiagram-v2
 
 Two kinds of `VALUES(…)` derived tables built by Graphitron when batching:
 
-- *Derived source table* ; built from parent source records. Contains the FK-relevant columns from the parent: the parent's PK/unique-key columns when the FK is on the child side, or the FK columns themselves when the FK is on the parent side. Used for `@splitQuery` table fields, user-provided returns (`@service`, `@tableMethod`), and mutation read-backs.
+- *Derived source table* ; built from parent source records. Contains the FK-relevant columns from the parent: the parent's PK/unique-key columns when the FK is on the child side, or the FK columns themselves when the FK is on the parent side. Used for `@splitQuery` table fields, user-provided returns (`@service`), and mutation read-backs.
 - *Derived target table* ; built from `@lookupKey` argument values (from `SelectedField.getArguments()`). Each argument value (or list element) is one row. *Identical for every source in a batch* ; all N parents in a batch share the same request arguments, so M (the number of lookup rows) is constant for the entire batch. Base result count is exactly N × M.
 
 *`@condition` on lookup fields is allowed.* The condition method, however, must preserve the N × M positional contract: each (source, target) pair produced by the derived-table cross join is either kept in full or dropped in full, and no additional rows may be introduced. In practice this means the condition should be a predicate over the pair of rows, not a filter that can change the per-parent result cardinality non-uniformly. Violating the contract desynchronises batch dispatch ; the client receives rows that cannot be reattached to their source. The contract is a developer responsibility, not a build-time check.
@@ -167,14 +167,14 @@ example's projection query, rendered as SDL descriptions by `QueryViewRenderer`.
 | Classification Trigger on Type | `GraphitronType` Variant | Generator Output
 
 | `@table` + `@node` | `NodeType` | `*Fetchers` class + `*` class (with Relay ID handling)
-| Producer's reflected return is a Java/jOOQ class (a `@service` return, a `@tableMethod` return, or a parent-accessor chain) | `ResultType`* | `*Fetchers` class only (no SQL scope of its own). The backing class is reflection-derived, not declared.
+| Producer's reflected return is a Java/jOOQ class (a `@service` return or a parent-accessor chain) | `ResultType`* | `*Fetchers` class only (no SQL scope of its own). The backing class is reflection-derived, not declared.
 | `Query` or `Mutation` root type | `RootType` | `*Fetchers` class only
 | Interface with `@table` + `@discriminate` | `TableInterfaceType` | `*Fetchers` class
 | Interface without `@table` (multi-table) | `InterfaceType` | `*Fetchers` class
 | Union type | `UnionType` | `*Fetchers` class
 | `@error` | `ErrorType` | No generation (error mapping config)
 | Input type with `@table` (deprecated on input; see `docs/manual/reference/directives/table.adoc`) | `TableInputType` | Used in mutation generation. A build warning fires per `@table`-on-input usage (no carve-out). An `INSERT`-consumed input warns and names the return-derived fix and `@mutation(table:)`; a `DELETE`-consumed input warns and names `@mutation(table:)`; `UPDATE`/`UPSERT`-consumed inputs earn the base warning (no field-relative replacement yet).
-| Input type without `@table` (the `@service` / `@condition` / `@tableMethod` parameter the input flows into is reflected as a developer class) | `InputType`* | No generation (developer-provided class). The input's backing class is reflected from the parameter type it flows into.
+| Input type without `@table` (the `@service` / `@condition` parameter the input flows into is reflected as a developer class) | `InputType`* | No generation (developer-provided class). The input's backing class is reflected from the parameter type it flows into.
 | Input type with `@table` used on fields with conflicting return tables | `PojoInputType` (unbound) | No generation ; column binding resolved per field-usage
 | Object type with no `@table` and no producer binding | `NestingType` | No generation; nested under a parent table-bound or class-backed scope via `NestingField`
 | GraphQL `enum` type | `EnumType` | No generation; enum values map to DB strings/ints at column-bind time
@@ -438,7 +438,6 @@ without declaring its path:
 | Schema Pattern | `QueryField` Variant | `*Fetchers` Generates
 
 | Any argument has `@lookupKey` | `QueryLookupTableField` | Synchronous fetcher + `lookup*()` rows method (+ VALUES input-rows helper)
-| `@tableMethod` | `QueryTableMethodTableField` | Fetcher method
 | Field named `node` (Relay) | `QueryNodeField` | Fetcher method
 | Field named `nodes` (Relay; auto-emitted, batched-by-id) | `QueryNodesField` | Async DataLoader fetcher dispatching by NodeId
 | Return: `@table`+`@discriminate` interface | `QueryTableInterfaceField` | Fetcher method
@@ -522,7 +521,6 @@ The four `Mutation*TableField` permits are guaranteed never to carry a class-bac
 | Schema Pattern | `ChildField` Variant | `*Fetchers` Generates
 
 | `@externalField(reference: {className, method})` | `ComputedField` | Inlined call in `$fields()` (`<Class>.<method>(table).as("<name>")`) + `ColumnFetcher` registered by alias in `wiring()`. Method must be `public static Field<X> name(<ParentTable> table)`.
-| `@tableMethod` | `TableMethodField` | Fetcher method
 | `@service`, return `@table` | `ServiceTableField` | Async DataLoader fetcher + `rows*()` method
 | `@service`, return non-table | `ServiceRecordField` | Fetcher method
 | Return `@table`, `@splitQuery` + `@lookupKey` | `BatchedLookupTableField` (Table-sourced) | Async DataLoader fetcher + `rows*()` method
@@ -540,7 +538,7 @@ The four `Mutation*TableField` permits are guaranteed never to carry a class-bac
 
 === Child Fields (on a class-backed parent)
 
-The parent here is a type whose backing class is reflection-derived from its producer (a `@service` / `@tableMethod` return, or a parent-accessor chain), not declared via a directive. The `Record*` variant names below are reflection-derived classifications, kept stable from earlier naming.
+The parent here is a type whose backing class is reflection-derived from its producer (a `@service` return, or a parent-accessor chain), not declared via a directive. The `Record*` variant names below are reflection-derived classifications, kept stable from earlier naming.
 
 |===
 | Schema Pattern | `ChildField` Variant | `*Fetchers` Generates
@@ -640,7 +638,7 @@ All source lives under `graphitron/src/main/java/no/sikt/graphitron/rewrite/`. E
 | Type classification | `TypeBuilder.java` | Two-pass: classify types, then enrich interfaces/unions with participants
 | Field classification | `FieldBuilder.java` | Classifies fields based on parent type, directives, and return type
 | jOOQ lookups | `JooqCatalog.java` | Lazy wrapper around jOOQ `Catalog` ; tables, columns, FKs, indexes, PKs
-| Service reflection | `ServiceCatalog.java` | Reflects `@service`/`@tableMethod` Java methods into `MethodRef`
+| Service reflection | `ServiceCatalog.java` | Reflects `@service` / `@condition` Java methods into `MethodRef`
 |===
 
 === Generators (`generators/`)

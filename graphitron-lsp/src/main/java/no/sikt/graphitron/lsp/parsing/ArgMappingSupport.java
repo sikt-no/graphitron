@@ -15,7 +15,7 @@ import java.util.Optional;
  * <p>An {@code argMapping} slot is always one field of a class/method group:
  * the nested {@code ExternalCodeReference.{className, method, argMapping}} (on
  * {@code @service} / {@code @condition} / {@code @externalField}) or the flat
- * {@code @tableMethod(className:, method:, argMapping:)}. The sibling
+ * {@code @sourceRow(className:, method:)} shape. The sibling
  * coordinates are the same shape with the field name swapped, so the same
  * {@link LspVocabulary#siblingStringAt} read the method / class providers use
  * resolves the values here.

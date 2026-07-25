@@ -81,7 +81,7 @@ public sealed interface ErrorChannel permits ErrorChannel.Mapped, ErrorChannel.R
      * arm for service-backed paths
      * ({@code MutationServiceTableField}, {@code MutationServiceRecordField},
      * {@code QueryServiceTableField}, {@code QueryServiceRecordField}) and child
-     * {@code @tableMethod} / child {@code @service} variants.
+     * child {@code @service} variants.
      *
      * <ul>
      *   <li>{@code payloadClass}: the developer-supplied payload class (e.g.

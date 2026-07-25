@@ -34,7 +34,6 @@ import no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField;
 import no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField;
-import no.sikt.graphitron.rewrite.model.ChildField.TableMethodField;
 import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
 import no.sikt.graphitron.rewrite.model.AccessorRef;
 import no.sikt.graphitron.rewrite.model.Arity;
@@ -140,7 +139,6 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE_FOR;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_SERVICE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_SPLIT_QUERY;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_ROUTINE;
-import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE_METHOD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_TENANT_FAN_OUT;
 import static no.sikt.graphitron.rewrite.BuildContext.argString;
 import static no.sikt.graphitron.rewrite.BuildContext.argStringList;
@@ -153,7 +151,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.locationOf;
  * Classifies all fields in the schema into the {@link GraphitronField} hierarchy.
  *
  * <p>Reads directives ({@code @service}, {@code @reference}, {@code @field}, {@code @nodeId},
- * {@code @externalField}, {@code @tableMethod}, {@code @mutation}, {@code @splitQuery},
+ * {@code @externalField}, {@code @mutation}, {@code @splitQuery},
  * {@code @lookupKey}, {@code @defaultOrder}, {@code @orderBy}, {@code @condition}) to determine
  * the correct field variant. Downstream code works exclusively with the produced
  * {@link GraphitronField} values.
@@ -177,7 +175,6 @@ class FieldBuilder {
     private final BuildContext ctx;
     private final ServiceCatalog svc;
     private final ServiceDirectiveResolver serviceResolver;
-    private final TableMethodDirectiveResolver tableMethodResolver;
     private final RoutineDirectiveResolver routineResolver;
     private final ExternalFieldDirectiveResolver externalFieldResolver;
     private final LookupKeyDirectiveResolver lookupKeyResolver;
@@ -202,7 +199,6 @@ class FieldBuilder {
         this.svc = svc;
         this.enumMappingResolver = new EnumMappingResolver(ctx);
         this.serviceResolver = new ServiceDirectiveResolver(ctx, svc, this, new InputBeanResolver(ctx));
-        this.tableMethodResolver = new TableMethodDirectiveResolver(ctx, svc, this);
         this.routineResolver = new RoutineDirectiveResolver(ctx, this);
         this.externalFieldResolver = new ExternalFieldDirectiveResolver(ctx, svc, this);
         this.lookupKeyResolver = new LookupKeyDirectiveResolver();
@@ -857,8 +853,7 @@ class FieldBuilder {
 
     /**
      * Classifies a child field on a {@link TableType} parent whose return type is an object, interface,
-     * or union, not a scalar or enum. Called after the {@code @tableMethod} check in
-     * {@link #classifyChildFieldOnTableType}.
+     * or union, not a scalar or enum. Called from {@link #classifyChildFieldOnTableType}.
      */
     private GraphitronField classifyObjectReturnChildField(GraphQLFieldDefinition fieldDef, String parentTypeName, TableBackedType parentTableType, Set<String> expandingTypes) {
         String name = fieldDef.getName();
@@ -1078,7 +1073,7 @@ class FieldBuilder {
                         String note = typeBuilder.resultProducerFor(elementTypeName)
                             .map(p -> " Type '" + elementTypeName + "' is also produced (" + p.describe()
                                 + "); if the field should return the produced value rather than project it "
-                                + "off '" + parentTypeName + "', add @service, @reference, @tableMethod, or "
+                                + "off '" + parentTypeName + "', add @service, @reference, or "
                                 + "@externalField on the field.")
                             .orElse("");
                         enriched = Rejection.structural(enriched.message() + note);
@@ -3639,8 +3634,8 @@ class FieldBuilder {
     }
 
     /**
-     * Variant of {@link #buildWithChannel} for child {@code @service} variants and root + child
-     * {@code @tableMethod} variants: resolves the {@link ErrorChannel} against the field's return
+     * Variant of {@link #buildWithChannel} for child {@code @service} variants: resolves the
+     * {@link ErrorChannel} against the field's return
      * type, runs {@link #checkDeclaredCheckedExceptions} against the resolved channel, and
      * forwards the channel to {@code builder}. The channel slot is wired uniformly so that
      * check runs against a populated channel wherever the field's payload declares an
@@ -3649,8 +3644,8 @@ class FieldBuilder {
      * <p>Sibling of {@link #buildServiceField}: that helper additionally runs the
      * service-return strict-equality check against the SDL payload type, rejecting service
      * methods whose return type does not match the field's declared payload. Child
-     * {@code @service} and {@code @tableMethod} variants don't need that check (their return
-     * shapes are pinned by the catalog's strict-return guarantee), so this helper omits it.
+     * {@code @service} variants don't need that check (their return shapes are pinned by the
+     * catalog's strict-return guarantee), so this helper omits it.
      *
      * <p>Both helpers call into the same {@link #checkDeclaredCheckedExceptions} utility.
      */
@@ -4565,17 +4560,6 @@ class FieldBuilder {
             };
         }
 
-        if (fieldDef.hasAppliedDirective(DIR_TABLE_METHOD)) {
-            return switch (tableMethodResolver.resolve(parentTypeName, fieldDef, true)) {
-                case TableMethodDirectiveResolver.Resolved.Rejected r ->
-                    new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());
-                case TableMethodDirectiveResolver.Resolved.TableBound tb ->
-                    buildMethodBackedWithChannel(tb.returnType(), tb.method(),
-                        parentTypeName, name, location, fieldDef,
-                        ch -> new QueryField.QueryTableMethodTableField(parentTypeName, name, location, tb.returnType(), tb.method(), ch));
-            };
-        }
-
         if (fieldDef.hasAppliedDirective(DIR_ROUTINE)) {
             // The single-node chain — the degenerate root chain with no @reference
             // applications (hops empty, the routine result is the terminus).
@@ -4640,7 +4624,7 @@ class FieldBuilder {
         }
 
         return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural("return type '" + elementTypeName + "' is not a @table, interface, or union Graphitron type; " +
-            "@service, @lookupKey, and @tableMethod are all absent"));
+            "@service and @lookupKey are both absent"));
     }
 
     private GraphitronField classifyMutationField(GraphQLFieldDefinition fieldDef, String parentTypeName) {
@@ -5921,7 +5905,6 @@ class FieldBuilder {
         var present = new ArrayList<String>();
         if (fieldDef.hasAppliedDirective(DIR_SERVICE))        present.add(DIR_SERVICE);
         if (fieldDef.hasAppliedDirective(DIR_EXTERNAL_FIELD)) present.add(DIR_EXTERNAL_FIELD);
-        if (fieldDef.hasAppliedDirective(DIR_TABLE_METHOD))   present.add(DIR_TABLE_METHOD);
         if (fieldDef.hasAppliedDirective(DIR_NODE_ID))        present.add(DIR_NODE_ID);
         if (fieldDef.hasAppliedDirective(DIR_ROUTINE))        present.add(DIR_ROUTINE);
         return reduceDirectiveConflict(present);
@@ -5931,14 +5914,13 @@ class FieldBuilder {
      * Returns a {@link Rejection} when the query-field classification-claiming directives present
      * conflict or compose to a capability gap (via {@link #reduceDirectiveConflict}), or
      * {@code null}. The set is {@code @service}, {@code @lookupKey} (detected anywhere on the
-     * argument surface), {@code @tableMethod}, and {@code @routine}; {@code @routine} ×
+     * argument surface), and {@code @routine}; {@code @routine} ×
      * {@code @lookupKey} lands the typed {@code Deferred} that extends the child verdict to root.
      */
     private Rejection detectQueryFieldConflict(GraphQLFieldDefinition fieldDef) {
         var present = new ArrayList<String>();
         if (fieldDef.hasAppliedDirective(DIR_SERVICE))      present.add(DIR_SERVICE);
         if (hasLookupKeyAnywhere(fieldDef))                 present.add(DIR_LOOKUP_KEY);
-        if (fieldDef.hasAppliedDirective(DIR_TABLE_METHOD)) present.add(DIR_TABLE_METHOD);
         if (fieldDef.hasAppliedDirective(DIR_ROUTINE))      present.add(DIR_ROUTINE);
         return reduceDirectiveConflict(present);
     }
@@ -6160,123 +6142,6 @@ class FieldBuilder {
                     : SourceEnvelope.DIRECT;
                 return new ChildField.RecordCompositeField(parentTypeName, name, location, rrt, envelope);
             }
-        }
-
-        // @tableMethod on a class-backed parent — DTO-parent shape; dissolves onto the merged
-        // batched leaf with a TableExpr.MethodCall terminal hop.
-        // Fires BEFORE the @sourceRow branch because both directives may coexist (their roles
-        // are complementary: @sourceRow provides the batch-key lifter; @tableMethod provides the
-        // developer's static jOOQ table method). When @sourceRow is absent, the parent must be
-        // backed by a jOOQ TableRecord so the FK source-key can be auto-derived from the catalog.
-        if (fieldDef.hasAppliedDirective(DIR_TABLE_METHOD)) {
-            warnIfSplitQueryOnRecordParent(fieldDef, parentTypeName, name, location);
-            var tableMethodResolved = tableMethodResolver.resolve(parentTypeName, fieldDef, /*isRoot=*/false);
-            if (tableMethodResolved instanceof TableMethodDirectiveResolver.Resolved.Rejected r) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());
-            }
-            var tmTb = (TableMethodDirectiveResolver.Resolved.TableBound) tableMethodResolved;
-            var tbReturn = tmTb.returnType();
-            String targetTableName = tbReturn.table().tableName();
-            String rawTypeName0 = baseTypeName(fieldDef);
-            String elementTypeName0 = ctx.isConnectionType(rawTypeName0)
-                ? ctx.connectionElementTypeName(rawTypeName0) : rawTypeName0;
-
-            SourceKey sourceKey;
-            KeyLift lift;
-            LoaderRegistration loaderRegistration;
-            List<JoinStep> joinPath;
-            ParentCorrelation.OnLiftedSlots lifted = null;
-            if (fieldDef.hasAppliedDirective(DIR_SOURCE_ROW)) {
-                var sr = sourceRowResolver.resolve(parentTypeName, fieldDef, parentResultType, elementTypeName0);
-                if (sr instanceof SourceRowDirectiveResolver.Resolved.Rejected rj) {
-                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
-                }
-                var ok = (SourceRowDirectiveResolver.Resolved.Ok) sr;
-                sourceKey = ok.sourceKey();
-                lift = ok.lift();
-                loaderRegistration = ok.loaderRegistration();
-                joinPath = ok.joinPath();
-                lifted = ok.lifted();
-            } else {
-                String parentSqlTableName = parentResultType instanceof GraphitronType.JooqTableRecordType jtr
-                        && jtr.table() != null
-                    ? jtr.table().tableName() : null;
-                var tmPath = ctx.parsePath(fieldDef, name, parentSqlTableName, targetTableName, tbReturn.table(), buildWrapper(fieldDef).isList());
-                if (tmPath.hasError()) {
-                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(tmPath.errorMessage()));
-                }
-                var fkSource = deriveFkRecordParentSource(tmPath.elements(), parentResultType, tbReturn);
-                if (fkSource == null) {
-                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
-                        "@tableMethod on a record-backed parent requires either a typed jOOQ TableRecord backing "
-                        + "(so the FK to the @tableMethod return-type table can be auto-derived from the catalog), "
-                        + "or @sourceRow(className: ..., method: ...) to lift the batch key manually. Parent '"
-                        + parentTypeName + "' has neither."));
-                }
-                sourceKey = fkSource.sourceKey();
-                lift = fkSource.lift();
-                loaderRegistration = fkSource.loaderRegistration();
-                joinPath = tmPath.elements();
-            }
-
-            if (!joinPath.isEmpty() && joinPath.getLast() instanceof JoinStep.Hop lastFk
-                && lastFk.on() instanceof On.ColumnPairs
-                && !lastFk.targetTable().sameTable(targetTableName)) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
-                    "@tableMethod @reference path: last hop lands on '" + lastFk.targetTable().tableName()
-                    + "' but @tableMethod's return type is bound to table '" + targetTableName + "'"));
-            }
-            // The DTO-parent @tableMethod shape dissolves onto the merged batched
-            // leaf — the developer's method becomes the terminal hop's TableExpr.MethodCall
-            // target, and the generic batched rows-method prelude materializes it through the
-            // shared table-expression switch. Only single-hop FK paths ship; the other shapes
-            // reject at classification time: an empty path's lifted-correlation prelude
-            // materializes its target from the CATALOG constants (it would silently ignore the
-            // developer's method), and no multi-hop emit exists. A Connection wrapper is
-            // rejected here for the same reason the merged leaf's constructor makes it
-            // unrepresentable on the Record arm (no record-parent Connection emit exists).
-            if (buildWrapper(fieldDef) instanceof FieldWrapper.Connection) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
-                    "@tableMethod on a record-backed parent cannot return a Connection; no "
-                    + "record-parent Connection emit exists"));
-            }
-            if (joinPath.size() != 1 || !(joinPath.get(0) instanceof JoinStep.Hop tmHop)) {
-                String shapeLabel = joinPath.isEmpty()
-                    ? "an empty join path (the @sourceRow pre-keyed shape)"
-                    : "a multi-hop join path";
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
-                    "@tableMethod on a record-backed parent with " + shapeLabel + " is not yet "
-                    + "supported — only single-hop FK paths ship"));
-            }
-            var methodTargetHop = new JoinStep.Hop(
-                new TableExpr.MethodCall(tmTb.method(), tbReturn.table()),
-                tmHop.on(), tmHop.originTable(), tmHop.filter(), tmHop.alias());
-            var capturedJoinPath = List.<JoinStep>of(methodTargetHop);
-            var capturedSourceKey = sourceKey;
-            var capturedLift = lift;
-            var capturedLoaderRegistration = loaderRegistration;
-            // class-backed-parent carrier: the surface SDL parent has no @table binding, so a
-            // condition-join (or hop-0-filter) first hop has no parent table to anchor the source
-            // argument. parentTable=null routes the parent-anchor (OnParentJoin) arm to AuthorError,
-            // mirroring the record-sourced BatchedTableField / BatchedLookupTableField arms. Filter-less FK-derived
-            // first hops produce ParentCorrelation.OnFkSlots and don't consult parentTable; the
-            // @sourceRow leaf-PK shape arrives pre-resolved as OnLiftedSlots.
-            var rtmPcResolution = lifted != null
-                ? new BuildContext.ParentCorrelationResolution.Resolved(lifted)
-                : ctx.buildParentCorrelation(capturedJoinPath, /* parentTable= */ null);
-            if (rtmPcResolution instanceof BuildContext.ParentCorrelationResolution.AuthorError e) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(e.message()));
-            }
-            var rtmParentCorrelation = ((BuildContext.ParentCorrelationResolution.Resolved) rtmPcResolution).correlation();
-            // The channel slot is provably empty on this shape (resolveErrorChannel guards on
-            // ResultReturnType; this return is table-bound) — the wrapper is kept for its
-            // declared-checked-exceptions rejection, and the merged leaf carries no channel.
-            return buildMethodBackedWithChannel(tbReturn, tmTb.method(),
-                parentTypeName, name, location, fieldDef,
-                ch -> new ChildField.BatchedTableField(parentTypeName, name, location, tbReturn,
-                    capturedJoinPath, List.of(), new OrderBySpec.None(), null,
-                    SourceShape.Record, capturedSourceKey, capturedLift,
-                    capturedLoaderRegistration, rtmParentCorrelation));
         }
 
         // @sourceRow is owned by its dedicated resolver from this point onward: the resolver
@@ -7339,31 +7204,6 @@ class FieldBuilder {
             };
         }
 
-        if (fieldDef.hasAppliedDirective(DIR_TABLE_METHOD)) {
-            return switch (tableMethodResolver.resolve(parentTypeName, fieldDef, false)) {
-                case TableMethodDirectiveResolver.Resolved.Rejected r ->
-                    new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());
-                case TableMethodDirectiveResolver.Resolved.TableBound tb -> {
-                    String targetTableName = tb.returnType().table().tableName();
-                    var tableMethodPath = ctx.parsePath(fieldDef, name, tableType.table().tableName(), targetTableName, tb.returnType().table(), buildWrapper(fieldDef).isList());
-                    if (tableMethodPath.hasError()) {
-                        yield new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(tableMethodPath.errorMessage()));
-                    }
-                    var pathElements = tableMethodPath.elements();
-                    if (!pathElements.isEmpty() && pathElements.getLast() instanceof JoinStep.Hop lastFk
-                        && lastFk.on() instanceof On.ColumnPairs
-                        && !lastFk.targetTable().sameTable(targetTableName)) {
-                        yield new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
-                            "@tableMethod @reference path: last hop lands on '" + lastFk.targetTable().tableName()
-                            + "' but @tableMethod's return type is bound to table '" + targetTableName + "'"));
-                    }
-                    yield buildMethodBackedWithChannel(tb.returnType(), tb.method(),
-                        parentTypeName, name, location, fieldDef,
-                        ch -> new TableMethodField(parentTypeName, name, location, tb.returnType(), pathElements, tb.method(), ch));
-                }
-            };
-        }
-
         if (!isScalarOrEnum(fieldDef)) {
             return classifyObjectReturnChildField(fieldDef, parentTypeName, tableType, expandingTypes);
         }
@@ -7617,8 +7457,8 @@ class FieldBuilder {
     }
 
     /**
-     * Returns the {@code contextArguments} list from the {@code @service} or {@code @tableMethod}
-     * directive on {@code fieldDef}, or an empty list when the directive is absent or the argument
+     * Returns the {@code contextArguments} list from the {@code @service} directive on
+     * {@code fieldDef}, or an empty list when the directive is absent or the argument
      * is not set.
      */
     List<String> parseContextArguments(GraphQLFieldDefinition fieldDef, String directiveName) {

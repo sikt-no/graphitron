@@ -117,7 +117,7 @@ final class ParentProjectionContainmentCheck {
             }
             // ParentRowDemand widens the same containment invariant to correlation reads: a
             // table-parent child whose fetcher reads parent-row columns by base name (a
-            // @tableMethod correlation, a multi-table polymorphic single-fetch parent-side read,
+            // a multi-table polymorphic single-fetch parent-side read,
             // or a batched polymorphic key extraction) demands every such column be projected.
             if (f instanceof ParentRowDemand prd) {
                 for (ColumnRef col : prd.parentRowColumns()) {

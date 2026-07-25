@@ -22,7 +22,7 @@ The rewrite's Maven plugin reflects on the named class at code-generation time (
         </execution>
     </executions>
     <dependencies>
-        <!-- Carries the @service / @externalField / @tableMethod / @condition /
+        <!-- Carries the @service / @externalField / @condition /
              @sourceRow / @enum target classes, plus the Java classes that back
              class-backed types (reflected from their producers). -->
         <dependency>
@@ -59,14 +59,14 @@ Set `method:` only when the Java method's name diverges from the field name:
 ----
 type Query {
     popularFilms(minRentalRate: Float!): [Film!]!
-        @tableMethod(
+        @service(service: {
             className: "com.example.services.SampleQueryService",
             method:    "popularFilmsAboveRate"
-        )
+        })
 }
 ----
 
-Reflection failures (class not on the plugin classpath, method not present, signature does not match the directive's expected shape) surface at build time with a directive-specific message: `service method could not be resolved — <reason>` for `@service`, `table method could not be resolved — <reason>` for `@tableMethod`, and so on. The `<reason>` is the underlying reflection exception when the class or method is missing, or a constraint message when the signature is wrong.
+Reflection failures (class not on the plugin classpath, method not present, signature does not match the directive's expected shape) surface at build time with a directive-specific message: `service method could not be resolved — <reason>` for `@service`, and so on. The `<reason>` is the underlying reflection exception when the class or method is missing, or a constraint message when the signature is wrong.
 
 == Map GraphQL arguments to Java parameter names
 
@@ -93,7 +93,7 @@ public final class SampleQueryService {
 
 The Java parameter `filmIds` receives the GraphQL argument `ids`. Unmentioned Java parameters bind to a GraphQL argument of the same name; an empty `argMapping:` is identity for every parameter. Whitespace around `:` and `,` is tolerated, and multi-line text-block input is accepted for long mappings.
 
-`argMapping:` is meaningful on `@service`, `@tableMethod`, and `@condition` (the directives whose Java targets receive GraphQL arguments). It is structurally inert on `@externalField` and `@enum`, where the Java target consumes no GraphQL-argument-bound parameters; applying it on those two is rejected at parse time.
+`argMapping:` is meaningful on `@service` and `@condition` (the directives whose Java targets receive GraphQL arguments). It is structurally inert on `@externalField` and `@enum`, where the Java target consumes no GraphQL-argument-bound parameters; applying it on those two is rejected at parse time.
 
 == Per-directive slot names
 

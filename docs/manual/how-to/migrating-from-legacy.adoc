@@ -17,6 +17,8 @@ include::../_generated/supported-directives.adoc[]
 
 include::../_generated/supported-schema-shapes.adoc[]
 
+One replacement pointer for the "Legacy-only directives" list above: legacy `@tableMethod` bound a consumer-authored static method returning a jOOQ table. The rewrite does not declare it. Where the method wrapped a database function, use `@routine`, which binds the generated `Routines`-class call directly; where it applied a filter, express that with `@condition`.
+
 == Hard removals
 
 Two directives the rewrite refuses to accept. Both stay declared so the SDL still parses, but every application is rejected at classify time with a "no longer supported" message.
@@ -121,7 +123,7 @@ The current rule: a `@table` type without `implements Node @node` is a regular `
 
 === `@record` is now a no-op
 
-Legacy schemas used `@record(record: {className: "..."})` to bind a class-backed SDL type to its Java class. The rewrite now derives that binding by reflection from the type's producer instead: for an output type, the producing field's return type (a `@service` method return, a `@tableMethod` return, or a parent-accessor chain); for an input type, the method parameter the input flows into. The directive still parses (so existing schemas keep loading), but it is ignored.
+Legacy schemas used `@record(record: {className: "..."})` to bind a class-backed SDL type to its Java class. The rewrite now derives that binding by reflection from the type's producer instead: for an output type, the producing field's return type (a `@service` method return or a parent-accessor chain); for an input type, the method parameter the input flows into. The directive still parses (so existing schemas keep loading), but it is ignored.
 
 A reachable type still carrying `@record` triggers a build WARN telling you to remove it. The WARN distinguishes three cases:
 
@@ -133,7 +135,7 @@ A reachable type still carrying `@record` triggers a build WARN telling you to r
 | disagrees | Reflection's class differs from the one the directive named. Reflection wins; the directive is ignored. Remove the directive and verify the producer's type is the one you want.
 |===
 
-Migration is mechanical: delete the `@record(record: {...})` annotation. Make sure the type's producer (the `@service` / `@tableMethod` return, or the `@externalField` lift's `Field<...>` element type) is the Java class you intend to back the type. xref:result-types.adoc[How-to: Result-type variants] covers the reflected backing-class shapes; the `@notGenerated`-on-a-class-backed-parent row above covers the child-fetch directives that remain unchanged.
+Migration is mechanical: delete the `@record(record: {...})` annotation. Make sure the type's producer (the `@service` return, or the `@externalField` lift's `Field<...>` element type) is the Java class you intend to back the type. xref:result-types.adoc[How-to: Result-type variants] covers the reflected backing-class shapes; the `@notGenerated`-on-a-class-backed-parent row above covers the child-fetch directives that remain unchanged.
 
 == Deprecated arguments: phase out at your leisure
 

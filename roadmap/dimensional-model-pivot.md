@@ -30,8 +30,7 @@ and are all Done: **R431** decomposed `SourceKey` (now the residue record `(colu
 `KeyLift` / `LifterRef` carrying the separated facts), **R432** merged the four batched keyed-re-query
 leaves onto two source-gated ones (`SplitTableField` + `RecordTableField` → `BatchedTableField`,
 `SplitLookupTableField` + `RecordLookupTableField` → `BatchedLookupTableField`), and **R314**
-dissolved `RecordTableMethodField` onto the record-sourced `BatchedTableField` carrying
-`TableExpr.MethodCall` and re-platformed the reentry emit family onto the R333 model. **R503** (Done
+dissolved the DTO-parent re-entry leaf onto the record-sourced `BatchedTableField` and re-platformed the reentry emit family onto the R333 model. **R503** (Done
 2026-07-20) then replaced the mixed-source nested-type rejection with run-time source-shape dispatch.
 Where a passage below names a `Record*` / `Split*` leaf or the six-component `SourceKey` as live, read
 it as the dated snapshot it declares; the umbrella direction is unchanged and these landings are its
@@ -64,14 +63,14 @@ Three changes, all instances of the same principle.
 
 ### Destination sketch
 
-`GraphitronField` becomes a single field namespace (the renamed `OutputField` after the input/output split dissolves and `UnclassifiedField` retires). Each carrier slot lives on the narrowest existing interface that names its property, not as a universal accessor on `GraphitronField`. The walker is universal across that interface's implementers; slot presence is interface-gated, and consumers reading the slot through the interface always get a populated value. R238 (the foundation slice) pins this for the service `MethodCall` family: `ServiceMethodCall` (sealed `Static` / `Instance`) lands on a fresh `ServiceField` interface that sits sibling to `MethodBackedField`, not as a sub-interface of it. The earlier umbrella draft anticipated one unified `MethodCall` carrier on `MethodBackedField`, with per-directive markers as pure sub-interfaces; R238 surfaced that the call shapes across `@service` / `@condition` / `@tableMethod` / `@externalField` differ enough (ctor vs static, multiple-DSLContext rules, return-type relationships) that one unified carrier would carry a kitchen-sink of optional fields. Per-directive sibling interfaces let each slice ship a tight carrier scoped to its call shape; `MethodBackedField` retires only once every per-directive sibling has landed.
+`GraphitronField` becomes a single field namespace (the renamed `OutputField` after the input/output split dissolves and `UnclassifiedField` retires). Each carrier slot lives on the narrowest existing interface that names its property, not as a universal accessor on `GraphitronField`. The walker is universal across that interface's implementers; slot presence is interface-gated, and consumers reading the slot through the interface always get a populated value. R238 (the foundation slice) pins this for the service `MethodCall` family: `ServiceMethodCall` (sealed `Static` / `Instance`) lands on a fresh `ServiceField` interface that sits sibling to `MethodBackedField`, not as a sub-interface of it. The earlier umbrella draft anticipated one unified `MethodCall` carrier on `MethodBackedField`, with per-directive markers as pure sub-interfaces; R238 surfaced that the call shapes across `@service` / `@condition` / `@externalField` differ enough (ctor vs static, multiple-DSLContext rules, return-type relationships) that one unified carrier would carry a kitchen-sink of optional fields. Per-directive sibling interfaces let each slice ship a tight carrier scoped to its call shape; `MethodBackedField` retires only once every per-directive sibling has landed.
 
 Subsequent slices for `Pagination`, `Ordering`, `PredicateCarrier`, `ValidationShape`, `InsertRows`, `UpdateRows` follow the same pattern: find (or introduce) the narrow interface that names the property, put the slot there, and add a marker sub-interface if a consumer subset needs polymorphic dispatch. Interface names land per slice:
 
 | Carrier | Slot home | Status |
 |---|---|---|
 | `ServiceMethodCall` | `ServiceField` (new sibling of `MethodBackedField`) | R238 (Done) |
-| `ConditionCall` / `TableMethodCall` / `ExternalFieldCall` | per-directive siblings | future slices; collectively retire `MethodBackedField` |
+| `ConditionCall` / `ExternalFieldCall` | per-directive siblings | future slices; collectively retire `MethodBackedField` |
 | `ValidationShape` | TBD (narrow interface or existing marker) | future slice |
 | `Pagination` | TBD | future slice |
 | `Ordering` | TBD | future slice |
@@ -186,8 +185,7 @@ TargetShape = Table | Record | Column | Field          // base shapes
   union declares no fields, so it is never a source) and wraps `Table` only (`Union(Record)` degrades to
   `Object` in the Java type system, which we cannot reflect on, so it is unsupported).
 - A target shape's **definition can be developer-supplied** instead of catalog-derived, and that
-  provenance (not a new operation) is the home for `@tableMethod` (supplies the `Table<?>` that `@table`
-  would resolve, replacing the target table) and `@externalField` (a `Column<T>` whose expression is
+  provenance (not a new operation) is the home for `@externalField` (a `Column<T>` whose expression is
   authored). The provenance `MethodRef` rides the target shape; the operation stays `Fetch` / projection.
 - A `Column` is not always a scalar leaf: a jOOQ embeddable column carries an embedded record, so a target
   `Column` can be the **source `Record` for further child fields**. This is the shape-level reading of the
@@ -265,7 +263,7 @@ mechanical simplification was R431 (`decompose-sourcekey`, Done); the model clai
   source; the name is correct (it is `null` only for the parent-IS-source polymorphic case). `path` is
   the join route to it. Both already live as first-class slots on `TableTargetField`: `returnType`
   (`returnType.table()`) and `joinPath`, carried even by the non-source table-bound variants
-  (`TableField`, `LookupTableField`, `TableMethodField`) that hold no `SourceKey`. The `SourceKey`
+  (`TableField`, `LookupTableField`) that hold no `SourceKey`. The `SourceKey`
   copies are denormalized: `SourceKey.path()` has *zero* readers in the generator (every emitter reads
   `field.joinPath()`), and the four `SourceKey.target()` readers all sit on carriers that also expose
   `returnType.table()` for the same table. So `target`/`path` leave `SourceKey` by deletion, not by
@@ -307,11 +305,10 @@ parent"); it belongs with the source-object descriptor, not a field key.
   construction sites produce `RecordTableField` at arrival `OnlyChild`, the re-fetch derivation above catches
   it through its received `Record` source, and `OrderingOwnedByProducer` dissolves (the source/target key
   correspondence owns the visible order). The whole re-fetch family (SRTF→RTF, `RecordLookupTableField` as
-  RTF's `@lookupKey` sibling, `RecordTableMethodField` as RTF with the `@tableMethod` target instance, and the
-  `@service`-batched `ServiceTableField`) re-fetches; `OnlyChild` re-projects inline (no DataLoader), `Child`
+  RTF's `@lookupKey` sibling, and the `@service`-batched `ServiceTableField`) re-fetches; `OnlyChild` re-projects inline (no DataLoader), `Child`
   batches. Because the source record and the target table are the same entity, **the source key is the target
   key**: the re-fetch key carries the target table plus its identifying columns once, not a source/target
-  column duality. No distinct leaf survives; R305 has landed and `SingleRecordTableField` is gone from the model. The rest of the re-fetch family named above has since dissolved too (see the 2026-07-20 re-baseline note): R432 merged `RecordTableField` and `RecordLookupTableField` into the source-gated `Batched*` leaves, and R314 dissolved `RecordTableMethodField`; of the family only `ServiceTableField` survives as a distinct leaf.
+  column duality. No distinct leaf survives; R305 has landed and `SingleRecordTableField` is gone from the model. The rest of the re-fetch family named above has since dissolved too (see the 2026-07-20 re-baseline note): R432 merged `RecordTableField` and `RecordLookupTableField` into the source-gated `Batched*` leaves, and R314 dissolved the DTO-parent re-entry leaf; of the family only `ServiceTableField` survives as a distinct leaf.
 
 ### Leaf reconstruction: where each slot lands
 
@@ -328,7 +325,7 @@ slots, the legacy leaf record must be reconstructible. A slot the triple cannot 
 | `returnExpression: DmlReturnExpression` | target | `Single` / `List` × `Column` (encoded id) / `Table` (projected) |
 | `filters` / `orderBy` | operation | `Fetch` / `Paginate` payload |
 | `pagination` | operation | the `Fetch` ↔ `Paginate` discriminant; `Paginate` payload |
-| `method` / `serviceMethodCall` | operation **or** target provenance | `ServiceCall`; `@tableMethod` / `@externalField` ride the target shape |
+| `method` / `serviceMethodCall` | operation **or** target provenance | `ServiceCall`; `@externalField` rides the target shape |
 | `lookupMapping` | operation | `Lookup` payload |
 | `tableInputArg` / `inputArg` + `updateRows` / `deleteRows` / `kind` | operation | the write-arm input payload |
 | `nestedFields` | operation | `Nest` payload |
@@ -481,11 +478,11 @@ The names below are the working vocabulary for the umbrella; slices may rename, 
 
 - **`Walker<S, C>`** — a pure function over an SDL substrate `S` returning `WalkerResult<C>`. One implementation shape for producers; slices may pick another. Substrate-parametric for forward-compat with type-level producers.
 - **`WalkerResult<C>`** — sealed `Ok<C>(C carrier, List<Diagnostic> diagnostics)` / `Err<C>(List<AuthorError> errors, List<Diagnostic> diagnostics)`. `Ok` rejects Error-severity diagnostics by compact-ctor; `Err.errors` is non-empty by compact-ctor invariant. Classification runs to completion regardless of how many `Err`s; downstream generation is blocked when any `Err` is present.
-- **Carriers**: `ValidationShape`, `Pagination`, `Ordering`, `PredicateCarrier`, the `MethodCall` family (per-directive: `ServiceMethodCall`, `ConditionCall`, `TableMethodCall`, `ExternalFieldCall`), `InsertRows`, `UpdateRows`. Each a sealed family or record carrying the reduced output. `No<Family>` arms apply when the slot is field-universal; directive-gated slots on narrow interfaces (R238's pattern) skip the `No<>` arm and use interface non-membership instead. No `Invalid` arm in either case; structural failure rides on `WalkerResult.Err`.
+- **Carriers**: `ValidationShape`, `Pagination`, `Ordering`, `PredicateCarrier`, the `MethodCall` family (per-directive: `ServiceMethodCall`, `ConditionCall`, `ExternalFieldCall`), `InsertRows`, `UpdateRows`. Each a sealed family or record carrying the reduced output. `No<Family>` arms apply when the slot is field-universal; directive-gated slots on narrow interfaces (R238's pattern) skip the `No<>` arm and use interface non-membership instead. No `Invalid` arm in either case; structural failure rides on `WalkerResult.Err`.
 - **Dimensional slots** — `DataFetcherBuilder`, `QueryBuilder`, `ValidationBuilder`. Compose walker carriers + reflection-driven information into emit-ready form.
 - **`No<Family>`**: the domain arm naming "the substrate carries no actionable signal for this family." Producer ran, no error, nothing to encode. Applies when the slot is field-universal; directive-gated slots on narrow interfaces use interface non-membership instead. Concrete shapes vary per family (`NoPredicates`, `NoValidationShape`, ...); framing is uniform across the cases that need it.
 - **`PredicateCarrier`'s two valid arms** — `Condition` for SQL-emitting *read* fields, `LookupRows` for *mutation* fields. The producer's bailout-restart pattern handles role discovery: sentinel directives (`@lookupKey` on a read field, `@multirows` on a mutation field) trigger an arm flip. Consumers pattern-match the arm at use time.
-- **`MethodCall` family**: per-directive records carrying `(target, methodName, bindings, returnShape)`. R238 pins the first instance — `ServiceMethodCall` (sealed `Static` / `Instance`) — and lands its bindings as `MappingEntry` arms (`FromArg`, `FromContext`, `FromDsl`) plus a recursive `ValueShape` family for input-object bindings. Subsequent slices add `ConditionCall`, `TableMethodCall`, `ExternalFieldCall` with their own binding shapes. The earlier umbrella draft named one unified `MethodCall` with `ParamBinding` arms covering every directive (`FromEnvArg`, `FromContextKey`, `FromDslContext`, `FromBatchKeys`, `FromSourceRow`); R238 split it per-directive because call shapes differ enough that one unified carrier would carry many always-absent slots per callsite.
+- **`MethodCall` family**: per-directive records carrying `(target, methodName, bindings, returnShape)`. R238 pins the first instance — `ServiceMethodCall` (sealed `Static` / `Instance`) — and lands its bindings as `MappingEntry` arms (`FromArg`, `FromContext`, `FromDsl`) plus a recursive `ValueShape` family for input-object bindings. Subsequent slices add `ConditionCall` and `ExternalFieldCall` with their own binding shapes. The earlier umbrella draft named one unified `MethodCall` with `ParamBinding` arms covering every directive (`FromEnvArg`, `FromContextKey`, `FromDslContext`, `FromBatchKeys`, `FromSourceRow`); R238 split it per-directive because call shapes differ enough that one unified carrier would carry many always-absent slots per callsite.
 - **Shared emitter**: a static utility parameterised on a carrier-bearing interface that produces emit-ready code fragments (var-decls, expression blocks). R238 introduces `ServiceMethodCallEmitter(ServiceMethodCall) -> List<CodeBlock>`. Lighter than a dimensional slot when the consumer's only need is the carrier's emission, not multi-carrier composition. Slices choose between shared emitter and dimensional slot per consumer's need.
 - **Per-directive sibling interface**: a sibling of `MethodBackedField` carrying one directive's call slot. R238 introduces `ServiceField` (carrying `ServiceMethodCall`) as the first instance. The earlier umbrella draft framed this as a pure marker sub-interface of `MethodBackedField`; the sibling shape lets each slice ship narrow without forcing the other six `MethodBackedField` implementers to grow no-op slot accessors. `MethodBackedField` retires once every per-directive sibling has landed.
 - **`BackingClass`** — three-arm sealed family (`Pojo`, `JavaRecord`, `JooqTableRecord`); attaches per binding kind where method-call semantics need it.
@@ -501,7 +498,7 @@ The names below are the working vocabulary for the umbrella; slices may rename, 
 - `ServiceCatalog` predicate consolidation (R220 / R193) — adjacent disease in a different file.
 - `argMapping` grouping syntax (R97 Phase 1) — adjacent.
 - Reachability pruning across all type kinds — owned by R279 (`field-first-classification-driver`, supersedes R166 Phase 1), the driver-restructure slice; orthogonal to the slot/carrier work here.
-- Producer-side unification of method invocation paths (uniform reflection-mapping rules across `@service` / `@externalField` / `@tableMethod` / `@condition`) — separate work that R164's `DataFetcherBuilder` dimension may absorb piecewise; not load-bearing on the umbrella.
+- Producer-side unification of method invocation paths (uniform reflection-mapping rules across `@service` / `@externalField` / `@condition`) — separate work that R164's `DataFetcherBuilder` dimension may absorb piecewise; not load-bearing on the umbrella.
 
 ## Previous design attempts
 

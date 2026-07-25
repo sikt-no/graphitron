@@ -78,8 +78,7 @@ final class ConditionResolver {
         var argBindings = ((ArgBindingMap.Result.Ok) bindingResult).map();
         var slotTypes = java.util.Map.of(argName, arg.getType());
         var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
-            argBindings, Set.copyOf(cond.contextArguments()), null,
-            ServiceCatalog.TableSlotPolicy.REQUIRED, slotTypes);
+            argBindings, Set.copyOf(cond.contextArguments()), slotTypes);
         if (result.failed()) {
             return new ArgConditionResult.Rejected(result.rejection().prefixedWith("argument '" + argName + "' @condition: "));
         }
@@ -109,8 +108,8 @@ final class ConditionResolver {
         }
         var argBindings = ((ArgBindingMap.Result.Ok) bindingResult).map();
         var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
-            argBindings, Set.copyOf(cond.contextArguments()), null,
-            ServiceCatalog.TableSlotPolicy.REQUIRED, FieldBuilder.argSlotTypes(fieldDef));
+            argBindings, Set.copyOf(cond.contextArguments()),
+            FieldBuilder.argSlotTypes(fieldDef));
         if (result.failed()) {
             return new FieldConditionResult.Rejected(result.rejection().prefixedWith("field '" + fieldDef.getName() + "' @condition: "));
         }

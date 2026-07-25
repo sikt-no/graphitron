@@ -64,7 +64,7 @@ public class GraphitronContextInterfaceGenerator {
             .endControlFlow()
             .addStatement("return value")
             .addJavadoc("Resolves the named {@code contextArgument} value (see {@code @condition},\n"
-                + "{@code @service} and {@code @tableMethod} directives) for this fetch. The default\n"
+                + "{@code @service} directive) for this fetch. The default\n"
                 + "reads the value from the request's {@code GraphQLContext} under the given key; a\n"
                 + "missing entry throws {@link IllegalStateException} naming the contextArgument and\n"
                 + "pointing at {@code Graphitron.newExecutionInput(...)}. The cast to the expected\n"

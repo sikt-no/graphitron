@@ -25,19 +25,11 @@ class ContextArgumentTypeAgreementTest {
 
     @Test
     void agreement_acceptsSameTypeAcrossSites() {
-        // Two directive sites — an arg-level @condition (String tenantId) and a @tableMethod
-        // (String tenantId) — both declare contextArguments: ["tenantId"] against String-typed
-        // Java parameters. The classifier should record one ResolvedContextArg.
+        // Two directive sites of different kinds — an arg-level @condition (String tenantId)
+        // and a field-level @condition on another field (String tenantId) — both declare
+        // contextArguments: ["tenantId"] against String-typed Java parameters. The classifier
+        // should record one ResolvedContextArg.
         String sdl = """
-            type Film @table(name: "film") {
-                filmId: Int
-                language: Language
-                    @tableMethod(
-                        className: "no.sikt.graphitron.rewrite.TestTableMethodStub",
-                        method: "getLanguageWithContext",
-                        contextArguments: ["tenantId"])
-                    @reference(path: [{key: "film_language_id_fkey"}])
-            }
             type Language @table(name: "language") { name: String }
             type Query {
                 languages(cityNames: String @field(name: "name")
@@ -46,7 +38,12 @@ class ContextArgumentTypeAgreementTest {
                         method: "argConditionWithContext"
                     }, contextArguments: ["tenantId"])):
                     [Language!]!
-                film: Film
+                more(otherNames: String @field(name: "name")
+                    @condition(condition: {
+                        className: "no.sikt.graphitron.rewrite.TestConditionStub",
+                        method: "argConditionWithContext"
+                    }, contextArguments: ["tenantId"])):
+                    [Language!]!
             }
             """;
         var schema = TestSchemaHelper.buildSchema(sdl);

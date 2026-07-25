@@ -14,8 +14,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Resolves the {@link ErrorChannel.Mapped} carrier for an in-scope ({@code @service}
- * / {@code @tableMethod}) outcome field from its classified {@link OutcomeType}. The output-walking
+ * Resolves the {@link ErrorChannel.Mapped} carrier for an in-scope {@code @service}
+ * outcome field from its classified {@link OutcomeType}. The output-walking
  * analogue of {@link ServiceMethodCallWalker}, over a different SDL surface (the outcome type and
  * its errors field rather than the field's arguments).
  *

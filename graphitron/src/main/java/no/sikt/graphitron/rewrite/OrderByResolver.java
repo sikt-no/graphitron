@@ -34,7 +34,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.baseTypeName;
 /**
  * Resolves the OrderBy concern for a table-bound list/connection field into a sealed
  * {@link Resolved} the caller switches on. Sibling to the directive resolvers
- * ({@link ServiceDirectiveResolver}, {@link TableMethodDirectiveResolver},
+ * ({@link ServiceDirectiveResolver},
  * {@link ExternalFieldDirectiveResolver}, {@link LookupKeyDirectiveResolver}).
  *
  * <p>Three concrete result shapes ride under {@link Resolved.Ok}: {@link OrderBySpec.None}

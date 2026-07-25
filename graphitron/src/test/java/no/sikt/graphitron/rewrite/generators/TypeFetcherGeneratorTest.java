@@ -610,32 +610,7 @@ class TypeFetcherGeneratorTest {
         assertThat(code).contains("ordering.columns()");
     }
 
-    // ===== Service / tableMethod root fetchers =====
-
-    @Test
-    void queryTableMethodTableField_emittedFetcher_declaresSpecificTableLocalAndProjects() {
-        // Body-shape properties (specific-table local, $fields projection, .from(table) call)
-        // are asserted at execution tier: GraphQLQueryTest.queryTableMethod_popularFilms_*.
-        // The @tableMethod method has no Table parameter; graphitron derives the target table
-        // from the method's return type, so the method takes only the GraphQL arg.
-        var method = TestFixtures.staticServiceMethodRef(
-            "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
-            "popularFilms",
-            ClassName.get("no.sikt.graphitron.rewrite.test.jooq.tables", "Film"),
-            List.of(
-                new MethodRef.Param.Typed("minRentalRate", "java.lang.Double",
-                    new ParamSource.Arg(new CallSiteExtraction.Direct(), no.sikt.graphitron.rewrite.PathExpr.head("minRentalRate")))));
-        var field = new QueryField.QueryTableMethodTableField("Query", "popularFilms", null,
-            TestFixtures.tableBoundFilm(nonNullList()), method, java.util.Optional.empty());
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
-            List.of(field), DEFAULT_OUTPUT_PACKAGE);
-
-        var fetcher = method(spec, "popularFilms");
-        assertThat(fetcher.parameters()).extracting(p -> p.type().toString())
-            .containsExactly("graphql.schema.DataFetchingEnvironment");
-        assertThat(fetcher.returnType().toString())
-            .isEqualTo("graphql.execution.DataFetcherResult<org.jooq.Result<org.jooq.Record>>");
-    }
+    // ===== Service root fetchers =====
 
     @Test
     void queryServiceTableField_emittedFetcher_declaresTypedResult() {

@@ -114,7 +114,6 @@ public sealed interface JoinStep permits JoinStep.Hop {
             return switch (target) {
                 case TableExpr.Catalog c -> c.table();
                 case TableExpr.RoutineCall rc -> rc.resultTable();
-                case TableExpr.MethodCall mc -> mc.resultTable();
             };
         }
     }

@@ -89,7 +89,6 @@ class BuildContext {
     static final String DIR_REFERENCE           = "reference";
     static final String DIR_REFERENCE_FOR       = "referenceFor";
     static final String DIR_ERROR               = "error";
-    static final String DIR_TABLE_METHOD        = "tableMethod";
     static final String DIR_ROUTINE             = "routine";
     static final String DIR_DEFAULT_ORDER       = "defaultOrder";
     static final String DIR_SPLIT_QUERY         = "splitQuery";
@@ -676,7 +675,7 @@ class BuildContext {
     private static final java.util.Set<String> FORBIDDEN_CARRIER_DATA_FIELD_DIRECTIVES = java.util.Set.of(
         DIR_SERVICE, DIR_SOURCE_ROW, DIR_REFERENCE, DIR_AS_CONNECTION, DIR_SPLIT_QUERY,
         DIR_EXTERNAL_FIELD, DIR_CONDITION, DIR_LOOKUP_KEY, DIR_NOT_GENERATED,
-        DIR_TABLE_METHOD, DIR_DEFAULT_ORDER, DIR_ORDER_BY, DIR_MULTITABLE_REFERENCE);
+        DIR_DEFAULT_ORDER, DIR_ORDER_BY, DIR_MULTITABLE_REFERENCE);
 
     // The @service-carrier scan tolerates @splitQuery on the data field. The carrier's
     // data-field emit already resolves through a PK-keyed follow-up SELECT off the producer's
@@ -1058,7 +1057,7 @@ class BuildContext {
      * wired through {@code FieldBuilder}) convert {@code Mismatch} into an
      * {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField} via
      * {@link TerminalTargetVerdict.Mismatch#diagnostic()}; callers with their own terminal-target
-     * invariant (e.g. {@code @tableMethod}) keep their existing checks and ignore the verdict.
+     * invariant keep their existing checks and ignore the verdict.
      */
     record ParsedPath(List<JoinStep> elements, String errorMessage,
             TerminalTargetVerdict terminalTargetVerdict) {
@@ -1282,7 +1281,7 @@ class BuildContext {
      *
      * <p>Returns {@code ParsedPath(List.of(), null)} when both inference preconditions are
      * unsatisfied (typical for {@code ColumnBackedReferenceField}, service reconnect, and same-table
-     * {@code @externalField} / {@code @tableMethod} sites).
+     * {@code @externalField} sites).
      *
      * <p>{@code fieldName} is the GraphQL field name and is used to compute per-step aliases
      * ({@code fieldName + "_" + stepIndex}). {@code startSqlTableName} is the SQL table name at
@@ -1393,7 +1392,7 @@ class BuildContext {
         //
         // The verdict is threaded onto ParsedPath as a typed projection rather than forced into
         // errorMessage here: parsePath is shared by callers that have their own terminal-target
-        // invariant (e.g. the @tableMethod path's "last hop lands on …" check) and callers whose
+        // invariant (e.g. a directive path's "last hop lands on …" check) and callers whose
         // emit shape does not feed the terminal alias to a $fields overload at all. Only the inline
         // / split output projection (InlineTableFieldEmitter) carries the $fields(terminalAlias)
         // invariant this check protects, so its two FieldBuilder callers (TableBoundReturnType,
@@ -2330,8 +2329,7 @@ class BuildContext {
                 "path-step @condition: " + p.message());
         }
         var argBindings = ((ArgBindingMap.Result.Ok) bindingResult).map();
-        var result = svc.reflectTableMethod(className, methodName, argBindings, Set.of(), null,
-            ServiceCatalog.TableSlotPolicy.REQUIRED);
+        var result = svc.reflectTableMethod(className, methodName, argBindings, Set.of());
         return result.failed() ? new ConditionResolution.Unresolved() : new ConditionResolution.Resolved(result.ref());
     }
 
@@ -2422,8 +2420,7 @@ class BuildContext {
         }
         var argBindings = ((ArgBindingMap.Result.Ok) bindingResult).map();
         var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
-            argBindings, Set.copyOf(cond.contextArguments()), null,
-            ServiceCatalog.TableSlotPolicy.REQUIRED,
+            argBindings, Set.copyOf(cond.contextArguments()),
             java.util.Map.of(field.getName(), field.getType()));
         if (result.failed()) {
             errors.add("input field '" + inputFieldName + "' @condition: " + result.rejection().message());

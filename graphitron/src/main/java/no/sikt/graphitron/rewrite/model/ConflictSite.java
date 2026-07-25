@@ -7,7 +7,7 @@ import no.sikt.graphitron.javapoet.TypeName;
  * the name was referenced and the structural {@link TypeName} that site declared.
  *
  * <p>The coordinate is a sealed {@link Site}: a {@link Site.Method} wraps a {@link MethodRef}
- * (a {@code @condition} / {@code @tableMethod} / {@code @externalField} param list), and a
+ * (a {@code @condition} / {@code @externalField} param list), and a
  * {@link Site.Carrier} wraps a {@link ServiceMethodCall} (a root sync {@code @service} carrier,
  * whose ctor/method args hold the context slots).
  *
@@ -26,7 +26,7 @@ public record ConflictSite(Site site, TypeName declared) {
         String className();
         String methodName();
 
-        /** A {@link MethodRef}-backed coordinate ({@code @condition} / {@code @tableMethod} / {@code @externalField}). */
+        /** A {@link MethodRef}-backed coordinate ({@code @condition} / {@code @externalField}). */
         record Method(MethodRef ref) implements Site {
             @Override public String className() { return ref.className(); }
             @Override public String methodName() { return ref.methodName(); }

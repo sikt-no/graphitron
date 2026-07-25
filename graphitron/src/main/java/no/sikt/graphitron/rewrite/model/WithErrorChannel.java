@@ -10,7 +10,7 @@ import java.util.Optional;
  * a redacting catch arm instead (the no-channel privacy disposition).
  *
  * <p>Capability rather than a slot on every {@link GraphitronField} root: only fetcher-emitting
- * variants (root mutations, root + child services, root + child {@code @tableMethod} fields)
+ * variants (root mutations, root + child services)
  * carry the slot, since only those have a fetcher body whose catch arm can dispatch through the
  * channel. Each such variant implements this interface; the rest stay free of the slot.
  * Generators consume the field via {@code instanceof WithErrorChannel} when they need to know

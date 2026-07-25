@@ -30,7 +30,6 @@ import no.sikt.graphitron.rewrite.model.ChildField.BatchedLookupTableField;
 import no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField;
-import no.sikt.graphitron.rewrite.model.ChildField.TableMethodField;
 import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
 import no.sikt.graphitron.rewrite.model.AccessorResolution;
 import no.sikt.graphitron.rewrite.model.Arity;
@@ -1449,147 +1448,6 @@ class GraphitronSchemaBuilderTest {
         var both = (FieldClassification.TableTarget) s4.fieldClassificationsByCoord().get("Store.customers");
         assertThat(both.splitBatched()).isTrue();
         assertThat(both.hasLookupKey()).isTrue();
-    }
-
-    // ===== TableMethodField =====
-
-    enum TableMethodFieldCase implements ClassificationCase {
-        SINGLE_RETURN(
-            "@tableMethod with object return type → Single cardinality",
-            """
-            type Language @table(name: "language") { name: String }
-            type Film @table(name: "film") {
-                language: Language
-                    @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getLanguage")
-                    @reference(path: [{key: "film_language_id_fkey"}])
-            }
-            type Query { film: Film }
-            """,
-            schema -> assertThat(((TableMethodField) schema.field("Film", "language")).returnType().wrapper())
-                .isInstanceOf(FieldWrapper.Single.class)),
-
-        LIST_RETURN(
-            "@tableMethod with list return type → List cardinality",
-            """
-            type Actor @table(name: "actor") { name: String }
-            type Film @table(name: "film") {
-                actors: [Actor!]!
-                    @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getActor")
-                    @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
-            }
-            type Query { film: Film }
-            """,
-            schema -> assertThat(((TableMethodField) schema.field("Film", "actors")).returnType().wrapper())
-                .isInstanceOf(FieldWrapper.List.class)),
-
-        CONNECTION_RETURN(
-            "@tableMethod with connection return type → Connection wrapper, element type from edges.node",
-            """
-            type Actor @table(name: "actor") { name: String }
-            type ActorEdge { node: Actor cursor: String }
-            type ActorConnection { edges: [ActorEdge] }
-            type Film @table(name: "film") {
-                actors: ActorConnection
-                    @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getActor")
-                    @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
-            }
-            type Query { film: Film }
-            """,
-            schema -> {
-                var tf = (TableMethodField) schema.field("Film", "actors");
-                assertThat(tf.returnType().wrapper()).isInstanceOf(FieldWrapper.Connection.class);
-                assertThat(tf.returnType().returnTypeName()).isEqualTo("Actor");
-            }),
-
-        WITH_REFERENCE_PATH(
-            "@tableMethod + @reference(path:) populates the joinPath",
-            """
-            type Language @table(name: "language") { name: String }
-            type Film @table(name: "film") {
-                language: Language
-                    @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getLanguage")
-                    @reference(path: [{key: "film_language_id_fkey"}])
-            }
-            type Query { film: Film }
-            """,
-            schema -> {
-                var field = (TableMethodField) schema.field("Film", "language");
-                assertThat(field.joinPath()).hasSize(1);
-                assertThat(field.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
-            }),
-
-        WITH_AUTO_FK_INFERENCE(
-            "@tableMethod without @reference and exactly one FK between parent and target table → single-hop FK hop auto-inferred",
-            """
-            type Film @table(name: "film") { title: String }
-            type Inventory @table(name: "inventory") {
-                film: Film @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getFilm")
-            }
-            type Query { inventory: Inventory }
-            """,
-            schema -> {
-                var field = (TableMethodField) schema.field("Inventory", "film");
-                assertThat(field.joinPath()).hasSize(1);
-                assertThat(field.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
-                assertThat(TestFixtures.fkHop(field.joinPath().get(0)).targetTable().tableName())
-                    .isEqualToIgnoringCase("film");
-            }),
-
-        WITH_CONDITION_PATH(
-            "@tableMethod + @reference(path:[{condition:...}]) resolves to a condition-join hop with non-null targetTable (R232)",
-            """
-            type Actor @table(name: "actor") { firstName: String }
-            type Film @table(name: "film") {
-                actor: Actor
-                    @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getActor")
-                    @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "join"}}])
-            }
-            type Query { film: Film }
-            """,
-            schema -> {
-                var field = (TableMethodField) schema.field("Film", "actor");
-                assertThat(field.joinPath()).hasSize(1);
-                assertThat(field.joinPath().get(0)).matches(TestFixtures::isConditionHop, "condition-join hop");
-                // The condition-join hop's targetTable() resolves at parse time from the field's
-                // return-type @table binding (terminal-hop arm of resolveConditionJoinTarget).
-                var cj = TestFixtures.conditionHop(field.joinPath().get(0));
-                assertThat(cj.targetTable()).isNotNull();
-                assertThat(cj.targetTable().tableName()).isEqualToIgnoringCase("actor");
-            });
-
-        final String sdl;
-        final Consumer<GraphitronSchema> assertions;
-        TableMethodFieldCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
-            this.sdl = sdl;
-            this.assertions = assertions;
-        }
-        @Override public Set<Class<?>> variants() { return Set.of(TableMethodField.class); }
-        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
-    }
-
-    @ParameterizedTest(name = "{0}")
-    @EnumSource(TableMethodFieldCase.class)
-    void tableMethodFieldClassification(TableMethodFieldCase tc) {
-        tc.assertions.accept(build(tc.sdl));
-    }
-
-    @Test
-    @ProjectionFor(TableMethodField.class)
-    void tableMethodFieldProjectionCarriesMethodCoordinates() {
-        var snapshot = buildSnapshot("""
-            type Language @table(name: "language") { name: String }
-            type Film @table(name: "film") {
-              language: Language
-                @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getLanguage")
-                @reference(path: [{key: "film_language_id_fkey"}])
-            }
-            type Query { film: Film }
-            """);
-        var p = (FieldClassification.TableMethod) snapshot.fieldClassificationsByCoord().get("Film.language");
-        assertThat(p.tableName()).isEqualToIgnoringCase("language");
-        assertThat(p.methodClassName()).isEqualTo("no.sikt.graphitron.rewrite.TestTableMethodStub");
-        assertThat(p.methodName()).isEqualTo("getLanguage");
-        assertThat(p.recordParent()).isFalse();
     }
 
     // ===== NestingField =====
@@ -3524,124 +3382,6 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
-    // ===== Record-parent @tableMethod (classifies onto BatchedTableField) =====
-
-    /**
-     * Classifier coverage for the child {@code @tableMethod} on a record-backed (non-table)
-     * parent: the shape classifies to a record-sourced
-     * {@link ChildField.BatchedTableField} whose terminal hop carries a
-     * {@link TableExpr.MethodCall} target (the {@code @tableMethod} distinguishing datum is a
-     * join-path fact, not a leaf identity). Two admit arms (FK-auto-derive on a
-     * JooqTableRecord-backed parent, explicit {@code @reference} path) and one rejection
-     * (free-form DTO without {@code @sourceRow}).
-     */
-    enum RecordParentTableMethodCase implements ClassificationCase {
-        JOOQ_TABLE_RECORD_PARENT_AUTO_FK(
-            "JooqTableRecordType record-backed parent + @tableMethod with single FK → record-sourced BatchedTableField with a MethodCall terminal hop",
-            """
-            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
-            type FilmDetails {
-              inventories: [Inventory!]! @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getInventory")
-            }
-            type Film @table(name: "film") { details: FilmDetails }
-            type Query {
-                film: Film
-                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
-            }
-            """,
-            schema -> {
-                var f = (ChildField.BatchedTableField) schema.field("FilmDetails", "inventories");
-                assertThat(f.sourceShape()).isEqualTo(SourceShape.Record);
-                assertThat(f.joinPath()).hasSize(1);
-                var target = ((JoinStep.Hop) f.joinPath().get(0)).target();
-                assertThat(target).isInstanceOf(TableExpr.MethodCall.class);
-                assertThat(((TableExpr.MethodCall) target).method().methodName()).isEqualTo("getInventory");
-                assertThat(f.lift()).isInstanceOf(KeyLift.FkColumns.class);
-                assertThat(f.returnType().wrapper().isList()).isTrue();
-            }),
-
-        JOOQ_TABLE_RECORD_PARENT_EXPLICIT_REFERENCE(
-            "JooqTableRecordType record-backed parent + @tableMethod + @reference(path:) → record-sourced BatchedTableField, explicit FK path, MethodCall terminal hop",
-            """
-            type Language @table(name: "language") { name: String }
-            type FilmDetails {
-              language: Language
-                @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getLanguage")
-                @reference(path: [{key: "film_language_id_fkey"}])
-            }
-            type Film @table(name: "film") { details: FilmDetails }
-            type Query {
-                film: Film
-                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
-            }
-            """,
-            schema -> {
-                var f = (ChildField.BatchedTableField) schema.field("FilmDetails", "language");
-                assertThat(f.sourceShape()).isEqualTo(SourceShape.Record);
-                assertThat(f.joinPath()).hasSize(1);
-                assertThat(((JoinStep.Hop) f.joinPath().get(0)).target())
-                    .isInstanceOf(TableExpr.MethodCall.class);
-                assertThat(f.lift()).isInstanceOf(KeyLift.FkColumns.class);
-            }),
-
-        FREE_FORM_PARENT_NO_SOURCEROW_REJECTED(
-            "Pojo parent (no FK metadata) + @tableMethod without @sourceRow → UnclassifiedField AUTHOR_ERROR pointing at the lift options",
-            """
-            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
-            type FilmDetails {
-              inventories: [Inventory!]! @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getInventory")
-            }
-            type Film @table(name: "film") { details: FilmDetails }
-            type Query {
-                film: Film
-                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
-            }
-            """,
-            schema -> {
-                var unc = (UnclassifiedField) schema.field("FilmDetails", "inventories");
-                assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
-                assertThat(unc.reason()).contains("@tableMethod").contains("@sourceRow").contains("TableRecord");
-            }) {
-            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
-        };
-
-        final String sdl;
-        final Consumer<GraphitronSchema> assertions;
-        RecordParentTableMethodCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
-            this.sdl = sdl;
-            this.assertions = assertions;
-        }
-        @Override public Set<Class<?>> variants() { return Set.of(ChildField.BatchedTableField.class); }
-        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
-    }
-
-    @ParameterizedTest(name = "{0}")
-    @EnumSource(RecordParentTableMethodCase.class)
-    void recordParentTableMethodClassification(RecordParentTableMethodCase tc) {
-        tc.assertions.accept(build(tc.sdl));
-    }
-
-    @Test
-    @ProjectionFor(ChildField.BatchedTableField.class)
-    void recordParentTableMethodProjectionFlipsRecordParentFlag() {
-        var snapshot = buildSnapshot("""
-            type Language @table(name: "language") { name: String }
-            type FilmDetails {
-              language: Language
-                @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getLanguage")
-                @reference(path: [{key: "film_language_id_fkey"}])
-            }
-            type Film @table(name: "film") { details: FilmDetails }
-            type Query {
-                film: Film
-                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
-            }
-            """);
-        var p = (FieldClassification.TableMethod) snapshot.fieldClassificationsByCoord().get("FilmDetails.language");
-        assertThat(p.tableName()).isEqualToIgnoringCase("language");
-        assertThat(p.recordParent()).isTrue();
-    }
-
     // ===== ResultType backing-class classification (reflection-only) =====
     // A result type's backing comes from the producing @service field's reflected return
     // type, or, for a DML carrier, a DML RETURNING payload, never the @record directive.
@@ -3826,26 +3566,6 @@ class GraphitronSchemaBuilderTest {
                     .filteredOn(p -> p instanceof no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed t
                         && t.source() instanceof no.sikt.graphitron.rewrite.model.ParamSource.DslContext)
                     .hasSize(1);
-            }),
-
-        TABLE_METHOD_FIELD_CONTEXT_ARGS(
-            "@tableMethod with contextArguments — context param reflected into ParamSource.Context",
-            """
-            type Language @table(name: "language") { name: String }
-            type Film @table(name: "film") {
-                language: Language
-                    @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getLanguageWithContext", contextArguments: ["tenantId"])
-                    @reference(path: [{key: "film_language_id_fkey"}])
-            }
-            type Query { film: Film }
-            """,
-            schema -> {
-                var f = (no.sikt.graphitron.rewrite.model.ChildField.TableMethodField) schema.field("Film", "language");
-                assertThat(f.method().params())
-                    .filteredOn(p -> p instanceof no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed t
-                        && t.source() instanceof no.sikt.graphitron.rewrite.model.ParamSource.Context)
-                    .extracting(p -> ((no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed) p).name())
-                    .containsExactly("tenantId");
             }),
 
         // ===== @condition directive on fields and arguments =====
@@ -6776,27 +6496,6 @@ class GraphitronSchemaBuilderTest {
                 assertThat(orderBy.namedOrders().get(0).name()).isEqualTo("TITLE");
             }),
 
-        TABLE_METHOD_QUERY_FIELD(
-            "@tableMethod on root field → QueryTableMethodTableField with context param reflected",
-            """
-            type Film @table(name: "film") { title: String }
-            type Query {
-                filteredFilms: [Film!]!
-                    @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getFilmWithContext", contextArguments: ["tenantId"])
-            }
-            """,
-            schema -> {
-                assertThat(schema.field("Query", "filteredFilms")).isInstanceOf(QueryField.QueryTableMethodTableField.class);
-                var f = (QueryField.QueryTableMethodTableField) schema.field("Query", "filteredFilms");
-                assertThat(f.method().params())
-                    .filteredOn(p -> p instanceof no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed t
-                        && t.source() instanceof no.sikt.graphitron.rewrite.model.ParamSource.Context)
-                    .extracting(p -> ((no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed) p).name())
-                    .containsExactly("tenantId");
-            }) {
-            @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryTableMethodTableField.class); }
-        },
-
         // The bare Relay-root verdicts (QueryNodeField in canonical and federation-style-alias
         // forms, QueryNodesField) live in the spec-by-example corpus (`relay-node` example:
         // Query.node, Query.internalFilmNode, Query.nodes).
@@ -7468,24 +7167,9 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    @ProjectionFor(QueryField.QueryTableMethodTableField.class)
-    void queryTableMethodProjectionCarriesMethodCoordinates() {
-        var snapshot = buildSnapshot("""
-            type Film @table(name: "film") { title: String }
-            type Query {
-              films: [Film!]! @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getFilm")
-            }
-            """);
-        var p = (FieldClassification.QueryTableMethod) snapshot.fieldClassificationsByCoord().get("Query.films");
-        assertThat(p.tableName()).isEqualToIgnoringCase("film");
-        assertThat(p.methodClassName()).isEqualTo("no.sikt.graphitron.rewrite.TestTableMethodStub");
-        assertThat(p.methodName()).isEqualTo("getFilm");
-    }
-
-    @Test
     @ProjectionFor(QueryField.QueryRoutineTableField.class)
     void queryRoutineProjectionCarriesRoutineCoordinates() {
-        // A @routine read projects onto the method-backed QueryTableMethod classification,
+        // A @routine read projects onto the method-backed RoutineBacked classification,
         // with className = the generated Routines class. The routine resolves against the sakila-db
         // fixture catalog (public.tilganger_for_feidebruker_med_fs_fiktivt_fnr).
         var snapshot = buildSnapshot("""
@@ -7498,7 +7182,7 @@ class GraphitronSchemaBuilderTest {
                 @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
             }
             """);
-        var p = (FieldClassification.QueryTableMethod) snapshot.fieldClassificationsByCoord().get("Query.tilganger");
+        var p = (FieldClassification.RoutineBacked) snapshot.fieldClassificationsByCoord().get("Query.tilganger");
         assertThat(p.tableName()).isEqualToIgnoringCase("tilganger_for_feidebruker_med_fs_fiktivt_fnr");
         assertThat(p.methodName()).isEqualTo("tilgangerForFeidebrukerMedFsFiktivtFnr");
         assertThat(p.methodClassName()).endsWith(".Routines");
@@ -7508,7 +7192,7 @@ class GraphitronSchemaBuilderTest {
     @ProjectionFor(MutationField.MutationRoutineWriteField.class)
     void mutationRoutineWriteProjectionCarriesRoutineCoordinates() {
         // Like the routine read above, the routine write projects onto the method-backed
-        // QueryTableMethod classification (className = the generated Routines class; the
+        // RoutineBacked classification (className = the generated Routines class; the
         // tableName is the terminus the response re-reads).
         var snapshot = buildSnapshot("""
             type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
@@ -7519,7 +7203,7 @@ class GraphitronSchemaBuilderTest {
                 @reference(path: [{table: "rental"}])
             }
             """);
-        var p = (FieldClassification.QueryTableMethod) snapshot.fieldClassificationsByCoord().get("Mutation.rentFilm");
+        var p = (FieldClassification.RoutineBacked) snapshot.fieldClassificationsByCoord().get("Mutation.rentFilm");
         assertThat(p.tableName()).isEqualToIgnoringCase("rental");
         assertThat(p.methodName()).isEqualTo("rentFilm");
         assertThat(p.methodClassName()).endsWith(".Routines");
@@ -10146,188 +9830,6 @@ class GraphitronSchemaBuilderTest {
                     .contains("@service at the root does not support Connection return types");
             }),
 
-        TABLEMETHOD_AT_ROOT_WITH_CONNECTION_RETURN_REJECTED(
-            "@tableMethod at root returning a Connection-shaped type → UnclassifiedField (Invariants §1)",
-            """
-            type Film @table(name: "film") { title: String }
-            type FilmConnection {
-                edges: [FilmEdge]
-                pageInfo: PageInfo!
-            }
-            type FilmEdge {
-                node: Film
-                cursor: String!
-            }
-            type PageInfo {
-                hasNextPage: Boolean!
-                hasPreviousPage: Boolean!
-                startCursor: String
-                endCursor: String
-            }
-            type Query {
-                methodFilms(first: Int, after: String): FilmConnection
-                    @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "get")
-            }
-            """,
-            schema -> {
-                var f = schema.field("Query", "methodFilms");
-                assertThat(f).isInstanceOf(UnclassifiedField.class);
-                assertThat(((UnclassifiedField) f).reason())
-                    .contains("@tableMethod at the root does not support Connection return types");
-            }),
-
-        SERVICE_AT_ROOT_WITH_SOURCES_PARAM_REJECTED(
-            "@service at root with List<Row1<Integer>> parameter → UnclassifiedField (Invariants §2)",
-            """
-            type Film @table(name: "film") { title: String }
-            type Query {
-                batchedFilms: Film @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilmWithSources"})
-            }
-            """,
-            schema -> {
-                var f = schema.field("Query", "batchedFilms");
-                assertThat(f).isInstanceOf(UnclassifiedField.class);
-                assertThat(((UnclassifiedField) f).reason())
-                    .contains("@service at the root does not support List<Row>/List<Record> batch parameters");
-            }),
-
-        SERVICE_AT_ROOT_WITH_TABLERECORD_PARAM_NAME_MISMATCH_REJECTED(
-            "R185: @service at root with List<FilmRecord> parameter whose name doesn't match any GraphQL argument → arg-mismatch diagnostic (not Sources-batch)",
-            """
-            type Film @table(name: "film") { title: String }
-            type Query {
-                batchedFilms(input: [ID!]): [Film!]!
-                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilmsWithTableRecordSources"})
-            }
-            """,
-            schema -> {
-                var f = schema.field("Query", "batchedFilms");
-                assertThat(f).isInstanceOf(UnclassifiedField.class);
-                assertThat(((UnclassifiedField) f).reason())
-                    .contains("does not match any GraphQL argument or context key")
-                    .contains("input")
-                    .doesNotContain("does not support List<Row>");
-            }),
-
-        SERVICE_ON_CHILD_WITH_NON_SOURCES_PARAM_NAME_MISMATCH_REJECTED(
-            "@service on @table-parent child with non-SOURCES-shaped param (LocalDate) whose name doesn't match any GraphQL arg → UnclassifiedField with arg-mismatch diagnostic (R187)",
-            """
-            type Film @table(name: "film") {
-                title: String
-                statushistorikk(dato: String): [Film]
-                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilmsWithLocalDate"})
-            }
-            type Query { films: [Film] }
-            """,
-            schema -> {
-                var f = schema.field("Film", "statushistorikk");
-                assertThat(f).isInstanceOf(UnclassifiedField.class);
-                assertThat(((UnclassifiedField) f).reason())
-                    .contains("does not match any GraphQL argument or context key")
-                    .contains("available GraphQL arguments: [dato]")
-                    .doesNotContain("unrecognized sources type");
-            }),
-
-        TABLEMETHOD_WITH_WIDER_RETURN_TYPE_REJECTED(
-            "@tableMethod whose method returns a wider Table<?> rather than the generated jOOQ table class → UnclassifiedField (Invariants §3)",
-            """
-            type Film @table(name: "film") { title: String }
-            type Query {
-                wider: [Film!]! @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "get")
-            }
-            """,
-            schema -> {
-                var f = schema.field("Query", "wider");
-                assertThat(f).isInstanceOf(UnclassifiedField.class);
-                assertThat(((UnclassifiedField) f).reason())
-                    .contains("must return the generated jOOQ table class");
-            }),
-
-        TABLEMETHOD_AT_ROOT_WITH_SCALAR_RETURN_REJECTED(
-            "@tableMethod at root returning a scalar → UnclassifiedField (R43: directive binds a jOOQ table method, always table-typed)",
-            """
-            type Film @table(name: "film") { title: String }
-            type Query {
-                count: Int @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getFilm")
-            }
-            """,
-            schema -> {
-                var f = schema.field("Query", "count");
-                assertThat(f).isInstanceOf(UnclassifiedField.class);
-                assertThat(((UnclassifiedField) f).reason())
-                    .isEqualTo("@tableMethod requires a @table-annotated return type");
-            }),
-
-        TABLEMETHOD_ON_CHILD_WITH_SCALAR_RETURN_REJECTED(
-            "@tableMethod on a child field returning a scalar → UnclassifiedField (R43: clear schema error, not a deferred stub)",
-            """
-            type Film @table(name: "film") {
-                title: String @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getFilm")
-            }
-            type Query { film: Film }
-            """,
-            schema -> {
-                var f = schema.field("Film", "title");
-                assertThat(f).isInstanceOf(UnclassifiedField.class);
-                assertThat(((UnclassifiedField) f).reason())
-                    .isEqualTo("@tableMethod requires a @table-annotated return type");
-            }),
-
-        TABLEMETHOD_CHILD_AMBIGUOUS_FK_REJECTED(
-            "@tableMethod on a child of a @table parent with multiple FKs between parent and target and no @reference → UnclassifiedField (R43 commit 2)",
-            """
-            type Language @table(name: "language") { name: String }
-            type Film @table(name: "film") {
-                language: Language @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getLanguage")
-            }
-            type Query { film: Film }
-            """,
-            schema -> {
-                var f = schema.field("Film", "language");
-                assertThat(f).isInstanceOf(UnclassifiedField.class);
-                assertThat(((UnclassifiedField) f).reason())
-                    .contains("multiple foreign keys")
-                    .contains("'film'")
-                    .contains("'language'");
-            }),
-
-        TABLEMETHOD_CHILD_MISSING_FK_REJECTED(
-            "@tableMethod on a child of a @table parent with no FK between parent and target and no @reference → UnclassifiedField (R43 commit 2)",
-            """
-            type Actor @table(name: "actor") { firstName: String }
-            type Film @table(name: "film") {
-                actors: [Actor!]! @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getActor")
-            }
-            type Query { film: Film }
-            """,
-            schema -> {
-                var f = schema.field("Film", "actors");
-                assertThat(f).isInstanceOf(UnclassifiedField.class);
-                assertThat(((UnclassifiedField) f).reason())
-                    .contains("no foreign key")
-                    .contains("'film'")
-                    .contains("'actor'");
-            }),
-
-        TABLEMETHOD_CHILD_LAST_HOP_MISMATCH_REJECTED(
-            "@tableMethod with @reference whose last hop lands on a table other than the return-type table → UnclassifiedField (R43 commit 2)",
-            """
-            type Actor @table(name: "actor") { firstName: String }
-            type Film @table(name: "film") {
-                wrongTarget: Actor
-                    @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getActor")
-                    @reference(path: [{key: "film_language_id_fkey"}])
-            }
-            type Query { film: Film }
-            """,
-            schema -> {
-                var f = schema.field("Film", "wrongTarget");
-                assertThat(f).isInstanceOf(UnclassifiedField.class);
-                assertThat(((UnclassifiedField) f).reason())
-                    .contains("last hop lands on 'language'")
-                    .contains("'actor'");
-            }),
-
         SERVICE_WITH_WRONG_RETURN_TYPE_REJECTED(
             "@service at root whose method's return type does not match the field's @table-bound return → UnclassifiedField (strict service return-type)",
             """
@@ -10854,7 +10356,7 @@ class GraphitronSchemaBuilderTest {
     }
 
     // ===== Child field directive mutual exclusivity =====
-    // @service, @externalField, @tableMethod, (@nodeId || @reference), and @multitableReference
+    // @service, @externalField, (@nodeId || @reference), and @multitableReference
     // are mutually exclusive. @nodeId and @reference CAN be combined.
     // The builder produces UnclassifiedField with a reason naming the conflicting directives.
 
@@ -10872,19 +10374,6 @@ class GraphitronSchemaBuilderTest {
             """,
             "Film", "title", "@service", "@externalField"),
 
-        SERVICE_AND_TABLE_METHOD_CONFLICT(
-            "@service and @tableMethod → UnclassifiedField with reason naming both",
-            """
-            type Language @table(name: "language") { name: String }
-            type Film @table(name: "film") {
-                language: Language
-                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
-                    @tableMethod(className: "com.example.Foo", method: "get")
-            }
-            type Query { film: Film }
-            """,
-            "Film", "language", "@service", "@tableMethod"),
-
         SERVICE_AND_NODE_ID_CONFLICT(
             "@service and @nodeId → UnclassifiedField with reason naming both",
             """
@@ -10893,20 +10382,7 @@ class GraphitronSchemaBuilderTest {
             }
             type Query { film: Film }
             """,
-            "Film", "id", "@service", "@nodeId"),
-
-        EXTERNAL_FIELD_AND_TABLE_METHOD_CONFLICT(
-            "@externalField and @tableMethod → UnclassifiedField with reason naming both",
-            """
-            type Language @table(name: "language") { name: String }
-            type Film @table(name: "film") {
-                language: Language
-                    @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "rating"})
-                    @tableMethod(className: "com.example.Foo", method: "get")
-            }
-            type Query { film: Film }
-            """,
-            "Film", "language", "@externalField", "@tableMethod");
+            "Film", "id", "@service", "@nodeId");
 
         final String sdl;
         final String parentType;
@@ -10933,7 +10409,7 @@ class GraphitronSchemaBuilderTest {
     }
 
     // ===== Query/mutation field directive mutual exclusivity =====
-    // Query fields: @service, @lookupKey, @tableMethod are mutually exclusive.
+    // Query fields: @service and @lookupKey are mutually exclusive.
     // Mutation fields: @service, @mutation are mutually exclusive.
     // The builder produces UnclassifiedField with a reason naming the conflicting directives.
 
@@ -10949,29 +10425,6 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             "Query", "film", "@service", "@lookupKey"),
-
-        SERVICE_AND_TABLE_METHOD_CONFLICT(
-            "@service and @tableMethod on query → UnclassifiedField with reason naming both",
-            """
-            type Film @table(name: "film") { title: String }
-            type Query {
-                film: Film
-                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
-                    @tableMethod(className: "com.example.Foo", method: "get")
-            }
-            """,
-            "Query", "film", "@service", "@tableMethod"),
-
-        LOOKUP_KEY_AND_TABLE_METHOD_CONFLICT(
-            "@lookupKey and @tableMethod on query → UnclassifiedField with reason naming both",
-            """
-            type Film @table(name: "film") { title: String }
-            type Query {
-                film(id: ID @lookupKey): Film
-                    @tableMethod(className: "com.example.Foo", method: "get")
-            }
-            """,
-            "Query", "film", "@lookupKey", "@tableMethod"),
 
         SERVICE_AND_MUTATION_CONFLICT(
             "@service and @mutation on mutation → UnclassifiedField with reason naming both",

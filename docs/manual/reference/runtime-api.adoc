@@ -83,7 +83,7 @@ public sealed interface GraphitronContext {
 }
 ----
 
-The factory IS the registration point; the parameter list is schema-driven (`DSLContext` first, then one parameter per `contextArgument` named in `@service` / `@tableMethod` / `@condition` directives, alphabetically):
+The factory IS the registration point; the parameter list is schema-driven (`DSLContext` first, then one parameter per `contextArgument` named in `@service` / `@condition` directives, alphabetically):
 
 [source,java]
 ----

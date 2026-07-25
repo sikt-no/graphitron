@@ -310,13 +310,6 @@ final class SchemaView {
                 m.put("joinPath", joinPath(f.joinPath()));
                 m.put("hasLookupKey", f.hasLookupKey());
             }
-            case FieldClassification.TableMethod f -> {
-                m.put("kind", "TableMethod");
-                McpWire.putIfNotNull(m, "tableName", f.tableName());
-                McpWire.putIfNotNull(m, "methodClassName", f.methodClassName());
-                McpWire.putIfNotNull(m, "methodName", f.methodName());
-                m.put("recordParent", f.recordParent());
-            }
             case FieldClassification.TableInterface f -> {
                 m.put("kind", "TableInterface");
                 McpWire.putIfNotNull(m, "tableName", f.tableName());
@@ -374,8 +367,8 @@ final class SchemaView {
                 McpWire.putIfNotNull(m, "tableName", f.tableName());
                 m.put("isLookup", f.isLookup());
             }
-            case FieldClassification.QueryTableMethod f -> {
-                m.put("kind", "QueryTableMethod");
+            case FieldClassification.RoutineBacked f -> {
+                m.put("kind", "RoutineBacked");
                 McpWire.putIfNotNull(m, "tableName", f.tableName());
                 McpWire.putIfNotNull(m, "methodClassName", f.methodClassName());
                 McpWire.putIfNotNull(m, "methodName", f.methodName());

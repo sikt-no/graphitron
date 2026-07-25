@@ -4,8 +4,8 @@ package no.sikt.graphitron.rewrite.model;
  * A field that delegates to a user-provided Java method reference.
  *
  * <p>Implemented by all field variants that carry a {@link MethodRef}:
- * {@link ChildField.TableMethodField}, {@link ChildField.ServiceTableField},
- * {@link ChildField.ServiceRecordField}, {@link QueryField.QueryTableMethodTableField},
+ * {@link ChildField.ServiceTableField},
+ * {@link ChildField.ServiceRecordField},
  * {@link QueryField.QueryServiceTableField}, {@link QueryField.QueryServiceRecordField},
  * {@link MutationField.MutationServiceTableField}, {@link MutationField.MutationServiceRecordField}.
  *

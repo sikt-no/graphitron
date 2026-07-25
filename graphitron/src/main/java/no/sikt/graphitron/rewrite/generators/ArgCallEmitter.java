@@ -86,7 +86,7 @@ public final class ArgCallEmitter {
 
     /**
      * Builds the argument list for a method-backed call (root {@code @service} or
-     * {@code @tableMethod} fetcher), iterating {@link MethodRef#params()} in declaration
+     * {@code @condition} call site), iterating {@link MethodRef#params()} in declaration
      * order and emitting one expression per {@link ParamSource} variant
      * (see {@link #emitForParam}).
      *
@@ -97,7 +97,7 @@ public final class ArgCallEmitter {
      *
      * @param method            the developer method to call.
      * @param tableExpression   every caller passes {@code null}: neither {@code @service} nor
-     *                          {@code @tableMethod} methods declare a Table parameter; the
+     *                          {@code @service} methods declare a Table parameter; the
      *                          {@link ParamSource.Table} slot exists for {@code @condition},
      *                          whose emission lives in {@link QueryConditionsGenerator}. The
      *                          slot is retained so a leaked Table param surfaces as a clear

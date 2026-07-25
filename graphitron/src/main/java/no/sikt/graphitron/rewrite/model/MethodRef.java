@@ -8,7 +8,7 @@ import java.util.List;
  * A resolved reference to a user-provided Java method.
  *
  * <p>Used for all user-provided method references: {@code @service} methods, {@code @condition}
- * methods, {@code @tableMethod} references, and {@code @externalField} methods.
+ * methods, {@code @condition} references, and {@code @externalField} methods.
  *
  * <p>{@code className} is the binary class name, e.g. {@code "com.example.FilmService"}.
  *
@@ -28,7 +28,7 @@ import java.util.List;
  * <ul>
  *   <li>{@link Service}: {@code @service} methods, the only variant whose call shape can vary
  *       ({@link Service#callShape()}). Producer: {@code ServiceCatalog.reflectServiceMethod}.</li>
- *   <li>{@link StaticOnly}: static-by-construction method references on the {@code @tableMethod} /
+ *   <li>{@link StaticOnly}: static-by-construction method references on the {@code @condition} /
  *       {@code @externalField} paths. Producers: {@code ServiceCatalog.reflectTableMethod},
  *       {@code reflectExternalField}, and {@link no.sikt.graphitron.rewrite.EnumMappingResolver}
  *       when wrapping a {@link StaticOnly} upstream.</li>
@@ -159,7 +159,7 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
     }
 
     /**
-     * Static-by-construction method references: {@code @tableMethod}, {@code @externalField},
+     * Static-by-construction method references: {@code @condition}, {@code @externalField},
      * and enum-mapping wrappers around either. The variant identity IS the static-call-shape
      * guarantee: no {@code callShape()} accessor exists, so any consumer reading a
      * {@link StaticOnly} can emit {@code ClassName.method(...)} unconditionally.

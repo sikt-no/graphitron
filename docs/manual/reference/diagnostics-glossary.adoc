@@ -91,7 +91,7 @@ When `[author-error]` carries an `UnknownName` variant (a closed-set name lookup
 
 *Sample line.* `[author-error] @service method 'findCustomers' not found on com.example.CustomerService; did you mean: findCustomer`.
 
-*Cause.* The `@service` (or `@externalField`, `@tableMethod`) directive's `methodName:` argument (or the field-name default) did not match any static method on the resolved class. Candidates are the public static methods on that class with matching arity.
+*Cause.* The `@service` (or `@externalField`) directive's `methodName:` argument (or the field-name default) did not match any static method on the resolved class. Candidates are the public static methods on that class with matching arity.
 
 *Next step.* Correct the method name or rebind via `argMapping:` if the parameter list shifted. xref:../how-to/external-code.adoc[How-to: Wire external Java code] covers the FQCN + method-name contract.
 

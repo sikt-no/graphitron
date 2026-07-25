@@ -29,7 +29,7 @@ R119 keyed the LSP's directive vocabulary on GraphQL-spec schema coordinates: `D
 
 `InputField("ExternalCodeReference", "method")` is one coordinate, shared across every directive that carries an ECR slot:
 
-- `@service`, `@condition`, `@externalField`, `@tableMethod`, `@reference(path:[{condition:}])` — the `method:` value is a method invocation. Validate as a method on the sibling `className`.
+- `@service`, `@condition`, `@externalField`, `@reference(path:[{condition:}])` — the `method:` value is a method invocation. Validate as a method on the sibling `className`.
 - `@record`, `@enum` — the `method:` value wraps a type, not a method invocation. Skip method validation.
 
 The canonical overlay binds the shared coordinate to one `MethodNameBinding(classNameCoord)` arm. Diagnostics' validator then re-discriminates by the enclosing directive name; since R347 Slice 2 that discrimination is `DirectivePolicy.bindsLiveMethod(directiveName)` (`graphitron-lsp/.../parsing/DirectivePolicy.java`, called from `Diagnostics.java:734` at the time of writing), which centralizes the former hand-coded `METHOD_VALIDATING_DIRECTIVES` set but still keys on the directive name at validation time rather than on the coordinate.

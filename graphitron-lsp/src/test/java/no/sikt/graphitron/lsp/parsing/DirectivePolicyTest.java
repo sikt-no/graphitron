@@ -29,7 +29,6 @@ class DirectivePolicyTest {
         assertThat(DirectivePolicy.bindsLiveMethod("service")).isTrue();
         assertThat(DirectivePolicy.bindsLiveMethod("condition")).isTrue();
         assertThat(DirectivePolicy.bindsLiveMethod("externalField")).isTrue();
-        assertThat(DirectivePolicy.bindsLiveMethod("tableMethod")).isTrue();
         assertThat(DirectivePolicy.bindsLiveMethod("reference")).isTrue();
         assertThat(DirectivePolicy.bindsLiveMethod("sourceRow")).isTrue();
     }

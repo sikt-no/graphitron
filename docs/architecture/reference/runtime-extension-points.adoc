@@ -237,7 +237,7 @@ integrity gradient>> below.
 `getContextArgument` passes values from the GraphQL context into generated
 condition and method calls. It is invoked when a method parameter is
 classified as `ParamSource.Context`, driven by the `contextArguments` field
-on the `@condition`, `@service`, and `@tableMethod` directives.
+on the `@condition` and `@service` directives.
 
 For example, a field with
 `@condition(condition: "AccessControl.visibleToUser",
@@ -277,7 +277,7 @@ its configuration.
   `SET LOCAL`, which connection to acquire. Anything that varies
   request-by-request gets composed at request entry and threaded through the
   factory.
-* *Schema directives* (`@condition`, `@tableMethod`, `@reference`) for
+* *Schema directives* (`@condition`, `@reference`) for
   predicates and joins that are part of the schema's business semantics.
   Anything a schema author should be able to read in the SDL belongs here,
   not in a runtime hook.
@@ -438,7 +438,7 @@ ciphertext; rebuild the claims JSON from the platform's claim accessors instead.
   the `GraphitronContext` factory, custom scalars, federation, and context arguments
   from the consumer side
 * xref:code-generation-triggers.adoc[Code Generation Triggers]: Schema patterns
-  to sealed variants, including the `@condition` / `@tableMethod` directives
+  to sealed variants, including the `@condition` directive
   that drive `getContextArgument` calls
 * xref:../../security.adoc[Security Model]: Database-level security
   philosophy

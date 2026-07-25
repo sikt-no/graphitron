@@ -12,13 +12,11 @@ last-updated: 2026-07-15
 
 # Inline TableInterfaceField children (currently N+1)
 
-> **Scoped to the interface case 2026-07-15.** This item originally also covered
-> `ChildField.TableMethodField` (the `@tableMethod` N+1). `@tableMethod` is withheld from the v1
-> surface (R400) and its support work was set aside (R277 discarded 2026-07-15; `@routine` covers
-> the pressing need, and `@tableMethod` will be redesigned on a real feature request), so the
-> `@tableMethod` half is dropped from here. `buildChildTableMethodFetcher` has the same per-parent
-> sync N+1 shape and should be inlined as part of that future `@tableMethod` redesign, not here.
-> This item is now the interface case only.
+> **Scoped to the interface case 2026-07-15.** This item originally also covered a second
+> per-parent sync N+1 on the directive that let a developer method supply a field's table. That
+> directive was withheld from the v1 surface (R400) and has since been removed outright, taking
+> its leaf and fetcher with it, so nothing of that half survives. This item is the interface case
+> only. The file slug keeps its historical name.
 
 A child `@table` field backed by a polymorphic interface target (`ChildField.TableInterfaceField`) is
 reachable by FK correlation from a query-scope parent, so it should inline into the parent query as a

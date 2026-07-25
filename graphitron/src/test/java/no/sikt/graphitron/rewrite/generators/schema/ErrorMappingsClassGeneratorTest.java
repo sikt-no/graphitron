@@ -273,7 +273,7 @@ class ErrorMappingsClassGeneratorTest {
     }
 
     /**
-     * Synthesises a minimal schema with one {@code @tableMethod} root field per channel
+     * Synthesises a minimal schema with one DML-record mutation field per channel
      * supplied: the lightest field variant whose channel slot carries the
      * {@link ErrorChannel.RouterDispatched} partition {@link ErrorChannel.PayloadClass}
      * belongs to (root {@code @service} variants carry {@link ErrorChannel.Mapped}).
@@ -284,15 +284,16 @@ class ErrorMappingsClassGeneratorTest {
         Map<FieldCoordinates, GraphitronField> fields = new LinkedHashMap<>();
         for (int i = 0; i < channels.size(); i++) {
             String fieldName = "fetch" + i;
-            var method = TestFixtures.staticServiceMethodRef("com.example.SvcStub", "doStuff",
-                ClassName.get(Object.class), List.of());
-            var field = new QueryField.QueryTableMethodTableField(
+            var tableInputArg = new no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg(
+                "in", "FilmInput", true, false, TestFixtures.filmTable(), List.of(), Optional.empty(),
+                List.of(), List.of(), List.of());
+            var field = new no.sikt.graphitron.rewrite.model.MutationField.MutationDmlRecordField(
                 "Query",
                 fieldName,
                 null,
-                new ReturnTypeRef.TableBoundReturnType("Film", TestFixtures.filmTable(),
-                    new FieldWrapper.Single(true)),
-                method,
+                new ReturnTypeRef.ResultReturnType("FilmPayload", new FieldWrapper.Single(true), null),
+                tableInputArg,
+                no.sikt.graphitron.rewrite.model.DmlKind.INSERT,
                 Optional.of(channels.get(i)));
             fields.put(FieldCoordinates.coordinates("Query", fieldName), field);
         }

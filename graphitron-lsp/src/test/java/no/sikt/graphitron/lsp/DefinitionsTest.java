@@ -203,18 +203,6 @@ class DefinitionsTest {
     }
 
     @Test
-    void tableMethodFlatMethodJumpsToMethodDeclaration() {
-        var file = file("""
-            type Foo {
-                bar: Int @tableMethod(className: "com.example.PriceService", method: "price")
-            }
-            """);
-        var pos = pointAt(file, 1, "price");
-        var loc = Definitions.compute(file, serviceCatalog(), serviceIndex(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
-        assertThat(loc.getRange().getStart().getLine()).isEqualTo(12);
-    }
-
-    @Test
     void recordClassNameReturnsEmptyByCarveOut() {
         // @record is deprecated/ignored; its className binds no class even
         // though the coordinate is shared with @enum.

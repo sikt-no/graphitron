@@ -10,7 +10,7 @@ import java.util.List;
  * A resolved reference to a stateless generated helper method.
  *
  * <p>Sibling of {@link MethodRef}. {@code MethodRef} models user-authored methods reached via the
- * {@code ParamSource} indirection ({@code @service}, {@code @condition}, {@code @tableMethod});
+ * {@code ParamSource} indirection ({@code @service}, {@code @condition});
  * {@code HelperRef} models methods Graphitron itself emits, where the call-site signature is
  * derived from a small piece of model state (a {@link ColumnRef} list) rather than reflection
  * over a developer-authored class. The split keeps the user-facing {@code ParamSource} story off

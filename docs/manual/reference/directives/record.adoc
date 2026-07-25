@@ -11,8 +11,8 @@
 
 A GraphQL `OBJECT` or `INPUT_OBJECT` is still backed by a Java class when it carries one; the rewrite just derives the class differently. Instead of reading `@record(record: {className: ...})`, the rewrite *reflects on the field that produces the type* and takes the backing class from that field's Java signature:
 
-* *Output / result types* take their backing from the producing field's *return* type: an xref:service.adoc[`@service`] method return, a xref:table.adoc[`@table`] resolution, a `@tableMethod` return, or a parent-accessor chain that threads the class down to child types.
-* *Input types* take their backing from the Java *parameter* type the input flows into (the xref:service.adoc[`@service`] / xref:condition.adoc[`@condition`] / `@tableMethod` method parameter), or from xref:table.adoc[`@table`].
+* *Output / result types* take their backing from the producing field's *return* type: an xref:service.adoc[`@service`] method return, a xref:table.adoc[`@table`] resolution, or a parent-accessor chain that threads the class down to child types.
+* *Input types* take their backing from the Java *parameter* type the input flows into (the xref:service.adoc[`@service`] / xref:condition.adoc[`@condition`] method parameter), or from xref:table.adoc[`@table`].
 
 The class shape still determines the variant the rewrite picks: a jOOQ `TableRecord` produces a `JooqTableRecordType` (output) / `JooqTableRecordInputType` (input), a jOOQ `Record` produces a `JooqRecordType` / `JooqRecordInputType`, and a plain Java record or POJO produces `JavaRecordType` / `PojoResultType` / `JavaRecordInputType` / `PojoInputType`. What changed is the *trigger*: reflection on the producing field, not the directive.
 

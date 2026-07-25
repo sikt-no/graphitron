@@ -13,7 +13,7 @@ import java.util.Set;
 
 /**
  * Execution fixture: child {@code @service} methods on the {@code City} type, which carries
- * <em>no</em> other force-projecting children ({@code @splitQuery}/{@code @tableMethod} siblings).
+ * <em>no</em> other force-projecting children ({@code @splitQuery} siblings).
  * The {@code Film} service-child fixtures ({@link FilmService}) cannot pin the SourceKey
  * force-projection because Film's {@code cast}/{@code castByKey} split children already project
  * {@code FILM_ID} into every parent SELECT; here the {@code @service} child itself is the only

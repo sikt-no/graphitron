@@ -170,11 +170,36 @@ R333's join-path section). With the directive removed, both the inline leaf and 
   else; the `directive-support --verify` drift guard is green.
 - Full reactor green under `-Plocal-db`.
 
+## Implementation deltas
+
+Two shapes the plan did not anticipate, both found by the compiler and resolved in-flight:
+
+- **`FieldClassification.QueryTableMethod` is renamed, not deleted.** Step 2 called for deleting both
+  classification seal arms, but the root arm is load-bearing beyond the directive:
+  `QueryField.QueryRoutineTableField` and `MutationField.MutationRoutineWriteField` both project onto
+  it (`CatalogBuilder`), and after removal it is the routine projection and nothing else. It is renamed
+  `FieldClassification.RoutineBacked`, mirroring the sibling `ServiceBacked`, with its javadoc restated
+  around the generated `Routines`-class call surface. The LSP hover / label / decl-target arms and the
+  MCP `SchemaView` / `EdgeProducer.EDGE_BEARING_FIELDS` entries follow the rename. The child arm
+  `FieldClassification.TableMethod` genuinely had no surviving producer and is deleted as planned.
+  Note the projection-record simple name is user-visible (hover headers, inlay labels), so the rename
+  is a visible-string change, not an internal refactor.
+- **`ServiceCatalog.reflectTableMethod`'s directive-forked knobs collapse.** The method stays, per
+  step 2, but with `@tableMethod` gone every surviving caller is `@condition`, passing
+  `TableSlotPolicy.REQUIRED` and a null `expectedReturnClass`. The `FORBIDDEN` arm, the
+  `TableSlotPolicy` enum, the `expectedReturnClass` parameter, and the strict `ClassName.equals`
+  return check are all unreachable, as is `ReflectionError.ReturnContext` (whose only non-`SERVICE`
+  arm rendered the `@tableMethod` prose). All are deleted, collapsing `ReturnTypeMismatch` to a single
+  message form. Step 9 already anticipated the strict-return check going with R240's renarrowing.
+
 ## Retired vocabulary
 
 `@tableMethod`, `TableMethodDirectiveResolver`, `ChildField.TableMethodField`,
 `QueryField.QueryTableMethodTableField`, `FieldClassification.TableMethod`,
 `FieldClassification.QueryTableMethod`, `TableExpr.MethodCall`,
+`ProducerBinding.RootTableMethod`, `groundTableMethodField`,
+`ServiceCatalog.TableSlotPolicy`, `ReflectionError.ReturnContext`,
 `buildChildTableMethodFetcher`, `buildQueryTableMethodFetcher`,
+`buildTableMethodParentCorrelation`,
 `TestTableMethodStub`, `TableMethodFieldPipelineTest`,
 `TableMethodFieldValidationTest`, `QueryTableMethodTableFieldValidationTest`.

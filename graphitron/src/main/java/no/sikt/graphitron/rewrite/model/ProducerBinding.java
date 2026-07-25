@@ -10,16 +10,16 @@ import java.util.Objects;
  * from. Surfaces in {@link Rejection.AuthorError.RecordBindingMultiProducer} when
  * two or more producers reach the same SDL type with disagreeing classes.
  *
- * <p>Five arms correspond to the producer sources the reflection walk visits:
+ * <p>The arms correspond to the producer sources the reflection walk visits:
  * {@link RootService} for an {@code @service} method's return type, {@link RootTable} for an
- * SDL Object's {@code @table} resolution, {@link RootTableMethod} for a {@code @tableMethod}
- * return type, {@link ParentAccessor} for an SDL parent's accessor return type, and
+ * SDL Object's {@code @table} resolution, {@link ParentAccessor} for an SDL parent's
+ * accessor return type, and
  * {@link DmlEmitted} for a DML mutation fetcher's emitted output shape (the only arm whose
  * source is generator-emitted rather than developer-authored reflection).
  */
 public sealed interface ProducerBinding
     permits ProducerBinding.RootService, ProducerBinding.RootTable,
-            ProducerBinding.RootTableMethod, ProducerBinding.ParentAccessor,
+            ProducerBinding.ParentAccessor,
             ProducerBinding.DmlEmitted, ProducerBinding.ServiceEmitted {
 
     /** The reflected Java class this producer named for the SDL type. */
@@ -64,24 +64,6 @@ public sealed interface ProducerBinding
     ) implements ProducerBinding {
         @Override public String describe() {
             return "@table on " + sdlTypeName + " resolving to '" + tableSqlName + "'";
-        }
-    }
-
-    /**
-     * A {@code @tableMethod} field's reflected return-element class. The holder class is the
-     * resolved Java class hosting the method ({@code Function} subclass with a static factory).
-     */
-    record RootTableMethod(
-        Class<?> reflectedClass,
-        String parentTypeName,
-        String fieldName,
-        String holderClassName,
-        String methodName,
-        SourceLocation location
-    ) implements ProducerBinding {
-        @Override public String describe() {
-            return "@tableMethod on " + parentTypeName + "." + fieldName
-                + " via " + holderClassName + "." + methodName;
         }
     }
 

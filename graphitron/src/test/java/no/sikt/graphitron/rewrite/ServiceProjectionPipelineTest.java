@@ -23,13 +23,12 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
  * {@code _entities}-fetch shape). Split-{@code @reference} children get the same treatment via
  * the shared {@link no.sikt.graphitron.rewrite.model.BatchKeyField} arm in
  * {@code TypeClassGenerator.collectRequiredProjection}; their coverage lives in
- * {@link NestingFieldPipelineTest} and {@link TableMethodFieldPipelineTest}.
+ * {@link NestingFieldPipelineTest}.
  *
  * <p>Every fixture's service method carries a Sources param ({@code Set<Row1<Integer>>}), so the
  * field classifies with a non-null {@code SourceKey} (a no-Sources method is a plain per-parent
  * delegation with no key read and no projection need). Every fixture's parent type deliberately
- * carries <em>no</em> other force-projecting child ({@code @splitQuery}/{@code @tableMethod}
- * sibling), so a regression of the {@code BatchKeyField} arm turns these red rather than being
+ * carries <em>no</em> other force-projecting child ({@code @splitQuery} sibling), so a regression of the {@code BatchKeyField} arm turns these red rather than being
  * masked by an unrelated sibling's projection.
  *
  * <p>When the child's key wrap is {@code SourceKey.Wrap.TableRecord} (typed-record Sources

@@ -62,10 +62,6 @@ final class EdgeProducer {
                 tableTargetEdge(edges, f.tableName(), f.joinPath(), ctx);
             case FieldClassification.RecordTableTarget f ->
                 tableTargetEdge(edges, f.tableName(), f.joinPath(), ctx);
-            case FieldClassification.TableMethod f -> {
-                resolvesMethod(edges, f.methodClassName(), f.methodName(), ctx);
-                targetsTable(edges, f.tableName(), ctx);
-            }
             case FieldClassification.TableInterface f -> {
                 backsColumn(edges, f.tableName(), f.discriminatorColumn(), ctx);
                 participates(edges, f.participantTypeNames());
@@ -83,7 +79,7 @@ final class EdgeProducer {
                 resolvesMethod(edges, f.methodClassName(), f.methodName(), ctx);
             case FieldClassification.SingleRecordId f -> targetsTable(edges, f.tableName(), ctx);
             case FieldClassification.QueryTable f -> targetsTable(edges, f.tableName(), ctx);
-            case FieldClassification.QueryTableMethod f -> {
+            case FieldClassification.RoutineBacked f -> {
                 resolvesMethod(edges, f.methodClassName(), f.methodName(), ctx);
                 targetsTable(edges, f.tableName(), ctx);
             }
@@ -278,7 +274,6 @@ final class EdgeProducer {
         FieldClassification.ParticipantCrossTable.class,
         FieldClassification.TableTarget.class,
         FieldClassification.RecordTableTarget.class,
-        FieldClassification.TableMethod.class,
         FieldClassification.TableInterface.class,
         FieldClassification.Polymorphic.class,
         FieldClassification.ServiceBacked.class,
@@ -286,7 +281,7 @@ final class EdgeProducer {
         FieldClassification.InputUnbound.class,
         FieldClassification.SingleRecordId.class,
         FieldClassification.QueryTable.class,
-        FieldClassification.QueryTableMethod.class,
+        FieldClassification.RoutineBacked.class,
         FieldClassification.QueryTableInterface.class,
         FieldClassification.QueryPolymorphic.class,
         FieldClassification.QueryService.class,

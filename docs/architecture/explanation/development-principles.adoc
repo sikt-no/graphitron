@@ -249,7 +249,7 @@ component, a return type, a sealed sub-variant ; once in the type, mechanically 
 pipeline-tier tests pinning the end-to-end shape, and the `graphitron-sakila-example` compile as
 cross-module backstop. A defensive runtime cast or a `var`-typed local abandons the guarantee ;
 it fails on a real request, days after the build passed. Candidate type-system lifts that would
-carry current prose contracts structurally are R240 (`@tableMethod` type-token threading) and
+carry current prose contracts structurally are R240 (method type-token threading) and
 R239 (`ColumnBackedField.parentTable`). To record a producer-consumer linkage the type system can't
 carry, use a javadoc `{@link}` from consumer to producer ; build-checked by the javadoc
 reference gate. Rule: if you relax a producer's check body, audit every emitter site that

@@ -425,6 +425,6 @@ final class SourceRowDirectiveResolver {
         }
         return "@sourceRow on '" + parentTypeName + "." + fieldName
             + "' requires the record-backed parent to resolve a backing class; produce the "
-            + "parent from a @service return type, @table, @tableMethod, or a parent-accessor chain";
+            + "parent from a @service return type, @table, or a parent-accessor chain";
     }
 }

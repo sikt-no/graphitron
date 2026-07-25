@@ -207,17 +207,12 @@ public final class MappingsConstantNameDedup {
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.serviceMethodCall(), f.errorChannel().map(c -> renameMapped(c, newName)));
             case QueryField.QueryServiceRecordField f -> new QueryField.QueryServiceRecordField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.serviceMethodCall(), f.errorChannel().map(c -> renameMapped(c, newName)));
-            case QueryField.QueryTableMethodTableField f -> new QueryField.QueryTableMethodTableField(
-                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.method(), f.errorChannel().map(c -> renameRouted(c, newName)));
             case ChildField.ServiceTableField f -> new ChildField.ServiceTableField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.joinPath(), f.filters(),
                 f.orderBy(), f.pagination(), f.method(), f.sourceKey(), f.loaderRegistration(), f.errorChannel().map(c -> renameRouted(c, newName)));
             case ChildField.ServiceRecordField f -> new ChildField.ServiceRecordField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.joinPath(), f.method(),
                 f.sourceKey(), f.loaderRegistration(), f.errorChannel().map(c -> renameRouted(c, newName)));
-            case ChildField.TableMethodField f -> new ChildField.TableMethodField(
-                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.joinPath(), f.method(),
-                f.errorChannel().map(c -> renameRouted(c, newName)));
             case MutationField.MutationDmlRecordField f -> new MutationField.MutationDmlRecordField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.tableInputArg(),
                 f.kind(), f.errorChannel().map(c -> renameRouted(c, newName)));

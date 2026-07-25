@@ -247,27 +247,12 @@ public final class CatalogBuilder {
             case ChildField.TableField f ->
                 new FieldClassification.TableTarget(
                     targetTableName(f.returnType()), fkSteps(f.joinPath()), false, false);
-            case ChildField.BatchedTableField f -> {
-                // The @tableMethod-terminal shape keeps its TableMethod catalog surface:
-                // the projection reads the hop's TableExpr.MethodCall fact, not a leaf identity.
-                var methodTarget = f.joinPath().stream()
-                    .filter(s -> s instanceof JoinStep.Hop h
-                        && h.target() instanceof no.sikt.graphitron.rewrite.model.TableExpr.MethodCall)
-                    .map(s -> (no.sikt.graphitron.rewrite.model.TableExpr.MethodCall) ((JoinStep.Hop) s).target())
-                    .findFirst();
-                if (methodTarget.isPresent()) {
-                    yield new FieldClassification.TableMethod(
-                        targetTableName(f.returnType()),
-                        methodTarget.get().method().className(),
-                        methodTarget.get().method().methodName(),
-                        true);
-                }
-                yield f.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Table
+            case ChildField.BatchedTableField f ->
+                f.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Table
                     ? new FieldClassification.TableTarget(
                         targetTableName(f.returnType()), fkSteps(f.joinPath()), true, false)
                     : new FieldClassification.RecordTableTarget(
                         targetTableName(f.returnType()), fkSteps(f.joinPath()), false);
-            }
             case ChildField.LookupTableField f ->
                 new FieldClassification.TableTarget(
                     targetTableName(f.returnType()), fkSteps(f.joinPath()), false, true);
@@ -277,12 +262,6 @@ public final class CatalogBuilder {
                         targetTableName(f.returnType()), fkSteps(f.joinPath()), true, true)
                     : new FieldClassification.RecordTableTarget(
                         targetTableName(f.returnType()), fkSteps(f.joinPath()), true);
-            case ChildField.TableMethodField f ->
-                new FieldClassification.TableMethod(
-                    targetTableName(f.returnType()),
-                    f.method() != null ? f.method().className() : null,
-                    f.method() != null ? f.method().methodName() : null,
-                    false);
             case ChildField.TableInterfaceField f ->
                 new FieldClassification.TableInterface(
                     targetTableName(f.returnType()),
@@ -348,16 +327,11 @@ public final class CatalogBuilder {
                 new FieldClassification.QueryTable(targetTableName(f.returnType()), false);
             case QueryField.QueryLookupTableField f ->
                 new FieldClassification.QueryTable(targetTableName(f.returnType()), true);
-            case QueryField.QueryTableMethodTableField f ->
-                new FieldClassification.QueryTableMethod(
-                    targetTableName(f.returnType()),
-                    f.method() != null ? f.method().className() : null,
-                    f.method() != null ? f.method().methodName() : null);
             // A @routine read is a root table sourced from a generated Routines-class
-            // method call, so it projects onto the method-backed QueryTableMethod classification
+            // method call, so it projects onto the method-backed RoutineBacked classification
             // (className = the generated Routines class).
             case QueryField.QueryRoutineTableField f ->
-                new FieldClassification.QueryTableMethod(
+                new FieldClassification.RoutineBacked(
                     targetTableName(f.returnType()),
                     f.routine() != null ? f.routine().routinesClass().canonicalName() : null,
                     f.routine() != null ? f.routine().methodName() : null);
@@ -411,10 +385,10 @@ public final class CatalogBuilder {
             // --- MutationField permits ---
             // Like the routine read above, the routine write is a root table sourced
             // from a generated Routines-class method call, so it projects onto the method-backed
-            // QueryTableMethod classification (className = the generated Routines class; hover and
+            // RoutineBacked classification (className = the generated Routines class; hover and
             // jump-to-source route to the routine's call surface).
             case MutationField.MutationRoutineWriteField f ->
-                new FieldClassification.QueryTableMethod(
+                new FieldClassification.RoutineBacked(
                     targetTableName(f.returnType()),
                     f.routine() != null ? f.routine().routinesClass().canonicalName() : null,
                     f.routine() != null ? f.routine().methodName() : null);
@@ -723,11 +697,10 @@ public final class CatalogBuilder {
         return switch (fc) {
             case FieldClassification.QueryTable q -> Optional.ofNullable(q.tableName());
             case FieldClassification.QueryTableInterface q -> Optional.ofNullable(q.tableName());
-            case FieldClassification.QueryTableMethod q -> Optional.ofNullable(q.tableName());
+            case FieldClassification.RoutineBacked q -> Optional.ofNullable(q.tableName());
             case FieldClassification.TableTarget t -> Optional.ofNullable(t.tableName());
             case FieldClassification.RecordTableTarget t -> Optional.ofNullable(t.tableName());
             case FieldClassification.TableInterface t -> Optional.ofNullable(t.tableName());
-            case FieldClassification.TableMethod t -> Optional.ofNullable(t.tableName());
             default -> Optional.empty();
         };
     }

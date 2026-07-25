@@ -8,8 +8,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
 /**
- * End-to-end check that classifier rejections from the root {@code @service} / {@code @tableMethod}
- * invariants (Connection wrapper, {@code Sources} param at root, {@code @tableMethod} strict-class
+ * End-to-end check that classifier rejections from the root {@code @service}
+ * invariants (Connection wrapper, {@code Sources} param at root, strict-return-class
  * return type, and the strict {@code @service} return-type comparison) surface as
  * {@link ValidationError}s through the full SDL → classifier → validator path.
  *
@@ -49,30 +49,6 @@ class ServiceRootFetcherPipelineTest {
         assertThat(messages(errors))
             .anyMatch(m -> m.contains("Field 'Query.externalFilms'")
                 && m.contains("@service at the root does not support Connection return types"));
-    }
-
-    @Test
-    void tableMethodWithWiderReturnType_surfacesAsValidationError() {
-        var errors = validate("""
-            type Film @table(name: "film") { title: String }
-            type Query {
-                wider: [Film!]!
-                    @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "get")
-            }
-            """);
-
-        // The wider-return failure surfaces the shared ReflectionError.ReturnTypeMismatch arm
-        // (TABLE_METHOD context) end-to-end through the validator, carrying its stable lspCode.
-        var typed = errors.stream()
-            .map(ValidationError::rejection)
-            .filter(r -> r instanceof no.sikt.graphitron.rewrite.model.ReflectionError.ReturnTypeMismatch)
-            .map(r -> (no.sikt.graphitron.rewrite.model.ReflectionError.ReturnTypeMismatch) r)
-            .findFirst();
-        assertThat(typed)
-            .as("@tableMethod wider-return must reach ValidationError as a typed ReturnTypeMismatch")
-            .isPresent();
-        assertThat(typed.get().lspCode()).isEqualTo("graphitron.reflect.return-type-mismatch");
-        assertThat(typed.get().message()).contains("must return the generated jOOQ table class");
     }
 
     @Test

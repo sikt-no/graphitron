@@ -553,30 +553,6 @@ public final class ClassifiedCorpus {
             """),
 
         /*
-         * @tableMethod (a developer-supplied table source FK-correlatable from the parent) on a child
-         * and on a root. The child `Film.language` is inline-correlatable (TableMethodField, Child /
-         * Fetch / Table; the generator's current per-parent query is a known defect, the corpus asserts
-         * the correct verdict). The root `Query.filteredFilms` starts a new query
-         * (QueryTableMethodTableField, Query / Fetch / Table).
-         */
-        new Example("table-method", """
-            type Language @table(name: "language") { name: String }
-            type Film @table(name: "film") {
-              title: String
-              language: Language
-                @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getLanguage")
-                @reference(path: [{key: "film_language_id_fkey"}])
-                @classified(source: Child, operation: Fetch, target: Single, targetShape: Table)
-            }
-            type Query {
-              film: Film
-              filteredFilms: [Film!]!
-                @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getFilmWithContext", contextArguments: ["tenantId"])
-                @classified(source: Query, operation: Fetch, target: List, targetShape: Table)
-            }
-            """),
-
-        /*
          * @routine: a table-valued read function backing a root list field. jOOQ models the
          * function as a catalog Table<R>, so the verdict is the same shape as a plain catalog read
          * (QueryRoutineTableField, Query / Fetch / List(Table)); only the FROM source differs (the
@@ -618,23 +594,17 @@ public final class ClassifiedCorpus {
             """),
 
         /*
-         * @table children under a jOOQ-TableRecord-backed parent, reached by @lookupKey and by
-         * @tableMethod. The record handoff has already opened a new keyed scope, so both re-query (the
-         * new-query is derived): `FilmDetails.language` is a BatchedLookupTableField (its @lookupKey makes
-         * the operation Lookup, target Table) and `FilmDetails.inventories` a BatchedTableField whose
-         * @tableMethod supplies the rows (Fetch, Table). FilmDetails is record-bound as getFilm's
-         * jOOQ-TableRecord return type, which supplies
-         * the FK source key for both.
+         * A @table child under a jOOQ-TableRecord-backed parent, reached by @lookupKey. The record
+         * handoff has already opened a new keyed scope, so the child re-queries (the new-query is
+         * derived): `FilmDetails.language` is a BatchedLookupTableField (its @lookupKey makes the
+         * operation Lookup, target Table). FilmDetails is record-bound as getFilm's jOOQ-TableRecord
+         * return type, which supplies the FK source key.
          */
         new Example("record-method", """
             type Language @table(name: "language") { name: String }
-            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
             type FilmDetails {
               language(language_id: ID! @lookupKey): Language @reference(path: [{key: "film_language_id_fkey"}])
                 @classified(source: Child, operation: Lookup, target: Single, targetShape: Table, sourceShape: Record)
-              inventories: [Inventory!]!
-                @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getInventory")
-                @classified(source: Child, operation: Fetch, target: List, targetShape: Table, sourceShape: Record)
             }
             type Film @table(name: "film") { details: FilmDetails }
             type Query {

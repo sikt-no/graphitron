@@ -18,8 +18,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * rather than prose.
  *
  * <p>Sites C ({@code @condition}) and D ({@code @externalField}) are out of scope for Slice 1 — their
- * dimensional wire-coercion channel is not yet pinned — so the {@code @tableMethod} /
- * {@code @condition} argument path keeps its legacy extraction; those sites are carved out to a
+ * dimensional wire-coercion channel is not yet pinned — so the {@code @condition}
+ * argument path keeps its legacy extraction; those sites are carved out to a
  * follow-up.
  */
 @PipelineTier

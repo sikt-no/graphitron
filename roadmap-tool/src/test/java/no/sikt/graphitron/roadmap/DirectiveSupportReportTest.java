@@ -176,14 +176,13 @@ class DirectiveSupportReportTest {
     @Test
     void renderMigrationWithholdsNotInUseAndRejectedDirectivesFromSupported() {
         // A rewrite that declares a genuinely-supported directive (table), the withheld-but-declared
-        // ones (tableMethod, sourceRow, experimental_constructType), the hard-rejected retirements
+        // ones (sourceRow, experimental_constructType), the hard-rejected retirements
         // (notGenerated, multitableReference), and @record (deprecated + silently ignored, kept
         // as-is for v1, NOT dropped).
         java.util.function.Function<String, DirectiveSupportReport.Directive> d =
             name -> new DirectiveSupportReport.Directive(name, List.of(), List.of("FIELD_DEFINITION"));
         var declared = List.of(
             d.apply("table"),
-            d.apply("tableMethod"),
             d.apply("sourceRow"),
             d.apply("experimental_constructType"),
             d.apply("notGenerated"),
@@ -199,7 +198,6 @@ class DirectiveSupportReportTest {
             fragment.indexOf("=== Supported directives"),
             fragment.indexOf("=== Removed / rejected directives"));
         assertThat(supportedSection)
-            .doesNotContain("`@tableMethod`")
             .doesNotContain("`@sourceRow`")
             .doesNotContain("`@experimental_constructType`")
             .doesNotContain("`@notGenerated`")
@@ -213,7 +211,6 @@ class DirectiveSupportReportTest {
         assertThat(rejectedSection)
             .contains("`@notGenerated`")
             .contains("`@multitableReference`")
-            .doesNotContain("`@tableMethod`")
             .doesNotContain("`@experimental_constructType`")
             .doesNotContain("`@record`");
     }

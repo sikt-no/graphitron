@@ -240,8 +240,7 @@ class RejectionSeverityCoverageTest {
         }
         if (permit == no.sikt.graphitron.rewrite.model.ReflectionError.ReturnTypeMismatch.class) {
             return new no.sikt.graphitron.rewrite.model.ReflectionError.ReturnTypeMismatch(
-                "com.example.Svc", "getFilm", "FilmRecord", "String",
-                no.sikt.graphitron.rewrite.model.ReflectionError.ReturnContext.SERVICE);
+                "com.example.Svc", "getFilm", "FilmRecord", "String");
         }
         if (permit == no.sikt.graphitron.rewrite.model.ReflectionError.ParameterNamesMissing.class) {
             return new no.sikt.graphitron.rewrite.model.ReflectionError.ParameterNamesMissing(

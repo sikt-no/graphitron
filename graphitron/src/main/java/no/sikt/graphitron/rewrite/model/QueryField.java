@@ -18,13 +18,12 @@ import java.util.Optional;
  *   <li>{@code pagination} — Relay pagination args; {@code null} when absent.</li>
  * </ul>
  *
- * <p>Service and table-method fields ({@link QueryServiceTableField},
- * {@link QueryServiceRecordField}, {@link QueryTableMethodTableField}) do not carry these
- * components — the developer-controlled method replaces SQL generation entirely.
+ * <p>Service fields ({@link QueryServiceTableField}, {@link QueryServiceRecordField})
+ * do not carry these components — the developer-controlled method replaces SQL generation entirely.
  */
 public sealed interface QueryField extends RootField
     permits QueryField.QueryLookupTableField, QueryField.QueryTableField,
-            QueryField.QueryTableMethodTableField, QueryField.QueryRoutineTableField,
+            QueryField.QueryRoutineTableField,
             QueryField.QueryNodeField, QueryField.QueryNodesField,
             QueryField.QueryTableInterfaceField, QueryField.QueryInterfaceField,
             QueryField.QueryUnionField,
@@ -44,7 +43,6 @@ public sealed interface QueryField extends RootField
             case QueryTableField f -> OutputField.readOperation(f.returnType(), f.filters(), f.orderBy(), f.pagination());
             case QueryTableInterfaceField f -> OutputField.readOperation(f.returnType(), f.filters(), f.orderBy(), f.pagination());
             // Table-method / polymorphic roots carry no field-level filter surface.
-            case QueryTableMethodTableField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
             // Routine reads are Fetch over the routine-result table; no field-level filter surface.
             case QueryRoutineTableField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
             case QueryInterfaceField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
@@ -64,7 +62,6 @@ public sealed interface QueryField extends RootField
             // Catalog table reads: wrap(...) keeps the Connection -> Single(Connection) decomposition.
             case QueryTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case QueryLookupTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
-            case QueryTableMethodTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case QueryRoutineTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case QueryTableInterfaceField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case QueryServiceTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
@@ -114,35 +111,6 @@ public sealed interface QueryField extends RootField
         OrderBySpec orderBy,
         PaginationSpec pagination
     ) implements QueryField, SqlGeneratingField {
-        @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Record(returnType.table());
-        }
-    }
-
-    /**
-     * A root query field using {@code @tableMethod}. The developer provides a pre-filtered
-     * {@code Table<?>}; Graphitron generates a fetcher around it.
-     *
-     * <p>The method signature is:
-     * <pre>
-     *     Table&lt;?&gt; method(Table&lt;?&gt; targetTable, arg1, arg2, ...)
-     * </pre>
-     * where the table parameter has {@link ParamSource.Table} as its source, and subsequent
-     * parameters have {@link ParamSource.Arg} or {@link ParamSource.Context}.
-     *
-     * <p>The return type is always a {@link ReturnTypeRef.TableBoundReturnType}: the
-     * directive's whole purpose is to bind a developer-authored jOOQ table method, which by
-     * construction returns a generated jOOQ table class.
-     * {@code TableMethodDirectiveResolver} rejects any other return shape as a schema error.
-     */
-    record QueryTableMethodTableField(
-        String parentTypeName,
-        String name,
-        SourceLocation location,
-        ReturnTypeRef.TableBoundReturnType returnType,
-        MethodRef method,
-        Optional<ErrorChannel.RouterDispatched> errorChannel
-    ) implements QueryField, MethodBackedField, WithErrorChannel {
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(returnType.table());
         }

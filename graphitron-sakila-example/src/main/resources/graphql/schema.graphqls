@@ -335,13 +335,6 @@ type Query {
     # the generator emitted an unguarded `film.film_id.in(null)` which jOOQ renders as
     # the literal `false`, silently producing the empty set.
     filmsByEffectiveNullability(filter: FilmIdListFilter): [Film!]!
-    # plan-service-root-fetchers.md: @tableMethod root fetcher. Developer returns a
-    # Table<FilmRecord>; framework projects via FilmType.$fields(...).
-    popularFilms(minRentalRate: Float!): [Film!]!
-        @tableMethod(
-            className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
-            method: "popularFilms"
-        )
     # plan-service-root-fetchers.md: @service root fetcher with @table-bound return.
     # Service hands back Result<FilmRecord> directly; framework does no projection.
     filmsByService(ids: [Int!]!): [Film!]!
@@ -678,7 +671,7 @@ input CityCountryFilter {
 type City @table(name: "city") {
     cityId:   Int!    @field(name: "CITY_ID")
     cityName: String! @field(name: "CITY")
-    # R425 unmasked @service-child fixtures. City deliberately carries no @splitQuery/@tableMethod
+    # R425 unmasked @service-child fixtures. City deliberately carries no @splitQuery
     # sibling, so the @service children themselves are the only reason CITY_ID is force-projected
     # into the parent SELECT (via the BatchKeyField arm in
     # TypeClassGenerator.collectRequiredProjectionColumns). Film's service children cannot pin
@@ -1275,14 +1268,6 @@ type Inventory @table(name: "inventory") {
         className: "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions",
         method:    "filmCardDataMaybeMissing"
     })
-    # R43 commit 3 fixture: child @tableMethod on a @table parent, single-FK auto-inference.
-    # Inventory has a unique FK inventory_film_id_fkey -> film, so the classifier auto-infers
-    # the join. SampleQueryService.tableMethodFilm returns the Film table; the framework
-    # projects via FilmType.$fields(...) and correlates on inventory.film_id.
-    filmViaTableMethod: Film @tableMethod(
-        className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
-        method: "tableMethodFilm"
-    )
 }
 
 type FilmCard {
@@ -1291,10 +1276,7 @@ type FilmCard {
 
 # Same-table nesting: a plain object child of @table Film with no boundary directive, so it
 # classifies as a NestingField bound to the film table and its columns project off the parent
-# film row. It used to carry a @tableMethod child (languageViaTableMethod) to exercise the
-# DTO-parent @tableMethod emit, but @record-typed parents no longer exist (R276) and the type
-# is now a NestingField; @tableMethod under a NestingField is not yet wired in the generator.
-# The @tableMethod child is deferred to R277 (tablemethod-under-nested-type).
+# film row.
 type FilmDetailsForMethod {
     filmId: Int @field(name: "film_id")
     languageId: Int @field(name: "language_id")
@@ -1611,17 +1593,9 @@ type Film implements Node & Searchable @table(name: "film") @node {
     # content.film_id FK links a Content entry back to its Film. The generator emits a
     # per-parent fetcher that conditions on the FK and projects the discriminator column.
     filmContent: Content @reference(path: [{key: "content_film_id_fkey"}])
-    # R43 commit 3 fixture: child @tableMethod on a @table parent, explicit single-hop
-    # @reference path. SampleQueryService.tableMethodLanguage returns the Language table
-    # (potentially derived); the generator joins back to this Film row via
-    # film.language_id -> language.language_id and projects the developer-returned table.
-    languageViaTableMethod: Language @tableMethod(
-        className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
-        method: "tableMethodLanguage"
-    ) @reference(path: [{key: "film_language_id_fkey"}])
     # Same-table nesting: FilmDetailsForMethod is a plain object child with no boundary directive,
     # so it stays bound to this film row (a NestingField) and its columns project off the parent
-    # film record. See its definition for the deferred @tableMethod-under-nesting note (R277).
+    # film record.
     detailsForMethod: FilmDetailsForMethod
     # R435 execution fixture: the child hops-then-routine chain. The FK hop lands on the
     # film_actor junction first, so columnMapping binds pActorId against the PREVIOUS node

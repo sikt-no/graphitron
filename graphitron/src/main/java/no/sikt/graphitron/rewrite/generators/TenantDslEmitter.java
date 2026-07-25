@@ -168,7 +168,7 @@ final class TenantDslEmitter {
                 "Field '" + ctx.parentTypeName() + "." + fieldName + "' classified as tenant "
                     + "ArgumentBound reached an expression-only DSL site that cannot emit the "
                     + "bound-slot reads; route it through TenantDslEmitter.resolve with the field carrier.");
-            // Unreachable by design: the classifier rejects @tenantFanOut on @service/@tableMethod
+            // Unreachable by design: the classifier rejects @tenantFanOut on @service
             // fields, so this arm firing is a graphitron bug, not an unrouted connection.
             case TenantBinding.FanOut ignored -> throw new IllegalStateException(
                 "Field '" + ctx.parentTypeName() + "." + fieldName + "' classified as tenant "

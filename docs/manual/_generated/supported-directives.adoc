@@ -45,6 +45,7 @@ These directives are still declared so existing schemas parse, but the rewrite n
 These directives existed in legacy graphitron but are removed in the rewrite. Drop them from your schema (or replace per the notes below) before migrating:
 
 * `@experimental_procedureCall`
+* `@tableMethod`
 
 === Argument-shape changes
 

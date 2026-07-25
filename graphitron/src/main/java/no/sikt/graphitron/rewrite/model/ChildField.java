@@ -14,7 +14,6 @@ public sealed interface ChildField extends OutputField
     permits ChildField.ColumnBackedField, ChildField.ColumnBackedReferenceField,
             ChildField.ParticipantColumnReferenceField,
             ChildField.TableTargetField,
-            ChildField.TableMethodField,
             ChildField.InterfaceField, ChildField.UnionField,
             ChildField.NestingField,
             ChildField.PivotField, ChildField.BatchedPivotField, ChildField.PivotSlotField,
@@ -62,7 +61,6 @@ public sealed interface ChildField extends OutputField
             case LookupTableField ignored -> SourceShape.Table;
 
             case TableInterfaceField ignored -> SourceShape.Table;
-            case TableMethodField ignored -> SourceShape.Table;
             case ServiceTableField ignored -> SourceShape.Table;
             case ServiceRecordField ignored -> SourceShape.Table;
             case ComputedField ignored -> SourceShape.Table;
@@ -103,7 +101,6 @@ public sealed interface ChildField extends OutputField
             case BatchedTableField f -> OutputField.readOperation(f.returnType(), f.filters(), f.orderBy(), f.pagination());
             case TableInterfaceField f -> OutputField.readOperation(f.returnType(), f.filters(), f.orderBy(), f.pagination());
             // Method-backed / polymorphic table reads carry no field-level filter surface.
-            case TableMethodField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
             case InterfaceField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
             case UnionField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
             // Lookup-keyed reads.
@@ -143,7 +140,6 @@ public sealed interface ChildField extends OutputField
             case LookupTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case BatchedLookupTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case TableInterfaceField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
-            case TableMethodField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case ServiceTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case NestingField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             // Java-side shapes: listOrSingle (never Connection, mapping stays flat Record / Field).
@@ -665,50 +661,6 @@ public sealed interface ChildField extends OutputField
         }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(returnType.table());
-        }
-    }
-
-    /**
-     * A child field using {@code @tableMethod}: the developer provides a pre-filtered
-     * {@code Table<?>}. The method handles all SQL generation.
-     *
-     * <p>The method signature is:
-     * <pre>
-     *     Table&lt;?&gt; method(Table&lt;?&gt; targetTable, arg1, arg2, ...)
-     * </pre>
-     * where the table parameter has {@link ParamSource.Table} as its source, and subsequent
-     * parameters have {@link ParamSource.Arg} or {@link ParamSource.Context}.
-     *
-     * <p>The return type is always a {@link ReturnTypeRef.TableBoundReturnType}: the directive
-     * exists to bind a developer-authored jOOQ table method, which by construction returns a
-     * generated jOOQ table class. {@code TableMethodDirectiveResolver} rejects any other return
-     * shape as a schema error.
-     */
-    record TableMethodField(
-        String parentTypeName,
-        String name,
-        SourceLocation location,
-        ReturnTypeRef.TableBoundReturnType returnType,
-        List<JoinStep> joinPath,
-        MethodRef method,
-        Optional<ErrorChannel.RouterDispatched> errorChannel
-    ) implements ChildField, MethodBackedField, WithErrorChannel, ParentRowDemand {
-        @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Record(returnType.table());
-        }
-        /**
-         * The single-FK-hop source-side columns the fetcher correlates on
-         * ({@code parentRecord.get(DSL.name("<src>"), …)}). Only the single-hop FK-derived
-         * shape demands parent-row columns: multi-hop and condition-join paths surface a runtime
-         * {@code UnsupportedOperationException} in the emitter, so projecting their first hop would
-         * synthesise dead columns.
-         */
-        @Override public List<ColumnRef> parentRowColumns() {
-            if (joinPath.size() == 1 && joinPath.get(0) instanceof JoinStep.Hop hop
-                    && hop.on() instanceof On.ColumnPairs fk) {
-                return fk.sourceSideColumns();
-            }
-            return List.of();
         }
     }
 
@@ -1285,7 +1237,7 @@ public sealed interface ChildField extends OutputField
 
         /**
          * The errors list rides on an {@code Outcome.ErrorList} arm carried as the
-         * {@code env.getSource()} of an in-scope ({@code @service} / {@code @tableMethod}) outcome
+         * {@code env.getSource()} of an in-scope {@code @service} outcome
          * type. The errors-field fetcher reads {@code ErrorList.errors} off the non-null
          * {@code Outcome} source; sibling data fields project {@code Success.value} (rendering null
          * on the error arm). Pairs with an {@link ErrorChannel.Mapped} catch arm. Every immediate

@@ -106,7 +106,7 @@ erDiagram
         on on "sealed On: ColumnPairs | Predicate | Lateral (on Hop; LiftedHop carries lifted slots; shipped by R438/R435)"
     }
     TABLE_EXPR {
-        enum arm "Catalog | MethodCall | RoutineCall (sealed; MethodCall/RoutineCall carry a callable + arg bindings)"
+        enum arm "Catalog | RoutineCall (sealed; RoutineCall carries a callable + arg bindings)"
     }
     SOURCE_OBJECT {
         class castTarget "never a table"
@@ -163,7 +163,7 @@ The catalog, each row a fact with its own deep-dive below:
 | `reference` | 0..1 | `@reference`, else inferred unique FK | the value lives off the parent's table; lowers to a `join` |
 | `referencedTable` | 0..1 (iff `reference`) | `@reference` | the reference's destination table, named in its own right |
 | `resolvedTable` | 0..1, derived | coalesce `referencedTable ?? source.table ?? target.table` | the catalog table the `@field` resolves against |
-| `tableExpr` | per table node | `@tableMethod` / `@routine` | materializes a table *node* (`Catalog` \| `MethodCall` \| `RoutineCall`) |
+| `tableExpr` | per table node | `@routine` | materializes a table *node* (`Catalog` \| `RoutineCall`) |
 | `joinPath` | the `reference`'s resolved form | `@reference` | the linearized join graph: a start node plus ordered `JoinStep`s |
 | `source object` | type-level | the parent type's record shape (`@sourceRow` for a DTO) | the cast-target record the read casts to; never a table |
 | `accessor` | 1:1 (read side) | `@field` / `@externalField` | the field-level **locator** that reads the value back out |
@@ -796,10 +796,8 @@ omits the table because this fact owns it). Consumers then read one fact instead
 > **`tableExpr(node) → arm`**, the materialization of a table node (the projected node, or any join target):
 > - **`Catalog`** (the default): the static generated reference (`Tables.FILM`). No payload, derivable from
 >   the node's table class.
-> - **`MethodCall(method, argBindings)`** (`@tableMethod`): a developer's static Java method returning that
->   table class, parameterized by the field's GraphQL arguments.
-> - **`RoutineCall(routine, argBindings)`** (`@routine`): a jOOQ table-valued function, parameterized the same
->   way, producing an **FK-less** result table.
+> - **`RoutineCall(routine, argBindings)`** (`@routine`): a jOOQ table-valued function, parameterized by the
+>   field's GraphQL arguments, producing an **FK-less** result table.
 >
 > A `RoutineCall` node is **FK-less**; it can be the projected node (the routine result is the field's table,
 > a function-backed query) or a join target / root entry (see *The join path*), the only constraint being that
@@ -809,24 +807,22 @@ Every table node has a `tableExpr`, and the absence of a directive is the `Catal
 (the same shape as `source` and `target`, total facts with arms). So the table-identity question
 (`resolvedTable`, the class) and the table-rendering question (`tableExpr`, the expression) split cleanly:
 `resolvedTable` drives projection, the source-object record shape, and the locator reads, all class-level and
-indifferent to the arm; only the FROM clause reads `tableExpr`. The `argBindings` on the `MethodCall` and
-`RoutineCall` arms are the field's GraphQL arguments feeding the call's parameters, the same input-coordinate
-/ argMapping machinery `@service` and `@condition` use.
+indifferent to the arm; only the FROM clause reads `tableExpr`. The `argBindings` on the `RoutineCall` arm
+are the field's GraphQL arguments feeding the call's parameters, the same input-coordinate / argMapping
+machinery `@service` and `@condition` use.
 
 **Composition with `reference`.** The two are orthogonal and meet only at `resolvedTable`'s class. `reference`
 owns the path and ON predicate (parent columns + the class's FK metadata), terminating at `resolvedTable`;
 `tableExpr` renders `resolvedTable` wherever it enters, the FROM at a root field, or the terminal join step's
 table at a child. Disjoint inputs (FK / parent columns versus field arguments), disjoint pieces of the query.
-The classifier already builds the child case this way: `@tableMethod` reuses the `@reference` path parser and
-then asserts the path's terminus equals the method's return table (`FieldBuilder.java:6892`). That
-assertion is the composition, a referential-integrity constraint of the same family as `resolvedTable`'s
-coincidence invariant:
+The composition is a referential-integrity constraint of the same family as `resolvedTable`'s coincidence
+invariant:
 
 > the `reference` path's terminus class `==` the `tableExpr` call's return class `==` `resolvedTable`.
 
-Because it holds, the reference's FK columns resolve on the method's result exactly as on the static table,
+Because it holds, the reference's FK columns resolve on the call's result exactly as on the static table,
 and the terminal join step renders its table via `tableExpr` instead of `Tables.X`. At a root field there is
-no `reference`, and `tableExpr` is the FROM directly. (A DTO parent reaches a `@tableMethod` child through a
+no `reference`, and `tableExpr` is the FROM directly. (A DTO parent reaches a child through a
 DataLoader-keyed batch lifted from the parent object, `sourceKey` / `parentCorrelation`, rather than a
 parent-table join; that is the `@sourceRow` machinery, gap 5, orthogonal to `tableExpr` itself.)
 
@@ -856,7 +852,7 @@ ordered list of **join steps** reaching the projected terminus (`resolvedTable`)
 **A join step is two orthogonal facts: a target and an `on`.**
 
 > **`JoinStep(coordinate, stepIndex)`**:
-> - **`target`**: a table node materialized by `tableExpr` (`Catalog` | `MethodCall` | `RoutineCall`).
+> - **`target`**: a table node materialized by `tableExpr` (`Catalog` | `RoutineCall`).
 > - **`on`** (0..1): `ColumnPairs(List<(sourceCol, targetCol)>)` | `Predicate(MethodRef)`. **Absent** only for
 >   the start node (a root routine entry, or the implicit `source.table`); **present** for every joining step,
 >   and then exactly one of the two.
@@ -902,9 +898,9 @@ So the `@reference` path *is* the join graph. The old flat `JoinStep` variants c
 (`FkJoin` = `Catalog` target + `ColumnPairs` from FK; `ConditionJoin` = target + `Predicate`); R438 shipped
 the decomposition as `JoinStep.Hop(TableExpr target, On on)` and deleted the flat variants, and R435 added
 `On.Lateral` and the name-matched key for hops adjacent to a routine result, so this part of the model is
-now the code's shape, not a proposal. `TableExpr.MethodCall` has since shipped too (R314 built it to
-carry the dissolved `RecordTableMethodField`'s developer method); the residue is that the inline
-`@tableMethod` leaf (`TableMethodField`) has not yet migrated onto it.
+now the code's shape, not a proposal. The R314 residue this section carried (migrating the inline
+`@tableMethod` leaf onto a `MethodCall` target arm) is discharged by removal: the directive, both leaves,
+and the `MethodCall` arm are gone, and the seal is `Catalog | RoutineCall`.
 New capability is a new
 *target* arm (`RoutineCall`), a new *source-side* provenance (`Lift`), or a new `on` derivation (PK/UK
 name-match), not a new step type. A routine node
@@ -1364,8 +1360,8 @@ a real catalog column"), and the discriminability invariant carries over as the 
 above.
 
 The signal partition recovers *which* error type. Where the recovered errors then **go** is a separate,
-operation-side fact, the **error guard**: an operation that can throw (DML / `serviceCall` / `Lookup` /
-`tableMethod`) carries `errorGuard(channel, handlerSet)`, where `channel` is the transport arm (an outcome
+operation-side fact, the **error guard**: an operation that can throw (DML / `serviceCall` / `Lookup`)
+carries `errorGuard(channel, handlerSet)`, where `channel` is the transport arm (an outcome
 wrapper, a developer payload class with a bound errors slot, or a DML local-context sentinel) and `handlerSet`
 is the interned partition keyed by the reachable error-type set (interned because distinct coordinates sharing
 an error union share one emitted dispatch table). The guard is the one genuinely new sub-fact `@error`
@@ -1796,8 +1792,8 @@ contribution.
 
   > **Shipped (R314, 2026-07-16).** The reentry slice landed across five implementation commits
   > (`d1f13a2` site-level fact + command registry + bidirectional oracle; `7137d1e` the one
-  > source-shape-gated batched fetcher; `4abde9e` `RecordTableMethodField` dissolved via
-  > `TableExpr.MethodCall`; `4e04345` the row-15 verdict pinned + root service leaves documented;
+  > source-shape-gated batched fetcher; `4abde9e` the DTO-parent re-entry leaf dissolved onto the
+  > record-sourced `BatchedTableField`; `4e04345` the row-15 verdict pinned + root service leaves documented;
   > `11122a4` the named DML reentry rows companions; `1158c14` `dispatchPerformsReFetch` retired
   > for the reentry implementedness guard). Thread I's level-2 command/name registry exists in
   > main source (`no.sikt.graphitron.rewrite.methodgraph`), populated for the whole reentry
@@ -1829,7 +1825,6 @@ Owned by an existing fact:
 | Directive(s) | Owning fact |
 |---|---|
 | `@table` | `source.table` / `target.table` / `resolvedTable` |
-| `@tableMethod` | `tableExpr` `MethodCall` (the projected node's FROM expression) |
 | `@routine` | `tableExpr` `RoutineCall` as a `@reference` join-target node (the join path) |
 | `@sourceRow` | the source-side key provenance `Lift(lifterRef)` (the join path) |
 | `@discriminate` / `@discriminator` | the discrimination fact (type recovery, `RecordClass` \| `DiscriminatorColumn`) |
@@ -1860,9 +1855,9 @@ The gaps, in resolution order:
    axis: the read is a **locator** plus references to `Column` and **node facts**; the scalar / enum
    conversions are column facts lifted at the boundary, and `@nodeId` is node facts. See *Reading the source
    object* / *Node facts* / *Enum facts*.
-2. **Table expression and the join path** (`@tableMethod`, `@routine`). **Resolved (this session).**
-   `resolvedTable` stays the table *class*; `tableExpr` (arms `Catalog` | `MethodCall` | `RoutineCall`)
-   materializes a table *node*. `@tableMethod` is a `MethodCall` projected node. `@routine` is a `RoutineCall`
+2. **Table expression and the join path** (`@routine`). **Resolved (this session).**
+   `resolvedTable` stays the table *class*; `tableExpr` (arms `Catalog` | `RoutineCall`)
+   materializes a table *node*. `@routine` is a `RoutineCall`
    node that can sit anywhere, the projected terminus (a function-backed query), an intermediate, or the root
    FROM-entry, in the `@reference` path: a join step is `(tableExpr target, on?)` with `on` a `ColumnPairs |
    Predicate`, and joins adjacent to the FK-less routine are keyed by a name-matched `key:` or a `condition:`.
@@ -1898,9 +1893,9 @@ The gaps, in resolution order:
 
 ## Open questions (to settle before / during Ready)
 
-- **`@routine` / `@tableMethod` and the join path. Resolved (this session): see *The join path*.** A routine
+- **`@routine` and the join path. Resolved (this session): see *The join path*.** A routine
   is a `RoutineCall` join-target node in the `@reference` path (or the root FROM-entry), joined by a
-  name-matched `key:` or a `condition:`; `@tableMethod` is a `MethodCall` projected node. The FROM-graph
+  name-matched `key:` or a `condition:`. The FROM-graph
   generalization collapses into the linearized join path, no separate top-level structure. A routine node may
   be the projected terminus (a function-backed query) or a join target / root entry; the only constraint is
   FK-less joins adjacent to it. **Residue discharged (2026-07-05) by R435** (`routine-table-node-composition`):
@@ -1912,8 +1907,6 @@ The gaps, in resolution order:
   since shipped (Done; see `changelog.md`)**, landing the composition on this model's own vocabulary
   (`TableExpr.RoutineCall`, `JoinStep.Hop`, `On.Lateral`, the name-matched key), with follow-ups R449
   (classification edges), R450 (split-path hop-0 filter binding), and R451 (routine writes) also Done.
-  **R314 has since built `TableExpr.MethodCall`** (carrying the dissolved `RecordTableMethodField`'s
-  developer method); the remaining residue is migrating the inline `TableMethodField` leaf onto it.
 - **Node-relation granularity** (the open fork from the session). **Resolved (thread K):** the node is one
   pair per *whole emitted method*; arm-renderers fold into a pair. *Which* methods exist in the target is
   governed by the seam-placement rule, not by a fixed count.

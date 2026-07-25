@@ -1239,7 +1239,6 @@ public class GraphitronSchemaBuilder {
         assertDirective(ctx, DIR_FIELD, ARG_NAME);
         assertDirective(ctx, DIR_REFERENCE, ARG_PATH);
         assertDirective(ctx, DIR_ERROR, ARG_HANDLERS);
-        assertDirective(ctx, DIR_TABLE_METHOD);
         assertDirective(ctx, DIR_DEFAULT_ORDER);
         assertDirective(ctx, DIR_SPLIT_QUERY);
         assertDirective(ctx, DIR_SERVICE);

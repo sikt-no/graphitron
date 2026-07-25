@@ -24,7 +24,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.baseTypeName;
 
 /**
  * Resolves {@code @routine} on a field into a sealed {@link Resolved} the caller switches on, the
- * database-routine sibling of {@link TableMethodDirectiveResolver}. Day-one resolves the
+ * database-routine sibling of {@link ServiceDirectiveResolver}. Day-one resolves the
  * table-valued read function:
  *
  * <ul>

@@ -61,7 +61,7 @@ directive site and the backing of the type it sits on:
 - On ARGUMENT_DEFINITION of an @table-backed filter argument, the column to bind to.
 - On ENUM_VALUE, the database string (or, where applicable, the Java enum constant) the value maps to.
 
-For Java-method-parameter binding on @service / @tableMethod / @condition arguments, use
+For Java-method-parameter binding on @service / @condition arguments, use
 `ExternalCodeReference.argMapping` on the directive itself.
 """
 directive @field(name: String!) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
@@ -73,8 +73,8 @@ method takes the parent table as its single parameter and returns a
 jOOQ Field<X> matching the field's scalar type.
 
 The `reference` argument is required: graphql-java's schema validation
-rejects a no-arg @externalField at parse time. Mirrors @service,
-@tableMethod, and @enum, which all take `ExternalCodeReference!`.
+rejects a no-arg @externalField at parse time. Mirrors @service and
+@enum, which both take `ExternalCodeReference!`.
 
 When `reference.method` is omitted, the GraphQL field name is used as
 the Java method name. Set `method:` only when the static method's name
@@ -259,7 +259,7 @@ tenants are queried is a per-request fact (the tenant collection the application
 generated factory, intersected with the tenants the deployment hosts), so the directive carries no
 arguments. Multi-tenant builds only (`<tenantColumn>` must be configured). Supported on root
 fields and on fields of `@table`-backed parents. Rejected at build time on mutation fields,
-non-list fields, `@asConnection` / `@lookupKey` / `@service` / `@tableMethod` / `@routine` fields,
+non-list fields, `@asConnection` / `@lookupKey` / `@service` / `@routine` fields,
 interface- or union-typed fields, fields of class-, record-, or nesting-backed parents, fields
 whose data is not tenant-scoped, and fields whose tenant is already determined (a bound argument,
 or any ancestor that fixed the tenant, including another `@tenantFanOut`).
@@ -376,7 +376,7 @@ DEPRECATED and IGNORED. This directive no longer binds a type to a Java class
 and drives no behaviour; it is still declared so existing schemas keep parsing.
 The backing class is now inferred by reflection from the field that produces the
 type: an @service method's return type (or parameter type, for inputs), a @table
-resolution, a @tableMethod return, or a parent-accessor chain. A reachable type
+resolution, or a parent-accessor chain. A reachable type
 that still carries @record produces a build warning telling you to remove it.
 Remove @record from the schema.
 
@@ -400,7 +400,7 @@ input ExternalCodeReference {
     `javaParam: graphqlArg`; multiple entries are comma-separated. Unmentioned
     parameters bind to a GraphQL argument of the same name (identity).
 
-    Use on `@service`, `@tableMethod`, and every `@condition` site (field-level,
+    Use on `@service` and every `@condition` site (field-level,
     argument-level, input-field-level, path-step). On `@condition` filter sites
     the same argument's `@field(name:)` continues to drive column binding for
     auto-equality; the two axes coexist on the same slot. Structurally inert
@@ -475,28 +475,6 @@ directive @nodeId(
   typeName: String
 ) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
 
-
-"""
-Specifies that the table that is used on the field should be the jOOQ table returned from the specified tableMethod.
-
-The referenced static method receives GraphQL field arguments only — no parent or return-type
-Table is passed; graphitron derives the target table from the method's return type. Parent-table
-filtering is `@reference`'s job.
-"""
-directive @tableMethod(
-  """Fully-qualified Java class name carrying the static table method."""
-  className: String!
-  """Static method name; must return the generated jOOQ table class for the field's `@table`-bound return type."""
-  method: String!
-  """
-  Maps Java method parameters to GraphQL argument names. Each entry is
-  `javaParam: graphqlArg`; multiple entries are comma-separated. Unmentioned
-  parameters bind to a GraphQL argument of the same name (identity).
-  """
-  argMapping: String
-  """Names of context arguments to pass through to the method (parameter names must match)."""
-  contextArguments: [String!]
-) on FIELD_DEFINITION
 
 """
 Backs the field with a jOOQ database routine (a stored function or procedure).
