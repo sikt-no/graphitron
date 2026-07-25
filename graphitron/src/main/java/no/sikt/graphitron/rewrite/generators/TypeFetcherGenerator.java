@@ -1651,8 +1651,8 @@ public class TypeFetcherGenerator {
      * leading Table parameter (graphitron derives the target table from the method's return type).
      *
      * <p>The local is declared with the specific table class (e.g. {@code Film}, not
-     * {@code Table<?>}). Type-strictness is enforced at classifier time
-     * (Invariants §3): {@link no.sikt.graphitron.rewrite.ServiceCatalog#reflectTableMethod} rejects developer
+     * {@code Table<?>}). Type-strictness is enforced at classifier time:
+     * {@link no.sikt.graphitron.rewrite.ServiceCatalog#reflectTableMethod} rejects developer
      * methods whose return type is wider than the generated jOOQ table class for the
      * field's {@code @table}-bound return type, so no downcast is needed in the emitter.
      */
@@ -1675,7 +1675,7 @@ public class TypeFetcherGenerator {
 
         builder.beginControlFlow("try");
         // <SpecificTableClass> table = MethodClass.method(<args>);
-        // No cast: classifier-time return-type check (Invariants §3) guarantees the developer's
+        // No cast: the classifier-time return-type check (ServiceCatalog.reflectTableMethod) guarantees the developer's
         // method returns the specific table class. A wider return type fails classification.
         // No leading Table arg: @tableMethod methods are passed GraphQL field args
         // and context values only; graphitron derives the target table from the return type.
@@ -1876,13 +1876,6 @@ public class TypeFetcherGenerator {
                 "MutationRoutineWriteField hop 0 must join by column pairs; the classifier's "
                 + "re-read-anchor verdict admits no other shape");
         }
-        if (hop0Pairs.slotCount() == 0) {
-            throw new IllegalStateException(
-                "a routine-write hop 0 with no slots cannot anchor the post-commit re-read; the "
-                + "derivation mints the pairs from the live catalog, so empty slots indicate a "
-                + "classifier bug, not a missing catalog");
-        }
-
         var builder = MethodSpec.methodBuilder(mrwf.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(syncResultType(valueType))
@@ -2038,7 +2031,7 @@ public class TypeFetcherGenerator {
 
         builder.addStatement("$T parentRecord = ($T) env.getSource()", RECORD, RECORD);
         // Developer-authored static method returning the specific generated jOOQ table class.
-        // No cast: classifier-time return-type strictness (Invariants §3) guarantees the precise type.
+        // No cast: classifier-time return-type strictness (ServiceCatalog.reflectTableMethod) guarantees the precise type.
         builder.addStatement("$T table = $T.$L($L)",
             names.jooqTableClass(),
             methodClass,
@@ -2081,13 +2074,6 @@ public class TypeFetcherGenerator {
      */
     private static CodeBlock buildTableMethodParentCorrelation(On.ColumnPairs fkJoin) {
         var slots = fkJoin.slots();
-        if (slots.isEmpty()) {
-            // jOOQ catalog unavailable at build time — emit a runtime-throwing condition so the
-            // mismatch surfaces at execution rather than silently producing broken SQL.
-            return CodeBlock.builder()
-                .addStatement("$T condition = $T.noCondition()", CONDITION, DSL)
-                .build();
-        }
         var code = CodeBlock.builder().add("$T condition = ", CONDITION);
         for (int i = 0; i < slots.size(); i++) {
             var slot = slots.get(i);
@@ -2109,7 +2095,7 @@ public class TypeFetcherGenerator {
      *
      * <p>Return type is the specific {@code Result<<RecordClass>>} for List cardinality or
      * the specific {@code <RecordClass>} for Single. Type-strictness is enforced at classifier
-     * time (Invariants §3): {@link no.sikt.graphitron.rewrite.ServiceCatalog#reflectServiceMethod} rejects methods whose
+     * time: {@link no.sikt.graphitron.rewrite.ServiceCatalog#reflectServiceMethod} rejects methods whose
      * declared parameterized return type doesn't match the expected record class for the
      * field's {@code @table}-bound return type.
      */
@@ -2119,7 +2105,7 @@ public class TypeFetcherGenerator {
         var recordClass = tableRef.recordClass();
         boolean isList = qstf.returnType().wrapper().isList();
         // For List cardinality, the developer's declared return type is either Result<XRecord>
-        // or List<XRecord> (validated in ServiceDirectiveResolver.validateRootInvariants §3);
+        // or List<XRecord> (validated in ServiceDirectiveResolver.validateRootListTableBoundReturnPair);
         // declare the local with whichever shape the developer chose so the generated
         // assignment compiles. graphql-java accepts either as a list value.
         TypeName returnType = isList ? qstf.serviceMethodCall().javaReturnType() : recordClass;

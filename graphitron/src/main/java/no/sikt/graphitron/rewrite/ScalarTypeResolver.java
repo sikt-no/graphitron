@@ -363,11 +363,13 @@ public final class ScalarTypeResolver {
      * splits at the last {@code .} via {@link #parseDirectiveValue(String)} and delegates to
      * {@link #resolveFromConstantFqn(String, String, ClassLoader)}.
      *
-     * <p>A value with no usable dot (e.g. just {@code "Scalars"}, or a trailing {@code "."}) is
-     * treated as a {@link ScalarResolution.Rejected.ClassNotFound} pointing at the value as
-     * written, since the per-arm LSP fix-it for {@code ClassNotFound} suggests classes on the
-     * classpath. A value with a usable dot that names a missing class or field surfaces the
-     * appropriate downstream rejection arm.
+     * <p>A value with no usable dot (e.g. just {@code "Scalars"}, or a trailing {@code "."})
+     * parses to {@link ParsedDirectiveValue.Malformed} and maps to
+     * {@link ScalarResolution.Rejected.ClassNotFound} pointing at the value as written: the value
+     * failed to name a class, and {@code ClassNotFound} is the rejection arm that says so. The
+     * shape rule itself lives on {@link #parseDirectiveValue(String)}, the one place both this
+     * resolver and the LSP diagnostic read it from. A value with a usable dot that names a
+     * missing class or field surfaces the appropriate downstream rejection arm.
      */
     public static ScalarResolution resolveFromDirectiveValue(String scalarFqn, ClassLoader loader) {
         return resolveFromDirectiveValue(scalarFqn, null, loader);

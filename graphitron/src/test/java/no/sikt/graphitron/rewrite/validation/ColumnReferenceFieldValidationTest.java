@@ -31,8 +31,8 @@ class ColumnReferenceFieldValidationTest {
         + " — requires JOIN-with-projection emission";
 
     private static final List<JoinStep> FK_PATH = List.of(TestFixtures.fkJoin(
-        TestFixtures.foreignKeyRef("film_language_id_fkey"), null, List.of(),
-        TestFixtures.joinTarget("language"), List.of(), null, ""));
+        TestFixtures.foreignKeyRef("film_language_id_fkey"), null, List.of(TestFixtures.languageIdCol()),
+        TestFixtures.joinTarget("language"), List.of(TestFixtures.languageIdCol()), null, ""));
     private static final List<JoinStep> CONDITION_PATH = List.of(TestFixtures.conditionJoin(
         TestFixtures.staticServiceMethodRef("com.example.Conditions", "languageCondition",
             ClassName.get("org.jooq", "Condition"), List.of()),

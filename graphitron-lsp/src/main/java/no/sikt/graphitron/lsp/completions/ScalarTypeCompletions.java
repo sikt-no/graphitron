@@ -25,7 +25,11 @@ import java.util.List;
  * enumerates the {@code GraphQLScalarType} fields actually on the classpath,
  * so it surfaces the consumer's own scalar constants
  * ({@code com.example.Scalars.MONEY}) as well as any library's, with no
- * coupling to {@code graphql-java-extended-scalars}. The scan sees the field
+ * coupling to {@code graphql-java-extended-scalars}. Every suggestion is a
+ * well-formed {@code class.field} reference as
+ * {@link no.sikt.graphitron.rewrite.ScalarTypeResolver.ParsedDirectiveValue}
+ * defines the shape, so a completed value never rejects as malformed at
+ * codegen. The scan sees the field
  * type, not its runtime value; a suggested constant may still fail to bind
  * (null at codegen, erased {@code Coercing}), which the authored-value
  * diagnostics in {@code Diagnostics} report. That is the same best-effort

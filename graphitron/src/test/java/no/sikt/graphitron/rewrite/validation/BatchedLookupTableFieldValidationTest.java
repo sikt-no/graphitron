@@ -68,8 +68,8 @@ class BatchedLookupTableFieldValidationTest {
     // AuthorError upstream; the validator does not surface a deferred-rejection for it.
 
     private static final List<JoinStep> FK_PATH = List.of(TestFixtures.fkJoin(
-        TestFixtures.foreignKeyRef("language_film_id_fkey"), null, List.of(),
-        TestFixtures.joinTarget("film"), List.of(), null, ""));
+        TestFixtures.foreignKeyRef("language_film_id_fkey"), null, List.of(TestFixtures.filmIdCol()),
+        TestFixtures.joinTarget("film"), List.of(TestFixtures.filmIdCol()), null, ""));
     private static final List<JoinStep> CONDITION_PATH = List.of(TestFixtures.conditionJoin(
         TestFixtures.staticServiceMethodRef("com.example.Conditions", "filmCondition",
             ClassName.get("org.jooq", "Condition"), List.of()),

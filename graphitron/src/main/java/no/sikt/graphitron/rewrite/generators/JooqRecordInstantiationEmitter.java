@@ -429,14 +429,16 @@ final class JooqRecordInstantiationEmitter {
      * from ({@code "raw"} for a single-element top-level path, where no block is emitted). The caller
      * must call {@link #closeDescent} with the same path after emitting the body.
      *
-     * <p>graphql-java constraint on nested present-{@code null}: unlike the top-level argument {@code Map}
-     * (which retains an explicit-null field, so {@code raw.containsKey(leaf)} distinguishes present-null
-     * from omitted), graphql-java's coercion <em>drops</em> an explicit-null field from a nested
-     * input-object value. So inside a descended {@code Map} a present-null leaf is indistinguishable from
-     * an omitted one — {@code containsKey} is false either way — and both leave the column untouched. The
-     * top-level present-null → {@code NULL} three-way therefore narrows to a nested two-way; this is a
-     * graphql-java coercion limitation, not a choice in the emitted code, and it is consistent with the
-     * sibling rule that a null nested <em>group</em> is treated as absent.
+     * <p>Nested present-{@code null}: the emitted guard is the same
+     * present-null / omitted / value three-way at every depth, but what reaches a descended
+     * {@code Map} depends on the wire shape. Variable coercion drops an explicit-null field from a
+     * nested input-object value, so on that path a nested present-null arrives indistinguishable
+     * from omitted and the three-way narrows to a two-way; an inline-literal nested null survives
+     * coercion and takes the present-null → {@code NULL} branch like a top-level leaf. Both halves
+     * are execution-pinned by {@code GraphQLQueryTest}'s
+     * {@code customerUpsert_explicitNullNestedLeaf_collapsesToOmitted} (variables) /
+     * {@code customerUpsert_explicitNullNestedLeaf_inlineLiteral_writesNull} (literal) pair. The
+     * narrowing is the coercion behaviour of graphql-java, not a choice in the emitted code.
      */
     private static String openDescent(MethodSpec.Builder b, List<String> path) {
         String current = "raw";

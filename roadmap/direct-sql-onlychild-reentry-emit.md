@@ -35,6 +35,10 @@ Scope, for the eventual Spec body:
   this test is a deliverable, not a nice-to-have.
 - New execution pins for the changed behavior (SELECT counts on the direct path), replacing the
   DataLoader-coalesced counts the R305/R308 pins assert for these coordinates today.
+- **Invert or retire the arrival-uniform census pin** (`ArrivalUniformEmitPinTest`, landed by
+  R527): it asserts zero `OnlyChild` dispatch sites across the generators, which this item's
+  strategy knowingly falsifies. Retire it (or invert it into a positive dispatch pin) in the same
+  change that lands the strategy plus the aliasing row-correctness test above.
 
 Blocked on R314: the emit must first switch on the model at all before an arrival arm can select a
 strategy. Not urgent — the one-element batch is correct, this is a query-shape optimization plus the

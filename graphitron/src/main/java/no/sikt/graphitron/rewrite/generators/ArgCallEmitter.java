@@ -181,7 +181,7 @@ public final class ArgCallEmitter {
                 if (sourcesExpression == null) {
                     throw new IllegalStateException(
                         "ParamSource.Sources reached buildMethodBackedCallArgs without a sourcesExpression — "
-                            + "root-level @service must reject this at classifier time (Invariants §2); "
+                            + "root-level @service must reject this at classifier time (ServiceDirectiveResolver.validateRootInvariants); "
                             + "child-level rows-method emitters must pass a sourcesExpression: param '"
                             + param.name() + "'");
                 }

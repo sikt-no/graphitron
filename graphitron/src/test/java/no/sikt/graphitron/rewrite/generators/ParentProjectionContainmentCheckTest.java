@@ -46,8 +46,8 @@ class ParentProjectionContainmentCheckTest {
     private static ChildField.BatchedTableField splitField(String parentType, String name, SourceKey sourceKey) {
         var rt = tableBoundFilm(nonNullList());
         var path = List.<JoinStep>of(TestFixtures.fkJoin(
-            TestFixtures.foreignKeyRef("film_language_id_fkey"), LANGUAGE_TABLE, List.of(),
-            TestFixtures.filmTable(), List.of(), null, name + "_0"));
+            TestFixtures.foreignKeyRef("film_language_id_fkey"), LANGUAGE_TABLE, List.of(TestFixtures.languageIdCol()),
+            TestFixtures.filmTable(), List.of(TestFixtures.languageIdCol()), null, name + "_0"));
         return new ChildField.BatchedTableField(parentType, name, null, rt, path,
             List.of(), new OrderBySpec.None(), null,
             SourceShape.Table,

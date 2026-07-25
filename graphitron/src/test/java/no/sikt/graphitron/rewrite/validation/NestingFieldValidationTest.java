@@ -52,8 +52,8 @@ class NestingFieldValidationTest {
      * single FK hop, with the arity-independent parent correlation the construction site derives.
      */
     private static ColumnBackedReferenceField compositeLanguageRef(String parentTypeName) {
-        var path = List.<JoinStep>of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_language_id_fkey"), null, List.of(),
-            TestFixtures.joinTarget("language"), List.of(), null, ""));
+        var path = List.<JoinStep>of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_language_id_fkey"), null, List.of(TestFixtures.languageIdCol()),
+            TestFixtures.joinTarget("language"), List.of(TestFixtures.languageIdCol()), null, ""));
         return new ColumnBackedReferenceField(parentTypeName, "languageRef", null,
             List.of(new ColumnRef("ID_1", "", ""), new ColumnRef("ID_2", "", "")),
             path,
@@ -224,15 +224,15 @@ class NestingFieldValidationTest {
 
     @Test
     void multiParentCompat_nonColumnLeaf_rejectedAcrossParents() {
-        var fkFirst = List.<JoinStep>of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_language_id_fkey"), null, List.of(),
-            TestFixtures.joinTarget("language"), List.of(), null, ""));
+        var fkFirst = List.<JoinStep>of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_language_id_fkey"), null, List.of(TestFixtures.languageIdCol()),
+            TestFixtures.joinTarget("language"), List.of(TestFixtures.languageIdCol()), null, ""));
         var columnRefFirst = new ColumnBackedReferenceField("FilmDetails", "langName", null,
             List.of(new ColumnRef("NAME", "", "")),
             fkFirst,
             new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct(),
             TestFixtures.pcFor(fkFirst, TestFixtures.tableRef("film_details", "FILM_DETAILS", "FilmDetails", List.of())));
-        var fkSecond = List.<JoinStep>of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("advertisement_language_id_fkey"), null, List.of(),
-            TestFixtures.joinTarget("language"), List.of(), null, ""));
+        var fkSecond = List.<JoinStep>of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("advertisement_language_id_fkey"), null, List.of(TestFixtures.languageIdCol()),
+            TestFixtures.joinTarget("language"), List.of(TestFixtures.languageIdCol()), null, ""));
         var columnRefSecond = new ColumnBackedReferenceField("FilmDetails", "langName", null,
             List.of(new ColumnRef("NAME", "", "")),
             fkSecond,

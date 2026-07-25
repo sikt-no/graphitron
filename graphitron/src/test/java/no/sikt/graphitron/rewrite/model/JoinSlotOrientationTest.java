@@ -84,4 +84,17 @@ class JoinSlotOrientationTest {
             i++;
         }
     }
+
+    @Test
+    void columnPairs_emptySlots_rejectedAtConstruction() {
+        // Both synthesis paths mint slots from the live catalog and a missing catalog routes
+        // through the FkJoinResolution rejection sub-taxonomy, so an empty pair list can only
+        // mean a classifier bug. The compact constructor makes the state unrepresentable;
+        // emitters consume slots with no empty-case fallback.
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new On.ColumnPairs(
+                new On.Keying.ForeignKey(TestFixtures.foreignKeyRef("project_note_project_fkey")),
+                List.of()))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("must be non-empty");
+    }
 }

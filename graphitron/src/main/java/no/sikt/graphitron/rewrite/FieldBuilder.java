@@ -2792,8 +2792,8 @@ class FieldBuilder {
      *
      * <p>The detection is structural, not name-based: any field whose return type is a
      * polymorphic-of-{@code @error} shape lifts here, regardless of whether the schema
-     * author named it {@code errors} or something else. See {@code error-handling-parity.md}
-     * §2a / §2b for the lift rules and the gating-on-all-{@code @error} predicate.
+     * author named it {@code errors} or something else. The same lift rules are read through
+     * {@link BuildContext#detectErrorsFieldShape} so the classifier paths agree.
      */
     GraphitronField liftToErrorsField(GraphQLFieldDefinition fieldDef, String parentTypeName,
                                               ReturnTypeRef.PolymorphicReturnType returnType) {
@@ -2844,14 +2844,14 @@ class FieldBuilder {
 
         // Mixed members: structural rejection. Schema author signalled an errors channel
         // (at least one @error member) but added non-@error members; not supported and not
-        // planned (§2b "all-@error predicate").
+        // planned.
         if (!nonErrorMembers.isEmpty()) {
             return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural("errors-shaped field on polymorphic '" + returnType.returnTypeName()
                     + "' must have every member declared @error; non-@error member(s): "
                     + String.join(", ", nonErrorMembers)));
         }
 
-        // Field-level nullability (§2b): the errors field must be a nullable list. A non-list
+        // Field-level nullability: the errors field must be a nullable list. A non-list
         // shape (single) or a non-null list (`[X]!` / `[X!]!`) is rejected.
         if (!(returnType.wrapper() instanceof FieldWrapper.List list)) {
             return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural("errors-shaped field of @error type(s) must be a list; declared as a single value. "
@@ -3146,7 +3146,7 @@ class FieldBuilder {
 
         // Walk the payload's SDL fields in declaration order to find the errors-shaped field.
         // The SDL declaration index of that field is the canonical-constructor's errors-slot
-        // index per the §2c positional rule (records preserve declaration order; hand-rolled
+        // index (records preserve declaration order; hand-rolled
         // payload classes are expected to expose a canonical constructor matching SDL order).
         List<ErrorType> mappedErrorTypes = null;
         int errorsFieldIndex = -1;
@@ -3163,19 +3163,19 @@ class FieldBuilder {
             return NO_CHANNEL;
         }
 
-        // §1 channel-level reject rules (rule 7). Run before payload-class reflection so
+        // Channel-level reject rule 7 (handler cardinality). Run before payload-class reflection so
         // a misconfigured channel is reported on its own terms rather than masked by a
         // constructor-shape rejection downstream.
         String channelReject = checkChannelLevelHandlerRules(mappedErrorTypes);
         if (channelReject != null) {
             return new ErrorChannelResult.Reject(channelReject);
         }
-        // §3 rule 8: duplicate match-criteria across the flattened handler list.
+        // Rule 8: duplicate match-criteria across the flattened handler list.
         String dupReject = checkDuplicateMatchCriteria(mappedErrorTypes);
         if (dupReject != null) {
             return new ErrorChannelResult.Reject(dupReject);
         }
-        // §2c: per-(channel, @error type, handler) source-class accessor reflection check.
+        // Per-(channel, @error type, handler) source-class accessor reflection check.
         // Walks each declared SDL field on each @error type and verifies the handler's source
         // class exposes a PropertyDataFetcher-visible accessor. path and message are populated
         // by per-@error-type synthesised DataFetchers and are exempt.
@@ -3395,8 +3395,8 @@ class FieldBuilder {
     }
 
     /**
-     * Channel-level reject rules from §1's parse-time table that span multiple {@code @error}
-     * types in the same channel. Runs after the carrier classifier has resolved
+     * Channel-level reject rules that span multiple {@code @error} types in the same
+     * channel (per-type shape rules are parse-time). Runs after the carrier classifier has resolved
      * {@code mappedErrorTypes}; returns a non-null reason string when a rule fires, or
      * {@code null} when the channel is well-formed.
      *
@@ -3404,17 +3404,17 @@ class FieldBuilder {
      *   <li>Rule 7: more than one {@code VALIDATION} handler across the channel's flattened
      *       handler list. VALIDATION is a single fan-out target per payload, and two
      *       {@code VALIDATION}-marked {@code @error} types would compete for the same slot.</li>
-     *   <li>Rule 8 (§3): two handlers of the same variant in the channel's flattened handler
+     *   <li>Rule 8: two handlers of the same variant in the channel's flattened handler
      *       list with identical match-criteria. The runtime's source-order {@code findFirst}
      *       on {@code MAPPINGS} would make the second mapping unreachable, so the duplicate
      *       is an author mistake. Intra-variant only: an {@code ExceptionHandler(SQLException)}
      *       and a {@code SqlStateHandler("23503")} discriminate on different fields and are
-     *       intentionally allowed to overlap (§3 source-order resolves which {@code @error}
+     *       intentionally allowed to overlap (source order resolves which {@code @error}
      *       type wins).</li>
      * </ul>
      *
-     * <p>(There is no rule-9 {@code ValidationViolationGraphQLException}-shadowing check:
-     * validation runs as a wrapper pre-execution step (§5) and never reaches the dispatch arm,
+     * <p>(There is no {@code ValidationViolationGraphQLException}-shadowing check:
+     * validation runs as a wrapper pre-execution step and never reaches the dispatch arm,
      * so no shadowing window exists.)
      */
     static String checkChannelLevelHandlerRules(List<ErrorType> mappedErrorTypes) {
@@ -3426,7 +3426,7 @@ class FieldBuilder {
     }
 
     /**
-     * Rule 8 (§3): rejects a channel whose flattened handler list contains two intra-variant
+     * Rule 8: rejects a channel whose flattened handler list contains two intra-variant
      * handlers with identical match-criteria. The criteria tuples per variant:
      *
      * <ul>
@@ -3440,7 +3440,7 @@ class FieldBuilder {
      * at one per channel and it has no discriminator. Cross-variant overlap is intentionally
      * allowed: a channel with {@code ExceptionHandler(SQLException)} and
      * {@code SqlStateHandler("23503")} is the canonical "specific arm before fallback" pattern,
-     * and §3's source-order rule resolves which {@code @error} type the runtime emits.
+     * and the runtime's source-order dispatch resolves which {@code @error} type it emits.
      *
      * <p>Returns the first reason encountered, or {@code null} when no duplicates exist. The
      * reason names both colliding {@code @error} types (the same type appears twice when the
@@ -3454,7 +3454,7 @@ class FieldBuilder {
     }
 
     /**
-     * Per-(channel, @error type, handler) source-class accessor reflection check (§2c).
+     * Per-(channel, @error type, handler) source-class accessor reflection check.
      *
      * <p>For each {@code (mappedErrorType, handler)} pair in the channel, looks up each
      * declared SDL field on the {@code @error} type against the handler's source class via
@@ -3636,8 +3636,8 @@ class FieldBuilder {
     /**
      * Variant of {@link #buildWithChannel} for child {@code @service} variants and root + child
      * {@code @tableMethod} variants: resolves the {@link ErrorChannel} against the field's return
-     * type, runs the §4 declared-checked-exception match check against the resolved channel, and
-     * forwards the channel to {@code builder}. The channel slot is wired uniformly so the §4
+     * type, runs {@link #checkDeclaredCheckedExceptions} against the resolved channel, and
+     * forwards the channel to {@code builder}. The channel slot is wired uniformly so that
      * check runs against a populated channel wherever the field's payload declares an
      * {@code errors} field.
      *
@@ -4063,7 +4063,7 @@ class FieldBuilder {
     /**
      * Structural detection of a DML payload's error channel. Scans the payload
      * SDL for an errors-shaped field (via {@link BuildContext#detectErrorsFieldShape}), runs
-     * the channel-level handler rules (§1 rule 7 and rule 8) inline, and produces either an
+     * the channel-level handler rules (rule 7 and rule 8) inline, and produces either an
      * {@link ErrorChannel.LocalContext} binding, an empty result when the payload has no
      * errors-shaped field, or a rule-violation rejection naming the offending channel.
      */
@@ -4082,15 +4082,15 @@ class FieldBuilder {
         for (var f : payloadObj.getFieldDefinitions()) {
             var errorTypes = ctx.detectErrorsFieldShape(f);
             if (errorTypes == null) continue;
-            String rule7 = checkChannelLevelHandlerRules(errorTypes);
-            if (rule7 != null) {
+            String handlerCardinality = checkChannelLevelHandlerRules(errorTypes);
+            if (handlerCardinality != null) {
                 return new StructuralDmlErrorChannel.RuleViolation(
-                    "errors-shaped carrier field '" + f.getName() + "': " + rule7);
+                    "errors-shaped carrier field '" + f.getName() + "': " + handlerCardinality);
             }
-            String rule8 = checkDuplicateMatchCriteria(errorTypes);
-            if (rule8 != null) {
+            String duplicateMatchCriteria = checkDuplicateMatchCriteria(errorTypes);
+            if (duplicateMatchCriteria != null) {
                 return new StructuralDmlErrorChannel.RuleViolation(
-                    "errors-shaped carrier field '" + f.getName() + "': " + rule8);
+                    "errors-shaped carrier field '" + f.getName() + "': " + duplicateMatchCriteria);
             }
             return new StructuralDmlErrorChannel.Present(
                 new ErrorChannel.LocalContext(errorTypes, BuildContext.toScreamingSnake(payloadSdlName)));
@@ -7976,15 +7976,15 @@ class FieldBuilder {
      * The single-hop-FK shape predicate shared by the single-table {@link ChildField.TableInterfaceField}
      * arm ({@link #validateSingleHopFkJoin}) and the multi-table interface/union child arm
      * ({@link #resolveChildPolymorphicJoinPaths}). Returns the {@link On.ColumnPairs}
-     * when {@code path} is exactly one {@link JoinStep.Hop} keyed by column pairs with at least one
-     * slot; empty otherwise. Callers phrase their own per-arm rejection message.
+     * when {@code path} is exactly one {@link JoinStep.Hop} keyed by column pairs; empty
+     * otherwise. (The pairs themselves are never empty; {@link On.ColumnPairs} rejects the
+     * degenerate shape at construction.) Callers phrase their own per-arm rejection message.
      */
     private static Optional<On.ColumnPairs> singleHopFkColumnPairs(List<JoinStep> path) {
         if (path.size() != 1) return Optional.empty();
         if (!(path.get(0) instanceof JoinStep.Hop hop0 && hop0.on() instanceof On.ColumnPairs pairs)) {
             return Optional.empty();
         }
-        if (pairs.slotCount() == 0) return Optional.empty();
         return Optional.of(pairs);
     }
 

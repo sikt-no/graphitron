@@ -813,18 +813,18 @@ class BuildContext {
         for (var f : payloadObj.getFieldDefinitions()) {
             var errorTypes = detectErrorsFieldShape(f);
             if (errorTypes != null) {
-                // §1 channel-level rules: rule 7 (handler cardinality) and rule 8 (duplicate
+                // Channel-level rules: rule 7 (handler cardinality) and rule 8 (duplicate
                 // match criteria). Test fixtures pin the wording, so the diagnostic family is
                 // preserved through the structural scan.
-                String rule7 = FieldBuilder.checkChannelLevelHandlerRules(errorTypes);
-                if (rule7 != null) {
+                String handlerCardinality = FieldBuilder.checkChannelLevelHandlerRules(errorTypes);
+                if (handlerCardinality != null) {
                     return new DmlPayloadScan.Reject(
-                        "errors-shaped carrier field '" + f.getName() + "': " + rule7);
+                        "errors-shaped carrier field '" + f.getName() + "': " + handlerCardinality);
                 }
-                String rule8 = FieldBuilder.checkDuplicateMatchCriteria(errorTypes);
-                if (rule8 != null) {
+                String duplicateMatchCriteria = FieldBuilder.checkDuplicateMatchCriteria(errorTypes);
+                if (duplicateMatchCriteria != null) {
                     return new DmlPayloadScan.Reject(
-                        "errors-shaped carrier field '" + f.getName() + "': " + rule8);
+                        "errors-shaped carrier field '" + f.getName() + "': " + duplicateMatchCriteria);
                 }
                 continue;
             }
@@ -910,7 +910,7 @@ class BuildContext {
 
     /**
      * Lightweight predicate for "this GraphQL field is an {@code errors}-shaped field" (a
-     * polymorphic-of-all-{@code @error} list with the nullability shape §2b allows). Returns
+     * polymorphic-of-all-{@code @error} list with the required nullable-list shape). Returns
      * the resolved {@code List<ErrorType>} when the shape matches, {@code null} otherwise.
      *
      * <p>Mirrors the lift rules in {@code FieldBuilder.liftToErrorsField};

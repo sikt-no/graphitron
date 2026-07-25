@@ -248,8 +248,8 @@ class TypeFetcherGeneratorTest {
         var rt = tableBoundFilm(nonNullList());
         var keyCols = List.of(languageIdCol());
         var path = List.<no.sikt.graphitron.rewrite.model.JoinStep>of(TestFixtures.fkJoin(
-            TestFixtures.foreignKeyRef("film_language_id_fkey"), LANGUAGE_TABLE, List.of(),
-            FILM_TABLE, List.of(), null, name + "_0"));
+            TestFixtures.foreignKeyRef("film_language_id_fkey"), LANGUAGE_TABLE, List.of(languageIdCol()),
+            FILM_TABLE, List.of(languageIdCol()), null, name + "_0"));
         return new ChildField.BatchedTableField(parentType, name, null,
             rt,
             path,

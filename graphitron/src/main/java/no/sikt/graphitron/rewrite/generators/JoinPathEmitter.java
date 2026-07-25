@@ -198,12 +198,6 @@ public final class JoinPathEmitter {
             case On.Keying.ForeignKey k -> CodeBlock.of(".join($L).onKey($T.$L)",
                 joinedAlias, k.fk().keysClass(), k.fk().constantName());
             case On.Keying.NameMatchedKey ignored -> {
-                if (cp.slotCount() == 0) {
-                    throw new IllegalStateException(
-                        "a name-matched-key hop with no slots cannot be emitted; the derivation "
-                        + "mints the pairs from the live catalog, so empty slots indicate a "
-                        + "classifier bug, not a missing catalog");
-                }
                 var on = CodeBlock.builder();
                 int i = 0;
                 for (var slot : cp.slots()) {
@@ -225,18 +219,11 @@ public final class JoinPathEmitter {
      * slot, ANDed together. Direction-blind because each slot is oriented at synthesis time:
      * {@code sourceSide} is always the column on the source (parent) table and
      * {@code targetSide} the column on the target (first-hop) table, regardless of which end of
-     * the catalog FK each maps to.
-     *
-     * <p>Empty-slot fallback (jOOQ catalog unavailable at build
-     * time) emits a runtime-throwing {@code DSL.noCondition()} stub so the mismatch surfaces at
-     * execution rather than silently producing broken SQL.
+     * the catalog FK each maps to. Slots are never empty; {@link On.ColumnPairs} rejects the
+     * degenerate shape at construction.
      */
     public static CodeBlock emitCorrelationWhere(On.ColumnPairs first, String firstAlias,
             String parentAlias) {
-        if (first.slotCount() == 0) {
-            return CodeBlock.of("$T.noCondition()",
-                ClassName.get("org.jooq.impl", "DSL"));
-        }
         var code = CodeBlock.builder();
         int i = 0;
         for (var slot : first.slots()) {

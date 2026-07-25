@@ -31,7 +31,7 @@ class TableMethodFieldValidationTest {
 
         WITH_FK_PATH("explicit single-hop FK path — emit ships in R43 commit 3, validator passes",
             new TableMethodField("Film", "filteredActors", null, TestFixtures.tableBoundFilm(new FieldWrapper.Single(true)), List.of(
-                TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_actor_film_id_fkey"), null, List.of(), TestFixtures.joinTarget("film_actor"), List.of(), null, "")),
+                TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_actor_film_id_fkey"), null, List.of(TestFixtures.filmIdCol()), TestFixtures.joinTarget("film_actor"), List.of(TestFixtures.filmIdCol()), null, "")),
                 TestFixtures.staticServiceMethodRef("com.example.TableMethods", "filteredActors", ClassName.get("org.jooq", "Table"), List.of()),
                 Optional.empty()),
             List.of()),

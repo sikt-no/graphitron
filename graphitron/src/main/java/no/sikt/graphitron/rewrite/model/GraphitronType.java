@@ -280,8 +280,8 @@ public sealed interface GraphitronType
 
         /**
          * One entry in the {@code handlers} argument of the {@code @error} directive. Sealed by
-         * matcher discriminator; the parser lifts each SDL entry into one variant per the
-         * {@code error-handling-parity} spec's parse-time table.
+         * matcher discriminator; the parser lifts each SDL entry into the variant its
+         * discriminator selects.
          */
         public sealed interface Handler
             permits ExceptionHandler, SqlStateHandler, VendorCodeHandler, ValidationHandler {

@@ -33,8 +33,8 @@ class ColumnBackedFieldInvariantTest {
 
     private static List<JoinStep> fkPath() {
         return List.of(TestFixtures.fkJoin(
-            TestFixtures.foreignKeyRef("bar_parent_fkey"), null, List.of(),
-            TestFixtures.joinTarget("bar"), List.of(), null, ""));
+            TestFixtures.foreignKeyRef("bar_parent_fkey"), null, List.of(TestFixtures.col("parent_id", "PARENT_ID", "java.lang.Integer")),
+            TestFixtures.joinTarget("bar"), List.of(TestFixtures.col("parent_id", "PARENT_ID", "java.lang.Integer")), null, ""));
     }
 
     // ===== ColumnBackedField =====

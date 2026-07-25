@@ -56,8 +56,8 @@ class BatchedTableFieldValidationTest {
     // deferred-rejection for it.
 
     private static final List<JoinStep> T_FK_PATH = List.of(TestFixtures.fkJoin(
-        TestFixtures.foreignKeyRef("film_actor_film_id_fkey"), null, List.of(),
-        TestFixtures.joinTarget("film_actor"), List.of(), null, ""));
+        TestFixtures.foreignKeyRef("film_actor_film_id_fkey"), null, List.of(TestFixtures.filmIdCol()),
+        TestFixtures.joinTarget("film_actor"), List.of(TestFixtures.filmIdCol()), null, ""));
     private static final List<JoinStep> T_CONDITION_PATH = List.of(TestFixtures.conditionJoin(
         TestFixtures.staticServiceMethodRef("com.example.Conditions", "actorCondition",
             ClassName.get("org.jooq", "Condition"), List.of()),
@@ -80,8 +80,8 @@ class BatchedTableFieldValidationTest {
     // gate, to confirm the validator does not double-fire on the constructed shape.
 
     private static final List<JoinStep> R_FK_PATH = List.of(TestFixtures.fkJoin(
-        TestFixtures.foreignKeyRef("language_film_id_fkey"), null, List.of(),
-        TestFixtures.joinTarget("film"), List.of(), null, ""));
+        TestFixtures.foreignKeyRef("language_film_id_fkey"), null, List.of(TestFixtures.filmIdCol()),
+        TestFixtures.joinTarget("film"), List.of(TestFixtures.filmIdCol()), null, ""));
     private static final List<JoinStep> R_CONDITION_PATH = List.of(TestFixtures.conditionJoin(
         TestFixtures.staticServiceMethodRef("com.example.Conditions", "filmCondition",
             ClassName.get("org.jooq", "Condition"), List.of()),

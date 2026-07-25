@@ -85,8 +85,10 @@ public sealed interface On permits On.ColumnPairs, On.Predicate, On.Lateral {
      * time: each slot's {@link JoinSlot#sourceSide()} is the column on the hop's origin table,
      * {@link JoinSlot#targetSide()} the column on the hop's target. The direction question is
      * answered once at synthesis time (for FK pairs in {@code BuildContext.synthesizeFkJoin})
-     * and baked into the pair, so readers are direction-blind. The list is empty when the jOOQ
-     * catalog is unavailable (unit tests).
+     * and baked into the pair, so readers are direction-blind. The list is never empty: both
+     * synthesis paths mint slots from the live catalog, and a missing catalog routes through
+     * the {@code FkJoinResolution} rejection sub-taxonomy before any pair list exists (see
+     * {@link Keying.ForeignKey}), so emitters consume the slots without an empty-case fallback.
      */
     record ColumnPairs(Keying keying, List<JoinSlot.FkSlot> slots) implements On {
         public ColumnPairs {
@@ -94,6 +96,12 @@ public sealed interface On permits On.ColumnPairs, On.Predicate, On.Lateral {
                 throw new NullPointerException("On.ColumnPairs.keying must not be null");
             }
             slots = List.copyOf(slots);
+            if (slots.isEmpty()) {
+                throw new IllegalArgumentException(
+                    "On.ColumnPairs.slots must be non-empty; both synthesis paths mint the pairs "
+                    + "from the live catalog, so an empty list indicates a classifier bug (e.g. a "
+                    + "column silently dropped during FK-column resolution), not a missing catalog.");
+            }
         }
 
         public int slotCount() { return slots.size(); }

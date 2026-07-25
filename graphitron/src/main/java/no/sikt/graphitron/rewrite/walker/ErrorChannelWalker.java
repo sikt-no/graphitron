@@ -44,15 +44,15 @@ public final class ErrorChannelWalker {
 
         List<Rejection.AuthorError> errors = new ArrayList<>();
 
-        String rule7 = ChannelRuleChecks.checkMultiValidation(mapped);
-        if (rule7 != null) {
+        String handlerCardinality = ChannelRuleChecks.checkMultiValidation(mapped);
+        if (handlerCardinality != null) {
             errors.add(new ErrorChannelWalkerError.ChannelRuleViolation(
-                outcomeTypeName, errorsFieldName, 7, rule7));
+                outcomeTypeName, errorsFieldName, 7, handlerCardinality));
         }
-        String rule8 = ChannelRuleChecks.checkDuplicateMatchCriteria(mapped);
-        if (rule8 != null) {
+        String duplicateMatchCriteria = ChannelRuleChecks.checkDuplicateMatchCriteria(mapped);
+        if (duplicateMatchCriteria != null) {
             errors.add(new ErrorChannelWalkerError.ChannelRuleViolation(
-                outcomeTypeName, errorsFieldName, 8, rule8));
+                outcomeTypeName, errorsFieldName, 8, duplicateMatchCriteria));
         }
 
         errors.addAll(HandlerAccessorCheck.check(

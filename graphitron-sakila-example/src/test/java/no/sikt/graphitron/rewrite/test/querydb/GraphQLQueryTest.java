@@ -5482,6 +5482,22 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void customerUpsert_explicitNullNestedLeaf_inlineLiteral_writesNull() {
+        // The literal-path counterpart of customerUpsert_explicitNullNestedLeaf_collapsesToOmitted:
+        // an INLINE-LITERAL nested null survives graphql-java coercion (only variable coercion drops
+        // it), so the key IS present in the descended Map, containsKey is true, and the leaf takes the
+        // same present-null → NULL branch a top-level leaf does (changed=true, val=null). Together the
+        // pair pins that the nested two-way narrowing is a property of the variables wire shape, not of
+        // the generated code: the emitted guard keeps the full three-way at every depth.
+        String customerId1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
+        Map<String, Object> data = execute(
+            "mutation { customerUpsert(in: {identity: {customerId: \"" + customerId1
+            + "\"}, details: {firstName: null}}) }");
+        assertThat(data).extractingByKey("customerUpsert")
+            .isEqualTo("customerId[changed=true,val=1] first[changed=true,val=null] last[changed=false,val=null]");
+    }
+
+    @Test
     void customerUpsert_nullNestedGroup_leavesEveryColumnUnderItUntouched() {
         // A null nullable `details` group is treated identically to absent: every column under it
         // stays changed=false. The present identity group still decodes customer_id.

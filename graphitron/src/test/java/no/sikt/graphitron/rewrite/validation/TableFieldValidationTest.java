@@ -38,8 +38,8 @@ class TableFieldValidationTest {
         ""));
 
     private static final List<JoinStep> FK_PATH = List.of(TestFixtures.fkJoin(
-        TestFixtures.foreignKeyRef("film_actor_film_id_fkey"), null, List.of(),
-        TestFixtures.joinTarget("film_actor"), List.of(), null, ""));
+        TestFixtures.foreignKeyRef("film_actor_film_id_fkey"), null, List.of(TestFixtures.filmIdCol()),
+        TestFixtures.joinTarget("film_actor"), List.of(TestFixtures.filmIdCol()), null, ""));
 
     enum Case implements ValidatorCase {
 

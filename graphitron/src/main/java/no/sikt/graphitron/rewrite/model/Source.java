@@ -48,7 +48,10 @@ public sealed interface Source permits Source.Root, Source.OnlyChild, Source.Chi
      * every arrival count: direct SQL once per invocation, degrading in query count, never in rows.
      * {@link Child} stays the absorbing always-correct arm. The current emitters keep leaf-identity
      * dispatch (an {@code OnlyChild}-classified batch field still emits its DataLoader, a one-element
-     * batch), so populating this arm changes no generated code; nothing machine-enforces this clause.
+     * batch), so populating this arm changes no generated code; that half is pinned by
+     * {@code ArrivalUniformEmitPinTest} (zero {@code OnlyChild} dispatch sites across the
+     * generators). The row-correctness constraint above is the forward burden: a strategy that
+     * starts consuming the arm discharges it with its own aliasing enforcer and retires the pin.
      */
     record OnlyChild(SourceShape shape) implements Source {
         public OnlyChild {

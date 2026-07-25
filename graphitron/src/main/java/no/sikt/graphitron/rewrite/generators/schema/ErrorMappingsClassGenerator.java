@@ -34,9 +34,6 @@ import java.util.Map;
  * lists currently produce a hard error; the hash-suffix dedup
  * ({@code FILM_PAYLOAD_A1B2C3D4}) is a follow-up addition. No production fixture
  * exercises the collision today.
- *
- * <p>Spec: {@code error-handling-parity.md} §3, "Drop the custom ExecutionStrategy.
- * Wrap try/catch at the fetcher" — {@code ErrorMappings} subsection.
  */
 public final class ErrorMappingsClassGenerator {
 
@@ -64,7 +61,7 @@ public final class ErrorMappingsClassGenerator {
                     throw new IllegalStateException(
                         "ErrorMappings: two channels share the constant '"
                             + channel.mappingsConstantName()
-                            + "' but declare different handler lists. The §3 hash-suffix dedup"
+                            + "' but declare different handler lists. The hash-suffix dedup"
                             + " pass should have rewritten one of them; this is an internal"
                             + " classifier bug. Add the missing WithErrorChannel variant to"
                             + " MappingsConstantNameDedup.withResolvedChannel.");
@@ -190,7 +187,7 @@ public final class ErrorMappingsClassGenerator {
     /**
      * Two channels collide on the same {@code mappingsConstantName} only legitimately when their
      * flattened handler list contents (per-handler discriminator + matches + description) match.
-     * Order matters because §3 dispatch is source-order-first-match.
+     * Order matters because mapping dispatch is source-order-first-match.
      */
     private static boolean sameHandlerShape(ErrorChannel a, ErrorChannel b) {
         var aHandlers = flattenHandlers(a);
