@@ -17,11 +17,12 @@ import no.sikt.graphitron.rewrite.test.jooq.tables.records.CustomerRecord;
  *
  * <p>{@link #describeCustomerUpsert} reports the constructed record's jOOQ {@code touched}-flags and
  * values without writing, the only tier that can observe the transparent-unpack contract on the
- * column axis: an omitted nested leaf stays {@code changed=false}, a present-{@code null} nested leaf
- * <em>also</em> stays {@code changed=false} (graphql-java drops an explicit-{@code null} field from a
- * nested input-object value, so it collapses to omitted; a column is nullable only through a top-level
- * field), a {@code null} / omitted nullable group leaves every column under it
- * untouched, and a non-null identity inside an omitted nullable group is <em>skipped</em> rather than
+ * column axis: an omitted nested leaf stays {@code changed=false}; a present-{@code null} nested leaf
+ * writes {@code NULL} ({@code changed=true}) unless the identity group is also present — its trailing
+ * {@code fromArray} key decode resets the touched flag of every null-valued column (jOOQ
+ * {@code from()} null-skip semantics), collapsing the {@code NULL} write to omitted; a
+ * {@code null} / omitted nullable group leaves every column under it
+ * untouched; and a non-null identity inside an omitted nullable group is <em>skipped</em> rather than
  * throwing (skip-not-throw). A malformed id in a <em>present</em> identity group still throws,
  * which surfaces as a request error rather than through this method.
  */

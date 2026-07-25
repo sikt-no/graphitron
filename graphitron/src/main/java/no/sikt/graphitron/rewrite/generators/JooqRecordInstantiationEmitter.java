@@ -108,9 +108,11 @@ final class JooqRecordInstantiationEmitter {
     /**
      * Emits one plain {@code @field} {@link CallSiteExtraction.ColumnBinding}, guarded on the wire key
      * being present. An explicit {@code null} is loaded via {@code set(field, null)} so the column is
-     * reliably marked changed and written as {@code NULL} (jOOQ's {@code fromArray} has null-skip
+     * marked touched and written as {@code NULL} (jOOQ's {@code fromArray} has null-skip
      * semantics that would leave it unchanged); a present value goes through {@code fromArray} so it
      * coerces via the column's {@code DataType}/{@code Converter} (no deprecated {@code DataType.convert}).
+     * The touched flag on a null-set column survives only until a later {@link CallSiteExtraction.RecordKeyDecode}
+     * runs; see the flag-reset note on {@link #emitKeyDecode}.
      *
      * <p>For a nested binding (path depth &gt; 1) the guard is wrapped in a parent-{@code Map}
      * descent ({@link #openDescent}): an absent / null / non-{@code Map} enclosing group skips the column
@@ -151,6 +153,15 @@ final class JooqRecordInstantiationEmitter {
      * <em>absent</em> nullable group skip rather than throw: the descent block is never entered, so the
      * decode throw in its body never runs. A malformed id in a <em>present</em> group still throws (the body
      * runs). At depth 1 no wrapping block is emitted and the output is byte-identical to the non-nested form.
+     *
+     * <p>Flag-reset side effect: the decode loads key columns via {@code Record.fromArray}, and jOOQ's
+     * {@code from()} null-skip semantics reset the touched flag of every null-valued column
+     * record-wide. Key decodes are emitted after the column bindings, so a running decode erases any
+     * explicit-null column write made earlier in the helper (a non-null value survives). The
+     * execution tier pins both halves: {@code GraphQLQueryTest}'s
+     * {@code customerUpsert_explicitNullNestedLeaf_collapsesToOmitted} (decode present, NULL write
+     * erased) and {@code customerUpsert_explicitNullNestedLeaf_noIdentityDecode_writesNull} (no
+     * decode, NULL write survives).
      */
     private static void emitKeyDecode(MethodSpec.Builder b, CallSiteExtraction.RecordKeyDecode kd,
             ClassName tablesClass, String tableField) {
@@ -429,16 +440,13 @@ final class JooqRecordInstantiationEmitter {
      * from ({@code "raw"} for a single-element top-level path, where no block is emitted). The caller
      * must call {@link #closeDescent} with the same path after emitting the body.
      *
-     * <p>Nested present-{@code null}: the emitted guard is the same
-     * present-null / omitted / value three-way at every depth, but what reaches a descended
-     * {@code Map} depends on the wire shape. Variable coercion drops an explicit-null field from a
-     * nested input-object value, so on that path a nested present-null arrives indistinguishable
-     * from omitted and the three-way narrows to a two-way; an inline-literal nested null survives
-     * coercion and takes the present-null → {@code NULL} branch like a top-level leaf. Both halves
-     * are execution-pinned by {@code GraphQLQueryTest}'s
-     * {@code customerUpsert_explicitNullNestedLeaf_collapsesToOmitted} (variables) /
-     * {@code customerUpsert_explicitNullNestedLeaf_inlineLiteral_writesNull} (literal) pair. The
-     * narrowing is the coercion behaviour of graphql-java, not a choice in the emitted code.
+     * <p>Nested present-{@code null}: graphql-java coercion retains an explicit-null field at
+     * every nesting depth, on the variables and inline-literal paths alike, so a descended
+     * {@code Map} distinguishes present-null from omitted exactly as the top-level argument
+     * {@code Map} does and the emitted guard is the same three-way at every depth. The narrowing
+     * observed in practice is not here: a key decode emitted after the column bindings can erase
+     * an explicit-null column write via jOOQ's {@code from()} flag reset; see the flag-reset note
+     * on {@link #emitKeyDecode}.
      */
     private static String openDescent(MethodSpec.Builder b, List<String> path) {
         String current = "raw";

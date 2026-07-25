@@ -5459,15 +5459,15 @@ class GraphQLQueryTest {
 
     @Test
     void customerUpsert_explicitNullNestedLeaf_collapsesToOmitted() {
-        // graphql-java constraint on nested present-null: unlike a TOP-LEVEL field (where an explicit
-        // null is retained and writes NULL — see describeEndorsement_explicitNull_writesNull), graphql-java
-        // coercion DROPS an explicit-null field from a NESTED input-object value. The key never reaches the
-        // helper's Map, so containsKey is false and the column is left untouched (changed=false), exactly as
-        // if the leaf had been omitted. Verified here through the variable path (the production wire shape),
-        // so this is a real coercion limitation, not an inline-literal artifact: the present-null signal is
-        // destroyed before any generated code runs. The top-level three-way thus narrows to a nested two-way
-        // (omitted / explicit-null → untouched; value → set), consistent with the spec's own rule that a null
-        // nested *group* is treated as absent — here extended to the leaf.
+        // A nested explicit-null alongside a PRESENT identity group collapses to omitted
+        // (changed=false). Not a coercion effect: graphql-java retains the nested null (variables,
+        // used here, and inline literals alike), and the emitted guard takes its present-null
+        // branch and set()s the column to NULL — but the identity group's trailing fromArray key
+        // decode then resets the touched flag of every null-valued column record-wide (jOOQ from()
+        // null-skip semantics), erasing the write.
+        // customerUpsert_explicitNullNestedLeaf_noIdentityDecode_writesNull is the counterpart
+        // without the decode, where the NULL write survives; a set VALUE survives the decode (see
+        // customerUpsert_nestedLeafSet_landsOnColumn_omittedSiblingUntouched).
         String customerId1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
         var details = new java.util.HashMap<String, Object>();
         details.put("firstName", null);
@@ -5482,19 +5482,18 @@ class GraphQLQueryTest {
     }
 
     @Test
-    void customerUpsert_explicitNullNestedLeaf_inlineLiteral_writesNull() {
-        // The literal-path counterpart of customerUpsert_explicitNullNestedLeaf_collapsesToOmitted:
-        // an INLINE-LITERAL nested null survives graphql-java coercion (only variable coercion drops
-        // it), so the key IS present in the descended Map, containsKey is true, and the leaf takes the
-        // same present-null → NULL branch a top-level leaf does (changed=true, val=null). Together the
-        // pair pins that the nested two-way narrowing is a property of the variables wire shape, not of
-        // the generated code: the emitted guard keeps the full three-way at every depth.
-        String customerId1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
+    void customerUpsert_explicitNullNestedLeaf_noIdentityDecode_writesNull() {
+        // Counterpart of customerUpsert_explicitNullNestedLeaf_collapsesToOmitted, isolating the
+        // cause. graphql-java RETAINS a nested explicit-null (inline literal and variables alike),
+        // so the leaf takes the emitted present-null → NULL branch: changed=true, val=null. The
+        // sibling test's collapse to changed=false is not coercion: its present identity group runs
+        // a trailing fromArray key decode, and jOOQ's from() null-skip semantics reset the touched
+        // flag of every null-valued column record-wide, erasing the earlier NULL write. No identity
+        // group here, so no decode runs and the write survives.
         Map<String, Object> data = execute(
-            "mutation { customerUpsert(in: {identity: {customerId: \"" + customerId1
-            + "\"}, details: {firstName: null}}) }");
+            "mutation { customerUpsert(in: {details: {firstName: null}}) }");
         assertThat(data).extractingByKey("customerUpsert")
-            .isEqualTo("customerId[changed=true,val=1] first[changed=true,val=null] last[changed=false,val=null]");
+            .isEqualTo("customerId[changed=false,val=null] first[changed=true,val=null] last[changed=false,val=null]");
     }
 
     @Test
