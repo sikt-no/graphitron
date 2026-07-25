@@ -1,7 +1,7 @@
 ---
 id: R51
 title: "Merge PropertyField and RecordField into one record-read leaf carrying a sealed locator"
-status: In Progress
+status: In Review
 theme: classification-model
 bucket: cleanup
 priority: 5
