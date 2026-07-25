@@ -1,13 +1,13 @@
 ---
 id: R526
 title: "Correct stale generator and model comment claims routed out of the javadoc sweep"
-status: Ready
+status: In Progress
 bucket: cleanup
 priority: 4
 theme: model-cleanup
 depends-on: []
 created: 2026-07-24
-last-updated: 2026-07-24
+last-updated: 2026-07-25
 ---
 
 # Correct stale generator and model comment claims routed out of the javadoc sweep

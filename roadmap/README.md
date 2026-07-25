@@ -18,7 +18,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-07-20 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R333` | The Graphitron data model | Ready | 2026-07-20 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
-| `R526` | Correct stale generator and model comment claims routed out of the javadoc sweep | Ready | 2026-07-24 | [plan](generator-comment-drift-corrections.md) |
+| `R526` | Correct stale generator and model comment claims routed out of the javadoc sweep | In Progress | 2026-07-25 <sub>created 2026-07-24</sub> | [plan](generator-comment-drift-corrections.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R51` | Merge PropertyField and RecordField into one record-read leaf carrying a sealed locator | Spec | 2026-07-24 | [plan](merge-propertyfield-recordfield-read-leaf.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
@@ -334,7 +334,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### model-cleanup
 
 - `R334` [**Generated argument extraction is unreadable nested-ternary one-liners**](readable-condition-arg-extraction.md) — Backlog, Backlog
-- `R526` [**Correct stale generator and model comment claims routed out of the javadoc sweep**](generator-comment-drift-corrections.md) — Ready, cleanup
+- `R526` [**Correct stale generator and model comment claims routed out of the javadoc sweep**](generator-comment-drift-corrections.md) — In Progress, cleanup
 - `R528` [**Carry backed-vs-unbacked by permit identity across GraphitronType and ReturnTypeRef**](graphitron-type-permit-identity-splits.md) — Backlog, cleanup
 - `R359` [**Guard ColumnRef.sqlName() comparisons against case-sensitivity drift**](column-sqlname-comparison-case-guard.md) — Backlog, cleanup
 - `R239` [**Lift ColumnBackedField.parentTable from emitter parameter to record component**](column-field-parent-table-record-component.md) — Backlog, architecture
