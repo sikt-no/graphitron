@@ -670,7 +670,7 @@ type Query {
 # R380 Surface 1 fixture: a @table(name: "city") filter input whose countryName field references
 # country.country through the city -> country FK. Mirrors the harSelvakkrediteringsretts /
 # LARESTED shape that motivated R380.
-input CityCountryFilter @table(name: "city") {
+input CityCountryFilter {
     countryName: String @reference(path: [{table: "country"}]) @field(name: "country")
 }
 
@@ -1831,7 +1831,7 @@ type FilmInlineBundle {
 # argres Phase 3 composite-key fixture. Each key carries both film_id and actor_id as
 # @lookupKey scalars. The generator builds a VALUES(idx, film_id, actor_id) derived table
 # and joins on the full composite key, preserving caller input order.
-input FilmActorKey @table(name: "film_actor") {
+input FilmActorKey {
     filmId:  Int! @field(name: "film_id")
     actorId: Int! @field(name: "actor_id")
 }
@@ -1856,7 +1856,7 @@ type FilmActor implements Node @table(name: "film_actor") @node {
 # R79 fixture (paired with `filmActorsByCompositeNodeIds`). The implicit-condition path
 # routes `ids` to BodyParam.RowIn over the FilmActor PK columns (actor_id, film_id),
 # generating a typed `Row2<Integer, Integer>` in the condition method.
-input FilmActorCompositeNodeIdFilter @table(name: "film_actor") {
+input FilmActorCompositeNodeIdFilter {
     ids: [ID!] @nodeId(typeName: "FilmActor")
 }
 
@@ -1869,7 +1869,7 @@ input FilmActorCompositeNodeIdFilter @table(name: "film_actor") {
 # underlies the canonical `slettRegelverksamling` repro in R131's spec; mutations are
 # blocked behind R130's emitter widening, but the read-side carrier proves the classifier
 # is right end-to-end.
-input FilmActorSingularNodeIdFilter @table(name: "film_actor") {
+input FilmActorSingularNodeIdFilter {
     id: ID! @nodeId(typeName: "FilmActor")
 }
 
@@ -1879,7 +1879,7 @@ input FilmActorSingularNodeIdFilter @table(name: "film_actor") {
 # class for the inline field, LanguageFetchers for the @splitQuery field). A forgotten drain would
 # surface as a dangling decodeFilm*(...) reference and fail this module's compile, so these fields
 # are the cross-module backstop for the own-and-drain wiring.
-input FilmMixedNodeIdConditionFilter @table(name: "film") {
+input FilmMixedNodeIdConditionFilter {
     ids: [ID!] @nodeId(typeName: "Film")
     filmId: ID @field(name: "film_id")
         @condition(condition: {
@@ -1987,7 +1987,7 @@ input ActorOrderBy {
 }
 
 # argres Phase 4: @condition on INPUT_FIELD_DEFINITION — @table input type.
-input FilmConditionInput @table(name: "film") {
+input FilmConditionInput {
     filmId: ID! @field(name: "film_id")
         @condition(condition: {
             className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
@@ -2001,7 +2001,7 @@ input FilmConditionInput @table(name: "film") {
 # need not map to columns (the method owns the predicate entirely).
 input RentalRateRange { fra: BigDecimal  til: BigDecimal }
 
-input FilmRentalRangeFilter @table(name: "film") {
+input FilmRentalRangeFilter {
     rentalRateRange: RentalRateRange
         @condition(condition: {
             className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
@@ -2011,7 +2011,7 @@ input FilmRentalRangeFilter @table(name: "film") {
 
 # Explicit-argMapping sibling: the same method bound with the argMapping the author would
 # otherwise write. R355 makes filmsByRentalRateRange (no argMapping) produce the identical binding.
-input FilmRentalRangeFilterExplicit @table(name: "film") {
+input FilmRentalRangeFilterExplicit {
     rentalRateRange: RentalRateRange
         @condition(condition: {
             className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
@@ -2161,7 +2161,7 @@ input PlainFilmIdInput {
 # override flag has no observable effect. The directive must still parse and flow the
 # explicit method through projection. Exercises the (Yes outer, Present override:true,
 # Suppressed implicit, Emitted explicit) truth-table row as far as this fixture supports it.
-input FilmConditionInputWithOverrideField @table(name: "film") {
+input FilmConditionInputWithOverrideField {
     filmId: ID! @field(name: "film_id")
         @condition(condition: {
             className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
@@ -2174,7 +2174,7 @@ input FilmConditionInputWithOverrideField @table(name: "film") {
 # predicate is suppressed and the developer method owns the predicate, receiving the FK-target
 # Address alias (a correlated EXISTS). Nullable so a test can pass an empty filter (the method
 # ignores addressId).
-input CustomerAddressNodeFilter @table(name: "customer") {
+input CustomerAddressNodeFilter {
     addressId: ID @nodeId(typeName: "Address")
         @condition(condition: {
             className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
@@ -2185,7 +2185,7 @@ input CustomerAddressNodeFilter @table(name: "customer") {
 # R424: a plain scalar @condition(override) filter on customer.first_name. Narrows by the argument
 # value; a null value maps to noCondition() (absent == unconstrained), so a dropped inline argument
 # returns unfiltered rows. Drives Store.customersByFirstName{,Split}.
-input CustomerFirstNameFilter @table(name: "customer") {
+input CustomerFirstNameFilter {
     firstName: String
         @condition(condition: {
             className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
@@ -2198,7 +2198,7 @@ input CustomerFirstNameFilter @table(name: "customer") {
 # decoded value. Drives Store.customersByNodeId{,Split}, pinning the inline NodeIdDecodeKeys
 # decode-with-value path (customersByAddressDistrict's override condition ignores its addressId, so
 # that fixture never exercised the decode narrowing).
-input CustomerByNodeIdFilter @table(name: "customer") {
+input CustomerByNodeIdFilter {
     customerRefs: [ID!] @nodeId(typeName: "Customer")
 }
 
@@ -2207,7 +2207,7 @@ input CustomerByNodeIdFilter @table(name: "customer") {
 # GeneratedConditionFilter and lift the `filter` arg to a `filterMap` local) ALONGSIDE a non-null
 # ID! FK-target @nodeId + @condition(override) field. The FK-target term must still emit a correlated
 # EXISTS handing addressDistrictAlberta an aliased Address, not the customer table.
-input CustomerMultiFieldNodeFilter @table(name: "customer") {
+input CustomerMultiFieldNodeFilter {
     firstName: String @field(name: "FIRST_NAME")
     activebool: Boolean @field(name: "ACTIVEBOOL")
     addressId: ID @nodeId(typeName: "Address")
@@ -2227,7 +2227,7 @@ input InnerFilmInput {
         })
 }
 
-input NestedFilmInput @table(name: "film") {
+input NestedFilmInput {
     inner: InnerFilmInput
 }
 
@@ -2235,7 +2235,7 @@ input NestedFilmInput @table(name: "film") {
 # filmId carries no @condition; the implicit predicate (film.FILM_ID = filmId) is emitted
 # by walkInputFieldConditions when enclosingOverride is false. Nullable so the null-omit
 # behavior (absent means unconstrained) is also exercised by tests.
-input FilmImplicitInput @table(name: "film") {
+input FilmImplicitInput {
     filmId: ID @field(name: "film_id")
 }
 
@@ -2247,7 +2247,7 @@ input FilmImplicitInput @table(name: "film") {
 # film columns; rating exercises the enum-valued facet (value: MpaaRating!), length the
 # Int-valued one (value: Int!). Round-trip contract: a client feeds facetValue.value straight
 # back into the same filter field with no coercion.
-input FilmFacetFilter @table(name: "film") {
+input FilmFacetFilter {
     rating: [MpaaRating!] @field(name: "RATING") @asFacet
     length: [Int!] @field(name: "LENGTH") @asFacet
     # Nullable elements: the NULL bucket is preserved (original_language_id is NULL for every
@@ -2270,11 +2270,11 @@ input FilmFacetFilter @table(name: "film") {
 # predicate, including the length facet's own arm: filter-minus-self subtracts the facet's own
 # FIELD, not every predicate over its column. (A same-NAME collision with a facet is rejected at
 # build time; the generated condition method cannot key two same-named parameters.)
-input FilmExtraFilter @table(name: "film") {
+input FilmExtraFilter {
     lengthIs: [Int!] @field(name: "LENGTH")
 }
 
-input FilmOneOfFilter @table(name: "film") @oneOf {
+input FilmOneOfFilter @oneOf {
     filmId: Int    @field(name: "film_id")
     title:  String @field(name: "title")
 }
@@ -2312,13 +2312,13 @@ input FilmIdGroup {
 # self-table-nodeid-filter.md: same-table @nodeId filter input. Each base64 ID decodes
 # to the Film's PK; the generated condition method emits a primary-key IN predicate
 # directly (`(film_id) IN (...)`), not a FK join.
-input FilmSameTableNodeIdInput @table(name: "film") {
+input FilmSameTableNodeIdInput {
     filmIds: [ID!] @nodeId(typeName: "Film")
 }
 
 # implicit-input-conditions plan: @table input with two un-annotated fields. Both emit
 # implicit column-equality predicates, AND-ed inside the GCF's generated method body.
-input FilmMultiImplicitInput @table(name: "film") {
+input FilmMultiImplicitInput {
     filmId: ID @field(name: "film_id")
     title: String @field(name: "title")
 }
@@ -2326,7 +2326,7 @@ input FilmMultiImplicitInput @table(name: "film") {
 # implicit-input-conditions plan: @table input wrapping a plain nesting type. The implicit
 # predicate at filmId binds to the outer @table's film column via NestedInputField path
 # ["inner", "filmId"]; exercises the NestingField arm of walkInputFieldConditions.
-input NestedImplicitInput @table(name: "film") {
+input NestedImplicitInput {
     inner: InnerImplicitInput
 }
 
@@ -2339,7 +2339,7 @@ input InnerImplicitInput {
 # `condition.and(film.film_id.in(null))` which jOOQ renders as the literal `false`; omitting
 # `filter` then silently returns zero rows. The execution test pins that omitting `filter`
 # returns the unfiltered baseline rather than empty.
-input FilmIdListFilter @table(name: "film") {
+input FilmIdListFilter {
     filmIds: [Int!]! @field(name: "film_id")
 }
 
@@ -2446,7 +2446,7 @@ type ShortContent implements Content @table(name: "content") @discriminator(valu
 # same-table columns; filmId is the FK the FilmContent.rating cross-table LEFT JOIN reads back on
 # the follow-up discriminator re-projection. Cross-table subtype fields (FilmContent.rating, on the
 # joined film row) are read-side projections only and are not writable through a 'content' INSERT.
-input ContentInput @table(name: "content") {
+input ContentInput {
     title:       String! @field(name: "TITLE")
     contentType: String! @field(name: "CONTENT_TYPE")
     length:      Int     @field(name: "LENGTH")
@@ -2455,7 +2455,7 @@ input ContentInput @table(name: "content") {
 }
 
 # R406 UPDATE twin: covers the content PK (CONTENT_ID) plus the set columns.
-input ContentUpdateInput @table(name: "content") {
+input ContentUpdateInput {
     contentId:   Int!    @field(name: "CONTENT_ID")
     title:       String  @field(name: "TITLE")
     length:      Int     @field(name: "LENGTH")
@@ -2517,7 +2517,7 @@ type Project implements Node @table(name: "project") @node {
 # correlated EXISTS whose correlation ANDs both composite-FK slots. The concrete Project parameter
 # is the compile-tier guard for the composite case (project_note cannot be passed where Project is
 # expected). Nullable so a test can pass an empty filter.
-input ProjectNoteByProjectFilter @table(name: "project_note") {
+input ProjectNoteByProjectFilter {
     projectId: ID @nodeId(typeName: "Project")
         @condition(condition: {
             className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
@@ -2542,7 +2542,7 @@ input ProjectNotePlainFilter {
 # R22 Phase 2 fixture: minimal INSERT input. Sakila's `film` table has two NOT-NULL columns
 # without defaults (`title`, `language_id`); everything else can be omitted and defaulted at
 # the DB. The classifier admits @lookupKey-free INSERT inputs (Invariant #5).
-input FilmCreateInput @table(name: "film") {
+input FilmCreateInput {
     title:          String! @field(name: "title")
     languageId:     Int!    @field(name: "language_id")
     # R77 Phase B fixture: nullable, no trailing `!`, so graphql-java's argument coercion
@@ -2569,7 +2569,7 @@ input FilmCreateReturnDerivedInput {
 # by the direct-return UPDATEs (`updateFilm` / `updateFilms`, R246) and the payload-returning
 # UPDATEs (`updateFilmPayload` / `updateFilmsPayload`, R258); the catalog-derived partition is why
 # the `@value` directive was retired entirely (R266, absorbing R188).
-input FilmUpdateInput @table(name: "film") {
+input FilmUpdateInput {
     filmId:      Int!    @field(name: "film_id")
     title:       String! @field(name: "title")
     # R77 Phase C: optional non-key column used by the missing-vs-null execution tests on
@@ -2591,7 +2591,7 @@ input FilmUpdateReturnDerivedInput {
 # (R144's filter-by-default rule covers the single-column PK). The bulk-DELETE arm
 # emits `DSL.row(film_id).in(in.stream().map(row -> DSL.row(...)).toList())`, locking
 # the row-tuple `IN` shape for execution-tier coverage.
-input FilmDeleteInput @table(name: "film") {
+input FilmDeleteInput {
     filmId: Int! @field(name: "film_id")
 }
 
@@ -2606,7 +2606,7 @@ input FilmCreateNestedDetails {
     # the nested-INSERT absent-vs-default execution test turns on this.
     rentalDuration: Int     @field(name: "rental_duration")
 }
-input FilmCreateNestedInput @table(name: "film") {
+input FilmCreateNestedInput {
     languageId: Int!                    @field(name: "language_id")
     details:    FilmCreateNestedDetails!
 }
@@ -2615,7 +2615,7 @@ input FilmUpdateNestedDetails {
     title:       String @field(name: "title")
     description: String @field(name: "description")
 }
-input FilmUpdateNestedInput @table(name: "film") {
+input FilmUpdateNestedInput {
     filmId:  Int! @field(name: "film_id")
     # Nullable nested group: an absent (or explicit-null) `details` claims nothing about the group,
     # so every leaf under it is skipped — the UPDATE then has no settable fields and the runtime
@@ -2627,7 +2627,7 @@ input FilmUpdateNestedInput @table(name: "film") {
 input FilmDeleteNestedKeys {
     filmId: Int! @field(name: "film_id")
 }
-input FilmDeleteNestedInput @table(name: "film") {
+input FilmDeleteNestedInput {
     keys: FilmDeleteNestedKeys!
 }
 
@@ -2637,7 +2637,7 @@ input FilmDeleteNestedInput @table(name: "film") {
 # `multiRow: true` opts into the broadcast: a single input row can affect many database
 # rows. The execution-tier proof inserts N films sharing one release_year, calls the
 # mutation with one input row carrying that year, and asserts |affected rows| > 1.
-input FilmReleaseYearDeleteInput @table(name: "film") {
+input FilmReleaseYearDeleteInput {
     releaseYear: Int! @field(name: "release_year")
 }
 
@@ -2651,7 +2651,7 @@ input FilmReleaseYearDeleteInput @table(name: "film") {
 # `where(actor_id.eq(__lookupKey0.value1()).and(film_id.eq(__lookupKey0.value2())))`.
 # Bulk variant exercises buildBulkLookupRowIn's block-lambda form (one decode per row
 # inside the stream lambda).
-input DeleteFilmActorByNodeIdInput @table(name: "film_actor") {
+input DeleteFilmActorByNodeIdInput {
     id: ID! @nodeId(typeName: "FilmActor")
 }
 
@@ -2666,7 +2666,7 @@ type KeyedNode implements Node @table(name: "keyed_node") @node {
     label: String! @field(name: "label")
 }
 
-input CreateKeyedNodeInput @table(name: "keyed_node") {
+input CreateKeyedNodeInput {
     id:    ID!     @nodeId(typeName: "KeyedNode")
     label: String! @field(name: "label")
 }
@@ -2732,7 +2732,7 @@ type FilmEndorsementNode implements Node @table(name: "film_endorsement") @node(
     id: ID! @nodeId
     note: String @field(name: "note")
 }
-input InsertEndorsementOverlapInput @table(name: "film_endorsement") {
+input InsertEndorsementOverlapInput {
     filmRef: ID @nodeId(typeName: "Film")
     endorsedFilm: Int @field(name: "endorsed_film")
     note: String @field(name: "note")
@@ -2742,7 +2742,7 @@ input InsertEndorsementOverlapInput @table(name: "film_endorsement") {
 # SET column written by BOTH the plain @field (endorsedFilm) and the @nodeId FK reference (filmRef). The
 # single-row SET Map.put would silently last-write-wins; the value-agreement preamble throws on
 # disagreement instead. (Two plain @field's on one SET column reject at validate time in the walker.)
-input UpdateEndorsementOverlapInput @table(name: "film_endorsement") {
+input UpdateEndorsementOverlapInput {
     endorsementId: Int! @field(name: "endorsement_id")
     filmRef: ID @nodeId(typeName: "Film")
     endorsedFilm: Int @field(name: "endorsed_film")
@@ -2767,7 +2767,7 @@ type Email implements Node @table(name: "email") @node {
     inReplyToNo: Int @field(name: "in_reply_to_no")
     subject: String @field(name: "subject")
 }
-input InsertEmailReplyInput @table(name: "email") {
+input InsertEmailReplyInput {
     mailboxRef: ID! @nodeId(typeName: "Mailbox")
     messageNo: Int! @field(name: "message_no")
     subject: String @field(name: "subject")
@@ -2782,7 +2782,7 @@ input InsertEmailReplyInput @table(name: "email") {
 # a cross-partition requireColumnAgreement check before the UPDATE (agree → repoint in_reply_to_no with
 # the mailbox_id SET a no-op; disagree → throw, nothing written). An omitted inReplyTo updates subject
 # only (the presence guard, no agreement check).
-input UpdateEmailReplyInput @table(name: "email") {
+input UpdateEmailReplyInput {
     id: ID! @nodeId(typeName: "Email")
     subject: String @field(name: "subject")
     inReplyTo: ID @nodeId(typeName: "Email") @reference(path: [{key: "email_in_reply_to_fk"}])
@@ -2959,28 +2959,28 @@ type Mutation {
     # UPSERT retired under R144 (see above).
     createFilms(in: [FilmCreateInput!]!): [Film!]! @mutation(typeName: INSERT)
     updateFilms(in: [FilmUpdateInput!]!): [Film!]! @mutation(typeName: UPDATE)
-    deleteFilms(in: [FilmDeleteInput!]!): [ID!]! @mutation(typeName: DELETE)
+    deleteFilms(in: [FilmDeleteInput!]!): [ID!]! @mutation(typeName: DELETE, table: "film")
 
     # R406: INSERT / UPDATE returning the single-table discriminated Content interface. The write
     # is a plain single-@table 'content' write; the follow-up SELECT re-projects by PK through the
     # discriminator re-projection (projecting __discriminator__ + the participant field set + the
     # discriminator-gated cross-table LEFT JOIN for FilmContent.rating), so the interface's
     # TypeResolver routes the returned row to FilmContent / ShortContent off its live discriminator.
-    createContent(in: ContentInput!): Content @mutation(typeName: INSERT)
-    updateContent(in: ContentUpdateInput!): Content @mutation(typeName: UPDATE)
+    createContent(in: ContentInput!): Content @mutation(typeName: INSERT, table: "content")
+    updateContent(in: ContentUpdateInput!): Content @mutation(typeName: UPDATE, table: "content")
 
     # Bulk sibling of createContent: the discriminated bulk payload rides the reentry
     # companion's VALUES (idx, pk) join and must honor the ordering / cardinality contract
     # (one payload row per written row, in RETURNING order) through the discriminator
     # re-projection. Execution-pinned in DmlTableInterfaceReturnExecutionTest.
-    createContents(in: [ContentInput!]!): [Content!]! @mutation(typeName: INSERT)
+    createContents(in: [ContentInput!]!): [Content!]! @mutation(typeName: INSERT, table: "content")
 
     # R144 execution-tier proof of the multiRow opt-out. Filter column is non-PK
     # (release_year); a single input row can affect many database rows. The
     # response shape is [ID!]! to keep the execution test focused on the
     # WHERE-broadcast semantics rather than payload assembly.
     deleteFilmsByReleaseYear(in: [FilmReleaseYearDeleteInput!]!): [ID!]!
-        @mutation(typeName: DELETE, multiRow: true)
+        @mutation(typeName: DELETE, multiRow: true, table: "film")
 
     # R130 execution-tier surfaces. Single-row and bulk DELETE keyed by a composite-PK
     # @nodeId-decoded carrier. The single-row form drives buildLookupWhereSingleRow's
@@ -2992,8 +2992,8 @@ type Mutation {
     # the WHERE-side decode-local lift is shared across DELETE/UPDATE/UPSERT, so the
     # headline forcing-function execution proof here covers the load-bearing emitter
     # arm regardless of verb.
-    deleteFilmActorByNodeId(in: DeleteFilmActorByNodeIdInput!): ID @mutation(typeName: DELETE)
-    deleteFilmActorsByNodeId(in: [DeleteFilmActorByNodeIdInput!]!): [ID!]! @mutation(typeName: DELETE)
+    deleteFilmActorByNodeId(in: DeleteFilmActorByNodeIdInput!): ID @mutation(typeName: DELETE, table: "film_actor")
+    deleteFilmActorsByNodeId(in: [DeleteFilmActorByNodeIdInput!]!): [ID!]! @mutation(typeName: DELETE, table: "film_actor")
 
     # R266 execution-tier proof of the UK-covering single-row delete. The input covers the
     # UNIQUE `code` (not the PK), so the DeleteRowsWalker matches the UniqueKey arm; the emitted
@@ -3015,7 +3015,7 @@ type Mutation {
     # Drives buildInsertDecodeLocals (one decode local per NodeId-bearing carrier)
     # and the buildPerCellValueList NodeIdDecodeKeys arm
     # (`__insertKey_<fi>.value1()` read into the `values(...)` cell).
-    createKeyedNode(in: CreateKeyedNodeInput!): ID @mutation(typeName: INSERT)
+    createKeyedNode(in: CreateKeyedNodeInput!): ID @mutation(typeName: INSERT, table: "keyed_node")
 
     # Bulk projected INSERT over a client-supplied (non-SERIAL) primary key. Because the
     # caller controls the PK values, the input list can be ordered against the key's
@@ -3053,7 +3053,7 @@ type Mutation {
     # (emitSetVColNameAdds / emitSetBulkCellAdds / emitSetVFieldPuts) with nested access paths.
     updateFilmsNested(in: [FilmUpdateNestedInput!]!): [Film!]! @mutation(typeName: UPDATE)
     updateFilmsNestedPayload(in: [FilmUpdateNestedInput!]!): FilmsPayload @mutation(typeName: UPDATE)
-    deleteFilmNested(in: FilmDeleteNestedInput!): ID @mutation(typeName: DELETE)
+    deleteFilmNested(in: FilmDeleteNestedInput!): ID @mutation(typeName: DELETE, table: "film")
 
     # R141: bulk-input single-carrier list-data-field DML mutations. The classifier routes the
     # bulk-input + list-shaped @table-element data field case to MutationBulkDmlRecordField; the
@@ -3079,7 +3079,7 @@ type Mutation {
     # public.language → jOOQ IntegrityConstraintViolationException. The catch arm dispatches
     # through ErrorRouter.dispatchToLocalContext into env.getLocalContext(); the errors field
     # reads it back. See R12LocalContextDmlExecutionTest in the execution tier.
-    createFilmWithErrors(in: FilmCreateInput!): FilmCreateLocalContextPayload @mutation(typeName: INSERT)
+    createFilmWithErrors(in: FilmCreateInput!): FilmCreateLocalContextPayload @mutation(typeName: INSERT, table: "film")
 
     # R156 compilation-tier fixture: payload-returning DELETE carrier, ID-typed element-shape arm.
     # Bulk DELETE returning [ID!] of encoded NodeIds. Classifies as MutationBulkDeletePayloadField
@@ -3089,7 +3089,7 @@ type Mutation {
     # data-field fetcher reads film_id from each RETURNING Record and runs through encodeFilm. No
     # follow-up SELECT runs after the row is gone. (R287 removed the @table-element DELETE carrier:
     # a full @table projection off a deleted row is impossible — RETURNING carries only the PK.)
-    deleteFilmsIdCarrier(in: [FilmDeleteInput!]!): DeletedFilmsIdPayload @mutation(typeName: DELETE)
+    deleteFilmsIdCarrier(in: [FilmDeleteInput!]!): DeletedFilmsIdPayload @mutation(typeName: DELETE, table: "film")
 
     # R158 execution-tier surfaces: @service-backed mutations returning carrier-payload
     # types whose data field is the @service producer's typed jOOQ record (List<FilmRecord>

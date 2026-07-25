@@ -33,7 +33,7 @@ type Query {
 
 # @oneOf demands all-nullable fields; graphql-java enforces this at schema build, so a non-null
 # field here would fail the assembled-schema build with a clear error.
-input FilmOneOfFilter @table(name: "film") @oneOf {
+input FilmOneOfFilter @oneOf {
     filmId: Int    @field(name: "film_id")
     title:  String @field(name: "title")
 }

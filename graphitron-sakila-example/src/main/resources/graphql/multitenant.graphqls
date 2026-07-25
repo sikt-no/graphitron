@@ -40,7 +40,7 @@ type FilmActor implements Node @table(name: "film_actor") @node(keyColumns: ["ac
 
 # ArgumentBound mutation arm: the INSERT input's filmId maps to the tenant column and divines
 # the routing for the write (and its follow-up re-read, which reuses the pinned connection).
-input InventoryCreateInput @table(name: "inventory") {
+input InventoryCreateInput {
     filmId: Int! @field(name: "film_id")
     storeId: Int! @field(name: "store_id")
 }
