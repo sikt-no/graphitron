@@ -1,7 +1,7 @@
 ---
 id: R519
 title: "Remove @table from input types; delete TableInputType (Phase 3)"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 6
 theme: classification-model
