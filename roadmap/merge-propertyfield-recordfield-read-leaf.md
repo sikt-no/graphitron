@@ -40,14 +40,27 @@ every switch arm and `instanceof` must be compiler-forced through the rename. It
 **`ReturnTypeRef returnType`, covering both cases.** The object construction path keeps its resolved
 `ReturnTypeRef`; the scalar path gains a `ReturnTypeRef.ScalarReturnType(name, wrapper)` it does not
 carry today. `target()` derives `listOrSingle(returnType.wrapper(), Field())` **unconditionally**.
-This is a decided model change, not a preservation: `PropertyField` today hard-codes `Single(Field)`
-and sits in `WrapperAlgebraTest.CARDINALITY_NOT_MODELED` with a "faithful read regardless of the
-GraphQL wrapper" rationale, while `RecordField` obeys the SDL-list mirror. The merged leaf follows the
-mirror (R333: the target wrapper is the field's own output cardinality read off `field.getType()`),
-so the `error-field` / `error-type` corpus rows flip `target: Single` to `target: List` for
-`path: [String!]!`, the `CARDINALITY_NOT_MODELED` entry retires with its list-shaped-scalar sentence,
-and no generator consumer moves (nothing in the emit reads `target()`; the surfaces that move are
-named in the acceptance bar below).
+This is a decided model change, and the pinned behavior it overrides was challenged rather than
+assumed away. `PropertyField` today hard-codes `Single(Field)` and sits in
+`WrapperAlgebraTest.CARDINALITY_NOT_MODELED`, a **five-member family** (the column family
+`ColumnBackedField` / `ColumnBackedReferenceField` / `ParticipantColumnReferenceField`, plus
+`PropertyField` and `ErrorsField`) pinned always-`Single` with a "faithful read regardless of the
+GraphQL wrapper" rationale. That rationale does not bind, for two reasons. First, it describes the
+emit mechanism, not the model fact: the bare property read is wrapper-agnostic, but so is
+`RecordField`'s identical bare read, and `RecordField` obeys the SDL-list mirror; the same mechanism
+answering two ways depending on which leaf name carries it is drift, not design. Second,
+`OutputField.single`'s own javadoc gives the pin's real cause: it is "the default wrapper for a leaf
+that **carries no return wrapper**", i.e. slot absence rationalized post-hoc, not a deliberate model
+answer. R333 defines the target wrapper as the field's own output cardinality read off
+`field.getType()`, so once the merged leaf carries a wrapper the mirror is the only honest
+derivation. Consequences: the `error-field` / `error-type` corpus rows flip `target: Single` to
+`target: List` for `path: [String!]!`, the merged leaf **exits the exemption family** (whose four
+remaining members stay pinned deliberately: they still carry no wrapper slot, and the column
+family's exit is R333's named `List(Column)` missing corner, real to-many machinery rather than a
+representational fix, tracked there and not here), and no generator consumer moves (nothing in the
+emit reads `target()`; the surfaces that move are named in the acceptance bar below). The residual
+asymmetry between the merged leaf and the still-pinned four is accepted and recorded, not
+accidental.
 
 **`ValueLocator locator`, one non-null sealed component replacing the `columnName` / `column` /
 `accessor` nullable triple.** This is R333's field-level accessor fact ("The accessor is
@@ -116,9 +129,10 @@ R432/R314 additive-cutover-retire template:
 3. **Retire**: delete the two old leaves; collapse every paired `instanceof` / switch arm; rename
    `propertyOrRecordBinding` and rewrite its javadoc and the surrounding two-leaf narration (the
    `ChildField` "distinguishing this leaf from RecordField" prose, the "See RecordField's analogous
-   slot" cross-references, the paired no-op dispatch comments); sweep the architecture docs
-   (`code-generation-triggers.adoc` names both leaves) and regenerate, not hand-edit, the generated
-   `supported-schema-shapes.adoc` fragment.
+   slot" cross-references, the paired no-op dispatch comments, and `OutputField.single`'s javadoc
+   mention of the property projection, which the merged leaf no longer uses); sweep the architecture
+   docs (`code-generation-triggers.adoc` names both leaves) and regenerate, not hand-edit, the
+   generated `supported-schema-shapes.adoc` fragment.
 
 ## Acceptance bar
 
@@ -163,5 +177,6 @@ enforcer-delta acceptance bar.
 ## Retired vocabulary
 
 `ChildField.PropertyField`, `ChildField.RecordField`, `propertyOrRecordBinding`,
-`validatePropertyField`, `validateRecordField`, `CARDINALITY_NOT_MODELED` (the retired leaf's entry
-and rationale sentence, if the set does not empty outright).
+`validatePropertyField`, `validateRecordField`. In `CARDINALITY_NOT_MODELED` only the
+`PropertyField` entry and the list-shaped-scalar rationale sentence retire; the set itself stays,
+four members strong.
