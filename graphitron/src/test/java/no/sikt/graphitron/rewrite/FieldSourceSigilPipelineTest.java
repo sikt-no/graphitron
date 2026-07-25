@@ -136,10 +136,10 @@ class FieldSourceSigilPipelineTest {
     void sourceSigil_unknownSigilAtCarrier_rejectsWithUnknownSigilMessage() {
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") { title: String }
+            input FilmInput { title: String }
             type FilmPayload { films: [Film!] @field(name: "$bogus") }
             type Query { x: String }
-            type Mutation { createFilms(in: [FilmInput!]!): FilmPayload @mutation(typeName: INSERT) }
+            type Mutation { createFilms(in: [FilmInput!]!): FilmPayload @mutation(typeName: INSERT, table: "film") }
             """);
 
         var mutField = schema.field("Mutation", "createFilms");
@@ -169,10 +169,10 @@ class FieldSourceSigilPipelineTest {
     void sourceSigil_bareNameAtCarrier_admitsUnderR178() {
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") { title: String }
+            input FilmInput { title: String }
             type FilmPayload { films: [Film!] @field(name: "films_alias") }
             type Query { x: String }
-            type Mutation { createFilms(in: [FilmInput!]!): FilmPayload @mutation(typeName: INSERT) }
+            type Mutation { createFilms(in: [FilmInput!]!): FilmPayload @mutation(typeName: INSERT, table: "film") }
             """);
 
         var mutField = schema.field("Mutation", "createFilms");

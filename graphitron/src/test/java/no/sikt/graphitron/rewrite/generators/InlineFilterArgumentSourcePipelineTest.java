@@ -48,7 +48,7 @@ class InlineFilterArgumentSourcePipelineTest {
     // A list-typed implicit column filter (bar.name IN (names)) — a GeneratedConditionFilter whose
     // call param is a list-typed Direct extraction, which casts to (List) under FromSelectedField.
     private static final String LIST_FILTER_INPUT = """
-        input BarListFilter @table(name: "bar") {
+        input BarListFilter {
             names: [String!] @field(name: "name")
         }
         """;
@@ -56,7 +56,7 @@ class InlineFilterArgumentSourcePipelineTest {
     // A scalar implicit column filter (bar.name = name) — a Direct extraction that casts to the
     // reifiable (String) under FromSelectedField (checked), so it needs no suppression.
     private static final String SCALAR_FILTER_INPUT = """
-        input BarScalarFilter @table(name: "bar") {
+        input BarScalarFilter {
             name: String @field(name: "name")
         }
         """;

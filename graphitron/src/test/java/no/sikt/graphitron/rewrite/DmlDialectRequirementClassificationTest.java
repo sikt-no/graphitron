@@ -29,7 +29,7 @@ class DmlDialectRequirementClassificationTest {
     void insert_carriesNone() {
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") {
+            input FilmInput {
                 title: String! @field(name: "title")
                 languageId: Int! @field(name: "language_id")
             }
@@ -44,7 +44,7 @@ class DmlDialectRequirementClassificationTest {
     void singleRowUpdate_carriesNone() {
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
-            input FilmUpdateInput @table(name: "film") {
+            input FilmUpdateInput {
                 filmId: Int! @field(name: "film_id")
                 title: String! @field(name: "title")
             }
@@ -59,7 +59,7 @@ class DmlDialectRequirementClassificationTest {
     void bulkUpdate_requiresPostgresFamily() {
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
-            input FilmUpdateInput @table(name: "film") {
+            input FilmUpdateInput {
                 filmId: Int! @field(name: "film_id")
                 title: String! @field(name: "title")
             }
@@ -80,9 +80,9 @@ class DmlDialectRequirementClassificationTest {
     void delete_carriesNone() {
         var schema = TestSchemaHelper.buildSchema("""
             type Film implements Node @table(name: "film") @node { id: ID! @nodeId filmId: Int! @field(name: "film_id") }
-            input FilmDeleteInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            input FilmDeleteInput { filmId: Int! @field(name: "film_id") }
             type Query { x: String }
-            type Mutation { deleteFilm(in: FilmDeleteInput!): ID @mutation(typeName: DELETE) }
+            type Mutation { deleteFilm(in: FilmDeleteInput!): ID @mutation(typeName: DELETE, table: "film") }
             """);
         var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteFilm");
         assertThat(f.dialectRequirement()).isEqualTo(DialectRequirement.None.INSTANCE);

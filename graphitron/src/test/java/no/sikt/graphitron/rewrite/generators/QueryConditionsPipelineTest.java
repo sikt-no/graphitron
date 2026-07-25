@@ -39,7 +39,7 @@ class QueryConditionsPipelineTest {
     void twoQueryFields_sharingNodeIdType_emitOneSharedHelper() {
         var schema = TestSchemaHelper.buildSchema("""
             type Bar implements Node @table(name: "bar") @node { id: ID! }
-            input BarFilter @table(name: "bar") {
+            input BarFilter {
                 ids: [ID!] @nodeId(typeName: "Bar")
             }
             type Query {
@@ -114,10 +114,10 @@ class QueryConditionsPipelineTest {
         // Same NodeId type but different list axis → registry key differs → two helpers.
         var schema = TestSchemaHelper.buildSchema("""
             type Bar implements Node @table(name: "bar") @node { id: ID! }
-            input BarListFilter @table(name: "bar") {
+            input BarListFilter {
                 ids: [ID!] @nodeId(typeName: "Bar")
             }
-            input BarScalarFilter @table(name: "bar") {
+            input BarScalarFilter {
                 id: ID @nodeId(typeName: "Bar")
             }
             type Query {

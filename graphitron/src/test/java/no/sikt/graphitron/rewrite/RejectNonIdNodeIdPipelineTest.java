@@ -128,11 +128,12 @@ class RejectNonIdNodeIdPipelineTest {
             type Customer implements Node @table(name: "customer") @node {
                 id: ID! @nodeId
             }
-            input CustomerSelector @table(name: "customer") {
+            input CustomerSelector {
                 id: ID! @nodeId(typeName: "Customer")
             }
             type Query {
                 customerById(id: ID! @nodeId(typeName: "Customer")): Customer
+                customersBySelector(filter: CustomerSelector): [Customer!]!
             }
             """);
 

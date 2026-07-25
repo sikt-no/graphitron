@@ -532,7 +532,7 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             type FilmListPayload { films: [Film!] }
-            input FilmInput @table(name: "film") { title: String }
+            input FilmInput { title: String }
             type Query { x: String }
             type Mutation {
                 createFilms(in: [FilmInput!]!): FilmListPayload @mutation(typeName: INSERT)
@@ -562,7 +562,7 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             type FilmListPayload { films: [Film!] }
-            input FilmInput @table(name: "film") { title: String }
+            input FilmInput { title: String }
             type Query { x: String }
             type Mutation {
                 runFilms: FilmListPayload

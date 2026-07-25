@@ -285,7 +285,7 @@ class NodeIdLeafResolverTest {
         String sdl = """
             type Bar implements Node @table(name: "bar") @node { id: ID! }
             type Baz implements Node @table(name: "baz") @node { id: ID! }
-            input BarFilterInput @table(name: "bar") {
+            input BarFilterInput {
                 bazIds: [ID!] @nodeId(typeName: "Baz")
             }
             type Query { x: String }

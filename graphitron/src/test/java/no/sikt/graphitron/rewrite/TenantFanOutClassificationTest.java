@@ -95,7 +95,7 @@ class TenantFanOutClassificationTest {
     void markerOnMutationFieldRejects() {
         var schema = build("""
             type Inventory @table(name: "inventory") { inventoryId: Int @field(name: "inventory_id") }
-            input InventoryCreateInput @table(name: "inventory") {
+            input InventoryCreateInput {
                 filmId: Int! @field(name: "film_id")
             }
             type Language @table(name: "language") { name: String }

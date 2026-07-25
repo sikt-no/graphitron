@@ -51,7 +51,7 @@ class NodeIdOverrideConditionFkTargetPipelineTest {
         var schema = TestSchemaHelper.buildSchema("""
             type Bar implements Node @table(name: "bar") @node { id: ID! name: String }
             type Baz implements Node @table(name: "baz") @node { id: ID! }
-            input BarFilter @table(name: "bar") {
+            input BarFilter {
                 bazId: ID! @nodeId(typeName: "Baz") @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "argConditionTypeUnique"}, override: true)
             }
             type Query {
@@ -85,11 +85,14 @@ class NodeIdOverrideConditionFkTargetPipelineTest {
         // slot), not be rejected. reordered_fk_child carries a composite FK to reordered_pk_parent.
         var schema = TestSchemaHelper.buildSchema("""
             type ReorderedPkParent implements Node @table(name: "reordered_pk_parent") @node { id: ID! }
-            input ReorderedChildFilter @table(name: "reordered_fk_child") {
+            type ReorderedChild @table(name: "reordered_fk_child") {
+                childId: String! @field(name: "child_id")
+            }
+            input ReorderedChildFilter {
                 parentId: ID! @nodeId(typeName: "ReorderedPkParent") @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "argConditionTypeUnique"}, override: true)
             }
             type Query {
-                children(filter: ReorderedChildFilter): [ReorderedPkParent!]!
+                children(filter: ReorderedChildFilter): [ReorderedChild!]!
             }
             """, FIXTURE_CTX);
 

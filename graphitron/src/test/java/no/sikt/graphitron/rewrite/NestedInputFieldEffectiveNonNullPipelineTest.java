@@ -35,7 +35,7 @@ class NestedInputFieldEffectiveNonNullPipelineTest {
             type Film implements Node @table(name: "film") @node(typeId: "Film", keyColumns: ["film_id"]) {
                 id: ID! @field(name: "film_id")
             }
-            input HentFilm @table(name: "film") {
+            input HentFilm {
                 filmIds: [Int!]! @field(name: "film_id")
             }
             type Query {
@@ -56,7 +56,7 @@ class NestedInputFieldEffectiveNonNullPipelineTest {
             type Film implements Node @table(name: "film") @node(typeId: "Film", keyColumns: ["film_id"]) {
                 id: ID! @field(name: "film_id")
             }
-            input HentFilm @table(name: "film") {
+            input HentFilm {
                 filmIds: [Int!]! @field(name: "film_id")
             }
             type Query {
@@ -80,7 +80,7 @@ class NestedInputFieldEffectiveNonNullPipelineTest {
             input WrapperInput {
                 filmIds: [Int!]! @field(name: "film_id")
             }
-            input HentFilmWrapper @table(name: "film") {
+            input HentFilmWrapper {
                 wrapper: WrapperInput
             }
             type Query {

@@ -111,7 +111,7 @@ class TenantRoutedFetcherPipelineTest {
     void insertMutationDivinesFromItsInputFieldAndRoutes() {
         var schema = multiTenant("""
             type Inventory @table(name: "inventory") { inventoryId: Int @field(name: "inventory_id") }
-            input InventoryCreateInput @table(name: "inventory") {
+            input InventoryCreateInput {
                 filmId: Int! @field(name: "film_id")
                 storeId: Int! @field(name: "store_id")
             }

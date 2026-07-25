@@ -411,7 +411,7 @@ class ErrorChannelClassificationTest {
         // and the INSERT variant produces an empty channel rather than null.
         var schema = build("""
             type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") { title: String }
+            input FilmInput { title: String }
             type Query { x: String }
             type Mutation { createFilm(in: FilmInput!): Film @mutation(typeName: INSERT) }
             """);
@@ -544,7 +544,7 @@ class ErrorChannelClassificationTest {
             }
             union CarrierError = SimpleErr
             type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") { title: String }
+            input FilmInput { title: String }
             """;
 
     @Test
@@ -558,7 +558,7 @@ class ErrorChannelClassificationTest {
         var schema = TestSchemaHelper.buildSchema(CARRIER_WALK_ERROR_SDL + """
             type FilmPayload { films: [Film!] errors: [CarrierError!] }
             type Query { x: String }
-            type Mutation { createFilm(in: [FilmInput!]!): FilmPayload @mutation(typeName: INSERT) }
+            type Mutation { createFilm(in: [FilmInput!]!): FilmPayload @mutation(typeName: INSERT, table: "film") }
             """);
 
         var errorsField = schema.field("FilmPayload", "errors");
@@ -577,11 +577,11 @@ class ErrorChannelClassificationTest {
             type V1 @error(handlers: [{handler: VALIDATION}]) { path: [String!]! message: String! }
             type V2 @error(handlers: [{handler: VALIDATION}]) { path: [String!]! message: String! }
             type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") { title: String }
+            input FilmInput { title: String }
             union DoubleVal = V1 | V2
             type FilmPayload { films: [Film!] errors: [DoubleVal!] }
             type Query { x: String }
-            type Mutation { createFilm(in: [FilmInput!]!): FilmPayload @mutation(typeName: INSERT) }
+            type Mutation { createFilm(in: [FilmInput!]!): FilmPayload @mutation(typeName: INSERT, table: "film") }
             """);
 
         var mutField = schema.field("Mutation", "createFilm");

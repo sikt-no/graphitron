@@ -58,7 +58,7 @@ class ReferenceFilterRemoteColumnPipelineTest {
         var schema = TestSchemaHelper.buildSchema("""
             type Country @table(name: "country") { name: String @field(name: "country") }
             type City @table(name: "city") { name: String @field(name: "city") }
-            input CityFilter @table(name: "city") {
+            input CityFilter {
                 countryName: String @reference(path: [{table: "country"}]) @field(name: "country")
             }
             type Query { cities(filter: CityFilter): [City!]! }
@@ -78,7 +78,7 @@ class ReferenceFilterRemoteColumnPipelineTest {
         var schema = TestSchemaHelper.buildSchema("""
             type Country @table(name: "country") { name: String @field(name: "country") }
             type City @table(name: "city") { name: String @field(name: "city") }
-            input CityFilter @table(name: "city") {
+            input CityFilter {
                 countryName: String @reference(path: [{key: "city_country_id_fkey"}]) @field(name: "country")
             }
             type Query { cities(filter: CityFilter): [City!]! }
@@ -94,7 +94,7 @@ class ReferenceFilterRemoteColumnPipelineTest {
         var schema = TestSchemaHelper.buildSchema("""
             type Country @table(name: "country") { name: String @field(name: "country") }
             type Address @table(name: "address") { line: String @field(name: "address") }
-            input AddressFilter @table(name: "address") {
+            input AddressFilter {
                 countryName: String @reference(path: [{table: "city"}, {table: "country"}]) @field(name: "country")
             }
             type Query { addresses(filter: AddressFilter): [Address!]! }
@@ -112,7 +112,7 @@ class ReferenceFilterRemoteColumnPipelineTest {
         var schema = TestSchemaHelper.buildSchema("""
             type Country @table(name: "country") { name: String @field(name: "country") }
             type City @table(name: "city") { name: String @field(name: "city") }
-            input CityFilter @table(name: "city") {
+            input CityFilter {
                 countryNames: [String!] @reference(path: [{table: "country"}]) @field(name: "country")
             }
             type Query { cities(filter: CityFilter): [City!]! }
@@ -182,7 +182,7 @@ class ReferenceFilterRemoteColumnPipelineTest {
         var schema = TestSchemaHelper.buildSchema("""
             type Baz @table(name: "baz") { id: ID! }
             type Bar @table(name: "bar") { idOne: String @field(name: "ID_1") }
-            input BarFilter @table(name: "bar") {
+            input BarFilter {
                 relatedId: ID @nodeId(typeName: "Baz")
             }
             type Query { bars(filter: BarFilter): [Bar!]! }

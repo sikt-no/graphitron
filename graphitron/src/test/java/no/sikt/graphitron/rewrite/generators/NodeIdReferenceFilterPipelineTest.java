@@ -41,14 +41,14 @@ class NodeIdReferenceFilterPipelineTest {
     );
 
     private static final String MIXED_FILTER_INPUT = """
-        input BarFilter @table(name: "bar") {
+        input BarFilter {
             ids: [ID!] @nodeId(typeName: "Bar")
             cityNames: String @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "argCondition"}, override: true)
         }
         """;
 
     private static final String CONDITION_ONLY_INPUT = """
-        input BarFilter @table(name: "bar") {
+        input BarFilter {
             cityNames: String @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "argCondition"}, override: true)
         }
         """;

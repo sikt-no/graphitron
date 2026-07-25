@@ -100,11 +100,11 @@ class IncrementalCompileHarnessTest {
           films(filter: FilmFilter): [Film!] @reference(path: [{key: "film_language_id_fkey"}])
         }
 
-        input FilmFilter @table(name: "film") {
+        input FilmFilter {
           ids: [ID!] @nodeId(typeName: "Film")
         }
 
-        input FilmInput @table(name: "film") { title: String }
+        input FilmInput { title: String }
 
         type Mutation {
           createFilm(in: FilmInput!): Film @mutation(typeName: INSERT)
@@ -138,11 +138,11 @@ class IncrementalCompileHarnessTest {
           films(filter: FilmFilter): [Film!] @reference(path: [{key: "film_language_id_fkey"}])
         }
 
-        input FilmFilter @table(name: "film") {
+        input FilmFilter {
           ids: [ID!] @nodeId(typeName: "Film")
         }
 
-        input FilmInput @table(name: "film") { title: String }
+        input FilmInput { title: String }
 
         type Mutation {
           createFilm(in: FilmInput!): Film @mutation(typeName: INSERT)

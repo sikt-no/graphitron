@@ -80,7 +80,7 @@ class IdReferenceShimWarnFormatTest {
     private static final String AMBIGUOUS_FK1_SDL = """
         type Studieprogram @table(name: "studieprogram") { studieprogramId: String }
         type Studierett @table(name: "studierett") { studierettId: ID }
-        input StudierettFilterInput @table(name: "studierett") {
+        input StudierettFilterInput {
           studieprogramIds: [ID!] @field(name: "STUDIEPROGRAM_ID")
         }
         type Query { studierett(filter: StudierettFilterInput): Studierett }
@@ -89,7 +89,7 @@ class IdReferenceShimWarnFormatTest {
     private static final String AMBIGUOUS_FK2_SDL = """
         type Studieprogram @table(name: "studieprogram") { studieprogramId: String }
         type Studierett @table(name: "studierett") { studierettId: ID }
-        input StudierettFilterInput @table(name: "studierett") {
+        input StudierettFilterInput {
           registrarStudieprogramIds: [ID!] @field(name: "REGISTRAR_STUDIEPROGRAM_STUDIEPROGRAM_ID")
         }
         type Query { studierett(filter: StudierettFilterInput): Studierett }
@@ -103,7 +103,7 @@ class IdReferenceShimWarnFormatTest {
     private static final String UNIQUE_FK_SDL = """
         type Baz @table(name: "baz") { id: ID }
         type Bar @table(name: "bar") { name: String }
-        input BarFilterInput @table(name: "bar") {
+        input BarFilterInput {
           bazIds: [ID!] @field(name: "1_BAZ_ID")
         }
         type Query { bar(filter: BarFilterInput): Bar }

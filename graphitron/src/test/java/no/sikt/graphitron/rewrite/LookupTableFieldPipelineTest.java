@@ -95,7 +95,7 @@ class LookupTableFieldPipelineTest {
         // @lookupKey drives the binding walk over every admissible input field). Emits inline
         // via TypeClassGenerator.$fields, with a composite VALUES helper on the type class.
         var schema = TestSchemaHelper.buildSchema("""
-            input FilmActorKey @table(name: "film_actor") {
+            input FilmActorKey {
                 filmId: Int @field(name: "film_id")
                 actorId: Int @field(name: "actor_id")
             }

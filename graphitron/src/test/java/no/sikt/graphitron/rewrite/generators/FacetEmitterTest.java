@@ -27,7 +27,7 @@ class FacetEmitterTest {
 
     private static final String FACETED = """
         type Film @table(name: "film") { title: String }
-        input FilmFilter @table(name: "film") {
+        input FilmFilter {
             title: [String!] @field(name: "title") @asFacet
             length: [Int] @field(name: "length") @asFacet
             releaseYear: [Int!] @field(name: "release_year")
@@ -39,7 +39,7 @@ class FacetEmitterTest {
 
     private static final String UNFACETED = """
         type Film @table(name: "film") { title: String }
-        input FilmFilter @table(name: "film") {
+        input FilmFilter {
             title: [String!] @field(name: "title")
         }
         type Query {

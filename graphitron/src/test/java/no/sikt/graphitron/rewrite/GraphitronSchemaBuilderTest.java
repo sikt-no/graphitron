@@ -3400,7 +3400,7 @@ class GraphitronSchemaBuilderTest {
         // catalog projection is a JooqTableRecord.
         var s1 = buildSnapshot("""
             type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") { title: String }
+            input FilmInput { title: String }
             type FilmPayload { films: [Film!] }
             type Query { x: String }
             type Mutation { createFilms(in: [FilmInput!]!): FilmPayload @mutation(typeName: INSERT) }
@@ -4472,6 +4472,60 @@ class GraphitronSchemaBuilderTest {
             .contains("@lookupKey argument 'key'")
             .contains("'code'")
             .contains("table 'film'");
+    }
+
+    /**
+     * The headline behavior of consumer-derived input resolution: one directiveless input
+     * consumed by fields on two different tables resolves independently per consumer. Both
+     * consumers classify when the column exists on both tables; there is no whole-type table
+     * verdict shared between them.
+     */
+    @Test
+    void plainInput_reusedAcrossConsumersOnDifferentTables_resolvesPerConsumer() {
+        var schema = build("""
+            input SharedFilter { lastUpdate: String @field(name: "last_update") }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Actor @table(name: "actor") { actorId: Int! @field(name: "actor_id") }
+            type Query {
+                films(filter: SharedFilter): [Film!]!
+                actors(filter: SharedFilter): [Actor!]!
+            }
+            """);
+        assertThat(schema.type("SharedFilter")).isInstanceOf(PojoInputType.class);
+        assertThat(schema.field("Query", "films"))
+            .as("last_update resolves on film for the films consumer")
+            .isNotInstanceOf(UnclassifiedField.class);
+        assertThat(schema.field("Query", "actors"))
+            .as("the same input resolves on actor for the actors consumer")
+            .isNotInstanceOf(UnclassifiedField.class);
+    }
+
+    /**
+     * The negative half of per-consumer resolution, and the regression home for the
+     * cross-table-reuse flip: a field of the shared input that resolves on one consumer's
+     * table but not the other's rejects only the non-resolving consumer, naming that
+     * consumer's table (never silently resolving against some type-level table).
+     */
+    @Test
+    void plainInput_reused_columnMissingOnOneConsumer_rejectsOnlyThatConsumerNamingItsTable() {
+        var schema = build("""
+            input SharedFilter { title: String @field(name: "title") }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Actor @table(name: "actor") { actorId: Int! @field(name: "actor_id") }
+            type Query {
+                films(filter: SharedFilter): [Film!]!
+                actors(filter: SharedFilter): [Actor!]!
+            }
+            """);
+        assertThat(schema.field("Query", "films"))
+            .as("title exists on film; that consumer classifies")
+            .isNotInstanceOf(UnclassifiedField.class);
+        var uf = (UnclassifiedField) schema.field("Query", "actors");
+        assertThat(uf.reason())
+            .as("the actor consumer rejects naming its own table, not film")
+            .contains("'title'")
+            .contains("actor")
+            .doesNotContain("table 'film'");
     }
 
     /**

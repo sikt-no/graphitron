@@ -24,7 +24,7 @@ class FacetedConnectionPipelineTest {
 
     private static final String FACETED_CONNECTION = """
         type Film @table(name: "film") { title: String }
-        input FilmFilter @table(name: "film") {
+        input FilmFilter {
             title: [String!] @field(name: "title") @asFacet
             length: [Int] @field(name: "length") @asFacet
         }
@@ -68,7 +68,7 @@ class FacetedConnectionPipelineTest {
         // is nullable by the non-null rejection, so the value is always nullable here.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
-            input FilmFilter @table(name: "film") {
+            input FilmFilter {
                 title: String @field(name: "title") @asFacet
             }
             type Query {
@@ -87,7 +87,7 @@ class FacetedConnectionPipelineTest {
     void connectionWithoutAsFacet_hasEmptyFacets() {
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
-            input FilmFilter @table(name: "film") {
+            input FilmFilter {
                 title: [String!] @field(name: "title")
             }
             type Query {
@@ -107,7 +107,7 @@ class FacetedConnectionPipelineTest {
     void asFacetWithoutFieldDirective_rejected() {
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
-            input FilmFilter @table(name: "film") {
+            input FilmFilter {
                 title: [String!] @asFacet
             }
             type Query {
@@ -125,7 +125,7 @@ class FacetedConnectionPipelineTest {
     void asFacetOnConditionBoundField_rejected() {
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
-            input FilmFilter @table(name: "film") {
+            input FilmFilter {
                 title: [String!] @field(name: "title") @asFacet
                     @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "inputColumnCondition"})
             }
@@ -144,7 +144,7 @@ class FacetedConnectionPipelineTest {
     void asFacetOnReferenceBoundField_rejected() {
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
-            input FilmFilter @table(name: "film") {
+            input FilmFilter {
                 languageName: [String!] @field(name: "name")
                     @reference(path: [{key: "film_language_id_fkey"}]) @asFacet
             }
@@ -166,7 +166,7 @@ class FacetedConnectionPipelineTest {
         // carrier with no directive trace.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
-            input FilmFilter @table(name: "film") {
+            input FilmFilter {
                 filmId: [ID!] @field(name: "film_id") @asFacet
             }
             type Query {
@@ -184,7 +184,7 @@ class FacetedConnectionPipelineTest {
     void asFacetWithNodeIdCoOccurrence_rejected() {
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
-            input FilmFilter @table(name: "film") {
+            input FilmFilter {
                 ids: [ID!] @field(name: "film_id") @nodeId(typeName: "Film") @asFacet
             }
             type Query {
@@ -203,7 +203,7 @@ class FacetedConnectionPipelineTest {
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             input TitleBox { title: String @field(name: "title") }
-            input FilmFilter @table(name: "film") {
+            input FilmFilter {
                 nested: TitleBox @field(name: "title") @asFacet
             }
             type Query {
@@ -224,7 +224,7 @@ class FacetedConnectionPipelineTest {
         var schema = TestSchemaHelper.buildSchema("""
             interface Watchable { title: String }
             type Film implements Watchable @table(name: "film") { title: String }
-            input WatchableFilter @table(name: "film") {
+            input WatchableFilter {
                 title: [String!] @field(name: "title") @asFacet
             }
             type Query {
@@ -250,7 +250,7 @@ class FacetedConnectionPipelineTest {
             type FilmsConnection { edges: [FilmsEdge!]! nodes: [Film!]! pageInfo: PageInfo! }
             type FilmsEdge { cursor: String! node: Film! }
             type PageInfo { hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String }
-            input FilmFilter @table(name: "film") {
+            input FilmFilter {
                 title: [String!] @field(name: "title") @asFacet
             }
             type Query {
@@ -270,7 +270,7 @@ class FacetedConnectionPipelineTest {
         // an always-active filter value could never show unfiltered pivot counts anyway.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
-            input FilmFilter @table(name: "film") {
+            input FilmFilter {
                 title: [String!]! @field(name: "title") @asFacet
             }
             type Query {
@@ -291,7 +291,7 @@ class FacetedConnectionPipelineTest {
         // silently miss that lookup, so the combination is rejected.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
-            input FilmFilter @table(name: "film") {
+            input FilmFilter {
                 title: [String!] @field(name: "title") @asFacet
             }
             type Query {
@@ -314,7 +314,7 @@ class FacetedConnectionPipelineTest {
         // null, so the combination is rejected rather than shipped dead.
         var schema = TestSchemaHelper.buildSchema("""
             type Customer @table(name: "customer") { firstName: String }
-            input CustomerFilter @table(name: "customer") {
+            input CustomerFilter {
                 firstName: [String!] @field(name: "first_name") @asFacet
             }
             type Store @table(name: "store") {
@@ -339,10 +339,10 @@ class FacetedConnectionPipelineTest {
         // parameters), so the collision is rejected rather than resolved by position.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
-            input FilmFilter @table(name: "film") {
+            input FilmFilter {
                 length: [Int] @field(name: "length") @asFacet
             }
-            input FilmExtra @table(name: "film") {
+            input FilmExtra {
                 length: [Int!] @field(name: "length")
             }
             type Query {
@@ -363,10 +363,10 @@ class FacetedConnectionPipelineTest {
         // inputs on the same carrier cannot both facet a field named 'title'.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
-            input FilmFilterA @table(name: "film") {
+            input FilmFilterA {
                 title: [String!] @field(name: "title") @asFacet
             }
-            input FilmFilterB @table(name: "film") {
+            input FilmFilterB {
                 title: [String!] @field(name: "title") @asFacet
             }
             type Query {
@@ -387,7 +387,7 @@ class FacetedConnectionPipelineTest {
     void asFacetOnInputNotReachedViaAnyConnection_rejected() {
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
-            input FilmFilter @table(name: "film") {
+            input FilmFilter {
                 title: [String!] @field(name: "title") @asFacet
             }
             type Query {
@@ -408,7 +408,7 @@ class FacetedConnectionPipelineTest {
         // rejection fires only when NO use site is an @asConnection field.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
-            input FilmFilter @table(name: "film") {
+            input FilmFilter {
                 title: [String!] @field(name: "title") @asFacet
             }
             type Query {

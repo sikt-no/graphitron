@@ -76,7 +76,7 @@ class ReentryCommandClosureTest {
         }
 
         type FilmPayload { film: Film }
-        input FilmInput @table(name: "film") { title: String }
+        input FilmInput { title: String }
 
         type Mutation {
           createFilm(in: FilmInput!): Film @mutation(typeName: INSERT)

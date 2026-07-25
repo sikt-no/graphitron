@@ -85,9 +85,9 @@ class MutationDeleteTableFieldValidationTest {
     void directReturnTableType_yieldsValidationError() {
         var schema = no.sikt.graphitron.rewrite.TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            input FilmInput { filmId: Int! @field(name: "film_id") }
             type Query { x: String }
-            type Mutation { deleteFilm(in: FilmInput!): Film @mutation(typeName: DELETE) }
+            type Mutation { deleteFilm(in: FilmInput!): Film @mutation(typeName: DELETE, table: "film") }
             """);
         assertThat(validate(schema))
             .extracting(ValidationError::message)
@@ -101,10 +101,10 @@ class MutationDeleteTableFieldValidationTest {
     void payloadCarrierWithTableElement_yieldsValidationError() {
         var schema = no.sikt.graphitron.rewrite.TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            input FilmInput { filmId: Int! @field(name: "film_id") }
             type DeletedFilmsPayload { deleted: [Film!] }
             type Query { x: String }
-            type Mutation { deleteFilms(in: [FilmInput!]!): DeletedFilmsPayload @mutation(typeName: DELETE) }
+            type Mutation { deleteFilms(in: [FilmInput!]!): DeletedFilmsPayload @mutation(typeName: DELETE, table: "film") }
             """);
         assertThat(validate(schema))
             .extracting(ValidationError::message)

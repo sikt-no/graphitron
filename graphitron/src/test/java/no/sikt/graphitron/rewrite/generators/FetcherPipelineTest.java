@@ -386,7 +386,7 @@ class FetcherPipelineTest {
     void dmlInsertField_bulkInput_emitsValuesOfRowsWithContainsKeyDispatchAndEmptyListShortCircuit() {
         var sdl = """
             type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") {
+            input FilmInput {
                 title: String! @field(name: "title")
                 languageId: Int! @field(name: "language_id")
             }
@@ -427,7 +427,7 @@ class FetcherPipelineTest {
         // the SQL chain.
         var sdl = """
             type Film @table(name: "film") { title: String }
-            input FilmUpsertInput @table(name: "film") {
+            input FilmUpsertInput {
                 filmId: Int! @field(name: "film_id")
                 title: String! @field(name: "title")
                 description: String @field(name: "description")
@@ -450,9 +450,9 @@ class FetcherPipelineTest {
         // independent of the terminator.
         var sdl = """
             type Film implements Node @table(name: "film") @node { id: ID! @nodeId filmId: Int! @field(name: "film_id") }
-            input FilmDeleteInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            input FilmDeleteInput { filmId: Int! @field(name: "film_id") }
             type Query { dummy: String }
-            type Mutation { deleteFilms(in: [FilmDeleteInput!]!): [ID!]! @mutation(typeName: DELETE) }
+            type Mutation { deleteFilms(in: [FilmDeleteInput!]!): [ID!]! @mutation(typeName: DELETE, table: "film") }
             """;
         var deleteFilms = method(findSpec("MutationFetchers", sdl), "deleteFilms");
         var body = deleteFilms.code().toString();
@@ -473,7 +473,7 @@ class FetcherPipelineTest {
     void dmlUpdateField_bulkInput_emitsValuesJoinWithUniformShapeAndDuplicateKeyAndDialectGuards() {
         var sdl = """
             type Film @table(name: "film") { title: String }
-            input FilmUpdateInput @table(name: "film") {
+            input FilmUpdateInput {
                 filmId: Int! @field(name: "film_id")
                 title: String! @field(name: "title")
                 description: String @field(name: "description")
@@ -526,7 +526,7 @@ class FetcherPipelineTest {
         // doUpdate dispatch never reaches the fetcher tier and no fetcher is emitted.
         var sdl = """
             type Film @table(name: "film") { title: String }
-            input FilmUpsertNoSetInput @table(name: "film") {
+            input FilmUpsertNoSetInput {
                 filmId: Int! @field(name: "film_id")
             }
             type Query { dummy: String }
@@ -544,7 +544,7 @@ class FetcherPipelineTest {
         // "if (in.containsKey(name)) { sets.put(...) }" gate.
         var sdl = """
             type Film @table(name: "film") { title: String }
-            input FilmUpdateInput @table(name: "film") {
+            input FilmUpdateInput {
                 filmId: Int! @field(name: "film_id")
                 title: String @field(name: "title")
                 description: String @field(name: "description")
@@ -597,11 +597,11 @@ class FetcherPipelineTest {
     @Test
     void dmlInsertField_discriminatedInterfaceReturn_reprojectsThroughDiscriminatorKeyedByReturningPk() {
         var sdl = DISCRIMINATED_CONTENT_TYPES + """
-            input ContentInput @table(name: "content") {
+            input ContentInput {
               title: String! @field(name: "TITLE")
               contentType: String! @field(name: "CONTENT_TYPE")
             }
-            type Mutation { createContent(in: ContentInput!): Content @mutation(typeName: INSERT) }
+            type Mutation { createContent(in: ContentInput!): Content @mutation(typeName: INSERT, table: "content") }
             """;
         var mutationFetchers = findSpec("MutationFetchers", sdl);
         var createContent = method(mutationFetchers, "createContent");
@@ -633,11 +633,11 @@ class FetcherPipelineTest {
     @Test
     void dmlUpdateField_discriminatedInterfaceReturn_reprojectsThroughDiscriminator() {
         var sdl = DISCRIMINATED_CONTENT_TYPES + """
-            input ContentUpdateInput @table(name: "content") {
+            input ContentUpdateInput {
               contentId: Int! @field(name: "CONTENT_ID")
               title: String @field(name: "TITLE")
             }
-            type Mutation { updateContent(in: ContentUpdateInput!): Content @mutation(typeName: UPDATE) }
+            type Mutation { updateContent(in: ContentUpdateInput!): Content @mutation(typeName: UPDATE, table: "content") }
             """;
         var mutationFetchers = findSpec("MutationFetchers", sdl);
         var updateContent = method(mutationFetchers, "updateContent");
@@ -664,7 +664,7 @@ class FetcherPipelineTest {
     void dmlBulkProjectedReturn_companionRendersValuesJoinOrderedByIdx() {
         var sdl = """
             type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") { title: String }
+            input FilmInput { title: String }
             type Query { dummy: String }
             type Mutation { createFilms(in: [FilmInput!]!): [Film!]! @mutation(typeName: INSERT) }
             """;
@@ -685,7 +685,7 @@ class FetcherPipelineTest {
     void dmlSingleProjectedReturn_companionKeepsPlainKeyEquality() {
         var sdl = """
             type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") { title: String }
+            input FilmInput { title: String }
             type Query { dummy: String }
             type Mutation { createFilm(in: FilmInput!): Film @mutation(typeName: INSERT) }
             """;

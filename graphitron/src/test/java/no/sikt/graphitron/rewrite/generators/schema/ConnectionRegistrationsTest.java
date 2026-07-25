@@ -40,7 +40,7 @@ class ConnectionRegistrationsTest {
     void facetedConnection_registersFacets() {
         var body = bodyFor("""
             type Film @table(name: "film") { title: String }
-            input FilmFilter @table(name: "film") {
+            input FilmFilter {
                 title: [String!] @field(name: "title") @asFacet
             }
             type Query {

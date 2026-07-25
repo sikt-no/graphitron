@@ -36,9 +36,9 @@ class MutationDmlNodeIdClassificationTest {
     void idReturnOnNodeTable_populatesEncodeReturn() {
         var schema = TestSchemaHelper.buildSchema("""
             type Bar implements Node @table(name: "bar") @node { id: ID! @nodeId name: String }
-            input BarInput @table(name: "bar") { name: String }
+            input BarInput { name: String }
             type Query { x: String }
-            type Mutation { createBar(in: BarInput!): ID @mutation(typeName: INSERT) }
+            type Mutation { createBar(in: BarInput!): ID @mutation(typeName: INSERT, table: "bar") }
             """, NODEID_CTX);
 
         var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createBar");
@@ -57,9 +57,9 @@ class MutationDmlNodeIdClassificationTest {
         // delegate to and the field is rejected at validate time.
         var schema = TestSchemaHelper.buildSchema("""
             type Bar @table(name: "bar") { name: String }
-            input BarInput @table(name: "bar") { name: String }
+            input BarInput { name: String }
             type Query { x: String }
-            type Mutation { createBar(in: BarInput!): ID @mutation(typeName: INSERT) }
+            type Mutation { createBar(in: BarInput!): ID @mutation(typeName: INSERT, table: "bar") }
             """, NODEID_CTX);
 
         var f = (UnclassifiedField) schema.field("Mutation", "createBar");
@@ -70,9 +70,9 @@ class MutationDmlNodeIdClassificationTest {
     void idReturnOnNonNodeTable_rejected() {
         var schema = TestSchemaHelper.buildSchema("""
             type Qux @table(name: "qux") { name: String }
-            input QuxInput @table(name: "qux") { name: String }
+            input QuxInput { name: String }
             type Query { x: String }
-            type Mutation { createQux(in: QuxInput!): ID @mutation(typeName: INSERT) }
+            type Mutation { createQux(in: QuxInput!): ID @mutation(typeName: INSERT, table: "qux") }
             """, NODEID_CTX);
 
         var f = (UnclassifiedField) schema.field("Mutation", "createQux");
@@ -91,12 +91,12 @@ class MutationDmlNodeIdClassificationTest {
                 id: ID! @nodeId
                 name: String
             }
-            input BarCollisionInput @table(name: "bar") {
+            input BarCollisionInput {
                 name: String @field(name: "name")
                 alias: String @field(name: "name")
             }
             type Query { bar: Bar }
-            type Mutation { createBar(in: BarCollisionInput!): ID @mutation(typeName: INSERT) }
+            type Mutation { createBar(in: BarCollisionInput!): ID @mutation(typeName: INSERT, table: "bar") }
             """, NODEID_CTX);
 
         var f = (UnclassifiedField) schema.field("Mutation", "createBar");
@@ -117,7 +117,7 @@ class MutationDmlNodeIdClassificationTest {
                 id: ID! @nodeId
                 name: String
             }
-            input BarUpdateCollisionInput @table(name: "bar") {
+            input BarUpdateCollisionInput {
                 idOne: Int! @field(name: "id_1")
                 idTwo: Int! @field(name: "id_2")
                 name: String @field(name: "name")
@@ -150,9 +150,9 @@ class MutationDmlNodeIdClassificationTest {
                 id: ID! @nodeId
                 name: String
             }
-            input BarInput @table(name: "bar") { name: String }
+            input BarInput { name: String }
             type Query { bar: Bar barTwo: BarTwo }
-            type Mutation { createBar(in: BarInput!): ID @mutation(typeName: INSERT) }
+            type Mutation { createBar(in: BarInput!): ID @mutation(typeName: INSERT, table: "bar") }
             """, NODEID_CTX);
 
         // Both node types survive (allowed); the mutation field is the only thing rejected.
@@ -172,11 +172,11 @@ class MutationDmlNodeIdClassificationTest {
                 id: ID! @nodeId
                 name: String
             }
-            input BarInput @table(name: "bar") {
+            input BarInput {
                 id: ID! @nodeId
             }
             type Query { x: String }
-            type Mutation { updateBar(in: BarInput!): ID @mutation(typeName: UPDATE) }
+            type Mutation { updateBar(in: BarInput!): ID @mutation(typeName: UPDATE, table: "bar") }
             """, NODEID_CTX);
 
         var f = (UnclassifiedField) schema.field("Mutation", "updateBar");
@@ -196,11 +196,11 @@ class MutationDmlNodeIdClassificationTest {
                 id: ID! @nodeId
                 name: String
             }
-            input DeleteBarInput @table(name: "bar") {
+            input DeleteBarInput {
                 id: ID! @nodeId
             }
             type Query { x: String }
-            type Mutation { deleteBar(in: DeleteBarInput!): ID @mutation(typeName: DELETE) }
+            type Mutation { deleteBar(in: DeleteBarInput!): ID @mutation(typeName: DELETE, table: "bar") }
             """, NODEID_CTX);
 
         var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteBar");
@@ -221,9 +221,9 @@ class MutationDmlNodeIdClassificationTest {
         // parent_node has PK pk_id and a separate UNIQUE on alt_key.
         var deleteSchema = TestSchemaHelper.buildSchema("""
             type ParentNode implements Node @table(name: "parent_node") @node { id: ID! @nodeId pkId: String! @field(name: "pk_id") }
-            input DeleteParentNodeInput @table(name: "parent_node") { altKey: String! @field(name: "alt_key") }
+            input DeleteParentNodeInput { altKey: String! @field(name: "alt_key") }
             type Query { x: String }
-            type Mutation { deleteParentNode(in: DeleteParentNodeInput!): ID @mutation(typeName: DELETE) }
+            type Mutation { deleteParentNode(in: DeleteParentNodeInput!): ID @mutation(typeName: DELETE, table: "parent_node") }
             """, NODEID_CTX);
         var del = (MutationField.MutationDeleteTableField) deleteSchema.field("Mutation", "deleteParentNode");
         var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) del.deleteRows();
@@ -233,7 +233,7 @@ class MutationDmlNodeIdClassificationTest {
 
         var updateSchema = TestSchemaHelper.buildSchema("""
             type ParentNode @table(name: "parent_node") { pkId: String! @field(name: "pk_id") }
-            input UpdateParentNodeInput @table(name: "parent_node") {
+            input UpdateParentNodeInput {
                 altKey: String! @field(name: "alt_key")
                 name: String @field(name: "name")
             }
@@ -256,12 +256,12 @@ class MutationDmlNodeIdClassificationTest {
                 id: ID! @nodeId
                 name: String
             }
-            input UpdateBarInput @table(name: "bar") {
+            input UpdateBarInput {
                 id: ID! @nodeId
                 name: String
             }
             type Query { x: String }
-            type Mutation { updateBar(in: UpdateBarInput!): ID @mutation(typeName: UPDATE) }
+            type Mutation { updateBar(in: UpdateBarInput!): ID @mutation(typeName: UPDATE, table: "bar") }
             """, NODEID_CTX);
 
         // The composite-NodeId key field projects to two KeyColumn entries sharing the SDL
@@ -288,7 +288,7 @@ class MutationDmlNodeIdClassificationTest {
                 id: ID! @nodeId
                 name: String
             }
-            input UpsertBarInput @table(name: "bar") {
+            input UpsertBarInput {
                 id: ID! @nodeId
                 name: String
             }
@@ -310,12 +310,12 @@ class MutationDmlNodeIdClassificationTest {
                 id: ID! @nodeId
                 name: String
             }
-            input CreateBarInput @table(name: "bar") {
+            input CreateBarInput {
                 id: ID! @nodeId
                 name: String
             }
             type Query { x: String }
-            type Mutation { createBar(in: CreateBarInput!): ID @mutation(typeName: INSERT) }
+            type Mutation { createBar(in: CreateBarInput!): ID @mutation(typeName: INSERT, table: "bar") }
             """, NODEID_CTX);
 
         var f = (UnclassifiedField) schema.field("Mutation", "createBar");
@@ -331,11 +331,11 @@ class MutationDmlNodeIdClassificationTest {
             type Baz implements Node @table(name: "baz") @node(keyColumns: ["id"]) {
                 id: ID! @nodeId
             }
-            input DeleteBazInput @table(name: "baz") {
+            input DeleteBazInput {
                 id: ID! @nodeId
             }
             type Query { x: String }
-            type Mutation { deleteBaz(in: DeleteBazInput!): ID @mutation(typeName: DELETE) }
+            type Mutation { deleteBaz(in: DeleteBazInput!): ID @mutation(typeName: DELETE, table: "baz") }
             """, NODEID_CTX);
 
         var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteBaz");
@@ -353,7 +353,7 @@ class MutationDmlNodeIdClassificationTest {
     void tableReturnOnNonNodeTable_classifiedWithoutEncodeReturn() {
         var schema = TestSchemaHelper.buildSchema("""
             type Qux @table(name: "qux") { name: String }
-            input QuxInput @table(name: "qux") { name: String }
+            input QuxInput { name: String }
             type Query { x: String }
             type Mutation { createQux(in: QuxInput!): Qux @mutation(typeName: INSERT) }
             """, NODEID_CTX);
@@ -378,10 +378,10 @@ class MutationDmlNodeIdClassificationTest {
                 id: ID! @nodeId
                 name: String
             }
-            input DeleteBarInput @table(name: "bar") { id: ID! @nodeId }
+            input DeleteBarInput { id: ID! @nodeId }
             type DeletedBarsPayload { deletedIds: [ID!] }
             type Query { x: String }
-            type Mutation { deleteBars(in: [DeleteBarInput!]!): DeletedBarsPayload @mutation(typeName: DELETE) }
+            type Mutation { deleteBars(in: [DeleteBarInput!]!): DeletedBarsPayload @mutation(typeName: DELETE, table: "bar") }
             """, NODEID_CTX);
 
         var mut = (MutationField.MutationBulkDeletePayloadField) schema.field("Mutation", "deleteBars");
@@ -400,10 +400,10 @@ class MutationDmlNodeIdClassificationTest {
                 id: ID! @nodeId
                 name: String
             }
-            input DeleteBarInput @table(name: "bar") { id: ID! @nodeId }
+            input DeleteBarInput { id: ID! @nodeId }
             type DeletedBarsPayload { deletedIds: [ID!] @nodeId(typeName: "Bar") }
             type Query { x: String }
-            type Mutation { deleteBars(in: [DeleteBarInput!]!): DeletedBarsPayload @mutation(typeName: DELETE) }
+            type Mutation { deleteBars(in: [DeleteBarInput!]!): DeletedBarsPayload @mutation(typeName: DELETE, table: "bar") }
             """, NODEID_CTX);
 
         var mut = (MutationField.MutationBulkDeletePayloadField) schema.field("Mutation", "deleteBars");
@@ -425,10 +425,10 @@ class MutationDmlNodeIdClassificationTest {
                 id: ID! @nodeId
                 name: String
             }
-            input DeleteBarInput @table(name: "bar") { id: ID! @nodeId }
+            input DeleteBarInput { id: ID! @nodeId }
             type DeletedBarsPayload { deletedIds: [ID!] @nodeId(typeName: "Bar") }
             type Query { x: String }
-            type Mutation { deleteBars(in: [DeleteBarInput!]!): DeletedBarsPayload @mutation(typeName: DELETE) }
+            type Mutation { deleteBars(in: [DeleteBarInput!]!): DeletedBarsPayload @mutation(typeName: DELETE, table: "bar") }
             """, NODEID_CTX);
 
         var dataField = (no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning)
@@ -443,10 +443,10 @@ class MutationDmlNodeIdClassificationTest {
             type Baz implements Node @table(name: "baz") @node(keyColumns: ["id"]) {
                 id: ID! @nodeId
             }
-            input DeleteBazInput @table(name: "baz") { id: ID! @nodeId }
+            input DeleteBazInput { id: ID! @nodeId }
             type DeletedBazPayload { deletedId: ID }
             type Query { x: String }
-            type Mutation { deleteBaz(in: DeleteBazInput!): DeletedBazPayload @mutation(typeName: DELETE) }
+            type Mutation { deleteBaz(in: DeleteBazInput!): DeletedBazPayload @mutation(typeName: DELETE, table: "baz") }
             """, NODEID_CTX);
 
         var mut = (MutationField.MutationDeletePayloadField) schema.field("Mutation", "deleteBaz");
@@ -464,10 +464,10 @@ class MutationDmlNodeIdClassificationTest {
             type Baz implements Node @table(name: "baz") @node(keyColumns: ["id"]) {
                 id: ID! @nodeId
             }
-            input DeleteBazInput @table(name: "baz") { id: ID! @nodeId }
+            input DeleteBazInput { id: ID! @nodeId }
             type DeletedBazPayload { deletedId: ID @nodeId(typeName: "Baz") }
             type Query { x: String }
-            type Mutation { deleteBaz(in: DeleteBazInput!): DeletedBazPayload @mutation(typeName: DELETE) }
+            type Mutation { deleteBaz(in: DeleteBazInput!): DeletedBazPayload @mutation(typeName: DELETE, table: "baz") }
             """, NODEID_CTX);
 
         var mut = (MutationField.MutationDeletePayloadField) schema.field("Mutation", "deleteBaz");
@@ -489,10 +489,10 @@ class MutationDmlNodeIdClassificationTest {
             type Baz implements Node @table(name: "baz") @node(keyColumns: ["id"]) {
                 id: ID! @nodeId
             }
-            input DeleteBarInput @table(name: "bar") { id: ID! @nodeId }
+            input DeleteBarInput { id: ID! @nodeId }
             type DeletedBarsPayload { deletedIds: [ID!] @nodeId(typeName: "Baz") }
             type Query { x: String }
-            type Mutation { deleteBars(in: [DeleteBarInput!]!): DeletedBarsPayload @mutation(typeName: DELETE) }
+            type Mutation { deleteBars(in: [DeleteBarInput!]!): DeletedBarsPayload @mutation(typeName: DELETE, table: "bar") }
             """, NODEID_CTX);
 
         var f = (UnclassifiedField) schema.field("Mutation", "deleteBars");
@@ -520,12 +520,12 @@ class MutationDmlNodeIdClassificationTest {
             type Bar implements Node @table(name: "bar") @node(keyColumns: ["id_1", "id_2"]) {
                 id: ID! @nodeId
             }
-            input CreateBarInput @table(name: "bar") {
+            input CreateBarInput {
                 bazRef: ID! @nodeId(typeName: "Baz")
                 id2: String! @field(name: "id_2")
             }
             type Query { x: String }
-            type Mutation { createBar(in: CreateBarInput!): ID @mutation(typeName: INSERT) }
+            type Mutation { createBar(in: CreateBarInput!): ID @mutation(typeName: INSERT, table: "bar") }
             """, NODEID_CTX);
 
         var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createBar");
@@ -552,12 +552,12 @@ class MutationDmlNodeIdClassificationTest {
             type Bar implements Node @table(name: "bar") @node(keyColumns: ["id_1", "id_2"]) {
                 id: ID! @nodeId
             }
-            input DeleteBarInput @table(name: "bar") {
+            input DeleteBarInput {
                 bazRef: ID! @nodeId(typeName: "Baz")
                 id2: String! @field(name: "id_2")
             }
             type Query { x: String }
-            type Mutation { deleteBar(in: DeleteBarInput!): ID @mutation(typeName: DELETE) }
+            type Mutation { deleteBar(in: DeleteBarInput!): ID @mutation(typeName: DELETE, table: "bar") }
             """, NODEID_CTX);
 
         var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteBar");
@@ -587,13 +587,13 @@ class MutationDmlNodeIdClassificationTest {
                 id: ID! @nodeId
                 name: String
             }
-            input UpdateBarInput @table(name: "bar") {
+            input UpdateBarInput {
                 bazRef: ID! @nodeId(typeName: "Baz")
                 id2: String! @field(name: "id_2")
                 name: String
             }
             type Query { x: String }
-            type Mutation { updateBar(in: UpdateBarInput!): ID @mutation(typeName: UPDATE) }
+            type Mutation { updateBar(in: UpdateBarInput!): ID @mutation(typeName: UPDATE, table: "bar") }
             """, NODEID_CTX);
 
         var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateBar");
@@ -616,13 +616,13 @@ class MutationDmlNodeIdClassificationTest {
                 id: ID! @nodeId
                 childId: String! @field(name: "child_id")
             }
-            input DeleteReorderedChildInput @table(name: "reordered_fk_child") {
+            input DeleteReorderedChildInput {
                 childId: String! @field(name: "child_id")
                 parentRef: ID! @nodeId(typeName: "ReorderedPkParent")
             }
             type Query { x: String }
             type Mutation {
-                deleteReorderedChild(in: DeleteReorderedChildInput!): ID @mutation(typeName: DELETE)
+                deleteReorderedChild(in: DeleteReorderedChildInput!): ID @mutation(typeName: DELETE, table: "reordered_fk_child")
             }
             """, NODEID_CTX);
 
@@ -649,7 +649,7 @@ class MutationDmlNodeIdClassificationTest {
             type ReorderedChild @table(name: "reordered_fk_child") {
                 childId: String! @field(name: "child_id")
             }
-            input CreateReorderedChildInput @table(name: "reordered_fk_child") {
+            input CreateReorderedChildInput {
                 childId: String! @field(name: "child_id")
                 parentRef: ID! @nodeId(typeName: "ReorderedPkParent")
             }
@@ -681,12 +681,12 @@ class MutationDmlNodeIdClassificationTest {
             type Bar implements Node @table(name: "bar") @node(keyColumns: ["id_1", "id_2"]) {
                 id: ID! @nodeId
             }
-            input DeleteBarPkCovInput @table(name: "bar") {
+            input DeleteBarPkCovInput {
                 bazRef: ID! @nodeId(typeName: "Baz")
                 id2: String! @field(name: "id_2")
             }
             type Query { x: String }
-            type Mutation { deleteBarPkCov(in: DeleteBarPkCovInput!): ID @mutation(typeName: DELETE) }
+            type Mutation { deleteBarPkCov(in: DeleteBarPkCovInput!): ID @mutation(typeName: DELETE, table: "bar") }
             """, NODEID_CTX);
 
         var f = schema.field("Mutation", "deleteBarPkCov");
@@ -707,12 +707,12 @@ class MutationDmlNodeIdClassificationTest {
             type Bar implements Node @table(name: "bar") @node(keyColumns: ["id_1", "id_2"]) {
                 id: ID! @nodeId
             }
-            input DeleteBarMissingPkInput @table(name: "bar") {
+            input DeleteBarMissingPkInput {
                 bazRef: ID! @nodeId(typeName: "Baz")
             }
             type Query { x: String }
             type Mutation {
-                deleteBarMissingPk(in: DeleteBarMissingPkInput!): ID @mutation(typeName: DELETE)
+                deleteBarMissingPk(in: DeleteBarMissingPkInput!): ID @mutation(typeName: DELETE, table: "bar")
             }
             """, NODEID_CTX);
 
@@ -735,7 +735,7 @@ class MutationDmlNodeIdClassificationTest {
             type Bar implements Node @table(name: "bar") @node(keyColumns: ["id_1", "id_2"]) {
                 id: ID! @nodeId
             }
-            input UpsertBarRefInput @table(name: "bar") {
+            input UpsertBarRefInput {
                 bazRef: ID! @nodeId(typeName: "Baz")
                 id2: String! @field(name: "id_2")
             }
@@ -765,13 +765,13 @@ class MutationDmlNodeIdClassificationTest {
         var schema = TestSchemaHelper.buildSchema("""
             type Mailbox implements Node @table(name: "mailbox") @node { id: ID! @nodeId }
             type Email implements Node @table(name: "email") @node { id: ID! @nodeId }
-            input InsertEmailReplyInput @table(name: "email") {
+            input InsertEmailReplyInput {
                 mailboxRef: ID! @nodeId(typeName: "Mailbox")
                 messageNo: Int! @field(name: "message_no")
                 inReplyTo: ID @nodeId(typeName: "Email") @reference(path: [{key: "email_in_reply_to_fk"}])
             }
             type Query { x: String }
-            type Mutation { insertEmailReply(in: InsertEmailReplyInput!): ID @mutation(typeName: INSERT) }
+            type Mutation { insertEmailReply(in: InsertEmailReplyInput!): ID @mutation(typeName: INSERT, table: "email") }
             """);
 
         var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "insertEmailReply");
@@ -815,7 +815,7 @@ class MutationDmlNodeIdClassificationTest {
                 inReplyToNo: Int @field(name: "in_reply_to_no")
                 subject: String @field(name: "subject")
             }
-            input UpdateEmailReplyInput @table(name: "email") {
+            input UpdateEmailReplyInput {
                 id: ID! @nodeId(typeName: "Email")
                 subject: String @field(name: "subject")
                 inReplyTo: ID @nodeId(typeName: "Email") @reference(path: [{key: "email_in_reply_to_fk"}])
@@ -850,10 +850,10 @@ class MutationDmlNodeIdClassificationTest {
         // same diagnostic family as the bare-ID DELETE return path.
         var schema = TestSchemaHelper.buildSchema("""
             type Qux @table(name: "qux") { name: String }
-            input DeleteQuxInput @table(name: "qux") { name: String! }
+            input DeleteQuxInput { name: String! }
             type DeletedQuxPayload { deletedIds: [ID!] }
             type Query { x: String }
-            type Mutation { deleteQux(in: [DeleteQuxInput!]!): DeletedQuxPayload @mutation(typeName: DELETE) }
+            type Mutation { deleteQux(in: [DeleteQuxInput!]!): DeletedQuxPayload @mutation(typeName: DELETE, table: "qux") }
             """, NODEID_CTX);
 
         var f = (UnclassifiedField) schema.field("Mutation", "deleteQux");

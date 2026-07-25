@@ -786,8 +786,8 @@ public final class ClassifiedCorpus {
             type FilmInsertBulkPayload { films: [Film!] }
             type FilmUpdatePayload { film: Film }
             type FilmUpdateBulkPayload { films: [Film!] }
-            input FilmCreateInput @table(name: "film") { title: String }
-            input FilmUpdateInput @table(name: "film") { filmId: Int! @field(name: "film_id") title: String }
+            input FilmCreateInput { title: String }
+            input FilmUpdateInput { filmId: Int! @field(name: "film_id") title: String }
             type Query { x: String }
             type Mutation {
               createFilmsPayload(in: [FilmCreateInput!]!): FilmInsertBulkPayload
@@ -843,20 +843,20 @@ public final class ClassifiedCorpus {
             type Film implements Node @table(name: "film") @node { id: ID! @nodeId title: String }
             type FilmDetails { title: String }
             type FilmPayload { film: Film @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Table, sourceShape: Record) }
-            input FilmKeyInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
-            input FilmUpdateInput @table(name: "film") { filmId: Int! @field(name: "film_id") title: String }
-            input FilmTitleInput @table(name: "film") { title: String @field(name: "title") }
-            input FilmCreateInput @table(name: "film") { title: String }
+            input FilmKeyInput { filmId: Int! @field(name: "film_id") }
+            input FilmUpdateInput { filmId: Int! @field(name: "film_id") title: String }
+            input FilmTitleInput { title: String @field(name: "title") }
+            input FilmCreateInput { title: String }
             type Query { x: String }
             type Mutation {
               updateFilm(in: FilmUpdateInput!): Film
                 @mutation(typeName: UPDATE)
                 @classified(source: Mutation, operation: Update, target: Single, targetShape: Table)
               deleteFilm(in: FilmKeyInput!): ID
-                @mutation(typeName: DELETE)
+                @mutation(typeName: DELETE, table: "film")
                 @classified(source: Mutation, operation: Delete, target: Single, targetShape: Column)
               deleteFilmsBroadcast(in: FilmTitleInput!): ID
-                @mutation(typeName: DELETE, multiRow: true)
+                @mutation(typeName: DELETE, multiRow: true, table: "film")
                 @classified(source: Mutation, operation: Delete, target: Single, targetShape: Column)
               externalMutation: Film
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runFilm"})

@@ -89,11 +89,11 @@ class MethodClosureOracleTest {
           )
         }
 
-        input FilmFilter @table(name: "film") {
+        input FilmFilter {
           ids: [ID!] @nodeId(typeName: "Film")
         }
 
-        input FilmInput @table(name: "film") { title: String }
+        input FilmInput { title: String }
 
         type Mutation {
           createFilm(in: FilmInput!): Film @mutation(typeName: INSERT)
