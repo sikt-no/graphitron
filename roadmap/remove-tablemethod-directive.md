@@ -1,7 +1,7 @@
 ---
 id: R535
 title: "Remove the @tableMethod directive"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 3
 theme: model-cleanup
