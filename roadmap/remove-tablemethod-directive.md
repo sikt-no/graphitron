@@ -1,7 +1,7 @@
 ---
 id: R535
 title: "Remove the @tableMethod directive"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 3
 theme: model-cleanup
@@ -72,7 +72,13 @@ R333's join-path section). With the directive removed, both the inline leaf and 
    files whose diagnostic ladders, javadoc, or switch arms name the directive or its
    types (a vocabulary grep hits over 50 main-source files across the three modules;
    shared carriers such as `MethodRef` and `MethodBackedField` stay, only their
-   `@tableMethod`-specific arms and mentions go).
+   `@tableMethod`-specific arms and mentions go). `ServiceCatalog.reflectTableMethod`
+   also stays under its current name: `@condition` reflects through it
+   (`ConditionResolver.java:80` / `:111`) and it is the sole producer of the surviving
+   `MethodRef.StaticOnly`. Its name is directive-derived and its javadoc leads with
+   `@tableMethod`, so rewrite the javadoc to describe what it actually does (reflect a
+   static, table-parameterised developer method) rather than renaming the method; record
+   the keep so the Done-gate sweep does not read it as a survival.
 3. **LSP and MCP.** These are structural deletions, not mention sweeps: the
    `tableMethod` entry in `DirectivePolicy.METHOD_BINDING_DIRECTIVES`
    (`graphitron-lsp/.../parsing/DirectivePolicy.java:48`), the `@tableMethod`
@@ -81,8 +87,15 @@ R333's join-path section). With the directive removed, both the inline leaf and 
    `parsing/DeclTarget.java`, `inlay/LspClassificationLabels.java`,
    `hover/DeclarationHovers.java`, `graphitron-mcp/.../SchemaView.java`, and
    `EdgeProducer.java`.
-4. **Emit.** Delete `TypeFetcherGenerator.buildChildTableMethodFetcher` and its dispatch
-   rows; sweep `TypeClassGenerator` and `JoinPathEmitter`.
+4. **Emit.** Delete both fetcher builders, not just the child one:
+   `TypeFetcherGenerator.buildChildTableMethodFetcher` (`:1992`, dispatched from `:681`)
+   and its root-site cognate `buildQueryTableMethodFetcher` (`:1657`, dispatched from
+   `:598`). Drop the two leaves from `TypeFetcherGenerator.IMPLEMENTED_LEAVES`
+   (`QueryField.QueryTableMethodTableField` at `:310`, `ChildField.TableMethodField` at
+   `:340`): that set is one arm of the four-way `IMPLEMENTED_LEAVES` /
+   `NOT_DISPATCHED_LEAVES` / `PROJECTED_LEAVES` / `STUBBED_VARIANTS` partition over the
+   `GraphitronField` seal, so the edit is a main-source constant, not a test enumeration.
+   Sweep `TypeClassGenerator` and `JoinPathEmitter`.
 5. **Report policy.** Drop `tableMethod` from `WITHHELD_FROM_V1` in
    `DirectiveSupportReport` (shrinks to `sourceRow`, `experimental_constructType`);
    regenerate `supported-directives.adoc`; the derived exempt set in
@@ -116,11 +129,33 @@ R333's join-path section). With the directive removed, both the inline leaf and 
    `catalog/FieldClassificationProjectionTest`, `catalog/LspColumnDispatchProjectionTest`,
    the graphitron-mcp `EdgeCoverageTest`, and the LSP behavioural tests. Update their
    enumerations alongside the deletions; no surviving coordinate may lose its last
-   demonstration.
+   demonstration. Two of the enumerations these tests police are main-source constants
+   rather than test data, and are edited where they live: the
+   `TypeFetcherGenerator.IMPLEMENTED_LEAVES` rows in step 4, and the
+   `FieldClassification.TableMethod` / `.QueryTableMethod` entries in
+   `EdgeProducer.EDGE_BEARING_FIELDS` (`graphitron-mcp/.../EdgeProducer.java:281` / `:289`).
 9. **Roadmap state.** R288 stays as filed (already narrowed to the polymorphic-interface
-   N+1 case, independent of `@tableMethod`); R277 is already Discarded; R333's join-path
-   residue note about the inline leaf is discharged by this removal (update the living
-   document's residue sentence when the item ships).
+   N+1 case, independent of `@tableMethod`); R277 is already Discarded. Two Backlog items
+   this removal invalidates must be dispositioned in the same commit that ships it, per
+   `roadmap/workflow.adoc`'s "reach for Discarded rather than leaving a stale plan in
+   Backlog":
+   - **R529** (`tablemethod-subshape-buildtime-rejection`) is Discarded. It is wholly
+     about lifting `TypeFetcherGenerator`'s `@tableMethod` multi-hop / condition-join
+     `unsupportedPath` runtime throw into a build-time rejection; deleting the arm
+     discharges it outright, so there is nothing left to renarrow.
+   - **R240** (`tablemethod-return-type-token-threading`) is renarrowed, not discarded.
+     Its `@tableMethod`-side motivation evaporates (`buildQueryTableMethodFetcher` and
+     the strict `ClassName.equals` check it justified both go), but
+     `MethodRef.StaticOnly` survives on the `@condition` / `@externalField` producers
+     (`ServiceCatalog.java:618` / `:691`), so the type-token lift still has a subject.
+     Rewrite its body to drop the deleted anchors and restate the surviving scope.
+
+   R333 (`coordinate-lowers-to-datafetcher-queryparts`) needs more than its residue note
+   at `:905-907`: `TableExpr.MethodCall` is also the subject of the node definition at
+   `:799`, two model-table rows (`:166`, `:1832`), and the resolution paragraphs at
+   `:1863-1865`, `:1901-1903`, `:1915`. Sweep all of them when the item ships; a living
+   document describing a deleted seal arm is exactly what the Done-gate retirement sweep
+   over roadmap bodies is for.
 
 ## Acceptance criteria
 
@@ -140,5 +175,6 @@ R333's join-path section). With the directive removed, both the inline leaf and 
 `@tableMethod`, `TableMethodDirectiveResolver`, `ChildField.TableMethodField`,
 `QueryField.QueryTableMethodTableField`, `FieldClassification.TableMethod`,
 `FieldClassification.QueryTableMethod`, `TableExpr.MethodCall`,
-`buildChildTableMethodFetcher`, `TestTableMethodStub`, `TableMethodFieldPipelineTest`,
+`buildChildTableMethodFetcher`, `buildQueryTableMethodFetcher`,
+`TestTableMethodStub`, `TableMethodFieldPipelineTest`,
 `TableMethodFieldValidationTest`, `QueryTableMethodTableFieldValidationTest`.
