@@ -1,13 +1,13 @@
 ---
 id: R527
 title: "Pin or enforce the load-bearing comment contracts the javadoc sweep could not anchor"
-status: Ready
+status: In Progress
 bucket: testing
 priority: 5
 theme: codegen-correctness
 depends-on: []
 created: 2026-07-24
-last-updated: 2026-07-24
+last-updated: 2026-07-25
 ---
 
 # Pin or enforce the load-bearing comment contracts the javadoc sweep could not anchor
