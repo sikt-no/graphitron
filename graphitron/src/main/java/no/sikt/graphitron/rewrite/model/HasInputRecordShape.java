@@ -4,7 +4,7 @@ package no.sikt.graphitron.rewrite.model;
  * Capability marker for classified SDL {@code input} types that produce a per-input-type
  * graphitron-emitted Java class (the validation target, eventually a Java {@code record} once
  * graphitron-javapoet gains record support). Declared on each
- * {@link GraphitronType.InputType} leaf and on {@link GraphitronType.TableInputType}.
+ * {@link GraphitronType.InputType} leaf.
  *
  * <p>Two consumers reach the slot via {@link #recordShape()}:
  * {@code InputRecordGenerator} emits one class per shape, and the validator pre-step in
@@ -15,8 +15,7 @@ public sealed interface HasInputRecordShape
     permits GraphitronType.JavaRecordInputType,
             GraphitronType.PojoInputType,
             GraphitronType.JooqRecordInputType,
-            GraphitronType.JooqTableRecordInputType,
-            GraphitronType.TableInputType {
+            GraphitronType.JooqTableRecordInputType {
 
     /**
      * Pre-resolved shape for the emitted class: target class name plus one

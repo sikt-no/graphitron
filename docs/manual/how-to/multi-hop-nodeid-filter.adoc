@@ -57,7 +57,7 @@ type LevelA implements Node @table(name: "level_a") @node {
     id: ID!
 }
 
-input LevelCFilterInput @table(name: "level_c") {
+input LevelCFilterInput {
     levelAIds: [ID!] @nodeId(typeName: "LevelA") @reference(path: [
         {key: "level_c_level_b_fk"},
         {key: "level_b_level_a_fk"}

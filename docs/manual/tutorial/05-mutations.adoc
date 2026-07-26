@@ -10,7 +10,7 @@ From `schema.graphqls`:
 
 [source,graphql]
 ----
-input FilmCreateInput @table(name: "film") {
+input FilmCreateInput {
     title:      String! @field(name: "title")
     languageId: Int!    @field(name: "language_id")
 }
@@ -22,7 +22,7 @@ type Mutation {
 
 Three pieces are doing the work:
 
-* `@table(name: "film")` on the input type. This binds `FilmCreateInput`'s fields to columns on the `film` table; without it, the generator would not know which table to insert into.
+* The `Film` return type. `Film` carries `@table(name: "film")` (page 2), and the mutation's write target is derived from its return type, so `FilmCreateInput`'s fields bind to columns on the `film` table. The input type itself needs no directive. (A mutation whose return names no table, a `DELETE` returning an `ID`, say, names the table on the field instead with `@mutation(table: "film")`.)
 * `@field(name: "...")` on each input field. Same role as on a query type: map the GraphQL field name to a database column.
 * `@mutation(typeName: INSERT)` on the mutation field. This is the directive that flips the resolver from "build a SELECT" to "build an INSERT", and tells it to use `RETURNING` to populate the response.
 
@@ -73,28 +73,27 @@ Splitting the write from the read-back keeps the write statement independent of 
 
 == Other mutation shapes
 
-The example schema also has `updateFilm` and `upsertFilm`:
+The example schema also has `updateFilm`:
 
 [source,graphql]
 ----
 type Mutation {
     createFilm(in: FilmCreateInput!): Film @mutation(typeName: INSERT)
     updateFilm(in: FilmUpdateInput!): Film @mutation(typeName: UPDATE)
-    upsertFilm(in: FilmUpsertInput!): Film @mutation(typeName: UPSERT)
 }
 ----
 
-`UPDATE` requires an input field marked with `@lookupKey` to identify the row to update; `UPSERT` adds an `ON CONFLICT` clause. Both follow the same pattern as `INSERT`: the directive picks the SQL shape, the input's `@table` binds the target, and the same two-step write-then-read-back serves the response selection set. Sample `FilmUpdateInput`:
+`UPDATE` follows the same pattern as `INSERT`: the directive picks the SQL shape, the `Film` return derives the write target, and the same two-step write-then-read-back serves the response selection set. Sample `FilmUpdateInput`:
 
 [source,graphql]
 ----
-input FilmUpdateInput @table(name: "film") {
-    filmId: Int!    @field(name: "film_id") @lookupKey
+input FilmUpdateInput {
+    filmId: Int!    @field(name: "film_id")
     title:  String! @field(name: "title")
 }
 ----
 
-The `@lookupKey` on `filmId` tells the generator "this field identifies the row, not a value to set". Try the update against the film you just inserted:
+`UPDATE` identifies the row to update by key coverage, read from the database catalog with no directive needed: `filmId` covers the `film` table's primary key, so it becomes the `WHERE` clause, and the remaining fields (`title`) populate the `SET` clause. An input that covers no primary or unique key fails the build rather than updating more rows than intended. Try the update against the film you just inserted:
 
 [source,bash]
 ----
@@ -105,11 +104,11 @@ curl -s -X POST http://localhost:8080/graphql \
 
 == Grouping fields with nested input types
 
-A `@mutation` input field can itself be an input object with no `@table` directive: a plain grouping type whose own fields map onto columns of the *same* table as the surrounding `@table` input. This tidies a large input into named clusters on the client side without introducing a second table. Suppose a schema like:
+A `@mutation` input field can itself be an input object: a plain grouping type whose own fields map onto columns of the *same* write target as the surrounding input. This tidies a large input into named clusters on the client side without introducing a second table. Suppose a schema like:
 
 [source,graphql]
 ----
-input EndreOrganisasjonInput @table(name: "ORGANISASJON") {
+input EndreOrganisasjonInput {
   id: ID! @nodeId(typeName: "URegOrganisasjon")
   originalnavn: String! @field(name: "NAVN_ORIGINAL")
   lokalisering: LokaliseringInput!
@@ -121,13 +120,19 @@ input LokaliseringInput {
   regionnavn: String
 }
 
+# URegOrganisasjon is @table(name: "ORGANISASJON"); its presence as the payload's
+# data element derives the write target.
+type EndreOrganisasjonPayload {
+  organisasjoner: [URegOrganisasjon!]
+}
+
 type Mutation {
   endreOrganisasjon(input: [EndreOrganisasjonInput!]!): EndreOrganisasjonPayload
     @mutation(typeName: UPDATE)
 }
 ----
 
-`LokaliseringInput` has no `@table`, so its fields are not a separate row: `landkode`, `bynavn`, and `regionnavn` are columns of `ORGANISASJON`, reached on the wire as `input.lokalisering.landkode`. The mutation call nests the same way:
+`LokaliseringInput` is a grouping, not a separate row: `landkode`, `bynavn`, and `regionnavn` are columns of `ORGANISASJON`, reached on the wire as `input.lokalisering.landkode`. The mutation call nests the same way:
 
 [source,graphql]
 ----
@@ -141,7 +146,7 @@ mutation {
 Three things to keep in mind:
 
 * *The grouping has no DML semantics.* It is purely a wire-format ergonomics shape. The generated `UPDATE` writes flat columns on `ORGANISASJON` exactly as if the nested leaves had been declared at the top level of `EndreOrganisasjonInput`.
-* *`@field(name:)` on a nested leaf targets the outer table.* The resolution context is the surrounding `@table`, so a nested leaf names a column of that table (here, of `ORGANISASJON`); the SDL-name-defaults-to-column-name fallback resolves against the outer table too.
+* *`@field(name:)` on a nested leaf targets the outer table.* The resolution context is the mutation's write target, so a nested leaf names a column of that table (here, of `ORGANISASJON`); the SDL-name-defaults-to-column-name fallback resolves against the outer table too.
 * *Absent-vs-null is honored at every nesting layer*, matching the way top-level mutation inputs already behave:
 +
 [cols="1,3"]
@@ -169,11 +174,11 @@ Three things to keep in mind:
 
 So sending `lokalisering: { landkode: "NO", bynavn: null }` writes `landkode = 'NO'`, `bynavn = NULL`, and leaves `regionnavn` untouched.
 
-This works for every DML verb (`INSERT`, `UPDATE`, `DELETE`). A nested grouping that introduces a *second* table (a nested input that is itself `@table`-backed) is a different, compound-mutation shape and is not covered here.
+This works for every DML verb (`INSERT`, `UPDATE`, `DELETE`). A nested grouping that introduces a *second* table is a different, compound-mutation shape and is not covered here.
 
 == You have just learned
 
-How `@mutation(typeName: ...)` flips a resolver into an `INSERT`, `UPDATE`, or `UPSERT`; how `@table` and `@field` on an input type wire the operation to a target table and its columns; and how `RETURNING` keeps the round-trip count to one, even when the response asks for more than the inserted row provides.
+How `@mutation(typeName: ...)` flips a resolver into an `INSERT` or `UPDATE`; how the field's return type (or `@mutation(table:)`, for returns that name no table) carries the write target while `@field` maps input fields to its columns; and how `RETURNING` keeps the round-trip count to one, even when the response asks for more than the inserted row provides.
 
 == Next
 

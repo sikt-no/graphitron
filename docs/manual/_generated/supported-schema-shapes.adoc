@@ -10,7 +10,7 @@ Supported schema shapes are enumerated below by output sealed-leaf class. Each s
 === RootField
 
 * *MutationBulkDeletePayloadField*: The payload-returning `@mutation(typeName: DELETE)` field with bulk
-* *MutationBulkDmlRecordField*: A record-returning DML mutation with bulk `@table` input and a list-shaped
+* *MutationBulkDmlRecordField*: A record-returning DML mutation with bulk DML input and a list-shaped
 * *MutationBulkUpdatePayloadField*: The payload-returning `@mutation(typeName: UPDATE)` field with bulk
 * *MutationDeletePayloadField*: The payload-returning `@mutation(typeName: DELETE)` field with single
 * *MutationDeleteTableField*: The `@mutation(typeName: DELETE)` field that returns an encoded ID. Unlike its
@@ -64,9 +64,9 @@ Supported schema shapes are enumerated below by output sealed-leaf class. Each s
 
 === InputField
 
-* *ColumnBackedField*: A field in a `@table`-annotated input type, successfully resolved to one or more SQL
-* *ColumnBackedReferenceField*: A field in a `@table`-annotated input type that uses `@reference` (or an
-* *NestingField*: A field in a `@table`-annotated input type whose GraphQL type is itself an input
+* *ColumnBackedField*: An input field successfully resolved to one or more SQL columns on the consuming
+* *ColumnBackedReferenceField*: An input field that uses `@reference` (or an
+* *NestingField*: An input field whose GraphQL type is itself an input
 * *UnboundField*: Input field that does not bind to a SQL column. The defining property is the absence of a
 
 === GraphitronType
@@ -91,7 +91,6 @@ Supported schema shapes are enumerated below by output sealed-leaf class. Each s
 * *PojoInputType*: A non-table input type backed by a plain Java class (POJO), or one for which no producer
 * *RootType*: A root operation type (Query or Mutation). Unmapped — no source context, no SQL until
 * *ScalarType*: A GraphQL scalar type whose Java type and `GraphQLScalarType` constant (or inline
-* *TableInputType*: A GraphQL input object type annotated with `@table`
 * *TableInterfaceType*: An interface annotated with `@table` and `@discriminate`, where implementing
 * *TableType*: A GraphQL object type annotated with `@table`, without `@node`
 * *UnclassifiedType*: A type that could not be classified — examples include an unresolvable `@table`

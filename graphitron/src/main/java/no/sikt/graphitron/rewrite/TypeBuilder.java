@@ -35,7 +35,6 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.NestingType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ResultType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableBackedType;
-import no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableInterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
@@ -109,7 +108,7 @@ class TypeBuilder {
     /**
      * The reflection-driven SDL-to-backing-class binding resolver. Populated by
      * {@link #prepareForWalk()} before per-type classification; consulted by
-     * {@link #buildResultType} and {@link #buildNonTableInputType} to decide the backed variant.
+     * {@link #buildResultType} and {@link #buildPlainInputType} to decide the backed variant.
      */
     private RecordBindingResolver bindings;
 
@@ -618,7 +617,6 @@ class TypeBuilder {
         boolean isInput = named instanceof GraphQLInputObjectType;
         boolean reachable = isInput
             ? bindings.resolveInput(name).isPresent()
-                || (named instanceof GraphQLInputObjectType iot && iot.hasAppliedDirective(DIR_TABLE))
             : bindings.resolveResult(name).isPresent();
         if (!reachable) return;
 
@@ -635,10 +633,11 @@ class TypeBuilder {
             container.getAppliedDirective(DIR_RECORD), "Remove the redundant @record");
 
         // Shadowed by @table. A @table + @record combination is not a hard conflict
-        // (detectTypeDirectiveConflict ignores @record), so both OBJECT and INPUT carriers reach
-        // this site; @table wins and @record is ignored.
-        if (container.hasAppliedDirective(DIR_TABLE)) {
-            String message = (isInput ? "Input type '" : "Type '") + name + "' carries both @table and "
+        // (detectTypeDirectiveConflict ignores @record), so OBJECT carriers reach this site;
+        // @table wins and @record is ignored. An input carrying @table is rejected at
+        // classification (retired location), which supersedes this warning.
+        if (!isInput && container.hasAppliedDirective(DIR_TABLE)) {
+            String message = "Type '" + name + "' carries both @table and "
                 + formatRecordRef(declaredClassName)
                 + ". Graphitron derives the backing class from @table; "
                 + "the @record directive is ignored. Remove it.";
@@ -1578,33 +1577,34 @@ class TypeBuilder {
     private GraphitronType buildInputType(GraphQLInputObjectType inputType) {
         String name = inputType.getName();
         SourceLocation location = locationOf(inputType);
-        // @table wins on the (@table + @record) combination on input types; the redundancy is
-        // surfaced by the "Shadowed by @table" variant in emitDirectiveIgnoredWarning.
+        // Retired location: the SDL declaration keeps INPUT_OBJECT so the parser does not fail
+        // with a generic "unknown directive location", and classification rejects the
+        // application here with the migration message (same convention as @notGenerated).
         if (inputType.hasAppliedDirective(DIR_TABLE)) {
-            String tableName = argString(inputType, DIR_TABLE, ARG_NAME).orElse(name.toLowerCase());
-            Optional<TableRef> tableOpt = svc.resolveTable(tableName);
-            if (tableOpt.isEmpty()) {
-                return new UnclassifiedType(name, location, ctx.unknownTableRejection(tableName));
-            }
-            return buildTableInputType(name, location, inputType.getFieldDefinitions(), tableOpt.get(), inputType);
+            return new UnclassifiedType(name, location, Rejection.structural(
+                "`@table` on input type '" + name + "' is no longer supported; remove the "
+                + "directive. An input's fields resolve against each consuming field's table, so "
+                + "filters and lookup args need no directive. For a consuming "
+                + "`@mutation(typeName: DELETE)` field, name the write target with "
+                + "`@mutation(table: \"…\")` on the field; for INSERT/UPDATE the write target is "
+                + "derived from the field's return type (a `@table` return, or a payload's "
+                + "`@table`-element data field), with `@mutation(table: \"…\")` for encoded-ID / "
+                + "scalar returns."));
         }
-        // Directive-driven only: an explicit @table produces the deprecated TableInputType bridge
-        // above; every other input is plain. The input is not itself a modeled relation, so it has
-        // no table to decide here; its fields resolve against the consuming field's return table
-        // at each call site (FieldBuilder.classifyArgument's plain-input path via
-        // InputFieldResolver, or the arg-level @lookupKey path via resolveInputFields), so an
-        // input reused across tables resolves per-consumer.
-        return buildNonTableInputType(inputType, name, location);
+        // The input is not itself a modeled relation, so it has no table to decide here; its
+        // fields resolve against the consuming field's return table at each call site
+        // (FieldBuilder.classifyArgument's plain-input path via InputFieldResolver, or the
+        // arg-level @lookupKey path via resolveInputFields), so an input reused across tables
+        // resolves per-consumer.
+        return buildPlainInputType(inputType, name, location);
     }
 
     /**
      * The narrow field-resolution fact a table-relative input-field resolution produces: either
-     * the resolved {@link InputField} list or the accumulated-failure prose. Deliberately
-     * <em>not</em> a synthesized {@link TableInputType} (which additionally carries
-     * {@code name}/{@code location}/{@code inputType}/{@code InputRecordShape}, all type-registry
-     * concerns): the field-derived DELETE write-target path in {@code FieldBuilder} needs only the
-     * fields, so landing a full {@code TableInputType} nowhere would make one model type mean two
-     * things. Shared by {@link #buildTableInputType} and the DELETE classifiers.
+     * the resolved {@link InputField} list or the accumulated-failure prose. Deliberately a
+     * bare fields carrier and not a per-type model record: the field-derived write-target paths
+     * in {@code FieldBuilder} need only the fields, resolved against the consuming field's
+     * table.
      */
     sealed interface InputFieldsResolution {
         record Resolved(List<InputField> fields) implements InputFieldsResolution {}
@@ -1614,9 +1614,8 @@ class TypeBuilder {
     /**
      * Resolves a list of raw input fields against a {@link TableRef} into fully-classified
      * {@link InputField}s (or the accumulated-failure prose). The single home of the input-field
-     * classification loop, shared by {@link #buildTableInputType} (the {@code @table}-on-input
-     * path) and the field-derived DELETE write-target path in {@code FieldBuilder}, so both routes
-     * classify identical schema defects identically.
+     * classification loop for the field-derived write-target paths in {@code FieldBuilder}, so
+     * every route classifies identical schema defects identically.
      */
     InputFieldsResolution resolveInputFields(String name, List<GraphQLInputObjectField> fields, TableRef tableRef) {
         var failures = new ArrayList<InputFieldResolution.Unresolved>();
@@ -1655,31 +1654,13 @@ class TypeBuilder {
     }
 
     /**
-     * Resolves a list of raw input fields against a {@link TableRef} into a {@link TableInputType}.
-     */
-    GraphitronType buildTableInputType(String name, SourceLocation location,
-            List<GraphQLInputObjectField> fields, TableRef tableRef, GraphQLInputObjectType inputType) {
-        var fieldsResolution = resolveInputFields(name, fields, tableRef);
-        if (fieldsResolution instanceof InputFieldsResolution.Failed failed) {
-            return new UnclassifiedType(name, location, Rejection.structural(failed.reason()));
-        }
-        var resolvedFields = ((InputFieldsResolution.Resolved) fieldsResolution).fields();
-        var shape = buildInputRecordShape(name, inputType);
-        if (shape == null) {
-            return new UnclassifiedType(name, location, Rejection.structural(
-                "mapped to table '" + tableRef.tableName() + "' — input-record component types could not be resolved"));
-        }
-        return new TableInputType(name, location, tableRef, resolvedFields, inputType, shape);
-    }
-
-    /**
      * Constructs the appropriate {@link InputType} sub-type from the resolved backing class,
      * symmetric with {@link #buildResultType}: {@link RecordBindingResolver} reflection is the
      * only source. An input type with no reflected producer binding is a backing-less
      * {@link GraphitronType.PojoInputType}; the deprecated {@code @record} directive never
      * supplies a fallback className.
      */
-    private GraphitronType buildNonTableInputType(GraphQLInputObjectType inputType, String name, SourceLocation location) {
+    private GraphitronType buildPlainInputType(GraphQLInputObjectType inputType, String name, SourceLocation location) {
         var shape = buildInputRecordShape(name, inputType);
         if (shape == null) {
             return new UnclassifiedType(name, location, Rejection.structural(

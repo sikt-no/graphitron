@@ -109,7 +109,7 @@ type Query {
     # R61 execution-tier fixture: lookup inventories by id to exercise the @externalField
     # TableRecord-lift paths (Inventory.filmRef and Inventory.filmCardData).
     inventoryById(inventory_id: [Int!]! @lookupKey @field(name: "inventory_id")): [Inventory!]!
-    # argres Phase 3: composite-key lookup via @table input type. Each FilmActorKey carries
+    # argres Phase 3: composite-key lookup via a consumer-resolved input type. Each FilmActorKey carries
     # two @lookupKey scalar fields (film_id, actor_id); the generator materialises a VALUES
     # derived table with columns (idx, film_id, actor_id) and joins on both keys.
     filmActorsByKey(key: [FilmActorKey!]! @lookupKey): [FilmActor!]!
@@ -119,11 +119,11 @@ type Query {
     # GraphqlErrorException via the ThrowOnMismatch contract. See lift-nodeid-out-of-model.md.
     filmActorByNodeId(id: [ID!]! @lookupKey): [FilmActor!]!
     # R79 compilation-tier regression guard: composite-PK NodeId on a *non-lookupKey* arg, fed
-    # through an `@table`-bound input type. Reaches FieldBuilder.compositeImplicitBodyParam →
+    # through the consumer-resolved input type. Reaches FieldBuilder.compositeImplicitBodyParam →
     # BodyParam.RowIn → TypeConditionsGenerator's typed `DSL.row(table.c1, table.c2).in(ids)`
     # form. Before R79 the generated source did not compile (Row vs Row<N> assignment).
     filmActorsByCompositeNodeIds(filter: FilmActorCompositeNodeIdFilter): [FilmActor!]!
-    # R131 compilation-tier guard: singular composite-PK same-table @nodeId on an `@table`
+    # R131 compilation-tier guard: singular composite-PK same-table @nodeId on a filter
     # input. Pre-R131 the singular branch unconditionally produced a CompositeColumnReferenceField
     # for this shape; post-R131 the resolver routes through the same SameTable arm as the list
     # branch and emits CompositeColumnField, which feeds compositeImplicitBodyParam → BodyParam.RowEq
@@ -191,7 +191,7 @@ type Query {
         {name: "rental_rate", direction: DESC},
         {name: "title", direction: ASC}
     ])
-    # argres Phase 4: @condition on INPUT_FIELD_DEFINITION — @table input type.
+    # argres Phase 4: @condition on INPUT_FIELD_DEFINITION, resolved on the consumer's table.
     # FilmConditionInput.filmId carries @condition; the condition method is wired
     # and called at runtime. In Phase 4, filmId arrives as null (nested-arg access
     # deferred), so the method returns noCondition() and all films are returned.
@@ -201,7 +201,7 @@ type Query {
     # spells the argMapping out. Both filter film.rental_rate into [fra, til] identically.
     filmsByRentalRateRange(filter: FilmRentalRangeFilter): [Film!]!
     filmsByRentalRateRangeExplicit(filter: FilmRentalRangeFilterExplicit): [Film!]!
-    # argres Phase 4: @condition on a plain input field (no @table).
+    # argres Phase 4: @condition on a plain input field.
     # PlainFilmIdInput.filmId resolves against film → condition wired and called at runtime.
     # R205 retired the Language-side counterpart: Path B now rejects mismatched call sites
     # rather than silently dropping the field, so the cross-table reuse pattern is no
@@ -213,12 +213,12 @@ type Query {
     # passed value. Locks in that override:true parses, classifies, and projects an explicit
     # method call.
     filmsWithInputFieldOverride(filter: FilmConditionInputWithOverrideField): [Film!]!
-    # argres Phase 4b: outer @condition(override: true) on a @table input whose field has its
+    # argres Phase 4b: outer @condition(override: true) on a filter input whose field has its
     # own non-override @condition. Pins the rewrite's divergence from legacy "outer owns
     # everything" semantics: legacy would drop filmIdCondition; rewrite preserves it, so
     # (film_id >= 2) AND (film_id = 1) no rows. A regression to legacy semantics breaks
     # this test by name.
-    filmsOuterOverrideTableInput(filter: FilmConditionInput): [Film!]!
+    filmsOuterOverrideFilterInput(filter: FilmConditionInput): [Film!]!
         @condition(condition: {
             className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
             method: "outerOverrideMethod"
@@ -227,20 +227,20 @@ type Query {
     # of type InnerFilmInput (plain); InnerFilmInput.filmId carries @condition. Exercises the
     # multi-segment path ["inner", "filmId"] in NestedInputField extraction.
     filmsNestedInput(filter: NestedFilmInput): [Film!]!
-    # argres Phase 4b: outer @condition(override: true) composition on a plain (non-@table)
+    # argres Phase 4b: outer @condition(override: true) composition on a nested-grouping
     # input. alf's production shape (Query.emner, emnerV2, studenter). Both outer and inner
     # explicit methods fire; outer excludes film 1 so (film_id >= 2) AND (film_id = 1)
-    # no rows, mirroring the @table case's divergence-pinning behavior.
+    # no rows, mirroring the flat filter case's divergence-pinning behavior.
     filmsOuterOverridePlainInput(filter: PlainFilmIdInput): [Film!]!
         @condition(condition: {
             className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
             method: "outerOverrideMethod"
         }, override: true)
-    # implicit-input-conditions plan: @table input with un-annotated column field.
+    # implicit-input-conditions plan: filter input with un-annotated column field.
     # filmId has no @condition — the implicit column-equality predicate (film.FILM_ID = ?)
     # is emitted by walkInputFieldConditions and folded into the GeneratedConditionFilter's
     # bodyParams. Null filmId produces noCondition() via the standard DSL.val null-guard.
-    # self-table-nodeid-filter.md: @table input with [ID!] @nodeId pointing at the input's
+    # self-table-nodeid-filter.md: filter input with [ID!] @nodeId pointing at the consumer's
     # own table → primary-key IN predicate via NodeIdInFilterField. Each opaque ID decodes
     # once at the carrier and feeds a (film_id) IN (...) jOOQ predicate.
     filmsBySameTableNodeId(filter: FilmSameTableNodeIdInput): [Film!]!
@@ -287,7 +287,7 @@ type Query {
     ): [Film!]! @asConnection @defaultOrder(primaryKey: true)
     filmsWithImplicitInput(filter: FilmImplicitInput): [Film!]!
     # implicit-input-conditions plan: outer @condition(override: true) on a field whose
-    # @table input has no explicit @condition on its fields. The enclosingOverride flag
+    # filter input has no explicit @condition on its fields. The enclosingOverride flag
     # suppresses all implicit predicates inside the input; only outerOverrideMethod fires.
     # Query with filmId: "1" → outerOverrideMethod returns film_id >= 2 → films 2..5 returned.
     filmsWithImplicitInputOuterOverride(filter: FilmImplicitInput): [Film!]!
@@ -301,14 +301,14 @@ type Query {
     # FK-target Address, not customer. The rewrite emits a correlated EXISTS over the FK;
     # addressDistrictAlberta filters customers whose address district is 'Alberta'.
     customersByAddressDistrict(filter: CustomerAddressNodeFilter!): [Customer!]!
-    # R330 rework: opptak shim reproduction — multi-field @table filter (implicit siblings +
+    # R330 rework: opptak shim reproduction — multi-field filter (implicit siblings +
     # GeneratedConditionFilter + lifted filterMap) with a non-null ID! FK-target @condition(override).
     customersByMultiFieldFilter(filter: CustomerMultiFieldNodeFilter): [Customer!]!
     # R330 rework: composite-key FK-target @nodeId + @condition(override). project_note -> project
     # via a composite FK; projectNameAtlas receives an aliased Project inside a correlated EXISTS
     # whose correlation ANDs both (org_id, project_id) slots. The common opptak shape (composite keys).
     projectNotesByProject(filter: ProjectNoteByProjectFilter): [ProjectNote!]!
-    # R330 rework: the opptak shape exactly — a PLAIN input filter (no @table) with a composite
+    # R330 rework: the opptak shape exactly — a plain input filter with a composite
     # FK-target @nodeId + @condition(override), on an @asConnection query returning a composite-key
     # @node. Reproduces SoknadsmangeltypeFilterInput / soknadsmangeltyper.
     projectNotesByPlainFilter(filter: ProjectNotePlainFilter): [ProjectNote!]!
@@ -323,10 +323,10 @@ type Query {
             className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
             method: "customersActiveOnly"
         }, override: true)
-    # implicit-input-conditions plan: @table input with two un-annotated fields.
+    # implicit-input-conditions plan: filter input with two un-annotated fields.
     # Both filmId and title get implicit predicates; GCF body ANDs them.
     filmsWithMultiImplicit(filter: FilmMultiImplicitInput): [Film!]!
-    # implicit-input-conditions plan: @table input whose NestingField wraps an un-annotated
+    # implicit-input-conditions plan: filter input whose NestingField wraps an un-annotated
     # ColumnField two levels deep. Implicit predicate binds to the outer @table's film_id
     # column; NestedInputField path is ["inner", "filmId"].
     filmsWithNestedImplicit(filter: NestedImplicitInput): [Film!]!
@@ -640,7 +640,7 @@ type Query {
     # federationLink=false, usesOneOf=true gate branch: no runtime OneOfDirectiveSdl helper is
     # emitted (the runtime _service.sdl correction is a federation-only concern), yet the on-disk
     # plain SDL still carries `directive @oneOf on INPUT_OBJECT` because graphql-java's
-    # SchemaPrinter emits spec-built-in directive definitions. Implicit-condition @table shape
+    # SchemaPrinter emits spec-built-in directive definitions. Implicit-condition filter shape
     # mirrors Query.filmsWithImplicitInput above, so codegen routes through a proven path.
     filmsByOneOf(filter: FilmOneOfFilter): [Film!]!
 
@@ -656,7 +656,7 @@ type Query {
         countryName: String @reference(path: [{table: "city"}, {table: "country"}]) @field(name: "country")
     ): [Address!]!
     # Surface 1 (input-object filter field — the motivating utdanningsregisteret bug shape):
-    # a @table input filter field whose @reference reaches a column on a joined table.
+    # a filter input field whose @reference reaches a column on a joined table.
     citiesByCountryFilter(filter: CityCountryFilter): [City!]!
 }
 
@@ -1050,7 +1050,7 @@ type Store @table(name: "store") {
     # the classifier infers the one-hop FK customer.store_id → store.store_id from the jOOQ
     # catalog because there is exactly one FK between the two tables.
     customers:  [Customer!]! @defaultOrder(primaryKey: true)
-    # R330: inline child TableField (InlineTableFieldEmitter) whose @table filter carries an
+    # R330: inline child TableField (InlineTableFieldEmitter) whose filter carries an
     # FK-target @nodeId + @condition(override). The child correlation is store -> customer
     # (customer_store_id_fkey); the filter's addressId is itself an FK-target @nodeId(Address)
     # reached via customer_address_id_fkey, so addressDistrictAlberta must receive an aliased
@@ -1836,7 +1836,7 @@ input FilmActorCompositeNodeIdFilter {
 
 # R131 compilation-tier carrier (paired with `filmActorBySingularCompositeNodeId`). The
 # singular composite-PK same-table corner: `id: ID! @nodeId(typeName: "FilmActor")` on a
-# @table input whose own table is the same as FilmActor's table. Pre-R131 this would
+# filter input resolved on FilmActor's own table. Pre-R131 this would
 # mis-classify as InputField.CompositeColumnReferenceField with an empty joinPath; post-R131
 # it lands on CompositeColumnField and emits a typed `Row2<Integer, Integer>` RowEq predicate
 # over (actor_id, film_id) — single-row equality, not a JOIN/reference shape. The same shape
@@ -1960,7 +1960,7 @@ input ActorOrderBy {
     direction: SortDirection
 }
 
-# argres Phase 4: @condition on INPUT_FIELD_DEFINITION — @table input type.
+# argres Phase 4: @condition on INPUT_FIELD_DEFINITION, resolved on the consumer's table.
 input FilmConditionInput {
     filmId: ID! @field(name: "film_id")
         @condition(condition: {
@@ -1994,7 +1994,7 @@ input FilmRentalRangeFilterExplicit {
         }, override: true)
 }
 
-# argres Phase 4: plain input (no @table). Used on Film and Language queries,
+# argres Phase 4: one shared filter input. Used on Film and Language queries,
 # creating a conflict so it stays PojoInputType. Call-site classification resolves
 # filmId for Film (condition wired) but not for Language (field skipped, no filter).
 # R150: input-bean fixture. Java-side this maps to FilmReviewDetails (record) carrying scalar
@@ -2130,7 +2130,7 @@ input PlainFilmIdInput {
         })
 }
 
-# argres Phase 4b: @table input whose field carries @condition(override: true).
+# argres Phase 4b: filter input whose field carries @condition(override: true).
 # This fixture has only the annotated field — no un-annotated sibling to suppress — so the
 # override flag has no observable effect. The directive must still parse and flow the
 # explicit method through projection. Exercises the (Yes outer, Present override:true,
@@ -2205,7 +2205,7 @@ input NestedFilmInput {
     inner: InnerFilmInput
 }
 
-# implicit-input-conditions plan: @table input type with an un-annotated column field.
+# implicit-input-conditions plan: filter input type with an un-annotated column field.
 # filmId carries no @condition; the implicit predicate (film.FILM_ID = filmId) is emitted
 # by walkInputFieldConditions when enclosingOverride is false. Nullable so the null-omit
 # behavior (absent means unconstrained) is also exercised by tests.
@@ -2290,15 +2290,15 @@ input FilmSameTableNodeIdInput {
     filmIds: [ID!] @nodeId(typeName: "Film")
 }
 
-# implicit-input-conditions plan: @table input with two un-annotated fields. Both emit
+# implicit-input-conditions plan: filter input with two un-annotated fields. Both emit
 # implicit column-equality predicates, AND-ed inside the GCF's generated method body.
 input FilmMultiImplicitInput {
     filmId: ID @field(name: "film_id")
     title: String @field(name: "title")
 }
 
-# implicit-input-conditions plan: @table input wrapping a plain nesting type. The implicit
-# predicate at filmId binds to the outer @table's film column via NestedInputField path
+# implicit-input-conditions plan: filter input wrapping a plain nesting type. The implicit
+# predicate at filmId binds to the consumer's film column via NestedInputField path
 # ["inner", "filmId"]; exercises the NestingField arm of walkInputFieldConditions.
 input NestedImplicitInput {
     inner: InnerImplicitInput
@@ -2499,9 +2499,9 @@ input ProjectNoteByProjectFilter {
         }, override: true)
 }
 
-# R330 rework: the opptak SoknadsmangeltypeFilterInput shape EXACTLY — a PLAIN input (no @table)
+# R330 rework: the opptak SoknadsmangeltypeFilterInput shape EXACTLY — a plain filter input
 # with a composite FK-target @nodeId + @condition(override) field alongside a sibling implicit
-# field. The plain input is promoted to the project_note table by its single @table-bound query
+# field. The input resolves against the project_note table of its single @table-bound query
 # field. projectId reaches the composite-key @node Project via the composite FK; projectNameAtlas
 # must receive an aliased Project inside a correlated EXISTS, not the project_note table.
 input ProjectNotePlainFilter {
@@ -2527,10 +2527,10 @@ input FilmCreateInput {
     rentalDuration: Int     @field(name: "rental_duration")
 }
 
-# INSERT write-target-from-return fixture: the same columns as FilmCreateInput but with NO @table on
-# the input. The write target is derived from the consuming field's return
+# INSERT write-target-from-return fixture: the same columns as FilmCreateInput; the write
+# target is derived from the consuming field's return
 # (createFilmsReturnDerivedPayload : FilmsReturnDerivedPayload, whose data field element is the @table
-# type Film), so no @table on the input is needed.
+# type Film), which names the write target.
 input FilmCreateReturnDerivedInput {
     title:          String! @field(name: "title")
     languageId:     Int!    @field(name: "language_id")
@@ -2552,10 +2552,10 @@ input FilmUpdateInput {
     description: String  @field(name: "description")
 }
 
-# Field-relative UPDATE write target: this input carries no `@table`, so the write
-# target is derived from the consuming field's return type (the deprecated `@table`-on-input
-# bridge is not needed). Consumed by `updateFilmReturnDerived`, whose `Film` return names the
-# table. Execution-tier proof that an UPDATE round-trips with `@table` dropped from the input.
+# Field-relative UPDATE write target: the write
+# target is derived from the consuming field's return type. Consumed by
+# `updateFilmReturnDerived`, whose `Film` return names the
+# table. Execution-tier proof that a return-derived UPDATE round-trips.
 input FilmUpdateReturnDerivedInput {
     filmId: Int!    @field(name: "film_id")
     title:  String! @field(name: "title")
@@ -2569,7 +2569,7 @@ input FilmDeleteInput {
     filmId: Int! @field(name: "film_id")
 }
 
-# R186 execution-tier fixtures: nested non-@table grouping inputs that flatten onto the outer
+# R186 execution-tier fixtures: nested grouping inputs that flatten onto the outer
 # table's columns. The grouping carries no DML semantics — it is purely a wire-format ergonomics
 # shape — and @field(name:) on a nested leaf still targets the outer @table. The emitter descends
 # the wire map (e.g. in.get("details").get("title")), honoring the same absent-vs-null contract at
@@ -2662,9 +2662,8 @@ type StorageBin implements Node @table(name: "storage_bin") @node {
 # `code` is the lone WHERE filter.
 #
 # R457 execution-tier fixture: the write target is named on the consuming field with
-# @mutation(table: "storage_bin") rather than with @table on this input type (see
-# deleteStorageBinByCode below). The input carries no @table; its `code` field resolves against
-# the field-named table. This round-trips identically to the @table-on-input form it replaced.
+# @mutation(table: "storage_bin") on the field (see deleteStorageBinByCode below); the
+# input's `code` field resolves against the field-named table.
 input StorageBinDeleteByCodeInput {
     code: String! @field(name: "code")
 }
@@ -2766,7 +2765,7 @@ input UpdateEmailReplyInput {
 # the classifier binds the type to its RETURNING table's JooqTableRecordType; the data field
 # classifies as a record-sourced ChildField.BatchedTableField; the mutation classifies as
 # MutationField.MutationDmlRecordField with a PK-only RETURNING in a tight transaction.
-# The data field's @table (film) must equal the input @table (film), enforced structurally
+# The data field's @table (film) is the mutation's write target, carried structurally
 # by ProducerBinding.DmlEmitted's compact-constructor invariant.
 type FilmPayload {
     film: Film
@@ -2777,7 +2776,7 @@ type FilmPayload {
 # JooqTableRecordType; the data field classifies as a record-sourced ChildField.BatchedTableField
 # with Arity.MANY (the data field's wrapper is list-shaped); the mutation
 # classifies as MutationField.MutationBulkDmlRecordField with batched per-row DML inside one
-# transaction. The data field's @table (film) must equal the input @table (film), enforced
+# transaction. The data field's @table (film) is the mutation's write target, carried
 # structurally by ProducerBinding.DmlEmitted's compact-constructor invariant.
 type FilmsPayload {
     films: [Film!]
@@ -2785,8 +2784,7 @@ type FilmsPayload {
 
 # Execution-tier fixture for the INSERT write target derived from the return (no @table on the
 # input). Structurally identical to FilmsPayload, but consumed by createFilmsReturnDerivedPayload
-# whose input FilmCreateReturnDerivedInput carries no @table: the write target (film) is derived
-# from this payload's @table-element data field. Byte-identical carrier to the @table-on-input form.
+# whose write target (film) is derived from this payload's @table-element data field.
 type FilmsReturnDerivedPayload {
     films: [Film!]
 }
@@ -2866,15 +2864,15 @@ type FilmActorsServicePayload {
 
 # R156 compilation-tier fixture (ID-typed carrier on DELETE): the carrier's data field is the
 # encoded NodeId of each deleted film. Film is @node-backed (see line 623), so the implicit
-# encoder lookup against the input @table's @node registration resolves to encodeFilm.
+# encoder lookup against the write target's @node registration resolves to encodeFilm.
 type DeletedFilmsIdPayload {
     deletedIds: [ID!]
 }
 
 # R514 execution-tier fixture: a payload-returning single-row DELETE whose write target is named on
-# the consuming field with @mutation(table: "storage_bin"), with no @table on the input. Before the
-# DmlEmitted @mutation(table:) grounding, the binding grounder read the write target only off the
-# input's @table, so a field-derived payload-returning DELETE grounded no producer binding, the
+# the consuming field with @mutation(table: "storage_bin"). Before the
+# DmlEmitted @mutation(table:) grounding, the binding grounder had no field-relative write-target
+# source, so a field-derived payload-returning DELETE grounded no producer binding, the
 # payload never registered as a producer-backed carrier, and the field rejected with the generic
 # "return type not yet supported". It now classifies as MutationDeletePayloadField; deletedId echoes
 # the deleted bin_id through the StorageBin @node encoder. See deleteStorageBinByCodePayload.
@@ -3040,10 +3038,9 @@ type Mutation {
     createFilmsPayload(in: [FilmCreateInput!]!): FilmsPayload @mutation(typeName: INSERT)
     updateFilmsPayload(in: [FilmUpdateInput!]!): FilmsPayload @mutation(typeName: UPDATE)
 
-    # INSERT write-target-from-return fixture: same bulk payload shape as createFilmsPayload, but the
-    # input FilmCreateReturnDerivedInput carries no @table. The write target (film) is derived from the
-    # payload's @table-element data field. Round-tripped by DmlBulkMutationsExecutionTest to confirm the
-    # return-derived carrier executes identically to the @table-on-input form.
+    # INSERT write-target-from-return fixture: same bulk payload shape as createFilmsPayload; the
+    # write target (film) is derived from the payload's @table-element data field. Round-tripped by
+    # DmlBulkMutationsExecutionTest to confirm the return-derived carrier executes end to end.
     createFilmsReturnDerivedPayload(in: [FilmCreateReturnDerivedInput!]!): FilmsReturnDerivedPayload @mutation(typeName: INSERT)
 
     # R12 + R161 execute-tier fixture: carrier-walk DML mutation that returns a payload with an

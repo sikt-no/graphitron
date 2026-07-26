@@ -19,8 +19,8 @@ import java.util.Objects;
  *       {@code fields} map in {@code GraphitronSchemaBuilder.buildSchema}, lifted into the
  *       registry) and emits a trace record. Asserts no prior entry.
  *   <li>{@link #classifyInput(String, String, SourceLocation, InputFieldResolution)} —
- *       input-field path. Trace-only: input fields are embedded in the parent
- *       {@code InputType} / {@code TableInputType} or {@code ArgumentRef.PlainInputArg.fields()}
+ *       input-field path. Trace-only: input fields are embedded in
+ *       {@code ArgumentRef.PlainInputArg.fields()} or the consuming carrier
  *       by their owner, not stored in a central map, so the registry doesn't own their
  *       persistence. Both {@link InputFieldResolution.Resolved} and
  *       {@link InputFieldResolution.Unresolved} arms emit one record per call.

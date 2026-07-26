@@ -1,5 +1,5 @@
 = How-to: Map types to tables
-:description: Bind GraphQL types and fields to jOOQ tables and columns, with enum-value mapping (text-column and jOOQ-enum), input-type binding, and the case-sensitivity rules.
+:description: Bind GraphQL types and fields to jOOQ tables and columns, with enum-value mapping (text-column and jOOQ-enum), input-field binding, and the case-sensitivity rules.
 :!toc:
 
 xref:../reference/directives/table.adoc[`@table`] anchors a GraphQL type to a database table; xref:../reference/directives/field.adoc[`@field`] points a slot at a specific column or string. Together they carry every type-to-storage mapping in the rewrite. This recipe walks through the four directive sites of `@field` (object field, argument, input field, enum value), shows the two enum-mapping shapes (text-column and jOOQ-enum), and covers the case-sensitivity and re-binding rules that catch teams new to the directive pair.
@@ -37,7 +37,7 @@ When the bare table name appears in two or more schemas, an *unqualified* lookup
 
 A genuinely missing name (the value isn't in any schema) takes a different path: the standard `table 'X' could not be resolved in the jOOQ catalog` rejection with a Levenshtein-ranked candidate hint pointing at near matches. The two messages distinguish "this column was renamed" from "this column lives somewhere; pick which one".
 
-The same syntax applies on input types and interfaces; `@table(name: "schema.table")` is valid wherever bare `@table(name:)` was. Schema and table halves of the qualified value are both case-insensitive (consistent with the unqualified form).
+The same syntax applies on interfaces; `@table(name: "schema.table")` is valid wherever bare `@table(name:)` is. Schema and table halves of the qualified value are both case-insensitive (consistent with the unqualified form). The qualified form also works in `@mutation(table:)` on a mutation field.
 
 == Field-to-column with `@field`
 
@@ -81,23 +81,27 @@ The argument can also drive a typed-enum filter (see "Enum values" below) or a x
 
 == Input-field-to-column: mutations and filters
 
-`@field` on `INPUT_FIELD_DEFINITION` plays the same role inside an `input` type used by a mutation, condition, or upsert:
+`@field` on `INPUT_FIELD_DEFINITION` plays the same role inside an `input` type used by a mutation or a filter. The input type itself carries no table directive (`@table` on an input is a retired location; the classifier rejects it): its fields resolve against each *consuming field's* table. For a mutation that is the write-target table (derived from the field's return type, or named with xref:../reference/directives/mutation.adoc[`@mutation(table:)`]); for a query filter it is the field's return-type table.
 
 [source,graphql]
 ----
-input FilmCreateInput @table(name: "film") {
+input FilmCreateInput {
     title:      String! @field(name: "title")
     languageId: Int!    @field(name: "language_id")
 }
+
+type Mutation {
+    createFilm(in: FilmCreateInput!): Film @mutation(typeName: INSERT)   # Film is @table(name: "film")
+}
 ----
 
-The `INSERT` writes `title` and `language_id`; the GraphQL camelCase never reaches SQL. The `@table` directive on the *input type* tells the generator which table the write targets; without it, the input would not classify as a `TableInputType` and the mutation would not wire up.
+The `INSERT` writes `title` and `language_id`; the GraphQL camelCase never reaches SQL. The write targets `film` because the `Film` return type carries `@table(name: "film")`.
 
 Three things that surface here and not on output types:
 
-* *Required input scalars are write-time required.* A `title: String!` field on a `@table` input means the column must be supplied on every call; nullability of the underlying column does not relax the GraphQL contract.
-* *Input types don't compose like output types.* You cannot reuse `Customer` (an output type) as an input. Define `CustomerCreateInput` separately and bind it with its own `@table`.
-* *Filter inputs follow the same rule.* A `FilmConditionInput @table(name: "film")` bound to a `filmsByCondition(filter: FilmConditionInput)` query uses `@field` on each input field to point its xref:../reference/directives/condition.adoc[`@condition`]-driven match at the right column.
+* *Required input scalars are write-time required.* A `title: String!` field on a mutation input means the column must be supplied on every call; nullability of the underlying column does not relax the GraphQL contract.
+* *Input types don't compose like output types.* You cannot reuse `Customer` (an output type) as an input. Define `CustomerCreateInput` separately; its fields resolve against the consuming mutation's write target.
+* *Filter inputs follow the same rule.* A `FilmConditionInput` consumed by `filmsByCondition(filter: FilmConditionInput): [Film!]!` resolves its fields against the `film` table (the query's return-type table) and uses `@field` on each input field to point the match at the right column. An input reused by consumers on different tables resolves per-consumer; a field that resolves on no consumer's table fails the build naming that table.
 
 == Enum values: text-column and jOOQ-enum
 
@@ -145,7 +149,7 @@ Column lookup resolves against a *current table context*. The cascade rules:
 . The containing GraphQL type's `@table`, if it has one.
 . A nested type's own `@table` re-binds inside that type.
 . An xref:../reference/directives/reference.adoc[`@reference`]-annotated field hops the context into the joined table for the duration of its subquery.
-. An argument or input field on a query/mutation field with no `@table` resolves against the field's *return-type table*, not the parent's.
+. An argument or input field resolves against the *consuming field's* table, not the parent's: the return-type table on a query field, the write-target table on a `@mutation` field.
 
 Two consequences worth highlighting:
 
@@ -158,7 +162,7 @@ Two consequences worth highlighting:
 * The target identifier must resolve in the surrounding `@table`'s jOOQ catalog; mismatches fail the build with a candidate hint.
 * `@field` is for column-bound slots only. Relations and nested types use xref:../reference/directives/reference.adoc[`@reference`] or auto-discovered FK paths.
 * GraphQL slot name and target identifier match case-insensitively (lowercased + underscore-normalised). The directive is redundant when names match; spell it out anyway to surface drift.
-* Input types must declare their own `@table`; inheriting from an output type's binding is not supported.
+* Input types carry no `@table` (the location is retired); their fields resolve against each consuming field's table.
 * Text-column enum values default to their own name when `@field` is omitted; that is only correct when the DB stores the GraphQL identifier verbatim.
 * jOOQ-enum values must match the Java enum constants 1:1; `@field` per value is rejected on the jOOQ-enum case.
 * The argument-side default (column lookup against the field's *return-type* table) is what makes argument `@field` work without a `@table` on the argument itself; it also means the same argument bound to two different return types resolves against two different tables.

@@ -44,9 +44,9 @@ The GraphQL spec does not allow `@deprecated` on a directive definition, nor on 
 | Directive | Status | Since | Migration
 
 | xref:directives/table.adoc[`@table`] (on `INPUT_OBJECT`)
-| Deprecated; `OBJECT` / `INTERFACE` unaffected
+| Removed; `OBJECT` / `INTERFACE` unaffected
 | Rewrite v1
-| Remove `@table` from input types. The mutation's write/read target is derived from the consuming field's resolved target table, so the directive on the input is redundant. For a `@mutation(typeName: INSERT)` field, the write target is derived from the return (a `@table` return, or a carrier payload's `@table`-element data field); for the encoded-`ID` / scalar-return `INSERT`, name it with xref:directives/mutation.adoc[`@mutation(table: "…")`] on the field. For a `@mutation(typeName: DELETE)` field, name the write target with `@mutation(table: "…")` on the field instead. `UPDATE` and `UPSERT` still read the write target from the input's `@table` for now. A build warning fires per `@table`-on-input usage (INSERT-consumed and DELETE-consumed inputs no longer carved out).
+| Remove `@table` from input types. The location went through the deprecation cycle (deprecated with a per-usage build warning, then removed); the classifier now rejects any input application at build time with a migration message. An input's fields resolve against each consuming field's table, so filters and lookup arguments need no directive. For a `@mutation(typeName: INSERT)` or `UPDATE` field, the write target is derived from the return (a `@table` return, or a carrier payload's `@table`-element data field); for an encoded-`ID` / scalar return, name it with xref:directives/mutation.adoc[`@mutation(table: "…")`] on the field. For a `@mutation(typeName: DELETE)` field, name the write target with `@mutation(table: "…")` on the field.
 
 | xref:directives/index-directive.adoc[`@index`]
 | Backward-compatibility alias
@@ -64,6 +64,7 @@ The GraphQL spec does not allow `@deprecated` on a directive definition, nor on 
 These directives parse but the rewrite refuses to generate against them. They are *not* deprecations (a deprecated surface still works); they are explicit rejections that fail the build with a structured diagnostic. Listed here because users sometimes confuse the categories:
 
 * xref:directives/notGenerated.adoc[`@notGenerated`] is rejected. Remove it from the schema; the rewrite has no equivalent escape hatch.
+* xref:directives/table.adoc[`@table`] on an `INPUT_OBJECT` is rejected (the row above records the completed deprecation cycle). The declaration keeps the location so old schemas parse to the migration message rather than a generic parse error.
 
 == See also
 

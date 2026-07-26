@@ -179,10 +179,6 @@ final class SchemaView {
                 m.put("kind", "PojoInput");
                 McpWire.putIfNotNull(m, "fqClassName", r.fqClassName());
             }
-            case TypeClassification.TableInput t -> {
-                m.put("kind", "TableInput");
-                McpWire.putIfNotNull(m, "tableName", t.tableName());
-            }
             case TypeClassification.Root r -> {
                 m.put("kind", "Root");
                 m.put("operation", r.operation());

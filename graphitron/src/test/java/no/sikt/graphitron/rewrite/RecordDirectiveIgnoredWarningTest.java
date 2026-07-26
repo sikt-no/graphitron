@@ -62,30 +62,32 @@ class RecordDirectiveIgnoredWarningTest {
     }
 
     @Test
-    void shadowedByTable_inputWithBothDirectives_warnsShadowed() {
+    void tableWithRecordOnInput_rejectsAtTheType_noShadowedWarning() {
+        // @table on an input is a retired location: the classify-time rejection supersedes the
+        // "Shadowed by @table" warning, which is now OBJECT-only.
         var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
             input FilmInput
                 @table(name: "film")
                 @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"})
             { id: ID }
-            type Query { x: String }
+            type Query { films(filter: FilmInput): [Film!]! }
             """);
 
+        assertThat(schema.type("FilmInput")).isInstanceOf(GraphitronType.UnclassifiedType.class);
         assertThat(schema.warnings())
             .extracting(BuildWarning::message)
-            .anyMatch(m -> m.contains("FilmInput")
-                && m.contains("carries both @table and")
-                && m.contains("@record")
-                && m.contains("the @record directive is ignored"));
+            .noneMatch(m -> m.contains("FilmInput") && m.contains("carries both @table and"));
     }
 
     @Test
     void tableObjectWithRecord_recordIgnored_staysTableBackedNotConflict() {
-        // D1 precedence: @record co-located with @table is not a DirectiveConflict; @table wins and
+        // Precedence: @record co-located with @table is not a DirectiveConflict; @table wins and
         // @record is ignored, so the type classifies table-backed rather than demoting to
-        // UnclassifiedType. (The reachable-input variant, which also fires the shadowed warning, is
-        // above; this object carrier pins only the no-conflict classification. Reached via Query.c so
-        // the field-first walk classifies it; an unreachable type is pruned, not classified.)
+        // UnclassifiedType. (The input variant rejects at the type instead — retired location —
+        // pinned above; this object carrier pins the no-conflict classification. Reached via
+        // Query.c so the field-first walk classifies it; an unreachable type is pruned, not
+        // classified.)
         var schema = TestSchemaHelper.buildSchema("""
             type Query { c: Conflicted }
             type Conflicted @table(name: "film") @record(record: {className: "no.sikt.graphitron.rewrite.TestDtoStub"}) {

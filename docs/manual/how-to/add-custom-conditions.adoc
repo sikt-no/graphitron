@@ -49,7 +49,7 @@ Add the carrying artifact to the rewrite plugin's `<dependencies>` block, not yo
 | Site | What the method sees | When to use
 | Argument | the table + the one argument's value | The predicate is local to one argument; other arguments are unaffected.
 | Field | the table + every direct argument | The predicate spans multiple arguments (conjunctive filter, multi-column boolean shape).
-| Input field | the table + the input's leaf scalar | The predicate filters by a value carried inside a `@table`-bound or plain input.
+| Input field | the table + the input's leaf scalar | The predicate filters by a value carried inside an input type.
 |===
 
 === Argument-level: filter by one input
@@ -88,7 +88,7 @@ The Java method's signature is `(City table, String countryId, List<String> city
 
 === Input-field-level: filter on an input's leaf scalar
 
-The example schema's `filmsWithInputFieldCondition` query exercises this at runtime. The query takes a `@table`-bound input whose `filmId` field carries `@condition`:
+The example schema's `filmsWithInputFieldCondition` query exercises this at runtime. The query takes a filter input whose `filmId` field carries `@condition` (the input's fields resolve against `film`, the query's return-type table):
 
 [source,graphql]
 ----
@@ -96,7 +96,7 @@ type Query {
     filmsWithInputFieldCondition(filter: FilmConditionInput): [Film!]!
 }
 
-input FilmConditionInput @table(name: "film") {
+input FilmConditionInput {
     filmId: ID! @field(name: "film_id")
         @condition(condition: {
             className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
@@ -174,7 +174,7 @@ Two consequences worth pinning:
 * The first Java parameter is always the surrounding `Table<?>`. Resolve column references through `table.field(...)` rather than the static jOOQ-table handle, the alias-bearing accessor keeps the predicate anchored to the calling fetcher's `FROM` clause.
 * Parameter names bind GraphQL argument names. Compile the carrying module with `<parameters>true</parameters>` so the names survive reflection. Diverging names are reconciled by `argMapping:`, not by reordering the method.
 * `DSL.noCondition()` is the explicit no-op; return it for null or absent inputs. Returning `null` is undefined and currently throws at the predicate-folding site.
-* Argument-level placement sees only that argument; sibling arguments are invisible. Field-level placement sees every direct argument, including those bound to `@table` inputs (the input arrives as the carrier type the input is bound to). Input-field-level placement walks the GraphQL argument map by path and delivers the leaf scalar.
+* Argument-level placement sees only that argument; sibling arguments are invisible. Field-level placement sees every direct argument, including input-typed ones (the input arrives as the carrier type the input is bound to). Input-field-level placement walks the GraphQL argument map by path and delivers the leaf scalar.
 * `argMapping:` is supported on `@condition`. It is not supported on `@externalField`, `@enum`, or `@sourceRow`.
 * `contextArguments:` keys flow through `GraphQLContext` unmodified; the runtime is responsible for placing each key. Typos surface as `null` at request time.
 * The override cascade and the divergence-from-legacy semantics live in xref:condition-cascade.adoc[How-to: Stacking and overriding conditions]. Read it before composing `@condition` with `override: true` across nested inputs.

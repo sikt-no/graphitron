@@ -4,7 +4,7 @@ import java.util.List;
 
 /**
  * The UPDATE-shape walker carrier. Holds the matched key identity plus the SET and WHERE
- * column partitions {@code UpdateRowsWalker} derived from the {@code @table} input and the jOOQ
+ * column partitions {@code UpdateRowsWalker} derived from the DML input and the jOOQ
  * catalog. Lands on {@link UpdateRowsField} alongside the slim {@link InputArgRef} arg surface.
  *
  * <p>The family is sealed with one arm today ({@link Identified}); keeping it sealed rather than

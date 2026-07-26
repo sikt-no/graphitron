@@ -311,37 +311,6 @@ class FieldCompletionsTest {
     // ===== @field(name:) on @reference path field completes terminal-table columns =====
 
     @Test
-    void inputTableWithReferencePathCompletesTerminalTableColumns() {
-        // The enclosing @table is "FILM"; the @reference path navigates to "LANGUAGE". Previously
-        // the completion dropdown listed FILM's columns (FILM_ID / TITLE) which are not
-        // reachable through this field; the dispatch now routes through
-        // FieldClassification.lspColumnDispatch() and emits LANGUAGE's columns instead.
-        String source = """
-            input FilmInput @table(name: "FILM") {
-                languageName: String @field(name: "") @reference(path: [{table: "LANGUAGE"}])
-            }
-            """;
-        int line = 1;
-        int col = source.split("\n")[line].indexOf("@field(name: \"") + "@field(name: \"".length();
-        Point cursor = new Point(line, col);
-
-        var snapshot = new LspSchemaSnapshot.Built.Current(
-            List.of(),
-            Map.of("FilmInput", new TypeBackingShape.TableBacking("FILM")),
-            Map.of(),
-            Map.of("FilmInput.languageName",
-                new no.sikt.graphitron.rewrite.catalog.FieldClassification.ColumnReference(
-                    "LANGUAGE", "NAME", List.of())),
-            Map.of()
-        );
-        var items = run(filmAndLanguageCatalog(), snapshot, source, cursor);
-
-        assertThat(items).extracting(c -> c.getLabel())
-            .containsExactly("LANGUAGE_ID", "NAME")
-            .doesNotContain("FILM_ID", "TITLE");
-    }
-
-    @Test
     void outputTableWithReferencePathCompletesTerminalTableColumns() {
         // Output-side mirror — covers the ChildField.ColumnReferenceField projection.
         String source = """
@@ -375,7 +344,7 @@ class FieldCompletionsTest {
         // type backing would lead the user toward FILM columns rather than helping resolve the
         // @reference target. The LSP must emit an empty list rather than leak the wrong table.
         String source = """
-            input FilmInput @table(name: "FILM") {
+            type FilmType @table(name: "FILM") {
                 languageName: String @field(name: "") @reference(path: [{table: "LANGUAGE"}])
             }
             """;
@@ -385,9 +354,9 @@ class FieldCompletionsTest {
 
         var snapshot = new LspSchemaSnapshot.Built.Current(
             List.of(),
-            Map.of("FilmInput", new TypeBackingShape.TableBacking("FILM")),
+            Map.of("FilmType", new TypeBackingShape.TableBacking("FILM")),
             Map.of(),
-            Map.of("FilmInput.languageName",
+            Map.of("FilmType.languageName",
                 new no.sikt.graphitron.rewrite.catalog.FieldClassification.Unclassified("synthetic test reason")),
             Map.of()
         );

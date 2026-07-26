@@ -924,7 +924,7 @@ class TypeFetcherGeneratorTest {
     // emitDialectGuard renders the guard from the model's typed DialectRequirement. The
     // RequiresFamily(POSTGRES) arm is exercised end-to-end by the reachable bulk-UPDATE pipeline
     // path (FetcherPipelineTest). UPSERT's RejectsFamily(ORACLE) arm cannot classify through the
-    // pipeline (UPSERT is refused at resolveInput and deferred), so its guard rendering is
+    // pipeline (UPSERT is refused at the classifier dispatch and deferred), so its guard rendering is
     // pinned here against a directly-constructed field. The None arm (INSERT / DELETE / single
     // UPDATE) must emit no guard at all.
 

@@ -90,7 +90,7 @@ class DomainReturnTypeCoverageTest {
         assertThat(plain.toString()).isEqualTo("Plain(java.lang.String)");
     }
 
-    /** {@link MutationField.MutationDmlRecordField} answers {@link DomainReturnType.Record} from the input @table. */
+    /** {@link MutationField.MutationDmlRecordField} answers {@link DomainReturnType.Record} from its resolved write target. */
     @Test
     void mutationDmlRecordField_answersRecordArm() {
         // Validator's load-bearing assumption: DML mutation producer hands a sparse Record at

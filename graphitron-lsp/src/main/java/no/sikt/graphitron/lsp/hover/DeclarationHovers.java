@@ -334,8 +334,6 @@ public final class DeclarationHovers {
                       .append(": `").append(String.join("`, `", p.resolvedTables())).append("`");
                 }
             }
-            case TypeClassification.TableInput ti ->
-                sb.append("\n\nTable: `").append(nullSafe(ti.tableName())).append("`");
             case TypeClassification.Root r ->
                 sb.append("\n\nOperation: ").append(r.operation());
             case TypeClassification.Connection c ->

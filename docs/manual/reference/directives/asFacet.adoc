@@ -23,7 +23,7 @@ type Query {
     films(filter: FilmFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
 }
 
-input FilmFilter @table(name: "film") {
+input FilmFilter {
     rating: [MpaaRating!] @field(name: "RATING") @asFacet
     length: [Int!]        @field(name: "LENGTH") @asFacet
     title:  String        @field(name: "TITLE")

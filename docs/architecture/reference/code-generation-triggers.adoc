@@ -173,9 +173,9 @@ example's projection query, rendered as SDL descriptions by `QueryViewRenderer`.
 | Interface without `@table` (multi-table) | `InterfaceType` | `*Fetchers` class
 | Union type | `UnionType` | `*Fetchers` class
 | `@error` | `ErrorType` | No generation (error mapping config)
-| Input type with `@table` (deprecated on input; see `docs/manual/reference/directives/table.adoc`) | `TableInputType` | Used in mutation generation. A build warning fires per `@table`-on-input usage (no carve-out). An `INSERT`-consumed input warns and names the return-derived fix and `@mutation(table:)`; a `DELETE`-consumed input warns and names `@mutation(table:)`; `UPDATE`/`UPSERT`-consumed inputs earn the base warning (no field-relative replacement yet).
-| Input type without `@table` (the `@service` / `@condition` parameter the input flows into is reflected as a developer class) | `InputType`* | No generation (developer-provided class). The input's backing class is reflected from the parameter type it flows into.
-| Input type with `@table` used on fields with conflicting return tables | `PojoInputType` (unbound) | No generation ; column binding resolved per field-usage
+| Input type with `@table` (retired location; see `docs/manual/reference/directives/table.adoc`) | `UnclassifiedType` | Validation error; build fails. The rejection message carries the per-verb migration guidance (drop the directive for filters and lookup args; `@mutation(table:)` for DELETE and encoded-ID / scalar returns; return-derivation for INSERT/UPDATE). The SDL declaration keeps `INPUT_OBJECT` only so the parser reaches this rejection instead of a generic "unknown directive location" error.
+| Input type whose consuming `@service` / `@condition` parameter is reflected as a developer class | `InputType`* | No generation (developer-provided class). The input's backing class is reflected from the parameter type it flows into.
+| Input type with no reflected backing class | `PojoInputType` (unbound) | No generation ; column binding resolved per field-usage against each consuming field's table
 | Object type with no `@table` and no producer binding | `NestingType` | No generation; nested under a parent table-bound or class-backed scope via `NestingField`
 | GraphQL `enum` type | `EnumType` | No generation; enum values map to DB strings/ints at column-bind time
 | GraphQL `scalar` type with `@scalarType(scalar:)` | `ScalarType` | No generation; the consumer's `public static final GraphQLScalarType` constant is registered on the synthesized schema via `.additionalType(...)`. Graphitron reflects on the constant's `Coercing<I, O>` to recover the Java type used for input-record components, service params, and `Field<X>` projections.
@@ -190,7 +190,7 @@ example's projection query, rendered as SDL descriptions by `QueryViewRenderer`.
 *Intermediate sealed interfaces* (not shown in the table ; grouping nodes in the hierarchy):
 - `TableBackedType` ; groups `TableType`, `NodeType`, `TableInterfaceType`. Builders switch on this to detect table-mapped types.
 - `ResultType` is itself a sealed sub-interface with four concrete variants: `JavaRecordType`, `Backed` (the sole concrete leaf of the intermediate `PojoResultType`), `JooqRecordType`, `JooqTableRecordType` ; reflecting how the result class is represented in Java.
-- `InputType` is itself a sealed sub-interface with four concrete variants: `JavaRecordInputType`, `PojoInputType`, `JooqRecordInputType`, `JooqTableRecordInputType` ; same split by Java representation. `PojoInputType` is also used when an input type appears as an argument on fields with different return tables ; it is classified as unbound rather than failing.
+- `InputType` is itself a sealed sub-interface with four concrete variants: `JavaRecordInputType`, `PojoInputType`, `JooqRecordInputType`, `JooqTableRecordInputType` ; same split by Java representation. `PojoInputType` is the unbound default: an input's fields resolve against each consuming field's table, so one input reused across consumers on different tables resolves per-consumer.
 
 '''
 
@@ -460,7 +460,7 @@ A mutation whose `@mutation(typeName:)` writes the catalog and returns a `@table
 target shape `Table`. The write produces the affected row, then a follow-up `SELECT` re-projects it
 through the catalog; that read-back is the *derived re-fetch* (a write producer yielding a `Table` shape),
 not a separate asserted axis. The mutation's input object is part of the rendered closure, so the excerpt
-shows the `@table`-bound input the write consumes:
+shows the plain input the write consumes; the `@table` return names the write target:
 
 [source,graphql]
 ----
@@ -472,7 +472,7 @@ type Film @table(name: "film") {
   title: String
 }
 
-input FilmInput @table(name: "film") {
+input FilmInput {
   title: String
 }
 ----
@@ -484,15 +484,14 @@ the read-back being the derived re-fetch. Asserted by the `dml` corpus example.
 |===
 | Schema Pattern | `MutationField` Variant | `*Fetchers` Generates
 
-| `@mutation(typeName: INSERT)`, returning a `@table` type (write target derived from the return) | `MutationInsertTableField` | Fetcher method ; write + read-back SELECT (the derived re-fetch). The input needs no `@table`; the return names the write target
-| `@mutation(typeName: INSERT)`, returning `ID`, write target from `@mutation(table: "…")` or the input's `@table` | `MutationInsertTableField` | As above; an encoded-`ID` return names no table, so it comes from `@mutation(table:)` (preferred) or the deprecated input `@table`. Byte-identical carrier across the rungs
-| `@mutation(typeName: UPDATE)`, returning `ID` or a `@table` type | `MutationUpdateTableField` | Fetcher method ; write + read-back SELECT (the derived re-fetch)
-| `@mutation(typeName: DELETE)`, returning `ID`, write target from the input's `@table` | `MutationDeleteTableField` | Fetcher method ; write + encoded-PK off `RETURNING` (no read-back ; the row is gone, target shape `Column`)
-| `@mutation(typeName: DELETE, table: "…")`, returning `ID`, input carrying no `@table` | `MutationDeleteTableField` | As above; the write target is named on the field rather than on the input type. Byte-identical carrier to the `@table`-on-input form
-| `@mutation(typeName: UPDATE\|UPSERT, table: "…")` (`table:` on a verb that reads its table from the input `@table`) | `UnclassifiedField` (typed `MutationTableArgError.UnsupportedVerb`) | Validation error ; build fails. `table:` is wired for `DELETE` and `INSERT` only
+| `@mutation(typeName: INSERT)`, returning a `@table` type (write target derived from the return) | `MutationInsertTableField` | Fetcher method ; write + read-back SELECT (the derived re-fetch). The return names the write target
+| `@mutation(typeName: INSERT, table: "…")`, returning `ID` | `MutationInsertTableField` | As above; an encoded-`ID` return names no table, so `@mutation(table:)` names it on the field. Byte-identical carrier across the two rungs
+| `@mutation(typeName: UPDATE)`, returning `ID` or a `@table` type | `MutationUpdateTableField` | Fetcher method ; write + read-back SELECT (the derived re-fetch). Same two-rung write-target ladder as `INSERT` (return-derived, else `@mutation(table:)`)
+| `@mutation(typeName: DELETE, table: "…")`, returning `ID` | `MutationDeleteTableField` | Fetcher method ; write + encoded-PK off `RETURNING` (no read-back ; the row is gone, target shape `Column`). The write target is named on the field; a `DELETE` return can never name it
+| `@mutation(typeName: UPSERT, table: "…")` (`table:` on a verb that does not read it) | `UnclassifiedField` (typed `MutationTableArgError.UnsupportedVerb`) | Validation error ; build fails. `table:` is wired for `DELETE`, `INSERT`, and `UPDATE` only
 | `@mutation(typeName: UPSERT)`, returning `ID` or a `@table` type | `MutationUpsertTableField` | Rejected at classification ; UPSERT generation gated pending R145
 | `@mutation(typeName: INSERT\|UPDATE\|DELETE\|UPSERT)`, returning a single-record class-backed carrier (one recognized data field, optional errors-shaped field; the carrier's backing class is reflected from the producing field, not declared) | `MutationDmlRecordField` | Two-step fetcher: per-kind DML chain inside `transactionResult` with PK-only `RETURNING`, plus a follow-up data-field SELECT outside the transaction
-| `@mutation(typeName: INSERT\|UPDATE)` with bulk input, returning a single-record carrier with a list-shaped `@table`-element data field | `MutationBulkDmlRecordField` | Per-row DML inside one `transactionResult`, accumulating a typed `Result<RecordN<PK>>` in input order. For `INSERT` the write target is derived from that `@table`-element data field, so the input needs no `@table`
+| `@mutation(typeName: INSERT\|UPDATE)` with bulk input, returning a single-record carrier with a list-shaped `@table`-element data field | `MutationBulkDmlRecordField` | Per-row DML inside one `transactionResult`, accumulating a typed `Result<RecordN<PK>>` in input order. The write target is derived from that `@table`-element data field
 | `@service`, return `@table` type | `MutationServiceTableField` | Async DataLoader fetcher + `rows*()` method
 | `@service`, return non-table type | `MutationServiceRecordField` | Fetcher method
 | Neither `@service` nor `@mutation` | `UnclassifiedField`** | Validation error ; build fails
@@ -553,19 +552,19 @@ The parent here is a type whose backing class is reflection-derived from its pro
 | `@service`, return non-table | `ServiceRecordField` | Fetcher method
 |===
 
-=== Input Fields (on `@table` input parent)
+=== Input Fields (resolved against the consuming field's table)
 
 |===
 | Schema Pattern | `InputField` Variant | Used for
 
 | `@field(name:)` or matching column name | `InputField.ColumnBackedField` (arity 1) | Maps input argument to a table column
 | `@reference` on input scalar | `InputField.ColumnBackedReferenceField` (arity 1) | Maps input argument to a FK column
-| `@nodeId` on input scalar | `InputField.ColumnBackedField` (`NodeIdDecodeKeys` extraction; arity = the node key's column count) | Decodes a NodeId into the input's key columns
+| `@nodeId` on input scalar | `InputField.ColumnBackedField` (`NodeIdDecodeKeys` extraction; arity = the node key's column count) | Decodes a NodeId into the consumer table's key columns
 | `@nodeId(typeName:)` on input scalar | `InputField.ColumnBackedReferenceField` (`NodeIdDecodeKeys` extraction; arity = the target key's column count) | Decodes a NodeId into FK columns referencing the typeName target
-| Return plain object (no `@table`) | `InputField.NestingField` | Expands nested input fields inline against parent table
+| Nested input object | `InputField.NestingField` | Expands nested input fields inline against the same table
 |===
 
-`InputField` is a separate top-level sub-hierarchy of `GraphitronField`, alongside `RootField` and `ChildField`. It classifies fields on `TableInputType` for mutation input processing.
+`InputField` is a separate top-level sub-hierarchy of `GraphitronField`, alongside `RootField` and `ChildField`. It classifies input-object fields against the consuming field's resolved table: the return-type table on the filter and arg-level `@lookupKey` paths, the write-target table on the DML paths.
 
 **\*\* `UnclassifiedField`** is a direct permit of `GraphitronField`; it is not nested under `QueryField`, `MutationField`, or `ChildField`. It is listed in the tables above for completeness, but structurally it sits at the top level of the sealed hierarchy. `TableTargetField` is an intermediate sealed sub-interface of `ChildField` grouping all 6 SQL-generating child field variants (`TableField`, `BatchedTableField`, `LookupTableField`, `BatchedLookupTableField`, `TableInterfaceField`, `ServiceTableField`; R432 collapsed the former Split/Record pairs onto the two source-gated batched leaves).
 

@@ -17,7 +17,7 @@ Background and rationale, organised by what you might want to understand. None o
 
 == Why specific things work the way they do
 
-* xref:design-decisions.adoc[Design decisions]: user-visible "why does it work that way" answers for the constraints that look surprising on first contact (why xref:../reference/directives/condition.adoc[`@condition`] methods take a table, why xref:../reference/directives/lookupKey.adoc[`@lookupKey`] blocks pagination, why mutations require xref:../reference/directives/table.adoc[`@table`] on the input type, and more).
+* xref:design-decisions.adoc[Design decisions]: user-visible "why does it work that way" answers for the constraints that look surprising on first contact (why xref:../reference/directives/condition.adoc[`@condition`] methods take a table, why xref:../reference/directives/lookupKey.adoc[`@lookupKey`] blocks pagination, why input types carry no xref:../reference/directives/table.adoc[`@table`] of their own, and more).
 
 == The wider context
 

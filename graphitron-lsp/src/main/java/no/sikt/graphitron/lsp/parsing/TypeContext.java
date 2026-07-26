@@ -124,7 +124,7 @@ public final class TypeContext {
 
     /**
      * Switches over the {@link TypeClassification} arms that carry a {@code tableName}. The four
-     * Table-bearing arms (Table, Node, TableInterface, TableInput) lift here so the inlay /
+     * Table-bearing arms (Table, Node, TableInterface) lift here so the inlay /
      * hover / completion / definition / diagnostic surfaces share a single switch.
      */
     public static Optional<String> tableNameFromClassification(TypeClassification classification) {
@@ -132,7 +132,6 @@ public final class TypeContext {
             case TypeClassification.Table t -> Optional.ofNullable(t.tableName());
             case TypeClassification.Node n -> Optional.ofNullable(n.tableName());
             case TypeClassification.TableInterface ti -> Optional.ofNullable(ti.tableName());
-            case TypeClassification.TableInput ti -> Optional.ofNullable(ti.tableName());
             default -> Optional.empty();
         };
     }

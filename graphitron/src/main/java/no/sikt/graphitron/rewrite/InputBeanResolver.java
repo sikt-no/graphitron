@@ -180,21 +180,6 @@ final class InputBeanResolver {
                     new ParamSource.Arg(jr, arg.path())));
                 continue;
             }
-            // An @table on the input classifies it as a TableInputType ("Graphitron owns the
-            // DML"), which contradicts a jOOQ-record @service param (the service owns the DML).
-            // Without this arm such a param falls through to the bean path and dies on the
-            // misleading "bean class … has no fields matching"; reject it honestly instead.
-            // Gated on isTableRecord, narrower than isJooqRecord on purpose: a non-table Record
-            // has no TableRef and keeps falling through to the bean path.
-            if (isTableRecord(elementClass)
-                    && ctx.lookAheadVerdict(iot.getName()) instanceof GraphitronType.TableInputType) {
-                return new Result.Failed(Rejection.structural(
-                    "parameter '" + p.name() + "' on method '" + method.methodName() + "' in class '"
-                    + method.className() + "' is jOOQ record '" + elementClass.getName() + "', but the"
-                    + " GraphQL input '" + iot.getName() + "' carries @table — drop @table; this input"
-                    + " feeds a @service param, so the service owns record construction (an @table input"
-                    + " means Graphitron owns the DML, which contradicts a jOOQ-record @service param)"));
-            }
             var built = buildInputBean(elementClass, iot, p.name(), method.methodName(),
                 method.className(), new HashSet<>());
             if (built instanceof Built.Fail f) {
@@ -820,23 +805,6 @@ final class InputBeanResolver {
             if (isJooqRecord(i)) return true;
         }
         return isJooqRecord(cls.getSuperclass());
-    }
-
-    /**
-     * True when {@code cls} implements {@code org.jooq.TableRecord} (transitively). Strictly narrower
-     * than {@link #isJooqRecord}: a non-table {@code Record} (e.g. {@code Record1}) implements
-     * {@code org.jooq.Record} but not {@code org.jooq.TableRecord} and has no backing {@code TableRef},
-     * so the {@code @table}-on-input reject gates on this; a non-table record keeps falling
-     * through to the bean path rather than reaching a reject that assumes a table. Same FQN-based,
-     * classloader-agnostic discipline as {@link #isJooqRecord}.
-     */
-    private static boolean isTableRecord(Class<?> cls) {
-        if (cls == null) return false;
-        if (cls.getName().equals("org.jooq.TableRecord")) return true;
-        for (Class<?> i : cls.getInterfaces()) {
-            if (isTableRecord(i)) return true;
-        }
-        return isTableRecord(cls.getSuperclass());
     }
 
     // ===== Java-side helpers =====

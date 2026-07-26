@@ -72,7 +72,7 @@ public sealed interface DeleteRowsError extends Rejection.AuthorError permits
                 sb.append("Candidate keys: ")
                     .append(candidateKeys.stream().map(DeleteRowsError::describeKey)
                         .collect(Collectors.joining("; ")))
-                    .append(". Add the missing column(s) to the @table input so one key is covered, "
+                    .append(". Add the missing column(s) to the input type so one key is covered, "
                     + "or opt into broadcast semantics with multiRow: true on the @mutation directive.");
             }
             return sb.toString();

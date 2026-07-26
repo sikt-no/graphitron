@@ -1,33 +1,59 @@
 ---
 id: R337
-title: "Input-side nesting-projection classification (NestingType mirror)"
+title: "Surface input-field projections honestly on the lowered coordinate"
 status: Backlog
 bucket: architecture
 priority: 4
 theme: classification-model
 depends-on: []
 created: 2026-06-19
-last-updated: 2026-06-22
+last-updated: 2026-07-25
 ---
 
-# Input-side nesting-projection classification (NestingType mirror)
+# Surface input-field projections honestly on the lowered coordinate
 
-**Deferred in favor of R97 (`consumer-derived-input-tables`).** This item proposed to fix the null-backed `PojoInputType` mislabel for nested grouping inputs by *adding* a new per-type `GraphitronType` variant (an input mirror of the output `NestingType`). R97's fact-model framing (which absorbed R327, `field-relative-input-classification`, on 2026-06-22) claims the same artifact from the opposite direction and supersedes that mechanism, so R337 is parked as a redirect rather than spec'd. Revive it only for the narrow residual below, and only if R97 lands without covering it.
+Re-scoped 2026-07-25 at the R519 cutover (the tombstone's guard condition fired: R97 is
+Done and the `@table`-on-input removal shipped the per-coordinate model without covering
+this surfacing). The original mechanism this file proposed, a new per-type
+`GraphitronType` variant mirroring the output `NestingType`, stays rejected: input
+classification is contextual, a function of the consuming field/coordinate, never a
+global property of the type (see the permanent explainer
+`roadmap/concepts/consumer-derived-input-tables.html`).
 
-## The artifact (unchanged, still real)
+## Problem
 
-A directiveless SDL `input` type nested under a table-bound parent (a `@table` input, or a jOOQ-record `@service` param via the R336 flatten, now Done) is semantically a *projection of columns on the parent's table*: its fields resolve against the parent's `TableRef`, it has no table of its own and no Java backing. Today it classifies as `GraphitronType.PojoInputType` with `fqClassName = null` (the `bindings.resolveInput(name)`-empty branch in `TypeBuilder.buildNonTableInputType`). Calling a column-grouping projection a "POJO" is a misnomer that leaks a reflection fallback into the model and the LSP (hover + inlay).
+Input-object field declarations have no author-facing classification surface. Two gaps,
+one cause (no per-coordinate projection):
 
-## Why deferred, not spec'd
+- **Input-field coordinates are dark in the LSP.** R519 deleted the last per-input-field
+  `FieldClassification` projection (the `CatalogBuilder` walk over the retired
+  `TableInputType.inputFields()`), so hover / goto / inlay on an input object's own field
+  declarations render nothing. The fields *are* classified, per consuming field, into
+  `ArgumentRef.InputTypeArg.PlainInputArg.fields()` and the DML write-target paths; the
+  catalog projection just never surfaces those per-coordinate verdicts.
+- **A nested grouping input still labels as `PojoInput` with a null backing.** A
+  directiveless input nested under a table-bound parent is a projection of columns on the
+  consumer's table; calling it a "POJO" leaks the reflection fallback into the type-level
+  hover. The type-declaration hover survives via `PojoInput.resolvedTables` (the
+  consumer-derived table list), but the label itself is still the contextless artifact.
 
-R337's plan was a *type-level* relabel: introduce a new variant and assign it instead of `PojoInput(null)`. The relabel is codegen-neutral, the nested grouping's record class still emits via `HasInputRecordShape`, and both flatten paths (the `@table`-input `classifyInputField` recursion and the R336 `InputBeanResolver` recursion) read the raw graphql-java `Map`, never the typed record, so the work really is just "add a variant + the two exhaustive `GraphitronType` switch arms (`projectTypeClassification`, `projectType`) + an LSP label/hover + tests."
+## Direction
 
-But R97 (via the R327 fold) settles that input classification is **contextual**, a function of the consuming field/coordinate, not a global property of the type, and names the null-backed `PojoInputType` explicitly as the contextless artifact that "exists only because `buildInputType` is asked to classify globally with no consumer in view. Per-coordinate, it cannot occur." R97's fix is to *dissolve* the per-type verdict (consumer-derived resolution, grounded in R333's coordinate-lowering), not to add another per-type label. R337's mechanism is the exact type-level altitude R97 diagnoses as wrong, and R97 records a withdrawn attempt that failed because "the type-level demotion throws away context the coordinate already has." Adding R337's variant now is model surface (a `GraphitronType` permit, a `TypeClassification` permit, `HasInputRecordShape` / `InputType` membership, LSP labels, pinned tests) that R97 / R333 would then have to remove: negative work against the agreed direction.
+Surface the projection on the lowered coordinate, not on the type: the catalog gains
+per-(consumer, input-field-path) entries derived from the consuming field's resolved
+carriers, and the LSP renders an input-field hover that names the consumer(s) and the
+column(s) each consumer resolves the field to. An input reused across consumers on
+different tables shows one entry per consumer, which is the honest per-coordinate answer
+the old type-level surface could never give. No new `GraphitronType` permit; no
+whole-type table verdict.
 
-## Residual this redirect guards
+## Scope notes for the spec pass
 
-R97 is scoped to query-filter binding, `@table`-on-input retirement, and the mutation write-target axis; it does not *explicitly* name the honest **surfacing** of a nested-grouping projection (the LSP hover / inlay and the `TypeClassification` label that today reads `PojoInput`). If R97 / R333 land their per-coordinate model but leave that surfacing on the null-`PojoInput` label, revive R337 narrowly as "surface the projection honestly on the lowered coordinate," with no new per-type variant. Until then this file is a redirect.
-
-## Disposition
-
-Backlog tombstone (per `workflow.adoc`): kept as a redirect during R97's lifecycle, `depends-on` R97. Delete this file when R97 reaches Done if the surfacing residual is subsumed there; otherwise re-scope to the residual only at that point. Out of scope regardless: the functional flatten (R336, Done), how nested fields resolve to columns, and the output-side `NestingType`.
+- The wire shape is the open question: keyed per input-type field with a consumer list
+  payload, or keyed per (consumer coordinate × arg path). The LSP addresses by SDL
+  position (the input type's declaration), so the projection must be reachable from the
+  input-type coordinate either way.
+- `LspColumnDispatchProjectionTest` and `FieldClassificationProjectionTest` pin the
+  current deliberate absence; this item flips those pins to the new surface.
+- Out of scope: how input fields resolve to columns (settled, consumer-derived), the
+  output-side `NestingType`, and any `GraphitronType` surface change.

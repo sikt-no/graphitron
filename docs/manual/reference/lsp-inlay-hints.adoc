@@ -18,7 +18,7 @@ All three live under the `graphitron.inlayHints` (and `graphitron.hover`) namesp
 
 | `graphitron.inlayHints.classification`
 | `false`
-| Renders a compact classification label at every field declaration and every object / interface / input / union / scalar / enum type declaration. Labels include `"column"`, `"table field"`, `"query node field"`, `"insert mutation"`, `"node type"`, `"table input"`, and the rest of the closed vocabulary.
+| Renders a compact classification label at every field declaration and every object / interface / input / union / scalar / enum type declaration. Labels include `"column"`, `"table field"`, `"query node field"`, `"insert mutation"`, `"node type"`, and the rest of the closed vocabulary.
 
 | `graphitron.hover.classification`
 | `false`

@@ -124,7 +124,6 @@ public final class InputRecordGenerator {
     private static GraphQLInputObjectType inputSchemaTypeOf(GraphitronType t) {
         return switch (t) {
             case GraphitronType.InputType it -> it.schemaType();
-            case GraphitronType.TableInputType tit -> tit.schemaType();
             case null, default -> null;
         };
     }

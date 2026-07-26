@@ -128,10 +128,6 @@ public final class CompileDependencyGraphBuilder {
                 acc.addNode(units.inputRecord(t.name()));
                 acc.addNode(units.schemaShape(t.name()));
             }
-            case GraphitronType.TableInputType t -> {
-                acc.addNode(units.inputRecord(t.name()));
-                acc.addNode(units.schemaShape(t.name()));
-            }
             // Relay connection: connection + edge fetchers + schema shape.
             case GraphitronType.ConnectionType t -> {
                 acc.addNode(units.fetchers(t.name()));

@@ -380,10 +380,9 @@ class JooqRecordServiceParamPipelineTest {
     }
 
     @Test
-    void tablePresentOnServiceRecordParam_rejectsWithDropTableMessage() {
-        // Convergence by rejection: the motivating input WITH @table classifies as a
-        // TableInputType (Graphitron-owns-DML), which contradicts a jOOQ-record @service param. Reject
-        // honestly ("drop @table") instead of the bean path's misleading "has no fields matching". The
+    void tablePresentOnServiceRecordParamInput_rejectsAtTheType() {
+        // @table on an input is a retired location: the type-level rejection carries the
+        // migration message, superseding the old service-param-specific "drop @table" arm. The
         // same input WITHOUT @table (PURE_FK_SDL above) classifies to the JooqRecord carrier.
         var sdl = """
             type Film implements Node @table(name: "film") @node { id: ID! }
@@ -397,12 +396,12 @@ class JooqRecordServiceParamPipelineTest {
                     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmActorRecord"})
             }
             """;
-        var field = TestSchemaHelper.buildSchema(sdl).field("Query", "assignFilmActorTable");
-        assertThat(field).isInstanceOf(UnclassifiedField.class);
-        assertThat(((UnclassifiedField) field).reason())
-            .contains("@table")
-            .contains("drop @table")
-            .doesNotContain("has no fields matching");
+        var schema = TestSchemaHelper.buildSchema(sdl);
+        var type = (no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType)
+            schema.type("AssignFilmActorTableInput");
+        assertThat(type.reason())
+            .contains("`@table` on input type 'AssignFilmActorTableInput'")
+            .contains("no longer supported");
     }
 
     private static final String MIXED_SDL = """

@@ -21,7 +21,7 @@ One replacement pointer for the "Legacy-only directives" list above: legacy `@ta
 
 == Hard removals
 
-Two directives the rewrite refuses to accept. Both stay declared so the SDL still parses, but every application is rejected at classify time with a "no longer supported" message.
+Two directives, and one directive location, the rewrite refuses to accept. All stay declared so the SDL still parses, but every application is rejected at classify time with a "no longer supported" message.
 
 === `@notGenerated`
 
@@ -57,6 +57,18 @@ Legacy schemas used `@multitableReference(routes: [...])` to declare per-impleme
 
 Migration is a one-step delete-and-rebuild: drop the `@multitableReference` directive (and its `ReferencesForType` argument tree) and model the multi-table dispatch through `@discriminate` / `@discriminator`. xref:polymorphic-types.adoc[How-to: Polymorphic types] covers the supported shapes.
 
+=== `@table` on input types
+
+Legacy schemas bound every mutation and filter input to a table with `@table` on the input type. The rewrite retired that location: an input's fields resolve against each *consuming field's* table, so the input-side declaration is redundant, and an input reused across consumers resolves per-consumer. Any input application is rejected at build time with a migration message (the location went through a deprecation-warning cycle first; the warning is now a rejection). `@table` on `OBJECT` and `INTERFACE` is unchanged.
+
+The migration is per-consumer:
+
+* *Filters and lookup inputs*: delete the `@table`; nothing replaces it. The fields resolve against the consuming query field's return-type table.
+* *`INSERT` / `UPDATE` mutation inputs*: delete the `@table`; the write target is derived from the mutation field's return type (a `@table` return, or a payload whose data field is a `@table` element). If the return names no table (an encoded-`ID` / scalar return), add xref:../reference/directives/mutation.adoc[`@mutation(table: "…")`] on the field.
+* *`DELETE` mutation inputs*: delete the `@table` and add `@mutation(table: "…")` on the field (a `DELETE` cannot derive its table from the return type).
+
+xref:../reference/directives/table.adoc[The `@table` reference page] carries the retired-location statement; xref:../reference/directives/mutation.adoc[`@mutation`] documents the write-target derivation.
+
 == Synthesis shims: WARN today, error later
 
 Two paths still work in the rewrite for backwards compatibility but emit a per-occurrence WARN at build time. Plan to migrate them before the shim retirement gate fires (no committed date; tracked at `roadmap/retire-synthesis-shims.md`).
@@ -89,16 +101,16 @@ The WARN message names the field: `field 'Customer.id' synthesizes an `@nodeId` 
 
 When the shim retires, the WARN flips to a classify-time rejection: the field reads as `UnclassifiedField` and the build fails with a "column 'id' could not be resolved" diagnostic.
 
-=== `[ID!] @field(name: "X_ID")` on `@table` input types
+=== `[ID!] @field(name: "X_ID")` on filter input fields
 
-Legacy `@table` input types let an `ID!` (or `[ID!]`) field carry a column name through `@field(name:)` and the FK qualifier was inferred from the catalog. The rewrite still does this, but warns. Migration: replace the `@field(name:)` annotation with an explicit xref:../reference/directives/nodeId.adoc[`@nodeId(typeName:)`].
+Legacy input types let an `ID!` (or `[ID!]`) field carry a column name through `@field(name:)` and the FK qualifier was inferred from the catalog. The rewrite still does this, but warns. Migration: replace the `@field(name:)` annotation with an explicit xref:../reference/directives/nodeId.adoc[`@nodeId(typeName:)`]. (Legacy schemas also carried `@table` on the input itself; that is a hard removal, covered above. The examples below show the input after that directive is dropped.)
 
 Before:
 
 [source,graphql]
 ----
-# Legacy form, still works, emits a WARN
-input CustomerFilter @table(name: "customer") {
+# Shim form, still works, emits a WARN
+input CustomerFilter {
     customerIds: [ID!] @field(name: "CUSTOMER_ID")
 }
 ----
@@ -108,12 +120,12 @@ After:
 [source,graphql]
 ----
 # Canonical form
-input CustomerFilter @table(name: "customer") {
+input CustomerFilter {
     customerIds: [ID!] @nodeId(typeName: "Customer")
 }
 ----
 
-When the FK is ambiguous (more than one path from the input's `@table` to the target), add an explicit `@reference(path: [{key: "fk_constraint_name"}])` alongside the `@nodeId`. The xref:join-with-references.adoc[`@reference` recipe] covers the FK-disambiguation mechanics; the migration is otherwise mechanical.
+When the FK is ambiguous (more than one path from the consuming field's table to the target), add an explicit `@reference(path: [{key: "fk_constraint_name"}])` alongside the `@nodeId`. The xref:join-with-references.adoc[`@reference` recipe] covers the FK-disambiguation mechanics; the migration is otherwise mechanical.
 
 === `@table` no longer auto-promotes to `NodeType`
 
@@ -206,13 +218,13 @@ The rewrite's reading is the intended one. Under legacy semantics, an inner `@co
 
 Schemas that relied on the legacy "outer owns everything" silently dropping inner conditions will produce different SQL under the rewrite. The migration is to rewrite the schema so the inner `@condition` annotations describe what should fire (instead of relying on them being ignored), or to remove them if their absence is the intent.
 
-The example schema's `filmsOuterOverrideTableInput` and `filmsOuterOverridePlainInput` fixtures pin the rewrite's behavior as a regression-fence. The full mechanics live in xref:condition-cascade.adoc[How-to: Stacking and overriding conditions] under "Divergence from legacy semantics".
+The example schema's `filmsOuterOverrideFilterInput` and `filmsOuterOverridePlainInput` fixtures pin the rewrite's behavior as a regression-fence. The full mechanics live in xref:condition-cascade.adoc[How-to: Stacking and overriding conditions] under "Divergence from legacy semantics".
 
 == Things that didn't change
 
 Every other directive on the legacy surface reads under the rewrite the same way, with one nuance per directive worth flagging:
 
-* xref:../reference/directives/table.adoc[`@table`], xref:../reference/directives/field.adoc[`@field`], xref:../reference/directives/reference.adoc[`@reference`]: unchanged; the catalog-driven mechanics are identical.
+* xref:../reference/directives/table.adoc[`@table`] on `OBJECT` / `INTERFACE`, xref:../reference/directives/field.adoc[`@field`], xref:../reference/directives/reference.adoc[`@reference`]: unchanged; the catalog-driven mechanics are identical. (`@table` on input types is a hard removal; see above.)
 * xref:../reference/directives/service.adoc[`@service`], xref:../reference/directives/externalField.adoc[`@externalField`], xref:../reference/directives/enum.adoc[`@enum`]: unchanged surface; the only change is the `name:` → `className:` migration on `ExternalCodeReference` (above). (`@record` is the exception: it is now a no-op; see "`@record` is now a no-op" above.)
 * xref:../reference/directives/discriminate.adoc[`@discriminate`] / xref:../reference/directives/discriminator.adoc[`@discriminator`]: unchanged; the rewrite generates the type resolvers and runtime dispatchers automatically (no `RuntimeWiring`-side wiring needed).
 * xref:../reference/directives/asConnection.adoc[`@asConnection`]: unchanged synth-vs-declared shape; only `connectionName:` is deprecated. The rewrite emits the same Relay connection contract.
@@ -226,7 +238,7 @@ Every other directive on the legacy surface reads under the rewrite the same way
 
 The recommended order, from least invasive to most:
 
-. Run a `mvn install` to surface every `@notGenerated` rejection. Replace each with the directive named in the matrix above. The build won't compile under the rewrite until this lands.
+. Run a `mvn install` to surface every `@notGenerated`, `@multitableReference`, and `@table`-on-input rejection. Replace each `@notGenerated` with the directive named in the matrix above; drop `@table` from input types per the per-consumer steps above. The build won't compile under the rewrite until this lands.
 . Audit the build log for `synthesizes an `@nodeId` carrier without the directive` WARNs; declare `@nodeId` explicitly on each.
 . Audit input types for `[ID!] @field(name: "X_ID")` patterns; replace with `[ID!] @nodeId(typeName: "T")`.
 . Drop `connectionName:` arguments from `@asConnection` and let each field own its connection type.

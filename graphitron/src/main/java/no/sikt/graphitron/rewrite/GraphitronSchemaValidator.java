@@ -117,7 +117,6 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.GraphitronType.UnionType t          -> validateUnionType(t, errors);
             case no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType t          -> {} // no structural validation needed
             case no.sikt.graphitron.rewrite.model.GraphitronType.InputType t          -> validateInputType(t, types, errors);
-            case no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType t     -> validateTableInputType(t, errors);
             case no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType t     -> validateConnectionType(t, errors);
             case no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType t           -> {} // structural validation is a downstream concern
             case no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType t       -> {} // structural validation is a downstream concern
@@ -378,22 +377,12 @@ public class GraphitronSchemaValidator {
         // Type-existence of field types is already guaranteed by graphql-java schema validation.
     }
 
-    private void validateTableInputType(no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType type, List<ValidationError> errors) {
-        // Input fields are stored embedded in their parent type rather than in the schema's
-        // flat field map, so the validateField walk doesn't reach them; iterate the type's input
-        // fields here to surface UnboundField + @condition(override:false) shapes the classifier
-        // admits structurally but the validator rejects.
-        errors.addAll(collectInputFieldRejections(type.inputFields()));
-    }
-
     /**
      * The input-field validator-side rejections ({@link #validateInputFieldRecursive}) as a
-     * standalone list, so a call site that resolves input fields against a table outside the
-     * registry {@link no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType} walk (the
-     * field-derived DELETE write-target path in {@code FieldBuilder}) can enforce the identical
-     * rule. A field-derived DELETE input never lands in {@link #validateTableInputType}, so the
-     * same broken input would reject on the {@code @table}-on-input path and slip through on the
-     * field-derived path unless both routes drain this one walk. Both do.
+     * standalone list. Input fields are resolved per consuming field (the field-derived
+     * write-target paths in {@code FieldBuilder}), never in a registry type walk, so every
+     * call site that resolves input fields against a table drains this one walk to enforce
+     * the identical rule (the validator-mirror obligation).
      */
     static List<ValidationError> collectInputFieldRejections(List<no.sikt.graphitron.rewrite.model.InputField> fields) {
         var errors = new java.util.ArrayList<ValidationError>();
@@ -405,8 +394,8 @@ public class GraphitronSchemaValidator {
 
     /**
      * Walks the input-field tree rooted at {@code field}, surfacing the validator-side
-     * rejections; recurses through nesting fields so nested plain inputs inside an
-     * {@code @table} input are walked too.
+     * rejections; recurses through nesting fields so nested plain inputs inside a
+     * DML input are walked too.
      */
     private static void validateInputFieldRecursive(no.sikt.graphitron.rewrite.model.InputField field, List<ValidationError> errors) {
         switch (field) {

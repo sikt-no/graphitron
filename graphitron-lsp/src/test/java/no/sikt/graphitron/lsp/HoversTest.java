@@ -574,37 +574,6 @@ class HoversTest {
     // ===== @field(name:) on @reference path field hovers on terminal-table column =====
 
     @Test
-    void inputTableWithReferencePathHoversOnTerminalTableColumn() {
-        // The enclosing @table is "film"; the @reference path navigates to "language"; the
-        // column "name" exists on "language" but not on "film". Previously the hover dispatched
-        // on the enclosing-type backing and either rendered the wrong column or silently failed
-        // to find one. Routing through FieldClassification.lspColumnDispatch() hovers
-        // the actual reachable column.
-        var file = file("""
-            input FilmInput @table(name: "film") {
-                languageName: String @field(name: "lang_name") @reference(path: [{table: "language"}])
-            }
-            """);
-        var pos = pointAt(file, 1, "lang_name");
-
-        var snapshot = new LspSchemaSnapshot.Built.Current(
-            List.of(),
-            java.util.Map.of("FilmInput", new TypeBackingShape.TableBacking("film")),
-            java.util.Map.of(),
-            java.util.Map.of("FilmInput.languageName",
-                new no.sikt.graphitron.rewrite.catalog.FieldClassification.ColumnReference(
-                    "language", "lang_name", List.of())),
-            java.util.Map.of()
-        );
-        var hover = Hovers.compute(file, filmAndLanguageCatalogWithLanguageName(), snapshot, pos).orElseThrow();
-        var md = hover.getContents().getRight().getValue();
-
-        assertThat(md).contains("**Column** `lang_name`");
-        assertThat(md).contains("on `language`");
-        assertThat(md).doesNotContain("on `film`");
-    }
-
-    @Test
     void outputTableWithReferencePathHoversOnTerminalTableColumn() {
         // Output-side mirror.
         var file = file("""
@@ -636,7 +605,7 @@ class HoversTest {
         // editor falls through to the SDL docstring rather than printing column metadata pulled
         // from the wrong table.
         var file = file("""
-            input FilmInput @table(name: "film") {
+            type FilmType @table(name: "film") {
                 languageName: String @field(name: "lang_name") @reference(path: [{table: "language"}])
             }
             """);
@@ -644,9 +613,9 @@ class HoversTest {
 
         var snapshot = new LspSchemaSnapshot.Built.Current(
             List.of(),
-            java.util.Map.of("FilmInput", new TypeBackingShape.TableBacking("film")),
+            java.util.Map.of("FilmType", new TypeBackingShape.TableBacking("film")),
             java.util.Map.of(),
-            java.util.Map.of("FilmInput.languageName",
+            java.util.Map.of("FilmType.languageName",
                 new no.sikt.graphitron.rewrite.catalog.FieldClassification.Unclassified("synthetic test reason")),
             java.util.Map.of()
         );

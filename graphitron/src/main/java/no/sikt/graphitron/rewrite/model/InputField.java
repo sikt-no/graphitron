@@ -31,9 +31,9 @@ public sealed interface InputField extends GraphitronField
      * carrier from {@link ColumnBackedReferenceField#liftedSourceColumns()}.
      *
      * <p>{@link NestingField} stays outside the permits set: it never admits as a carrier itself.
-     * A non-{@code @table} nested grouping flattens to its leaf carriers at the gate, each
+     * A nested grouping flattens to its leaf carriers at the gate, each
      * leaf rewrapped with a {@link CallSiteExtraction.NestedInputField} access path; a nested
-     * {@code @table} input that introduces a second DML target remains compound-entity-mutation
+     * input introducing a second DML target remains compound-entity-mutation
      * territory.
      */
     sealed interface LookupKeyField extends InputField permits ColumnBackedField,
@@ -49,17 +49,16 @@ public sealed interface InputField extends GraphitronField
             ColumnBackedReferenceField {}
 
     /**
-     * A field in a {@code @table}-annotated input type, successfully resolved to one or more SQL
-     * columns on the type's own table. Arity is a column count on this one leaf, not a leaf
+     * An input field successfully resolved to one or more SQL columns on the consuming
+     * field's table. Arity is a column count on this one leaf, not a leaf
      * dimension; consumers branch on {@link #isComposite()}.
      *
      * <p>Each {@link ColumnRef} carries the jOOQ identity of a column: SQL name, Java constant
      * name, and Java class. The GraphQL layer ({@code typeName}, {@code nonNull}, {@code list})
      * describes the shape of the value the caller supplies.
      *
-     * <p>If a field's column cannot be resolved at build time the entire containing
-     * {@link GraphitronType.TableInputType} is replaced by a
-     * {@link GraphitronType.UnclassifiedType}.
+     * <p>If a field's column cannot be resolved at build time, the resolution rejects at
+     * the consuming coordinate (the surrounding argument or mutation field).
      *
      * @param extraction translates the wire-format value to the columns' typed Java values at
      *     the call-site root. {@link CallSiteExtraction.Direct} (column-equality path) and the
@@ -106,12 +105,12 @@ public sealed interface InputField extends GraphitronField
     }
 
     /**
-     * A field in a {@code @table}-annotated input type that uses {@code @reference} (or an
+     * An input field that uses {@code @reference} (or an
      * FK-target {@code @nodeId(typeName: T)}) to reach one or more columns on a joined table.
      * Arity is a column count on this one leaf, not a leaf dimension; consumers branch on
      * {@link #isComposite()}.
      *
-     * <p>{@code joinPath} is the resolved FK join path from the input type's own table to the
+     * <p>{@code joinPath} is the resolved FK join path from the consuming field's table to the
      * terminal table that holds {@code columns}. The path is produced by the same reference-path
      * parser as {@link ChildField.ColumnBackedReferenceField}.
      *
@@ -172,8 +171,8 @@ public sealed interface InputField extends GraphitronField
     }
 
     /**
-     * A field in a {@code @table}-annotated input type whose GraphQL type is itself an input
-     * object type with no {@code @table} directive — i.e., a plain grouping type whose fields all
+     * An input field whose GraphQL type is itself an input
+     * object type, i.e. a plain grouping type whose fields all
      * map to columns on the <em>parent</em> table rather than a separate SQL table.
      *
      * <p>This is the input-side parallel of {@link no.sikt.graphitron.rewrite.model.ChildField.NestingField}
@@ -210,7 +209,7 @@ public sealed interface InputField extends GraphitronField
      *       this shape is a schema author bug and {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator GraphitronSchemaValidator} catches it
      *       at the directive's location).</li>
      *   <li>{@code condition.isEmpty()}: the field has no {@code @condition} of its own and no
-     *       column resolves on the {@code @table} input's table. Admitted at consumption when the
+     *       column resolves on the consuming field's table. Admitted at consumption when the
      *       enclosing arg- or field-level {@code @condition(override: true)} cascade resolves it;
      *       rejected at the field's source location otherwise.</li>
      * </ul>

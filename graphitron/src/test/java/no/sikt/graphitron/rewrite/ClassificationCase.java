@@ -11,8 +11,8 @@ import java.util.Set;
  * cases and requires full coverage (minus a documented allowlist).
  *
  * <p>A case usually covers one variant. Cases that classify a whole type tree (e.g. a
- * {@code TableInputType} case whose assertion lambda also verifies {@code InputField}
- * children) may return multiple.
+ * type-level case whose assertion lambda also verifies {@code InputField} children)
+ * may return multiple.
  */
 public interface ClassificationCase {
     /** The sealed leaves this case is the primary classification coverage for. */

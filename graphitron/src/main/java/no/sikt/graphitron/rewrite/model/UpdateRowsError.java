@@ -67,7 +67,7 @@ public sealed interface UpdateRowsError extends Rejection.AuthorError permits
                 sb.append("Candidate keys: ")
                     .append(candidateKeys.stream().map(UpdateRowsError::describeKey)
                         .collect(Collectors.joining("; ")))
-                    .append(". Add the missing column(s) to the @table input so one key is covered.");
+                    .append(". Add the missing column(s) to the input type so one key is covered.");
             }
             return sb.toString();
         }
@@ -82,7 +82,7 @@ public sealed interface UpdateRowsError extends Rejection.AuthorError permits
         @Override public String message() {
             return "@mutation(typeName: UPDATE) input for table '" + table
                 + "' has nothing to set; every input field contributes to matched key '"
-                + matchedKey.keyName() + "'. Add at least one non-key column to the @table input.";
+                + matchedKey.keyName() + "'. Add at least one non-key column to the input type.";
         }
         @Override public String lspCode() { return "graphitron.update-rows.no-set-fields"; }
     }

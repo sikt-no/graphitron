@@ -74,7 +74,6 @@ public final class InferredDirectiveArgs {
                     case TypeClassification.Table t -> t.tableName();
                     case TypeClassification.Node n -> n.tableName();
                     case TypeClassification.TableInterface ti -> ti.tableName();
-                    case TypeClassification.TableInput ti -> ti.tableName();
                     default -> null;
                 });
             }

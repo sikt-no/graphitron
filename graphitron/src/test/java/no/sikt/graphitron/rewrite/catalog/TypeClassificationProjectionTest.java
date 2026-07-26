@@ -39,7 +39,28 @@ class TypeClassificationProjectionTest {
     }
 
     @Test
-    void tableInputTypeProjectsTableName() {
+    void plainInputProjectsPojoInputWithConsumerResolvedTables() {
+        // Inputs carry no @table of their own; a formerly-@table key input is now a plain
+        // input that projects as PojoInput. No producer binds a backing class (fqClassName is
+        // null), and the tables its fields resolve against are read off the consuming fields'
+        // classified targets (here Query.film's table).
+        var snapshot = snapshotOf("""
+            input FilmKey { filmId: Int @field(name: "film_id") }
+            type Film @table(name: "film") { title: String }
+            type Query {
+              film(key: FilmKey!): Film
+            }
+            """);
+        var input = (TypeClassification.PojoInput) snapshot.typeClassificationsByName().get("FilmKey");
+        assertThat(input.fqClassName()).isNull();
+        assertThat(input.resolvedTables()).hasSize(1);
+        assertThat(input.resolvedTables().getFirst()).isEqualToIgnoringCase("film");
+    }
+
+    @Test
+    void tableDirectiveOnInputProjectsUnclassifiedWithMigrationReason() {
+        // `@table` on an input type is no longer supported; the type classifies as
+        // UnclassifiedType and the projection surfaces the migration message.
         var snapshot = snapshotOf("""
             input FilmKey @table(name: "film") { filmId: Int @field(name: "film_id") }
             type Film @table(name: "film") { title: String }
@@ -47,8 +68,9 @@ class TypeClassificationProjectionTest {
               film(key: FilmKey!): Film
             }
             """);
-        var input = (TypeClassification.TableInput) snapshot.typeClassificationsByName().get("FilmKey");
-        assertThat(input.tableName()).isEqualToIgnoringCase("film");
+        var unclassified = (TypeClassification.Unclassified) snapshot.typeClassificationsByName().get("FilmKey");
+        assertThat(unclassified.reason()).contains(
+            "`@table` on input type 'FilmKey' is no longer supported", "remove the directive");
     }
 
     @Test

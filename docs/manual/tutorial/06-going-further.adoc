@@ -2,7 +2,7 @@
 :description: Four how-to recipes most relevant after the tutorial, plus the reference and explanation chapters.
 :!toc:
 
-You started with a fresh checkout, set up PostgreSQL with example data, ran the example app under `mvn quarkus:dev`, queried `customers` directly, traversed a `@reference` to `Address`, and ran `INSERT` and `UPDATE` mutations against `film`. The directives you used (`@table`, `@field`, `@reference`, `@lookupKey`, `@mutation`) cover the common case; everything else builds on the same idea: GraphQL types map to PostgreSQL tables, and directives pick the SQL shape.
+You started with a fresh checkout, set up PostgreSQL with example data, ran the example app under `mvn quarkus:dev`, queried `customers` directly, traversed a `@reference` to `Address`, and ran `INSERT` and `UPDATE` mutations against `film`. The directives you used (`@table`, `@field`, `@reference`, `@mutation`) cover the common case; everything else builds on the same idea: GraphQL types map to PostgreSQL tables, and directives pick the SQL shape.
 
 This page lists the four how-to recipes most worth reading next, then points at the rest of the manual.
 

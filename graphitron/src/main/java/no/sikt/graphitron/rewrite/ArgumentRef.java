@@ -38,7 +38,7 @@ import java.util.Optional;
  *       key columns (arity 1..N).</li>
  *   <li>{@link ScalarArg.UnboundArg} — scalar arg whose column could not be resolved;
  *       surfaced as a validation error.</li>
- *   <li>{@link InputTypeArg.TableInputArg} — {@code @table}-backed input type; carries per-field
+ *   <li>{@link InputTypeArg.TableInputArg} — table-resolved input arg; carries per-field
  *       column bindings.</li>
  *   <li>{@link InputTypeArg.PlainInputArg} — input type without {@code @table}; only meaningful
  *       when paired with {@code @condition}.</li>
@@ -277,12 +277,11 @@ public sealed interface ArgumentRef {
 
         /**
          * Input type without {@code @table}. Resolved against the surrounding query field's
-         * target table by {@link InputFieldResolver}: every classified field contributes the
-         * same implicit / explicit predicates as a {@code @table} input. Any
+         * target table by {@link InputFieldResolver}: every classified field contributes its
+         * implicit / explicit predicates against that table. Any
          * unresolvable field rejects the surrounding argument as
          * {@link no.sikt.graphitron.rewrite.ArgumentRef.UnclassifiedArg} carrying a typed
-         * {@link Rejection}, mirroring the {@code @table}-input whole-type rejection at
-         * {@link no.sikt.graphitron.rewrite.TypeBuilder#buildTableInputType}.
+         * {@link Rejection}.
          */
         record PlainInputArg(
             String name,

@@ -422,7 +422,7 @@ public sealed interface FieldClassification
     // ===== Mutation fields =====
 
     /**
-     * A mutation field bound to a {@code @table} input arg that emits direct DML and
+     * A mutation field bound to a DML input arg that emits direct DML and
      * returns the {@code @table}-bound type. Covers the four
      * {@code MutationField.DmlTableField} permits via the {@link DmlKind} discriminator.
      */

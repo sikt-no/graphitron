@@ -151,7 +151,7 @@ final class MutationInputResolver {
         record Resolved(TableRef table) implements WriteTableRef {}
         /** {@code @mutation(table:)} named a table the catalog could not resolve. */
         record UnknownTable(String namedTable) implements WriteTableRef {}
-        /** No {@code @mutation(table:)} (on a supported verb) and no resolvable input {@code @table}. */
+        /** No live write-target source on the field for this verb. */
         record None() implements WriteTableRef {}
     }
 
@@ -160,21 +160,16 @@ final class MutationInputResolver {
      *
      * <ol>
      *   <li><b>Rung 1 (preferred): the return's own {@code @table}</b>, for verbs in
-     *       {@link #RETURN_DERIVED_TABLE_VERBS}; see {@link #resolveReturnDerivedTable}. This is
-     *       the derivation the {@code @table}-on-input deprecation warning promises for INSERT
-     *       and UPDATE.</li>
+     *       {@link #RETURN_DERIVED_TABLE_VERBS}; see {@link #resolveReturnDerivedTable}.</li>
      *   <li><b>Rung 2: {@code @mutation(table:)}</b>, for verbs in
      *       {@link #TABLE_ARG_SUPPORTED_VERBS}.</li>
-     *   <li><b>Rung 3: the single {@code @table} input argument's table</b> (the deprecated
-     *       migration bridge; the only rung for UPSERT, which is refused upstream before
-     *       classification).</li>
      * </ol>
      *
      * The one producer of the precedence fact, called from both the binding walk
      * ({@code RecordBindingResolver.groundDmlMutationField}) and the classify walk
      * ({@code FieldBuilder.resolveDeleteWriteTarget} / {@code FieldBuilder.resolveInsertWriteTarget}),
      * so the grounded {@code DmlEmitted} and the classified write target cannot diverge. The
-     * must-agree cross-checks (a present higher rung disagreeing with a present lower rung) live in
+     * must-agree cross-check (a present rung 2 disagreeing with a present rung 1) lives in
      * the classify-phase resolvers, not here; this helper returns the highest present rung and
      * never rejects on disagreement.
      *
@@ -202,13 +197,7 @@ final class MutationInputResolver {
                     .orElseGet(() -> new WriteTableRef.UnknownTable(named.get()));
             }
         }
-        // Rung 3: input @table.
-        GraphQLInputObjectType tableInput = singleTableInputType(fieldDef);
-        if (tableInput == null) return new WriteTableRef.None();
-        String tableSqlName = argString(tableInput, DIR_TABLE, ARG_NAME).orElse(tableInput.getName().toLowerCase());
-        return svc.resolveTable(tableSqlName)
-            .<WriteTableRef>map(WriteTableRef.Resolved::new)
-            .orElse(new WriteTableRef.None());
+        return new WriteTableRef.None();
     }
 
     /**
@@ -218,7 +207,7 @@ final class MutationInputResolver {
      * a carrier payload return resolves through {@link BuildContext#scanStructuralDmlPayload} to
      * its single {@code @table}-element data field's {@link TableRef}. Returns empty for an
      * ID / scalar return, a payload whose data field is ID- or record-element, or a return that
-     * resolves to no live table; the caller then falls to rung 2 / rung 3.
+     * resolves to no live table; the caller then falls to rung 2.
      */
     static Optional<TableRef> resolveReturnDerivedTable(
             GraphQLFieldDefinition fieldDef, ServiceCatalog svc, BuildContext ctx) {
@@ -234,24 +223,6 @@ final class MutationInputResolver {
             return Optional.of(tbl.table());
         }
         return Optional.empty();
-    }
-
-    /**
-     * The single {@code @table}-bearing input-object argument of a {@code @mutation} field, or
-     * {@code null} when there is not exactly one. Used by {@link #resolveDmlWriteTableRef} to read the
-     * input {@code @table} rung's SQL name; a multi-{@code @table} shape is left to the classifier's
-     * "more than one @table input argument" rejection rather than resolved to an arbitrary winner.
-     */
-    private static GraphQLInputObjectType singleTableInputType(GraphQLFieldDefinition fieldDef) {
-        GraphQLInputObjectType found = null;
-        for (GraphQLArgument arg : fieldDef.getArguments()) {
-            if (GraphQLTypeUtil.unwrapAll(arg.getType()) instanceof GraphQLInputObjectType iot
-                    && iot.hasAppliedDirective(DIR_TABLE)) {
-                if (found != null) return null;
-                found = iot;
-            }
-        }
-        return found;
     }
 
     /**

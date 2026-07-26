@@ -26,7 +26,7 @@ import java.util.List;
  * LspClassificationLabels.projectionTypeLabel} returns each permit's simple name
  * verbatim, {@code DeclarationHovers} prints {@code TypeClassification.<name>} in hover
  * headers, and {@code InlayHints} anchors its synthetic ghost on the {@code Table} /
- * {@code Node} / {@code TableInterface} / {@code TableInput} projection records. Renaming
+ * {@code Node} / {@code TableInterface} projection records. Renaming
  * a permit is a user-visible-string change touching docs, screenshots, and tutorials,
  * not a purely internal refactor.
  */
@@ -44,7 +44,6 @@ public sealed interface TypeClassification
             TypeClassification.JooqTableRecordInput,
             TypeClassification.PojoResult,
             TypeClassification.PojoInput,
-            TypeClassification.TableInput,
             TypeClassification.Root,
             TypeClassification.Connection,
             TypeClassification.Edge,
@@ -171,11 +170,6 @@ public sealed interface TypeClassification
             resolvedTables = List.copyOf(resolvedTables);
         }
     }
-
-    /**
-     * A {@code @table}-annotated input type. Covers {@code GraphitronType.TableInputType}.
-     */
-    record TableInput(String tableName) implements TypeClassification {}
 
     /**
      * The {@code Query} or {@code Mutation} root operation type. Covers

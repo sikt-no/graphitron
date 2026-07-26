@@ -4,7 +4,7 @@ import java.util.List;
 
 /**
  * The DELETE-shape walker carrier. Holds the WHERE columns {@code DeleteRowsWalker} derived
- * from the {@code @table} input plus, on the {@link Identified} arm, the matched key identity that
+ * from the DML input plus, on the {@link Identified} arm, the matched key identity that
  * proves the WHERE reduces to at most one row. Lands on {@link DeleteRowsField} alongside the slim
  * {@link InputArgRef} arg surface.
  *

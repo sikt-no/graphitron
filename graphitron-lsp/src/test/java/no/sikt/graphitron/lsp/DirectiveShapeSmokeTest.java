@@ -106,10 +106,10 @@ class DirectiveShapeSmokeTest {
 
     @Test
     void conditionDirectiveSakilaShapeFlagsUnknownMethod() {
-        // Lifted from sakila Query.filmsOuterOverrideTableInput.
+        // Lifted from sakila Query.filmsOuterOverrideFilterInput.
         String source = """
             type Query {
-                filmsOuterOverrideTableInput(filter: FilmConditionInput): [Film!]!
+                filmsOuterOverrideFilterInput(filter: FilmConditionInput): [Film!]!
                     @condition(condition: {
                         className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
                         method: "ghostMethod"

@@ -135,23 +135,6 @@ class InlayHintsTest {
     }
 
     @Test
-    void absentTableHintRendersOnInputTypeWithoutDirective() {
-        var file = file("""
-            input ActorInput {
-                name: String
-            }
-            """);
-        var snapshot = snapshotWith(
-            Map.of(),
-            Map.of("ActorInput", new TypeClassification.TableInput("actor"))
-        );
-        var hints = InlayHints.compute(
-            new InlayHintConfig(true, false, false), file, snapshot, fullRange(file));
-        assertThat(hints).extracting(InlayHintsTest::labelOf)
-            .contains("@table(name: \"actor\")");
-    }
-
-    @Test
     void absentTableHintSuppressedWhenDirectivePresent() {
         var file = file("""
             type Film @table {

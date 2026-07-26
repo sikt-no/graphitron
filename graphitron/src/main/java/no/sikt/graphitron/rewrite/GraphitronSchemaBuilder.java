@@ -270,7 +270,6 @@ public class GraphitronSchemaBuilder {
         // Runs post-promotion so synth-vs-synth Connection-name clashes are visible; see
         // rejectCaseInsensitiveTypeCollisions.
         rejectCaseInsensitiveTypeCollisions(ctx);
-        emitTableOnInputDeprecationWarnings(ctx);
         rejectNonIdNodeId(ctx);
         rejectFacetMisuse(ctx);
         // Apply the collision-suffix rule to ErrorChannel.mappingsConstantName on every
@@ -792,129 +791,6 @@ public class GraphitronSchemaBuilder {
                     Rejection.caseFoldCollision(group, origin), existing.location()));
             }
         }
-    }
-
-    /**
-     * The actionable tier of the {@code @table}-on-input deprecation signal. Walks every
-     * {@code INPUT_OBJECT} that <em>explicitly declares</em> {@code @table} (read off
-     * {@code ctx.schema} applied directives, like {@link #rejectNonIdNodeId}; the consumer-derived
-     * table branch of {@link TypeBuilder#buildInputType} carries no author-written directive and is
-     * deliberately not flagged) and emits a non-fatal {@link BuildWarning.NoRule} advisory per usage.
-     * No input is carved out: DELETE, INSERT, and UPDATE all have field-relative write-target
-     * paths, so the warning fires on every author-written {@code @table} input and names the
-     * per-verb replacement explicitly.
-     *
-     * <p>The message gives the replacement instruction (the write target is derived from the
-     * consuming mutation field's resolved table) rather than pointing at an internal owner. It is
-     * unconditional and not suppressible: a switchable nudge defeats the "stop adding new usages"
-     * purpose, and there is no build-breakage to suppress. The plain {@link BuildWarning.NoRule}
-     * arm (not {@link BuildWarning.LintFinding}) is deliberate: this is a deprecation
-     * announcement, not a lint-engine finding. The live precedent for {@code NoRule} is the
-     * federation compound-key advisory in {@link EntityResolutionBuilder}.
-     */
-    private static void emitTableOnInputDeprecationWarnings(BuildContext ctx) {
-        Set<String> deleteConsumed = deleteConsumedInputTypes(ctx);
-        Set<String> insertConsumed = insertConsumedInputTypes(ctx);
-        Set<String> updateConsumed = updateConsumedInputTypes(ctx);
-        for (var type : ctx.schema.getAllTypesAsList()) {
-            if (!(type instanceof GraphQLInputObjectType input)) continue;
-            if (!input.hasAppliedDirective(DIR_TABLE)) continue;
-            String replacement;
-            if (deleteConsumed.contains(input.getName())) {
-                replacement = " For the consuming `@mutation(typeName: DELETE)` field, set the write "
-                    + "target with `@mutation(table: \"…\")` on the field, not with `@table` on the "
-                    + "input type.";
-            } else if (insertConsumed.contains(input.getName())) {
-                replacement = " For the consuming `@mutation(typeName: INSERT)` field, the write target "
-                    + "is derived from the field's return type (a `@table` return, or a payload's "
-                    + "`@table`-element data field); for an encoded-ID / scalar return, name it with "
-                    + "`@mutation(table: \"…\")` on the field.";
-            } else if (updateConsumed.contains(input.getName())) {
-                replacement = " For the consuming `@mutation(typeName: UPDATE)` field, the write target "
-                    + "is derived from the field's return type (a `@table` return, or a payload's "
-                    + "`@table`-element data field); for an encoded-ID / scalar return, name it with "
-                    + "`@mutation(table: \"…\")` on the field.";
-            } else {
-                replacement = "";
-            }
-            ctx.addWarning(new BuildWarning.NoRule(
-                "`@table` on input type '" + input.getName() + "' is deprecated and will be removed "
-                + "in a future release; the write target is derived from the consuming mutation "
-                + "field's resolved table. Remove `@table` from this input." + replacement,
-                locationOf(input)));
-        }
-    }
-
-    /**
-     * The SDL input-type names consumed by a {@code @mutation(typeName: INSERT)} field. Drives the
-     * INSERT-specific replacement clause on the {@code @table}-on-input deprecation warning (the write
-     * target is derived from the return type, or named with {@code @mutation(table:)} for an encoded
-     * return); the set selects wording only, it suppresses nothing. Every INSERT leaf carries an
-     * {@link ArgumentRef.InputTypeArg.TableInputArg} whose {@code typeName()} is the input type; the
-     * record-carrier DML leaves are gated on {@code kind() == INSERT} (UPSERT is refused upstream,
-     * but the leaf type structurally permits it).
-     */
-    private static Set<String> insertConsumedInputTypes(BuildContext ctx) {
-        Set<String> consumed = new LinkedHashSet<>();
-        for (var field : ctx.fieldRegistry.entries().values()) {
-            switch (field) {
-                case MutationField.MutationInsertTableField f -> consumed.add(f.tableInputArg().typeName());
-                case MutationField.MutationDmlRecordField f -> {
-                    if (f.kind() == no.sikt.graphitron.rewrite.model.DmlKind.INSERT) consumed.add(f.tableInputArg().typeName());
-                }
-                case MutationField.MutationBulkDmlRecordField f -> {
-                    if (f.kind() == no.sikt.graphitron.rewrite.model.DmlKind.INSERT) consumed.add(f.tableInputArg().typeName());
-                }
-                default -> { /* only the INSERT leaves carry a TableInputArg write target */ }
-            }
-        }
-        return consumed;
-    }
-
-    /**
-     * The SDL input-type names consumed by a {@code @mutation(typeName: DELETE)} field. Drives
-     * the DELETE-specific replacement clause on the {@code @table}-on-input deprecation warning (name
-     * the write target with {@code @mutation(table:)} on the field).
-     *
-     * <p>The three DELETE leaves carry an {@link no.sikt.graphitron.rewrite.model.InputArgRef} whose
-     * accessor is {@code inputTypeName()} (not the {@code tableInputArg().typeName()} the INSERT set
-     * reads); the record-carrier DML leaves are INSERT/UPSERT-only by compact constructor, so these
-     * three arms are exhaustive over DELETE.
-     */
-    private static Set<String> deleteConsumedInputTypes(BuildContext ctx) {
-        Set<String> carveOut = new LinkedHashSet<>();
-        for (var field : ctx.fieldRegistry.entries().values()) {
-            switch (field) {
-                case MutationField.MutationDeleteTableField f -> carveOut.add(f.inputArg().inputTypeName());
-                case MutationField.MutationDeletePayloadField f -> carveOut.add(f.inputArg().inputTypeName());
-                case MutationField.MutationBulkDeletePayloadField f -> carveOut.add(f.inputArg().inputTypeName());
-                default -> { /* only the three DELETE leaves carry an InputArgRef write target */ }
-            }
-        }
-        return carveOut;
-    }
-
-    /**
-     * The SDL input-type names consumed by a {@code @mutation(typeName: UPDATE)} field. Drives the
-     * UPDATE-specific replacement clause on the {@code @table}-on-input deprecation warning (the write
-     * target is derived from the return type, or named with {@code @mutation(table:)} for an encoded /
-     * scalar return). The three UPDATE walker-carrier leaves
-     * ({@link MutationField.MutationUpdateTableField}, {@link MutationField.MutationUpdatePayloadField},
-     * {@link MutationField.MutationBulkUpdatePayloadField}) each carry an
-     * {@link no.sikt.graphitron.rewrite.model.InputArgRef} whose accessor is {@code inputTypeName()},
-     * mirroring the DELETE leaves.
-     */
-    private static Set<String> updateConsumedInputTypes(BuildContext ctx) {
-        Set<String> consumed = new LinkedHashSet<>();
-        for (var field : ctx.fieldRegistry.entries().values()) {
-            switch (field) {
-                case MutationField.MutationUpdateTableField f -> consumed.add(f.inputArg().inputTypeName());
-                case MutationField.MutationUpdatePayloadField f -> consumed.add(f.inputArg().inputTypeName());
-                case MutationField.MutationBulkUpdatePayloadField f -> consumed.add(f.inputArg().inputTypeName());
-                default -> { /* only the three UPDATE leaves carry an InputArgRef write target */ }
-            }
-        }
-        return consumed;
     }
 
     /**

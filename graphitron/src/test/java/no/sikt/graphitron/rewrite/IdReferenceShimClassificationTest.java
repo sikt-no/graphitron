@@ -1,7 +1,10 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType;
+import no.sikt.graphitron.rewrite.model.BodyParam;
+import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
+import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.InputField;
+import no.sikt.graphitron.rewrite.model.QueryField;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -20,6 +23,12 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
  * resolved FK joinPath. Uses the {@code idreffixture} jOOQ catalog (studieprogram + studierett)
  * because the shim gate requires {@code nodeIdMetadata(targetTable)} to be present; the
  * standard Sakila catalog tables have no {@code __NODE_TYPE_ID} metadata.
+ *
+ * <p>The inputs are plain (directiveless) input types resolved against each consuming field's
+ * return-type table, so the classified leaves surface as the consuming {@code Query} field's
+ * {@link GeneratedConditionFilter} body params: the reference carrier's lifted FK source column
+ * and its {@code NodeIdDecodeKeys} extraction ride through
+ * {@link CallSiteExtraction.NestedInputField} on the projected {@link BodyParam}.
  *
  * <p>The idreffixture schema provides:
  * <ul>
@@ -60,114 +69,117 @@ class IdReferenceShimClassificationTest {
         return TestSchemaHelper.buildSchema(schemaText, IDREF_CTX);
     }
 
+    /** The consuming field's single implicit predicate of the expected operator shape. */
+    private static <T extends BodyParam> T bodyParam(GraphitronSchema schema, String queryFieldName, Class<T> shape) {
+        var f = (QueryField.QueryTableField) schema.field("Query", queryFieldName);
+        var gcf = (GeneratedConditionFilter) f.filters().stream()
+            .filter(GeneratedConditionFilter.class::isInstance)
+            .findFirst().orElseThrow();
+        return gcf.bodyParams().stream()
+            .filter(shape::isInstance).map(shape::cast).findFirst().orElseThrow();
+    }
+
+    /** Unwraps the leaf extraction the input-field carrier contributed to the projected param. */
+    private static CallSiteExtraction leafExtraction(BodyParam bp) {
+        return ((CallSiteExtraction.NestedInputField) bp.extraction()).leaf();
+    }
+
     enum ShimCase {
 
         // Case 4a: @field(name:) value = "STUDIEPROGRAM_ID" → raw map key "studieprogram_id" →
         // matches FK1. Without pre-column placement the column lookup would find the
-        // studieprogram_id column and classify as ColumnBackedField; the shim wins because it
-        // runs first for ID-typed fields.
+        // studieprogram_id column and classify as ColumnBackedField with a plain (non-decode)
+        // leaf; the shim wins because it runs first for ID-typed fields, so the projected
+        // predicate decodes node ids.
         SHIM_EXPLICIT_FIELD(
-            "[ID!] @field(name: \"STUDIEPROGRAM_ID\") → shim fires before column lookup → ColumnReferenceField with NodeIdDecodeKeys",
+            "[ID!] @field(name: \"STUDIEPROGRAM_ID\") → shim fires before column lookup → In-predicate with NodeIdDecodeKeys leaf",
             SHARED_SDL_PREFIX + """
-            input StudierettFilterInput @table(name: "studierett") {
+            input StudierettFilterInput {
               studieprogramIds: [ID!] @field(name: "STUDIEPROGRAM_ID")
             }
             type Query { studierett(filter: StudierettFilterInput): Studierett }
             """,
             schema -> {
-                var tit = (TableInputType) schema.type("StudierettFilterInput");
-                var f = (InputField.ColumnBackedReferenceField) tit.inputFields().stream()
-                    .filter(InputField.ColumnBackedReferenceField.class::isInstance).findFirst().orElseThrow();
-                assertThat(f.list()).isTrue();
-                assertThat(f.columns().get(0).sqlName()).isEqualTo("studieprogram_id");
-                assertThat(f.extraction())
-                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
-                assertThat(f.joinPath()).hasSize(1);
+                var bp = bodyParam(schema, "studierett", BodyParam.In.class);
+                assertThat(bp.column().sqlName()).isEqualTo("studieprogram_id");
+                assertThat(leafExtraction(bp))
+                    .isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
             }),
 
         // Case 4b: bare plural field name; default columnName = "studieprogramIds" →
         // lowercase "studieprogramids" hits the plural camel map key.
         SHIM_BARE_LIST(
-            "[ID!] with bare plural field name studieprogramIds → plural map key hit → ColumnReferenceField with NodeIdDecodeKeys",
+            "[ID!] with bare plural field name studieprogramIds → plural map key hit → In-predicate with NodeIdDecodeKeys leaf",
             SHARED_SDL_PREFIX + """
-            input StudierettFilterInput @table(name: "studierett") {
+            input StudierettFilterInput {
               studieprogramIds: [ID!]
             }
             type Query { studierett(filter: StudierettFilterInput): Studierett }
             """,
             schema -> {
-                var tit = (TableInputType) schema.type("StudierettFilterInput");
-                var f = (InputField.ColumnBackedReferenceField) tit.inputFields().stream()
-                    .filter(InputField.ColumnBackedReferenceField.class::isInstance).findFirst().orElseThrow();
-                assertThat(f.list()).isTrue();
-                assertThat(f.extraction())
-                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
+                var bp = bodyParam(schema, "studierett", BodyParam.In.class);
+                assertThat(leafExtraction(bp))
+                    .isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
             }),
 
         // Case 4c: bare scalar field name; default columnName = "studieprogramId" →
         // lowercase "studieprogramid" hits the camelCase map key.
         SHIM_BARE_SCALAR(
-            "ID (scalar) bare field name studieprogramId → camelCase map key hit → ColumnReferenceField with NodeIdDecodeKeys",
+            "ID (scalar) bare field name studieprogramId → camelCase map key hit → Eq-predicate with NodeIdDecodeKeys leaf",
             SHARED_SDL_PREFIX + """
-            input StudierettFilterInput @table(name: "studierett") {
+            input StudierettFilterInput {
               studieprogramId: ID
             }
             type Query { studierett(filter: StudierettFilterInput): Studierett }
             """,
             schema -> {
-                var tit = (TableInputType) schema.type("StudierettFilterInput");
-                var f = (InputField.ColumnBackedReferenceField) tit.inputFields().stream()
-                    .filter(InputField.ColumnBackedReferenceField.class::isInstance).findFirst().orElseThrow();
-                assertThat(f.list()).isFalse();
-                assertThat(f.extraction())
-                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
+                var bp = bodyParam(schema, "studierett", BodyParam.Eq.class);
+                assertThat(leafExtraction(bp))
+                    .isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
             }),
 
         // Case 4d: bare id: ID on a table that has nodeId metadata but no outgoing FKs.
         // studieprogram has __NODE_TYPE_ID but no outgoing FK → empty qualifier map →
         // "id" doesn't match → column lookup misses (no column named "id") →
         // falls to the synthesis shim, which routes onto ColumnBackedField with
-        // NodeIdDecodeKeys.SkipMismatchedElement (arity-1 single-PK NodeType).
+        // NodeIdDecodeKeys.SkipMismatchedElement (arity-1 single-PK NodeType), projected as an
+        // Eq-predicate against the table's own key column.
         DOES_NOT_SHIM_OWN_ID(
-            "bare id: ID on node-typed @table with no outgoing FKs → ColumnField with NodeIdDecodeKeys (post-R50; retired wire-shape NodeIdField successor)",
+            "bare id: ID on a node-typed table with no outgoing FKs → own-key Eq-predicate with NodeIdDecodeKeys leaf (post-R50; retired wire-shape NodeIdField successor)",
             """
             type Studieprogram @table(name: "studieprogram") { studieprogramId: String }
-            input StudieprogramFilterInput @table(name: "studieprogram") {
+            input StudieprogramFilterInput {
               id: ID
             }
             type Query { studieprogram(filter: StudieprogramFilterInput): Studieprogram }
             """,
             schema -> {
-                var tit = (TableInputType) schema.type("StudieprogramFilterInput");
-                var f = tit.inputFields().stream()
-                    .filter(g -> g.name().equals("id")).findFirst().orElseThrow();
-                assertThat(f).isInstanceOf(InputField.ColumnBackedField.class);
-                var cf = (InputField.ColumnBackedField) f;
-                assertThat(cf.extraction())
-                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
+                var bp = bodyParam(schema, "studieprogram", BodyParam.Eq.class);
+                assertThat(bp.name()).isEqualTo("id");
+                assertThat(bp.column().sqlName()).isEqualTo("studieprogram_id");
+                assertThat(leafExtraction(bp))
+                    .isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
             }),
 
         // Case 4e: role-prefixed qualifier (FK2). The raw map key
         // "registrar_studieprogram_studieprogram_id" does NOT match any column on studierett
         // (columns: studierett_id, studieprogram_id, registrar_studieprogram). Without the
-        // pre-column shim, this field would be Unresolved and propagate as UnclassifiedType.
+        // pre-column shim, this field would be Unresolved and reject the consuming field.
+        // The predicate binds the lifted FK source column on the consumer's own table
+        // (registrar_studieprogram), not the target's key column.
         SHIM_ROLE_PREFIXED(
-            "[ID!] @field where key ≠ any column (role-prefixed qualifier) → ColumnReferenceField with NodeIdDecodeKeys",
+            "[ID!] @field where key ≠ any column (role-prefixed qualifier) → In-predicate on the FK source column with NodeIdDecodeKeys leaf",
             SHARED_SDL_PREFIX + """
-            input StudierettFilterInput @table(name: "studierett") {
+            input StudierettFilterInput {
               registrarStudieprogramIds: [ID!] @field(name: "REGISTRAR_STUDIEPROGRAM_STUDIEPROGRAM_ID")
             }
             type Query { studierett(filter: StudierettFilterInput): Studierett }
             """,
             schema -> {
-                var tit = (TableInputType) schema.type("StudierettFilterInput");
-                var f = (InputField.ColumnBackedReferenceField) tit.inputFields().stream()
-                    .filter(InputField.ColumnBackedReferenceField.class::isInstance).findFirst().orElseThrow();
-                assertThat(f.list()).isTrue();
-                assertThat(f.columns().get(0).sqlName()).isEqualTo("studieprogram_id");
-                assertThat(f.extraction())
-                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
-                assertThat(f.joinPath()).hasSize(1);
+                var bp = bodyParam(schema, "studierett", BodyParam.In.class);
+                assertThat(bp.column().sqlName()).isEqualTo("registrar_studieprogram");
+                assertThat(leafExtraction(bp))
+                    .isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
             });
 
         final String sdl;

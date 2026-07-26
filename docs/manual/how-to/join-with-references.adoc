@@ -236,7 +236,7 @@ A reference filter behaves exactly like a local-column filter for absent values:
 
 A reference filter requires every hop to resolve to a foreign key (the `{key:}` and `{table:}` forms, including single-FK auto-discovery). A `{condition:}` hop (see <<condition-form>> below) is *not* supported in a filter path and is rejected at build time; reference filters are emitted as a foreign-key correlated subquery, so a non-FK hop has nothing to correlate on.
 
-The full set of input-field directives (`@field`, `@condition`, `@reference`) interoperate; see xref:condition-cascade.adoc[How-to: Stacking and overriding conditions] for the input-carrier rules and how the input's `@table` cascade interacts with the per-field directives.
+The full set of input-field directives (`@field`, `@condition`, `@reference`) interoperate; see xref:condition-cascade.adoc[How-to: Stacking and overriding conditions] for the input-carrier rules and how the override cascade interacts with the per-field directives.
 
 [#condition-form]
 == The `condition:` form (classify-only today)

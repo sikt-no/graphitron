@@ -6158,7 +6158,7 @@ public class TypeFetcherGenerator {
 
     /**
      * Emits the fetcher for a {@link MutationField.MutationBulkDmlRecordField}: a record-
-     * returning DML mutation with bulk {@code @table} input and a list-shaped data field on the
+     * returning DML mutation with bulk DML input and a list-shaped data field on the
      * carrier. The fetcher loops the input list, runs one DML per row inside
      * {@code dsl.transactionResult(...)}, collects the PK records into a typed
      * {@code Result<RecordN<...>>} in input order, and returns the accumulated Result. The

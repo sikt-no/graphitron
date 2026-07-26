@@ -189,25 +189,16 @@ public final class CatalogBuilder {
 
     /**
      * Projects every classified field onto its {@link FieldClassification} variant, keyed by
-     * {@code "ParentType.fieldName"}. Walks both the output field index
-     * ({@link GraphitronSchema#fields()}) and the input fields nested on table-input types.
-     * Input types other than {@link GraphitronType.TableInputType} carry no classified
-     * {@link InputField} list (the input-field machinery is gated on the table-input pathway),
-     * so they contribute no entries here.
+     * {@code "ParentType.fieldName"}, from the output field index
+     * ({@link GraphitronSchema#fields()}). Input types carry no classified {@link InputField}
+     * list of their own (input fields are resolved per consuming field), so input-field
+     * declarations contribute no entries here.
      */
     private static Map<String, FieldClassification> projectFieldClassifications(GraphitronSchema schema) {
         var out = new LinkedHashMap<String, FieldClassification>();
         for (var entry : schema.fields().entrySet()) {
             var coord = entry.getKey().getTypeName() + "." + entry.getKey().getFieldName();
             out.put(coord, projectFieldClassification(entry.getValue(), schema));
-        }
-        for (var type : schema.types().values()) {
-            if (type instanceof GraphitronType.TableInputType tit) {
-                for (var inputField : tit.inputFields()) {
-                    var coord = tit.name() + "." + inputField.name();
-                    out.put(coord, projectFieldClassification(inputField, schema));
-                }
-            }
         }
         return Map.copyOf(out);
     }
@@ -612,7 +603,6 @@ public final class CatalogBuilder {
             case GraphitronType.TableType t -> t.table() != null ? t.table().tableName() : null;
             case GraphitronType.NodeType t -> t.table() != null ? t.table().tableName() : null;
             case GraphitronType.TableInterfaceType t -> t.table() != null ? t.table().tableName() : null;
-            case GraphitronType.TableInputType t -> t.table() != null ? t.table().tableName() : null;
             case null -> null;
             default -> null;
         };
@@ -757,8 +747,6 @@ public final class CatalogBuilder {
                 // resolvedTables is filled by the consumer-derived pass in projectTypeClassifications,
                 // which has the schema-wide arg→consumer edges this per-type projection cannot see.
                 new TypeClassification.PojoInput(t.fqClassName(), List.of());
-            case GraphitronType.TableInputType t ->
-                new TypeClassification.TableInput(t.table() != null ? t.table().tableName() : null);
             case GraphitronType.RootType t ->
                 new TypeClassification.Root(t.name());
             case GraphitronType.ConnectionType t ->
@@ -832,7 +820,6 @@ public final class CatalogBuilder {
             case GraphitronType.TableType t -> new TypeBackingShape.TableBacking(tableNameOf(t.table()));
             case GraphitronType.NodeType t -> new TypeBackingShape.TableBacking(tableNameOf(t.table()));
             case GraphitronType.TableInterfaceType t -> new TypeBackingShape.TableBacking(tableNameOf(t.table()));
-            case GraphitronType.TableInputType t -> new TypeBackingShape.TableBacking(tableNameOf(t.table()));
             case GraphitronType.RootType ignored -> new TypeBackingShape.NoBacking.Root();
             case GraphitronType.InterfaceType ignored -> new TypeBackingShape.NoBacking.UnclassifiedInterface();
             case GraphitronType.UnionType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();

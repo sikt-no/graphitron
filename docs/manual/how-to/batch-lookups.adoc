@@ -2,7 +2,7 @@
 :description: Drive a positional batch fetch with @lookupKey across single, correlated, composite, NodeId-encoded, and per-parent shapes.
 :!toc:
 
-xref:../reference/directives/lookupKey.adoc[`@lookupKey`] turns a query into a batch lookup: the client sends a list of key values, the server returns a list of results in the same positions, and unmatched keys surface as `null` at the corresponding output index. The reference page covers the directive's signature and the four canonical shapes; this recipe walks the operational variations: correlated multi-arg keys, composite keys behind a `@table` input, NodeId-encoded keys and the failure-mode split they imply, the `@splitQuery` interaction (per-parent narrowed batches), and the constraints that bite when keys are too many, the wrong shape, or paired with the wrong directive.
+xref:../reference/directives/lookupKey.adoc[`@lookupKey`] turns a query into a batch lookup: the client sends a list of key values, the server returns a list of results in the same positions, and unmatched keys surface as `null` at the corresponding output index. The reference page covers the directive's signature and the four canonical shapes; this recipe walks the operational variations: correlated multi-arg keys, composite keys behind an input type, NodeId-encoded keys and the failure-mode split they imply, the `@splitQuery` interaction (per-parent narrowed batches), and the constraints that bite when keys are too many, the wrong shape, or paired with the wrong directive.
 
 == The positional contract
 
@@ -31,13 +31,13 @@ type Query {
 }
 ----
 
-A request `customerById(customer_id: ["1", "2", "4", "3"], store_id: "1")` joins each customer id against `store_id = "1"` (broadcast) and returns four positions, `null` where a `(customer_id, store_id)` pair has no match. Two list arguments of unequal length are a runtime contract violation; wrap them in a `@table` input to get framework-level enforcement.
+A request `customerById(customer_id: ["1", "2", "4", "3"], store_id: "1")` joins each customer id against `store_id = "1"` (broadcast) and returns four positions, `null` where a `(customer_id, store_id)` pair has no match. Two list arguments of unequal length are a runtime contract violation; wrap them in an input type to get framework-level enforcement.
 
 The argument-level `@lookupKey` shape is right when the keys are scalar lists at the call site and the caller can be trusted to supply correlated lists. When the pairing matters and you want the schema to enforce it, the input-type shape is preferable.
 
-== Composite keys via `@table` input
+== Composite keys via an input type
 
-A `@table`-bound input type with `@lookupKey` on each leaf scalar lets the schema enforce that the keys travel together as one record. Each input element is one row of the lookup; the generator materialises `VALUES(idx, film_id, actor_id)` and joins on the full composite key.
+An input type with `@lookupKey` on each leaf scalar lets the schema enforce that the keys travel together as one record. The input needs no directive of its own; its fields resolve against the consuming field's return-type table (`film_actor` here). Each input element is one row of the lookup; the generator materialises `VALUES(idx, film_id, actor_id)` and joins on the full composite key.
 
 [source,graphql]
 ----
@@ -45,15 +45,15 @@ type Query {
     filmActorsByKey(key: [FilmActorKey!]! @lookupKey): [FilmActor!]!
 }
 
-input FilmActorKey @table(name: "film_actor") {
+input FilmActorKey {
     filmId:  Int! @field(name: "film_id")  @lookupKey
     actorId: Int! @field(name: "actor_id") @lookupKey
 }
 ----
 
-The contract: each `FilmActorKey` is one row of the `VALUES` table, the join is on the full key set, and the output preserves input order. `@lookupKey` on the argument itself (`key: [FilmActorKey!]! @lookupKey`) is the carrier marker; the per-leaf `@lookupKey` annotations are what bind individual fields into the key tuple. A leaf without `@lookupKey` is excluded from the key set and resolves like any other `@table`-bound input field.
+The contract: each `FilmActorKey` is one row of the `VALUES` table, the join is on the full key set, and the output preserves input order. `@lookupKey` on the argument itself (`key: [FilmActorKey!]! @lookupKey`) is the carrier marker; the per-leaf `@lookupKey` annotations are what bind individual fields into the key tuple. A leaf without `@lookupKey` is excluded from the key set and resolves like any other column-bound input field.
 
-The same shape works for the `@mutation` directive's `UPDATE`/`DELETE`/`UPSERT` row identification, but that is a distinct use of `@lookupKey` on `INPUT_FIELD_DEFINITION` covered in xref:../reference/directives/mutation.adoc[`@mutation`].
+Mutation row identification is different: `@mutation`'s `UPDATE`/`DELETE` identify rows by primary-key or unique-key coverage read from the catalog, and `@lookupKey` on a mutation input field is no longer supported; see xref:../reference/directives/mutation.adoc[`@mutation`].
 
 == NodeId-encoded keys
 
@@ -125,7 +125,7 @@ The same VALUES-pair join applies; the difference is purely on the parent side, 
 * `@asConnection` on a `@lookupKey` field is rejected. Pagination would shift positions, breaking the positional contract.
 * Single-cardinality `@lookupKey` is rejected. Pass a list-returning field, or drop `@lookupKey`.
 * Two layers of lists (e.g. `[InList] @lookupKey` where `InList { field: [String] }`) is rejected. The lookup operates over a flat keyset; flatten the input or drop the inner list.
-* Multiple `@lookupKey` arguments at the same call site must have the same length; values at the same index are correlated. A scalar argument broadcasts to every position. Wrap correlated keys in a `@table` input when the schema should enforce the pairing.
+* Multiple `@lookupKey` arguments at the same call site must have the same length; values at the same index are correlated. A scalar argument broadcasts to every position. Wrap correlated keys in an input type when the schema should enforce the pairing.
 * `@nodeId(typeName: T)` on the same arg implies `@lookupKey` when `T` matches the field's return type; the explicit `@lookupKey` is rejected as redundant. The decode failure mode is `Skip` (filter semantics, malformed ids drop silently). Synthesised lookup-key paths via `@lookupKey` on `[ID]` args use `Throw` (decode failure surfaces as `GraphqlErrorException`).
 * Composite keys cap at 21 columns plus the implicit `idx` cell. `ValuesJoinRowBuilder` enforces jOOQ's typed `Row<N+1>`/`Record<N+1>` arity limit of 22; exceeding it fails the build with the offending arity in the message.
 * Empty lookup-input short-circuits before SQL. Selecting `filmById(film_id: [])` returns `[]` without dispatching to the database.

@@ -16,7 +16,7 @@ import java.util.Optional;
 public sealed interface GraphitronType
     permits GraphitronType.TableBackedType, GraphitronType.ResultType, GraphitronType.RootType,
             GraphitronType.InterfaceType, GraphitronType.UnionType, GraphitronType.ErrorType,
-            GraphitronType.InputType, GraphitronType.TableInputType,
+            GraphitronType.InputType,
             GraphitronType.ConnectionType, GraphitronType.EdgeType, GraphitronType.PageInfoType,
             GraphitronType.FacetsType, GraphitronType.FacetValueType,
             GraphitronType.NestingType, GraphitronType.EnumType, GraphitronType.ScalarType,
@@ -419,28 +419,6 @@ public sealed interface GraphitronType
         GraphQLInputObjectType schemaType,
         InputRecordShape recordShape
     ) implements InputType, HasInputRecordShape {}
-
-    /**
-     * A GraphQL input object type annotated with {@code @table}.
-     * Graphitron owns the DML — fields are resolved against the jOOQ table so that
-     * INSERT/UPDATE/DELETE statements can be generated directly.
-     * This is the input-side counterpart of {@link ReturnTypeRef.TableBoundReturnType}.
-     *
-     * <p>{@code table} is the resolved jOOQ table (always present — failure to resolve produces
-     * {@link UnclassifiedType}). All {@code inputFields} are fully resolved {@link InputField}
-     * instances ({@link InputField.ColumnBackedField} for fields on the type's own table,
-     * {@link InputField.ColumnBackedReferenceField} for fields that navigate via {@code @reference});
-     * any field whose column cannot be matched causes the whole type to be classified as
-     * {@link UnclassifiedType}.
-     */
-    record TableInputType(
-        String name,
-        SourceLocation location,
-        TableRef table,
-        List<InputField> inputFields,
-        GraphQLInputObjectType schemaType,
-        InputRecordShape recordShape
-    ) implements GraphitronType, EmitsPerTypeFile, HasInputRecordShape {}
 
     /**
      * A nesting projection: a directiveless SDL object type embedded under a {@code @table}-bound

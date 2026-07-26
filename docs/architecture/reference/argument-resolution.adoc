@@ -29,13 +29,17 @@ override-propagation semantics that tie them together.
   via `LookupValuesJoinEmitter`.
 - `LookupField` capability with non-`Optional` `LookupMapping lookupMapping()`
   pairs with `@lookupKey`.
-- `TypeBuilder.buildInputType` is directive-driven: an explicit `@table` on the
-  input produces the deprecated `TableInputType` bridge, and every other input is
-  plain. A plain input carries no table of its own; its fields resolve against the
-  consuming field's target table at the call site (`InputFieldResolver` on the
-  filter path, `TypeBuilder.resolveInputFields` on the arg-level `@lookupKey`
-  path). The `override` axis is threaded field-relative there too, as
-  `classifyArgument`'s `enclosingOverride`.
+- `TypeBuilder.buildInputType` rejects any input carrying `@table` (a retired
+  directive location; the rejection message carries the per-verb migration
+  guidance) and classifies every other input on the plain path. An input carries
+  no table of its own; its fields resolve against the consuming field's target
+  table at the call site (`InputFieldResolver` on the filter path,
+  `TypeBuilder.resolveInputFields` on the arg-level `@lookupKey` path), so an
+  input reused across consumers resolves per-consumer. The `override` axis is
+  threaded field-relative there too, as `classifyArgument`'s `enclosingOverride`.
+- `TableInputArg` is the carrier for an input argument whose fields resolved to a
+  concrete table; it is built field-relatively (from the consuming field's
+  table), never from a table declared on the input type.
 
 == Scope
 
@@ -45,22 +49,18 @@ override-propagation semantics that tie them together.
 predicate when the input is used at a call site. Nested input-field
 conditions compose. Outer-level overrides propagate downward.
 
-The input-field position covers both `@table`-annotated input types
-(primary case) and plain input types used under the legacy
-"implicit-table" heuristic, where the input's fields resolve against the
-enclosing query field's target table. A divergence-scan of alf's
-production schema
+The input-field position applies to every input type: an input's fields
+resolve against the enclosing consuming field's target table, per call
+site. A divergence-scan of alf's production schema
 (`alf/graphitron-rewrite:graphitron-rewrite/generator-schema.graphql`,
-not committed to trunk) counted 62 plain inputs carrying inner
+not committed to trunk) counted 62 inputs carrying inner
 `@condition`, 3 of them under an outer field-level
 `@condition(override: true)` (`Query.emner`, `Query.emnerV2`,
-`Query.studenter`). Zero `@table` inputs carry inner `@condition`
-because `@table` inputs on alf rely on *implicit column conditions*
-instead (63 distinct call sites). Implicit column conditions ship
-alongside this Phase 4 work (commit `96e39df`); an un-annotated
-`ColumnBackedField` / `ColumnBackedReferenceField` on a `@table` input contributes
+`Query.studenter`), alongside 63 call sites relying on *implicit column
+conditions* instead: an un-annotated
+`ColumnBackedField` / `ColumnBackedReferenceField` contributes
 a `BodyParam` with `NestedInputField` extraction to the same
-`GeneratedConditionFilter` this phase emits.
+`GeneratedConditionFilter` the explicit conditions land in.
 
 == Design
 
@@ -74,42 +74,36 @@ Three `InputField` variants
 - `InputField.ColumnBackedReferenceField`
 - `InputField.NestingField`
 
-The same variants cover both resolution sources: `@table`-input fields
-(classified at type-build time against the input's own declared table) and
-plain-input fields (classified at argument-classify time against the
-enclosing query field's target table). The variant doesn't need to know
-which source produced it; the carrying argument record (`TableInputArg` or
-`PlainInputArg`) remembers that.
+The variants are source-agnostic: input fields classify at
+argument-classify time against the enclosing consuming field's target
+table, whichever path (filter, arg-level `@lookupKey`, DML write target)
+supplied that table. The variant doesn't need to know which path produced
+it; the carrying argument record (`TableInputArg` or `PlainInputArg`)
+remembers that.
 
 `NodeIdField` is intentionally excluded; see Out of Scope. `ArgConditionRef`
 is reused verbatim; its `override` flag is the input-field-level override
 (matching legacy semantics: `override: true` on an input field replaces that
 field's implicit condition with the explicit method).
 
-=== Classification: reading the directive at type-build and call-site time
+=== Classification: per call site, against the consumer's table
 
-`@table` inputs and plain inputs classify at different times because their
-resolution tables differ:
-
-- *`@table` inputs.* Classified once at type-build time by
-  `TypeBuilder.buildInputField` against the input's own `@table(name:)`.
-- *Plain inputs.* Classified per call site by
-  `FieldBuilder.classifyPlainInputFields` against the enclosing query
-  field's target table (`rt`). Same plain input used at N call sites
-  classifies N times, one per resolved table. Classification is cheap;
-  reclassification is simpler than caching, and a per-site cache would
-  complicate invalidation without a measured need.
+Input fields classify per call site, because the resolution table is a
+fact of the consuming field, not of the input type: the same input used
+at N call sites classifies N times, once per resolved table.
+Classification is cheap; reclassification is simpler than caching, and a
+per-site cache would complicate invalidation without a measured need. A
+field that resolves on no column of a consumer's table is a classify-time
+rejection naming that consumer's table.
 
 *Shared per-field classifier.* `BuildContext.classifyInputField(field,
 parentTypeName, tableRef, expandingTypes, errors) -> InputFieldResolution`
-hosts the column / `@reference` / nesting decision tree, accessible from
-both `TypeBuilder` and `FieldBuilder`. `TypeBuilder` calls it with the
-input type's declared table; `FieldBuilder` calls it with the call site's
-`rt` when it encounters a plain-input arg. The shared classifier means
-`NestingField` semantics stay identical across both resolution paths: a
-plain input nested inside a `@table` input still resolves against the
-parent `@table`'s table via the existing recursive call, and a plain input
-used directly as a field argument resolves against `rt`.
+hosts the column / `@reference` / nesting decision tree. Every caller
+supplies the call site's resolved table: the filter path passes the query
+field's return-type table (`rt`), the DML paths pass the write-target
+table. The shared classifier means `NestingField` semantics stay identical
+across all resolution paths: a nested input resolves against the same
+table as its parent via the existing recursive call.
 
 *Condition helper.* `BuildContext.buildInputFieldCondition(GraphQLInputObjectField
 field, String inputFieldName, List<String> errors) -> Optional<ArgConditionRef>`
@@ -126,8 +120,8 @@ mirrors `FieldBuilder.buildArgCondition`:
 - On reflection failure, the error is appended and `Optional.empty()` is
   returned, mirroring the `buildArgCondition` error contract.
 
-The helper is agnostic to `@table` vs. plain source; both paths call it
-with the same shape. `classifyInputField`, `buildInputFieldCondition`,
+The helper is agnostic to which path supplied the resolution table; every
+caller uses the same shape. `classifyInputField`, `buildInputFieldCondition`,
 and `readConditionDirective` all live in `BuildContext`; callers in
 `TypeBuilder` and `FieldBuilder` reach them via `ctx`.
 
@@ -148,9 +142,9 @@ necessarily lookup keys.
 The alternative was to read the field list out of a registry at projection
 time. Rejected: re-couples projection to builder context, breaks the
 invariant that projection is a pure function of `List<ArgumentRef>` (no
-builder state, no registry lookups). For `PlainInputArg` there is no
-registry entry to read from at all, so the carry-on-the-record shape is
-the only coherent option there anyway.
+builder state, no registry lookups). And since input fields classify per
+call site, there is no whole-type registry entry to read from anyway, so
+the carry-on-the-record shape is the only coherent option.
 
 === Override propagation
 
@@ -226,10 +220,10 @@ silencing explicit input-field conditions written by the schema author.
 *Divergence-pinning tests.* Two execution tests pin the rewrite against
 legacy's total-replace rule:
 `inputFieldCondition_tableInput_outerOverride_preservesInnerExplicitMethod`
-(outer `@condition(override: true)` over a `@table` input whose field
-carries its own `@condition`) and
+(outer `@condition(override: true)` over a filter input whose field
+carries its own `@condition`; the test name's `tableInput` is historical) and
 `inputFieldCondition_plainInput_outerOverride_preservesInnerExplicitMethod`
-(same shape against a plain input; alf production shape). Both generate a
+(same shape against a second filter input; alf production shape). Both generate a
 predicate conjunction that evaluates to an empty result set; a regression
 to the legacy "outer owns everything" rule would drop the inner predicate
 and return rows, breaking the tests by name.
@@ -278,9 +272,9 @@ intermediate nesting-field's `override: true`.
 | Yes | Present (override:true) | Suppressed  | Emitted
 |===
 
-Enforced by the symmetric-implicit-predicate-emission pipeline test added in
-R205 (`plainInput_resolvedColumnWithoutCondition_emitsImplicitBodyParam`),
-which pins identical implicit-condition emission for `@table` and plain inputs.
+Enforced by the symmetric-implicit-predicate-emission pipeline test
+(`plainInput_resolvedColumnWithoutCondition_emitsImplicitBodyParam`),
+which pins implicit-condition emission for consumer-resolved input fields.
 
 "Emitted" in the explicit-method column means the method call lands in the
 `List<WhereFilter>` returned by `projectFilters`; downstream emitters AND
@@ -309,7 +303,7 @@ VALUES+JOIN rows; per-row condition evaluation already reads fields via
 loop; projection just hands them as additional filters. Verify round-trip
 count with an execution test (see §Test strategy).
 
-*Nested non-`@table` input types.* `InputField.NestingField` resolves its
+*Nested input types.* `InputField.NestingField` resolves its
 own fields against the parent's table. A condition on the nesting field is
 reflected with the nesting field's SDL name as the sole arg (same shape as a
 scalar input field's condition); projection walks `NestingField.fields`
@@ -325,17 +319,16 @@ descendants. No new emitter shape.
    to the call site as `classifyArgument`'s `enclosingOverride` (the enclosing
    field- or argument-level `@condition(override: true)`, ORed with the
    consuming argument's own). Every classified input field carries its own
-   `@condition` override flag. The per-call-site classifier handles plain-input
-   column resolution directly against the outer field's table with the existing
-   `catalog.findColumn` + `@field(name:)` path; a column-miss under an active
-   override is admitted as an `InputField.UnboundField` rather than rejected.
+   `@condition` override flag. The per-call-site classifier handles input-field
+   column resolution directly against the consuming field's table with the
+   existing `catalog.findColumn` + `@field(name:)` path; a column-miss under an
+   active override is admitted as an `InputField.UnboundField` rather than
+   rejected.
 
 2. *`GraphitronSchemaValidator`.* No new structural validation:
    graphql-java enforces `on INPUT_FIELD_DEFINITION` placement at
-   schema-parse time. Reflection errors surface through the existing
-   `errors` list in `TypeBuilder.buildInputField` → `UnclassifiedType`
-   fallback for `@table` inputs, and through the per-call-site
-   classifier's `errors` list for plain inputs (same `UnclassifiedArg`
+   schema-parse time. Reflection errors surface through the per-call-site
+   classifier's `errors` list (the same `UnclassifiedArg`
    fallback already used for other classify-time failures).
 
 == Runtime: nested input-field arg extraction
@@ -385,10 +378,10 @@ code.
   `PlainInputArg` each hold `List<InputField> fields`, populated at
   classify time. Registry lookup at projection time was rejected: it
   re-couples projection to builder context and breaks the invariant that
-  projection is a pure function of `List<ArgumentRef>`. For
-  `PlainInputArg` there is no registry entry anyway (plain-input fields
-  classify per call site against the outer field's `rt`), so the
-  carry-on-record shape is the only coherent one there.
+  projection is a pure function of `List<ArgumentRef>`. There is no
+  whole-type registry entry anyway (input fields classify per call site
+  against the consuming field's table), so the carry-on-record shape is
+  the only coherent one.
 
 - **Condition-method signature for `NestingField` conditions: single arg
   named after the SDL field.** Matches the reflection shape
@@ -403,7 +396,7 @@ code.
 - *Reflection-failure behaviour: per-arg, not per-type.* Input-field
   condition reflection mirrors `buildArgCondition`: append the error,
   return `Optional.empty()`, leave the rest of the field classifying
-  cleanly. Promoting the whole `TableInputType` to `UnclassifiedType` was
+  cleanly. Promoting the whole input type to `UnclassifiedType` was
   rejected on blast-radius grounds: a reflection failure is a
   caller-fixable error, not a schema-structural one, so it should not
   invalidate the input type's other fields.

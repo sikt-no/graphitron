@@ -451,7 +451,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
 
     /**
      * A record-returning DML mutation: the schema field carries
-     * {@code @mutation(typeName: INSERT|UPSERT)}, takes a {@code @table} input, and
+     * {@code @mutation(typeName: INSERT|UPSERT)}, takes a DML input, and
      * returns a payload carrier (an SDL Object admitted by
      * {@code BuildContext.scanStructuralDmlPayload} as a single non-errors data field whose
      * element is an {@code @table}-bound type). Sibling to {@link DmlTableField}: the latter
@@ -502,7 +502,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
     }
 
     /**
-     * A record-returning DML mutation with bulk {@code @table} input and a list-shaped
+     * A record-returning DML mutation with bulk DML input and a list-shaped
      * {@code @table}-element data field on the carrier. The carrier itself is single
      * ({@code FilmsPayload}, not {@code [FilmsPayload!]!}); the list lives on the data field
      * ({@code films: [Film!]}). Sibling to {@link MutationDmlRecordField}, which covers the
@@ -571,7 +571,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
             }
             if (!tableInputArg.list()) {
                 throw new IllegalArgumentException(
-                    "MutationBulkDmlRecordField requires bulk @table input "
+                    "MutationBulkDmlRecordField requires a bulk (list) input "
                     + "(tableInputArg.list() == true); single-input belongs on "
                     + "MutationDmlRecordField.");
             }
@@ -583,7 +583,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
 
     /**
      * The payload-returning {@code @mutation(typeName: UPDATE)} field with single
-     * {@code @table} input (e.g. {@code updateFilmPayload(in: FilmUpdateInput!): FilmPayload}).
+     * DML input (e.g. {@code updateFilmPayload(in: FilmUpdateInput!): FilmPayload}).
      * Sibling on two axes: of {@link MutationUpdateTableField} (the direct-{@code @table}/ID-return
      * UPDATE leaf) it shares the walker-driven input semantics, the slim {@link InputArgRef} arg
      * surface plus the {@link UpdateRows} carrier with no {@code TableInputArg}; of
@@ -614,7 +614,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
 
     /**
      * The payload-returning {@code @mutation(typeName: UPDATE)} field with bulk
-     * {@code @table} input and a list-shaped {@code @table}-element data field on the carrier
+     * DML input and a list-shaped {@code @table}-element data field on the carrier
      * (e.g. {@code updateFilmsPayload(in: [FilmUpdateInput!]!): FilmsPayload}). Bulk sibling of
      * {@link MutationUpdatePayloadField}, exactly as {@link MutationBulkDmlRecordField} is the bulk
      * sibling of {@link MutationDmlRecordField}.
@@ -645,7 +645,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
 
     /**
      * The payload-returning {@code @mutation(typeName: DELETE)} field with single
-     * {@code @table} input (e.g. {@code deleteFilmPayload(in: FilmDeleteInput!): FilmPayload}).
+     * DML input (e.g. {@code deleteFilmPayload(in: FilmDeleteInput!): FilmPayload}).
      * The DELETE analogue of {@link MutationUpdatePayloadField}: of {@link MutationDeleteTableField}
      * (the direct-{@code @table}/ID-return DELETE leaf) it shares the walker-driven input
      * semantics, the slim {@link InputArgRef} arg surface plus the {@link DeleteRows} carrier with
@@ -676,7 +676,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
 
     /**
      * The payload-returning {@code @mutation(typeName: DELETE)} field with bulk
-     * {@code @table} input and a list-shaped data field on the carrier
+     * DML input and a list-shaped data field on the carrier
      * (e.g. {@code deleteFilmsPayload(in: [FilmDeleteInput!]!): FilmsPayload}). Bulk sibling of
      * {@link MutationDeletePayloadField}, exactly as {@link MutationBulkUpdatePayloadField} is the
      * bulk sibling of {@link MutationUpdatePayloadField}.

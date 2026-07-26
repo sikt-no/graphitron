@@ -59,17 +59,19 @@ class LspColumnDispatchProjectionTest {
     }
 
     @Test
-    void inputColumnFieldDispatchesResolveOnInputTable() {
+    void inputFieldCoordinateContributesNoDispatchEntry() {
+        // Input-field coordinates were dropped from the snapshot together with `@table` on
+        // input types (an input's fields resolve per consuming field, so there is no
+        // type-level table to dispatch on). Column dispatch is an output-field concern; the
+        // enclosing-table and terminal-table Resolve cases above pin the surviving arms. This
+        // pins the deliberate absence of the input coordinate.
         var snapshot = snapshotOf("""
-            input FilmKey @table(name: "film") { filmId: Int @field(name: "film_id") }
+            input FilmKey { filmId: Int @field(name: "film_id") }
             type Film @table(name: "film") { title: String }
             type Query { film(key: FilmKey!): Film }
             """);
-        var classification = snapshot.fieldClassificationsByCoord().get("FilmKey.filmId");
-        var dispatch = classification.lspColumnDispatch();
-        assertThat(dispatch).isInstanceOf(FieldClassification.LspColumnDispatch.Resolve.class);
-        assertThat(((FieldClassification.LspColumnDispatch.Resolve) dispatch).tableName())
-            .isEqualToIgnoringCase("film");
+        assertThat(snapshot.fieldClassificationsByCoord().keySet())
+            .noneMatch(coord -> coord.startsWith("FilmKey."));
     }
 
     @Test

@@ -25,16 +25,16 @@ The reason is the *N × M contract* that batching depends on. xref:batching-mode
 
 You could, in principle, page each lookup value independently and join the page boundaries into the derived target table. We considered it and rejected it: the surface complexity (page cursors per lookup value, per-parent state in the loader, validation of cursor consistency across the batch) outweighed the use cases we found. The pragmatic alternative is to use xref:../reference/directives/splitQuery.adoc[`@splitQuery`] for paginated relations and reserve `@lookupKey` for the bounded-cardinality shapes (Relay `node(id:)`, Apollo Federation `_entities`, point lookups on natural keys).
 
-== Mutations require `@table` on the input type
+== Input types carry no table directive
 
-A mutation like `createFilm(input: FilmCreateInput!): Film` won't generate unless `FilmCreateInput` carries xref:../reference/directives/table.adoc[`@table`]. The output type does not transfer its table binding to the input.
+A mutation like `createFilm(input: FilmCreateInput!): Film` names its write target on the *field*, never on the input type: the target is derived from the `Film` return type (which carries xref:../reference/directives/table.adoc[`@table`]), or named with xref:../reference/directives/mutation.adoc[`@mutation(table:)`] when the return names no table (`DELETE`, encoded-`ID` / scalar returns). Query filters work the same way: a filter input's fields resolve against the consuming query field's return-type table. `@table` on an input type is a retired directive location; the build rejects it with migration guidance.
 
-Two reasons input types can't reuse the output type's binding:
+Two reasons the table fact lives on the consuming field rather than the input:
 
-* *Input shapes diverge.* The set of fields a client supplies on create is rarely the set the database stores: client supplies natural keys, generated keys arrive from sequences, audit columns are server-set, transient validation fields don't reach storage at all. Forcing the input to share the output's binding would conflate the two surfaces.
-* *Different binding rules apply.* On a `@table` output, `@field` is column-bound and selection-driven; on a `@table` input, `@field` declares "this column is written on every call" and the GraphQL nullability of the field is the contract for whether the column must be supplied. The generator's emit rules differ; without the directive on the input, the classifier can't pick the input-shape rules.
+* *An input type is not an entity.* It is a wire shape. The table it maps onto is a property of each *use*: the same filter input consumed by two queries returning different tables should resolve against each consumer's table, not against one table declared globally on the input. Declaring the table on the input silently mis-resolved the second consumer.
+* *The signal was redundant.* Every consuming field already carries the table fact: a query field through its return type, a mutation through its return type or `@mutation(table:)`. A second declaration on the input could only agree (noise) or disagree (a conflict needing a rule).
 
-The cost is one extra `@table` directive per input type. The benefit is that input and output evolve independently, and a mutation's wire shape is clear from its input definition without cross-referencing the output.
+Input types still don't reuse output types: the set of fields a client supplies on create is rarely the set the database stores (generated keys arrive from sequences, audit columns are server-set), so `FilmCreateInput` stays a separate declaration. What it no longer needs is a table binding of its own.
 
 xref:../how-to/index.adoc[The how-to index] points at xref:../reference/directives/mutation.adoc[`@mutation`] and the mutation recipes for the full input vocabulary.
 

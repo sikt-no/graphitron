@@ -131,7 +131,6 @@ final class EdgeProducer {
             case TypeClassification.Union u -> participates(edges, u.participantTypeNames());
             case TypeClassification.JooqTableRecord r -> targetsTable(edges, r.tableName(), ctx);
             case TypeClassification.JooqTableRecordInput r -> targetsTable(edges, r.tableName(), ctx);
-            case TypeClassification.TableInput t -> targetsTable(edges, t.tableName(), ctx);
 
             // ---- deliberate no-edge arms ----
             case TypeClassification.JavaRecord ignored -> { }
@@ -307,8 +306,7 @@ final class EdgeProducer {
         TypeClassification.Interface.class,
         TypeClassification.Union.class,
         TypeClassification.JooqTableRecord.class,
-        TypeClassification.JooqTableRecordInput.class,
-        TypeClassification.TableInput.class);
+        TypeClassification.JooqTableRecordInput.class);
 
     /** {@link TypeClassification} permits deliberately mapped to no edge. */
     static final Set<Class<? extends TypeClassification>> NO_EDGE_TYPES = Set.of(

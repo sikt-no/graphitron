@@ -3360,8 +3360,8 @@ class GraphQLQueryTest {
         // (film_id >= 2) AND (film_id = 1) → no rows. A regression to legacy semantics
         // would make films non-empty and break this test by name.
         Map<String, Object> data = execute(
-            "{ filmsOuterOverrideTableInput(filter: {filmId: \"1\"}) { filmId } }");
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsOuterOverrideTableInput");
+            "{ filmsOuterOverrideFilterInput(filter: {filmId: \"1\"}) { filmId } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsOuterOverrideFilterInput");
         assertThat(films).isEmpty();
     }
 

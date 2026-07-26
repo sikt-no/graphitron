@@ -346,31 +346,6 @@ class DiagnosticsTest {
     // ===== @field(name:) on @reference path field validates against terminal table =====
 
     @Test
-    void inputTableWithReferencePathValidatesAgainstTerminalTable() {
-        // The enclosing @table is "film"; the @reference path navigates to "language"; the
-        // column "NAME" exists on "language" but not on "film". Validation targets the path's
-        // terminal table, so no false-positive "Unknown column 'NAME' on table 'film'."
-        var file = file("""
-            input FilmInput @table(name: "film") {
-                languageName: String @field(name: "NAME") @reference(path: [{table: "language"}])
-            }
-            """);
-
-        var snapshot = new LspSchemaSnapshot.Built.Current(
-            java.util.List.of(),
-            java.util.Map.of("FilmInput", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.TableBacking("film")),
-            java.util.Map.of(),
-            java.util.Map.of("FilmInput.languageName",
-                new no.sikt.graphitron.rewrite.catalog.FieldClassification.ColumnReference(
-                    "language", "NAME", java.util.List.of())),
-            java.util.Map.of()
-        );
-        var diags = compute(file, filmAndLanguageCatalogWithLanguageName(), snapshot);
-
-        assertThat(diags).isEmpty();
-    }
-
-    @Test
     void outputTableWithReferencePathValidatesAgainstTerminalTable() {
         // Mirror on an output type declaration — covers the
         // ChildField.ColumnReferenceField projection arm of projectFieldClassification.
@@ -401,16 +376,16 @@ class DiagnosticsTest {
         // message; the LSP must not emit a duplicate "Unknown column ... on table '<enclosing>'"
         // diagnostic naming the wrong table.
         var file = file("""
-            input FilmInput @table(name: "film") {
+            type FilmType @table(name: "film") {
                 languageName: String @field(name: "TYPO") @reference(path: [{table: "language"}])
             }
             """);
 
         var snapshot = new LspSchemaSnapshot.Built.Current(
             java.util.List.of(),
-            java.util.Map.of("FilmInput", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.TableBacking("film")),
+            java.util.Map.of("FilmType", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.TableBacking("film")),
             java.util.Map.of(),
-            java.util.Map.of("FilmInput.languageName",
+            java.util.Map.of("FilmType.languageName",
                 new no.sikt.graphitron.rewrite.catalog.FieldClassification.Unclassified("synthetic test reason")),
             java.util.Map.of()
         );

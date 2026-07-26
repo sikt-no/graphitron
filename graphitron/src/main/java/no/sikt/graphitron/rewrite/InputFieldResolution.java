@@ -4,7 +4,7 @@ import no.sikt.graphitron.rewrite.model.InputField;
 
 /**
  * Result of classifying a single {@link graphql.schema.GraphQLInputObjectField} during the
- * type-build pass (for {@code @table} inputs) or argument-classify pass (for plain inputs).
+ * write-target resolution pass (for DML inputs) or argument-classify pass (for filter inputs).
  *
  * <p>A field that resolves successfully yields a {@link Resolved} containing the classified
  * {@link InputField}. Failures yield {@link Unresolved} with diagnostic details.

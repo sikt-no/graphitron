@@ -619,7 +619,7 @@ final class RecordBindingResolver {
         // grounded as RootTable; don't double-bind.
         if (payloadObj.hasAppliedDirective(DIR_TABLE)) return;
 
-        // Cardinality from the field's single input-object argument's list shape: the @table input
+        // Cardinality from the field's single input-object argument's list shape: the DML input
         // on the deprecated-bridge route, the raw input on the @mutation(table:) field-derived
         // route. Zero or multiple input-object arguments skip silently; the classifier rejects any
         // other shape independently.

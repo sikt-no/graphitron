@@ -54,7 +54,6 @@ public final class InputTypeGenerator {
             if (entry.getKey().startsWith("_")) continue;
             GraphQLInputObjectType inputType = switch (entry.getValue()) {
                 case GraphitronType.InputType it -> it.schemaType();
-                case GraphitronType.TableInputType tit -> tit.schemaType();
                 default -> null;
             };
             if (inputType != null) {

@@ -9,7 +9,7 @@ import java.util.Objects;
 /**
  * Pre-resolved shape of the graphitron-emitted class for one SDL {@code input} type. Lives
  * on every {@link HasInputRecordShape} carrier (the four {@link GraphitronType.InputType}
- * leaves and {@link GraphitronType.TableInputType}). One {@link InputComponent} per SDL
+ * leaves). One {@link InputComponent} per SDL
  * field, in declaration order. The "record" terminology in this carrier's name and slot
  * names is forward-looking: the emitted artifact is a plain Java class today and becomes a
  * Java {@code record} once graphitron-javapoet gains record emission support.

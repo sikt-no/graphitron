@@ -83,7 +83,6 @@ public final class LspClassificationLabels {
             case TypeClassification.JooqTableRecordInput x -> TypeClassification.JooqTableRecordInput.class.getSimpleName();
             case TypeClassification.PojoResult x -> TypeClassification.PojoResult.class.getSimpleName();
             case TypeClassification.PojoInput x -> TypeClassification.PojoInput.class.getSimpleName();
-            case TypeClassification.TableInput x -> TypeClassification.TableInput.class.getSimpleName();
             case TypeClassification.Root x -> TypeClassification.Root.class.getSimpleName();
             case TypeClassification.Connection x -> TypeClassification.Connection.class.getSimpleName();
             case TypeClassification.Edge x -> TypeClassification.Edge.class.getSimpleName();

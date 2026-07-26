@@ -82,17 +82,20 @@ class FieldClassificationProjectionTest {
     }
 
     @Test
-    void inputColumnFieldProjectsInputTable() {
+    void inputFieldProjectsNoCoordinate() {
+        // Input-field coordinates were dropped from the LSP surface together with `@table` on
+        // input types: an input is not a modeled relation, its fields resolve per consuming
+        // field, so there is no type-level table to key a "FilmKey.filmId" projection on. This
+        // pins the deliberate absence; the consuming field itself still projects (Query.film).
         var snapshot = snapshotOf("""
-            input FilmKey @table(name: "film") { filmId: Int @field(name: "film_id") }
+            input FilmKey { filmId: Int @field(name: "film_id") }
             type Film @table(name: "film") { title: String }
             type Query {
               film(key: FilmKey!): Film
             }
             """);
-        var input = (FieldClassification.Column) snapshot.fieldClassificationsByCoord().get("FilmKey.filmId");
-        assertThat(input.tableName()).isEqualToIgnoringCase("film");
-        assertThat(input.columnName()).isEqualTo("film_id");
+        assertThat(snapshot.fieldClassificationsByCoord()).doesNotContainKey("FilmKey.filmId");
+        assertThat(snapshot.fieldClassificationsByCoord()).containsKey("Query.film");
     }
 
     @Test

@@ -151,7 +151,7 @@ The producer's return type determines the backing class. The only authoring choi
 
 == Constraints and gotchas
 
-* *Table-bound and class-backed are exclusive on an output type.* The type is either jOOQ-table-bound (`TableType`, via `@table`) or backed by a Java class reflected from its producer (`ResultType`). On *input* types, `@table` wins over a reflected class binding: when both apply, a build warning names the conflict.
+* *Table-bound and class-backed are exclusive on an output type.* The type is either jOOQ-table-bound (`TableType`, via `@table`) or backed by a Java class reflected from its producer (`ResultType`). *Input* types are never table-bound (`@table` on an input is a retired location and is rejected): an input is class-backed when a consuming method parameter reflects to a class, otherwise its fields resolve against each consuming field's table.
 * *`@sourceRow` is rejected on `JooqTableRecordType` and `JooqRecordType` parents.* The catalog already supplies the path; use `@reference`. The diagnostic names the directive that's redundant.
 * *Accessor inference rejects bridge and synthetic methods.* If a backing class has a generic-typed accessor that the compiler erases through a bridge method, the bridge is filtered out before name matching. The user-visible accessor (the canonical declared method) is what the classifier sees.
 * *`@splitQuery` on record-parent table-bound fields is redundant but not rejected.* `classifyChildFieldOnResultType` never inspects the directive on these fields; record-parent children are DataLoader-batched unconditionally.

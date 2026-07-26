@@ -1,12 +1,15 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.rewrite.model.BodyParam;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.InputField;
+import no.sikt.graphitron.rewrite.model.QueryField;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -301,102 +304,128 @@ class NodeIdPipelineTest {
     }
 
     // ===== Input side =====
+    //
+    // Inputs are plain (directiveless) types resolved per consuming field against that field's
+    // return-type table. The classified InputField carriers project onto the consuming query
+    // field's GeneratedConditionFilter body params: the carrier's columns (own columns for
+    // ColumnBackedField, lifted FK source columns for ColumnBackedReferenceField) become the
+    // predicate's column tuple, and its NodeIdDecodeKeys extraction rides through
+    // CallSiteExtraction.NestedInputField as the projected param's leaf. Rejections surface as
+    // UnclassifiedField on the consuming field, naming the plain input type.
+
+    /** The consuming field's single implicit predicate of the expected operator shape. */
+    private static <T extends BodyParam> T inputBodyParam(GraphitronSchema schema, String queryFieldName, Class<T> shape) {
+        var f = (QueryField.QueryTableField) schema.field("Query", queryFieldName);
+        var gcf = (GeneratedConditionFilter) f.filters().stream()
+            .filter(GeneratedConditionFilter.class::isInstance)
+            .findFirst().orElseThrow();
+        return gcf.bodyParams().stream()
+            .filter(shape::isInstance).map(shape::cast).findFirst().orElseThrow();
+    }
+
+    /** Unwraps the leaf extraction the input-field carrier contributed to the projected param. */
+    private static CallSiteExtraction leafExtraction(BodyParam bp) {
+        return ((CallSiteExtraction.NestedInputField) bp.extraction()).leaf();
+    }
+
+    private static String leafDecodeMethodName(BodyParam bp) {
+        return ((CallSiteExtraction.NodeIdDecodeKeys) leafExtraction(bp)).decodeMethod().methodName();
+    }
 
     enum InputCase {
         IMPLICIT_ID(
-            "input `id: ID!` on a composite-PK node-type table → composite ColumnBackedField with NodeIdDecodeKeys.SkipMismatchedElement",
+            "input `id: ID!` consumed against a composite-PK node-type table → composite RowEq "
+                + "predicate whose leaf is NodeIdDecodeKeys.SkipMismatchedElement",
             """
-            input Foo @table(name: "bar") { id: ID! }
-            type Query { x: String leafReach1(in: Foo): String }
+            input Foo { id: ID! }
+            type Bar @table(name: "bar") { name: String }
+            type Query { bars(in: Foo): [Bar!] }
             """,
             schema -> {
-                var t = (GraphitronType.TableInputType) schema.type("Foo");
-                var f = (InputField.ColumnBackedField) t.inputFields().get(0);
-                assertThat(f.columns()).extracting(ColumnRef::sqlName)
+                var bp = inputBodyParam(schema, "bars", BodyParam.RowEq.class);
+                assertThat(bp.columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("id_1", "id_2");
-                assertThat(f.extraction())
+                assertThat(leafExtraction(bp))
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
-                assertThat(((no.sikt.graphitron.rewrite.model.CallSiteExtraction.NodeIdDecodeKeys) f.extraction()).decodeMethod().methodName()).isEqualTo("decodeBar");
+                assertThat(leafDecodeMethodName(bp)).isEqualTo("decodeBar");
             }),
 
         EXPLICIT_PERSON_ID(
-            "input `personId: ID! @field(name: \"PERSON_ID\")` on a composite-PK node-type table → composite ColumnBackedField with NodeIdDecodeKeys (PERSON_ID has no column, nodeId metadata wins)",
+            "input `personId: ID! @field(name: \"PERSON_ID\")` consumed against a composite-PK node-type table → composite RowEq with NodeIdDecodeKeys leaf (PERSON_ID has no column, nodeId metadata wins)",
             """
-            input Foo @table(name: "bar") { personId: ID! @field(name: "PERSON_ID") }
-            type Query { x: String leafReach1(in: Foo): String }
+            input Foo { personId: ID! @field(name: "PERSON_ID") }
+            type Bar @table(name: "bar") { name: String }
+            type Query { bars(in: Foo): [Bar!] }
             """,
             schema -> {
-                var t = (GraphitronType.TableInputType) schema.type("Foo");
-                var f = (InputField.ColumnBackedField) t.inputFields().get(0);
-                assertThat(f.columns()).extracting(ColumnRef::sqlName)
+                var bp = inputBodyParam(schema, "bars", BodyParam.RowEq.class);
+                assertThat(bp.columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("id_1", "id_2");
-                assertThat(f.extraction())
+                assertThat(leafExtraction(bp))
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
             }),
 
         EXPLICIT_NODE_ID_DIRECTIVE(
-            "R131 four-corners: singular `id: ID! @nodeId` on a @table input whose table is the"
-                + " same as the inferred NodeType's table, composite-PK → composite ColumnBackedField"
+            "R131 four-corners: singular `id: ID! @nodeId` on an input consumed against the"
+                + " inferred NodeType's own table, composite-PK → composite RowEq"
                 + " (same-table filter against the parent's own PK columns; not a reference)",
             """
-            type Bar @table(name: "bar") @node { id: ID! @nodeId }
-            input Foo @table(name: "bar") { id: ID! @nodeId }
-            type Query { x: String leafReach1(in: Foo): String }
+            type Bar implements Node @table(name: "bar") @node { id: ID! @nodeId }
+            input Foo { id: ID! @nodeId }
+            type Query { bars(in: Foo): [Bar!] }
             """,
             schema -> {
-                var t = (GraphitronType.TableInputType) schema.type("Foo");
-                var f = (InputField.ColumnBackedField) t.inputFields().get(0);
-                assertThat(f.list()).isFalse();
-                assertThat(f.columns()).extracting(ColumnRef::sqlName)
+                var bp = inputBodyParam(schema, "bars", BodyParam.RowEq.class);
+                assertThat(bp.columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("id_1", "id_2");
-                assertThat(f.extraction())
+                assertThat(leafExtraction(bp))
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch.class);
-                assertThat(((no.sikt.graphitron.rewrite.model.CallSiteExtraction.NodeIdDecodeKeys) f.extraction()).decodeMethod().methodName()).isEqualTo("decodeBar");
+                assertThat(leafDecodeMethodName(bp)).isEqualTo("decodeBar");
             }),
 
         EXPLICIT_NODE_ID_DIRECTIVE_SINGLE_PK(
-            "R131 four-corners: singular `id: ID! @nodeId(typeName: \"Baz\")` on a @table input"
-                + " whose table is the same as Baz's table (baz, single-PK) → ColumnField"
+            "R131 four-corners: singular `id: ID! @nodeId(typeName: \"Baz\")` on an input"
+                + " consumed against Baz's own table (baz, single-PK) → Eq predicate"
                 + " (same-table arity-1 case)",
             """
-            type Baz @table(name: "baz") @node { id: ID! @nodeId }
-            input BazSelector @table(name: "baz") { id: ID! @nodeId(typeName: "Baz") }
-            type Query { x: String leafReach1(in: BazSelector): String }
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
+            input BazSelector { id: ID! @nodeId(typeName: "Baz") }
+            type Query { baz(in: BazSelector): Baz }
             """,
             schema -> {
-                var t = (GraphitronType.TableInputType) schema.type("BazSelector");
-                var f = (InputField.ColumnBackedField) t.inputFields().get(0);
-                assertThat(f.list()).isFalse();
-                assertThat(f.columns().get(0).sqlName()).isEqualTo("id");
-                var skip = (no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch) f.extraction();
+                var bp = inputBodyParam(schema, "baz", BodyParam.Eq.class);
+                assertThat(bp.column().sqlName()).isEqualTo("id");
+                var skip = (no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch) leafExtraction(bp);
                 assertThat(skip.decodeMethod().methodName()).isEqualTo("decodeBaz");
             }),
 
         BARE_NODE_ID_NO_OBJECT_TYPE(
-            "input `id: ID! @nodeId` on a @table whose table has no matching object type → friendly error",
+            "input `id: ID! @nodeId` resolved against a table with no matching object type "
+                + "(DELETE write target; a query consumer would itself supply one) → friendly error",
             """
-            input Foo @table(name: "bar") { id: ID! @nodeId }
-            type Query { x: String leafReach1(in: Foo): String }
+            input Foo { id: ID! @nodeId }
+            type Query { x: String }
+            type Mutation { deleteBars(in: Foo!): Int @mutation(typeName: DELETE, table: "bar") }
             """,
             schema -> {
-                var t = (GraphitronType.UnclassifiedType) schema.type("Foo");
-                assertThat(t.reason())
+                var f = (GraphitronField.UnclassifiedField) schema.field("Mutation", "deleteBars");
+                assertThat(f.reason())
                     .contains("@nodeId without typeName: cannot infer node type")
                     .contains("no @table-annotated object type maps to table 'bar'")
                     .contains("Add typeName: explicitly");
             }),
 
         BARE_NODE_ID_AMBIGUOUS_OBJECT_TYPES(
-            "input `id: ID! @nodeId` on a @table shared by two object types → friendly ambiguity error",
+            "input `id: ID! @nodeId` resolved against a table shared by two object types → friendly ambiguity error",
             """
-            type BarA @table(name: "bar") @node { id: ID! @nodeId }
-            type BarB @table(name: "bar") @node { id: ID! @nodeId }
-            input Foo @table(name: "bar") { id: ID! @nodeId }
-            type Query { a: BarA b: BarB leafReach1(in: Foo): String }
+            type BarA implements Node @table(name: "bar") @node { id: ID! @nodeId }
+            type BarB implements Node @table(name: "bar") @node { id: ID! @nodeId }
+            input Foo { id: ID! @nodeId }
+            type Query { a: BarA b: BarB bars(in: Foo): [BarA!] }
             """,
             schema -> {
-                var t = (GraphitronType.UnclassifiedType) schema.type("Foo");
-                assertThat(t.reason())
+                var f = (GraphitronField.UnclassifiedField) schema.field("Query", "bars");
+                assertThat(f.reason())
                     .contains("@nodeId without typeName: is ambiguous")
                     .contains("multiple object types map to table 'bar'")
                     .contains("BarA")
@@ -405,18 +434,18 @@ class NodeIdPipelineTest {
             }),
 
         ACCESSOR_MISSING(
-            "plain ID field on a table without node-id metadata → TableInputType with UnboundField "
-                + "(R215 §3 defers column-coverage to consumption; the field is admitted at type-build "
-                + "and a non-override consumer rejects)",
+            "plain ID field resolved against a table without node-id metadata → the consuming "
+                + "field rejects, naming the plain input type and the unresolvable field",
             """
-            input Foo @table(name: "qux") { id: ID! }
-            type Query { x: String leafReach1(in: Foo): String }
+            input Foo { id: ID! }
+            type Qux @table(name: "qux") { name: String }
+            type Query { quxes(in: Foo): [Qux!] }
             """,
             schema -> {
-                var tit = (GraphitronType.TableInputType) schema.type("Foo");
-                assertThat(tit.inputFields()).hasSize(1);
-                assertThat(tit.inputFields().get(0))
-                    .isInstanceOf(no.sikt.graphitron.rewrite.model.InputField.UnboundField.class);
+                var f = (GraphitronField.UnclassifiedField) schema.field("Query", "quxes");
+                assertThat(f.reason())
+                    .contains("'Foo'")
+                    .contains("input field 'id'");
             }),
 
         R377_DECODE_VIA_NODE_INDEX_NOT_TYPEID(
@@ -428,65 +457,65 @@ class NodeIdPipelineTest {
             """
             type SharedNode implements Node @table(name: "shared_node") @node(typeId: "10154") { id: ID! }
             type SharedNodeProjection @table(name: "shared_node") { label: String }
-            input SharedSelector @table(name: "shared_node") { id: ID! @nodeId(typeName: "SharedNode") }
-            type Query { x: String leafReach1(in: SharedSelector): String }
+            input SharedSelector { id: ID! @nodeId(typeName: "SharedNode") }
+            type Query { shared(in: SharedSelector): SharedNode }
             """,
             schema -> {
-                var t = (GraphitronType.TableInputType) schema.type("SharedSelector");
-                var f = (InputField.ColumnBackedField) t.inputFields().get(0);
-                assertThat(f.columns().get(0).sqlName()).isEqualTo("id");
-                var skip = (no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch) f.extraction();
+                var bp = inputBodyParam(schema, "shared", BodyParam.Eq.class);
+                assertThat(bp.column().sqlName()).isEqualTo("id");
+                var skip = (no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch) leafExtraction(bp);
                 assertThat(skip.decodeMethod().methodName()).isEqualTo("decodeSharedNode");
                 assertThat(skip.decodeMethod().methodName()).isNotEqualTo("decode10154");
             }),
 
         R377_MULTI_NODE_REJECTS(
-            "R377: two @node types with distinct typeIds on one table, plus a bare-ID @table input "
+            "R377: two @node types with distinct typeIds on one table, plus a bare-ID input "
                 + "that triggers the @nodeId synthesis shim without @nodeId(typeName:). The decode "
-                + "helper cannot be resolved implicitly (two nodes back the table), so the input "
+                + "helper cannot be resolved implicitly (two nodes back the table), so the consumer "
                 + "rejects at build time with the 'zero or multiple' message rather than emitting a "
                 + "phantom decode<typeId> call. Sibling to MULTIPLE_NODE_TYPES_PER_TABLE_ALLOWED, which "
                 + "pins that both types still classify as NodeType.",
             """
             type FooA implements Node @table(name: "bar") @node(typeId: "FooA") { id: ID! }
             type FooB implements Node @table(name: "bar") @node(typeId: "FooB") { id: ID! }
-            input Selector @table(name: "bar") { id: ID! }
-            type Query { a: FooA b: FooB leafReach1(in: Selector): String }
+            input Selector { id: ID! }
+            type Query { a: FooA b: FooB bars(in: Selector): [FooA!] }
             """,
             schema -> {
-                var t = (GraphitronType.UnclassifiedType) schema.type("Selector");
-                assertThat(t.reason()).contains("zero or multiple GraphQL types map to it");
+                var f = (GraphitronField.UnclassifiedField) schema.field("Query", "bars");
+                assertThat(f.reason()).contains("zero or multiple GraphQL types map to it");
             }),
 
         R377_ORPHAN_INPUT_TYPEID_FALLBACK(
-            "R377: a @table input over a metadata-carrying table with NO @node SDL type (orphan-input "
-                + "/ synthesis-shim case). With no @node backing the table the decode helper falls back "
-                + "to the metadata's typeId suffix (decodeBaz, since baz's __NODE_TYPE_ID is 'Baz'). "
-                + "Pins that dropping the old branch 1 preserves the orphan-input path rather than "
-                + "silently changing it.",
+            "R377: an input resolved against a metadata-carrying table with NO @node SDL type "
+                + "(orphan-input / synthesis-shim case). With no @node backing the table the decode "
+                + "helper falls back to the metadata's typeId suffix (decodeBaz, since baz's "
+                + "__NODE_TYPE_ID is 'Baz'). Pins that dropping the old branch 1 preserves the "
+                + "orphan-input path rather than silently changing it.",
             """
-            input Foo @table(name: "baz") { bazRef: ID! }
-            type Query { x: String leafReach1(in: Foo): String }
+            input Foo { bazRef: ID! }
+            type BazRow @table(name: "baz") { id: String }
+            type Query { bazes(in: Foo): [BazRow!] }
             """,
             schema -> {
-                var t = (GraphitronType.TableInputType) schema.type("Foo");
-                var f = (InputField.ColumnBackedField) t.inputFields().get(0);
-                var skip = (no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement) f.extraction();
+                var bp = inputBodyParam(schema, "bazes", BodyParam.Eq.class);
+                var skip = (no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement) leafExtraction(bp);
                 assertThat(skip.decodeMethod().methodName()).isEqualTo("decodeBaz");
             }),
 
         LIST_VARIANT(
-            "list ID input skips the node-id check (list gate) → TableInputType with UnboundField "
-                + "(R215 §3 defers column-coverage to consumption)",
+            "list ID input skips the node-id check (list gate); the column 'id' does not exist "
+                + "on the consumer's table, so the consuming field rejects",
             """
-            input Foo @table(name: "bar") { id: [ID!]! }
-            type Query { x: String leafReach1(in: Foo): String }
+            input Foo { id: [ID!]! }
+            type Bar @table(name: "bar") { name: String }
+            type Query { bars(in: Foo): [Bar!] }
             """,
             schema -> {
-                var tit = (GraphitronType.TableInputType) schema.type("Foo");
-                assertThat(tit.inputFields()).hasSize(1);
-                assertThat(tit.inputFields().get(0))
-                    .isInstanceOf(no.sikt.graphitron.rewrite.model.InputField.UnboundField.class);
+                var f = (GraphitronField.UnclassifiedField) schema.field("Query", "bars");
+                assertThat(f.reason())
+                    .contains("'Foo'")
+                    .contains("input field 'id'");
             });
 
         final String sdl;
@@ -508,95 +537,92 @@ class NodeIdPipelineTest {
 
     enum InputReferenceCase {
         REFERENCE_TO_NODE_TYPE(
-            "R131 four-corners: singular `relatedId: ID! @nodeId(typeName: 'Baz')` on bar table"
-                + " (FK bar.id_1 -> baz.id, single-PK target) → ColumnReferenceField with"
-                + " NodeIdDecodeKeys.ThrowOnMismatch",
+            "R131 four-corners: singular `relatedId: ID! @nodeId(typeName: 'Baz')` consumed on bar"
+                + " (FK bar.id_1 -> baz.id, single-PK target) → Eq predicate on the lifted FK source"
+                + " column bar.id_1 with a NodeIdDecodeKeys.ThrowOnMismatch leaf",
             """
             type Baz @table(name: "baz") { id: ID! }
-            input Foo @table(name: "bar") { relatedId: ID! @nodeId(typeName: "Baz") }
-            type Query { x: String leafReach1(in: Foo): String }
+            type Bar @table(name: "bar") { name: String }
+            input Foo { relatedId: ID! @nodeId(typeName: "Baz") }
+            type Query { bars(in: Foo): [Bar!] }
             """,
             schema -> {
-                var t = (GraphitronType.TableInputType) schema.type("Foo");
-                var f = (InputField.ColumnBackedReferenceField) t.inputFields().get(0);
-                assertThat(f.typeName()).isEqualTo("ID");
-                assertThat(f.list()).isFalse();
-                assertThat(f.columns().get(0).sqlName()).isEqualTo("id");
-                assertThat(f.joinPath()).hasSize(1);
-                assertThat(f.extraction())
+                var bp = inputBodyParam(schema, "bars", BodyParam.Eq.class);
+                assertThat(bp.name()).isEqualTo("relatedId");
+                assertThat(bp.column().sqlName()).isEqualTo("id_1");
+                assertThat(leafExtraction(bp))
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch.class);
-                assertThat(((no.sikt.graphitron.rewrite.model.CallSiteExtraction.NodeIdDecodeKeys) f.extraction())
-                    .decodeMethod().methodName()).isEqualTo("decodeBaz");
+                assertThat(leafDecodeMethodName(bp)).isEqualTo("decodeBaz");
             }),
 
         REFERENCE_TO_COMPOSITE_PK_NODE_TYPE(
-            "R131 four-corners: singular `parentId: ID! @nodeId(typeName: 'LevelA')` on"
-                + " level_b table (FK level_b.(k1,k2) -> level_a.(k1,k2), composite-PK target) →"
-                + " composite ColumnBackedReferenceField with joinPath length 1 and the lifted source"
-                + " columns positionally aligned with the NodeType key",
+            "R131 four-corners: singular `parentId: ID! @nodeId(typeName: 'LevelA')` consumed on"
+                + " level_b (FK level_b.(k1,k2) -> level_a.(k1,k2), composite-PK target) →"
+                + " composite RowEq over the lifted source columns, positionally aligned with the"
+                + " NodeType key",
             """
             type LevelA implements Node @table(name: "level_a") @node(typeId: "LevelA", keyColumns: ["k1", "k2"]) { id: ID! @nodeId }
-            input LevelBFilter @table(name: "level_b") { parentId: ID! @nodeId(typeName: "LevelA") }
-            type Query { x: String leafReach1(in: LevelBFilter): String }
+            type LevelB @table(name: "level_b") { name: String }
+            input LevelBFilter { parentId: ID! @nodeId(typeName: "LevelA") }
+            type Query { levelBs(in: LevelBFilter): [LevelB!] }
             """,
             schema -> {
-                var t = (GraphitronType.TableInputType) schema.type("LevelBFilter");
-                var f = (InputField.ColumnBackedReferenceField) t.inputFields().get(0);
-                assertThat(f.list()).isFalse();
-                assertThat(f.columns()).extracting(ColumnRef::sqlName)
+                var bp = inputBodyParam(schema, "levelBs", BodyParam.RowEq.class);
+                assertThat(bp.columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("k1", "k2");
-                assertThat(f.joinPath()).hasSize(1);
-                assertThat(f.liftedSourceColumns()).extracting(ColumnRef::sqlName)
-                    .containsExactly("k1", "k2");
-                assertThat(f.extraction())
+                assertThat(leafExtraction(bp))
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch.class);
-                assertThat(((no.sikt.graphitron.rewrite.model.CallSiteExtraction.NodeIdDecodeKeys) f.extraction()).decodeMethod().methodName()).isEqualTo("decodeLevelA");
+                assertThat(leafDecodeMethodName(bp)).isEqualTo("decodeLevelA");
             }),
 
         TARGET_NOT_A_NODE_TYPE(
-            "input `relatedId: ID! @nodeId(typeName: 'Qux')` where Qux is not a NodeType → UnclassifiedType",
+            "input `relatedId: ID! @nodeId(typeName: 'Qux')` where Qux is not a NodeType → consuming field rejects",
             """
             type Qux @table(name: "qux") { name: String }
-            input Foo @table(name: "bar") { relatedId: ID! @nodeId(typeName: "Qux") }
-            type Query { x: String leafReach1(in: Foo): String }
+            type Bar @table(name: "bar") { name: String }
+            input Foo { relatedId: ID! @nodeId(typeName: "Qux") }
+            type Query { bars(in: Foo): [Bar!] }
             """,
-            schema -> assertThat(schema.type("Foo")).isInstanceOf(GraphitronType.UnclassifiedType.class)),
+            schema -> assertThat(schema.field("Query", "bars"))
+                .isInstanceOf(GraphitronField.UnclassifiedField.class)),
 
         LIST_VARIANT(
-            "list `[ID!]!` with @nodeId(typeName:) and no FK from source to target → UnclassifiedType (no FK from 'qux' to 'baz')",
+            "list `[ID!]!` with @nodeId(typeName:) and no FK from source to target → consuming field rejects (no FK from 'qux' to 'baz')",
             """
             type Baz @table(name: "baz") { id: ID! }
-            input Foo @table(name: "qux") { relatedId: [ID!]! @nodeId(typeName: "Baz") }
-            type Query { x: String leafReach1(in: Foo): String }
+            type Qux @table(name: "qux") { name: String }
+            input Foo { relatedId: [ID!]! @nodeId(typeName: "Baz") }
+            type Query { quxes(in: Foo): [Qux!] }
             """,
-            schema -> assertThat(schema.type("Foo")).isInstanceOf(GraphitronType.UnclassifiedType.class)),
+            schema -> assertThat(schema.field("Query", "quxes"))
+                .isInstanceOf(GraphitronField.UnclassifiedField.class)),
 
         NO_FK_PATH(
-            "input `relatedId: ID! @nodeId(typeName: 'Baz')` where no FK from qux to baz → UnclassifiedType (path resolver rejects)",
+            "input `relatedId: ID! @nodeId(typeName: 'Baz')` where no FK from qux to baz → consuming field rejects (path resolver rejects)",
             """
             type Baz @table(name: "baz") { id: ID! }
-            input Foo @table(name: "qux") { relatedId: ID! @nodeId(typeName: "Baz") }
-            type Query { x: String leafReach1(in: Foo): String }
+            type Qux @table(name: "qux") { name: String }
+            input Foo { relatedId: ID! @nodeId(typeName: "Baz") }
+            type Query { quxes(in: Foo): [Qux!] }
             """,
-            schema -> assertThat(schema.type("Foo")).isInstanceOf(GraphitronType.UnclassifiedType.class)),
+            schema -> assertThat(schema.field("Query", "quxes"))
+                .isInstanceOf(GraphitronField.UnclassifiedField.class)),
 
         NODE_TARGET_NO_METADATA_PK_FALLBACK(
             "input `id: ID! @nodeId(typeName: 'Qux')` where Qux has @node but its table has no"
-                + " NodeId metadata → ColumnField via catalog PK fallback (post-R131: same-table"
+                + " NodeId metadata → Eq predicate via catalog PK fallback (post-R131: same-table"
                 + " classification; before R131 this produced a ColumnReferenceField with empty"
                 + " joinPath, which was a giveaway of the same-table case being mis-classified"
                 + " as a reference)",
             """
             type Qux implements Node @table(name: "qux") @node { id: ID! name: String }
-            input Foo @table(name: "qux") { id: ID! @nodeId(typeName: "Qux") }
-            type Query { x: String leafReach1(in: Foo): String }
+            input Foo { id: ID! @nodeId(typeName: "Qux") }
+            type Query { quxes(in: Foo): [Qux!] }
             """,
             schema -> {
-                var t = (GraphitronType.TableInputType) schema.type("Foo");
-                var f = (InputField.ColumnBackedField) t.inputFields().get(0);
-                assertThat(f.list()).isFalse();
-                assertThat(f.columns().get(0).sqlName()).isEqualTo("name");
-                assertThat(f.extraction())
+                var bp = inputBodyParam(schema, "quxes", BodyParam.Eq.class);
+                assertThat(bp.column().sqlName()).isEqualTo("name");
+                assertThat(leafExtraction(bp))
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch.class);
             });
 
@@ -620,7 +646,8 @@ class NodeIdPipelineTest {
     /**
      * Synthesis-shim cases that route the FK-qualifier hit onto
      * {@link InputField.ColumnBackedReferenceField} carrying
-     * {@link CallSiteExtraction.SkipMismatchedElement} plus the resolved FK joinPath. All use
+     * {@link CallSiteExtraction.SkipMismatchedElement} plus the resolved FK joinPath, projected
+     * at the consumer as a predicate on the lifted FK source column. All use
      * the nodeidfixture catalog so that {@code catalog.nodeIdMetadata("baz")} returns present
      * (the shim's gate condition). {@code bar} carries FK {@code bar_id_1_fkey} to {@code baz};
      * the qualifier map keys for that FK are {@code "1_baz_id"} (raw), {@code "1bazid"}
@@ -630,66 +657,65 @@ class NodeIdPipelineTest {
      */
     enum InputIdReferenceCase {
         SHIM_RAW_QUALIFIER_KEY(
-            "@field(name: \"1_baz_id\") hits raw-qualifier map key → ColumnReferenceField with NodeIdDecodeKeys",
+            "@field(name: \"1_baz_id\") hits raw-qualifier map key → In predicate on the lifted FK source column with NodeIdDecodeKeys leaf",
             """
             type Baz @table(name: "baz") { id: ID! }
-            input Foo @table(name: "bar") {
+            type Bar @table(name: "bar") { name: String }
+            input Foo {
               barRef: [ID!] @field(name: "1_baz_id")
             }
-            type Query { x: String leafReach1(in: Foo): String }
+            type Query { bars(in: Foo): [Bar!] }
             """,
             schema -> {
-                var tit = (GraphitronType.TableInputType) schema.type("Foo");
-                var f = (InputField.ColumnBackedReferenceField) tit.inputFields().get(0);
-                assertThat(f.list()).isTrue();
-                assertThat(f.columns().get(0).sqlName()).isEqualTo("id");
-                assertThat(f.extraction()).isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
-                assertThat(f.joinPath()).hasSize(1);
+                var bp = inputBodyParam(schema, "bars", BodyParam.In.class);
+                assertThat(bp.column().sqlName()).isEqualTo("id_1");
+                assertThat(leafExtraction(bp)).isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
             }),
 
         SHIM_PLURAL_CAMEL_KEY(
-            "@field(name: \"1bazids\") hits plural camelCase map key → ColumnReferenceField with NodeIdDecodeKeys",
+            "@field(name: \"1bazids\") hits plural camelCase map key → In predicate with NodeIdDecodeKeys leaf",
             """
             type Baz @table(name: "baz") { id: ID! }
-            input Foo @table(name: "bar") {
+            type Bar @table(name: "bar") { name: String }
+            input Foo {
               barRef: [ID!] @field(name: "1bazids")
             }
-            type Query { x: String leafReach1(in: Foo): String }
+            type Query { bars(in: Foo): [Bar!] }
             """,
             schema -> {
-                var tit = (GraphitronType.TableInputType) schema.type("Foo");
-                var f = (InputField.ColumnBackedReferenceField) tit.inputFields().get(0);
-                assertThat(f.list()).isTrue();
-                assertThat(f.extraction()).isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
+                var bp = inputBodyParam(schema, "bars", BodyParam.In.class);
+                assertThat(leafExtraction(bp)).isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
             }),
 
         SHIM_SINGULAR_CAMEL_KEY(
-            "scalar ID @field(name: \"1bazid\") hits singular camelCase map key → ColumnReferenceField with NodeIdDecodeKeys (list=false)",
+            "scalar ID @field(name: \"1bazid\") hits singular camelCase map key → Eq predicate with NodeIdDecodeKeys leaf (list=false)",
             """
             type Baz @table(name: "baz") { id: ID! }
-            input Foo @table(name: "bar") {
+            type Bar @table(name: "bar") { name: String }
+            input Foo {
               barRef: ID @field(name: "1bazid")
             }
-            type Query { x: String leafReach1(in: Foo): String }
+            type Query { bars(in: Foo): [Bar!] }
             """,
             schema -> {
-                var tit = (GraphitronType.TableInputType) schema.type("Foo");
-                var f = (InputField.ColumnBackedReferenceField) tit.inputFields().get(0);
-                assertThat(f.list()).isFalse();
-                assertThat(f.extraction()).isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
+                var bp = inputBodyParam(schema, "bars", BodyParam.Eq.class);
+                assertThat(leafExtraction(bp)).isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
             }),
 
         SHIM_BARE_ID_FALLS_THROUGH(
-            "bare id: ID on a KjerneJooqGenerator composite-PK table — qualifier map miss → falls through to a composite ColumnBackedField with NodeIdDecodeKeys",
+            "bare id: ID on a KjerneJooqGenerator composite-PK table — qualifier map miss → falls through to a composite own-PK RowEq with NodeIdDecodeKeys leaf",
             """
-            input Foo @table(name: "bar") {
+            type Bar @table(name: "bar") { name: String }
+            input Foo {
               id: ID
             }
-            type Query { x: String leafReach1(in: Foo): String }
+            type Query { bars(in: Foo): [Bar!] }
             """,
             schema -> {
-                var tit = (GraphitronType.TableInputType) schema.type("Foo");
-                assertThat(tit.inputFields().get(0)).isInstanceOf(InputField.ColumnBackedField.class);
+                var bp = inputBodyParam(schema, "bars", BodyParam.RowEq.class);
+                assertThat(bp.columns()).extracting(ColumnRef::sqlName)
+                    .containsExactly("id_1", "id_2");
+                assertThat(leafExtraction(bp)).isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
             });
 
         final String sdl;
@@ -718,94 +744,83 @@ class NodeIdPipelineTest {
      */
     enum InputSameTableNodeIdCase {
         SAME_TABLE_COMPOSITE_PK(
-            "input `[ID!] @nodeId(typeName: \"Bar\")` on a `bar`-bound input → composite ColumnBackedField "
-                + "with NodeIdDecodeKeys over composite PK columns",
+            "input `[ID!] @nodeId(typeName: \"Bar\")` consumed on `bar` → composite RowIn "
+                + "with NodeIdDecodeKeys leaf over composite PK columns",
             """
             type Bar implements Node @table(name: "bar") @node { id: ID! }
-            input BarFilterInput @table(name: "bar") {
+            input BarFilterInput {
               ids: [ID!] @nodeId(typeName: "Bar")
             }
-            type Query { x: String leafReach1(in: BarFilterInput): String }
+            type Query { bars(in: BarFilterInput): [Bar!] }
             """,
             schema -> {
-                var tit = (GraphitronType.TableInputType) schema.type("BarFilterInput");
-                var f = (InputField.ColumnBackedField) tit.inputFields().stream()
-                    .filter(InputField.ColumnBackedField.class::isInstance).findFirst().orElseThrow();
-                assertThat(f.list()).isTrue();
-                assertThat(f.columns()).extracting(ColumnRef::sqlName)
+                var bp = inputBodyParam(schema, "bars", BodyParam.RowIn.class);
+                assertThat(bp.columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("id_1", "id_2");
-                assertThat(f.extraction())
-                    .isInstanceOf(CallSiteExtraction.ThrowOnMismatch.class);
-                var skip = (CallSiteExtraction.ThrowOnMismatch) f.extraction();
+                var skip = (CallSiteExtraction.ThrowOnMismatch) leafExtraction(bp);
                 assertThat(skip.decodeMethod().methodName()).isEqualTo("decodeBar");
             }),
 
         SAME_TABLE_SINGLE_PK(
-            "single-PK same-table case → ColumnField with NodeIdDecodeKeys over the one key column",
+            "single-PK same-table case → In predicate with NodeIdDecodeKeys leaf over the one key column",
             """
             type Baz implements Node @table(name: "baz") @node { id: ID! }
-            input BazFilterInput @table(name: "baz") {
+            input BazFilterInput {
               ids: [ID!] @nodeId(typeName: "Baz")
             }
-            type Query { x: String leafReach1(in: BazFilterInput): String }
+            type Query { bazes(in: BazFilterInput): [Baz!] }
             """,
             schema -> {
-                var tit = (GraphitronType.TableInputType) schema.type("BazFilterInput");
-                var f = (InputField.ColumnBackedField) tit.inputFields().stream()
-                    .filter(InputField.ColumnBackedField.class::isInstance).findFirst().orElseThrow();
-                assertThat(f.list()).isTrue();
-                assertThat(f.columns().get(0).sqlName()).isEqualTo("id");
-                assertThat(f.extraction())
-                    .isInstanceOf(CallSiteExtraction.ThrowOnMismatch.class);
-                var skip = (CallSiteExtraction.ThrowOnMismatch) f.extraction();
+                var bp = inputBodyParam(schema, "bazes", BodyParam.In.class);
+                assertThat(bp.column().sqlName()).isEqualTo("id");
+                var skip = (CallSiteExtraction.ThrowOnMismatch) leafExtraction(bp);
                 assertThat(skip.decodeMethod().methodName()).isEqualTo("decodeBaz");
             }),
 
         SAME_TABLE_TARGET_NOT_NODE(
-            "same-table reference where target table has no @node metadata → UnclassifiedType "
-                + "(no PK columns to encode)",
+            "same-table reference where target table has no @node metadata → consuming field "
+                + "rejects (no PK columns to encode)",
             """
             type Qux @table(name: "qux") { name: String }
-            input QuxFilterInput @table(name: "qux") {
+            input QuxFilterInput {
               ids: [ID!] @nodeId(typeName: "Qux")
             }
-            type Query { x: String leafReach1(in: QuxFilterInput): String }
+            type Query { quxes(in: QuxFilterInput): [Qux!] }
             """,
-            schema -> assertThat(schema.type("QuxFilterInput"))
-                .isInstanceOf(GraphitronType.UnclassifiedType.class)),
+            schema -> assertThat(schema.field("Query", "quxes"))
+                .isInstanceOf(GraphitronField.UnclassifiedField.class)),
 
         BARE_LIST_NODE_ID_INFERS_TYPE_NAME(
             "bare `[ID!] @nodeId` infers typeName from the unique @table-matching object type → "
-                + "composite ColumnBackedField (same as explicit typeName)",
+                + "composite RowIn (same as explicit typeName)",
             """
             type Bar implements Node @table(name: "bar") @node { id: ID! }
-            input BarFilterInput @table(name: "bar") {
+            input BarFilterInput {
               ids: [ID!] @nodeId
             }
-            type Query { x: String leafReach1(in: BarFilterInput): String }
+            type Query { bars(in: BarFilterInput): [Bar!] }
             """,
             schema -> {
-                var tit = (GraphitronType.TableInputType) schema.type("BarFilterInput");
-                var f = (InputField.ColumnBackedField) tit.inputFields().stream()
-                    .filter(InputField.ColumnBackedField.class::isInstance).findFirst().orElseThrow();
-                assertThat(f.list()).isTrue();
-                assertThat(f.columns()).extracting(ColumnRef::sqlName)
+                var bp = inputBodyParam(schema, "bars", BodyParam.RowIn.class);
+                assertThat(bp.columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("id_1", "id_2");
-                assertThat(f.extraction())
+                assertThat(leafExtraction(bp))
                     .isInstanceOf(CallSiteExtraction.ThrowOnMismatch.class);
             }),
 
         BARE_LIST_NODE_ID_NO_OBJECT_TYPE(
-            "bare `[ID!] @nodeId` with no @table-matching object type → friendly inference error",
+            "bare `[ID!] @nodeId` resolved against a table with no @table-matching object type "
+                + "(DELETE write target; a query consumer would itself supply one) → friendly inference error",
             """
-            input BarFilterInput @table(name: "bar") {
+            input BarFilterInput {
               ids: [ID!] @nodeId
             }
-            type Query { x: String leafReach1(in: BarFilterInput): String }
+            type Query { x: String }
+            type Mutation { deleteBars(in: BarFilterInput!): Int @mutation(typeName: DELETE, table: "bar") }
             """,
             schema -> {
-                var t = (GraphitronType.UnclassifiedType) schema.type("BarFilterInput");
-                assertThat(t.reason())
+                var f = (GraphitronField.UnclassifiedField) schema.field("Mutation", "deleteBars");
+                assertThat(f.reason())
                     .contains("@nodeId without typeName: cannot infer node type")
                     .contains("no @table-annotated object type maps to table 'bar'");
             }),
@@ -813,16 +828,16 @@ class NodeIdPipelineTest {
         BARE_LIST_NODE_ID_AMBIGUOUS(
             "bare `[ID!] @nodeId` with two @table-matching object types → friendly ambiguity error",
             """
-            type BarA @table(name: "bar") @node { id: ID! }
-            type BarB @table(name: "bar") @node { id: ID! }
-            input BarFilterInput @table(name: "bar") {
+            type BarA implements Node @table(name: "bar") @node { id: ID! }
+            type BarB implements Node @table(name: "bar") @node { id: ID! }
+            input BarFilterInput {
               ids: [ID!] @nodeId
             }
-            type Query { a: BarA b: BarB leafReach1(in: BarFilterInput): String }
+            type Query { a: BarA b: BarB bars(in: BarFilterInput): [BarA!] }
             """,
             schema -> {
-                var t = (GraphitronType.UnclassifiedType) schema.type("BarFilterInput");
-                assertThat(t.reason())
+                var f = (GraphitronField.UnclassifiedField) schema.field("Query", "bars");
+                assertThat(f.reason())
                     .contains("@nodeId without typeName: is ambiguous")
                     .contains("BarA")
                     .contains("BarB");
@@ -1449,65 +1464,58 @@ class NodeIdPipelineTest {
      */
     enum InputFieldFkTargetNodeIdCase {
         FK_TARGET_PATHOLOGICAL_KEY_MISMATCH_DEFERRED_INPUT(
-            "input-field `[ID!] @nodeId(typeName: ParentNode)` on a child_ref-bound input where the "
+            "input-field `[ID!] @nodeId(typeName: ParentNode)` consumed on child_ref where the "
                 + "FK targets parent_node.alt_key but ParentNode's keyColumn is parent_node.pk_id "
-                + "(FK target ≠ NodeType key) → UnclassifiedType for the input (the input field "
+                + "(FK target ≠ NodeType key) → the consuming field rejects (the input field "
                 + "surfaces the deferred-emission hint via its Unresolved reason), parallel to the "
                 + "arg-side ArgumentFkTargetNodeIdCase.FK_TARGET_PATHOLOGICAL_KEY_MISMATCH_DEFERRED",
             """
             type ParentNode implements Node @table(name: "parent_node") @node { id: ID! }
-            input ChildRefFilterInput @table(name: "child_ref") {
+            type ChildRef @table(name: "child_ref") { childId: String! @field(name: "child_id") }
+            input ChildRefFilterInput {
                 parentIds: [ID!] @nodeId(typeName: "ParentNode")
             }
-            type Query { x: String leafReach1(in: ChildRefFilterInput): String }
+            type Query { childRefs(in: ChildRefFilterInput): [ChildRef!] }
             """,
             schema -> {
-                var t = schema.type("ChildRefFilterInput");
-                assertThat(t).isInstanceOf(GraphitronType.UnclassifiedType.class);
-                var u = (GraphitronType.UnclassifiedType) t;
-                assertThat(u.reason())
+                var f = (GraphitronField.UnclassifiedField) schema.field("Query", "childRefs");
+                assertThat(f.reason())
                     .contains("FK's target columns do not positionally match")
                     .contains("deferred");
             }),
 
         MULTI_HOP_IDENTITY_CARRYING_INPUT(
-            "R114: input-field `[ID!] @nodeId(typeName: LevelA) @reference(path: [..., ...])` on a "
-                + "level_c-bound input — 2-hop chain that satisfies the lift predicate. The carrier "
-                + "is InputField.ColumnBackedReferenceField with joinPath.size() == 2, the column "
-                + "tuple = LevelA's NodeType keys (k1, k2), and liftedSourceColumns lives on the "
-                + "parent's own table (level_c.(k1, k2)). Mirror of the arg-side multi-hop case.",
+            "R114: input-field `[ID!] @nodeId(typeName: LevelA) @reference(path: [..., ...])` "
+                + "consumed on level_c — 2-hop chain that satisfies the lift predicate. The "
+                + "projected predicate is a RowIn bound to liftedSourceColumns on the parent's own "
+                + "table (level_c.(k1, k2)), SQL-name-equal to LevelA's NodeType keys "
+                + "(identity-carrying). Mirror of the arg-side multi-hop case.",
             """
             type LevelA implements Node @table(name: "level_a") @node { id: ID! }
-            input LevelCFilterInput @table(name: "level_c") {
+            type LevelC @table(name: "level_c") { cId: String! @field(name: "c") }
+            input LevelCFilterInput {
                 levelAIds: [ID!] @nodeId(typeName: "LevelA") @reference(path: [
                     {key: "level_c_level_b_fk"},
                     {key: "level_b_level_a_fk"}
                 ])
             }
-            type Query { x: String leafReach1(in: LevelCFilterInput): String }
+            type Query { levelCs(in: LevelCFilterInput): [LevelC!] }
             """,
             schema -> {
-                var input = (GraphitronType.TableInputType)
-                    schema.type("LevelCFilterInput");
-                var leaf = input.inputFields().stream()
-                    .filter(f -> f.name().equals("levelAIds"))
-                    .findFirst().orElseThrow();
-                assertThat(leaf).isInstanceOf(no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField.class);
-                var ccrf = (no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField) leaf;
-                assertThat(ccrf.joinPath()).hasSize(2);
-                assertThat(ccrf.columns())
-                    .extracting(c -> c.sqlName())
-                    .containsExactly("k1", "k2");
+                var bp = inputBodyParam(schema, "levelCs", BodyParam.RowIn.class);
+                assertThat(bp.name()).isEqualTo("levelAIds");
                 // liftedSourceColumns are SQL-name-equal to the NodeType keys (identity-carrying);
                 // the table affinity is positional (parent's own table), not encoded on ColumnRef.
-                assertThat(ccrf.liftedSourceColumns())
+                assertThat(bp.columns())
                     .extracting(c -> c.sqlName())
                     .containsExactly("k1", "k2");
+                var skip = (CallSiteExtraction.ThrowOnMismatch) leafExtraction(bp);
+                assertThat(skip.decodeMethod().methodName()).isEqualTo("decodeLevelA");
             }),
 
         FK_TARGET_REORDERED_KEY_PERMUTATION_DIRECT_FK(
-            "R131: input-field `[ID!] @nodeId(typeName: \"ReorderedPkParent\")` on a"
-                + " reordered_fk_child-bound input where the FK references the parent PK columns"
+            "R131: input-field `[ID!] @nodeId(typeName: \"ReorderedPkParent\")` consumed on"
+                + " reordered_fk_child where the FK references the parent PK columns"
                 + " in (pk_b, pk_c, pk_a) order but the NodeType's __NODE_KEY_COLUMNS publish"
                 + " them in PK declaration order (pk_a, pk_b, pk_c). Same set, different order →"
                 + " DirectFk (not TranslatedFk); the resolver permutes liftedSourceColumns into"
@@ -1516,29 +1524,21 @@ class NodeIdPipelineTest {
                 + " too).",
             """
             type ReorderedPkParent implements Node @table(name: "reordered_pk_parent") @node { id: ID! }
-            input ReorderedChildFilter @table(name: "reordered_fk_child") {
+            type ReorderedChild @table(name: "reordered_fk_child") { childId: String! @field(name: "child_id") }
+            input ReorderedChildFilter {
                 parentIds: [ID!] @nodeId(typeName: "ReorderedPkParent")
             }
-            type Query { x: String leafReach1(in: ReorderedChildFilter): String }
+            type Query { children(in: ReorderedChildFilter): [ReorderedChild!] }
             """,
             schema -> {
-                var input = (GraphitronType.TableInputType) schema.type("ReorderedChildFilter");
-                var leaf = (no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField)
-                    input.inputFields().stream()
-                        .filter(f -> f.name().equals("parentIds"))
-                        .findFirst().orElseThrow();
-                // columns reflect the NodeType key declaration order, which the encoder/decoder
-                // round-trip in.
-                assertThat(leaf.columns()).extracting(ColumnRef::sqlName)
-                    .containsExactly("pk_a", "pk_b", "pk_c");
-                // liftedSourceColumns are permuted into __NODE_KEY_COLUMNS order; unpermuted
-                // they would come out in FK declaration order (fk_b, fk_c, fk_a), which the
-                // emitter would bind position-wise against (pk_a, pk_b, pk_c)-ordered decoded
-                // values, which is semantically wrong.
-                assertThat(leaf.liftedSourceColumns()).extracting(ColumnRef::sqlName)
+                var bp = inputBodyParam(schema, "children", BodyParam.RowIn.class);
+                // The predicate binds liftedSourceColumns, permuted into __NODE_KEY_COLUMNS
+                // order; unpermuted they would come out in FK declaration order
+                // (fk_b, fk_c, fk_a), which the emitter would bind position-wise against
+                // (pk_a, pk_b, pk_c)-ordered decoded values, which is semantically wrong.
+                assertThat(bp.columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("fk_a", "fk_b", "fk_c");
-                assertThat(leaf.joinPath()).hasSize(1);
-                assertThat(leaf.extraction())
+                assertThat(leafExtraction(bp))
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch.class);
             }),
 
@@ -1549,23 +1549,18 @@ class NodeIdPipelineTest {
                 + " branch's classification.",
             """
             type ReorderedPkParent implements Node @table(name: "reordered_pk_parent") @node { id: ID! }
-            input ReorderedChildSingleFilter @table(name: "reordered_fk_child") {
+            type ReorderedChild @table(name: "reordered_fk_child") { childId: String! @field(name: "child_id") }
+            input ReorderedChildSingleFilter {
                 parentId: ID! @nodeId(typeName: "ReorderedPkParent")
             }
-            type Query { x: String leafReach1(in: ReorderedChildSingleFilter): String }
+            type Query { children(in: ReorderedChildSingleFilter): [ReorderedChild!] }
             """,
             schema -> {
-                var input = (GraphitronType.TableInputType) schema.type("ReorderedChildSingleFilter");
-                var leaf = (no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField)
-                    input.inputFields().stream()
-                        .filter(f -> f.name().equals("parentId"))
-                        .findFirst().orElseThrow();
-                assertThat(leaf.list()).isFalse();
-                assertThat(leaf.columns()).extracting(ColumnRef::sqlName)
-                    .containsExactly("pk_a", "pk_b", "pk_c");
-                assertThat(leaf.liftedSourceColumns()).extracting(ColumnRef::sqlName)
+                var bp = inputBodyParam(schema, "children", BodyParam.RowEq.class);
+                assertThat(bp.columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("fk_a", "fk_b", "fk_c");
-                assertThat(leaf.joinPath()).hasSize(1);
+                assertThat(leafExtraction(bp))
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch.class);
             });
 
         final String sdl;
@@ -1650,7 +1645,7 @@ class NodeIdPipelineTest {
             """
             type Baz implements Node @table(name: "baz") @node { id: ID! }
             """ + CONNECTION_DECLS + """
-            input BazFilter @table(name: "baz") {
+            input BazFilter {
                 ids: [ID!]! @nodeId(typeName: "Baz")
             }
             type Query {
@@ -1670,7 +1665,7 @@ class NodeIdPipelineTest {
             """
             type Baz implements Node @table(name: "baz") @node { id: ID! }
             """ + CONNECTION_DECLS + """
-            input BazFilter @table(name: "baz") {
+            input BazFilter {
                 ids: [ID!] @nodeId(typeName: "Baz")
             }
             type Query {
@@ -1691,7 +1686,7 @@ class NodeIdPipelineTest {
             """
             type Baz implements Node @table(name: "baz") @node { id: ID! }
             """ + CONNECTION_DECLS + """
-            input BazFilter @table(name: "baz") {
+            input BazFilter {
                 ids: [ID!]! @nodeId(typeName: "Baz")
             }
             type Query {

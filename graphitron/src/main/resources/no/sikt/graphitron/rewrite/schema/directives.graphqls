@@ -27,7 +27,13 @@ directive @notGenerated on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_
 """
 Connect this type to a jOOQ table. All the containing fields will by default be assumed to be located there.
 
-Deprecated on input types: applying `@table` to an input (`INPUT_OBJECT`) is deprecated and will be removed in a future release. A mutation's write/read target is derived from the consuming field's resolved target table, so the directive on the input is redundant; remove it. (One case still needs it for now: a mutation returning an encoded ID or scalar, e.g. `createFilm(...): ID`, where the input's `@table` is currently the only signal naming the write target. The build does not warn on that case yet.) `@table` on `OBJECT` / `INTERFACE` is unaffected.
+Retired on `INPUT_OBJECT`. The declaration retains the location only so the GraphQL parser does
+not fail with "unknown directive location"; the rewrite classifier rejects any input application
+with a migration message. An input's fields resolve against each consuming field's table, so
+filters and lookup args need no directive; a DELETE mutation names its write target with
+`@mutation(table:)` on the field, and INSERT/UPDATE derive it from the field's return type
+(with `@mutation(table:)` for encoded-ID / scalar returns). `@table` on `OBJECT` / `INTERFACE`
+is unaffected.
 """
 directive @table(name: String) on OBJECT | INPUT_OBJECT | INTERFACE
 

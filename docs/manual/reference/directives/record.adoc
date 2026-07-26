@@ -12,7 +12,7 @@
 A GraphQL `OBJECT` or `INPUT_OBJECT` is still backed by a Java class when it carries one; the rewrite just derives the class differently. Instead of reading `@record(record: {className: ...})`, the rewrite *reflects on the field that produces the type* and takes the backing class from that field's Java signature:
 
 * *Output / result types* take their backing from the producing field's *return* type: an xref:service.adoc[`@service`] method return, a xref:table.adoc[`@table`] resolution, or a parent-accessor chain that threads the class down to child types.
-* *Input types* take their backing from the Java *parameter* type the input flows into (the xref:service.adoc[`@service`] / xref:condition.adoc[`@condition`] method parameter), or from xref:table.adoc[`@table`].
+* *Input types* take their backing from the Java *parameter* type the input flows into (the xref:service.adoc[`@service`] / xref:condition.adoc[`@condition`] method parameter). An input with no such parameter carries no backing class; its fields resolve against each consuming field's table.
 
 The class shape still determines the variant the rewrite picks: a jOOQ `TableRecord` produces a `JooqTableRecordType` (output) / `JooqTableRecordInputType` (input), a jOOQ `Record` produces a `JooqRecordType` / `JooqRecordInputType`, and a plain Java record or POJO produces `JavaRecordType` / `PojoResultType` / `JavaRecordInputType` / `PojoInputType`. What changed is the *trigger*: reflection on the producing field, not the directive.
 
@@ -42,7 +42,7 @@ Nothing else about the type changes: child fields still reach further tables thr
 When a reachable type still carries `@record`, the rewrite emits one of three warnings at the type's source location, all of which end "remove it":
 
 * *Redundant*: the directive's `className` (or a bare `@record` with none) matches the class the rewrite already derives from the producing field. The directive adds nothing.
-* *Shadowed by `@table`*: the type also carries xref:table.adoc[`@table`], which supplies the backing class; `@record` is ignored.
+* *Shadowed by `@table`*: the `OBJECT` type also carries xref:table.adoc[`@table`], which supplies the backing class; `@record` is ignored. (This case only arises on object types; `@table` on an input is a retired location and is rejected outright.)
 * *Disagrees*: the directive's `className` names a different class from the one the producing field reflects to. The rewrite uses the reflected class and ignores the directive's claim.
 
 A bare `@record` with no `record:` was previously rejected at classify time; it now folds into the redundant case, because `className` was the only field that ever participated in binding.

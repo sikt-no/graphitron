@@ -811,7 +811,7 @@ public final class ClassifiedCorpus {
          */
         new Example("dml", """
             type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") @classifiedType(as: TableInputType) { title: String }
+            input FilmInput { title: String }
             type Query { x: String }
             type Mutation {
               createFilm(in: FilmInput!): Film

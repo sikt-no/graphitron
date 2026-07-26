@@ -32,10 +32,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Per-{@link DmlKind} admission cases run parameterised over INSERT / UPDATE / UPSERT so
  * per-kind divergence shows up immediately. DELETE-with-carrier is rejected at classify time
  * (the row is gone before the response SELECT can read it). Rejection paths share one
- * fixture per case. Cross-path cases verify the trigger is consumer-agnostic and that the
- * data-table-equals-input-table rejection (backed structurally by
- * {@link no.sikt.graphitron.rewrite.model.ProducerBinding.DmlEmitted}'s compact constructor)
- * fires on mismatches.
+ * fixture per case. Cross-path cases verify the trigger is consumer-agnostic and that a
+ * {@code @mutation(table:)} naming a different table than the payload's return-derived write
+ * target rejects at the classifier (the rung cross-check in
+ * {@code FieldBuilder.resolveReturnCapableWriteTarget}).
  */
 @PipelineTier
 class SingleRecordPayloadPipelineTest {
@@ -139,6 +139,8 @@ class SingleRecordPayloadPipelineTest {
         // row is gone after the statement and RETURNING carries only the primary key, so a full
         // @table projection is impossible; the classifier rejects DELETE -> @table at authoring
         // time and points the author at the ID-typed carrier shape (which echoes the deleted PKs).
+        // DELETE has no return-derived rung, so the fixture names its write target with
+        // @mutation(table:) (supplied by the helper for DELETE).
         var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(DmlKind.DELETE, "type FilmPayload { film: Film }"));
         var mutField = schema.field("Mutation", mutationName(DmlKind.DELETE));
         assertThat(mutField).isInstanceOf(UnclassifiedField.class);
@@ -152,9 +154,11 @@ class SingleRecordPayloadPipelineTest {
     @Test
     void payload_withMultipleDataFields_returnsRejected() {
         // Two @table-element list-shaped data fields is two data channels — the scan
-        // rejects with "declares N data-channel-shaped fields; require exactly one".
+        // rejects with "declares N data-channel-shaped fields; require exactly one". The broken
+        // carrier shape return-derives nothing, so the fixture grounds the write target with
+        // @mutation(table:) to reach the payload-shape rejection.
         var schema = TestSchemaHelper.buildSchema(payloadDml(DmlKind.INSERT,
-            "type FilmPayload { films: [Film!] alsoFilms: [Film!] }"));
+            "type FilmPayload { films: [Film!] alsoFilms: [Film!] }", true));
 
         var mutField = schema.field("Mutation", mutationName(DmlKind.INSERT));
         assertThat(mutField).isInstanceOf(UnclassifiedField.class);
@@ -166,9 +170,10 @@ class SingleRecordPayloadPipelineTest {
     void payload_withScalarField_returnsRejected() {
         // A scalar (String) on the carrier is not a recognized DML payload data-field
         // shape; the scan rejects naming the offending field and pointing at the extension
-        // point.
+        // point. The broken carrier shape return-derives nothing, so the fixture grounds the
+        // write target with @mutation(table:) to reach the payload-shape rejection.
         var schema = TestSchemaHelper.buildSchema(payloadDml(DmlKind.INSERT,
-            "type FilmPayload { films: [Film!] description: String }"));
+            "type FilmPayload { films: [Film!] description: String }", true));
 
         var mutField = schema.field("Mutation", mutationName(DmlKind.INSERT));
         assertThat(mutField).isInstanceOf(UnclassifiedField.class);
@@ -181,14 +186,15 @@ class SingleRecordPayloadPipelineTest {
         // An interface-typed field on the carrier is not a recognized DML payload
         // data-field shape (the SDL polymorphic union/interface shape is reserved for the
         // errors channel and requires @error members; an arbitrary interface doesn't match).
-        // The scan names the offending field.
+        // The scan names the offending field. The broken carrier shape return-derives nothing,
+        // so the fixture grounds the write target with @mutation(table:).
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             interface Searchable { id: ID! }
             type FilmPayload { films: [Film!] hits: [Searchable!] }
-            input FilmInput @table(name: "film") { title: String }
+            input FilmInput { title: String }
             type Query { x: String }
-            type Mutation { createFilm(in: [FilmInput!]!): FilmPayload @mutation(typeName: INSERT) }
+            type Mutation { createFilm(in: [FilmInput!]!): FilmPayload @mutation(typeName: INSERT, table: "film") }
             """);
 
         var mutField = schema.field("Mutation", "createFilm");
@@ -204,7 +210,7 @@ class SingleRecordPayloadPipelineTest {
         // MutationInsertTableField; no payload-carrier BatchedTableField is registered.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") { title: String }
+            input FilmInput { title: String }
             type Query { x: String }
             type Mutation { createFilm(in: FilmInput!): Film @mutation(typeName: INSERT) }
             """);
@@ -243,7 +249,7 @@ class SingleRecordPayloadPipelineTest {
         // identically; see SettKvotesporsmalShapeRegressionTest for the contract pin.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") { title: String }
+            input FilmInput { title: String }
             type FilmPayload { films: [Film!] @field(name: "films_alias") }
             type Query { x: String }
             type Mutation { createFilm(in: [FilmInput!]!): FilmPayload @mutation(typeName: INSERT) }
@@ -259,7 +265,7 @@ class SingleRecordPayloadPipelineTest {
         // on the data field is pure SDL metadata, not on the carrier's forbidden-directive list.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") { title: String }
+            input FilmInput { title: String }
             type FilmPayload { films: [Film!] @deprecated(reason: "use createFilms instead") }
             type Query { x: String }
             type Mutation { createFilm(in: [FilmInput!]!): FilmPayload @mutation(typeName: INSERT) }
@@ -306,15 +312,16 @@ class SingleRecordPayloadPipelineTest {
     }
 
     @Test
-    void payloadInsert_groundedCarrierTableEqualsClassifiedWriteTarget_inputTableBridge() {
-        // The same equality holds on the deprecated input-@table rung (rung 3): grounding it or deriving
-        // it from the return resolves the identical write target.
+    void payloadInsert_groundedCarrierTableEqualsClassifiedWriteTarget_mutationTableArgAgrees() {
+        // The same equality holds when @mutation(table:) (rung 2) names the same table the
+        // return derives (rung 1): resolving through either rung yields the identical write
+        // target, and the grounded carrier table equals it.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             type FilmsPayload { films: [Film!] }
-            input FilmInput @table(name: "film") { title: String }
+            input FilmInput { title: String }
             type Query { x: String }
-            type Mutation { createFilms(in: [FilmInput!]!): FilmsPayload @mutation(typeName: INSERT) }
+            type Mutation { createFilms(in: [FilmInput!]!): FilmsPayload @mutation(typeName: INSERT, table: "film") }
             """);
         var carrierType = schema.type("FilmsPayload");
         assertThat(carrierType).isInstanceOf(GraphitronType.JooqTableRecordType.class);
@@ -362,18 +369,17 @@ class SingleRecordPayloadPipelineTest {
 
     @ParameterizedTest
     @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
-    void payload_dataTableMismatchesInputTable_rejectsAtClassifier(DmlKind kind) {
-        // The data field's @table is `actor`, but the mutation's input @table is `film` —
-        // ProducerBinding.DmlEmitted's compact constructor rejects the disagreement at fold time.
-        // Uses bulk input + list data field so the carrier admits its shape and the mismatch
-        // check fires; the equivalent single-data-field shape would not fire Invariant #16.
+    void payload_dataTableMismatchesMutationTableArg_rejectsAtClassifier(DmlKind kind) {
+        // The payload data field's @table is `film` (rung 1, the return-derived write target),
+        // but @mutation(table:) names `language` (rung 2) — the rung cross-check in
+        // FieldBuilder.resolveReturnCapableWriteTarget rejects the disagreement: the RETURNING
+        // projection reads from the write target, so the two cannot emit a coherent statement.
         String sdl = """
             type Film @table(name: "film") { title: String }
-            type Actor @table(name: "actor") { firstName: String }
-            type ActorPayload { actors: [Actor!] }
-            input FilmInput @table(name: "film") { %s }
+            type FilmPayload { films: [Film!] }
+            input FilmInput { %s }
             type Query { x: String }
-            type Mutation { %s(in: [FilmInput!]!): ActorPayload @mutation(typeName: %s) }
+            type Mutation { %s(in: [FilmInput!]!): FilmPayload @mutation(typeName: %s, table: "language") }
             """.formatted(inputBody(kind), mutationName(kind), kind.name());
 
         var schema = TestSchemaHelper.buildSchema(sdl);
@@ -382,9 +388,8 @@ class SingleRecordPayloadPipelineTest {
         assertThat(mutField).isInstanceOf(UnclassifiedField.class);
         var reason = ((UnclassifiedField) mutField).rejection().message();
         assertThat(reason).contains(
-            "'ActorPayload'",
-            "table 'actor'",
-            "input table 'film'");
+            "derives write target 'film'",
+            "@mutation(table:) names a different table 'language'");
     }
 
     // ===== Direct-@table two-step emit pin =====
@@ -408,7 +413,7 @@ class SingleRecordPayloadPipelineTest {
         // source-text match against a hand-written expected) is honoured.
         String sdl = """
             type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") { %s }
+            input FilmInput { %s }
             type Query { x: String }
             type Mutation { %s(in: FilmInput!): Film @mutation(typeName: %s) }
             """.formatted(directReturnInputBody(kind), mutationName(kind), kind.name());
@@ -524,16 +529,18 @@ class SingleRecordPayloadPipelineTest {
         // DML mutation would require a "DML row → domain record" conversion step at the
         // emitter, which does not exist. The mutation classifier rejects at classify time with
         // a per-mismatch message naming the carrier, the data field, and pointing to @service
-        // as the right path.
+        // as the right path. The record-element payload derives no write target from its
+        // return, so @mutation(table:) supplies it; UPDATE resolves the write target before
+        // the payload scan, so without it the rejection would be masked by "no write target".
         String sdl = """
             type Film @table(name: "film") { title: String }
             type FilmDto { title: String }
             type FilmDtoPayload { film: FilmDto }
-            input FilmInput @table(name: "film") { %s }
+            input FilmInput { %s }
             type Query {
                 aFilmDto: FilmDto @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
             }
-            type Mutation { %s(in: FilmInput!): FilmDtoPayload @mutation(typeName: %s) }
+            type Mutation { %s(in: FilmInput!): FilmDtoPayload @mutation(typeName: %s, table: "film") }
             """.formatted(inputBody(kind), mutationName(kind), kind.name());
 
         var schema = TestSchemaHelper.buildSchema(sdl);
@@ -571,9 +578,11 @@ class SingleRecordPayloadPipelineTest {
     @ParameterizedTest
     @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
     void payload_singleInput_withErrorsField_classifiesAsMutationDmlRecordFieldWithLocalContext(DmlKind kind) {
+        // A payload with an errors-shaped sibling does not return-derive the write target, so
+        // the fixture names it with @mutation(table:).
         var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(kind,
             CARRIER_WALK_LOCAL_CONTEXT_ERRORS
-            + "type FilmPayload { film: Film errors: [CarrierError!] }"));
+            + "type FilmPayload { film: Film errors: [CarrierError!] }", true));
 
         // UPDATE routes onto MutationUpdatePayloadField; INSERT stays on MutationDmlRecordField.
         // The LocalContext error channel is carried on the common WithErrorChannel supertype either way.
@@ -604,9 +613,10 @@ class SingleRecordPayloadPipelineTest {
     @ParameterizedTest
     @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
     void payload_bulkInput_withErrorsField_classifiesAsMutationBulkDmlRecordFieldWithLocalContext(DmlKind kind) {
+        // Errors-shaped sibling → no return-derivation; @mutation(table:) names the target.
         var schema = TestSchemaHelper.buildSchema(payloadDml(kind,
             CARRIER_WALK_LOCAL_CONTEXT_ERRORS
-            + "type FilmPayload { films: [Film!] errors: [CarrierError!] }"));
+            + "type FilmPayload { films: [Film!] errors: [CarrierError!] }", true));
 
         // UPDATE routes onto MutationBulkUpdatePayloadField; INSERT stays on MutationBulkDmlRecordField.
         // The LocalContext error channel is carried on the common WithErrorChannel supertype either way.
@@ -641,7 +651,7 @@ class SingleRecordPayloadPipelineTest {
         // regressions to the PayloadAccessor transport without a model-level signal.
         var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(DmlKind.INSERT,
             CARRIER_WALK_LOCAL_CONTEXT_ERRORS
-            + "type FilmPayload { film: Film errors: [CarrierError!] }"));
+            + "type FilmPayload { film: Film errors: [CarrierError!] }", true));
 
         var generated = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE);
         var mutationFetchers = generated.stream()
@@ -714,26 +724,49 @@ class SingleRecordPayloadPipelineTest {
             : MutationField.MutationBulkDmlRecordField.class;
     }
 
-    /** Bulk input ({@code [FilmInput!]!}) → list data field. */
-    private static String payloadDml(DmlKind kind, String payloadType) {
-        return """
-            type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") { %s }
-            %s
-            type Query { x: String }
-            type Mutation { %s(in: [FilmInput!]!): FilmPayload @mutation(typeName: %s) }
-            """.formatted(inputBody(kind), payloadType, mutationName(kind), kind.name());
+    /**
+     * The {@code @mutation(...)} directive for {@code kind}. INSERT / UPDATE derive their write
+     * target from a payload whose single data field is a {@code @table}-element; fixtures whose
+     * payload does not return-derive (an errors-shaped sibling present, or a deliberately
+     * broken carrier shape) pass {@code tableArg} to name the write target with
+     * {@code @mutation(table:)} so classification proceeds past write-target resolution to the
+     * behavior under test. DELETE has no return-derived rung and always names its table.
+     */
+    private static String mutationDirective(DmlKind kind, boolean tableArg) {
+        String table = (tableArg || kind == DmlKind.DELETE) ? ", table: \"film\"" : "";
+        return "@mutation(typeName: " + kind.name() + table + ")";
     }
 
-    /** Single input ({@code FilmInput!}) → single data field. */
-    private static String payloadDmlSingleInput(DmlKind kind, String payloadType) {
+    /** Bulk input ({@code [FilmInput!]!}) → list data field; return-derived write target. */
+    private static String payloadDml(DmlKind kind, String payloadType) {
+        return payloadDml(kind, payloadType, false);
+    }
+
+    /** Bulk input with an explicit {@code @mutation(table:)} write target when {@code tableArg}. */
+    private static String payloadDml(DmlKind kind, String payloadType, boolean tableArg) {
         return """
             type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") { %s }
+            input FilmInput { %s }
             %s
             type Query { x: String }
-            type Mutation { %s(in: FilmInput!): FilmPayload @mutation(typeName: %s) }
-            """.formatted(inputBody(kind), payloadType, mutationName(kind), kind.name());
+            type Mutation { %s(in: [FilmInput!]!): FilmPayload %s }
+            """.formatted(inputBody(kind), payloadType, mutationName(kind), mutationDirective(kind, tableArg));
+    }
+
+    /** Single input ({@code FilmInput!}) → single data field; return-derived write target. */
+    private static String payloadDmlSingleInput(DmlKind kind, String payloadType) {
+        return payloadDmlSingleInput(kind, payloadType, false);
+    }
+
+    /** Single input with an explicit {@code @mutation(table:)} write target when {@code tableArg}. */
+    private static String payloadDmlSingleInput(DmlKind kind, String payloadType, boolean tableArg) {
+        return """
+            type Film @table(name: "film") { title: String }
+            input FilmInput { %s }
+            %s
+            type Query { x: String }
+            type Mutation { %s(in: FilmInput!): FilmPayload %s }
+            """.formatted(inputBody(kind), payloadType, mutationName(kind), mutationDirective(kind, tableArg));
     }
 
     private static long countMatches(String src, Pattern pattern) {

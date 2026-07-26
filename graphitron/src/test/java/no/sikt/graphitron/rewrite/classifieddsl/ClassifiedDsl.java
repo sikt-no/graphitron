@@ -58,7 +58,7 @@ public final class ClassifiedDsl {
           TableType NodeType TableInterfaceType
           JavaRecordType Backed JooqRecordType JooqTableRecordType
           RootType InterfaceType UnionType ErrorType
-          JavaRecordInputType PojoInputType JooqRecordInputType JooqTableRecordInputType TableInputType
+          JavaRecordInputType PojoInputType JooqRecordInputType JooqTableRecordInputType
           NestingType EnumType ScalarType
           ConnectionType EdgeType PageInfoType FacetsType FacetValueType
         }
