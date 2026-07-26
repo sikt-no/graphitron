@@ -1447,7 +1447,7 @@ below draws the member-to-seam crosswalk that wires the two together.
 | 7 | `<field>InputRows` | `LookupValuesJoinEmitter` | per lookup field | R2 | seam (c): assertable | lift to R1 |
 | 8 | `create<Bean>` / `create<Record>` / `decode<Record>` | `InputBeanInstantiationEmitter`, `JooqRecordInstantiationEmitter` | dedup-by-class | R2 | seam (b): class-level reuse | lift to R1 |
 | 9 | `<field>OrderBy` | `OrderByResultClassGenerator` | per orderable field | R2 | seam (c): assertable | lift to R1 |
-| 10 | Root Query unit (the root `rows<X>`-equivalent) | inlined in `SelectMethodBody` today | anchor | new | seam (b): one query unit shared by root and child | new R1 edge; the decided 2026-06-19 target (closes the root/child asymmetry) |
+| 10 | Root Query unit (the root `rows<X>`-equivalent) | inlined in `TypeFetcherGenerator`'s root builders today (corrected 2026-07-26; `SelectMethodBody` is the already-named entity-dispatch unit) | anchor | new | seam (c): assertable; one unit *kind* across root and child, instances stay per-coordinate (verdict letter corrected 2026-07-26: root and child WHERE clauses differ, no literal sharing) | new R1 edge; the decided 2026-06-19 target (closes the root/child asymmetry); owned by R541 |
 | 11 | Service-call unit | inlined via `ServiceMethodCallEmitter` today | per service-backed field | new | seam (a): service vs query strategy | new R1 edge; the service-backed arm of the same delegation |
 | 12 | Inline column-reference arm | `InlineColumnReferenceFieldEmitter` | arm of `$fields` | n/a | folds into Projection (row 2); promote under looser-(c)? | OPEN: assert separately vs inline (linear, single-use projection) |
 | 13 | Inline table-field arm | `InlineTableFieldEmitter` | arm of `$fields` | n/a | folds into Projection; emits the `Y.$fields` edge | edge name lift tracked under row 2 |
@@ -1679,7 +1679,9 @@ topology *is* the node/edge relation of thread H, and designing it is the conten
 The current resolve side is asymmetric. The child path factors its query into a named unit (child fetcher
 to DataLoader to `rows<X>`, the rows-method being the `select` / `from` / `where` / `orderBy` / `$fields`
 assembly as a named method). The root path inlines that same assembly into the fetcher body
-(`SelectMethodBody`), with no `rows<X>`-equivalent to call. Root and child build the same query two ways;
+(`TypeFetcherGenerator`'s root builders; a 2026-07-26 code walk corrected the earlier
+`SelectMethodBody` attribution, that class being the already-named entity-dispatch unit), with no
+`rows<X>`-equivalent to call. Root and child build the same query two ways;
 only child names it. **The decided target** (2026-06-19) closes that seam: both fetcher kinds become thin
 entry points delegating to one shared query unit, differing only in invocation strategy (root calls it
 directly; child calls it batched through a loader plus scatter). This generalizes the `SplitTableField` =
