@@ -126,6 +126,34 @@
                             <commandlineArgs>directive-support ${project.basedir}/src/main/resources/legacy-directives.graphqls ${project.basedir}/../graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls ${project.basedir}/../graphitron/src/test/resources --mode=migration --output=${project.basedir}/../docs/manual/_generated/supported-directives.adoc --verify</commandlineArgs>
                         </configuration>
                     </execution>
+                    <execution>
+                        <!-- Fail the build if an agent-onboarding prose document cites a roadmap item
+                             by R-number or by roadmap/<slug> path. CLAUDE.md's own "Javadoc conventions"
+                             section forbids the citation form, and the generator module's roadmap-reference
+                             guard test enforces it across Java sources, but that test parses Java comment
+                             and string-literal regions, so markdown documents sat outside every scan and
+                             drifted the way the rule exists to prevent. Scan set and rationale:
+                             TransientCitationCheck.SCANNED_DOCS. -->
+                        <id>check-transient-citations</id>
+                        <phase>verify</phase>
+                        <goals><goal>java</goal></goals>
+                        <configuration>
+                            <commandlineArgs>check-transient-citations ${project.basedir}/..</commandlineArgs>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <!-- Fail the build if a document enumerating the reactor's modules has fallen
+                             behind the root pom's <modules> block. Adding a module changes nothing any
+                             build step reads, so both CLAUDE.md and the module reference page silently
+                             described a smaller reactor than the one that exists. Scan set:
+                             ModuleEnumerationCheck.ENUMERATING_DOCS. -->
+                        <id>check-module-enumeration</id>
+                        <phase>verify</phase>
+                        <goals><goal>java</goal></goals>
+                        <configuration>
+                            <commandlineArgs>check-module-enumeration ${project.basedir}/..</commandlineArgs>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
         </plugins>

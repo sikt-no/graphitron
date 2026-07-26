@@ -1,7 +1,7 @@
 ---
 id: R542
 title: "Correct and sharpen the CLAUDE.md agent-onboarding surface"
-status: Ready
+status: In Progress
 bucket: tooling
 priority: 3
 depends-on: []
@@ -77,6 +77,18 @@ Work:
   deploy-skipped). `docs/architecture/index.adoc` already lists `docs` among the deploy-skipped
   set, so the table is the only place it is missing.
 
+*Reviewer recommendation, accepted.* This drift satisfies the same test §3 uses to justify its
+guard: it recurred silently, in two files, because a module joined the reactor and nothing compared
+the prose against the pom. Correcting the count by hand leaves it free to re-rot on the next
+module. So the module enumeration gets a sibling check in the same `roadmap-tool` shape: every
+module the root pom declares must be named, as a backticked identifier, in both `CLAUDE.md` and
+`modules.adoc`. Checked in one direction only. A document naming a module the pom no longer
+declares is out of scope, because a module identifier and an ordinary backticked word are not
+distinguishable in prose without a heuristic that fires on the reactor's own vocabulary; module
+addition is the drift that happened. The count each document states in prose stays hand-written,
+but the check now fails in the same file the number lives in, so the author is standing in the
+right sentence when they fix the list.
+
 ## 3. Transient roadmap citations, and a guard so they stop recurring
 
 The `graphitron:dev` sibling-scan paragraph says "See R99 (`lsp-submodule-sibling-classpath`)".
@@ -106,12 +118,15 @@ A guard that fired on those would be suppressed within a week. This is the same 
 `RoadmapReferenceGuardTest` already makes when it excludes test-source string literals: scan
 the habitat where a stale ID misleads, not every habitat where the characters appear.
 
-Open question for the reviewer: whether the guard earns its keep at all, or whether §1, §2, and
-the deletions here are a one-time correction that does not need a ratchet. The argument for it
-is that this is the one failure mode in the item that already recurred without anyone noticing.
-The argument against is that a check over two files is a lot of machinery for a small habitat.
-I lean toward building it, at roughly 80 lines reusing `BuildFailure`, but will not defend it
-hard.
+*Reviewer decision (Spec → Ready).* Build the guard. The deciding argument is the one above: this
+is the failure mode in the item that already rotted silently, four times across two files, and the
+check reuses an in-tree shape end to end. Two wording points settled with it. The scan-set
+sentence above is ambiguous between excluding the three permanent artifacts *from the scan* and
+permitting them *as citation targets inside the scanned files*; only the second reading is
+consistent with the rest of this section, and that is the one implemented. The scan set is a
+declared list on the check rather than two inlined paths, so a future prose document joins by one
+line. The scanned-file floor is a presence requirement on every declared path: a document that
+moved fails the check instead of shrinking the scan to a vacuous pass.
 
 ## 4. The em-dash prohibition reads as an invariant it is not
 
@@ -145,6 +160,14 @@ clause on when it is the right choice. Do not copy all four; `testing.adoc` stay
 reference and the existing "prefer the full install" nudge stays, since it is correct for
 verification runs and only wrong as a claim that nothing narrower exists.
 
+*Reviewer finding, resolved.* As drafted this adds a command that contradicts the rule three lines
+above it: Common commands says a bare `-pl` produces stale results and must be paired with `-am` or
+`-amd`, and the addition, taken verbatim from `testing.adoc`, is a bare `-pl`. Keep `testing.adoc`'s
+form and move the precondition into the surrounding prose, which is where it belongs: the scoped
+command reads the *installed* artifacts of its upstream modules, so it needs `-am` when an upstream
+module changed in this session and `-amd` when downstream modules must be rebuilt. Stated that way
+the two claims stop fighting and the `-am` rule keeps the meaning it has for a dirty upstream.
+
 ## 7. `CLAUDE.md` hand-rolls the git flow the `publish` skill performs
 
 The Git Workflow section ends in a four-line command block. `.claude/skills/publish/SKILL.md`
@@ -168,9 +191,20 @@ is user-facing and the agent never sees it; the channels that reach the agent ar
 nudge the session that just pushed, and the nudge lands on the human, who then has to relay it.
 
 Move the payload to `hookSpecificOutput` with `hookEventName: "PostToolUse"` and the text under
-`additionalContext`. The `if: "Bash(git push *)"` scoping on the hook entry is valid and
-correctly targeted; only the output shape is wrong. Keep the existing `grep` for
-`claude/graphitron-rewrite` that suppresses the message on the fast-forward push itself.
+`additionalContext`. Keep the existing suppression of the message on the fast-forward push itself,
+which is what stops the nudge firing on the very command that satisfies it.
+
+*Implementation finding.* The claim that the `if: "Bash(git push *)"` scoping needs no change did
+not survive contact. With the payload moved onto the agent-facing channel, the reminder was
+observed arriving after a `Bash` call that ran no `git` command at all, which the old shape hid
+because a `systemMessage` nobody reads is indistinguishable from a `systemMessage` that never
+fires. Fixing the output shape alone therefore converts a silent misfire into noise injected into
+agent context on unrelated tool calls, which is worse than the bug being fixed. So the command
+body now does the filtering it cannot delegate: it exits 0 unless the tool input actually contains
+`git push`, then exits 0 again if the push targets trunk, and only then emits the nudge. This also
+retires a latent bug in the old body, which read a single line off `jq` and so missed a push on the
+second line of a compound command. The `if` entry stays as a declaration of intent, but nothing
+depends on its semantics any more.
 
 ---
 
@@ -178,6 +212,12 @@ correctly targeted; only the output shape is wrong. Keep the existing `grep` for
 
 * No sweep of existing em dashes, and no em-dash build check (§4 decision).
 * No scan of `.claude/skills/` for roadmap IDs (§3 rationale).
+* No sweep of the other two habitats where the same citations live and no scan reaching them.
+  `pom.xml` comments carry them across nine poms and 22 distinct IDs, one already rotted (the
+  `graphitron-jakarta-rest` Java-17 comment explains the module's absent test coverage by citing an
+  item with no file left under `roadmap/`), and the published `docs/architecture/` pages carry more,
+  including two in the `modules.adoc` row this item edits. R547 covers both. The guard §3 builds
+  closes the agent-onboarding habitat, not the citation question as a whole.
 * No restructuring of `CLAUDE.md`'s section order or length budget. Every change here is a
   correction, a repoint, or at most two added lines; the file's shape is working.
 * No generator, classifier, emitter, or test-tier changes. Nothing under `graphitron/src/main`
@@ -190,11 +230,17 @@ correctly targeted; only the output shape is wrong. Keep the existing `grep` for
   block, `publish/SKILL.md`'s procedure.
 * `grep -nE '\bR[0-9]+\b' CLAUDE.md .claude/web-environment.md` returns nothing outside the
   three permanent artifact paths.
-* If §3's guard ships: a unit test in the shape of `AdocMarkdownTableCheckTest`, covering a
-  citation of a live-looking ID, a permitted `roadmap/workflow.adoc` path reference, and the
-  scanned-file floor that catches a walk reaching nothing (the vacuous-pass failure mode
-  `RoadmapReferenceGuardTest` guards against with its own floor).
+* Unit tests in the shape of `AdocMarkdownTableCheckTest` for both checks, covering a citation of a
+  live-looking ID, a permitted `roadmap/workflow.adoc` path reference, the rule's own placeholder
+  forms (which must not trip the guard that enforces it), the `roadmap-tool` identifier that shares
+  the prefix without being a path, and the floor that catches a walk reaching nothing: a declared
+  document that has moved for the citation check, a pom parsing to no modules for the enumeration
+  check. Each check also asserts itself clean against this repository from the test tier, so the
+  guarded documents stay honest under `mvn test` and not only at `verify`.
 * `mvn install -Plocal-db` clean, including the `verify`-phase `check-adoc-tables` sibling and
   the Javadoc reference gate.
 * The hook change verified by observation, not inspection: push from a feature branch without
-  the trunk fast-forward and confirm the reminder text reaches the agent's context.
+  the trunk fast-forward and confirm the reminder text reaches the agent's context. The filter
+  itself is verified by feeding the hook body the four tool-input shapes that matter (a non-push
+  command, a feature-branch push, a trunk fast-forward, and a push on the second line of a compound
+  command) and checking which of them emit.

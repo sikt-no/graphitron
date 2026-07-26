@@ -2,7 +2,7 @@
 :description: The reactor module map for the Graphitron generator.
 :!toc:
 
-The repository is a single Maven reactor rooted at the `graphitron-rewrite-parent` parent pom (`10-SNAPSHOT`). Eleven modules cover the generator, its inputs, its consumers, the reusable runtime surface, and the tooling that wraps both ends:
+The repository is a single Maven reactor rooted at the `graphitron-rewrite-parent` parent pom (`10-SNAPSHOT`). Twelve modules cover the generator, its inputs, its consumers, the reusable runtime surface, the tooling that wraps both ends, and the documentation site. The roadmap-tool `check-module-enumeration` step fails the build if this table stops naming a module the root pom declares, so the set below cannot fall behind the reactor:
 
 [cols="1,3"]
 |===
@@ -39,7 +39,10 @@ The repository is a single Maven reactor rooted at the `graphitron-rewrite-paren
 | Reusable, spec-conformant GraphQL-over-HTTP serving library (vendor-neutral Jakarta REST + CDI) over a Graphitron schema: the `/graphql` resource, status-code semantics, SDL endpoint, and GraphiQL page, behind a `GraphitronApplication` SPI the consumer's adapter implements (R399). The GraphiQL page is self-hosted: a version-pinned GraphiQL 5 + React bundle ships as committed classpath resources and is streamed from the resource's `assets/{name}` endpoint (no runtime CDN), with the one-shot Vite recipe that reproduces it under `tools/graphiql-build/` (R416); the Maven build never invokes node. The first hand-written *runtime* artifact consumers depend on; compiles at `<release>17</release>`.
 
 | `roadmap-tool`
-| Regenerates `roadmap/README.md` from per-item front-matter.
+| Regenerates `roadmap/README.md` from per-item front-matter. Also hosts the repo-wide prose tripwires bound to `verify`: the markdown-table check, the transient-citation check over the agent-onboarding documents, and the module-enumeration check that guards this table.
+
+| `docs`
+| Packaging `pom`; renders the AsciiDoc site (user manual, architecture pages, roadmap) to `target/generated-docs/` and is deployed to GitHub Pages from trunk. Carries `maven.deploy.skip`, so it publishes a site and not an artifact.
 |===
 
 `graphitron-tree-sitter-natives` sits alongside these as a plain subdirectory (not a reactor module); it packages the `tree_sitter_graphql` grammar and `libtree-sitter` runtime the LSP loads at startup.

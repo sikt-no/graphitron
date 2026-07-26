@@ -6,11 +6,12 @@ Links elsewhere in this file point at deep references. **Don't fetch them up fro
 
 ## What graphitron-rewrite is
 
-The next-generation Graphitron generator: a Maven-based code generator that turns GraphQL schemas + jOOQ-generated database models into Java resolvers. The repo root is the reactor, with its parent pom (`graphitron-rewrite-parent`, `10-SNAPSHOT`). Modules: `graphitron-javapoet`, `graphitron`, `graphitron-fixtures-codegen`, `graphitron-sakila-db`, `graphitron-sakila-service`, `graphitron-mcp`, `graphitron-jakarta-rest`, `graphitron-maven-plugin`, `graphitron-sakila-example`, `graphitron-lsp`, `roadmap-tool` (plus the `graphitron-tree-sitter-natives` subdirectory). Developed by Sikt.
+The next-generation Graphitron generator: a Maven-based code generator that turns GraphQL schemas + jOOQ-generated database models into Java resolvers. The repo root is the reactor, with its parent pom (`graphitron-rewrite-parent`, `10-SNAPSHOT`). Modules: `graphitron-javapoet`, `graphitron`, `graphitron-fixtures-codegen`, `graphitron-sakila-db`, `graphitron-sakila-service`, `graphitron-mcp`, `graphitron-jakarta-rest`, `graphitron-maven-plugin`, `graphitron-sakila-example`, `graphitron-lsp`, `roadmap-tool`, `docs` (plus the `graphitron-tree-sitter-natives` subdirectory). What each one is for: `docs/architecture/reference/modules.adoc`. Developed by Sikt.
 
 ## Technology constraints
 
-- **Java 25** for generator code (`<release>25</release>` in the root `pom.xml` and most child modules); **Java 17** for generated output (`graphitron-sakila-example` compiles with `<release>17</release>` to verify this). Generator implementation may use Java 25 features freely. Generated source files must target Java 17, consumers may still be on 17, and we control what syntax appears in those files. The parent pom's `requireJavaVersion` enforcer rule fails the build with a clear message when run on a JDK older than 25.
+- **Java 25** for generator code (`<release>25</release>` in the root `pom.xml` and most child modules). Generator implementation may use Java 25 features freely. The parent pom's `requireJavaVersion` enforcer rule fails the build with a clear message when run on a JDK older than 25.
+- **Java 17** is the floor in two places, for two different reasons. Generated source files must target 17 because consumers may still be on 17 and we control what syntax appears in those files; `graphitron-sakila-example` compiles emitted sources with `<release>17</release>` to verify that. Separately, `graphitron-jakarta-rest` is hand-written runtime code that consumers put on their classpath, so its `default-compile` execution pins `<release>17</release>` too: **anything you type in that module must compile at 17**, Java 25 syntax there fails the build.
 - **jOOQ 3.20.11**, **GraphQL-Java 25.0**, **JUnit 6.0.3 + AssertJ 3.27.7**, **PostgreSQL 42.7.10** (Testcontainers 2.0.4). Versions are pinned in the root `pom.xml` properties; don't add dependencies without checking that pom first.
 
 ## Environment (agent sessions)
@@ -25,7 +26,7 @@ mvn -version  # expect "Java version: 25.x"
 
 If `mvn -version` reports Java 21, the session inherited a stale `JAVA_HOME`; see `.claude/web-environment.md` for the JDK 25 install + `JAVA_HOME` export. The parent pom's enforcer fails loudly with "Detected JDK … 21", so this is not silent.
 
-**Claude Code Web** uses a web-sandbox setup (no Docker, native PostgreSQL via `-Plocal-db`). The SessionStart hook runs asynchronously and warms the full reactor build in the background (R439); a PreToolUse guard holds your first `mvn`/`mvnd` command until the warm-up finishes, so an unusually long first invocation is the guard waiting, not a hang. For PostgreSQL/Testcontainers errors there, see `.claude/web-environment.md`.
+**Claude Code Web** uses a web-sandbox setup (no Docker, native PostgreSQL via `-Plocal-db`). The SessionStart hook runs asynchronously and warms the full reactor build in the background; a PreToolUse guard holds your first `mvn`/`mvnd` command until the warm-up finishes, so an unusually long first invocation is the guard waiting, not a hang. For PostgreSQL/Testcontainers errors there, see `.claude/web-environment.md`.
 
 **Prefer `mvnd` over `mvn` in web sessions.** The hook installs mvnd (Maven Daemon) and warms its daemon, so repeat Maven commands skip the 3-8 s JVM start that plain `mvn` pays each time. Every `mvn` command in this file works verbatim as `mvnd`; behaviour is identical (mvnd runs modules in parallel by default, which the test suite supports and CI enforces with `-T 1C`). If `mvnd` is absent its install failed; plain `mvn` is always correct. One quirk: don't combine `mvnd` with `-q` when you need a tool's stdout (it can be swallowed); details in `.claude/web-environment.md`.
 
@@ -37,27 +38,33 @@ mvn install -Plocal-db
 
 # Regenerate roadmap/README.md from item front-matter
 mvn -pl roadmap-tool exec:java -q
+
+# Inner loop: generator tests only, no PostgreSQL. Assumes a prior full install
+mvn test -pl :graphitron -Plocal-db -DexcludedGroups=execution
+
+# Does it compile at all? Skips the tests and the Javadoc reference gate
+mvn install -Plocal-db -Pquick
 ```
 
-The full install is fast; prefer it over targeted `-pl` builds. If you do need `-pl`, always pair it with `-am` (also-make) or `-amd` (also-make-dependents); a bare `-pl` skips dependent modules and produces stale results.
+The full install is fast; prefer it over targeted `-pl` builds for anything you intend to trust as verification. The scoped command above is for the inner loop only: it reads the *installed* artifacts of every upstream module, so add `-am` (also-make) whenever an upstream module changed in this session, and `-amd` (also-make-dependents) when you need the modules downstream of your edit rebuilt. A bare `-pl` on a dirty upstream produces stale results silently. `docs/architecture/how-to/testing.adoc` is the full command reference.
 
 ## Building and testing
 
 The `mvn install -Plocal-db` command above runs the full pipeline (build-fixtures → test → compile-spec → execute-spec). Reach for the deeper docs only when the task requires it:
 
-- Adding/structuring tests, or unsure which tier (unit vs pipeline vs compilation vs execution) to put a test in: `docs/architecture/explanation/development-principles.adoc`.
+- Adding/structuring tests, or unsure which tier (unit vs pipeline vs compilation vs execution) to put a test in: `docs/architecture/how-to/testing.adoc`, which carries the tier names, locations, decision rubric, and per-tier commands. For *why* the tiers are shaped that way: `docs/architecture/explanation/development-principles.adoc`.
 - Navigating the sealed variant hierarchy, classification taxonomy, or runtime extension points: `docs/architecture/index.adoc`.
 - Diagnosing build/test failures specific to the web sandbox: `.claude/web-environment.md`.
 
 **Footgun: catalog-jar clobber.** Omitting `-Plocal-db` silently empties the jOOQ catalog jar; pipeline tests then fail with `UnclassifiedType` / `NoSuchElement` / "table … could not be resolved" cascades. Recovery: rerun with `-Plocal-db`.
 
-**Sub-module gotcha (handled for standard layouts): `graphitron:dev` sibling scan.** Running `mvn graphitron:dev` from inside one module of a multi-module reactor used to see only that module's classes, so services / conditions / records in sibling modules silently produced empty completions. The dev goal now walks the parent pom's `<modules>` and folds siblings' `target/classes` and sources into the scan automatically (standard layout only; a sibling must have been compiled once). See R99 (`lsp-submodule-sibling-classpath`) and the "Multi-module projects" note in `docs/architecture/how-to/dev-loop-internals.adoc`.
+**Sub-module gotcha (handled for standard layouts): `graphitron:dev` sibling scan.** Running `mvn graphitron:dev` from inside one module of a multi-module reactor used to see only that module's classes, so services / conditions / records in sibling modules silently produced empty completions. The dev goal now walks the parent pom's `<modules>` and folds siblings' `target/classes` and sources into the scan automatically (standard layout only; a sibling must have been compiled once). See the "Multi-module projects" note in `docs/architecture/how-to/dev-loop-internals.adoc`.
 
 **Javadoc `{@link}` reference gate.** The `verify` phase runs a doclint reference check (maven-javadoc-plugin, `reference` group only) across the in-scope modules and fails the build on a dangling `{@link}`/`{@see}`, so a link that names a live symbol is build-enforced. It forks javadoc per module and costs real wall-clock; for a fast inner loop skip it with `-Pquick` (which sets `maven.javadoc.skip`, and also skips tests). When the gate fires, repoint the link to the current symbol; only downgrade to `{@code}` when the target genuinely is not a resolvable symbol (generated-only, or another module's non-dependency internals), never merely to silence the tool.
 
 ## Writing style
 
-Do not use em dashes (—) in documentation. Use a comma, semicolon, colon, or restructure the sentence instead.
+Do not write em dashes (—) into prose you author. Use a comma, semicolon, colon, or restructure the sentence instead. This binds what you write; it is style guidance with no build gate, and the em dashes already in the tree are not a cleanup backlog. Leave them alone unless you are rewriting the sentence anyway.
 
 In `.adoc` files, use AsciiDoc table syntax (`[cols="..."]` + `|===` block) for tables; the markdown form (`| col | col |` header followed by a `|---|---|` separator) renders as paragraph text with literal pipes. The roadmap-tool `check-adoc-tables` step fails the build on any such row outside a structural block.
 
@@ -66,6 +73,8 @@ In `.adoc` files, use AsciiDoc table syntax (`[cols="..."]` + `|===` block) for 
 Comments and javadoc name live things, never transient ones. A roadmap item id (`R<n>`) or a `roadmap/<slug>` path is transient: items get renumbered, ship and leave a numbering gap, or get discarded, so a comment that leans on one is stale the moment the item moves. Do not cite roadmap items in javadoc or implementation comments. Instead, reference a live symbol with `{@link}` (compiler- and javadoc-checked, so it cannot silently rot), reference the published docs (the user manual for author-facing behavior, `docs/architecture/` for contributor-facing rationale), or just state the fact and drop the citation. Prefer terse over verbose. The three permanent roadmap artifacts (`roadmap/changelog.md`, `roadmap/workflow.adoc`, `roadmap/README.md`) are not transient items and may be cited by path.
 
 This is enforced mechanically: `RoadmapReferenceGuardTest` (a `graphitron` test-tier meta-test) fails the build if an `R<n>` or `roadmap/<slug>` citation appears in an in-scope module, in either of two lexically-scoped habitats. The comment scan inspects comment and javadoc regions across main and test sources. The string-literal scan inspects string, character, and text-block literals across *main* sources: the rejection messages, invariant-throw messages, and documentation text emitted into generated output that would render a rotting id at a consumer with no `roadmap/` directory. (Test-source string literals citing an item as provenance, a `@DisplayName` or an assertion description, render to no consumer surface and are deliberately out of the string scan's scope.) If the guard fires, rewrite the comment per the above, or, in a message string, state the fact or name the live class/method in prose; do not suppress it.
+
+The same rule covers this file. `RoadmapReferenceGuardTest` parses Java, so the markdown documents an agent reads first sat outside every scan and drifted; the roadmap-tool `check-transient-citations` step now fails the build on an `R<n>` or `roadmap/<slug>` citation in `CLAUDE.md` or `.claude/web-environment.md`. Skill documents under `.claude/skills/` are deliberately out of scope: an id there is worked-example syntax (a `move R<n> to Ready` command shape), not a provenance claim. The sibling `check-module-enumeration` step fails the build when either this file or `docs/architecture/reference/modules.adoc` stops naming a module the root pom declares, so the module list above cannot silently fall behind the reactor.
 
 When a change retires a symbol or mechanism, declare the retired vocabulary in the roadmap item's body (a `## Retired vocabulary` section) and run the retirement sweep at the Done gate; see the "Retirement sweep" check in `roadmap/workflow.adoc`.
 
@@ -114,6 +123,8 @@ Trunk-based development against `claude/graphitron-rewrite`.
 - the user saying "don't ship this to trunk yet".
 
 **Session flow:** sync → work + commit → push own branch → fast-forward trunk. Trunk is fast-forward only; never force-push it. Force-push-with-lease on your own branch is fine. If trunk moved during work, rebase and repeat.
+
+**Use the `publish` skill for the push half.** It does the branch push and the trunk fast-forward in one step, and adds what the raw commands cannot: a dirty-tree stop, the wip/draft/spike check against the rules above, a trunk-divergence pre-check that tells you to rebase *before* the push instead of after a rejection, and network retry. The commands below are the fallback for when the skill is unavailable or the flow has to deviate.
 
 ```bash
 git fetch origin claude/graphitron-rewrite

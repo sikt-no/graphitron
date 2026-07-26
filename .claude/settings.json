@@ -30,7 +30,7 @@
           {
             "type": "command",
             "if": "Bash(git push *)",
-            "command": "jq -r '.tool_input.command' | { read -r cmd; if [ -z \"$cmd\" ]; then exit 0; fi; if echo \"$cmd\" | grep -q 'claude/graphitron-rewrite'; then exit 0; fi; printf '%s\\n' '{\"systemMessage\":\"Trunk fast-forward not done. Follow up with: git push origin HEAD:claude/graphitron-rewrite\"}'; }"
+            "command": "cmd=$(jq -r '.tool_input.command'); case \"$cmd\" in *'git push'*) ;; *) exit 0;; esac; case \"$cmd\" in *claude/graphitron-rewrite*) exit 0;; esac; printf '%s\\n' '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"Trunk fast-forward not done. Follow up with the publish skill, or: git push origin HEAD:claude/graphitron-rewrite\"}}'"
           }
         ]
       }

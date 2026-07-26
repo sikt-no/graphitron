@@ -13,7 +13,7 @@ It is not relevant when building locally or in CI.
 ## Automatic setup (SessionStart hook)
 
 `.claude/scripts/session-start-web-env.sh` runs at the start of every web session and brings the
-sandbox to a buildable state. In web sessions it runs **asynchronously** (R439): the session
+sandbox to a buildable state. In web sessions it runs **asynchronously**: the session
 starts immediately while the hook keeps working in the background, first the prerequisite steps
 below, then a warm build of the whole reactor (`install -P 'local-db,!docs' -DskipTests`,
 preferring `mvnd` when its install succeeded, plain `mvn` otherwise), so the first foreground
@@ -56,7 +56,7 @@ fully synchronous and skips the warm build). It:
   `403`s on third-party repos; plain HTTPS to `github.com` is unaffected. CI
   (`.github/workflows/rewrite-build.yml`) clones the same `v0.26.9` directly (it has unrestricted
   GitHub access), so the sandbox and CI exercise the same runtime version.
-- **Installs mvnd `1.0.6` (R474).** Fetches the release tarball from `downloads.apache.org`,
+- **Installs mvnd `1.0.6`.** Fetches the release tarball from `downloads.apache.org`,
   extracts to `/opt/mvnd`, and symlinks `/usr/local/bin/mvnd`. On any failure the hook logs one
   line and continues; the session stays fully usable with plain `mvn`. See
   [mvnd](#mvnd-maven-daemon) below for why and how to use it.
@@ -86,7 +86,7 @@ intentional and enforced: CI builds with `mvn verify -Plocal-db --batch-mode -T 
 execution fails at the gate. Such a failure is a bug in the test, never a reason to serialize
 the build. Within-module (surefire) parallelism is a separate axis and remains off.
 
-Known quirks, accepted and documented rather than fixed (R474):
+Known quirks, accepted and documented rather than fixed:
 
 - **Maven version skew.** mvnd 1.0.6 embeds Maven 3.9.16 while `/opt/maven` is 3.9.11. The
   repo pins no Maven version anywhere (CI uses the runner's), so this is not a new category
@@ -148,8 +148,8 @@ install — silently re-emits the jar with an empty jOOQ catalog and re-triggers
 any broad install, re-run the `-Plocal-db` install for the catalog as a final step before testing.
 
 **A second, now-eliminated cause of the same cascade** was a *stale sandbox DB* (as opposed to a
-stale `.m2` catalog jar): a `rewrite_test` seeded from an older `init.sql` — e.g. one predating
-R389's `party_*` tables — kept that outdated schema, so `-Plocal-db` codegen built its catalog
+stale `.m2` catalog jar): a `rewrite_test` seeded from an older `init.sql`, e.g. one predating the
+`party_*` tables, kept that outdated schema, so `-Plocal-db` codegen built its catalog
 against a DB missing tables the current corpus expects. The SessionStart hook now drops and
 re-seeds `rewrite_test` on every start (see "Brings up PostgreSQL" above), so a stale sandbox DB no
 longer produces this cascade; if you still see it, it is the catalog-jar clobber above, not the DB.

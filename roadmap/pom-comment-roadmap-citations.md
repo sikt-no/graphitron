@@ -28,5 +28,12 @@ rationale, and drop the citation. Whether the sweep earns a mechanical guard is 
 question; the citation-recurrence check being scoped to prose documents leaves this habitat open
 either way.
 
+The published `docs/architecture/` pages are a fourth habitat with the same exposure and a wider
+audience: the module reference page cites two items in a single table row, one of them the same dead
+id as the pom comment. Whether the two habitats are one sweep or two items is a Spec-stage question;
+the argument for one is that the fix and the judgment call ("is this citation load-bearing enough to
+replace, or does the fact stand alone?") are identical in both.
+
 Surfaced by the Spec review of the agent-onboarding surface item, which corrects the same drift in
-`CLAUDE.md` and `.claude/web-environment.md` and scopes poms out.
+`CLAUDE.md` and `.claude/web-environment.md`, adds the prose-document guard, and scopes both of
+these habitats out.
