@@ -1,7 +1,7 @@
 ---
 id: R548
 title: "Collapse the duplicated directive index and guard it"
-status: Spec
+status: Ready
 bucket: docs
 priority: 3
 theme: docs
