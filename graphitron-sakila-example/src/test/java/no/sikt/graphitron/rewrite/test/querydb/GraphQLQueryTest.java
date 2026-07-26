@@ -244,16 +244,15 @@ class GraphQLQueryTest {
 
     @Test
     void projectNotesByPlainFilter_plainInputCompositeFkTargetOverride_filtersByForeignTable() {
-        // The opptak SoknadsmangeltypeFilterInput shape exactly: an input with no
-        // @table carrying a composite FK-target @nodeId + @condition(override) alongside a sibling
-        // implicit field. The @condition(override) field is what routes the type off the table path
-        // (isUsedWithOverrideCondition, TypeBuilder.buildInputType): without the override it would be
-        // promoted to project_note via findReturnTablesForInput, so the divergence is driven by the
-        // override directive, not by the absence of @table. It still resolves against project_note;
+        // The opptak SoknadsmangeltypeFilterInput shape exactly: an input carrying a composite
+        // FK-target @nodeId + @condition(override) alongside a sibling implicit field. The input
+        // declares no table of its own; its fields resolve against the consuming field's table
+        // (project_note) per TypeBuilder.buildInputType, and the @condition(override) field
+        // suppresses only that field's implicit condition.
         // projectNameAtlas receives an aliased Project inside a correlated EXISTS over the composite
-        // (org_id, project_id) FK. This non-table routing is the coverage gap the @table fixtures
-        // leave: the structural validator walks only TableInputType (validateTableInputType), so a
-        // broken call here surfaces only at the consumer's javac.
+        // (org_id, project_id) FK. Input fields are classified per consuming field rather than in a
+        // registry type walk, so the execution tier is where a broken call surfaces as something
+        // other than the consumer's javac.
         Map<String, Object> data = execute("{ projectNotesByPlainFilter(filter: {}) { body } }");
         assertThat(data).extractingByKey("projectNotesByPlainFilter", as(list(Map.class)))
             .extracting(c -> c.get("body"))

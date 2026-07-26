@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 6
 theme: classification-model
-depends-on: [remove-table-on-input-directive]
+depends-on: []
 created: 2026-07-24
 last-updated: 2026-07-24
 ---
