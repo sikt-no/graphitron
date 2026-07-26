@@ -1,13 +1,13 @@
 ---
 id: R535
 title: "Remove the @tableMethod directive"
-status: In Review
+status: Ready
 bucket: architecture
 priority: 3
 theme: model-cleanup
 depends-on: []
 created: 2026-07-25
-last-updated: 2026-07-25
+last-updated: 2026-07-26
 ---
 
 # Remove the `@tableMethod` directive
@@ -191,6 +191,30 @@ Two shapes the plan did not anticipate, both found by the compiler and resolved 
   return check are all unreachable, as is `ReflectionError.ReturnContext` (whose only non-`SERVICE`
   arm rendered the `@tableMethod` prose). All are deleted, collapsing `ReturnTypeMismatch` to a single
   message form. Step 9 already anticipated the strict-return check going with R240's renarrowing.
+
+## Review feedback (In Review -> Ready, independent session)
+
+The removal itself is complete and correct: all nine scope-sweep steps verified individually,
+full reactor green under `-Plocal-db` (13/13 modules), both in-flight deltas justified and
+recorded. One residue blocks the Done gate.
+
+**`ArgCallEmitter.buildMethodBackedCallArgs`'s four-arg overload is now dead, and its javadoc
+was garbled by the sweep.** The overload at `ArgCallEmitter.java:107` had exactly two callers,
+both deleted by this item: the `TableExpr.MethodCall` arm of `JoinPathEmitter.emitTableExpression`
+and the `@tableMethod` fetcher builders in `TypeFetcherGenerator`. Nothing in main or test source
+calls it now; both surviving call sites (`TypeFetcherGenerator.java:564` and `:6641`) pass five
+arguments. An uncalled method left behind by a removal item is unremoved machinery, which is the
+item's own charter.
+
+The javadoc sweep over the same block also mis-substituted. `ArgCallEmitter.java:99-100` now reads
+"neither `@service` nor `@service` methods declare a Table parameter" (the `@tableMethod` half of
+the original "neither `@service` nor `@tableMethod`" was replaced with `@service`), and the header
+at `:88` now claims the emitter serves the "`@condition` call site" while `:101-102` states, still
+correctly, that `@condition` emission lives in `QueryConditionsGenerator`. Both live callers are
+`@service`; no `@condition` argument list is built here.
+
+Fix: delete the four-arg overload, and restate the surviving five-arg javadoc to name only the
+`@service` call surface it actually serves. No test change expected; the build should stay green.
 
 ## Retired vocabulary
 
