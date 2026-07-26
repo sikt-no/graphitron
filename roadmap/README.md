@@ -18,7 +18,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-07-20 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R333` | The Graphitron data model | Ready | 2026-07-20 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
-| `R542` | Correct and sharpen the CLAUDE.md agent-onboarding surface | In Review | 2026-07-26 | [plan](agent-onboarding-surface-accuracy.md) |
 | `R541` | Root Query unit: one query unit shared by root and child fetchers | Ready | 2026-07-26 | [plan](root-query-unit-seam.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
@@ -394,7 +393,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### (untagged)
 
-- `R542` [**Correct and sharpen the CLAUDE.md agent-onboarding surface**](agent-onboarding-surface-accuracy.md)
 - `R475` [**Generated <Type>Conditions methods break on same-named filter fields across sibling arguments**](conditions-method-duplicate-param-names.md)
 - `R547` [**Retire transient roadmap-ID citations from pom.xml comments**](pom-comment-roadmap-citations.md)
 - `R476` [**Route ConnectionHelper.totalCount failures through the ErrorRouter redaction contract**](connection-helper-totalcount-redaction.md)
