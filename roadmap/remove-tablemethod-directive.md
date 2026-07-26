@@ -1,7 +1,7 @@
 ---
 id: R535
 title: "Remove the @tableMethod directive"
-status: Ready
+status: In Review
 bucket: architecture
 priority: 3
 theme: model-cleanup
@@ -215,6 +215,17 @@ correctly, that `@condition` emission lives in `QueryConditionsGenerator`. Both 
 
 Fix: delete the four-arg overload, and restate the surviving five-arg javadoc to name only the
 `@service` call surface it actually serves. No test change expected; the build should stay green.
+
+**Resolved.** Both findings confirmed on inspection and fixed together. The four-arg overload is
+deleted; the two surviving call sites (`TypeFetcherGenerator.java:564`, the child service
+rows-method, and `:6641`, the root service fetcher) already passed five arguments, both with a
+{@code null} `tableExpression`, so no call site changed. The five-arg javadoc absorbs the deleted
+overload's parameter documentation with the mis-substitution corrected: the header now states that
+both call sites are `@service`, the `tableExpression` note reads "a `@service` method declares no
+Table parameter" and keeps the `@condition` pointer at `QueryConditionsGenerator` (the one place
+`@condition` legitimately appears here), and `sourcesExpression` gains the parameter entry it never
+had. `{@link ArgCallEmitter#buildMethodBackedCallArgs}` at `TypeFetcherGenerator.java:6593` is now
+unambiguous against a single method. Full reactor green under `-Plocal-db`.
 
 ## Retired vocabulary
 

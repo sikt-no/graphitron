@@ -85,10 +85,10 @@ public final class ArgCallEmitter {
     }
 
     /**
-     * Builds the argument list for a method-backed call (root {@code @service} or
-     * {@code @condition} call site), iterating {@link MethodRef#params()} in declaration
-     * order and emitting one expression per {@link ParamSource} variant
-     * (see {@link #emitForParam}).
+     * Builds the argument list for a method-backed call, iterating {@link MethodRef#params()}
+     * in declaration order and emitting one expression per {@link ParamSource} variant
+     * (see {@link #emitForParam}). Both call sites are {@code @service}: the root service
+     * fetcher and the child service rows-method.
      *
      * <p>Unlike {@link #buildCallArgs}, there is no implicit first argument: the helper
      * emits exactly the comma-separated argument expressions in user-declared order,
@@ -96,23 +96,17 @@ public final class ArgCallEmitter {
      * a projection, a {@code return} statement) the per-leaf shape requires.
      *
      * @param method            the developer method to call.
-     * @param tableExpression   every caller passes {@code null}: neither {@code @service} nor
-     *                          {@code @service} methods declare a Table parameter; the
-     *                          {@link ParamSource.Table} slot exists for {@code @condition},
-     *                          whose emission lives in {@link QueryConditionsGenerator}. The
-     *                          slot is retained so a leaked Table param surfaces as a clear
+     * @param tableExpression   every caller passes {@code null}: a {@code @service} method
+     *                          declares no Table parameter. The {@link ParamSource.Table} slot
+     *                          exists for {@code @condition}, whose emission lives in
+     *                          {@link QueryConditionsGenerator}. The slot is retained so a
+     *                          leaked Table param surfaces as a clear
      *                          {@link IllegalStateException} rather than a NPE.
+     * @param sourcesExpression the {@link CodeBlock} to emit at the {@link ParamSource.Sources}
+     *                          slot: the child rows-method's {@code keys} parameter (or a
+     *                          converted form of it). {@code null} at the root fetcher, where
+     *                          a Sources slot is rejected.
      * @param conditionsClassName  no extraction arm reads it.
-     */
-    public static CodeBlock buildMethodBackedCallArgs(TypeFetcherEmissionContext ctx, MethodRef method, CodeBlock tableExpression, String conditionsClassName) {
-        return buildMethodBackedCallArgs(ctx, method, tableExpression, null, conditionsClassName);
-    }
-
-    /**
-     * Variant that accepts a {@code sourcesExpression}: the {@link CodeBlock} to emit at the
-     * {@link ParamSource.Sources} slot. Use this when emitting a child {@code @service} rows-
-     * method body where the {@code keys} parameter (or a converted form of it) is the value
-     * supplied at the Sources slot. When {@code null}, Sources is rejected.
      */
     public static CodeBlock buildMethodBackedCallArgs(TypeFetcherEmissionContext ctx, MethodRef method, CodeBlock tableExpression,
             CodeBlock sourcesExpression, String conditionsClassName) {
