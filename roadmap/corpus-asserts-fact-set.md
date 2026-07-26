@@ -32,13 +32,33 @@ or end-to-end through the compilation and execution tiers, which answers "it com
 pure function over the SDL, so it is assertable from a fixture directive with no javac in the loop. That is
 the missing rung between the pipeline and compilation tiers.
 
-**The altitude rule, stated once and inherited by both halves.** Command completeness and command
-assertability pull against each other: a command complete enough that the shell decides nothing is, at the
-limit, a full body AST, and asserting a javapoet tree from an SDL directive is not a spec anyone reads. The
-resolution already exists on the front half, where `DimensionTuple` deliberately asserts the `Operation`
-*arm token* and not the arm payload, on the stated grounds that the payload is not reconstructible from a
-directive and its completeness belongs to the tiers that compile and run the result. Apply the same rule one
-layer down:
+**Precondition: a command is pure data, in ordinary Java records.** A command carries no vocabulary from the
+emit library. The moment a command holds a `CodeBlock` (or a `TypeName`, or any other javapoet type) it stops
+being a decision the core made and becomes output the core already rendered, which defeats the point twice
+over: the core has reached into the shell's job, and the command is no longer comparable, printable, or
+assertable as data, only as text. This is the dual of R333's thread-B law. Thread B says the shell makes no
+decision the core could have made; the same cut requires that the core render nothing the shell should
+render, and only the second half is currently at risk.
+
+It is at risk concretely, so this is a precondition rather than a principle. `RowsMethodBody` is a sealed
+hierarchy in the *model* package whose every permit carries an opaque `CodeBlock content()`, constructed by
+`SplitRowsMethodEmitter` and `TypeFetcherGenerator` and consumed by `RowsMethodSkeleton`: emitters on both
+ends, so it is a shell-to-shell handoff misfiled as a model type, with the boundary inverted (the shell owns
+the declaration scaffolding while a model type carries pre-rendered body text). More broadly the model's
+Java-type vocabulary *is* javapoet's, with `ClassName` in 21 model files and `TypeName` in 20, plus
+`ParameterizedTypeName` / `ArrayTypeName`, reaching as far as author-facing rejection text through
+`TypeNames.simple`. A plain type reference record would serve every one of those slots. `MethodCommand` is
+the counter-example that shows the target shape: four strings, no emit vocabulary, fully comparable.
+Whether that purge lands here or as its own item is a Spec-time call; the command half of this item cannot
+assert commands as data until it does.
+
+**The altitude rule, stated once and inherited by both halves.** Even as pure records, command completeness
+and command assertability pull against each other: a command complete enough that the shell decides nothing
+carries the whole structure of a method body, and a directive that spells that out is not a spec anyone
+reads. The resolution already exists on the front half, where `DimensionTuple` deliberately asserts the
+`Operation` *arm token* and not the arm payload, on the stated grounds that the payload is not reconstructible
+from a directive and its completeness belongs to the tiers that compile and run the result. The constraint is
+payload size and structure, not the vocabulary the payload is written in. Apply the same rule one layer down:
 
 | layer | the corpus declares | who owns the rest |
 |---|---|---|
