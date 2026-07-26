@@ -11,7 +11,7 @@ last-updated: 2026-07-14
 
 # Measure the test pyramid: JaCoCo coverage instrumentation
 
-Re-specced 2026-07-14. The original one-sentence item ("shift new test investment from per-variant structural tests toward SDL-to-classification-to-emission pipeline tests") has become doctrine since filing: the tier guide (`docs/architecture/how-to/testing.adoc`, shipped by R29) states "pipeline beats unit: per-variant structural tests are bookkeeping", and R281's `ClassifiedCorpus` is migrating truth-table enum cases (`GraphitronSchemaBuilderTest`) onto corpus fixtures. What the item lacked was measurement: nothing in the build reports line/branch coverage, so pyramid claims are unquantified. This item wires JaCoCo in so the balance is measured, not asserted.
+Re-specced 2026-07-14. The original one-sentence item ("shift new test investment from per-variant structural tests toward SDL-to-classification-to-emission pipeline tests") has become doctrine since filing: the tier guide (`docs/architecture/how-to/testing.adoc`, shipped by R29) states "pipeline beats unit: per-variant structural tests are bookkeeping", and R281's `ClassifiedCorpus` took over the truth table's pure-verdict cases, leaving `GraphitronSchemaBuilderTest` its slot-asserting, rejection, and input-side rows. What the item lacked was measurement: nothing in the build reports line/branch coverage, so pyramid claims are unquantified. This item wires JaCoCo in so the balance is measured, not asserted.
 
 ## Baseline (measured 2026-07-14, ad hoc, no pom changes)
 

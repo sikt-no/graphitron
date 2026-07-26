@@ -1,17 +1,28 @@
 # R281 retirement inventory: the enum-row deletion whitelist
 
-> **Superseded, historical (banner added 2026-07-14).** This inventory predates the R299/R290
-> classification reshapes and the R316 corpus recut, so its row list no longer matches the live
-> enum or the corpus coordinates. It is retained as R281's permanent lineage record; do not use
-> it as a deletion whitelist without re-deriving the rows against the current
-> `GraphitronSchemaBuilderTest` enum and corpus. The staleness audits have carried this flag
-> since 2026-07-10.
+> **Closed and historical. The grind this file gated is finished; there is no residue to pick up.**
+> All 35 whitelisted rows are ticked, and the *Slice 3 closeout* section at the bottom of this file
+> records the endpoint: the union net retired, output-field and type coverage moved to the corpus as
+> single source of truth, the long tail swept in. A re-derivation over the live enum on 2026-07-25
+> found **zero** remaining pure-verdict rows; what is left in `GraphitronSchemaBuilderTest` is the
+> slot-asserting, rejection, and input-side buckets, which stay by design (see *Excluded by rule*).
+>
+> Read the closeout before concluding anything about outstanding work here. A large surviving
+> `GraphitronSchemaBuilderTest` plus the staleness banner below is **not** evidence of an unfinished
+> migration; a Backlog item filed on that reading in July 2026 was discarded once the closeout was
+> read.
+>
+> **Staleness (banner added 2026-07-14).** The row list predates the R299/R290 classification
+> reshapes and the R316 corpus recut, so it no longer matches the live enum or the corpus
+> coordinates. Retained as R281's permanent lineage record. If a future migration ever needs a
+> whitelist again, re-derive it against the current enum and corpus rather than reusing these rows.
+> The staleness audits have carried this flag since 2026-07-10.
 
 Companion to [`../classification-test-dsl.md`](../classification-test-dsl.md) (R281),
 satisfying pre-migration-hardening **item 1** ("commit the retirement inventory") of that
 spec's *Pre-migration hardening* section.
 
-This file is the **deletion whitelist** for the slice-2/3 grind. The rule the gate sets:
+This file was the **deletion whitelist** for the slice-2/3 grind. The rule the gate set:
 
 > A row not listed here does not retire, full stop. Each migration commit ticks its row off
 > (changes `[ ]` to `[x]` and names the corpus example that picked the verdict up).

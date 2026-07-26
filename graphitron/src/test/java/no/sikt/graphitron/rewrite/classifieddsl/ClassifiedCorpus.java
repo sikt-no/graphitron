@@ -1028,9 +1028,10 @@ public final class ClassifiedCorpus {
     /**
      * The set of sealed {@code GraphitronField} / {@code GraphitronType} leaves the corpus demonstrates
      * classification for, by classifying every fixture and collecting the leaf each {@code @classified}
-     * / {@code @classifiedType} coordinate landed on. {@code VariantCoverageTest} unions this with the
-     * legacy enum cases, so an enum row may be retired once its leaf is covered here without the
-     * coverage meta-test regressing.
+     * / {@code @classifiedType} coordinate landed on. This set alone carries the output-field and type
+     * side of {@code VariantCoverageTest}: its
+     * {@code everyOutputFieldAndTypeLeafIsDemonstratedByTheCorpus} obligation reads this and nothing
+     * else, so a leaf absent here fails coverage even when an enum case still asserts it.
      */
     public static Set<Class<?>> coveredLeaves() {
         var leaves = new HashSet<Class<?>>();
