@@ -332,6 +332,19 @@ second model whose only job is the projection layer. Facts, revived leaves, and 
 The fix is to point the projection seam at the facts and let its coverage switch fail to compile until every
 projection re-sources, the same falsifiable-closure discipline thread I applies to the emit.
 
+**A fourth reader, test-side: the spec-by-example corpus.** The three consumers above are the shipped
+readers; the `@classified` corpus is a fourth reader of the same base, and it inherits the re-sourcing
+requirement verbatim. `ClassifiedHarness` builds its verdict from the leaf zoo (`OutputField.operation()`,
+`OutputField.target()`, `GraphitronSchema.sourceOf`) and records `field.getClass()` as the coordinate's
+leaf; `ClassifiedCorpus.coveredLeaves()` and `VariantCoverageTest`'s corpus obligation are both stated over
+sealed leaf *classes*. So the failure mode this section warns about has a second entrance: if the harness is
+not re-sourced onto the facts alongside the projections, the test tier pins the leaf permits in place from
+below, and the leaves survive as a shim for the corpus instead of for the editor. The obligation is the same
+(re-source, keep the coverage guarantee falsifiable), and the extra piece the corpus needs is a restatement
+of its coverage net, which cannot stay "every sealed leaf is demonstrated" once leaves are not the unit.
+Widening the corpus directive to the fact set is filed separately; this note only records that the harness is
+in scope for the re-sourcing, not something to migrate afterwards.
+
 The shared discipline is *We are data modeling*: the facts are typed, keyed relations in the type system,
 materialized as in-memory collections guarded by a referential-integrity check, not sat on a query-engine
 runtime. The three consumers read views over one base; the base carries every column some view needs, and no
