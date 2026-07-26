@@ -1,7 +1,7 @@
 ---
 id: R535
 title: "Remove the @tableMethod directive"
-status: In Review
+status: Ready
 bucket: architecture
 priority: 3
 theme: model-cleanup
@@ -226,6 +226,42 @@ Table parameter" and keeps the `@condition` pointer at `QueryConditionsGenerator
 `@condition` legitimately appears here), and `sourcesExpression` gains the parameter entry it never
 had. `{@link ArgCallEmitter#buildMethodBackedCallArgs}` at `TypeFetcherGenerator.java:6593` is now
 unambiguous against a single method. Full reactor green under `-Plocal-db`.
+
+### Second review pass (In Review -> Ready)
+
+The structural half of the rework is right: the four-arg overload is gone, no call site changed,
+the mis-substituted "neither `@service` nor `@service`" clause reads correctly, the
+`@condition` pointer stays where it belongs, and `sourcesExpression` is documented for the first
+time. Retirement sweep clean (surviving mentions are the deliberate keeps: `legacy-directives.graphqls`,
+the migration-guide pointer, the generated Legacy-only bullet, `ServiceCatalog.reflectTableMethod`,
+`RetiredVocabularyGuardTest`'s registry, R403's body, and the changelog/audit history).
+User-manual prose carries no roadmap markers. Full reactor green under `-Plocal-db`, 13/13 modules.
+
+One claim in the replacement javadoc is false, and it is the claim the rework introduced rather
+than inherited. `ArgCallEmitter.java:90-91` now reads "Both call sites are `@service`: the root
+service fetcher and the child service rows-method." There is no root call site. Both callers are
+`ChildField` arms of `TypeFetcherGenerator.generateTypeSpec`'s dispatch:
+
+- `TypeFetcherGenerator.java:564` sits in `case ChildField.ServiceTableField` (`:553`) and feeds
+  `SplitRowsMethodEmitter.buildServiceTableLift`, the child service table lift.
+- `TypeFetcherGenerator.java:6641` sits in `buildServiceRowsMethod` (`:6613`), whose own javadoc
+  says it emits "the rows method backing a `ServiceTableField` or `ServiceRecordField` DataLoader";
+  its single caller is `:570`, in `case ChildField.ServiceRecordField` (`:568`).
+
+Root service reads and writes are the separate `QueryServiceTableField` / `QueryServiceRecordField`
+/ `MutationService*` permits, and none of them reaches this helper. The pre-removal javadoc's
+"root `@service` or `@tableMethod` fetcher" was accurate because the deleted root `@tableMethod`
+fetcher was the root caller; with it gone, the surviving population is child-only.
+
+The same mistake propagates into the new `@param sourcesExpression` entry (`:105-108`), which says
+the slot is "`null` at the root fetcher, where a Sources slot is rejected". No caller passes null;
+both pass `CodeBlock.of("keys")`. The null-rejects-Sources behaviour is real code
+(`ArgCallEmitter.java:183`) but is now caller-unreachable, so attributing it to a root fetcher
+invents the caller the deleted overload used to be.
+
+Fix: restate the header to name the two child call sites (the service table lift and the service
+record rows-method), and reword the `sourcesExpression` entry so the null case describes the guard
+rather than a caller. Two clauses; no code or test change expected.
 
 ## Retired vocabulary
 
