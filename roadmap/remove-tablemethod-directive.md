@@ -1,7 +1,7 @@
 ---
 id: R535
 title: "Remove the @tableMethod directive"
-status: Ready
+status: In Review
 bucket: architecture
 priority: 3
 theme: model-cleanup
@@ -262,6 +262,17 @@ invents the caller the deleted overload used to be.
 Fix: restate the header to name the two child call sites (the service table lift and the service
 record rows-method), and reword the `sourcesExpression` entry so the null case describes the guard
 rather than a caller. Two clauses; no code or test change expected.
+
+**Resolved.** Both call sites re-verified before editing: `:564` sits in
+`case ChildField.ServiceTableField` (`:553`), and `:6641` sits in `buildServiceRowsMethod`, whose
+only caller repo-wide is `:570` in `case ChildField.ServiceRecordField`. Neither is reachable from a
+root permit, and both pass `CodeBlock.of("keys")`, so the previous javadoc was wrong on both the
+root attribution and the null case. The header now names the two child arms explicitly (the
+`ServiceTableField` lift-back call feeding `SplitRowsMethodEmitter.buildServiceTableLift`, and the
+`ServiceRecordField` rows-method body) and states that root service permits emit elsewhere. The
+`sourcesExpression` entry now says both callers pass the batch `keys` parameter and describes the
+`null` arm as a caller-unreachable guard rather than attributing it to a caller. Javadoc only; no
+code or test change, full reactor green under `-Plocal-db`.
 
 ## Retired vocabulary
 

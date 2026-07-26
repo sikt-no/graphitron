@@ -87,8 +87,11 @@ public final class ArgCallEmitter {
     /**
      * Builds the argument list for a method-backed call, iterating {@link MethodRef#params()}
      * in declaration order and emitting one expression per {@link ParamSource} variant
-     * (see {@link #emitForParam}). Both call sites are {@code @service}: the root service
-     * fetcher and the child service rows-method.
+     * (see {@link #emitForParam}). Both call sites are child {@code @service} arms: the
+     * {@code ServiceTableField} lift-back call feeding
+     * {@link SplitRowsMethodEmitter#buildServiceTableLift}, and the
+     * {@code ServiceRecordField} rows-method body. Root service permits emit their calls
+     * elsewhere and do not reach this helper.
      *
      * <p>Unlike {@link #buildCallArgs}, there is no implicit first argument: the helper
      * emits exactly the comma-separated argument expressions in user-declared order,
@@ -103,9 +106,10 @@ public final class ArgCallEmitter {
      *                          leaked Table param surfaces as a clear
      *                          {@link IllegalStateException} rather than a NPE.
      * @param sourcesExpression the {@link CodeBlock} to emit at the {@link ParamSource.Sources}
-     *                          slot: the child rows-method's {@code keys} parameter (or a
-     *                          converted form of it). {@code null} at the root fetcher, where
-     *                          a Sources slot is rejected.
+     *                          slot; both callers pass the batch {@code keys} parameter. The
+     *                          {@code null} arm rejects a Sources param outright and is
+     *                          caller-unreachable today, retained as a guard for a future
+     *                          caller with no batch to supply.
      * @param conditionsClassName  no extraction arm reads it.
      */
     public static CodeBlock buildMethodBackedCallArgs(TypeFetcherEmissionContext ctx, MethodRef method, CodeBlock tableExpression,
