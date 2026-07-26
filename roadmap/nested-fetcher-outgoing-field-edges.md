@@ -155,3 +155,19 @@ and nothing else (record the verification in the In Review note).
 
 Filed by R459 as its scope-boundary follow-up. R459's related collapse target (the derived
 nested-type view on `GraphitronSchema`) is deliberately not built here; see Design.
+
+**Scoping advisory (added 2026-07-26, no design change).** Fix the defect, do not generalise the
+machinery. This item is the third on the same root cause (R455's oracle blind spots, R459's missing
+node, this item's missing outgoing edges), and the shared cause is structural: the graph is derived
+from coordinates while the emit contains methods no coordinate exposes, so such a method is invisible
+to `CompileDependencyGraphBuilder` by construction. That whole class dissolves if the dependency graph
+becomes a projection over a core-produced command relation (nodes grouped by unit, edges projected to
+unit granularity), because a command exists per method emitted rather than per coordinate found. See
+the "recompile graph is a duplicate" section of R546 and
+`roadmap/audits/2026-07-26-fcis-command-layer-distance.md`.
+
+Consequence for whoever implements this: a targeted fix for the shapes named above is the right size,
+and per-field edge sourcing over nested types wanting "its own design" (per the Problem section) should
+stay minimal rather than growing a general framework that the command projection would delete. The
+dev loop is wrong for this shape today, so the fix should not wait on that program, which is unproven
+and has an explicit abandon condition.

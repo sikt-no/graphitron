@@ -77,6 +77,32 @@ About fifteen non-generator files reflect over the consumer's classpath, includi
 `walker/internal/HandlerAccessorCheck`. Classification interleaves IO with deciding, where the cut
 wants the IO at the edge producing a described Java surface as data.
 
+### 7. The recompile graph is a second derivation of the same relation
+
+The dev loop needs to know which generated units a schema edit invalidates.
+`CompileDependencyGraphBuilder.fromModel` answers it in 731 lines that coarsen the classified model
+into an FQCN-keyed edge graph through an exhaustive switch over leaf arms, and
+`TypeSpecReferenceWalk` walks the emitted specs as a completeness oracle because the model-derived
+graph and the real references can disagree. The emit call graph is therefore derived twice: once by
+the emitters that emit the calls, once by a hand-maintained switch that predicts them.
+
+The duplication produces a recurring bug class, not occasional bugs. R455 fixed
+`TypeSpecReferenceWalk` blind spots that silently falsified the oracle; R459 added a missing node for
+fetcher-owning plain-object nesting types; R462 is open (bucket `bug`) for missing outgoing per-field
+edges and names the cause exactly, that `addFieldEdges` never sees fields absent from
+`schema.fields()` and that `schema.fieldsOf(nestedType)` is empty for a coordinate-less nesting type.
+One shape underneath all three: the graph is derived from coordinates, the emit contains methods no
+coordinate exposes, and such a method is invisible by construction.
+
+This is the clearest cost-removing argument for the command layer, as opposed to the
+capability-adding one in the testing thread. A command exists per emitted method, so the dependency
+graph becomes a projection (nodes grouped by `unitFqcn`, edges projected to unit granularity) rather
+than a prediction, the switch collapses toward a group-by, and the two walks over emitted specs
+unify. `AbiSignature.hash` fingerprints the rendered unit today, so signature-carrying commands would
+additionally make the recompile set computable before rendering. Caveats: javac's unit is still the
+file, the frozen-scaffold blanket edges remain, and the dev loop is user-visible, so any re-basing
+must hold `IncrementalCompileHarnessTest` green (superset oracle plus clauses (a) and (b)).
+
 ## What is already built toward the ideal
 
 - **Fact relations are an established pattern, not a novelty.** `ArrivalIndex(Map<String, Arrival>)`,
