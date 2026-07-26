@@ -120,7 +120,14 @@ slot into later: arrival picks the strategy, the unit does not care who calls it
   regime 1's one-derivation-locus rule three loci. So the capability *extracts* the formula
   rather than duplicating it: `BatchKeyField` extends it, and the service arms' `load<X>` and
   the lookup root's `lookup<Field>` become overrides of the one method rather than parallel
-  naming facts. Root SQL-anchor leaves adopt the capability.
+  naming facts. Root SQL-anchor leaves adopt the capability. The fold is a **cutover, not
+  additive-then-cutover**: the surface is narrowly pinned (the in-tree read sites are
+  `MethodCommandRegistry`, `RowsMethodCall`, `TypeFetcherEmissionContext.rowsDeclarationName`,
+  and the lookup fetcher's call site), the rename is total, behavior-free and compiler-forced,
+  and generated output is byte-identical, which is exactly the narrowly-pinned carve-out
+  `roadmap/workflow.adoc` § "Structural pivots" grants. The registry seam names
+  (`declareReentryRowsMethod`, `declareDmlReentryRowsMethod`) survive unchanged: they name
+  family seams, not the naming fact. Retired names are listed in `## Retired vocabulary` below.
 - **Registry seam.** A new `MethodCommandRegistry.declareRootQueryUnit(field, unitFqcn)` commit,
   shaped exactly like `declareReentryRowsMethod`: reads the model's naming fact, returns the
   declaration name, commits when the site-level fact holds, no overload accepting an
@@ -159,7 +166,17 @@ slot into later: arrival picks the strategy, the unit does not care who calls it
   a tautology over its members and cannot catch the silent-skip drift where a leaf that should
   implement the capability simply does not and vanishes from the set. The capability is the
   structural conjunct only, the migration dial, exactly as R314 widened its covered set between
-  slices.
+  slices. One emit-shape requirement makes the closure assertable at all: the fetcher's call to
+  its unit is rendered **class-qualified even though it is a same-class sibling**
+  (`<Type>Fetchers.rows<Field>(dsl, env)`, legal Java, zero runtime cost).
+  `EmittedMethodClosure`'s javadoc names unqualified same-class calls as one of its two blind
+  spots (no generated-name token to resolve, closed only by javac), and the lookup precedent
+  emits exactly that invisible shape today (`$L(env)` off `lookupMethodName()`). Rejected
+  alternatives: extending the edge relation to bare identifiers (false-edge risk from locals and
+  parameters, and it weakens the scanner's falsifiability pins) and housing the unit in a
+  separate class (changes the generated surface for no reader benefit). `MethodClosureOracleTest`
+  gains a root-unit visibility witness alongside its existing pins, and the lookup call site
+  gets the same qualification when it folds in.
 - **Validator mirror.** The classifier decision ("this root coordinate launches a SELECT, so a
   named query unit must exist") implies a generator branch, so it gets the twin every classifier
   invariant gets: the derived fact true on a leaf that carries no query-unit naming fact is a
@@ -195,37 +212,55 @@ slot into later: arrival picks the strategy, the unit does not care who calls it
 ## Slices
 
 1. **Model + registry + oracle + plain root, together.** The capability with the extracted
-   one-locus formula, the derived covered-family fact, `declareRootQueryUnit`, the bidirectional
-   oracle, *and* the extraction of `buildQueryTableFetcher`'s single and list arms into the
-   named unit. The oracle lands green with positive witnesses (the R314 slice-1 shape worked
-   because the reentry methods already existed; here the first units must land with the oracle
-   or it asserts an empty set, which is not an enforcer). The pre-extraction SQL baseline
-   (acceptance below) is captured before this slice's cutover.
+   one-locus formula (the compiler-forced rename landing with it), the derived covered-family
+   fact, `declareRootQueryUnit`, the bidirectional oracle, *and* the extraction of
+   `buildQueryTableFetcher`'s single and list arms into the named unit, called class-qualified.
+   The oracle lands green with positive witnesses (the R314 slice-1 shape worked because the
+   reentry methods already existed; here the first units must land with the oracle or it
+   asserts an empty set, which is not an enforcer). The SQL equivalence pin suite (acceptance
+   below) is authored against pre-extraction output and lands before this slice's cutover.
 2. **Connection root.** Same extraction for `buildQueryConnectionFetcher`.
 3. **Fanned root.** The fetcher keeps `fanOutRows` and calls the unit per tenant `dsl`.
 4. **Routine + single-table-interface roots.**
 5. **Lookup-root fold + validator mirror + membership enforcer.** The `lookup<Field>` override
-   commits through the seam; the `ValidateMojo` guard and the derived-fact-equals-member-set
+   commits through the seam (retiring `lookupMethodName()`), its fetcher call site gains the
+   class qualification, and the `ValidateMojo` guard plus the derived-fact-equals-member-set
    enforcer land in the same commit, closing the migration dial (no window).
 
 ## Acceptance
 
 - **SQL equivalence, not byte equivalence.** Extracting an inline block into a named method
-  changes the generated Java by construction; what must not change is the SQL. The mechanism is
-  a deliverable, not a hope: slice 1 captures a pre-extraction SQL baseline for the covered
-  root shapes through the execution tier's `ExecuteListener`-based SQL capture in
-  `graphitron-sakila-example` (R432's `diff -r` discipline, pointed at SQL instead of Java),
-  and every slice diffs against it. Query strings and query counts stay identical; the
-  execution tier stays green unchanged. No behavioral delta of any kind; that is R471's line,
-  not ours.
+  changes the generated Java by construction; what must not change is the SQL. The mechanism,
+  fully specified: a new execution-tier equivalence pin suite in `graphitron-sakila-example`
+  (working name `RootQueryUnitSqlEquivalenceTest`), following the existing per-test-class
+  `SQL_LOG` `ExecuteListener` idiom (`GraphQLQueryTest` et al.), asserting **exact rendered SQL
+  strings and statement counts** (equality, not the `contains` substring form) for one
+  representative query per covered root shape. The suite is authored against pre-extraction
+  generator output and lands *before* slice 1's cutover; every slice keeps it green unchanged.
+  Editing its expected strings during this item is a defect being papered over, not test
+  maintenance. (This is a SQL-text pin, which the tier guide permits; the ban is on code-string
+  assertions against generated Java method bodies.) The execution tier stays green unchanged
+  throughout. No behavioral delta of any kind; that is R471's line, not ours.
 - **Closure both ways.** Level-1 oracle green throughout; the new family's bidirectional oracle
   green from slice 1 on (model to command, command to emit, exactly one), with non-vacuity
   witnesses and the boundary pins (polymorphic / node / service / DML roots commit nothing).
 - **Thinness is a graph property, not a string pin.** For every covered root coordinate, the
   fetcher method's emitted call edges (the `EmittedMethodClosure` walk the level-1 machinery
-  already models) include a call to that coordinate's committed command's method. This pins the
-  actual invariant (the fetcher is thin *because* it delegates) structurally; code-string
-  assertions on generated bodies stay banned at every tier.
+  already models) include a call to that coordinate's committed command's method. This is
+  assertable only because the design requires the fetcher-to-unit call to be class-qualified
+  (Design, the closure bullet): an unqualified same-class call is inside the walk's declared
+  blind spot and would make this acceptance vacuous. It pins the actual invariant (the fetcher
+  is thin *because* it delegates) structurally; code-string assertions on generated Java bodies
+  stay banned at every tier.
+
+## Retired vocabulary
+
+- `BatchKeyField.rowsMethodName()` (slice 1): reads migrate to `QueryUnitField.queryUnitName()`;
+  the service arms' `load<X>` derivation becomes their override of it.
+- `MutationField.DmlTableField.reentryRowsMethodName()` (slice 1): same migration; the DML arms
+  use the extracted default.
+- `QueryLookupTableField.lookupMethodName()` (slice 5): becomes that leaf's `queryUnitName()`
+  override; the emitted `lookup<Field>` method name is unchanged.
 
 ## Out of scope
 
