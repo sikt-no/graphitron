@@ -15,6 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R516` | Narrow SourceKey.Wrap.TableRecord contract to PK-only, revert full-row projection | Ready | 2026-07-24 <sub>created 2026-07-23</sub> | [plan](service-table-record-pk-only-contract.md) |
+| `R548` | Collapse the duplicated directive index and guard it | Spec | 2026-07-26 | [plan](directive-index-single-source.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-07-20 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R333` | The Graphitron data model | Ready | 2026-07-20 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
@@ -357,6 +358,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### docs
 
+- `R548` [**Collapse the duplicated directive index and guard it**](directive-index-single-source.md) — Spec, docs
 - `R348` [**Regenerate and guard the generated supported-schema-shapes migration doc against drift**](supported-schema-shapes-regen-guard.md) — Backlog, tech-debt
 - `R530` [**Manual how-to: serve your schema over HTTP (the GraphitronApplication SPI adapter)**](manual-howto-serve-schema-over-http.md) — Backlog, cleanup
 - `R498` [**Restore or repoint the missing getting-started quieting-warnings doc referenced by the RAG dev-warm hint**](rag-log-quieting-getting-started-doc.md) — Backlog, docs
