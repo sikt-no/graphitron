@@ -1,7 +1,7 @@
 ---
 id: R542
 title: "Correct and sharpen the CLAUDE.md agent-onboarding surface"
-status: Spec
+status: Ready
 bucket: tooling
 priority: 3
 depends-on: []
