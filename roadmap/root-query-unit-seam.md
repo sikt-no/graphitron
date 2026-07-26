@@ -1,7 +1,7 @@
 ---
 id: R541
 title: "Root Query unit: one query unit shared by root and child fetchers"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 4
 theme: classification-model
