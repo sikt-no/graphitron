@@ -70,7 +70,7 @@ decidable rather than a judgment call. Most families in this codebase still need
 
 **The honest note, named here rather than discovered at review: this is the one of R549's three
 proofs with no capability payload.** Slice 3.1 renames a method and ends a duplicated walk, slice 3.2
-stops over-projecting, and R552 ships two fixes for output that does not compile today. This item
+stops over-projecting, and R552 ships fixes for output that does not compile today. This item
 adds no user-visible capability and fixes no filed defect; every root shape it touches works. R549's
 rule is "no slice that is purely a migration payment", and what pays for this one is not a feature
 but the three deletions it makes possible (the inline `select`/`from`/`fetch` chain repeated at five
@@ -402,7 +402,7 @@ composition does not care who invokes it.
 Slice 0 is two R549 slices, not one, since the programme moved the vocabulary skeleton off the
 keystone: **slice 1** brings `EmitPlan`, the `command` / `plan` / `render` packages, `UnitRef` and the
 naming vocabulary out of `compile/`, and **slices 3.1 and 3.2** bring the projection command this item
-names and the final select list its pin is authored against. R552 slices 1 to 3 also precede this
+names and the final select list its pin is authored against. R552 slices 1 and 2 also precede this
 item, per R549's ordering decision, so the condition relation exists before the `where` slot needs it
 (see fork 1). Nothing here starts before those land, and this item builds no part of that vocabulary
 itself.
@@ -512,7 +512,7 @@ diff inside its own family, which is what a proof of concept wants.
   resolution this item produces no condition unit and mints no condition name: R552 owns the family
   wholesale and lands first, so what was previously scoped here as "the covered family's coordinates
   only" is now consumption of a `UnitRef`. The four `TypeFetcherGenerator` FQCN recomputation sites and
-  `buildConditionCall`'s formula retire in R552's slice 2, before this item's slice 1 touches those
+  `buildConditionCall`'s formula retire in R552's slice 1, before this item's slice 1 touches those
   builders.
 - Multi-table polymorphic stage 1 (outside the covered family by the derived fact; note 4
   above) and the hand-rolled polymorphic loader registration.

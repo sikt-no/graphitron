@@ -414,7 +414,7 @@ naming scheme (entity by return type, glue by parent type) reduces to one.
 4. **Who owns the launcher handshake. Resolved 2026-07-27, at the programme.** This fork and R541's
    fork 1 were each recommending the same answer while deferring the sequencing to the other item's
    reviewer, so neither closed. R549's Slices section decides it: **this item lands first**, slices 1
-   to 3 before R541 slice 1. R552 owns condition production wholesale, R541's `where` slot is the
+   and 2 before R541 slice 1. R552 owns condition production wholesale, R541's `where` slot is the
    row's glue `UnitRef`, and R541 consumes rather than builds. The reasons, recorded so the decision
    is auditable rather than arbitrary: four of R541's five root shapes already call named
    `<field>Condition` methods, so the launcher wants the relation from its first row; the reverse

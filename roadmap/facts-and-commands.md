@@ -576,7 +576,8 @@ already make.
 
 **Per-slice budget, so the width is checkable rather than felt.** After slice 1 the entire command
 vocabulary is `UnitRef`, a unit-kind enum and the global command record: three names. R552 slice 1
-adds the condition command, two predicate arms, the column term and its match kind. Slice 3.1 adds
+adds the condition command, two predicate arms, the column term, its match kind and the facet
+fragment. Slice 3.1 adds
 the projection command, `Contribution`, `CallWrap`, the select-term arms and `Arity`. R541 adds the
 launcher command, `Invocation` and `ResultShape`. Anything else appearing in a slice is a finding to
 report, not a detail to absorb.
@@ -725,19 +726,21 @@ should not carry one.
 
 **Ordering among the three proofs is decided here, not by their reviewers.** R541's fork 1 and R552's
 fork 4 each ask how the launcher gets its WHERE clause, and each defers to the other item's reviewer,
-which means nobody decides. The programme owns sequencing, so: **R552 slices 1 and 2 land before R541
+which means nobody decides. The programme owns sequencing, so: **R552 slice 1 lands before R541
 slice 1.** Four of R541's five root shapes already call named `<field>Condition` methods, so the
 launcher consumes the condition relation from its first row; the reverse order has R541 mint a
 `ConditionRef` from a formula R552 then re-homes, which is the migration payment this programme
-refuses. R552 also needs only slice 1 to start, and it carries two absorbed defect fixes (R475's
-uncompilable output, R472's dangling reference), so running it first puts a user-visible correctness
-win in front of the first purely architectural family. Both forks now resolve by pointing here rather
-than by weighing options. The full sequence: 1, 2, R552 1 to 3, 3.1, 3.2, 3.3, R552 4 jointly with
-3c, then 3b, 4, 5, 6, 7, 8.
+refuses. R552 also needs only slice 1 to start, and it carries fixes for output that does not compile
+today (R472's dangling reference converted at its slice 1, R475's collision dissolved at its slice 3),
+so running it first puts a user-visible correctness win in front of the first purely architectural
+family. Both forks now resolve by pointing here rather than by weighing options. The full sequence:
+1, 2, R552 1 and 2, 3.1, 3.2, 3.3, R552 4 jointly with 3c, then 3b, 4, 5, 6, 7, 8. R552's slice 3
+(entity-layer retirement) is unblocked the moment its slice 2 lands and depends on nothing in the
+keystone, so it floats anywhere after that point.
 
-R552 slice 3 and slice 3.1 are the one pair in that sequence that must not run concurrently: the
-inline `$fields` arm emitters are R552 slice 3's convergence targets and slice 3.1's raw material, so
-both would be editing the same emitters for different reasons. R552 slice 3 goes first, which is also
+R552 slice 2 and slice 3.1 are the one pair in that sequence that must not run concurrently: the
+inline `$fields` arm emitters are R552 slice 2's convergence targets and slice 3.1's raw material, so
+both would be editing the same emitters for different reasons. R552 slice 2 goes first, which is also
 the cheaper order, since 3.1 then folds arms whose condition composition is already a one-line call.
 The R472 coupling runs the other way and is soft: without slice 3.1 there is no walkable home for
 nested coordinates, so R552's fix for it degrades to a deferred rejection rather than blocking, which
@@ -802,7 +805,7 @@ slice 3.1 commits to the two-arm collapse it would falsify.
 | R543 (Backlog) | slice 8. Its fact half needs slice 4, its command half needs slice 5 |
 | R544 (Backlog) | independent, and this reframing strengthens it: the error-channel hierarchies are a first-class fourth kind at 43 permits, so pinning them declaratively is model work, not only test hygiene |
 | R541 (reopened to Spec 2026-07-27) | **the second proof of concept**, slice 3c. Rewritten in command terms, which dissolves rather than defers most of its previous design: its `QueryUnitField` naming capability, its `declareRootQueryUnit` registry seam and its bidirectional oracle were all machinery for facts an emitter reads directly, and under a coordinate-keyed relation the name is a producer-computed field and "exactly one command per coordinate" is the key. Building them first would have been a migration payment slice 5 then retires. Its five root emit shapes stay the real content, and its exact-SQL equivalence pin gets simpler rather than narrower: authored after slice 3, the select list is already final, so the pin covers whole statements with no carve-out. Its conditions fork was re-posed at Spec review 2026-07-27: the root builders already call named `<field>Condition` methods, so what the fork actually does is finish R333 row 5's naming lift (the `QueryConditionsGenerator` end, R2 today) for the covered family's coordinates; the slot resolves as a `UnitRef` into R552's condition relation and the scope question moved there (its fork 4). Its live open fork is now the connection root's `ConnectionResult` carrier plan (`totalCount`'s `(table, condition)` binding and the facet condition fragments), which the launcher sketch has no slot for. Two notes from the rollout review: it is the one proof of the three with no capability payload, which the "no slice that is purely a migration payment" rule makes a thing to name in its own body rather than discover at review; and it runs after R552, per the ordering decision in the Slices section |
-| R552 (Spec) | **the third proof of concept**, slice 3d, and the first family to land. The WHERE family as one coordinate-keyed condition relation with a total glue unit per row: the first value-shaped unit, the second edge-source kind including the first external callees, argument marshalling as data, and the type-keyed GROUP BY that hands slice 3b its exemplar rows. Dissolves R541's conditions fork by owning condition production; the ordering question its fork 4 leaves open is decided in the Slices section (R552 first). Absorbs R472, R475 and R387 for its family, which is why it is also the right family to run first: two of the programme's earliest visible commits fix output that does not compile today |
+| R552 (Spec) | **the third proof of concept**, slice 3d, and the first family to land. The WHERE family as one coordinate-keyed condition relation with a total glue unit per row: the first value-shaped unit, the second cross-kind edge including the first external callees, argument marshalling as data, and the type-keyed GROUP BY that hands slice 3b its exemplar rows. Dissolves R541's conditions fork by owning condition production; the ordering question its fork 4 leaves open is decided in the Slices section (R552 first). Absorbs R472, R475, R387 and R334 for its family, which is why it is also the right family to run first: the programme's earliest visible commits fix output that does not compile today |
 | R516 (Ready, priority 2) | **dependency of slice 3.2**, and of nothing earlier: the keystone's reshape half does not need it, which is part of why the split is worth having. It deletes the `reservedFullRow` axis and the reserved-alias scheme, which is the one demand no parent-owned fact can serve, and it ships independently as correctness work. Its force-include of PK plus node key is an interim expression that slice 3 converts to a gated `Project` arm, and the node-key half is redundant once the `id` arm projects those columns; its scope item 5 (update `ParentProjectionContainmentCheck`) should be the minimum that keeps the check honest, since slice 3 deletes it |
 | R462 (Spec) | fix by hand now, do not generalise; slice 7 dissolves its class. Advisory already noted on the item. Its Spec body cites `GraphitronSchemaValidator.NESTED_WIREABLE_LEAVES`, which no longer exists under that name anywhere in main or test, so the implementer must re-derive the current nested-leaf bound rather than trusting the citation |
 | R10 (Backlog) | dependency of slice 7. Its own body says it wants "a concrete signal"; the fact engine making connection synthesis a relation is that signal |
