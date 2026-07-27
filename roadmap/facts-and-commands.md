@@ -123,12 +123,31 @@ sealed interface Contribution {
     record Call(String resultKey, String calleeUnit, CallWrap wrap)   implements Contribution {}
 }
 
-sealed interface CallWrap {                        // how the callee's terms arrive
-    record Splice()                       implements CallWrap {}  // same row: a nesting unit, merged in
-    record Multiset(JoinRef join)         implements CallWrap {}  // other rows, as a collection
-    record ScalarSubquery(JoinRef join)   implements CallWrap {}  // other rows, as one value
+sealed interface CallWrap {                            // how the callee's fields arrive
+    record Splice()                     implements CallWrap {}  // same row: the callee's fields become mine
+    record Multiset(JoinRef join, Arity arity) implements CallWrap {}  // other rows: one multiset field
 }
 ```
+
+**Every contribution adds fields to this unit's projection when its result key is selected.** That is the
+one thing all of them do, and a `Call` is not an exception: it also lands a field, the difference being that
+the field is a subselect rather than a column on this table. What varies is only where the field expressions
+come from:
+
+| contribution | fields it lands |
+|---|---|
+| `Project` | one per term, each an expression over this unit's table context |
+| `Call` + `Splice` | the callee's fields, added as they are, since a nesting unit projects the same row |
+| `Call` + `Multiset` | **exactly one**: a multiset subselect whose inner select list is the callee's fields |
+
+Two details from the current emit that the wrap axis has to respect. `DSL.multiset(...)` is used
+**uniformly for both cardinalities**, deliberately, because jOOQ 3.20's `DSL.row(Collection)` flattens
+nested rows; single cardinality caps the subselect with `.limit(1)` and unwraps the `Result` to its first
+record at read time. So cardinality is a slot on the call (it decides the limit and the read) and never a
+different wrap, and nobody should later "optimise" a to-one into a row. And a scalar `@reference` is *not* a
+call: it emits `DSL.field(DSL.select(terminal.COL)...).as(alias)`, a scalar subselect over one column with
+no callee unit and no edge, so it is a `Project` term whose expression happens to be a subselect. The term
+algebra therefore covers columns, aliased columns, scalar subselects, aggregates, and helper invocations.
 
 **Two kinds, because provenance is not a distinction.** Read off what the current arms emit: a scalar column
 adds `table.TITLE`; a composite adds N of those; a direct `@reference` adds `table.COL.as(alias)`; a remote
