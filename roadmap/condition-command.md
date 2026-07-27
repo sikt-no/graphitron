@@ -211,7 +211,11 @@ same relation instead of re-composing the fold.
   whose live filter set is nonempty, plus the participant-filter rows interface/union roots expand
   to. The `boundary` slot is present exactly when the coordinate is in the root SELECT family (the
   same derived fact R541 states: a `RootField` whose operation is `Fetch` / `Paginate` / `Lookup`
-  with a table-shaped target). No exemption list anywhere.
+  with a table-shaped target). No exemption list anywhere. The participant expansion also decides the
+  relation's key, and the sketch's "the relation's key" comment is honest only once this is said: a
+  participant row keys on `(coordinate, participant)` and carries the participant's table as its
+  `TableRef`, while every other row keys on the coordinate alone. Stated up front, "exactly one per
+  key" stays structural instead of quietly false for interface and union roots.
 - **Facet fragments are masked renderings, not new commands.** Which fragments exist
   (`<field>FacetBaseCondition`, one `<field>Facet_<g>Condition` per facet input) and which parameter
   slots each masks to `null` are producer decisions carried on the command; the boundary renderer
@@ -280,10 +284,16 @@ naming vocabulary out of `compile/`. Nothing here starts before that lands.
    facet fragments as masked renderings, the outer-argument lift, FK-target aliasing. The name lift
    completes here: the four recomputation sites in `TypeFetcherGenerator` and `buildConditionCall`'s
    formula read minted `UnitRef`s, and `conditionMethodName` / `facetBaseConditionMethodName` /
-   `facetConditionMethodName` retire.
+   `facetConditionMethodName` retire. The family's migration dial closes here, windowless: the
+   membership enforcer (the derived fact's true-set, live filter set nonempty plus the participant
+   expansion, equals the relation's key-set) lands in the same commit that retires the generator,
+   per R549 recipe step 6.
 3. **The launcher handshake.** `LauncherCommand.where` resolves as a `UnitRef` into this relation
    (jointly with R541 slice 1; see fork 4 for the ordering). The cross-kind edge appears in the edge
-   view, typed emitted-or-external, and the plan-time closure check covers it.
+   view, typed emitted-or-external, and the plan-time closure check covers it. A covered launcher
+   coordinate whose live filter set is empty has no row in this relation; the launcher's `where`
+   slot is absent there and its renderer composes the neutral condition, so absence is data rather
+   than an inline escape hatch.
 
 ## Acceptance
 
@@ -291,9 +301,14 @@ naming vocabulary out of `compile/`. Nothing here starts before that lands.
   equivalence pin suite covers the WHERE clauses of the covered root shapes once both items are in
   flight, and the existing condition execution tests (`GraphQLQueryTest`,
   `MultiTableFilterExecutionTest`, the fixtures in `graphitron-sakila-service`'s conditions package)
-  pin the rest. Where slice 1 changes emitted Java shape (parameter names), SQL does not move.
+  pin the rest. Where slice 1 changes emitted Java shape (parameter names), SQL does not move. Per
+  R549 recipe step 6, a SQL-neutral cutover wants its exact-SQL pin authored before the cutover, so
+  if R541's suite is not yet in place when slice 2 cuts over, this item authors exact-SQL WHERE pins
+  for the covered root shapes itself rather than leaning on execution assertions that are
+  substring-shaped.
 - **The relation is non-vacuous and correctly bounded.** Every conditions-bearing coordinate in the
-  corpus appears exactly once; coordinates whose live filter set is empty appear zero times; the
+  corpus appears exactly once (once per participant where the interface/union expansion applies, per
+  the key stated in the design); coordinates whose live filter set is empty appear zero times; the
   `boundary` slot is present exactly on the root SELECT family and absent elsewhere.
 - **The two absorbed defects have fixtures.** R472's nested generated condition compiles and
   executes (or, if the nested walk is deferred, fails the build as a deferred rejection rather than

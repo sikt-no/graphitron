@@ -163,7 +163,7 @@ composition does not care who invokes it.
       Coordinate coordinate,    // the relation's key, with operation
       TableRef table,           // the table this query runs against
       UnitRef projection,       // the projection unit whose $project supplies the select list
-      ConditionRef where,       // the emitted condition method; see the conditions fork below
+      ConditionRef where,       // the condition unit; absent composes the neutral condition (fork 1)
       List<OrderTerm> orderBy,
       Pagination pagination,    // None | Seek
       Invocation invocation,    // Direct | FannedOverTenants
@@ -302,7 +302,13 @@ composition does not care who invokes it.
    not hold for this edge and the honest guard is the name-level closure oracle, which is weaker and
    should be said plainly. The reading that keeps the typed claim is that the producer mints the covered
    family's condition rows alongside its launcher rows, which is what "completes the conditions migration
-   for the covered family" should be taken to mean.
+   for the covered family" should be taken to mean. R552 (the condition command) has since been filed and
+   gives that reading its owner: it produces the condition relation wholesale, this slot resolves as a
+   `UnitRef` into it, and its fork 4 records the sequencing (R552 slices 1 and 2 land before or with this
+   item's slice 1; if this item lands first, option (a) stands as written and R552's slice 2 shrinks to
+   re-homing what it built). A covered coordinate whose live filter set is empty has no condition row at
+   all; the slot is then absent and the renderer composes the neutral condition, so absence is data
+   rather than an escape hatch.
 2. **The lookup root.** `QueryLookupTableField.lookupMethodName()` is already regime-1 and its unit
    already exists, so it is the one covered coordinate that starts with a name. Recommendation: the
    producer computes its `UnitRef` like every other row and keeps emitting `lookup<Field>` unchanged,
@@ -377,7 +383,7 @@ vocabulary itself. The SQL equivalence pin suite is authored against post-slice-
   boundaries, so its In Review hand-off states what it found: whether `extras` absorbed the connection
   root's cursor columns cleanly, whether the conditions fork held, and whether the `UnitRef` edge shape
   survived contact with a second command kind. A slice-3c that reports nothing has not been read carefully, because slice 5
-  generalises from exactly these two proofs.
+  generalises from the three proofs together (slice 3, this item, and R552's condition command).
 
 ## Retired vocabulary
 
@@ -402,7 +408,8 @@ diff inside its own family, which is what a proof of concept wants.
 - The child path. Its batched invocation arm, `RowsMethodSkeleton`, and `RowsMethodBody` are untouched,
   and folding the child family into the relation is slice 5's work.
 - Lifting `$fields` to regime 1 (row 2), and the conditions half-migration (row 5) **beyond the covered
-  family**. Fork 1 pulls a bounded slice of row 5 in; the rest is separately tracked.
+  family**. Fork 1 pulls a bounded slice of row 5 in; the rest is R552's, which owns the family
+  wholesale and records the two items' sequencing in its fork 4.
 - Multi-table polymorphic stage 1 (outside the covered family by the derived fact; note 4
   above) and the hand-rolled polymorphic loader registration.
 - Root DML chains (not SELECT launchers; their reentry SELECT is already covered by R314).
