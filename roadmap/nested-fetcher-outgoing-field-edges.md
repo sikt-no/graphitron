@@ -163,8 +163,9 @@ from coordinates while the emit contains methods no coordinate exposes, so such 
 to `CompileDependencyGraphBuilder` by construction. That whole class dissolves if the dependency graph
 becomes a projection over a core-produced command relation (nodes grouped by unit, edges projected to
 unit granularity), because a command exists per method emitted rather than per coordinate found. See
-the "recompile graph is a duplicate" section of R546 and
-`roadmap/audits/2026-07-26-fcis-command-layer-distance.md`.
+gap 7 ("the recompile graph is a second derivation of the same relation") in
+`roadmap/audits/2026-07-26-fcis-command-layer-distance.md`, which carries the full argument and its
+caveats, and slice 7 of R549.
 
 Consequence for whoever implements this: a targeted fix for the shapes named above is the right size,
 and per-field edge sourcing over nested types wanting "its own design" (per the Problem section) should

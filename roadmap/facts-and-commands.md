@@ -172,7 +172,7 @@ for pinning it.
 |---|---|
 | R333 (Ready) | governs. This item consumes its model and does not re-litigate it. The fourth-reader note in its consumers section is the corpus's stake in the re-sourcing |
 | R545 (Backlog) | becomes slice 2's invariant 3. Stays as filed; it is a precondition, not an independent win |
-| R546 (Backlog) | **should be re-scoped or discarded in favour of slice 5.** Its Spec question "what shape should `MethodCommand` grow into" is answered by this reframing: it should not grow, because the hierarchies are the commands and a parallel four-string record is exactly the intermediary model this programme says we do not need. Its recompile-graph justification survives intact and moves to slice 7, and its abandon condition survives and moves here |
+| R546 (Discarded 2026-07-27) | absorbed here. It asked what shape `MethodCommand` should grow into, and this reframing answers "none": the hierarchies are the commands, so a parallel four-string record is exactly the intermediary model this programme says is unnecessary. Its flow-inversion scope became slice 5, its recompile-graph justification became slice 7 (full argument in the audit's gap 7), and its abandon condition became this item's |
 | R543 (Backlog) | slice 8. Its fact half needs slice 4, its command half needs slice 5 |
 | R544 (Backlog) | independent, and this reframing strengthens it: the error-channel hierarchies are a first-class fourth kind at 43 permits, so pinning them declaratively is model work, not only test hygiene |
 | R541 (Spec) | first family to flip under slice 5, already spending the command registry |
