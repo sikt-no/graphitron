@@ -68,7 +68,7 @@ independence or measured multiplicity, never on aesthetics.**
 
 | relation | key | where it lives today |
 |---|---|---|
-| global commands | unit kind | the roughly twenty `write(...)` calls in `GraphQLRewriteGenerator.runPipeline`, including an inline `federationLink && usesOneOf` gate |
+| global commands | unit kind | the roughly thirty `write(...)` calls in `GraphQLRewriteGenerator.runPipeline`, including an inline `federationLink && usesOneOf` gate |
 | type-keyed commands | `(typeName, unitKind)` | 24 generator entry points that each loop the schema asking "should I emit my kind for this type", with the naming vocabulary already centralised as data in `compile/GeneratedUnits` (`typeClass`, `fetchers`, `conditions`, `inputRecord`, `schemaShape`, plus `singleton` / `rootUnit` for globals) |
 | coordinate-keyed commands | `(coordinate, operation)` | `Operation`'s minted arms, plus `MethodCommandRegistry`'s four-string records minted during rendering |
 
@@ -416,7 +416,7 @@ is already wrong.
 | 3b | The type-keyed relation `(typeName, unitKind)` replaces the 24 generator predicates, one kind at a time | inverts "should I emit" from 24 independent loops into one relation the shell folds over; renderers barely move, and the unit vocabulary already landed with slice 3 | medium |
 | 4 | Fact-visitor engine: one shared traversal dispatching to per-fact visitors, on the `LintEngine` pattern, with the registry-coverage meta-test, one genuinely independent fact as beachhead | dissolves the central switch that made `FieldBuilder` the largest file in the tree, using an architecture that already shipped here | medium |
 | 5 | Coordinate-keyed command relation: `Operation` rows become the command set the shell consumes; `MethodCommandRegistry`'s parallel four-string record retires into it | this is where the flow finally inverts from shell-asks-core to core-tells-shell | medium |
-| 6 | Grain repair, worked from the exemption lists | 21 stated data points about where the grain is wrong, already written down with reasons | medium |
+| 6 | Grain repair, worked from the exemption lists | 19 stated data points about where the grain is wrong, already written down with reasons | medium |
 | 7 | The recompile graph becomes a projection over the command relation, retiring `CompileDependencyGraphBuilder`'s coarsening switch; R10's rebuild drop lands once connection synthesis is a relation | removes the largest duplicate derivation and with it a recurring bug class (R455, R459, R462) | high |
 | 8 | The corpus asserts facts, then commands (R543) | the payoff that justifies the command half at all, and it wants the relations to exist first | medium |
 
@@ -437,7 +437,7 @@ not after.
 
 ## The exemption lists are the grain worklist
 
-`VariantCoverageTest.NO_CASE_REQUIRED` (14 entries) and `ClassifiedDslTest.OPERATION_KNOWN_GAPS` (7) each
+`VariantCoverageTest.NO_CASE_REQUIRED` (13 entries) and `ClassifiedDslTest.OPERATION_KNOWN_GAPS` (6) each
 state why something the model declares cannot be reached at the grain a test walks. Read as a set rather
 than one at a time, they should partition into (a) genuinely unimplemented behaviour, (b) synthesised
 things with no SDL origin, and (c) things riding another row's list rather than their own key. Category (c)
@@ -464,7 +464,7 @@ for pinning it.
 | R546 (Discarded 2026-07-27) | absorbed here. It asked what shape `MethodCommand` should grow into, and this reframing answers "none": the hierarchies are the commands, so a parallel four-string record is exactly the intermediary model this programme says is unnecessary. Its flow-inversion scope became slice 5, its recompile-graph justification became slice 7 (full argument in the audit's gap 7), and its abandon condition became this item's |
 | R543 (Backlog) | slice 8. Its fact half needs slice 4, its command half needs slice 5 |
 | R544 (Backlog) | independent, and this reframing strengthens it: the error-channel hierarchies are a first-class fourth kind at 43 permits, so pinning them declaratively is model work, not only test hygiene |
-| R541 (Spec) | first family to flip under slice 5, already spending the command registry |
+| R541 (Ready) | first family to flip under slice 5, already spending the command registry |
 | R516 (Ready, priority 2) | **dependency of slice 3.** It deletes the `reservedFullRow` axis and the reserved-alias scheme, which is the one demand no parent-owned fact can serve, and it ships independently as correctness work. Its force-include of PK plus node key is an interim expression that slice 3 converts to a gated `Project` arm, and the node-key half is redundant once the `id` arm projects those columns; its scope item 5 (update `ParentProjectionContainmentCheck`) should be the minimum that keeps the check honest, since slice 3 deletes it |
 | R462 (Spec) | fix by hand now, do not generalise; slice 7 dissolves its class. Advisory already noted on the item. Its Spec body cites `GraphitronSchemaValidator.NESTED_WIREABLE_LEAVES`, which no longer exists under that name anywhere in main or test, so the implementer must re-derive the current nested-leaf bound rather than trusting the citation |
 | R10 (Backlog) | dependency of slice 7. Its own body says it wants "a concrete signal"; the fact engine making connection synthesis a relation is that signal |
