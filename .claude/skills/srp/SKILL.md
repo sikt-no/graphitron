@@ -76,7 +76,7 @@ For other statuses (Backlog, Ready, In Progress), no formal review handoff appli
 
 ## Template design intent
 
-Both templates are goal + hard invariants + pointers, deliberately. They state the question the gate answers, the mechanical facts a fresh session cannot infer (sync-first, the reviewer rule, the two outcomes and their state-machine actions, non-inferable project facts), and where the judgment materials live. They do not prescribe a reading order, an assessment rubric, or a per-finding output format: rubrics get completed rather than thought about, and the fresh-context reviewer exists to apply independent judgment. When editing the templates, prefer deleting instructions over adding them; do not re-accrete checklists.
+Both templates are goal + hard invariants + pointers, deliberately. They state the question the gate answers, the mechanical facts a fresh session cannot infer (sync-first, the reviewer rule, the two outcomes and their state-machine actions, non-inferable project facts), and where the judgment materials live. The stated goal is improvement, not just gatekeeping: the reviewer is asked for opportunities that would make the item land better alongside blocking problems, with the verdict keeping the two distinct. They do not prescribe a reading order, an assessment rubric, or a per-finding output format: rubrics get completed rather than thought about, and the fresh-context reviewer exists to apply independent judgment. When editing the templates, prefer deleting instructions over adding them; do not re-accrete checklists.
 
 ## Spec-stage template
 
@@ -84,9 +84,10 @@ Emit this as a fenced ```text``` block, replacing the `{{...}}` tokens.
 
 ````text
 You are an independent reviewer doing the Spec → Ready sign-off on roadmap item
-{{Rn}} in graphitron-rewrite. The gate answers one question: would you hand
-this plan to an implementer as-is? Either flip the status to Ready, or request
-specific revisions (the item stays in Spec for another pass).
+{{Rn}} in graphitron-rewrite. The review exists to help this item land as well
+as it can, and the gate answers one question: would you hand this plan to an
+implementer as-is? Either flip the status to Ready, or request specific
+revisions (the item stays in Spec for another pass).
 
 Repo:    {{repo-root}}
 Spec:    {{spec-path}}  (id: {{Rn}}, title: {{title}}, status: Spec)
@@ -146,9 +147,13 @@ catches mismatches that partial-name searches miss.
    author. Use the `roadmap` skill for a recorded Spec → Spec revise
    transition if needed.
 
-Report what materially bears on the go/no-go, anchored so the author can act
-on it. A clean spec is a valid outcome; say so plainly instead of inventing
-findings. End with an unambiguous verdict and what happens next.
+Surface opportunities as well as problems: a stronger shape, a simpler path,
+sharper coverage. Keep the two distinct in your report; a problem blocks
+sign-off, an opportunity is the author's call and does not, and new scope
+belongs in a fresh Backlog item rather than in this verdict. Report what
+materially bears on the decision, anchored so the author can act on it. A
+clean spec is a valid outcome; say so plainly instead of inventing findings.
+End with an unambiguous verdict and what happens next.
 ````
 
 ## Implementation-stage template
@@ -157,10 +162,10 @@ Emit this as a fenced ```text``` block, replacing the `{{...}}` tokens.
 
 ````text
 You are an independent reviewer doing the In Review → Done approval on roadmap
-item {{Rn}} in graphitron-rewrite. The gate answers one question: does the
-delivery honor the contract the spec set? Either approve (the item ships and
-its spec file is deleted), or request rework (status flips back to Ready for
-another pass).
+item {{Rn}} in graphitron-rewrite. The review exists to help this item land as
+well as it can, and the gate answers one question: does the delivery honor the
+contract the spec set? Either approve (the item ships and its spec file is
+deleted), or request rework (status flips back to Ready for another pass).
 
 Repo:    {{repo-root}}
 Spec:    {{spec-path}}  (id: {{Rn}}, title: {{title}}, status: In Review)
@@ -231,10 +236,13 @@ grep, read the diff and the code around it.
    capture the review feedback in the spec body for the next pass. The
    reviewer rule applies again next cycle.
 
-Report what materially bears on the go/no-go, anchored (file:line) so the
-implementer can act on it. A clean delivery is a valid outcome; say so
-plainly instead of inventing findings. End with an unambiguous verdict and
-what happens next.
+Surface improvement opportunities as well as defects, and keep them distinct:
+a broken contract or invariant means rework, while an improvement the contract
+does not demand becomes a follow-up Backlog item (any session can file one)
+rather than a reason to hold the gate. Report what materially bears on the
+decision, anchored (file:line) so the implementer can act on it. A clean
+delivery is a valid outcome; say so plainly instead of inventing findings.
+End with an unambiguous verdict and what happens next.
 ````
 
 ## Output rules
