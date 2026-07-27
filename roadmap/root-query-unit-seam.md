@@ -105,6 +105,20 @@ The root-side SQL anchors and their current factoring, all in `TypeFetcherGenera
   already the named `rows<Name>` companion R314 landed (minted via
   `MethodCommandRegistry.declareDmlReentryRowsMethod`).
 
+**The WHERE clause is already factored for most of the family** (corrected 2026-07-27 during Spec
+review; the earlier draft of this item claimed the opposite and posed fork 1 on that claim). Four of
+the five root shapes emit `Condition condition = <RootType>Conditions.<field>Condition(tableLocal, env)`
+through the shared `TypeFetcherGenerator.buildConditionCall`: the plain root, the connection root, the
+fanned root, and the single-table-interface root. `QueryConditionsGenerator` emits those methods, over
+exactly `QueryTableField` and `QueryTableInterfaceField`, as the env-aware shim composing
+`TypeConditionsGenerator`'s pure entity-scoped condition functions. The emitted output confirms it
+(`QueryFetchers.films` reads `Condition condition = QueryConditions.filmsCondition(filmTable, env);`).
+The two shapes that do not call one: the routine root, which carries no field-level filter surface at
+all and emits no condition, and the lookup root, whose `buildQueryLookupRowsMethod` genuinely does
+compose `DSL.noCondition()` and fold `field.filters()` into it inline. The stale
+`var condition = DSL.noCondition();` in `buildQueryTableFetcher`'s javadoc example does not match what
+that method emits three statements later, and is the likely source of the earlier draft's error.
+
 The child path, for contrast, is fully factored: `RowsMethodSkeleton.build` frames every
 `rows<X>` / `load<X>` as `public static <Ret> <name>(keys, env)` (the `dsl` local is emitted
 inside from `TenantDslEmitter`; the selection set rides `env`), the body is the sealed
@@ -126,7 +140,11 @@ Model facts in place: `Source.Root` (`Root.Query` / `Root.Mutation`, the emit-st
 `SqlGeneratingField` (`returnType()` / `filters()` / `orderBy()` / `pagination()`) is the
 capability that already spans root and child: implemented by `QueryTableField`,
 `QueryLookupTableField`, `QueryTableInterfaceField` and all `ChildField.TableTargetField`
-variants; `TypeConditionsGenerator` already dispatches on it. `BatchKeyField` (which carries
+variants; `TypeConditionsGenerator` already dispatches on it. It does **not** span the whole covered
+family, though: `QueryRoutineTableField` implements `RoutineChainField` and not `SqlGeneratingField`,
+carrying no `filters()` / `orderBy()` / `pagination()` at all, so the producer cannot read the family's
+composition off one capability and slice 4 has to source the routine root's slots from its
+`RoutineChain`. `BatchKeyField` (which carries
 `rowsMethodName()`) is child-only by construction: its other members (`sourceKey()`,
 `loaderRegistration()`) are inherently child-shaped, so the root unit needs its own naming fact,
 not a forced retrofit.
@@ -284,31 +302,45 @@ composition does not care who invokes it.
 
 ## Design forks for the Spec reviewer
 
-1. **How the launcher carries its WHERE clause.** This is the one fork the command reframing creates,
-   and it is the item's real design question. Conditions are a half-migration today (R333 row 5):
-   `TypeConditionsGenerator` emits named condition methods for some sites, while the root builders
-   compose `var condition = DSL.noCondition()` inline and hand the local to `.where(condition)`. Options:
-   (a) the launcher carries a `ConditionRef` naming an emitted condition method, which means this item
-   completes the conditions migration **for the covered family only**; (b) the launcher carries a
-   `ConditionRef` where one exists and an opaque "compose inline as today" arm otherwise.
-   Recommendation: (a). Option (b) puts a rendered-code escape hatch inside a command, which is R545's
-   offender pattern arriving in the very layer built to be free of it, and it would make the launcher
-   command a bad proof of concept precisely where the proof matters. The cost of (a) is honest and
-   should be weighed: it pulls a bounded slice of row 5 into this item, and R549 currently lists row 5
-   as out of scope, so signing off on (a) means accepting that scope growth. The bound is the covered
-   family, nothing wider. One thing (a) must still decide and state: who mints the `ConditionRef`. If the
-   covered family's condition methods remain emitted by the unmigrated `TypeConditionsGenerator`, the ref
-   cannot be minted by the plan's naming vocabulary, so "an unresolvable callee is unrepresentable" does
-   not hold for this edge and the honest guard is the name-level closure oracle, which is weaker and
-   should be said plainly. The reading that keeps the typed claim is that the producer mints the covered
-   family's condition rows alongside its launcher rows, which is what "completes the conditions migration
-   for the covered family" should be taken to mean. R552 (the condition command) has since been filed and
-   gives that reading its owner: it produces the condition relation wholesale, this slot resolves as a
-   `UnitRef` into it, and its fork 4 records the sequencing (R552 slices 1 and 2 land before or with this
-   item's slice 1; if this item lands first, option (a) stands as written and R552's slice 2 shrinks to
-   re-homing what it built). A covered coordinate whose live filter set is empty has no condition row at
-   all; the slot is then absent and the renderer composes the neutral condition, so absence is data
-   rather than an escape hatch.
+1. **How the launcher carries its WHERE clause.** Re-posed 2026-07-27 against the corrected topology
+   walk above; the earlier framing (root builders compose conditions inline, so option (a) drags a slice
+   of R333 row 5 into scope) was false, and the fork is both smaller and sharper than it read.
+
+   What row 5 actually records is a **naming-regime** half-migration, not a missing seam: the seam is
+   already cut for four of the five shapes, and the row's open issue is "finish lift
+   (`QueryConditionsGenerator` end)", meaning the method name is R2, the `<field>Condition` formula
+   reconstructed independently at both ends (`QueryConditionsGenerator.conditionMethodName` mints it,
+   `TypeFetcherGenerator.buildConditionCall` recomputes it). So option (a), the launcher carrying a
+   `ConditionRef`, *is* that lift for the covered family: the producer mints the name once, the launcher
+   renderer reads it, and `QueryConditionsGenerator` reads it instead of recomputing it. Recommendation:
+   (a), and it should be taken as the default rather than as a weighed scope expansion. Option (b)'s
+   "compose inline as today" arm describes a state only the lookup root is in, so it would put a
+   rendered-code escape hatch in a command to serve one coordinate that slice 5 handles anyway.
+
+   The "who mints the `ConditionRef`" worry largely dissolves with the premise. The name is fully
+   derivable from the coordinate today (`<parentTypeName>Conditions.<fieldName>Condition`), so the plan
+   can mint a typed ref for every covered coordinate that has a condition method, and the typed-closure
+   claim holds for this edge. Two residuals remain, both bounded and both to be stated in the
+   implementation rather than discovered:
+
+   - `QueryConditionsGenerator` stays unmigrated and must be edited to *consume* the plan-minted name
+     rather than compute it, or the second locus survives and the lift is nominal. This is the fork's
+     real cost, and it is small.
+   - The routine root has no condition method at all and the lookup root's is inline, so `ConditionRef`
+     is not total over the family. Model the absent case as absence (an empty or optional ref), not as an
+     opaque inline arm. The same reading covers a covered coordinate whose live filter set is empty: it
+     has no condition row, the slot is absent, and the renderer composes the neutral condition, so
+     absence is data rather than an escape hatch.
+
+   R552 (the condition command) has since been filed and gives the lift its owner: it produces the
+   condition relation wholesale, this slot resolves as a `UnitRef` into it, and its fork 4 records the
+   sequencing (R552 slices 1 and 2 land before or with this item's slice 1; if this item lands first,
+   option (a) stands as written and R552's slice 2 shrinks to re-homing what it built). R552's own walk
+   reaches the same conclusion this correction does, naming `buildConditionCall`'s re-derivation as the
+   R2 end row 5 wants lifted, so the two items now agree.
+
+   See fork 5: the faceted connection root needs more than one condition reference, so the single
+   `ConditionRef where` slot in the sketch is under-modelled regardless of how this fork resolves.
 2. **The lookup root.** `QueryLookupTableField.lookupMethodName()` is already regime-1 and its unit
    already exists, so it is the one covered coordinate that starts with a name. Recommendation: the
    producer computes its `UnitRef` like every other row and keeps emitting `lookup<Field>` unchanged,
@@ -326,6 +358,26 @@ composition does not care who invokes it.
    Folding them in later means extending the fact, which belongs with a dedicated
    polymorphic-emit item (that family also carries the documented hand-rolled loader carve-out);
    this item stays a seam extraction, not a polymorphic redesign.
+5. **The connection root's carrier plan, which the command sketch has no slot for.** Raised
+   2026-07-27 during Spec review. `buildQueryConnectionFetcher` emits more than the page SELECT. It binds
+   `(tableLocal, condition)` onto the `ConnectionResult` carrier so the lazy `totalCount` resolver can
+   issue `dsl.selectCount().from(cr.table()).where(cr.condition())` on selection, and for a faceted
+   carrier it additionally binds `facetBase`, a `Map<String, Condition>` of per-facet conditions, and a
+   `List<FacetSpec>`, which `ConnectionHelper.facets` turns into a UNION ALL of per-facet GROUP BY arms.
+   The fragments come from `QueryConditionsGenerator.facetBaseConditionMethodName` and
+   `facetConditionMethodName`. This is not hypothetical: `Query.filmsFaceted` in the sakila corpus is a
+   faceted connection root with execution-tier coverage.
+
+   `LauncherCommand` as sketched carries one `ConditionRef where` and a payload-free
+   `ResultShape.ConnectionResult`, so it can express none of that. Three consequences the implementer
+   should not have to discover mid-slice: slice 2 is scoped to `Pagination.Seek` and `extras`, which is
+   the easy half of that builder; the "thinness is a type property" acceptance does not hold for
+   connection roots while the carrier binding is renderer knowledge rather than command data; and the
+   equivalence pin's statement-count claim is only as good as whether a faceted query and a
+   `totalCount` selection are in the representative set. Recommendation: put the carrier plan on the
+   `ConnectionResult` arm (the base condition ref, the per-facet ref map, the facet specs), which is
+   also what the Pagination/ResultShape fold above wants the arm to be carrying anyway. Deciding it here
+   is cheaper than deciding it inside slice 2.
 
 ## Slices
 
@@ -341,7 +393,10 @@ vocabulary itself. The SQL equivalence pin suite is authored against post-slice-
 2. **Connection root.** `buildQueryConnectionFetcher`, which is where `Pagination.Seek` and the
    `extras` slot first carry weight. If the connection helper's `selectFields` union does not decompose
    into "projection command output plus launcher extras", that is the R549 boundary failing, and it
-   fails here first.
+   fails here first. This slice also carries the `ConnectionResult` carrier plan (fork 5): the
+   `(table, condition)` binding the lazy `totalCount` resolver reads, and the facet base plus per-facet
+   condition fragments and specs a faceted carrier binds. Size the slice for that; it is the larger half
+   of this builder, not a detail of it.
 3. **Fanned root.** The `FannedOverTenants` arm and its call-site wrapper. This is the slice that
    demonstrates strategy-as-data, since the fanned and plain rows differ in one field.
 4. **Routine + single-table-interface roots.** The two shapes with extra moving parts (routine table
@@ -359,6 +414,11 @@ vocabulary itself. The SQL equivalence pin suite is authored against post-slice-
   `RootQueryUnitSqlEquivalenceTest`), following the existing per-test-class `SQL_LOG` `ExecuteListener`
   idiom (`GraphQLQueryTest` et al.), asserting **exact rendered SQL strings and statement counts**
   (equality, not the `contains` substring form) for one representative query per covered root shape.
+  "Per covered root shape" is a floor, not the whole set: the connection root launches up to three
+  statement families from one coordinate (the page query, `totalCount`'s `selectCount`, and a faceted
+  carrier's UNION ALL), so the representative set must include a query that selects `totalCount` and one
+  against a faceted carrier (`Query.filmsFaceted` in the corpus), or the statement-count half of the pin
+  is silent exactly where the cutover carries the most risk.
   Because this item now lands after R549 slice 3, the select list is already in its final form when the
   suite is authored, so the pin covers the whole statement and needs no carve-out for the projection
   half: author it against post-slice-3 output, before slice 1's cutover, and every slice keeps it green
@@ -407,9 +467,10 @@ diff inside its own family, which is what a proof of concept wants.
   adds no new strategy itself.
 - The child path. Its batched invocation arm, `RowsMethodSkeleton`, and `RowsMethodBody` are untouched,
   and folding the child family into the relation is slice 5's work.
-- Lifting `$fields` to regime 1 (row 2), and the conditions half-migration (row 5) **beyond the covered
-  family**. Fork 1 pulls a bounded slice of row 5 in; the rest is R552's, which owns the family
-  wholesale and records the two items' sequencing in its fork 4.
+- Lifting `$fields` to regime 1 (row 2), and row 5's naming lift **beyond the covered family**. Fork 1
+  finishes the `QueryConditionsGenerator`-end lift for the covered family's coordinates only; the rest,
+  including every child-side and polymorphic-participant condition method, is R552's, which owns the
+  family wholesale and records the two items' sequencing in its fork 4.
 - Multi-table polymorphic stage 1 (outside the covered family by the derived fact; note 4
   above) and the hand-rolled polymorphic loader registration.
 - Root DML chains (not SELECT launchers; their reentry SELECT is already covered by R314).
