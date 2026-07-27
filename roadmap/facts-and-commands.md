@@ -35,13 +35,17 @@ The discriminator is not subject matter, it is **how a row comes to exist**: wal
 | walked facts | read off the SDL or catalog by a traversal | `Source`, `Target`, `TargetShape`, `TenantBinding`, `ScalarResolution`, `ProducerBinding`, 19 of `GraphitronType`'s 24 permits |
 | resolved views | a coalesce or inference over facts, with no walk of its own | `JoinStep` / `On`, the `reference` resolution, `resolvedTable` |
 | commands | minted at emit grain from facts | `Operation` (19 permits), `BodyParam`, `DmlReturnExpression`, `CallSiteExtraction`, `OrderBySpec`, `RowsMethodShape` |
-| the walk's error channel | neither fact nor command, the `Err` arm of classification | `Rejection` (14), `PivotError` (12), `UpdateRowsError`, `ServiceMethodCallError`, `ErrorChannelWalkerError` |
+| the walk's error channel | facts minted by the gathering pass rather than read off a traversal, the `Err` arm of classification | `Rejection` (14), `PivotError` (12), `UpdateRowsError`, `ServiceMethodCallError`, `ErrorChannelWalkerError` |
 
 `Operation` is the proof that commands are already written: R333 describes its members as *minted by
 triggers* (a table-bound return type mints `select`, pagination args mint `paginate`, `@condition` mints
 `condition`, `join` is minted by the `reference` fact), which is derivation at emit grain, not a fact
-anybody walks for. The error-channel kind is a genuine fourth: 43 permits across five seals, larger than
-`Operation`, and neither walked nor minted at emit grain.
+anybody walks for. The error-channel kind is a genuine fourth at 43 permits across five seals, larger than
+`Operation`, but it is still inside the fact base: the development principles say rejections are facts too,
+located violations asserted once and rendered into views. What distinguishes the kind is provenance (minted
+by the gathering pass, not read off SDL or catalog), not membership, and its grain is the located violation
+keyed by location plus code. Stated that way, invariant 2's grain-and-home rule covers all 43 permits with
+no exemption.
 
 ## Grain decides what a leaf can hold
 
@@ -111,7 +115,7 @@ currently express.
 
 ```java
 record ProjectionCommand(
-    String unit,                       // types.Film, or a nesting type's own unit
+    UnitRef unit,                      // types.Film, or a nesting type's own unit
     TableRef table,                    // the table whose columns the contributions name
     List<Contribution> contributions)  // every one gated on client selection
 {}
@@ -119,8 +123,8 @@ record ProjectionCommand(
 sealed interface Contribution {
     /** Terms this unit builds from its own table context. */
     record Project(String resultKey, List<SelectTerm> terms)          implements Contribution {}
-    /** Terms another projection unit decides. */
-    record Call(String resultKey, String calleeUnit, CallWrap wrap)   implements Contribution {}
+    /** Fields another projection unit decides. */
+    record Call(String resultKey, UnitRef callee, CallWrap wrap)      implements Contribution {}
 }
 
 sealed interface CallWrap {                            // how the callee's fields arrive
@@ -134,9 +138,17 @@ adds `table.TITLE`; a composite adds N of those; a direct `@reference` adds `tab
 one adds `DSL.field(DSL.select(ref.COL)...).as(alias)`; a computed field adds `Helper.method(args).as(...)`;
 a pivot adds a multiset of `max(...).filterWhere(...)` terms; a batched or `@service` child needs its
 correlation columns added. Every one of those is "add these terms when this field is selected", differing
-only in how the term expression is built. The two that genuinely differ are the ones whose terms another
-unit decides, which is what `Call` is for. Modelling a correlation key, a node key, a service key and a
+only in how the term expression is built. The discriminator for `Call` is stated precisely: **the callee is
+a projection unit**, whose contribution list merges into this one. "Another unit decides the terms" is not
+it, because a scalar `@reference` also reaches rows this unit does not own yet names no unit (see below).
+Modelling a correlation key, a node key, a service key and a
 plain scalar as separate contribution kinds records *why* a column is wanted, which nothing downstream needs.
+
+**Unit identity is typed.** `UnitRef` is minted only by the plan's naming vocabulary (`GeneratedUnits`, once
+slice 3 moves it out of `compile/`), never parsed from a string, so a `Call` naming a unit no producer
+committed is unrepresentable rather than a test failure. That is the lesson of retiring
+`MethodCommandRegistry`'s four-string record: reproducing it as a record of three strings would reproduce
+the diagnosis, and invariant 4's oracle then narrows to the cross-family names the type cannot yet carry.
 
 `Splice` versus `Multiset` is likewise not provenance: it is whether the callee projects the **same row** (a
 nesting unit, so its terms merge into this list) or **other rows** (a child table, so its terms sit inside a
@@ -150,14 +162,20 @@ in the parent SELECT, the only available home was an unconditional append at the
 the origin of the whole category, and of the chain that widened it (R425 force-included, R426 promised the
 full row, R436 built the reserved-alias scheme, R516 narrows it back). The missing arm is an ordinary `Project`
 contribution carrying the correlation columns: project them when the child is selected, project nothing when
-it is not.
+it is not. One constraint makes that arm safe to trust: **its column list is read from the same accessors the
+extraction emitter consumes** (`BatchKeyField.sourceKey()`, `ParentRowDemand.parentRowColumns()`), so supply
+and demand are single-sourced rather than derived twice and compared.
 
 Consequences, all of them things that stop existing rather than things that get built:
 
 - The required-projection walk (`TypeClassGenerator.collectRequiredProjection`) has nothing left to
   discover, since no demand crosses a key without travelling through a call.
-- `ParentProjectionContainmentCheck` loses its subject. It throws `IllegalStateException` at generation
-  time today to catch a demand omitted from an append; with demand co-located in arms there is no append.
+- `ParentProjectionContainmentCheck` loses its subject, for the single-sourcing reason and not merely the
+  exhaustiveness one. The check cross-checks two *independent* derivations of the key columns (its javadoc
+  states the independence as a hard requirement), and exhaustive dispatch alone would not replace it: the
+  shipped bug it guards against was an arm projecting the wrong column subset, which a coverage check
+  cannot see. What deletes it is the constraint above, that the correlation arm and the extraction emitter
+  read the same accessors, so only one derivation remains and there is nothing left to compare.
 - Over-projection goes away as a runtime effect. A query selecting only `title` on a type with three split
   children currently projects the union of all their keys.
 - Node key columns need no forcing. Node-id-ness is a wrap applied at the fetcher value, not in the SELECT
@@ -180,7 +198,8 @@ come from:
 Two details from the current emit that the wrap axis has to respect. `DSL.multiset(...)` is used
 **uniformly for both cardinalities**, deliberately, because jOOQ 3.20's `DSL.row(Collection)` flattens
 nested rows; single cardinality caps the subselect with `.limit(1)` and unwraps the `Result` to its first
-record at read time. So cardinality is a slot on the call (it decides the limit and the read) and never a
+record at read time. So cardinality is a slot on the wrap, as the sketch's `Arity` on `Multiset` has it (it
+decides the limit and the read) and never a
 different wrap, and nobody should later "optimise" a to-one into a row. And a scalar `@reference` is *not* a
 call: it emits `DSL.field(DSL.select(terminal.COL)...).as(alias)`, a scalar subselect over one column with
 no callee unit and no edge, so it is a `Project` term whose expression happens to be a subselect. The term
@@ -202,8 +221,8 @@ because the expressions differ. The `__src_<col>__` reservation goes away with R
 > expression is occurrence-dependent.**
 
 That drops the reader-uniformity alias, because a command tells each end which shape it is rather than
-forcing one convention on both, and it removes `AliasedColumn` from the term algebra: aliasing becomes a slot
-on expression terms, not a term kind.
+forcing one convention on both, and it keeps aliasing out of the term algebra as an arm: the slice-3 term
+type carries the alias as a slot on expression terms, never as a term kind of its own.
 
 **Deduplication then becomes safe, with a stated scope.** A term readable by column identity is added **once**
 no matter how many selected occurrences reference it; an occurrence-dependent term is added per occurrence.
@@ -224,9 +243,13 @@ invocation) and rejects a proposed `CorrelationKeyTerm` on sight, since it rende
 plain column does.
 
 **Edges are a derived view over the command, not a top-level list.** A `Call` names a callee unit, but a
-helper invocation inside a `SelectTerm` is also a reference to a method we emit, so the edge set for closure
-and for the recompile-graph projection is a function that walks contributions *and* terms collecting names of
-emitted methods. Small walk, worth stating so nobody reads the arm list as the complete edge list.
+helper invocation inside a `SelectTerm` is also a reference to a method we emit, so an emitted-method
+reference is one slot that appears on both sides of the `Project`/`Call` split, carried once wherever a
+contribution or term reaches outside this unit. The edge set for closure and for the recompile-graph
+projection is then a **total switch over the `Contribution` and term arm sets with no default arm**, the
+same compile-checked projection seam `CatalogBuilder.projectFieldClassification` is the exemplar for: a new
+arm carrying a method name fails compilation until the edge view covers it, rather than being silently
+missed by a walk somebody remembered as small. Slice 8's corpus projection follows the same rule.
 
 **`__typename` is not a contribution.** The polymorphic path appends it after calling the participant's
 projection, so it is a launcher extra alongside `__idx__` and `__rn__`, and it belongs nowhere in this
@@ -256,7 +279,10 @@ the property to state and hold rather than any claim about how many parents reac
 passes; the only thing that cares about the host is the emitted parameter type, which binds one unit to one
 jOOQ table class. So a nesting type reached from two hosts with different tables is a signature question at
 emit time, not a projection-design question, and it is not a live one today (nesting registration is
-first-wins and `MixedSourceReachIndex` treats a pure nesting target as single reach).
+first-wins and `MixedSourceReachIndex` treats a pure nesting target as single reach). First-wins is a silent
+overwrite, though, not an enforcer, so plan production guards it: minting two `ProjectionCommand`s for one
+unit with differing `TableRef` fails the plan build with a typed rejection, which converts "not live today"
+from an unguarded claim into a guarded one.
 
 **Polymorphic projection needs no folding in.** `MultiTablePolymorphicEmitter` already emits
 `Type.$fields(PolymorphicSelectionSet.restrictTo(env.getSelectionSet(), "Film"), t, env)` per participant
@@ -283,6 +309,16 @@ all of it to `buildTypeSpec(typeName, table, sevenLists..., outputPackage)`. Eve
 is production; the last call is rendering. So slice 3 is mostly a change of shape: the seven positional
 buckets become one ordered `List<Contribution>`, the required projection becomes a gated `Project` arm, the
 containment check goes away, and `buildTypeSpec` becomes `render(ProjectionCommand, RenderContext)`.
+
+**The dispatch partition moves with the dispatch.** `TypeFetcherGenerator.PROJECTED_LEAVES` hand-states
+exactly the leaf set whose projection `$fields` emits inline, and
+`GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` plus `ValidateMojo` rest on that
+four-way partition staying exhaustive and disjoint. Slice 3 relocates the arm set into a producer that the
+generator package cannot import, so leaving the set behind as a hand-maintained restatement would be R268's
+bug class verbatim. The slice re-sources the bucket instead: projected-ness becomes a fact derived from the
+plan (a leaf is projected exactly when the producer mints a contribution for it), the partition test reads
+it from there, and a leaf the producer cannot yet mint for surfaces as a validate-time deferred rejection,
+not a producer-side throw.
 
 The producer reads exactly where the generator reads today, so **slice 3 needs no fact walk**. Slice 4 later
 re-sources the producer onto fact relations and the renderer never notices, which is what makes 3-before-4
@@ -383,8 +419,13 @@ installable as a ratchet at its current value before any migration happens.
    becomes a compile error instead of a forgotten entry in a global append that silently nulls a DataLoader
    key at runtime under a federation `_entities` fetch.
 6. **No unconditional columns in a projection command.** Every contribution is gated on client selection;
-   anything a mechanism needs regardless belongs to a launcher. Checkable as an emit-shape property: a
-   projection method's body has statements outside its selection switch only for the switch scaffolding.
+   anything a mechanism needs regardless belongs to a launcher. Structural, not checked after the fact:
+   every `Contribution` arm carries its result key as a mandatory component, so an ungated contribution is
+   unrepresentable and the compiler is the enforcer, with renderer totality (one emit path per arm, no
+   default) covering the render side. No body-shape meta-test; asserting the statement layout of a
+   generated method is the code-string assertion the test tiers ban, and it would fire on a legitimate
+   helper-locality lift. The behavioural residue, that an unselected child projects nothing, is pinned at
+   the execution tier.
 7. **Concentration ratchet** (optional but recommended): share of package LOC in the top five files, and
    largest single file per package. Today 46% / 7,102 for `generators/` and 52% / 7,754 for the core.
    Totals are a poor discriminator, since they can stay flat while structure degrades; concentration is
@@ -405,8 +446,10 @@ whereas doing 4 first means building the engine before anything consumes it.
 projection units: the split launches a keyed query against the parent's table selecting that unit's columns,
 correlated by the parent's key. Today the directive is accepted there and `NestingField` carries no delivery
 slot, so it appears to be silently ignored; confirm that at implementation, because if it is, the same slice
-either implements the launcher or the shape needs a lint advisory, and doing nothing is the one option that
-is already wrong.
+either implements the launcher or lands a validate-time deferred rejection on the shape, per the
+validator-mirrors-classifier rule: an accepted classification whose emit is unimplemented fails the build,
+and the rejection deletes for free when the launcher arrives. A lint advisory is too weak (the build would
+succeed while the directive does nothing), and doing nothing is the one option that is already wrong.
 
 | # | slice | why here | cost |
 |---|---|---|---|
