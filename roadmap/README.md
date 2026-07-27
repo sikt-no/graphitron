@@ -21,8 +21,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R541` | Root query launcher: the root SELECT family as launcher commands <sub>blocked by: [facts-and-commands](facts-and-commands.md)</sub> | Spec | 2026-07-27 <sub>created 2026-07-26</sub> | [plan](root-query-unit-seam.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
-| `R551` | Simplify the srp hand-off templates: goal-oriented review prompts that trust reviewer judgment | Ready | 2026-07-27 | [plan](srp-review-prompt-simplification.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
+| `R551` | Simplify the srp hand-off templates: goal-oriented review prompts that trust reviewer judgment | In Progress | 2026-07-27 | [plan](srp-review-prompt-simplification.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-07-15 | [plan](catalog-check-constraint-validation.md) |
 | `R427` | Type-ahead search backed by native database indexes | Ready | 2026-07-17 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-07-15 <sub>created 2026-05-26</sub> | [plan](dml-payload-positional-alignment.md) |
@@ -374,7 +374,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R298` [**Leverage Rover and GraphOS: composition checks in CI, contract verification, rover lsp in the dev loop**](rover-graphos-integration.md) — Backlog, feature, blocked by [oneof-augment-defeated-by-descriptions](oneof-augment-defeated-by-descriptions.md)
 - `R538` [**BgeEmbedderOnnxTest fails nondeterministically under full-reactor parallel load**](onnx-embedder-nondeterminism-under-parallel-load.md) — Backlog, testing
 - `R133` [**Flip leaf-coverage profile activation to opt-in**](leaf-coverage-profile-opt-in.md) — Backlog, cleanup
-- `R551` [**Simplify the srp hand-off templates: goal-oriented review prompts that trust reviewer judgment**](srp-review-prompt-simplification.md) — Ready, improvement
+- `R551` [**Simplify the srp hand-off templates: goal-oriented review prompts that trust reviewer judgment**](srp-review-prompt-simplification.md) — In Progress, improvement
 - `R506` [**Roadmap tool as statechart driver, items as machine instances**](roadmap-tool-statechart-driver.md) — Backlog, architecture
 - `R168` [**Sub-agent classifier for blast-radius effort (Low/Medium/High) at Spec stage**](effort-blast-radius-classification.md) — Backlog, cleanup
 - `R107` [**Classify leaf mentions in inference-axis-coverage report**](leaf-coverage-mention-classification.md) — Backlog, validation

@@ -1,7 +1,7 @@
 ---
 id: R551
 title: "Simplify the srp hand-off templates: goal-oriented review prompts that trust reviewer judgment"
-status: Ready
+status: In Progress
 bucket: improvement
 priority: 5
 theme: tooling
