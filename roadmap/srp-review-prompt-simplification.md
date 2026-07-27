@@ -42,6 +42,10 @@ The skill's own Procedure (steps 0-6) is untouched in intent: sync-first, ID res
 
 ## Deliverable
 
+Shipped at a9d1355: both templates rewritten as goal + invariants + pointers, design-intent paragraph added, Procedure/Output rules/Hard rules untouched. Templates went from 1144 to 968 words combined, with the surviving bulk being the mandated invariants. The implementation-stage materials list now names workflow.adoc (per the Spec → Ready review note: its per-gate obligations were previously unsurfaced) and keeps an optional pointer to the reviewer-prompt taxonomy. Nothing remains unimplemented.
+
+Original deliverable text follows.
+
 Rewrite the two templates in `.claude/skills/srp/SKILL.md` along the lines above; both should shrink substantially. The skill's Procedure, Output rules, and Hard rules sections keep their current contracts (one fenced block, pre-filled tokens, no improvising the template per call; template consistency across reviewers is itself a workflow property and is not up for relaxation). Add one short paragraph to the skill noting the design intent (goal + invariants + pointers; no rubrics) so future edits do not re-accrete checklists.
 
 Apply the same treatment to the sibling `reviewer-prompt` skill only if this item's review says so; default is out of scope.
