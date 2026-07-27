@@ -27,6 +27,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R427` | Type-ahead search backed by native database indexes | Ready | 2026-07-17 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-07-15 <sub>created 2026-05-26</sub> | [plan](dml-payload-positional-alignment.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec | 2026-07-14 | [plan](capability-catalog.md) |
+| `R549` | Facts and commands: grain-first hierarchies and the three command relations | Spec | 2026-07-27 | [plan](facts-and-commands.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec | 2026-07-14 | [plan](list-valued-external-field-multiset.md) |
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-07-14 <sub>created 2026-05-21</sub> | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec | 2026-07-14 | [plan](operation-driven-test-corpus.md) |
@@ -216,6 +217,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R235` [**Tidy @reference path-element surface: separate join-shape from WHERE-filter**](path-element-surface-cleanup.md) — Backlog, cleanup
 - `R518` [**argMapping grouping form for multi-target service fan-out (GG-376)**](argmapping-grouping-fanout.md) — Backlog, architecture
 - `R174` [**graphitron-javapoet: emit records, sealed/permits, package-info.java**](javapoet-record-sealed-package-info-support.md) — Backlog, architecture
+- `R549` [**Facts and commands: grain-first hierarchies and the three command relations**](facts-and-commands.md) — Spec, architecture
 - `R546` [**Invert the command flow: the core produces method commands, the shell consumes them**](core-produced-method-commands.md) — Backlog, structural, blocked by [model-free-of-emit-vocabulary](model-free-of-emit-vocabulary.md)
 - `R180` [**Resolved accessors for record-parent column reads (recordColumnReadArgs)**](record-parent-column-read-helper.md) — Spec
 - `R545` [**The model owns no emit-library vocabulary**](model-free-of-emit-vocabulary.md) — Backlog, structural
