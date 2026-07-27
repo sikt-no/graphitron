@@ -545,15 +545,16 @@ fact rather than a build break. The lint engine hit exactly this and answered it
 kinds partition the node kinds with no overlap or gap). The equivalent must land with the first visitor,
 not after.
 
-Slice 5 owes its own design decision before any code: **the launcher command's shape.** The keystone
-deliberately designs only the projection half; the launcher half (owns a query, composes projection calls,
-adds FROM, joins, WHERE, ordering, windowing, and the mechanism-entailed extras) has no sketch yet, and
-R541 sitting first in line under this slice makes the gap due early. Two constraints are already known.
-First, a launcher is a fold over the operation rows addressed to its unit, so the coordinate-keyed relation
-must carry forward the anchor column R333's operation relation already names (`anchor address`, which query
-unit the row lands in); dropping it would leave the fold with no grouping key. Second, the design must
-state how `Operation`'s arms partition across launcher renderers, projection calls, and DML rendering,
-because that partition is what slice 5's exhaustive dispatch is total over.
+Slice 5 owes its own design decision before any code: **the general launcher command.** The keystone
+designs the projection half, and R541 (slice 3c) sketches the launcher for one family, the root SELECT
+launchers, with an In Review hand-off required to report whether the `extras` slot, the conditions fork,
+and the `UnitRef` edge shape held. Slice 5 generalises from those two proofs, and what it owes beyond them
+is stated now. The `Batched` invocation arm lands with its first row when the child family folds in (R541
+deliberately declines to pre-declare it). The design must state how `Operation`'s arms partition across
+launcher renderers, projection calls, and DML rendering, because that partition is what slice 5's
+exhaustive dispatch is total over. And where a unit composes several operation rows, the relation must say
+which unit each row lands in, the anchor column R333's operation relation already names (`anchor address`);
+R541's single-operation launchers never need it, and a general launcher cannot do without it.
 
 ## The exemption lists are the grain worklist
 
