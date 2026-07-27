@@ -262,7 +262,10 @@ contribution or term reaches outside this unit. The edge set for closure and for
 projection is then a **total switch over the `Contribution` and term arm sets with no default arm**, the
 same compile-checked projection seam `CatalogBuilder.projectFieldClassification` is the exemplar for: a new
 arm carrying a method name fails compilation until the edge view covers it, rather than being silently
-missed by a walk somebody remembered as small. Slice 8's corpus projection follows the same rule.
+missed by a walk somebody remembered as small. The rule is stated once and holds per command kind: every
+command kind owes its own total-switch edge view (the launcher's projection `UnitRef` and its condition
+reference are slice 3c's instances), and slice 7's recompile graph is the union of the per-kind views.
+Slice 8's corpus projection follows the same rule.
 
 **`__typename` is not a contribution.** The polymorphic path appends it after calling the participant's
 projection, so it is a launcher extra alongside `__idx__` and `__rn__`, and it belongs nowhere in this
@@ -398,18 +401,31 @@ than any signature convention.
 
 1. Find the emitter's decisions: its `instanceof` and switch sites, plus its "should I emit for this unit"
    predicate.
-2. Move them into a producer that emits command rows in SDL order.
+2. Move them into a producer that emits command rows in SDL order, stating the family's membership as a
+   predicate derived from facts the model already carries wherever the facts permit it, since a derived
+   membership makes "did we cover it" decidable rather than a judgment call (R541's covered family, a
+   conjunction over `operation()` and target shape with no exemption list anywhere, is the exemplar).
 3. Rewrite the emitter as a total function over the command's arms, dropping its `GraphitronSchema`
    parameter.
 4. Point both ratchets down: one entry point off the 25, N leaf references out of `generators/`.
-5. Land the family's two new test surfaces: pipeline-tier assertions on the produced command rows over
-   existing fixtures (the decisions as data, asserted without javapoet), and per-arm unit tests on the
+5. Land the family's three new test surfaces: pipeline-tier assertions on the produced command rows over
+   existing fixtures (the decisions as data, asserted without javapoet), per-arm unit tests on the
    family's renderer (a total function whose inputs are record literals, needing no schema, fixture, or
-   catalog plumbing).
+   catalog plumbing), and the relation's non-vacuity and boundary pins: every covered coordinate in the
+   corpus appears exactly once, and every shape the family's membership predicate excludes appears zero
+   times. The pin is what replaces bidirectional oracles under a keyed relation ("exactly one per key" is
+   the key, structurally), so what is left to falsify is that the relation is populated and correctly
+   bounded; R541 worked this out for the launcher family and it holds for every family.
 6. Acceptance: compilation and execution tiers unchanged, closure oracle green, the family's graph edges
    now read off the command instead of being predicted, and the family's rows in R333's seam worklist (the
    living table) updated to record the landed verdict, so the model item and this programme cannot drift
-   on seam decisions.
+   on seam decisions. Two sharpenings generalised from slice 3c: where the cutover claims SQL-neutrality,
+   the sharp form of "execution tier unchanged" is an exact-SQL equivalence pin authored before the
+   cutover and kept green unchanged through it (a slice that deliberately changes SQL, as slice 3 does by
+   ending over-projection, pins the new behaviour instead); and the family's migration dial closes with a
+   membership enforcer in the same commit, no window. Where membership is a derived fact, the enforcer is
+   the fact's true-set equalling the relation's key-set; where the family still needs an exemption list,
+   the list is the dial and emptying it is the enforcer.
 
 Step 4 deserves an honest note: migrating a family does not delete its leaf dispatch, it **relocates** it
 from `generators/` into a producer, which is where leaf dispatch belongs until slice 4 turns it into fact

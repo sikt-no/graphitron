@@ -168,9 +168,16 @@ composition does not care who invokes it.
       Pagination pagination,    // None | Seek
       Invocation invocation,    // Direct | FannedOverTenants
       ResultShape result,       // SingleRecord | RecordList | ConnectionResult
-      List<ExtraTerm> extras)   // launcher-owned projection additions: cursor columns, __idx__, __rn__
+      List<SelectTerm> extras)  // launcher-owned projection additions: cursor columns, __idx__, __rn__
   {}
   ```
+
+  Every slot is build-time composition. Runtime values (argument filter values, seek cursor values,
+  orderBy argument values) arrive through the rendered method's parameters and never through the command,
+  which is the same static/runtime line R549 draws at the projection gate: field names are the command's
+  vocabulary, result keys and argument values are the runtime's. A reader must not mistake
+  `List<OrderTerm> orderBy` for concrete ordering values; it names the composition, and the emitted body
+  binds the request's values into it.
 
   `extras` is the slot that makes this command the projection command's dual. R549 establishes that
   anything a mechanism needs regardless of client selection belongs to a launcher rather than to a
@@ -184,6 +191,11 @@ composition does not care who invokes it.
   inside the projection, not at a launcher, so it is slice 3's business and not an extra at all. One
   populated mechanism is still a real test of the slot (it either decomposes into projection output plus
   launcher extras or it does not), but nobody should read slice 3c as having validated all four.
+  The slot also mints no term type of its own: R549's rule that term arms are SQL shapes, never reasons,
+  applies to launchers too, and extra-ness is a reason (a cursor column renders exactly as a plain column
+  term does; what makes it an extra is which list it sits in). So `extras` reuses the projection command's
+  `SelectTerm` algebra, and slice 5's `__rn__` extends that shared algebra with a window-function arm when
+  it arrives, a new SQL shape and therefore a legitimate extension rather than a parallel type.
 - **Invocation, with two arms and deliberately not three.**
 
   ```java
@@ -204,7 +216,12 @@ composition does not care who invokes it.
 - **Return shape as data.** `ResultShape` is derived once, in the producer, from the coordinate's
   cardinality and whether pagination is present, so the renderer reads a return shape instead of
   deriving one. `RowsMethodShape.outerRowsReturnType` is the keyed derivation and does not fit these
-  three shapes; nothing bends it.
+  three shapes; nothing bends it. That derivation also says the `Pagination` and `ResultShape` slots
+  co-vary: `Seek` appears exactly when the shape is `ConnectionResult`, so the two slots as sketched make
+  the illegal pairs (`Seek` with `SingleRecord`) representable. Fold them, carrying the seek pagination
+  on the `ConnectionResult` arm and dropping the separate slot, unless the producer walk turns up a
+  covered coordinate that breaks the correlation. This is the mirror of R549's correlated-families rule:
+  a point in a product space beats the product exactly while the axes co-vary.
 - **The covered family, derived and never tagged.** The producer mints a row for exactly one thing: a
   `RootField` whose `operation()` is one of `Fetch` / `Paginate` / `Lookup` and whose target
   shape is `Table` (peeling the `Connection` wrapper). Walking `QueryField`'s permits against
@@ -279,7 +296,13 @@ composition does not care who invokes it.
    command a bad proof of concept precisely where the proof matters. The cost of (a) is honest and
    should be weighed: it pulls a bounded slice of row 5 into this item, and R549 currently lists row 5
    as out of scope, so signing off on (a) means accepting that scope growth. The bound is the covered
-   family, nothing wider.
+   family, nothing wider. One thing (a) must still decide and state: who mints the `ConditionRef`. If the
+   covered family's condition methods remain emitted by the unmigrated `TypeConditionsGenerator`, the ref
+   cannot be minted by the plan's naming vocabulary, so "an unresolvable callee is unrepresentable" does
+   not hold for this edge and the honest guard is the name-level closure oracle, which is weaker and
+   should be said plainly. The reading that keeps the typed claim is that the producer mints the covered
+   family's condition rows alongside its launcher rows, which is what "completes the conditions migration
+   for the covered family" should be taken to mean.
 2. **The lookup root.** `QueryLookupTableField.lookupMethodName()` is already regime-1 and its unit
    already exists, so it is the one covered coordinate that starts with a name. Recommendation: the
    producer computes its `UnitRef` like every other row and keeps emitting `lookup<Field>` unchanged,
