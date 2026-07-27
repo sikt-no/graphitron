@@ -230,6 +230,17 @@ row, and the readability requirement is what pays for the extra emitted methods.
   vocabulary decision, not a formula at the emit site). Where parent and return type coincide, the
   entity method (typed parameters) and the glue method (args map) are overloads on one class, which
   is legal and readable.
+- **This family mints the shared term algebra, because it gets there first.** Under R549's ordering
+  this is the first command family to land, and R549's shared-vocabulary rule makes the column
+  reference programme-owned core rather than family vocabulary: `table.COL` is the same SQL shape
+  whether it is projected or compared, and term arms are SQL shapes, never reasons. So the column
+  reference `ColumnTerm` names goes in `command` as core, and slice 3.1's `SelectTerm` extends it
+  rather than standing up a parallel type beside it. The comparison wrapping (`Eq` / `In` / `RowEq` /
+  `RowIn`) is *not* core: those are comparison shapes, condition-family vocabulary holding a core
+  column reference. Getting this split right is cheap here and expensive after two families have
+  shipped their own, which is why R549 names it as one of the two decisions the vocabulary rule
+  forces. The other, whether `Coordinate` in `command` is graphql-java's `FieldCoordinates` or a
+  command-package type adapted at the plan boundary, is settled in R549 slice 1 and consumed here.
 - **Two predicate arms, on one structural axis: who owns the body.** The projection command collapsed
   its provenance distinctions because every arm still rendered to "add these terms"; here one arm
   literally cannot be rendered by us. A `Generated` predicate's body is ours to emit; an `Authored`
@@ -277,13 +288,16 @@ row, and the readability requirement is what pays for the extra emitted methods.
 - **The producer walks coordinates, which is where R472 gets fixed or fenced.** R472's root cause is
   that a `NestingField`'s children have no `schema.types()` entry and an empty `fieldsOf`, so the
   coordinate index itself cannot see them; minting from it changes nothing by itself. The enabler is
-  R549 slice 3's promotion of nesting types to projection units, which gives nested coordinates a
-  walkable home. If that enumeration is in place when slice 1 lands, the nested
-  `GeneratedConditionFilter` gets a row and its body gets emitted, closing the dangling reference; if
-  it is not, the validator-mirrors-classifier rule applies: an accepted classification whose emit is
-  unimplemented is a `ValidateMojo` deferred rejection, not a silent skip, and R472 converts from a
-  wrong-output bug to a build-time rejection until the walk lands. Either outcome retires the bug
-  class; only the first retires the item.
+  R549 slice 3.1's promotion of nesting types to projection units, which gives nested coordinates a
+  walkable home. **Under R549's decided ordering that enumeration does not exist yet when slice 1
+  lands**, so the second branch is the live one rather than a contingency: the validator-mirrors-
+  classifier rule applies, an accepted classification whose emit is unimplemented becomes a
+  `ValidateMojo` deferred rejection rather than a silent skip, and R472 converts from a wrong-output
+  bug (a call emitted to a method that is never generated) into a build-time rejection. That retires
+  the bug class immediately and leaves the item open. The fix proper lands when slice 3.1 does: the
+  producer's walk picks up the nested coordinates, the rejection deletes for free, and R472 closes.
+  Plan for that two-step rather than for the one-step the earlier draft's conditional implied, and
+  keep a fixture for both states so the transition is a test flipping from rejected to emitted.
 - **The covered family, derived and never tagged, with its edge cases named.** The relation gets a
   row per `(coordinate, resolvedTable)` key with a nonempty live filter set; polymorphic roots
   expand to one row per participant (their filters live on `participantFilters()` and their own
@@ -328,7 +342,7 @@ row, and the readability requirement is what pays for the extra emitted methods.
   both replaced by glue calls, and `QueryConditionsGeneratorLiftTest` retires with it.
 - **Naming is one locus for the emitted set, with the window stated honestly.** The producer mints
   every `UnitRef` (entity class by return type or participant, glue class by parent type, method
-  names, facet fragment names) from the naming vocabulary R549 slice 3 moves out of `compile/`.
+  names, facet fragment names) from the naming vocabulary R549 slice 1 moves out of `compile/`.
   `GeneratedUnits.conditions(parentTypeName)` currently derives only the shim scheme while the
   emitted set spans both schemes; the producer's vocabulary covers both, and the four
   `TypeFetcherGenerator` sites that recompute the shim FQCN plus `buildConditionCall`'s method-name
@@ -366,16 +380,20 @@ row, and the readability requirement is what pays for the extra emitted methods.
    working schema shape rejected for an emitter limitation the reframing removes for free. R475's
    own body already prefers the qualified-name fix and names the threading through `BodyParam` /
    `CallParam` this design makes natural.
-4. **Who owns the launcher handshake.** R541's fork 1, as re-posed at its Spec review 2026-07-27,
-   offers (a) the launcher reads the covered family's condition names from the plan, or (b) an
-   opaque escape-hatch arm. The premise is smaller than this item's early drafts assumed: the root
-   builders already call named `<field>Condition` methods, so R541's option (a) is only row 5's
-   naming lift for its covered family, not new condition machinery. Recommendation: this item
-   dissolves the fork anyway. R552 owns condition production wholesale; R541's `where` slot becomes
-   the row's glue `UnitRef`, and its option (a) reduces to consuming what this item produces.
-   Sequencing follows: R552 slices 1 and 2 land before (or with) R541 slice 1. If the reviewer
-   prefers R541 to land first, option (a) stands there and this item's slice 2 shrinks to re-homing
-   what R541 built; both orders are safe, one builds the seam twice.
+4. **Who owns the launcher handshake. Resolved 2026-07-27, at the programme.** This fork and R541's
+   fork 1 were each recommending the same answer while deferring the sequencing to the other item's
+   reviewer, so neither closed. R549's Slices section decides it: **this item lands first**, slices 1
+   to 3 before R541 slice 1. R552 owns condition production wholesale, R541's `where` slot is the
+   row's glue `UnitRef`, and R541 consumes rather than builds. The reasons, recorded so the decision
+   is auditable rather than arbitrary: four of R541's five root shapes already call named
+   `<field>Condition` methods, so the launcher wants the relation from its first row; the reverse
+   order has R541 mint a ref from a formula this item then re-homes, which is a migration payment;
+   this item needs only R549 slice 1 to start, where R541 needs slices 3.1 and 3.2; and this item
+   carries two fixes for output that does not compile today (R472, R475), which is a better first
+   family for the programme to be judged on than a purely architectural one.
+   The premise correction that shrank R541's side of this stands and is worth keeping: the root
+   builders already call named methods, so R541's old option (a) was only row 5's naming lift for its
+   covered family, never new condition machinery.
 5. **The FK-target alias scheme inside glue.** Today the EXISTS aliases fork by host: static
    `table_fkt<f>_<h>` locals at the shim, runtime-prefixed (`<base>.getName() + "_fkt..."`) at the
    recursion-prone inline sites. Glue methods are per-coordinate scopes, but two glue methods land
@@ -390,8 +408,23 @@ row, and the readability requirement is what pays for the extra emitted methods.
 
 ## Slices
 
-Slice 0 is R549 slice 3: `EmitPlan`, `UnitRef`, the `command` / `plan` / `render` packages, and the
-naming vocabulary out of `compile/`. Nothing here starts before that lands.
+Slice 0 is **R549 slice 1**, not slice 3: `EmitPlan`, `UnitRef`, the `command` / `plan` / `render`
+packages, and the naming vocabulary out of `compile/` all moved onto the programme's cheapest slice
+when it was rescoped, and none of the rest of the keystone is a prerequisite here. That makes this
+item the first command family to land, which is the ordering R549's Slices section now fixes, and it
+is why the sequencing question in fork 4 is closed rather than open.
+
+R549 slice 3.1 is a **soft** dependency of exactly one thing: the nested-coordinate walk that fixes
+R472. Promoting nesting types to projection units is what gives a nested `GeneratedConditionFilter` a
+walkable home; without it, the producer cannot see those coordinates and R472 converts to a deferred
+rejection instead of a fix, per the R472 note in Design. Everything else here runs against slice 1
+alone.
+
+One hard ordering constraint runs the other way and belongs here rather than in R549: **slice 3 must
+land before slice 3.1.** The inline `$fields` arm emitters are this item's convergence targets and the
+keystone's raw material, so running them concurrently means two items editing the same emitters for
+different reasons. Slice 3 first is also the cheaper order, since the keystone then folds arms whose
+condition composition is already a one-line call.
 
 1. **Command, producer, entity renderer, together.** The record set, the producer minting condition
    rows for every covered `(coordinate, resolvedTable)` key (participants expanded, nested
@@ -438,9 +471,9 @@ naming vocabulary out of `compile/`. Nothing here starts before that lands.
   stays green unchanged, and conjunct order is preserved exactly, so whichever of R541 and R552 lands
   first, the other does not edit its pinned strings. The one sanctioned SQL-text delta is fork 5's
   alias scheme, decided in slice 2 before any pin is authored. A borrowed suite is not this item's
-  enforcer: in slice 2, after the alias decision, a glue-family equivalence pin lands in
-  `graphitron-sakila-example` (the same per-test-class `SQL_LOG` `ExecuteListener` idiom R541
-  specifies), asserting exact rendered SQL for one representative faceted, one lifted-outer, one
+  enforcer: in slice 2, after the alias decision, this family's cases are added to the programme-level
+  equivalence harness R549 slice 2 stands up in `graphitron-sakila-example` (the per-test-class
+  `SQL_LOG` `ExecuteListener` idiom), asserting exact rendered SQL for one representative faceted, one lifted-outer, one
   FK-target, and one filtered-child coordinate; the child pin is what holds slice 3's convergence to
   "call sites moved, SQL did not". The existing condition execution tests (`GraphQLQueryTest`,
   `MultiTableFilterExecutionTest`, the fixtures in `graphitron-sakila-service`'s conditions package)
@@ -456,9 +489,11 @@ naming vocabulary out of `compile/`. Nothing here starts before that lands.
   `ArgumentValueSource` type and the inline hosts' uses of the extraction and term machinery are
   deleted, so a host that wanted to compose a fold inline again would have nothing to call; the
   compiler enforces what a body-shape assertion cannot without violating the tier doctrine.
-- **The two absorbed defects have fixtures.** R472's nested generated condition compiles and
-  executes (or, if the nested walk is deferred, fails the build as a deferred rejection rather than
-  emitting a dangling reference). R475's sibling same-named filter fields compile.
+- **The two absorbed defects have fixtures.** R475's sibling same-named filter fields compile. R472's
+  nested generated condition fails the build as a deferred rejection rather than emitting a dangling
+  reference, and the same fixture flips to compiling and executing when R549 slice 3.1 supplies the
+  nested coordinates; both states are pinned, so the transition is a test changing its expectation
+  rather than a test appearing.
 - **Closure and edges.** The level-1 oracle (`MethodClosureOracleTest`) stays green over emitted
   output. The plan-time edge view covers glue-to-body and glue-to-external edges, and the external
   arm resolves against the same reflection surface `ConditionResolver` uses today. The base/view
@@ -519,11 +554,11 @@ naming vocabulary out of `compile/`. Nothing here starts before that lands.
 
 | item | relationship |
 |---|---|
-| R549 (Spec) | governs; this item is the third proof alongside slice 3 and slice 3c. Slice 5's generalisation gate widens from two proofs to three, and slice 3b gains its exemplar rows from the entity renderer's GROUP BY |
-| R541 (Spec) | consumer. Its fork 1 dissolves into fork 4 here: the launcher's `where` slot is a `UnitRef` into this relation, and its bounded row-5 scope reduces to consumption. Cross-referenced there |
+| R549 (Spec) | governs; this item is the third proof by argument and the **first by landing order**, running on slice 1 alone. Slice 5's generalisation gate widens from two proofs to three, slice 3b gains its exemplar rows from the entity renderer's GROUP BY, and this item mints the shared term algebra's column reference under the programme's shared-vocabulary rule |
+| R541 (Spec) | consumer, and lands after this item. Its fork 1 and this item's fork 4 both resolve at R549: the launcher's `where` slot is the row's glue `UnitRef`, and row 5's naming lift is wholly this item's. Cross-referenced there |
 | R333 (Ready) | owns row 5 and the target condition semantics; this item executes the row's "finish lift" verdict in command form and does not touch the `Single` value-gating semantic or the raw-relation re-sourcing |
 | R475 (Backlog) | absorbed: slice 1's qualified parameter names are its preferred fix. Tombstone at pickup, delete when this item reaches Done |
-| R472 (Backlog) | absorbed: the coordinate walk (or its deferred rejection) is the fix. Same tombstone treatment |
+| R472 (Backlog) | absorbed, in two steps under the decided ordering: slice 1 converts it to a deferred rejection (the walk does not exist yet), and R549 slice 3.1 supplies the nested coordinates that turn the rejection into an emitted body. Tombstone at pickup, delete when the second step lands |
 | R387 (Backlog) | absorbed by slice 1's per-arm renderer tests, which is R549 recipe step 5 applied to this family |
 | R334 (Backlog) | absorbed: the glue body's one-local-per-argument convention is its fix for the condition family, and slice 3 removes the ternary chains from every call site. Tombstone at pickup, delete when this item reaches Done |
 | R11 (Backlog) | untouched: resolver-side, feeds new binding rows into the same relation when it lands |

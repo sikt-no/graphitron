@@ -68,6 +68,18 @@ The family is also unusually well-bounded for a proof: its membership is derived
 already carries with no exemption list anywhere (see *Design*), which makes "did we cover it"
 decidable rather than a judgment call. Most families in this codebase still need an exemption list.
 
+**The honest note, named here rather than discovered at review: this is the one of R549's three
+proofs with no capability payload.** Slice 3.1 renames a method and ends a duplicated walk, slice 3.2
+stops over-projecting, and R552 ships two fixes for output that does not compile today. This item
+adds no user-visible capability and fixes no filed defect; every root shape it touches works. R549's
+rule is "no slice that is purely a migration payment", and what pays for this one is not a feature
+but the three deletions it makes possible (the inline `select`/`from`/`fetch` chain repeated at five
+sites, the level-2 oracle pattern that stops being needed, and the root-shaped absence of a unit) plus
+the four findings the In Review hand-off owes. That is a real return, and it is a different kind of
+return, which is exactly why it should be stated rather than left for a reviewer to notice. The
+practical consequence: if this item starts eating scope, the thing to cut is scope, not the hand-off,
+because the hand-off is the product.
+
 ## Current topology (2026-07-26 code walk)
 
 Two corrections to R333's worklist row first (both applied to R333 alongside this item). The
@@ -150,9 +162,9 @@ composition off one capability and slice 4 has to source the routine root's slot
 not a forced retrofit.
 
 Two things about this walk to hold in mind while reading the design. The `$fields` head it records at
-every site is what R549 slice 3 rewrites: the call becomes `<Type>.$project(<grouped selection>, t,
+every site is what R549 slice 3.1 rewrites: the call becomes `<Type>.$project(<grouped selection>, t,
 env)` and the three overloads collapse to one, so this item composes launchers around the
-post-slice-3 shape and never sees `$fields`. And the walk itself is the item's most durable content:
+post-keystone shape and never sees `$fields`. And the walk itself is the item's most durable content:
 it is an inventory of five genuinely distinct emit shapes, and the command reframing changes who
 decides them, not how many there are.
 
@@ -181,7 +193,8 @@ composition does not care who invokes it.
       Coordinate coordinate,    // the relation's key, with operation
       TableRef table,           // the table this query runs against
       UnitRef projection,       // the projection unit whose $project supplies the select list
-      ConditionRef where,       // the condition unit; absent composes the neutral condition (fork 1)
+      UnitRef where,            // R552's glue unit for this coordinate; absent (no live filters, the
+                                // routine root, the lookup root) composes the neutral condition (fork 1)
       List<OrderTerm> orderBy,
       Pagination pagination,    // None | Seek
       Invocation invocation,    // Direct | FannedOverTenants
@@ -206,7 +219,7 @@ composition does not care who invokes it.
   cursor encoding). The other three are elsewhere: `__idx__` and `__rn__` live entirely in
   `SplitRowsMethodEmitter`, so they are the child path's extras and arrive with slice 5; `__typename` is
   appended by the polymorphic launcher, which the derived fact excludes; and multiset wrapping happens
-  inside the projection, not at a launcher, so it is slice 3's business and not an extra at all. One
+  inside the projection, not at a launcher, so it is slice 3.1's business and not an extra at all. One
   populated mechanism is still a real test of the slot (it either decomposes into projection output plus
   launcher extras or it does not), but nobody should read slice 3c as having validated all four.
   The slot also mints no term type of its own: R549's rule that term arms are SQL shapes, never reasons,
@@ -302,45 +315,29 @@ composition does not care who invokes it.
 
 ## Design forks for the Spec reviewer
 
-1. **How the launcher carries its WHERE clause.** Re-posed 2026-07-27 against the corrected topology
-   walk above; the earlier framing (root builders compose conditions inline, so option (a) drags a slice
-   of R333 row 5 into scope) was false, and the fork is both smaller and sharper than it read.
+1. **How the launcher carries its WHERE clause. Resolved 2026-07-27, at the programme rather than
+   here.** Kept because the diagnosis outlived the fork, and because two successive framings of it
+   were wrong in ways a later reader of R333 row 5 would repeat.
 
-   What row 5 actually records is a **naming-regime** half-migration, not a missing seam: the seam is
-   already cut for four of the five shapes, and the row's open issue is "finish lift
-   (`QueryConditionsGenerator` end)", meaning the method name is R2, the `<field>Condition` formula
-   reconstructed independently at both ends (`QueryConditionsGenerator.conditionMethodName` mints it,
-   `TypeFetcherGenerator.buildConditionCall` recomputes it). So option (a), the launcher carrying a
-   `ConditionRef`, *is* that lift for the covered family: the producer mints the name once, the launcher
-   renderer reads it, and `QueryConditionsGenerator` reads it instead of recomputing it. Recommendation:
-   (a), and it should be taken as the default rather than as a weighed scope expansion. Option (b)'s
-   "compose inline as today" arm describes a state only the lookup root is in, so it would put a
-   rendered-code escape hatch in a command to serve one coordinate that slice 5 handles anyway.
+   The correction: the root builders do **not** compose conditions inline. Four of the five shapes
+   already emit `Condition condition = <RootType>Conditions.<field>Condition(tableLocal, env)` through
+   the shared `buildConditionCall`, so row 5 records a **naming-regime** half-migration, not a missing
+   seam. Its open issue, "finish lift (`QueryConditionsGenerator` end)", is that the `<field>Condition`
+   formula is reconstructed independently at both ends: `QueryConditionsGenerator.conditionMethodName`
+   mints it and `TypeFetcherGenerator.buildConditionCall` recomputes it.
 
-   The "who mints the `ConditionRef`" worry largely dissolves with the premise. The name is fully
-   derivable from the coordinate today (`<parentTypeName>Conditions.<fieldName>Condition`), so the plan
-   can mint a typed ref for every covered coordinate that has a condition method, and the typed-closure
-   claim holds for this edge. Two residuals remain, both bounded and both to be stated in the
-   implementation rather than discovered:
+   The resolution: R552 owns condition production wholesale and lands first, per the ordering decision
+   in R549's Slices section, which settles what this fork and R552's fork 4 were each deferring to the
+   other item's reviewer. So `where` is a `UnitRef` naming the row's glue method, this item consumes
+   rather than builds, and the R2 locus is R552's to dissolve. R552's own walk reaches the same
+   diagnosis, so the two items agree on the premise as well as on the owner.
 
-   - `QueryConditionsGenerator` stays unmigrated and must be edited to *consume* the plan-minted name
-     rather than compute it, or the second locus survives and the lift is nominal. This is the fork's
-     real cost, and it is small.
-   - The routine root has no condition method at all and the lookup root's is inline, so `ConditionRef`
-     is not total over the family. Model the absent case as absence (an empty or optional ref), not as an
-     opaque inline arm. The same reading covers a covered coordinate whose live filter set is empty: it
-     has no condition row, the slot is absent, and the renderer composes the neutral condition, so
-     absence is data rather than an escape hatch.
-
-   R552 (the condition command) has since been filed and gives the lift its owner: it produces the
-   condition relation wholesale, this slot resolves as a `UnitRef` into it, and its fork 4 records the
-   sequencing (R552 slices 1 and 2 land before or with this item's slice 1; if this item lands first,
-   option (a) stands as written and R552's slice 2 shrinks to re-homing what it built). R552's own walk
-   reaches the same conclusion this correction does, naming `buildConditionCall`'s re-derivation as the
-   R2 end row 5 wants lifted, so the two items now agree.
-
-   See fork 5: the faceted connection root needs more than one condition reference, so the single
-   `ConditionRef where` slot in the sketch is under-modelled regardless of how this fork resolves.
+   One consumption detail survives, for the implementer rather than the reviewer: **the slot is not
+   total over the family.** The routine root carries no field-level filter surface at all, the lookup
+   root's fold is inline today, and a covered coordinate whose live filter set is empty has no row in
+   R552's relation either. Model all three as absence (an empty or optional ref) and let the renderer
+   compose the neutral condition; never an opaque inline arm. And see fork 5: the faceted connection
+   root needs more than one condition reference, so a single `where` slot is under-modelled regardless.
 2. **The lookup root.** `QueryLookupTableField.lookupMethodName()` is already regime-1 and its unit
    already exists, so it is the one covered coordinate that starts with a name. Recommendation: the
    producer computes its `UnitRef` like every other row and keeps emitting `lookup<Field>` unchanged,
@@ -368,7 +365,7 @@ composition does not care who invokes it.
    `facetConditionMethodName`. This is not hypothetical: `Query.filmsFaceted` in the sakila corpus is a
    faceted connection root with execution-tier coverage.
 
-   `LauncherCommand` as sketched carries one `ConditionRef where` and a payload-free
+   `LauncherCommand` as sketched carries one `where` ref and a payload-free
    `ResultShape.ConnectionResult`, so it can express none of that. Three consequences the implementer
    should not have to discover mid-slice: slice 2 is scoped to `Pagination.Seek` and `extras`, which is
    the easy half of that builder; the "thinness is a type property" acceptance does not hold for
@@ -377,31 +374,55 @@ composition does not care who invokes it.
    `totalCount` selection are in the representative set. Recommendation: put the carrier plan on the
    `ConnectionResult` arm (the base condition ref, the per-facet ref map, the facet specs), which is
    also what the Pagination/ResultShape fold above wants the arm to be carrying anyway. Deciding it here
-   is cheaper than deciding it inside slice 2.
+   is cheaper than deciding it inside a slice.
+
+   The carrier plan is now **slice 3, its own slice**, rather than the back half of the connection
+   slice. The two answer different questions (slice 2 tests R549's projection/launcher boundary via
+   `extras`; slice 3 tests whether a launcher can own a query it does not itself issue), and bundling
+   them lets a wobble in the carrier design withhold the `extras` finding, which is the finding this
+   item exists to produce. The per-facet refs resolve into R552's relation like any other condition
+   reference, since that item produces the facet fragments as masked glue variants; this slice consumes
+   them and mints nothing of its own.
 
 ## Slices
 
-Slice 0 is R549 slice 3: the projection command, `EmitPlan`, the `command` / `plan` / `render`
-packages, and `UnitRef`. Nothing here starts before that lands, and this item builds no part of that
-vocabulary itself. The SQL equivalence pin suite is authored against post-slice-3 output.
+Slice 0 is two R549 slices, not one, since the programme moved the vocabulary skeleton off the
+keystone: **slice 1** brings `EmitPlan`, the `command` / `plan` / `render` packages, `UnitRef` and the
+naming vocabulary out of `compile/`, and **slices 3.1 and 3.2** bring the projection command this item
+names and the final select list its pin is authored against. R552 slices 1 to 3 also precede this
+item, per R549's ordering decision, so the condition relation exists before the `where` slot needs it
+(see fork 1). Nothing here starts before those land, and this item builds no part of that vocabulary
+itself.
+
+The pin suite is authored against post-3.2 output and extends the programme-level equivalence harness
+R549 slice 2 lands rather than standing up a second one: same module, same `SQL_LOG` idiom, this
+item's representative root queries added to it. That is also what removes the awkwardness in the
+previous phrasing, where "authored before the cutover" and "authored after slice 3" were the same
+sentence for an item whose cutover is after the keystone.
 
 1. **Command, producer, renderer, plain root, together.** The `LauncherCommand` record set, the derived
    covered-family fact, the producer minting rows for `buildQueryTableFetcher`'s single and list arms,
    and the renderer, with the fetcher reduced to a strategy-plus-call entry point. The relation's
    non-vacuity pin and boundary pins land with it: a first slice whose pins assert over an empty set is
    not an enforcer, which is why the command and its first rows ship in one slice rather than two.
-2. **Connection root.** `buildQueryConnectionFetcher`, which is where `Pagination.Seek` and the
-   `extras` slot first carry weight. If the connection helper's `selectFields` union does not decompose
-   into "projection command output plus launcher extras", that is the R549 boundary failing, and it
-   fails here first. This slice also carries the `ConnectionResult` carrier plan (fork 5): the
-   `(table, condition)` binding the lazy `totalCount` resolver reads, and the facet base plus per-facet
-   condition fragments and specs a faceted carrier binds. Size the slice for that; it is the larger half
-   of this builder, not a detail of it.
-3. **Fanned root.** The `FannedOverTenants` arm and its call-site wrapper. This is the slice that
+2. **Connection root, page query only.** `buildQueryConnectionFetcher`'s seek/limit chain, which is
+   where `Pagination.Seek` and the `extras` slot first carry weight. If the connection helper's
+   `selectFields` union does not decompose into "projection command output plus launcher extras", that
+   is the R549 boundary failing, and it fails here first. That finding is the whole reason this item
+   is the second proof, so it gets a slice that cannot be held up by anything else.
+3. **The `ConnectionResult` carrier plan** (fork 5). The `(table, condition)` binding the lazy
+   `totalCount` resolver reads, and the facet base plus per-facet condition fragments and specs a
+   faceted carrier binds, all moved onto the `ConnectionResult` arm. Split out from slice 2 because it
+   is the larger half of that builder and answers a different question: slice 2 tests R549's
+   projection/launcher boundary, this one tests whether a launcher can own a query it does not itself
+   issue. Keeping them together would let a wobble in the carrier design withhold the `extras`
+   finding, which is the more valuable of the two. The equivalence pin's faceted and `totalCount`
+   cases (see Acceptance) belong here, since before this slice the carrier is still renderer knowledge.
+4. **Fanned root.** The `FannedOverTenants` arm and its call-site wrapper. This is the slice that
    demonstrates strategy-as-data, since the fanned and plain rows differ in one field.
-4. **Routine + single-table-interface roots.** The two shapes with extra moving parts (routine table
+5. **Routine + single-table-interface roots.** The two shapes with extra moving parts (routine table
    expressions, discriminator reprojection).
-5. **Lookup-root fold + validator mirror + membership enforcer.** The lookup coordinate's row is minted
+6. **Lookup-root fold + validator mirror + membership enforcer.** The lookup coordinate's row is minted
    by the producer and `lookupMethodName()` retires; the `ValidateMojo` deferred rejection and the
    derived-fact-equals-key-set enforcer land in the same commit, closing the migration dial with no
    window.
@@ -419,11 +440,16 @@ vocabulary itself. The SQL equivalence pin suite is authored against post-slice-
   carrier's UNION ALL), so the representative set must include a query that selects `totalCount` and one
   against a faceted carrier (`Query.filmsFaceted` in the corpus), or the statement-count half of the pin
   is silent exactly where the cutover carries the most risk.
-  Because this item now lands after R549 slice 3, the select list is already in its final form when the
-  suite is authored, so the pin covers the whole statement and needs no carve-out for the projection
-  half: author it against post-slice-3 output, before slice 1's cutover, and every slice keeps it green
-  unchanged. Editing its expected strings during this item is a defect being papered over, not test
-  maintenance. (This is a SQL-text pin, which the tier guide permits; the ban is on code-string
+  Because this item lands after R549 slices 3.1 and 3.2, the select list is already in its final form
+  when the suite is authored, so the pin covers the whole statement and needs no carve-out for the
+  projection half: add these cases to the programme-level harness R549 slice 2 stands up, authored
+  against post-3.2 output and before slice 1's cutover, and every slice keeps them green unchanged.
+  Extending that harness rather than starting a second suite matters for a reason beyond tidiness:
+  R549's baseline is what pins the keystone, and a root-shape case added to it inherits the same
+  frozen-strings rule. Editing expected strings during this item is a defect being papered over, not
+  test maintenance.
+  The faceted and `totalCount` cases land with slice 3, not slice 1, since the carrier is still
+  renderer knowledge until then; slice 1 authors the plain and connection-page cases. (This is a SQL-text pin, which the tier guide permits; the ban is on code-string
   assertions against generated Java method bodies.) The execution tier stays green unchanged throughout.
   No behavioral delta of any kind; that is R471's line, not ours.
 - **The relation is non-vacuous and correctly bounded.** Every covered root coordinate in the corpus
@@ -441,13 +467,15 @@ vocabulary itself. The SQL equivalence pin suite is authored against post-slice-
   banned at every tier.
 - **Second-proof findings are written down, not just absorbed.** This item exists partly to test R549's
   boundaries, so its In Review hand-off states what it found: whether `extras` absorbed the connection
-  root's cursor columns cleanly, whether the conditions fork held, and whether the `UnitRef` edge shape
-  survived contact with a second command kind. A slice-3c that reports nothing has not been read carefully, because slice 5
-  generalises from the three proofs together (slice 3, this item, and R552's condition command).
+  root's cursor columns cleanly, whether consuming R552's glue `UnitRef` for the `where` slot worked as
+  fork 1's resolution assumes, whether the `ConnectionResult` carrier arm held the whole carrier plan,
+  and whether the `UnitRef` edge shape survived contact with a second command kind. A slice-3c that reports nothing has not been read carefully, because slice 5
+  generalises from the three proofs together (slice 3, this item, and R552's condition command). Per
+  the honest note above, this hand-off is the item's product, not a formality attached to it.
 
 ## Retired vocabulary
 
-- `QueryLookupTableField.lookupMethodName()` (slice 5): the producer computes this coordinate's
+- `QueryLookupTableField.lookupMethodName()` (slice 6): the producer computes this coordinate's
   `UnitRef` like every other row; the emitted `lookup<Field>` method name is unchanged.
 - `QueryUnitField` and `MethodCommandRegistry.declareRootQueryUnit` (never built): vocabulary from the
   signed-off version of this spec, listed here so a reader who saw it knows the names were retired at
@@ -467,10 +495,12 @@ diff inside its own family, which is what a proof of concept wants.
   adds no new strategy itself.
 - The child path. Its batched invocation arm, `RowsMethodSkeleton`, and `RowsMethodBody` are untouched,
   and folding the child family into the relation is slice 5's work.
-- Lifting `$fields` to regime 1 (row 2), and row 5's naming lift **beyond the covered family**. Fork 1
-  finishes the `QueryConditionsGenerator`-end lift for the covered family's coordinates only; the rest,
-  including every child-side and polymorphic-participant condition method, is R552's, which owns the
-  family wholesale and records the two items' sequencing in its fork 4.
+- Lifting `$fields` to regime 1 (row 2), and **row 5's naming lift in its entirety**. Under fork 1's
+  resolution this item produces no condition unit and mints no condition name: R552 owns the family
+  wholesale and lands first, so what was previously scoped here as "the covered family's coordinates
+  only" is now consumption of a `UnitRef`. The four `TypeFetcherGenerator` FQCN recomputation sites and
+  `buildConditionCall`'s formula retire in R552's slice 2, before this item's slice 1 touches those
+  builders.
 - Multi-table polymorphic stage 1 (outside the covered family by the derived fact; note 4
   above) and the hand-rolled polymorphic loader registration.
 - Root DML chains (not SELECT launchers; their reentry SELECT is already covered by R314).

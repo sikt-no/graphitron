@@ -157,7 +157,7 @@ never by provenance alone, and the condition family is the worked counter-exampl
 (suppression semantics, emit ownership, edge typing) make a two-arm split right (R552).
 
 **Unit identity is typed.** `UnitRef` is minted only by the plan's naming vocabulary (`GeneratedUnits`, once
-slice 3 moves it out of `compile/`), never parsed from a string, so a `Call` naming a unit no producer
+slice 1 moves it out of `compile/`), never parsed from a string, so a `Call` naming a unit no producer
 committed is unrepresentable rather than a test failure. That is the lesson of retiring
 `MethodCommandRegistry`'s four-string record: reproducing it as a record of three strings would reproduce
 the diagnosis, and invariant 4's oracle then narrows to the cross-family names the type cannot yet carry.
@@ -339,14 +339,17 @@ the argument for taking the launcher second rather than eventually.
 `TypeClassGenerator.generateForType(schema, typeName, outputPackage)` partitions `schema.fieldsOf(typeName)`
 into seven per-leaf-kind buckets, computes the required projection, runs the containment check, and hands
 all of it to `buildTypeSpec(typeName, table, sevenLists..., outputPackage)`. Everything above that last call
-is production; the last call is rendering. So slice 3 is mostly a change of shape: the seven positional
+is production; the last call is rendering. So the keystone is mostly a change of shape: the seven positional
 buckets become one ordered `List<Contribution>`, the required projection becomes a gated `Project` arm, the
-containment check goes away, and `buildTypeSpec` becomes `render(ProjectionCommand, RenderContext)`.
+containment check goes away, and `buildTypeSpec` becomes `render(ProjectionCommand, RenderContext)`. That
+is the split line between the keystone's two halves: the bucket-to-contribution-list reshape and the
+`buildTypeSpec` rewrite are slice 3.1, the gated correlation arm and the two deletions it enables are
+slice 3.2.
 
 **The dispatch partition moves with the dispatch.** `TypeFetcherGenerator.PROJECTED_LEAVES` hand-states
 exactly the leaf set whose projection `$fields` emits inline, and
 `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` plus `ValidateMojo` rest on that
-four-way partition staying exhaustive and disjoint. Slice 3 relocates the arm set into a producer that the
+four-way partition staying exhaustive and disjoint. Slice 3.1 relocates the arm set into a producer that the
 generator package cannot import, so leaving the set behind as a hand-maintained restatement would be R268's
 bug class verbatim. The slice re-sources the bucket instead: projected-ness becomes a fact derived from the
 plan (a leaf is projected exactly when the producer mints a contribution for it), the partition test reads
@@ -428,8 +431,8 @@ than any signature convention.
    living table) updated to record the landed verdict, so the model item and this programme cannot drift
    on seam decisions. Two sharpenings generalised from slice 3c: where the cutover claims SQL-neutrality,
    the sharp form of "execution tier unchanged" is an exact-SQL equivalence pin authored before the
-   cutover and kept green unchanged through it (a slice that deliberately changes SQL, as slice 3 does by
-   ending over-projection, pins the new behaviour instead); and the family's migration dial closes with a
+   cutover and kept green unchanged through it (a slice that deliberately changes SQL, as slice 3.2 does by
+   ending over-projection, pins the new behaviour instead, per the baseline rule below); and the family's migration dial closes with a
    membership enforcer in the same commit, no window. Where membership is a derived fact, the enforcer is
    the fact's true-set equalling the relation's key-set; where the family still needs an exemption list,
    the list is the dial and emptying it is the enforcer.
@@ -438,6 +441,72 @@ Step 4 deserves an honest note: migrating a family does not delete its leaf disp
 from `generators/` into a producer, which is where leaf dispatch belongs until slice 4 turns it into fact
 reads. A falling leaf-reference count in `generators/` is progress on the boundary, not evidence that the
 dispatch is gone.
+
+## The SQL baseline lands before the keystone, and moves exactly once
+
+Step 6's equivalence pin is per family, which leaves the largest SQL-affecting change in the programme
+with nothing behind it: slice 3.2 ends over-projection, and R541's suite is authored after the
+keystone precisely so it needs no carve-out. So the programme owns one thing the families do not.
+
+**Slice 2 lands the equivalence harness and a projection-covering baseline, authored against today's
+output.** Same mechanism the families use (a per-test-class `SQL_LOG` `ExecuteListener` in
+`graphitron-sakila-example`, exact rendered strings and statement counts, not `contains`), with a
+representative set chosen for projection shapes rather than for one family: a type with split
+children, a nesting type, a multiset child, a polymorphic root, and a query selecting one scalar on a
+type with several children, which is the over-projection case itself.
+
+Slice 3.1 keeps that baseline green unchanged, which is what makes "the reshape moved no SQL" a
+result rather than a claim. **Slice 3.2 re-baselines it exactly once, and that diff is the
+deliverable**: the columns that disappear from those expected strings are precisely the
+over-projection this programme is removing, reviewable as a diff instead of asserted in a plan body.
+After that commit the strings freeze again and the families' own rule (editing expected strings is a
+defect being papered over, not test maintenance) applies to everything downstream. A slice that needs
+to move a pinned string and is not 3.2 has found a bug.
+
+This also fixes an ordering hazard in the family rule as written. R541 and R552 each author a pin
+"before its own cutover", which for R541 means after the keystone; without a programme-level baseline
+the keystone itself is the one cutover in the programme with no pin on either side of it.
+
+## The shared command vocabulary, and who owns it
+
+Three specs now mint command types, and between them they already name `UnitRef`, `TableRef`,
+`Coordinate`, `SelectTerm`, `ColumnTerm`, `Binding`, `Reach`, `ExternalRef`, `FkHopRef`, `OrderTerm`,
+`Pagination`, `Invocation`, `ResultShape`, `CallWrap` and `Arity`. Reuse across them is currently
+asserted in prose, family by family, with no rule for when one family may add an arm to another's
+type and no owner for the ones all three touch. That is the second-order version of exactly the zoo
+this programme exists to collapse, and it is cheap to prevent now and expensive to unpick later.
+
+**A small core is programme-owned; everything else is family-owned.** The core is `UnitRef`,
+`TableRef`, `Coordinate`, and the term algebra: the column reference and whatever else more than one
+family renders. It changes only by adding an arm that arrives with a populated row, per the
+non-vacuity discipline, and a family adding a core arm names it in that item's vocabulary section, so
+the growth is readable off the roadmap rather than off a diff. Family-owned types (`Invocation`,
+`ResultShape`, `Reach`, `CallWrap`) live with their family and are not shared until a second family
+has a row that needs them.
+
+Slice 1 mints `UnitRef`, `Coordinate` and `TableRef`. The term algebra is minted by whichever family
+lands first and needs it, which under the ordering decided below is **R552 slice 1**, not slice 3.1:
+the condition relation's column reference and the projection's are the same SQL shape, so slice 3.1's
+`SelectTerm` extends what R552 minted rather than standing up a parallel type. Being explicit about
+that is the whole point of naming an owner, since the alternative is that the second family to arrive
+quietly builds its own and the rule is satisfied only in prose.
+
+Two decisions this rule forces, both cheaper to make now than to discover:
+
+- **Is a predicate's column reference a `SelectTerm`?** The rule is that term arms are SQL shapes,
+  never reasons, and `table.COL` renders identically whether it is projected or compared. R552's
+  `ColumnTerm` carries `Eq` / `In` / `RowEq` / `RowIn`, which are *comparison* shapes rather than
+  column shapes, so the likely correct reading is that the column reference is core and shared while
+  the comparison wrapping is condition-family vocabulary that holds one. R552 slice 1 makes the call,
+  because it gets there first; if it mints a condition-private column type instead, two parallel term
+  algebras land and the shapes-never-reasons rule quietly becomes per-family.
+- **What is a `Coordinate` in `command`?** The model keys on graphql-java's `FieldCoordinates`
+  (`GraphitronSchema.fields`), so carrying it on command records puts graphql-java inside the pure
+  data package. That is not what invariant 3 bans (javapoet is the emit library) but it is the same
+  smell, and it sits awkwardly beside R552's point that graphql-java is absent from the condition
+  unit's signature entirely. Slice 1 mints a `command`-package `Coordinate` and adapts at the plan
+  boundary, or accepts the dependency deliberately and records why. Either is defensible; discovering
+  it in slice 3c is not.
 
 ## What the seam buys the test pyramid
 
@@ -468,7 +537,7 @@ three tiers:
 None of this changes the slice set; it changes the per-family recipe (step 5) and slice 2's instrument
 list. The measurement to watch: re-run R25's ad hoc JaCoCo baseline alongside the other numbers after
 slices 1 to 5, expecting renderer coverage to climb family by family as arms become directly
-constructible. Wiring R25 into the build before slice 3 lands would make that signal cheap to read, which
+constructible. Wiring R25 into the build before slice 3.1 lands would make that signal cheap to read, which
 is a reason to raise its priority, not a dependency.
 
 ## Invariants: what makes this falsifiable rather than believed
@@ -531,28 +600,75 @@ given what has landed, not by which slice earns the next one. Slice 3 stays ahea
 since projection commands can be derived from today's leaves and re-sourced onto facts when the walk exists,
 whereas doing 4 first means building the engine before anything consumes it.
 
-`@splitQuery` on a nesting field is in slice 3's scope as a consequence of promoting nesting types to
+Two things shape the numbering below beyond that ordering rule, and both exist to keep the expensive
+slice from also being the first one.
+
+**The skeleton rides slice 1, not the keystone.** `EmitPlan`, the `command` / `plan` / `render`
+packages, the import-direction check over them, `UnitRef`, and `GeneratedUnits` moved out of
+`compile/` are the vocabulary every command family needs, and none of it is projection-specific. The
+global command list needs all of it too (its producer has to name the units it commits, and the
+naming vocabulary for globals, `singleton` and `rootUnit`, is already sitting in `GeneratedUnits`),
+so the cheapest slice in the programme is also a complete vertical through the whole architecture:
+producer in `plan`, records in `command`, the shell folds. Landing the skeleton there means it is in
+trunk, reviewed, and running against real output before anything expensive depends on it, and the
+keystone inherits a proven skeleton instead of inventing one under load. The alternative, which the
+earlier draft of this table had, makes the first visible artifact of the whole direction a large
+diff that simultaneously invents the vocabulary and migrates the hardest family.
+
+**The keystone ships in three parts.** Slice 3 as originally scoped bundled six independently risky
+things: a reshape of the producer/renderer seam, a rename of the most-called generated method, the
+deletion of a build-time check, a change to emitted SQL, a new directive reach, and a dependency on
+R516. Splitting them along the lines that actually differ (does it move SQL, does it depend on
+R516, is its scope a finding) costs nothing in total work and means a wobble in one part does not
+hold the other two. References to "slice 3" elsewhere in this item, and in R541 and R552, mean 3.1
+to 3.3 together unless a part is named.
+
+`@splitQuery` on a nesting field is slice 3.3, a consequence of promoting nesting types to
 projection units: the split launches a keyed query against the parent's table selecting that unit's columns,
 correlated by the parent's key. Today the directive is accepted there and `NestingField` carries no delivery
-slot, so it appears to be silently ignored; confirm that at implementation, because if it is, the same slice
+slot, so it appears to be silently ignored; confirm that at implementation, because if it is, that slice
 either implements the launcher or lands a validate-time deferred rejection on the shape, per the
 validator-mirrors-classifier rule: an accepted classification whose emit is unimplemented fails the build,
 and the rejection deletes for free when the launcher arrives. A lint advisory is too weak (the build would
 succeed while the directive does nothing), and doing nothing is the one option that is already wrong.
+It is its own part precisely because its scope is a finding, and a slice two other items depend on
+should not carry one.
 
 | # | slice | why here | cost |
 |---|---|---|---|
-| 1 | Global command list: `runPipeline`'s `write(...)` sequence becomes data the core computes and the shell folds over | touches no leaf, no fact, no javapoet, no emitted output; makes "the core decides the entire emit" literally true for the one population where it is currently 20 lines of orchestrator decisions | very low |
-| 2 | Label the hierarchies (walked / resolved / command / error), install invariants 1 and 3 at their current counts, and ship the programme's two instruments: the exemption-list triage and the corpus pair-independence extension (both below) | the labelling is the programme's vocabulary, a ratchet installed before the migration is what stops the surface growing while the work proceeds, and the pair-independence data validates the two-arm contribution collapse before slice 3 spends the medium cost | low |
-| 3 | **The keystone: projection commands.** One method per projection unit, grouped selection in and select list out, replacing the three `$fields` overloads and renamed to say what it returns (`$project`) uniformly across table-backed and nesting units. Nesting types promoted to units; correlation keys as gated `Project` arms; exhaustive dispatch with no default; a launcher for `@splitQuery` on a nesting field; the demand walk and `ParentProjectionContainmentCheck` deleted. Brings `EmitPlan`, the `command` / `plan` / `render` packages, and `GeneratedUnits` moved out of `compile/` so the producer can name its units. Depends on R516 | designing this validates or breaks the whole model, and it is the only slice that deletes a build-time throw, a duplicated walk, and a runtime over-projection at once | medium |
-| 3c | **The launcher dual: the root SELECT family becomes launcher commands.** Owned by R541, rewritten in command terms: `(coordinate, operation)` rows carrying invocation strategy, return shape, and a `UnitRef` naming the projection unit they select from. Depends on slice 3 | the second proof of concept. Slice 3 proves type grain and a contribution list; this proves the three things it cannot reach, namely coordinate keying, strategy as data, and one command referencing another, which is what slice 7's edge projection rests on. Generalising to slice 5 from two proofs at different grains beats generalising from one | medium |
-| 3d | **The third proof: condition commands.** The WHERE family becomes coordinate-keyed condition units, owned by R552; the entity classes and per-coordinate glue methods become two renderings of one relation, and every WHERE consumer (root, child, inline, polymorphic) calls glue instead of composing the fold inline. Depends on slice 3, orders freely against 3c (R552 fork 4) | reaches what neither sibling proof can: a QueryPart-valued unit proves the command vocabulary is not select-specific, authored `@condition` methods give the edge view its emitted-versus-external split before the service family needs it at scale, and the entity GROUP BY hands slice 3b its exemplar rows | medium |
-| 3b | The type-keyed relation `(typeName, unitKind)` replaces the 24 generator predicates, one kind at a time | inverts "should I emit" from 24 independent loops into one relation the shell folds over; renderers barely move, and the unit vocabulary already landed with slice 3 | medium |
+| 1 | **Global command list, and the vocabulary skeleton.** `runPipeline`'s 34 `write(...)` calls become a relation the core computes and the shell folds over, and the slice brings the machinery that relation cannot exist without: `EmitPlan`, the `command` / `plan` / `render` packages, the import-direction check over them, `UnitRef`, and `GeneratedUnits` moved out of `compile/` | touches no leaf, no fact, no javapoet, no emitted output, so the cheapest slice in the programme is also its first complete vertical; makes "the core decides the entire emit" literally true for the one population where it is currently orchestrator control flow, and puts the package triangle in trunk before anything expensive rests on it | very low |
+| 2 | Label the hierarchies (walked / resolved / command / error), install invariants 1 and 3 at their current counts, and ship the programme's three instruments: the exemption-list triage, the corpus pair-independence extension (both below), and the SQL equivalence harness with its projection-covering baseline | the labelling is the programme's vocabulary, a ratchet installed before the migration is what stops the surface growing while the work proceeds, the pair-independence data validates the two-arm contribution collapse before slice 3.1 spends the medium cost, and the baseline is what makes the keystone's SQL change a reviewable diff instead of a claim | low |
+| 3.1 | **The keystone, part one: the projection command.** One method per projection unit, grouped selection in and select list out, replacing the three `$fields` overloads and renamed to say what it returns (`$project`) uniformly across table-backed and nesting units. Nesting types promoted to units; the seven positional buckets become one ordered `List<Contribution>`; exhaustive dispatch with no default | designing this validates or breaks the whole model. It reshapes the producer/renderer seam and renames a method without moving any SQL, so it lands against the frozen baseline and proves the reshape in isolation | medium |
+| 3.2 | **The keystone, part two: correlation keys, and the end of over-projection.** The correlation columns become a gated `Project` arm reading the same accessors the extraction emitter consumes; the required-projection walk and `ParentProjectionContainmentCheck` are deleted; an unselected child projects nothing. Depends on R516 and on 3.1 | the only slice that deletes a build-time throw, a duplicated walk and a runtime over-projection at once, and the only part of the keystone that changes SQL, which is what makes it the part that re-baselines the pin | medium |
+| 3.3 | **The keystone, part three: `@splitQuery` on a nesting field.** Confirm the directive is accepted and silently ignored there; implement the launcher it implies, or land the validate-time deferred rejection. Depends on 3.1 | the one part whose scope is a finding rather than a plan, so it is separated from the two parts R541 and R552 wait on | low |
+| 3c | **The launcher dual: the root SELECT family becomes launcher commands.** Owned by R541, rewritten in command terms: `(coordinate, operation)` rows carrying invocation strategy, return shape, and a `UnitRef` naming the projection unit they select from. Depends on 3.1 and 3.2 (it names projection units, and its exact-SQL pin wants the select list final) | the second proof of concept. Slice 3 proves type grain and a contribution list; this proves the three things it cannot reach, namely coordinate keying, strategy as data, and one command referencing another, which is what slice 7's edge projection rests on. Generalising to slice 5 from two proofs at different grains beats generalising from one | medium |
+| 3d | **The third proof: condition commands.** The WHERE family becomes coordinate-keyed condition units, owned by R552; the entity classes and per-coordinate glue methods become two renderings of one relation, and every WHERE consumer (root, child, inline, polymorphic) calls glue instead of composing the fold inline. Depends on slice 1 only; 3.1 is what unlocks its R472 fix, and without it that defect converts to a deferred rejection instead. Runs before 3c (ordering below) | reaches what neither sibling proof can: a QueryPart-valued unit proves the command vocabulary is not select-specific, authored `@condition` methods give the edge view its emitted-versus-external split before the service family needs it at scale, and the entity GROUP BY hands slice 3b its exemplar rows | medium |
+| 3b | The type-keyed relation `(typeName, unitKind)` replaces the 24 generator predicates, one kind at a time | inverts "should I emit" from 24 independent loops into one relation the shell folds over; renderers barely move, and the unit vocabulary already landed with slice 1 | medium |
 | 4 | Fact-visitor engine: one shared traversal dispatching to per-fact visitors, on the `LintEngine` pattern, with the registry-coverage meta-test, one genuinely independent fact as beachhead | dissolves the central switch that made `FieldBuilder` the largest file in the tree, using an architecture that already shipped here | medium |
 | 5 | Coordinate-keyed command relation: `Operation` rows become the command set the shell consumes; `MethodCommandRegistry`'s parallel four-string record retires into it | this is where the flow finally inverts from shell-asks-core to core-tells-shell | medium |
 | 6 | Grain repair, worked from the exemption lists | 19 stated data points about where the grain is wrong, already written down with reasons | medium |
 | 7 | The recompile graph becomes a projection over the command relation, retiring `CompileDependencyGraphBuilder`'s coarsening switch; R10's rebuild drop lands once connection synthesis is a relation | removes the largest duplicate derivation and with it a recurring bug class (R455, R459, R462) | high |
 | 8 | The corpus asserts facts, then commands (R543) | the payoff that justifies the command half at all, and it wants the relations to exist first | medium |
+
+**Ordering among the three proofs is decided here, not by their reviewers.** R541's fork 1 and R552's
+fork 4 each ask how the launcher gets its WHERE clause, and each defers to the other item's reviewer,
+which means nobody decides. The programme owns sequencing, so: **R552 slices 1 and 2 land before R541
+slice 1.** Four of R541's five root shapes already call named `<field>Condition` methods, so the
+launcher consumes the condition relation from its first row; the reverse order has R541 mint a
+`ConditionRef` from a formula R552 then re-homes, which is the migration payment this programme
+refuses. R552 also needs only slice 1 to start, and it carries two absorbed defect fixes (R475's
+uncompilable output, R472's dangling reference), so running it first puts a user-visible correctness
+win in front of the first purely architectural family. Both forks now resolve by pointing here rather
+than by weighing options. The full sequence: 1, 2, R552 1 to 3, 3.1, 3.2, 3.3, R552 4 jointly with
+3c, then 3b, 4, 5, 6, 7, 8.
+
+R552 slice 3 and slice 3.1 are the one pair in that sequence that must not run concurrently: the
+inline `$fields` arm emitters are R552 slice 3's convergence targets and slice 3.1's raw material, so
+both would be editing the same emitters for different reasons. R552 slice 3 goes first, which is also
+the cheaper order, since 3.1 then folds arms whose condition composition is already a one-line call.
+The R472 coupling runs the other way and is soft: without slice 3.1 there is no walkable home for
+nested coordinates, so R552's fix for it degrades to a deferred rejection rather than blocking, which
+is exactly what that item already specifies.
 
 Slice 4 owes one design decision before any code: **gather versus resolve.** Lint rules are independent
 inspections, which is why their registry is clean, but facts interlock (`resolvedTable` is a coalesce over
@@ -601,7 +717,7 @@ diagonal? A populated product means independence, so the families must separate;
 co-vary, so keep them fused and save the machinery. That turns "which families are real" from a judgment
 call into a measurement, and it makes the corpus an instrument for designing the model rather than only
 for pinning it. Slice 2 ships this extension alongside the labelling, so the measurement exists before
-slice 3 commits to the two-arm collapse it would falsify.
+slice 3.1 commits to the two-arm collapse it would falsify.
 
 ## Relationship to existing items
 
@@ -612,9 +728,9 @@ slice 3 commits to the two-arm collapse it would falsify.
 | R546 (Discarded 2026-07-27) | absorbed here. It asked what shape `MethodCommand` should grow into, and this reframing answers "none": the hierarchies are the commands, so a parallel four-string record is exactly the intermediary model this programme says is unnecessary. Its flow-inversion scope became slice 5, its recompile-graph justification became slice 7 (full argument in the audit's gap 7), and its abandon condition became this item's |
 | R543 (Backlog) | slice 8. Its fact half needs slice 4, its command half needs slice 5 |
 | R544 (Backlog) | independent, and this reframing strengthens it: the error-channel hierarchies are a first-class fourth kind at 43 permits, so pinning them declaratively is model work, not only test hygiene |
-| R541 (reopened to Spec 2026-07-27) | **the second proof of concept**, slice 3c. Rewritten in command terms, which dissolves rather than defers most of its previous design: its `QueryUnitField` naming capability, its `declareRootQueryUnit` registry seam and its bidirectional oracle were all machinery for facts an emitter reads directly, and under a coordinate-keyed relation the name is a producer-computed field and "exactly one command per coordinate" is the key. Building them first would have been a migration payment slice 5 then retires. Its five root emit shapes stay the real content, and its exact-SQL equivalence pin gets simpler rather than narrower: authored after slice 3, the select list is already final, so the pin covers whole statements with no carve-out. Its conditions fork was re-posed at Spec review 2026-07-27: the root builders already call named `<field>Condition` methods, so what the fork actually does is finish R333 row 5's naming lift (the `QueryConditionsGenerator` end, R2 today) for the covered family's coordinates; the slot resolves as a `UnitRef` into R552's condition relation and the scope question moved there (its fork 4). Its live open fork is now the connection root's `ConnectionResult` carrier plan (`totalCount`'s `(table, condition)` binding and the facet condition fragments), which the launcher sketch has no slot for |
-| R552 (Spec) | **the third proof of concept**, slice 3d. The WHERE family as coordinate-keyed condition relations: the first value-shaped unit, the second edge-source kind including the first external callees, boundary marshalling as data, and the type-keyed GROUP BY that hands slice 3b its exemplar rows. Dissolves R541's conditions fork by owning condition production (either landing order is safe, its fork 4); absorbs R472, R475 and R387 for its family |
-| R516 (Ready, priority 2) | **dependency of slice 3.** It deletes the `reservedFullRow` axis and the reserved-alias scheme, which is the one demand no parent-owned fact can serve, and it ships independently as correctness work. Its force-include of PK plus node key is an interim expression that slice 3 converts to a gated `Project` arm, and the node-key half is redundant once the `id` arm projects those columns; its scope item 5 (update `ParentProjectionContainmentCheck`) should be the minimum that keeps the check honest, since slice 3 deletes it |
+| R541 (reopened to Spec 2026-07-27) | **the second proof of concept**, slice 3c. Rewritten in command terms, which dissolves rather than defers most of its previous design: its `QueryUnitField` naming capability, its `declareRootQueryUnit` registry seam and its bidirectional oracle were all machinery for facts an emitter reads directly, and under a coordinate-keyed relation the name is a producer-computed field and "exactly one command per coordinate" is the key. Building them first would have been a migration payment slice 5 then retires. Its five root emit shapes stay the real content, and its exact-SQL equivalence pin gets simpler rather than narrower: authored after slice 3, the select list is already final, so the pin covers whole statements with no carve-out. Its conditions fork was re-posed at Spec review 2026-07-27: the root builders already call named `<field>Condition` methods, so what the fork actually does is finish R333 row 5's naming lift (the `QueryConditionsGenerator` end, R2 today) for the covered family's coordinates; the slot resolves as a `UnitRef` into R552's condition relation and the scope question moved there (its fork 4). Its live open fork is now the connection root's `ConnectionResult` carrier plan (`totalCount`'s `(table, condition)` binding and the facet condition fragments), which the launcher sketch has no slot for. Two notes from the rollout review: it is the one proof of the three with no capability payload, which the "no slice that is purely a migration payment" rule makes a thing to name in its own body rather than discover at review; and it runs after R552, per the ordering decision in the Slices section |
+| R552 (Spec) | **the third proof of concept**, slice 3d, and the first family to land. The WHERE family as one coordinate-keyed condition relation with a total glue unit per row: the first value-shaped unit, the second edge-source kind including the first external callees, argument marshalling as data, and the type-keyed GROUP BY that hands slice 3b its exemplar rows. Dissolves R541's conditions fork by owning condition production; the ordering question its fork 4 leaves open is decided in the Slices section (R552 first). Absorbs R472, R475 and R387 for its family, which is why it is also the right family to run first: two of the programme's earliest visible commits fix output that does not compile today |
+| R516 (Ready, priority 2) | **dependency of slice 3.2**, and of nothing earlier: the keystone's reshape half does not need it, which is part of why the split is worth having. It deletes the `reservedFullRow` axis and the reserved-alias scheme, which is the one demand no parent-owned fact can serve, and it ships independently as correctness work. Its force-include of PK plus node key is an interim expression that slice 3 converts to a gated `Project` arm, and the node-key half is redundant once the `id` arm projects those columns; its scope item 5 (update `ParentProjectionContainmentCheck`) should be the minimum that keeps the check honest, since slice 3 deletes it |
 | R462 (Spec) | fix by hand now, do not generalise; slice 7 dissolves its class. Advisory already noted on the item. Its Spec body cites `GraphitronSchemaValidator.NESTED_WIREABLE_LEAVES`, which no longer exists under that name anywhere in main or test, so the implementer must re-derive the current nested-leaf bound rather than trusting the citation |
 | R10 (Backlog) | dependency of slice 7. Its own body says it wants "a concrete signal"; the fact engine making connection synthesis a relation is that signal |
 | R7 (Backlog) | subsumed in effect. `TypeFetcherGenerator` splits along command kinds under slice 3 and slice 5 rather than by a decomposition pass that regrows |
@@ -643,6 +759,16 @@ the intent to run the slices to completion, the mitigation is sequencing rather 
 in the invariants section hold each conversion once it lands, so an interruption leaves a smaller shell
 rather than two half-models.
 
+One honest qualification on that mitigation, because the widest window is the one the ratchets measure
+but do not close. Between slice 3.1 and the end of slice 4, migrated families run facts, then leaves,
+then commands, then render, and invariant 1's tertiary count (leaf references inside `plan/`) makes a
+stall in that window a flat line on a named number. Visible is not the same as costly. The programme's
+stated answer is the intent to run to completion, which is a commitment rather than a mechanism, and
+that is a fine answer for serial single-session work: say so plainly and the risk is accepted, not
+hidden. If the work is ever parallelised across sessions, the four-layer window stops being self-
+closing, and the thing to do then is name slice 4's owner before slice 3.1 lands rather than after
+the count flattens.
+
 ## Non-goals
 
 - A generic fact bus. No `Fact` interface, no `Map<String, Object>`, no dynamically registered fact kinds.
@@ -653,17 +779,18 @@ rather than two half-models.
   do not move, they stop deciding.
 - **Byte-identical emitted output as an acceptance test.** Tempting for a re-platforming, and wrong for the
   same reason code-string assertions are wrong: it makes generated text the contract, and it forbids
-  improving the emit (slice 3 renames a method and adds arms, so it cannot hold anyway). Acceptance for
+  improving the emit (slice 3.1 renames a method and adds arms, so it cannot hold anyway). Acceptance for
   every slice is the tiers that already exist: the compilation tier proves the emit compiles, the execution
   tier proves it runs against PostgreSQL, `MethodClosureOracleTest` proves the graph is closed,
   `IncrementalCompileHarnessTest` proves the recompile set is right, and the corpus proves the
   classification. For a pure rename, ordinary refactoring practice (rename at the definition, let the
   compiler and the closure oracle find every reference) is the discipline, not output diffing.
-- Any change to emitted *behaviour*. Slices 1, 3b and 3c change who decides what to emit, not what runs; where
-  a slice does change output (slice 3's rename, its new arms, and the projection it stops emitting for
-  unselected children), it changes shape and never semantics.
+- Any change to emitted *behaviour*. Slices 1, 3.1, 3b and 3c change who decides what to emit, not what runs; where
+  a slice does change output (slice 3.1's rename and new arms, and slice 3.2's projection it stops emitting for
+  unselected children), it changes shape and never semantics. Slice 3.2's SQL change is the single
+  exception the baseline rule is built around, and it is a narrowing: fewer columns, same rows.
 - Changing what any directive means. The one directive whose *reach* grows is `@splitQuery` on a nesting
-  field, which today is accepted and appears to do nothing; slice 3 gives it the launcher it implies.
+  field, which today is accepted and appears to do nothing; slice 3.3 gives it the launcher it implies.
   Otherwise this is entirely internal.
 
 ## Acceptance
