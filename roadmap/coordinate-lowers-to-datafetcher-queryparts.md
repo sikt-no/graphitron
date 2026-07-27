@@ -37,7 +37,9 @@ reached by a foreign key); together those trigger a `join` and a `select`. No le
 table field reached by a reference"; the facts do, and they add rather than multiply.
 
 This item is the **model**: the facts, the method graph, and the integrity check that ties them
-together. Re-platforming the generator's emit onto the model is a separate item, **R314**. Suggested
+together. Re-platforming the generator's emit onto the model is owned by the **R549**
+(`facts-and-commands`) programme, which consumes this model slice by slice; **R314** (Done) shipped its
+reentry beachhead. Suggested
 reading order is this orientation, then *The model* (the ER diagram and the fact catalog) and *What the
 model enables*, then the detail: the front half (*The normalized schema: the coordinate and its facts*)
 and the back half (*Operations are realized by seams*). The lettered **Discovery** threads (A-K) at the
@@ -319,7 +321,7 @@ it runs. It does not select the columns the other two live on: the authored form
 the description text, the source position. Those columns are in the base regardless; code generation simply
 does not project them. Calling code generation "the model" was the original error; it is the projection that
 selects the fewest columns and imposes the strictest precondition, no more privileged than the others.
-Re-platforming the emit onto the facts is R314.
+Re-platforming the emit onto the facts is the R549 programme; R314 (Done) was its reentry beachhead.
 
 **The invariant that keeps it one model: the projection seam re-sources from the facts.** Today
 `CatalogBuilder.projectFieldClassification` switches over the classifier's leaf permits to build
@@ -505,8 +507,8 @@ this spec, and it is neither the field nor either library type. It is the **emit
 > name. The leaf zoo, the per-field "graphitron field", and the two library types (`DataFetcher`,
 > `QueryPart`) are all denormalized or partial views of that one graph.
 
-This spec is the **model**; consuming it (re-platforming the generator onto the lowering) is R314's emit
-re-platforming. The graph framing was reached by walking the actual emitters; the **Discovery** section
+This spec is the **model**; consuming it (re-platforming the generator onto the lowering) is the R549
+programme's job, of which R314 (Done) shipped the reentry slice. The graph framing was reached by walking the actual emitters; the **Discovery** section
 below records that chain, each step pinned to a current emitter with line numbers. It superseded an
 earlier, narrower headline ("a coordinate lowers to one `DataFetcher` plus one or more `org.jooq.QueryPart`s")
 that named the SQL-side unit a level too fine. That earlier framing is kept in Discovery as the path in,
@@ -1820,6 +1822,12 @@ contribution.
   Acceptance across the run-up is **execution-tier equivalence** (same rows, same order, error paths
   intact), not byte-for-byte generated-output equality: the goal is gradual improvement toward this
   model, and slices may normalize generated-code shape as they go.
+- **R549** (facts-and-commands): the emit-re-platforming programme, and the successor to the wholesale
+  reading of R314 above. It consumes this model without re-litigating it, labels the sealed hierarchies by
+  provenance and grain, and executes the back half as three command relations (global, type-keyed,
+  coordinate-keyed), with the projection command as its keystone. The seam worklist below stays this
+  document's living table: R549's per-family recipe updates the corresponding rows as each family's
+  verdict lands, so the two items cannot drift on seam decisions.
 - **R222** (dimensional-model-pivot): the umbrella this model grew out of, and it keeps the
   umbrella/stage-tracking role; slices keep filing under its stages. Where its sketches lag this
   document (notably the Stage 3 destination sketch and the carrier table), **this document governs
@@ -2014,7 +2022,8 @@ filed as R360), the DataFetcher
 and QueryPart-methods as views over them), the target seam topology and its placement rule, and the decision to materialize
 the relations as typed in-type collections with a referential-integrity check rather than on a query
 engine). Out of scope: the emit
-re-platforming that consumes it (R314), any rewrite of R316 slices 1-4 (they are the valid
+re-platforming that consumes it (the R549 programme; R314 shipped its reentry slice), any rewrite of R316
+slices 1-4 (they are the valid
 denormalized projection), and any incremental-query engine for the LSP (a separate, later perf question).
 No code in this item beyond what is needed to make the model executable as
 tests, and that split is now decided (2026-07-04): the Ready code deliverable is **thread I's closure
