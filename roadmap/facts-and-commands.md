@@ -300,6 +300,16 @@ wrapping in the inline paths). The runtime dedup is also evidence that overlap b
 name collision to reconcile at runtime, not a build-time invariant to enforce, which is a second argument
 against the demand walk.
 
+**The launcher is the other half, and slice 3c proves it.** This command decides a select list; something
+else decides the `select(<unit>.$project(...)).from(t).where(...)` around it, appends the extras above, and
+picks how the query is invoked. Slice 3 states that boundary and slice 3c tests it against the root SELECT
+family, though only for the one append site that family reaches: the connection root's extra-ordering
+columns. `__idx__` and `__rn__` are `SplitRowsMethodEmitter`'s and arrive with the child path in slice 5,
+`__typename` belongs to the polymorphic launcher, and multiset wrapping is projection-side rather than a
+launcher extra at all. One populated mechanism still falsifies the boundary if it fails to decompose, and
+designing the projection without ever writing its dual would leave the claim untested entirely, which is
+the argument for taking the launcher second rather than eventually.
+
 ## Production path and coexistence
 
 **Where commands come from.** The producer/renderer seam already exists as a function boundary.
@@ -456,6 +466,7 @@ succeed while the directive does nothing), and doing nothing is the one option t
 | 1 | Global command list: `runPipeline`'s `write(...)` sequence becomes data the core computes and the shell folds over | touches no leaf, no fact, no javapoet, no emitted output; makes "the core decides the entire emit" literally true for the one population where it is currently 20 lines of orchestrator decisions | very low |
 | 2 | Label the hierarchies (walked / resolved / command / error) and install invariants 1 and 3 at their current counts | the labelling is the programme's vocabulary, and a ratchet installed before the migration is what stops the surface growing while the work proceeds | low |
 | 3 | **The keystone: projection commands.** One method per projection unit, grouped selection in and select list out, replacing the three `$fields` overloads and renamed to say what it returns (`$project`) uniformly across table-backed and nesting units. Nesting types promoted to units; correlation keys as gated `Project` arms; exhaustive dispatch with no default; a launcher for `@splitQuery` on a nesting field; the demand walk and `ParentProjectionContainmentCheck` deleted. Brings `EmitPlan`, the `command` / `plan` / `render` packages, and `GeneratedUnits` moved out of `compile/` so the producer can name its units. Depends on R516 | designing this validates or breaks the whole model, and it is the only slice that deletes a build-time throw, a duplicated walk, and a runtime over-projection at once | medium |
+| 3c | **The launcher dual: the root SELECT family becomes launcher commands.** Owned by R541, rewritten in command terms: `(coordinate, operation)` rows carrying invocation strategy, return shape, and a `UnitRef` naming the projection unit they select from. Depends on slice 3 | the second proof of concept. Slice 3 proves type grain and a contribution list; this proves the three things it cannot reach, namely coordinate keying, strategy as data, and one command referencing another, which is what slice 7's edge projection rests on. Generalising to slice 5 from two proofs at different grains beats generalising from one | medium |
 | 3b | The type-keyed relation `(typeName, unitKind)` replaces the 24 generator predicates, one kind at a time | inverts "should I emit" from 24 independent loops into one relation the shell folds over; renderers barely move, and the unit vocabulary already landed with slice 3 | medium |
 | 4 | Fact-visitor engine: one shared traversal dispatching to per-fact visitors, on the `LintEngine` pattern, with the registry-coverage meta-test, one genuinely independent fact as beachhead | dissolves the central switch that made `FieldBuilder` the largest file in the tree, using an architecture that already shipped here | medium |
 | 5 | Coordinate-keyed command relation: `Operation` rows become the command set the shell consumes; `MethodCommandRegistry`'s parallel four-string record retires into it | this is where the flow finally inverts from shell-asks-core to core-tells-shell | medium |
@@ -507,7 +518,7 @@ for pinning it.
 | R546 (Discarded 2026-07-27) | absorbed here. It asked what shape `MethodCommand` should grow into, and this reframing answers "none": the hierarchies are the commands, so a parallel four-string record is exactly the intermediary model this programme says is unnecessary. Its flow-inversion scope became slice 5, its recompile-graph justification became slice 7 (full argument in the audit's gap 7), and its abandon condition became this item's |
 | R543 (Backlog) | slice 8. Its fact half needs slice 4, its command half needs slice 5 |
 | R544 (Backlog) | independent, and this reframing strengthens it: the error-channel hierarchies are a first-class fourth kind at 43 permits, so pinning them declaratively is model work, not only test hygiene |
-| R541 (Ready) | first family to flip under slice 5, already spending the command registry |
+| R541 (reopened to Spec 2026-07-27) | **the second proof of concept**, slice 3c. Rewritten in command terms, which dissolves rather than defers most of its previous design: its `QueryUnitField` naming capability, its `declareRootQueryUnit` registry seam and its bidirectional oracle were all machinery for facts an emitter reads directly, and under a coordinate-keyed relation the name is a producer-computed field and "exactly one command per coordinate" is the key. Building them first would have been a migration payment slice 5 then retires. Its five root emit shapes stay the real content, and its exact-SQL equivalence pin gets simpler rather than narrower: authored after slice 3, the select list is already final, so the pin covers whole statements with no carve-out. Its one open fork pulls a bounded slice of R333 row 5 (conditions) into the covered family, which its own scope section previously excluded outright, so that widening is the reviewer's call to confirm |
 | R516 (Ready, priority 2) | **dependency of slice 3.** It deletes the `reservedFullRow` axis and the reserved-alias scheme, which is the one demand no parent-owned fact can serve, and it ships independently as correctness work. Its force-include of PK plus node key is an interim expression that slice 3 converts to a gated `Project` arm, and the node-key half is redundant once the `id` arm projects those columns; its scope item 5 (update `ParentProjectionContainmentCheck`) should be the minimum that keeps the check honest, since slice 3 deletes it |
 | R462 (Spec) | fix by hand now, do not generalise; slice 7 dissolves its class. Advisory already noted on the item. Its Spec body cites `GraphitronSchemaValidator.NESTED_WIREABLE_LEAVES`, which no longer exists under that name anywhere in main or test, so the implementer must re-derive the current nested-leaf bound rather than trusting the citation |
 | R10 (Backlog) | dependency of slice 7. Its own body says it wants "a concrete signal"; the fact engine making connection synthesis a relation is that signal |
@@ -553,7 +564,7 @@ rather than two half-models.
   `IncrementalCompileHarnessTest` proves the recompile set is right, and the corpus proves the
   classification. For a pure rename, ordinary refactoring practice (rename at the definition, let the
   compiler and the closure oracle find every reference) is the discipline, not output diffing.
-- Any change to emitted *behaviour*. Slices 1 and 3b change who decides what to emit, not what runs; where
+- Any change to emitted *behaviour*. Slices 1, 3b and 3c change who decides what to emit, not what runs; where
   a slice does change output (slice 3's rename, its new arms, and the projection it stops emitting for
   unselected children), it changes shape and never semantics.
 - Changing what any directive means. The one directive whose *reach* grows is `@splitQuery` on a nesting

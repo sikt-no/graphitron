@@ -1,16 +1,16 @@
 ---
 id: R541
-title: "Root Query unit: one query unit shared by root and child fetchers"
-status: Ready
+title: "Root query launcher: the root SELECT family as launcher commands"
+status: Spec
 bucket: architecture
 priority: 4
 theme: classification-model
-depends-on: []
+depends-on: [facts-and-commands]
 created: 2026-07-26
-last-updated: 2026-07-26
+last-updated: 2026-07-27
 ---
 
-# Root Query unit: one query unit shared by root and child fetchers
+# Root query launcher: the root SELECT family as launcher commands
 
 Owns seam-worklist row 10 of R333's decided target topology: the **Root Query unit**, the root
 `rows<X>`-equivalent. The resolve side is asymmetric today: the child path factors its query into a
@@ -26,11 +26,47 @@ uniformity, independent assertability of the query unit in the corpus and tests,
 invocation-strategy slot that later arrival work (R471) spends. This is the deliberate, accepted
 trade recorded in R333.
 
-R314 has since shipped the machinery this item spends: the `methodgraph` command/name registry
-(`MethodCommand` + `MethodCommandRegistry`, the name authority whose commit returns the declaration
-name), the level-1 closure oracle (`MethodClosureOracleTest`) and the level-2 bidirectional oracle
-pattern (`ReentryCommandClosureTest`). This item extends that machinery to a new covered family
-rather than inventing any of it.
+**Reopened to Spec 2026-07-27 and rewritten as a command family.** The signed-off version built this
+seam in the idiom where an emitter reads model facts directly: a `QueryUnitField` naming capability
+with the `rows<X>` formula extracted to one locus, a `declareRootQueryUnit` commit seam on
+`MethodCommandRegistry`, and a level-2 bidirectional oracle to discover that each covered coordinate
+has exactly one command. R549 makes that machinery unnecessary rather than merely early. Under a
+coordinate-keyed command relation the declaration name is a field the producer computes when it mints
+the row, so there is one derivation locus by construction; "exactly one command per coordinate" is the
+relation's key rather than a property a test hunts for; and the fetcher's thinness is a type property
+of a renderer that is a total function over its command. Building the capability and the seam first
+would have been precisely the migration payment R549 refuses: real work, then real deletion, in its
+slice 5. So this item becomes **R549 slice 3c, the second proof of concept** for the command
+architecture, and keeps the content the reframing does not touch: the five root emit shapes below, the
+derived family fact, fan-out as invocation strategy, and the SQL equivalence pin.
+
+What survives from R314 is the level-1 closure oracle (`MethodClosureOracleTest`), which R549 keeps as
+its invariant 4: every callee name resolves to a committed command. What does not survive is the
+level-2 pattern (`ReentryCommandClosureTest`) as a thing this item extends, because the property it
+asserts becomes structural here.
+
+## Why this family is the right second proof
+
+R549 slice 3's projection command proves type grain and a contribution list. Four things it cannot
+reach are exercised here, and all four are load-bearing later:
+
+- **Coordinate-grain keying.** `(coordinate, operation)` is R549's third relation and has no instance
+  until this item ships one.
+- **Invocation strategy as data.** Direct, fanned across tenant connections, and (later) batched
+  through a loader plus scatter are strategies over one query composition. A projection command has no
+  strategy axis at all, so nothing has yet tested that strategy is expressible as a command field
+  rather than as emitter control flow. This item populates the first two arms; see *Design* for why it
+  declines to declare the third ahead of its first row.
+- **Return-shape variation.** `Result<Record>`, a single `Record`, and a connection result are three
+  shapes derived from the coordinate's facts, where a projection always returns a select-term list.
+- **One command referencing another.** The launcher names the projection unit it selects from. This is
+  the first cross-command edge, and slice 7's central claim, that the recompile graph is a projection
+  over the command relation, rests on those edges being data rather than a scan of emitted text. If
+  the reference shape is wrong, slice 7 does not work, and this is the cheapest place to find out.
+
+The family is also unusually well-bounded for a proof: its membership is derived from facts the model
+already carries with no exemption list anywhere (see *Design*), which makes "did we cover it"
+decidable rather than a judgment call. Most families in this codebase still need an exemption list.
 
 ## Current topology (2026-07-26 code walk)
 
@@ -95,44 +131,81 @@ variants; `TypeConditionsGenerator` already dispatches on it. `BatchKeyField` (w
 `loaderRegistration()`) are inherently child-shaped, so the root unit needs its own naming fact,
 not a forced retrofit.
 
+Two things about this walk to hold in mind while reading the design. The `$fields` head it records at
+every site is what R549 slice 3 rewrites: the call becomes `<Type>.$project(<grouped selection>, t,
+env)` and the three overloads collapse to one, so this item composes launchers around the
+post-slice-3 shape and never sees `$fields`. And the walk itself is the item's most durable content:
+it is an inventory of five genuinely distinct emit shapes, and the command reframing changes who
+decides them, not how many there are.
+
 ## Target
 
-Every root SQL anchor delegates across a named seam to its own query unit, exactly as the child
-path does today. The root fetcher becomes a thin entry point: decode strategy-side concerns
-(nothing today; the direct call *is* the strategy), call the unit, wrap the result. The unit owns
-the whole query composition: table local, condition, orderBy, pagination, the
-`select($fields).from(...)` head, and the terminal fetch.
+Every root SQL anchor is produced as a **launcher command** and rendered by an interpreter that is a
+total function over it. The root fetcher becomes a thin entry point by construction rather than by
+discipline: it renders from a command whose arms are the only things it can express. The launcher owns
+the whole query composition as data: the table, the condition, the orderBy, pagination, the reference
+to the projection unit it selects from, the invocation strategy, and the return shape.
 
-"One query unit shared by root and child" (row 10's phrasing) means one unit **kind**: the same
-skeleton framing, the same naming discipline (regime 1, minted on the model, committed through
-the registry), the same closure oracle, per anchor coordinate. A root coordinate and a child
-coordinate are distinct coordinates and keep distinct unit instances; what stops existing is the
-root-shaped *absence* of a unit. The direct-vs-batched fork becomes a property of the call site
-(invocation strategy), which is exactly the shape R471's direct-SQL `OnlyChild` emit needs to
-slot into later: arrival picks the strategy, the unit does not care who calls it.
+"One query unit shared by root and child" (row 10's phrasing) means one command **kind**, not one
+command instance. A root coordinate and a child coordinate are distinct coordinates and keep distinct
+rows in the relation; what stops existing is the root-shaped *absence* of a unit. The direct-versus-batched
+fork becomes a field on the command, which is what makes R471's direct-SQL `OnlyChild` emit a new
+strategy arm rather than a fifth body shape or a new call site: arrival picks the strategy, and the
+composition does not care who invokes it.
 
 ## Design
 
-- **Naming fact, one derivation locus.** A small capability interface (working name
-  `QueryUnitField`) carrying `queryUnitName()`, default `"rows" + capitalize(name())`. That
-  formula already exists byte-identical in `BatchKeyField.rowsMethodName()` and
-  `MutationField.DmlTableField.reentryRowsMethodName()`; a third sibling copy would give
-  regime 1's one-derivation-locus rule three loci. So the capability *extracts* the formula
-  rather than duplicating it: `BatchKeyField` extends it, and the service arms' `load<X>` and
-  the lookup root's `lookup<Field>` become overrides of the one method rather than parallel
-  naming facts. Root SQL-anchor leaves adopt the capability. The fold is a **cutover, not
-  additive-then-cutover**: the surface is narrowly pinned (the in-tree read sites are
-  `MethodCommandRegistry`, `RowsMethodCall`, `TypeFetcherEmissionContext.rowsDeclarationName`,
-  and the lookup fetcher's call site), the rename is total, behavior-free and compiler-forced,
-  and generated output is byte-identical, which is exactly the narrowly-pinned carve-out
-  `roadmap/workflow.adoc` § "Structural pivots" grants. The registry seam names
-  (`declareReentryRowsMethod`, `declareDmlReentryRowsMethod`) survive unchanged: they name
-  family seams, not the naming fact. Retired names are listed in `## Retired vocabulary` below.
-- **Registry seam.** A new `MethodCommandRegistry.declareRootQueryUnit(field, unitFqcn)` commit,
-  shaped exactly like `declareReentryRowsMethod`: reads the model's naming fact, returns the
-  declaration name, commits when the site-level fact holds, no overload accepting an
-  externally-derived name. Duplicate claims throw via the existing exactly-one guard. The
-  covered-family gate is **derived from facts the model already carries, never tagged**: a
+- **The command.** Pure records, no emit-library vocabulary, per R549's invariant 3:
+
+  ```java
+  record LauncherCommand(
+      UnitRef unit,             // the method the shell declares for this launcher
+      Coordinate coordinate,    // the relation's key, with operation
+      TableRef table,           // the table this query runs against
+      UnitRef projection,       // the projection unit whose $project supplies the select list
+      ConditionRef where,       // the emitted condition method; see the conditions fork below
+      List<OrderTerm> orderBy,
+      Pagination pagination,    // None | Seek
+      Invocation invocation,    // Direct | FannedOverTenants
+      ResultShape result,       // SingleRecord | RecordList | ConnectionResult
+      List<ExtraTerm> extras)   // launcher-owned projection additions: cursor columns, __idx__, __rn__
+  {}
+  ```
+
+  `extras` is the slot that makes this command the projection command's dual. R549 establishes that
+  anything a mechanism needs regardless of client selection belongs to a launcher rather than to a
+  projection contribution, and this is where those terms live. Be precise about how much of that claim
+  this family can actually test, because R549 names four append sites and **this item reaches exactly
+  one of them**: the connection root's extra-ordering columns, which `ConnectionHelperClassGenerator`
+  computes as `extraFields` ("the pure extra-ordering columns", merged into `selectFields` and driving
+  cursor encoding). The other three are elsewhere: `__idx__` and `__rn__` live entirely in
+  `SplitRowsMethodEmitter`, so they are the child path's extras and arrive with slice 5; `__typename` is
+  appended by the polymorphic launcher, which the derived fact excludes; and multiset wrapping happens
+  inside the projection, not at a launcher, so it is slice 3's business and not an extra at all. One
+  populated mechanism is still a real test of the slot (it either decomposes into projection output plus
+  launcher extras or it does not), but nobody should read slice 3c as having validated all four.
+- **Invocation, with two arms and deliberately not three.**
+
+  ```java
+  sealed interface Invocation {
+      /** The fetcher resolves one dsl and calls the launcher once. */
+      record Direct() implements Invocation {}
+      /** The same composition invoked once per tenant connection, results concatenated. */
+      record FannedOverTenants() implements Invocation {}
+  }
+  ```
+
+  The child path's batched arm is **not** declared here. It is the obvious third arm and it is what
+  would make "one command kind shared by root and child" literally true, but declaring an arm before
+  any row populates it adds untested surface, which R549's non-vacuity discipline is against. Slice 5
+  declares `Batched` together with its first row, when the child path folds in. Two populated arms are
+  enough to prove the real point, that invocation strategy is expressible as a command field rather
+  than as emitter control flow.
+- **Return shape as data.** `ResultShape` is derived once, in the producer, from the coordinate's
+  cardinality and whether pagination is present, so the renderer reads a return shape instead of
+  deriving one. `RowsMethodShape.outerRowsReturnType` is the keyed derivation and does not fit these
+  three shapes; nothing bends it.
+- **The covered family, derived and never tagged.** The producer mints a row for exactly one thing: a
   `RootField` whose `operation()` is one of `Fetch` / `Paginate` / `Lookup` and whose target
   shape is `Table` (peeling the `Connection` wrapper). Walking `QueryField`'s permits against
   that conjunction: `QueryTableField`, `QueryLookupTableField`, `QueryTableInterfaceField`,
@@ -140,63 +213,79 @@ slot into later: arrival picks the strategy, the unit does not care who calls it
   `QueryUnionField`, target shape `Interface` / `Union`), the node roots (`NodeResolve`), the
   service roots (`ServiceCall`) and the DML roots (write operations) are out *by the fact*,
   with no exemption list anywhere. Not `emitsKeyedReQuery()`, which is false for root by design.
-- **Skeleton.** Extend or sibling `RowsMethodSkeleton`: the root unit is
-  `public static <Ret> rows<Field>(dsl, env)`. No `keys` parameter, and `dsl` is a
-  **parameter, not a local**: the call site owns connection acquisition (R333's thread K
-  pre-pays exactly this parameter-threading cost). Return types are the natural fetch results
-  (`Result<Record>` list, `Record` single, `ConnectionResult` connection), which do not fit
-  `RowsMethodShape.outerRowsReturnType` as written; the root unit gets its own return-shape
-  derivation rather than bending the keyed one.
-- **Body permit.** `RowsMethodBody` (sealed) gains root arms, or a sibling sealed permit for
-  root unit bodies; whichever keeps the skeleton switch exhaustive and the arms honest. The
-  bodies themselves are the existing inline blocks moved, not rewritten: composition of the
-  already-shared helpers stays identical so the SQL cannot drift.
-- **Fan-out.** `TenantConnections.fanOutRows(env, dsl -> ...)` is invocation strategy (the same
-  query invoked across N tenant connections), not query composition. The wrapper stays in the
-  fanned fetcher, which passes each tenant's `dsl` into the *same* unit the plain root calls
-  with its one resolved `dsl`. `TenantDslEmitter`'s `FanOut` invariant throw survives
-  untouched, and the unit's `dsl` parameter means one thing at every call site. This is also
-  what makes the R471 hand-off literal: an `OnlyChild` direct call is "same unit, caller
-  supplies `dsl`", not a fifth body shape.
-- **Closure.** Extend the level-2 bidirectional oracle to the new family
-  (`ReentryCommandClosureTest` pattern, likely a sibling test): every covered root coordinate
-  has exactly one committed command, every committed command's method was declared, and the
-  level-1 oracle keeps proving every emitted call edge resolves. The oracle's covered set reads
-  the **derived fact, never capability membership**: an `instanceof QueryUnitField`-gated set is
-  a tautology over its members and cannot catch the silent-skip drift where a leaf that should
-  implement the capability simply does not and vanishes from the set. The capability is the
-  structural conjunct only, the migration dial, exactly as R314 widened its covered set between
-  slices. One emit-shape requirement makes the closure assertable at all: the fetcher's call to
-  its unit is rendered **class-qualified even though it is a same-class sibling**
-  (`<Type>Fetchers.rows<Field>(dsl, env)`, legal Java, zero runtime cost).
-  `EmittedMethodClosure`'s javadoc names unqualified same-class calls as one of its two blind
-  spots (no generated-name token to resolve, closed only by javac), and the lookup precedent
-  emits exactly that invisible shape today (`$L(env)` off `lookupMethodName()`). Rejected
-  alternatives: extending the edge relation to bare identifiers (false-edge risk from locals and
-  parameters, and it weakens the scanner's falsifiability pins) and housing the unit in a
-  separate class (changes the generated surface for no reader benefit). `MethodClosureOracleTest`
-  gains a root-unit visibility witness alongside its existing pins, and the lookup call site
-  gets the same qualification when it folds in.
-- **Validator mirror.** The classifier decision ("this root coordinate launches a SELECT, so a
-  named query unit must exist") implies a generator branch, so it gets the twin every classifier
-  invariant gets: the derived fact true on a leaf that carries no query-unit naming fact is a
-  `ValidateMojo` error, landed in the same commit that closes the migration dial (no window).
-  The same guard is the membership enforcer: once migration completes, the derived fact's
-  true-set equals the capability's member-set.
+- **The producer.** One function in `plan`, from the model to the family's rows, minting a `UnitRef`
+  per covered coordinate as it goes. Name derivation lives here and nowhere else, so the three-loci
+  problem the previous design solved with a capability interface does not arise: there is one producer,
+  not three leaves. The whole family materialises before anything renders, per R549's produce-eagerly
+  rule.
+- **The renderer.** One interpreter in `render`, total over the command's arms, taking no
+  `GraphitronSchema`: R549's invariant 1, and this family is its second decrement. The emitted shape is
+  what the signed-off version specified and does not change: `public static <Ret> rows<Field>(dsl, env)`,
+  no `keys` parameter, and `dsl` a **parameter, not a local**, so the call site owns connection
+  acquisition (R333's thread K pre-pays exactly this parameter-threading cost). The bodies compose the
+  already-shared helpers (`ValuesJoinRowBuilder`, `JoinPathEmitter`, `LookupValuesJoinEmitter`, the
+  `<field>OrderBy` helper, `buildTableInterfaceReprojection`, `TenantDslEmitter`,
+  `GeneratorUtils.declareTableLocal`) exactly as the inline blocks do today, so the SQL cannot drift.
+- **`RowsMethodSkeleton` and `RowsMethodBody` stay untouched.** They are the child path's machinery and
+  the root launcher does not extend either. That matters beyond tidiness: `RowsMethodBody` sits in
+  `rewrite/model/` with a `CodeBlock` on every permit, which is R545's worst offender, and adding root
+  arms to it would grow the surface R549's invariant 3 ratchets down while making R545's relocation a
+  larger job. The launcher's arms are pure data in `command`, so the question does not arise.
+- **Fan-out is the `FannedOverTenants` arm, not a body shape.** `TenantConnections.fanOutRows(env,
+  dsl -> ...)` invokes the same query across N tenant connections, so it is strategy rather than
+  composition. Two coordinates differing only in tenancy binding therefore produce launcher commands
+  that differ in exactly one field, which is the sharpest available evidence that the strategy axis is
+  real: under the previous design the same distinction was a separate fetcher builder. The wrapper is
+  rendered at the call site, which passes each tenant's `dsl` into the same launcher the plain root
+  calls with its one resolved `dsl`; `TenantDslEmitter`'s `FanOut` invariant throw survives untouched,
+  and the `dsl` parameter means one thing everywhere. This is also what makes the R471 hand-off literal:
+  an `OnlyChild` direct call becomes a third arm on `Invocation`, not a fifth body shape.
+- **Closure, and the edge that carries the proof.** The launcher's reference to its projection unit is
+  a typed `UnitRef` minted by the plan's naming vocabulary, so an unresolvable callee is
+  unrepresentable rather than caught late: the same narrowing R549 settled on for projection callees.
+  The level-1 oracle (`MethodClosureOracleTest`, R549's invariant 4) stays green throughout and now
+  reads this edge off the command instead of scanning emitted text for it. The level-2 bidirectional
+  oracle is **not** extended to this family, because the property it would assert is structural here:
+  one row per coordinate is the relation's key, and a producer that mints two for one coordinate fails
+  the plan build. What replaces it as a falsifier is a non-vacuity pin on the relation itself (every
+  covered coordinate in the corpus appears exactly once; the boundary cases named above appear zero
+  times) plus the edge view over the command set.
+
+  The class-qualified emit for the fetcher's call to its launcher (`<Type>Fetchers.rows<Field>(dsl,
+  env)`, legal Java, zero runtime cost) **stays**, because churning the generated surface back buys
+  nothing and the qualified form reads better. But it stops being load-bearing, and the spec should say
+  so plainly: it existed only because `EmittedMethodClosure`'s javadoc names unqualified same-class
+  calls as one of its two blind spots, and under a command relation the edge is data, not a token a
+  scanner has to find. A later reader must not mistake the qualification for a principle.
+- **Validator mirror and membership.** The classifier decision ("this root coordinate launches a
+  SELECT") implies an emit branch, so it keeps the twin every classifier invariant gets. A coordinate
+  the derived fact is true of and the producer cannot mint a row for is a `ValidateMojo` **deferred
+  rejection**, not a producer-side throw, matching what R549 settled for unmintable projection leaves.
+  Once migration completes, the derived fact's true-set equals the relation's key-set, and that equality
+  is the membership enforcer; it lands in the same commit that closes the migration dial, with no
+  window.
 
 ## Design forks for the Spec reviewer
 
-1. **Where the naming fact lives.** Options: (a) the small capability interface above, with the
-   formula extracted to one locus and existing facts becoming overrides, (b) a default method on
-   `SqlGeneratingField`, (c) per-leaf methods like `lookupMethodName()` today. Recommendation:
-   (a). Option (b) fails twice over: child implementers already carry `rowsMethodName()` and
-   would get two naming facts, and `QueryRoutineTableField` does not implement
-   `SqlGeneratingField` at all, so the routine root would never receive the default. Option (c)
-   is the third-copy shape the one-locus rule forbids.
-2. **The lookup root.** `QueryLookupTableField.lookupMethodName()` is already regime-1 and its
-   unit already exists. Recommendation: it becomes the `queryUnitName()` *override* on that
-   leaf, and its declaration commits through the new seam so the closure oracle covers it; the
-   emitted `lookup<Field>` name is unchanged (renaming emitted methods buys nothing).
+1. **How the launcher carries its WHERE clause.** This is the one fork the command reframing creates,
+   and it is the item's real design question. Conditions are a half-migration today (R333 row 5):
+   `TypeConditionsGenerator` emits named condition methods for some sites, while the root builders
+   compose `var condition = DSL.noCondition()` inline and hand the local to `.where(condition)`. Options:
+   (a) the launcher carries a `ConditionRef` naming an emitted condition method, which means this item
+   completes the conditions migration **for the covered family only**; (b) the launcher carries a
+   `ConditionRef` where one exists and an opaque "compose inline as today" arm otherwise.
+   Recommendation: (a). Option (b) puts a rendered-code escape hatch inside a command, which is R545's
+   offender pattern arriving in the very layer built to be free of it, and it would make the launcher
+   command a bad proof of concept precisely where the proof matters. The cost of (a) is honest and
+   should be weighed: it pulls a bounded slice of row 5 into this item, and R549 currently lists row 5
+   as out of scope, so signing off on (a) means accepting that scope growth. The bound is the covered
+   family, nothing wider.
+2. **The lookup root.** `QueryLookupTableField.lookupMethodName()` is already regime-1 and its unit
+   already exists, so it is the one covered coordinate that starts with a name. Recommendation: the
+   producer computes its `UnitRef` like every other row and keeps emitting `lookup<Field>` unchanged,
+   with the leaf's naming method retired rather than promoted to an override. Renaming emitted methods
+   buys nothing; keeping a leaf-level naming fact alive next to a producer that computes names would
+   reintroduce the second locus this reframing removes.
 3. **Single-table-interface and routine roots.** Both are root SELECT launchers and belong to
    the family (the derived fact includes them); both have extra moving parts (discriminator
    reprojection, routine table expressions). Take them in the tail slices or spin them off?
@@ -211,64 +300,86 @@ slot into later: arrival picks the strategy, the unit does not care who calls it
 
 ## Slices
 
-1. **Model + registry + oracle + plain root, together.** The capability with the extracted
-   one-locus formula (the compiler-forced rename landing with it), the derived covered-family
-   fact, `declareRootQueryUnit`, the bidirectional oracle, *and* the extraction of
-   `buildQueryTableFetcher`'s single and list arms into the named unit, called class-qualified.
-   The oracle lands green with positive witnesses (the R314 slice-1 shape worked because the
-   reentry methods already existed; here the first units must land with the oracle or it
-   asserts an empty set, which is not an enforcer). The SQL equivalence pin suite (acceptance
-   below) is authored against pre-extraction output and lands before this slice's cutover.
-2. **Connection root.** Same extraction for `buildQueryConnectionFetcher`.
-3. **Fanned root.** The fetcher keeps `fanOutRows` and calls the unit per tenant `dsl`.
-4. **Routine + single-table-interface roots.**
-5. **Lookup-root fold + validator mirror + membership enforcer.** The `lookup<Field>` override
-   commits through the seam (retiring `lookupMethodName()`), its fetcher call site gains the
-   class qualification, and the `ValidateMojo` guard plus the derived-fact-equals-member-set
-   enforcer land in the same commit, closing the migration dial (no window).
+Slice 0 is R549 slice 3: the projection command, `EmitPlan`, the `command` / `plan` / `render`
+packages, and `UnitRef`. Nothing here starts before that lands, and this item builds no part of that
+vocabulary itself. The SQL equivalence pin suite is authored against post-slice-3 output.
+
+1. **Command, producer, renderer, plain root, together.** The `LauncherCommand` record set, the derived
+   covered-family fact, the producer minting rows for `buildQueryTableFetcher`'s single and list arms,
+   and the renderer, with the fetcher reduced to a strategy-plus-call entry point. The relation's
+   non-vacuity pin and boundary pins land with it: a first slice whose pins assert over an empty set is
+   not an enforcer, which is why the command and its first rows ship in one slice rather than two.
+2. **Connection root.** `buildQueryConnectionFetcher`, which is where `Pagination.Seek` and the
+   `extras` slot first carry weight. If the connection helper's `selectFields` union does not decompose
+   into "projection command output plus launcher extras", that is the R549 boundary failing, and it
+   fails here first.
+3. **Fanned root.** The `FannedOverTenants` arm and its call-site wrapper. This is the slice that
+   demonstrates strategy-as-data, since the fanned and plain rows differ in one field.
+4. **Routine + single-table-interface roots.** The two shapes with extra moving parts (routine table
+   expressions, discriminator reprojection).
+5. **Lookup-root fold + validator mirror + membership enforcer.** The lookup coordinate's row is minted
+   by the producer and `lookupMethodName()` retires; the `ValidateMojo` deferred rejection and the
+   derived-fact-equals-key-set enforcer land in the same commit, closing the migration dial with no
+   window.
 
 ## Acceptance
 
-- **SQL equivalence, not byte equivalence.** Extracting an inline block into a named method
-  changes the generated Java by construction; what must not change is the SQL. The mechanism,
-  fully specified: a new execution-tier equivalence pin suite in `graphitron-sakila-example`
-  (working name `RootQueryUnitSqlEquivalenceTest`), following the existing per-test-class
-  `SQL_LOG` `ExecuteListener` idiom (`GraphQLQueryTest` et al.), asserting **exact rendered SQL
-  strings and statement counts** (equality, not the `contains` substring form) for one
-  representative query per covered root shape. The suite is authored against pre-extraction
-  generator output and lands *before* slice 1's cutover; every slice keeps it green unchanged.
-  Editing its expected strings during this item is a defect being papered over, not test
+- **SQL equivalence, not byte equivalence.** Moving an inline block behind a command changes the
+  generated Java by construction; what must not change is the SQL. The mechanism, fully specified: a new
+  execution-tier equivalence pin suite in `graphitron-sakila-example` (working name
+  `RootQueryUnitSqlEquivalenceTest`), following the existing per-test-class `SQL_LOG` `ExecuteListener`
+  idiom (`GraphQLQueryTest` et al.), asserting **exact rendered SQL strings and statement counts**
+  (equality, not the `contains` substring form) for one representative query per covered root shape.
+  Because this item now lands after R549 slice 3, the select list is already in its final form when the
+  suite is authored, so the pin covers the whole statement and needs no carve-out for the projection
+  half: author it against post-slice-3 output, before slice 1's cutover, and every slice keeps it green
+  unchanged. Editing its expected strings during this item is a defect being papered over, not test
   maintenance. (This is a SQL-text pin, which the tier guide permits; the ban is on code-string
-  assertions against generated Java method bodies.) The execution tier stays green unchanged
-  throughout. No behavioral delta of any kind; that is R471's line, not ours.
-- **Closure both ways.** Level-1 oracle green throughout; the new family's bidirectional oracle
-  green from slice 1 on (model to command, command to emit, exactly one), with non-vacuity
-  witnesses and the boundary pins (polymorphic / node / service / DML roots commit nothing).
-- **Thinness is a graph property, not a string pin.** For every covered root coordinate, the
-  fetcher method's emitted call edges (the `EmittedMethodClosure` walk the level-1 machinery
-  already models) include a call to that coordinate's committed command's method. This is
-  assertable only because the design requires the fetcher-to-unit call to be class-qualified
-  (Design, the closure bullet): an unqualified same-class call is inside the walk's declared
-  blind spot and would make this acceptance vacuous. It pins the actual invariant (the fetcher
-  is thin *because* it delegates) structurally; code-string assertions on generated Java bodies
-  stay banned at every tier.
+  assertions against generated Java method bodies.) The execution tier stays green unchanged throughout.
+  No behavioral delta of any kind; that is R471's line, not ours.
+- **The relation is non-vacuous and correctly bounded.** Every covered root coordinate in the corpus
+  appears exactly once in the launcher relation, and the boundary cases appear zero times (polymorphic
+  roots by target shape, node roots, service roots, DML roots). This replaces the level-2 oracle rather
+  than extending it, and it is the assertion that catches the silent-skip drift the previous design
+  worried about: a coordinate the derived fact is true of but the producer walks past shows up as a
+  missing row, not as a leaf that quietly failed to implement a capability.
+- **Thinness is a type property, and the edge is data.** A renderer that is a total function over
+  `LauncherCommand` cannot do anything the command does not say, so "the fetcher is thin" needs no
+  emitted-shape assertion at all: it holds by construction, which is strictly stronger than the graph
+  pin the previous design specified. What is asserted instead is the edge view: for every launcher row,
+  the projection `UnitRef` it names resolves to a minted projection command, and the level-1 closure
+  oracle stays green over the emitted result. Code-string assertions on generated Java bodies stay
+  banned at every tier.
+- **Second-proof findings are written down, not just absorbed.** This item exists partly to test R549's
+  boundaries, so its In Review hand-off states what it found: whether `extras` absorbed the connection
+  root's cursor columns cleanly, whether the conditions fork held, and whether the `UnitRef` edge shape
+  survived contact with a second command kind. A slice-3c that reports nothing has not been read carefully, because slice 5
+  generalises from exactly these two proofs.
 
 ## Retired vocabulary
 
-- `BatchKeyField.rowsMethodName()` (slice 1): reads migrate to `QueryUnitField.queryUnitName()`;
-  the service arms' `load<X>` derivation becomes their override of it.
-- `MutationField.DmlTableField.reentryRowsMethodName()` (slice 1): same migration; the DML arms
-  use the extracted default.
-- `QueryLookupTableField.lookupMethodName()` (slice 5): becomes that leaf's `queryUnitName()`
-  override; the emitted `lookup<Field>` method name is unchanged.
+- `QueryLookupTableField.lookupMethodName()` (slice 5): the producer computes this coordinate's
+  `UnitRef` like every other row; the emitted `lookup<Field>` method name is unchanged.
+- `QueryUnitField` and `MethodCommandRegistry.declareRootQueryUnit` (never built): vocabulary from the
+  signed-off version of this spec, listed here so a reader who saw it knows the names were retired at
+  the design stage rather than shipped and removed.
+
+The child path's naming facts (`BatchKeyField.rowsMethodName()`,
+`MutationField.DmlTableField.reentryRowsMethodName()`) are **no longer retired by this item**. The
+signed-off version retired them because its capability interface had to absorb them to keep one
+derivation locus; a producer that computes names for its own family imposes nothing on the child path,
+so those facts retire when slice 5 folds the child family in. Leaving them alone also keeps this item's
+diff inside its own family, which is what a proof of concept wants.
 
 ## Out of scope
 
 - The Service-call unit (R333 worklist row 11): the parallel service-backed arm, its own item.
-- Direct-SQL `OnlyChild` emit (R471): this item builds the unit that strategy will call
-  directly, it does not change any invocation strategy itself.
-- Lifting `$fields` to regime 1 (row 2) and finishing the conditions half-migration (row 5):
-  adjacent naming-authority work, separately tracked.
+- Direct-SQL `OnlyChild` emit (R471): this item builds the command that strategy becomes an arm of; it
+  adds no new strategy itself.
+- The child path. Its batched invocation arm, `RowsMethodSkeleton`, and `RowsMethodBody` are untouched,
+  and folding the child family into the relation is slice 5's work.
+- Lifting `$fields` to regime 1 (row 2), and the conditions half-migration (row 5) **beyond the covered
+  family**. Fork 1 pulls a bounded slice of row 5 in; the rest is separately tracked.
 - Multi-table polymorphic stage 1 (outside the covered family by the derived fact; note 4
   above) and the hand-rolled polymorphic loader registration.
 - Root DML chains (not SELECT launchers; their reentry SELECT is already covered by R314).
