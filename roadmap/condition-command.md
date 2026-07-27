@@ -413,18 +413,12 @@ naming scheme (entity by return type, glue by parent type) reduces to one.
    (slice 3), since the colliding method is emitted unchanged through the window.
 4. **Who owns the launcher handshake. Resolved 2026-07-27, at the programme.** This fork and R541's
    fork 1 were each recommending the same answer while deferring the sequencing to the other item's
-   reviewer, so neither closed. R549's Slices section decides it: **this item lands first**, slices 1
-   and 2 before R541 slice 1. R552 owns condition production wholesale, R541's `where` slot is the
-   row's glue `UnitRef`, and R541 consumes rather than builds. The reasons, recorded so the decision
-   is auditable rather than arbitrary: four of R541's five root shapes already call named
-   `<field>Condition` methods, so the launcher wants the relation from its first row; the reverse
-   order has R541 mint a ref from a formula this item then re-homes, which is a migration payment;
-   this item needs only R549 slice 1 to start, where R541 needs slices 3.1 and 3.2; and this item
-   carries fixes for output that does not compile today (R472 as a two-step, R475 by dissolution),
-   which is a better first family for the programme to be judged on than a purely architectural one.
-   The premise correction that shrank R541's side of this stands and is worth keeping: the root
-   builders already call named methods, so R541's old option (a) was only row 5's naming lift for its
-   covered family, never new condition machinery.
+   reviewer, so neither closed. R549's Slices section owns the ordering and records the reasons:
+   **this item lands first**, and R541 consumes rather than builds. What is decided here, because it
+   is this item's to decide: R552 owns condition production wholesale, and R541's `where` slot is the
+   row's glue `UnitRef`. The premise correction that shrank R541's side (its root builders already
+   call named `<field>Condition` methods, so nothing there was ever new condition machinery) is
+   recorded at R541 fork 1.
 5. **The FK-target alias scheme inside glue.** Today the EXISTS aliases fork by host: static
    `table_fkt<f>_<h>` locals at the shim, runtime-prefixed (`<base>.getName() + "_fkt..."`) at the
    recursion-prone inline sites. Glue methods are per-coordinate scopes, but two glue methods land
@@ -439,11 +433,9 @@ naming scheme (entity by return type, glue by parent type) reduces to one.
 
 ## Slices
 
-Slice 0 is **R549 slice 1**, not slice 3: `EmitPlan`, `UnitRef`, the `command` / `plan` / `render`
-packages, and the naming vocabulary out of `compile/` all moved onto the programme's cheapest slice
-when it was rescoped, and none of the rest of the keystone is a prerequisite here. That makes this
-item the first command family to land, which is the ordering R549's Slices section now fixes, and it
-is why the sequencing question in fork 4 is closed rather than open.
+Slice 0 is **R549 slice 1**, the vocabulary skeleton; nothing else in the keystone is a prerequisite
+here. The landing order among the three proofs is R549's Slices section's to state, which is why the
+sequencing question in fork 4 is closed rather than open.
 
 R549 slice 3.1 is a **soft** dependency of exactly one thing: the nested-coordinate walk that fixes
 R472. Promoting nesting types to projection units is what gives a nested `GeneratedConditionFilter` a
@@ -451,12 +443,9 @@ walkable home; without it, the producer cannot see those coordinates and R472 co
 rejection instead of a fix, per the R472 note in Design. Everything else here runs against slice 1
 alone.
 
-One hard ordering constraint runs the other way and belongs here rather than in R549: **this item's
-slice 2 (call-site convergence) must land before R549 slice 3.1.** The inline `$fields` arm emitters
-are this item's convergence targets and the keystone's raw material, so running them concurrently
-means two items editing the same emitters for different reasons. Convergence first is also the
-cheaper order, since the keystone then folds arms whose condition composition is already a one-line
-call.
+One hard ordering constraint runs the other way: **this item's slice 2 (call-site convergence) must
+land before R549 slice 3.1**, because both edit the inline `$fields` arm emitters. The constraint and
+its reasoning live with the rest of the sequencing in R549's Slices section.
 
 1. **Command, producer, glue renderer, root cutover, together.** The record set, the producer
    minting rows for every covered `(coordinate, resolvedTable)` key (participants expanded, nested
@@ -591,7 +580,7 @@ call.
 
 | item | relationship |
 |---|---|
-| R549 (Spec) | governs; this item is the third proof by argument and the **first by landing order**, running on slice 1 alone. Slice 5's generalisation gate widens from two proofs to three, slice 3b gains its exemplar rows from the glue renderer's GROUP BY, and this item mints the shared term algebra's column reference under the programme's shared-vocabulary rule |
+| R549 (Spec) | governs; this item is the third proof by argument and the **first by landing order**, running on slice 1 alone. Slice 5's generalisation gate widens from two proofs to three, slice 3b gains its exemplar rows from the glue renderer's GROUP BY, and this item is the allowlist's first use, borrowing the model's refs rather than minting a parallel vocabulary |
 | R541 (Spec) | consumer, and lands after this item. Its fork 1 and this item's fork 4 both resolve at R549: the launcher's `where` slot is the row's glue `UnitRef`, and row 5's naming lift is wholly this item's. Cross-referenced there |
 | R333 (Ready) | owns row 5 and the target condition semantics; this item executes the row's "finish lift" verdict in command form and does not touch the `Single` value-gating semantic or the raw-relation re-sourcing |
 | R475 (Backlog) | absorbed, by dissolution: the colliding generated parameter list stops existing when the entity layer retires (slice 3), and glue locals are producer-named collision-free. Tombstone at pickup, delete when this item reaches Done |

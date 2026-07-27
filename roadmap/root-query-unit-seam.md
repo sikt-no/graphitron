@@ -399,13 +399,11 @@ composition does not care who invokes it.
 
 ## Slices
 
-Slice 0 is two R549 slices, not one, since the programme moved the vocabulary skeleton off the
-keystone: **slice 1** brings `EmitPlan`, the `command` / `plan` / `render` packages, `UnitRef` and the
-naming vocabulary out of `compile/`, and **slices 3.1 and 3.2** bring the projection command this item
-names and the final select list its pin is authored against. R552 slices 1 and 2 also precede this
-item, per R549's ordering decision, so the condition relation exists before the `where` slot needs it
-(see fork 1). Nothing here starts before those land, and this item builds no part of that vocabulary
-itself.
+Slice 0 is two R549 slices, not one: **slice 1**, the vocabulary skeleton, and **slices 3.1 and
+3.2**, the projection command this item names and the final select list its pin is authored against.
+The condition relation also precedes this item, per R549's ordering decision, so it exists before the
+`where` slot needs it (see fork 1). Nothing here starts before those land, and this item builds no
+part of that vocabulary itself.
 
 The pin suite is authored against post-3.2 output and extends the programme-level equivalence harness
 R549 slice 2 lands rather than standing up a second one: same module, same `SQL_LOG` idiom, this
