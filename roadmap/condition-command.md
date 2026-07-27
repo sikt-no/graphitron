@@ -1,7 +1,7 @@
 ---
 id: R552
 title: "Condition command: the WHERE family as coordinate-keyed condition units"
-status: Backlog
+status: Spec
 bucket: architecture
 priority: 4
 theme: classification-model
@@ -37,19 +37,21 @@ R549 slice 3 proves the projection half; R541 proves the launcher half. Four loa
 of the command architecture have no instance until this family ships one:
 
 - **A value-shaped unit.** A projection command returns a select-term list; a launcher command owns a
-  query. A condition unit returns one `org.jooq.Condition` value, composed into someone else's query.
-  It is the first command whose renderer emits a QueryPart-valued helper, so it tests that the
-  command vocabulary (UnitRef, producer, total renderer) is not select-specific. It is also the first
+  query. A condition unit returns one `org.jooq.Condition` value, composed into someone else's query,
+  and it is the first unit whose parameters are typed domain values rather than the selection set or
+  the env: graphql-java is absent from the entity signature entirely. That tests that the command
+  vocabulary (UnitRef, producer, total renderer) is not select-specific. It is also the first
   member of R333's operation crosswalk (the `condition` row) realized as a command; `orderBy` (row 9)
   and the rest of the operation seams will follow this template in R549 slice 5, so a template that
   only fits queries would be found out here.
-- **A command referenced by another command kind.** R541's `LauncherCommand` carries a `where` slot,
-  and its design fork 1 asks how that slot avoids becoming a rendered-code escape hatch. With this
-  relation in place the answer is structural: the slot is a `UnitRef` into the condition relation,
-  and the cross-kind edge set becomes two kinds deep (launcher to projection, launcher to condition).
-  R549 slice 7's claim, that the recompile graph is a projection over the command relation, needs
-  edges from more than one command kind to be more than a special case; this is the cheapest second
-  edge kind.
+- **A second source kind in the edge view.** R541 already proves a cross-kind `UnitRef` edge
+  (launcher to projection); what has no instance yet is a command kind that is itself a *source* of
+  edges to more than one target kind: the boundary unit references the entity bodies it folds and the
+  external methods it calls. R549 slice 7's claim, that the recompile graph is a projection over the
+  command relation, needs edges radiating from more than one kind to be more than a special case.
+  Separately, and as scope coordination rather than proof: R541's design fork 1 (how the launcher
+  carries its WHERE without a rendered-code escape hatch) dissolves once this relation exists,
+  because the `where` slot becomes a `UnitRef` into it.
 - **External-code edges.** An authored `@condition` names a developer method the emit does not own
   (`ConditionFilter` is a `MethodRef` into consumer code). This is the first command carrying a
   callee outside the emitted set, so the edge view learns the emitted-versus-external distinction
@@ -108,8 +110,9 @@ Three emit hosts read the same `List<WhereFilter>`; only the first two produce n
   arms), `MultiTablePolymorphicEmitter` (per-branch WHERE), `LookupValuesJoinEmitter` and
   `SelectMethodBody`: each seeds `DSL.noCondition()`, ANDs hop filters and field filters through the
   same `FkTargetConditionEmitter.emitTerm`, and differs only in `ArgumentValueSource` (`Env` versus
-  `FromSelectedField`), alias-prefixing mode, and the outer-argument lift (root-only; every inline
-  site passes `liftedOuters = null`).
+  `FromSelectedField`), alias-prefixing mode, and the outer-argument lift (`SplitRowsMethodEmitter`
+  and the inline `$fields` arms pass `liftedOuters = null`; `MultiTablePolymorphicEmitter` reuses
+  `computeLiftedOuters` with a populated map, the one lift outside the root shims).
 
 Model facts in place: the sealed `WhereFilter` (`GeneratedConditionFilter` with its `bodyParams`,
 `ConditionFilter` as the authored `MethodRef` pinned to return `org.jooq.Condition`,
@@ -129,14 +132,16 @@ documented in-source bug: `@condition(contextArguments:)` reaching `QueryConditi
 
 ## Target
 
-Every named condition unit is produced as a **condition command** in the coordinate-keyed relation
-and rendered by interpreters that are total functions over it. One command per conditions-bearing
-coordinate; the command carries the resolved table, the ordered predicate list, and the
-producer-computed unit names. The entity classes and the root shims become two renderings of the one
-relation (a type-keyed GROUP BY each); the name exists at exactly one locus, the producer, so row 5's
-half-migration ends by construction. Inline hosts are untouched: they keep reading `filters()` facts
+Every named condition unit is produced from **two coordinate-keyed command relations** and rendered
+by one interpreter per kind, each a total function over its arms. The condition relation, keyed
+`(coordinate, resolvedTable)`, carries the ordered predicate list; the boundary relation, populated
+exactly for the root SELECT family, carries the env-taking fold unit and its facet fragments and
+references the condition rows it folds. The entity classes and the root shims are the two kinds'
+renderings (a type-keyed GROUP BY each); the R2 naming locus dissolves, and what remains of the
+half-migration is one declared base/view derivation pinned at plan time (see Design). Inline hosts
+are untouched: they keep reading `filters()` facts
 until their own families migrate (R549 slices 3 and 5), at which point their commands reference the
-same relation instead of re-composing the fold.
+same relations instead of re-composing the fold.
 
 ## Design
 
@@ -145,48 +150,75 @@ same relation instead of re-composing the fold.
 
   ```java
   record ConditionCommand(
-      Coordinate coordinate,        // the relation's key
-      TableRef table,               // the resolvedTable the predicates land on
-      List<Predicate> predicates,   // 0..N, SDL order, conjoined by AND at every consumer
-      Optional<UnitRef> boundary,   // the env-taking fold unit; present for the root SELECT family
+      Coordinate coordinate,        // key: (coordinate, table)
+      TableRef table,               // the resolvedTable the predicates land on; polymorphic roots
+                                    // expand to one row per participant table
+      List<Predicate> predicates)   // 0..N, conjoined by AND; today's conjunct order preserved
+  {}
+
+  /** The env-taking fold over a coordinate's condition rows; its own relation, its own renderer. */
+  record BoundaryConditionCommand(
+      Coordinate coordinate,        // key; populated exactly for the root SELECT family
+      UnitRef unit,                 // <Root>Conditions#<field>Condition; R541's `where` points here
       List<FacetFragment> facets)   // masked re-renderings for faceted coordinates; empty otherwise
   {}
 
   sealed interface Predicate {
-      /** Graphitron-minted column predicate; its body is emitted into the unit this row names. */
-      record Generated(UnitRef body, List<ColumnTerm> terms, List<Binding> bindings, Reach reach)
+      /** Graphitron-minted column predicate; its body is ours to emit, into the unit named here.
+          Each ColumnTerm carries its shape (Eq | In | RowEq | RowIn), its presence gate, and its
+          own Reach. */
+      record Generated(UnitRef body, List<ColumnTerm> terms, List<Binding> bindings)
           implements Predicate {}
-      /** Developer @condition method; opaque, known only by external reference. */
+      /** Developer @condition method: an opaque external call, no terms of ours at all. */
       record Authored(ExternalRef method, List<Binding> bindings, Reach reach)
           implements Predicate {}
   }
 
   sealed interface Reach {          // where the predicate's subject rows live
-      record Local() implements Reach {}                    // this coordinate's resolvedTable
-      record ViaPath(List<JoinRef> hops) implements Reach {} // other rows: correlated EXISTS
+      record Local() implements Reach {}                       // this row's resolvedTable
+      record ViaFkPath(List<FkHopRef> hops) implements Reach {} // other rows: correlated EXISTS
   }
   ```
 
-- **Two predicate arms, because provenance here is load-bearing.** The projection command collapsed
-  its provenance distinctions because nothing downstream needed them; conditions are the opposite
-  case. R333 gives the two provenances different semantics (generated rows carry presence-gating,
-  authored rows never do; override suppression reaps only generated rows), the renderer emits them
-  differently (a generated predicate's body is ours to emit, an authored one is a call into consumer
-  code), and the edge view types them differently (emitted versus external callee). That is three
-  downstream consumers of the distinction, which is what an arm split has to show.
-- **Reach is a wrap, not more arms.** Today the "predicate over rows reached through a join path"
-  shape exists twice under different names: `BodyParam.RemoteColumnPredicate` (generated arm,
-  rendered inside the entity method) and `FkTargetConditionFilter` (authored arm, rendered at the
-  fold site). Both render the same SQL shape, a correlated `DSL.exists(selectOne().from(target)
-  .where(correlation.and(inner)))`, so under R549's rule (term arms are SQL shapes, never reasons)
-  they are one `Reach.ViaPath` slot appearing on both arms, and the two EXISTS emitters converge on
-  one. Where the EXISTS is *emitted* (inside the entity body for generated, around the call for
-  authored) is renderer placement, not command structure.
-- **Bindings are source-relative.** `CallParam` / `CallSiteExtraction` already describe an extraction
-  relative to an argument value source, and the source is the consuming host's to supply
-  (`ArgumentValueSource.Env` at the boundary unit, `FromSelectedField` at inline arms). The command
-  carries the bindings; it does not carry the source. That is what lets one relation serve the
-  env-shaped boundary now and the inline hosts later without re-minting rows.
+  The boundary row carries no predicate content of its own: what it folds is the condition row(s)
+  for its coordinate, referenced by key, so its edge set (to entity bodies and external methods) is
+  a total switch over the referenced predicates, per R549's edges-are-a-derived-view rule.
+
+- **Two predicate arms, on one structural axis: who owns the body.** The projection command collapsed
+  its provenance distinctions because every arm still rendered to "add these terms"; here one arm
+  literally cannot be rendered by us. A `Generated` predicate's body is ours to emit; an `Authored`
+  one is an opaque call into consumer code with no terms of ours at all. That single axis manifests
+  three ways downstream (the renderer emits a body versus a call, the edge view types the callee
+  emitted versus external, and override suppression reaps only generated rows), which is what an arm
+  split has to show. Presence-gating is not part of the split: it is per-term data on the generated
+  arm (`BodyParam.nonNull()` today), evidence for the grain note below rather than for the arms.
+- **Reach is one type, attached at each arm's own grain.** Today the "predicate over rows reached
+  through a join path" shape exists twice under different names: `BodyParam.RemoteColumnPredicate`
+  (generated, rendered inside the entity method) and `FkTargetConditionFilter` (authored, rendered
+  at the fold site). Both render the same SQL shape, a correlated `DSL.exists(selectOne()
+  .from(target).where(correlation.and(inner)))`, so under R549's rule (term arms are SQL shapes,
+  never reasons) they share one `Reach` type. The grain differs and the command respects it: on the
+  generated arm reach is decided per body param today (`FieldBuilder` routes each input binding
+  locally or remotely, so one entity method routinely mixes a local `Eq` with a remote EXISTS), and
+  `Reach` therefore sits on the `ColumnTerm`; on the authored arm the wrap covers the whole call, so
+  it sits on the predicate. One narrowing is a genuine capability: both EXISTS emitters accept only
+  FK-derived hops (`JoinStep.Hop` with `On.ColumnPairs`) and throw `IllegalStateException` on
+  anything else, so `ViaFkPath` carries FK hop references by type and the two defensive throws
+  become unrepresentable. Where the EXISTS is *emitted* (inside the entity body for generated,
+  around the call for authored) is renderer placement, not command structure.
+- **Bindings are source-relative, and the command owns its own binding vocabulary.** `CallParam` /
+  `CallSiteExtraction` already describe an extraction relative to an argument value source, and the
+  source is the consuming host's to supply (`ArgumentValueSource.Env` at the boundary unit,
+  `FromSelectedField` at inline arms). The command carries the bindings; it does not carry the
+  source. That is what lets one relation serve the env-shaped boundary now and the inline hosts
+  later without re-minting rows. The home question is decided here rather than discovered at
+  implementation: `Binding` is `command`-package vocabulary, not a re-export of the model's
+  `CallParam`, which would put a model type inside `command` and break R549 invariant 3 on this
+  family's first row. The shared term emitters (`FkTargetConditionEmitter`, `ArgCallEmitter`) are
+  re-parameterised over the command arms, and the unmigrated inline hosts reach them through one
+  `WhereFilter`-to-`Binding` adapter in `plan`, deleted when slice 5 folds those hosts in. That
+  keeps one term emitter and one extraction vocabulary through the coexistence window, instead of a
+  third emitter beside the two this design is meant to converge.
 - **Suppression stays where it is resolved.** Union-then-suppress (R333's `generated_op ... is live
   iff` rule) is already computed in `FieldBuilder.projectFilters`, and a suppressed generated
   predicate is already absent from `filters()`. The producer reads the resolved lists, per R549's
@@ -199,42 +231,72 @@ same relation instead of re-composing the fold.
   qualified, collision-free parameter names as data on the command (the binding rows carry them), so
   the fixture R475 describes compiles. This is the item's capability payload, per R549's "no slice
   that is purely a migration payment".
-- **The producer walks coordinates, and that is the R472 fix.** Minting from the coordinate relation
-  rather than the `schema.types()` × `fieldsOf` product means a nested `GeneratedConditionFilter`
-  gets a row and its body gets emitted, closing the dangling reference R472 documents. The
-  implementer must verify how nested coordinates are enumerated (through `ChildField.NestingField`
-  children); if the walk cannot reach them yet, the same validator-mirrors-classifier rule applies
-  that R541 uses: an accepted classification whose emit is unimplemented is a `ValidateMojo` deferred
-  rejection, not a silent skip, and R472's case converts from a wrong-output bug to a build-time
-  rejection until the walk lands.
-- **The covered family, derived and never tagged.** The producer mints a row for every coordinate
-  whose live filter set is nonempty, plus the participant-filter rows interface/union roots expand
-  to. The `boundary` slot is present exactly when the coordinate is in the root SELECT family (the
-  same derived fact R541 states: a `RootField` whose operation is `Fetch` / `Paginate` / `Lookup`
-  with a table-shaped target). No exemption list anywhere. The participant expansion also decides the
-  relation's key, and the sketch's "the relation's key" comment is honest only once this is said: a
-  participant row keys on `(coordinate, participant)` and carries the participant's table as its
-  `TableRef`, while every other row keys on the coordinate alone. Stated up front, "exactly one per
-  key" stays structural instead of quietly false for interface and union roots.
+- **The producer walks coordinates, which is where R472 gets fixed or fenced.** R472's root cause is
+  that a `NestingField`'s children have no `schema.types()` entry and an empty `fieldsOf`, so the
+  coordinate index itself cannot see them; minting from it changes nothing by itself. The enabler is
+  R549 slice 3's promotion of nesting types to projection units, which gives nested coordinates a
+  walkable home. If that enumeration is in place when slice 1 lands, the nested
+  `GeneratedConditionFilter` gets a row and its body gets emitted, closing the dangling reference; if
+  it is not, the validator-mirrors-classifier rule applies: an accepted classification whose emit is
+  unimplemented is a `ValidateMojo` deferred rejection, not a silent skip, and R472 converts from a
+  wrong-output bug to a build-time rejection until the walk lands. Either outcome retires the bug
+  class; only the first retires the item.
+- **The covered family, derived and never tagged, with its boundary cases named.** The condition
+  relation gets a row per `(coordinate, resolvedTable)` key with a nonempty live filter set;
+  polymorphic roots expand to one row per participant (their filters live on `participantFilters()`
+  and their own `filters()` is empty, so the expansion is the fact, not a special case). The boundary
+  relation's membership is the derived fact R541 states for its covered family (a `RootField` whose
+  operation is `Fetch` / `Paginate` / `Lookup` with a table-shaped target) intersected with a
+  nonempty live filter set: a covered launcher coordinate with no filters has no boundary row, its
+  launcher's `where` slot is absent, and the renderer composes the neutral condition, so absence is
+  data rather than an inline escape hatch (today's emitted `return DSL.noCondition();` shims stop
+  existing, a shape change with no SQL effect). Two boundary cases are
+  named rather than glossed. Lookup coordinates: lookup keys go through the VALUES join and are not
+  predicates, and today `TypeConditionsGenerator` silently skips every `LookupField` with an
+  in-source "no such schema exists today" note; the producer keeps lookup keys out by the fact, and a
+  lookup coordinate carrying a *non-key* filter becomes a `ValidateMojo` deferred rejection instead
+  of a silent skip. `@condition(contextArguments:)` on a boundary coordinate: the emit is
+  known-broken today (the shim lacks the `graphitronContext(env)` helper it emits a call to,
+  documented only in a source comment slice 2 deletes), so the same deferred-rejection treatment
+  lands with slice 2, and the broken shape fails the build instead of riding a comment. Stating the
+  key up front is what keeps "exactly one row per key" structural instead of quietly false for
+  interface and union roots: a participant row differs from its siblings in its `resolvedTable`, so
+  the expansion needs no second key column.
 - **Facet fragments are masked renderings, not new commands.** Which fragments exist
   (`<field>FacetBaseCondition`, one `<field>Facet_<g>Condition` per facet input) and which parameter
-  slots each masks to `null` are producer decisions carried on the command; the boundary renderer
-  emits them from the same predicate list. Today that knowledge is generator control flow in
-  `buildSuppressedConditionMethod`; as data it becomes assertable in the pipeline tier.
-- **Two renderers over one relation.** The entity renderer groups rows by the generated predicate's
-  host class and emits the typed predicate bodies (this is the type-keyed GROUP BY, slice 3b's
-  exemplar). The boundary renderer groups boundary units by root type and emits the env-taking fold,
-  including facet fragments and the outer-argument lift. Both are total, take no `GraphitronSchema`
-  (R549 invariant 1; two more decrements on the 25), and live in `render`. The fold shape itself
-  (seed, guarded AND, single-filter short form) is renderer-internal; so is `computeLiftedOuters`,
-  which decides Java locals, not what is emitted for whom.
-- **Naming is one locus.** The producer mints every `UnitRef` (entity class by return type or
-  participant, boundary class by root type, method names, facet fragment names) from the naming
-  vocabulary R549 slice 3 moves out of `compile/`. `GeneratedUnits.conditions(parentTypeName)`
-  currently derives only the shim scheme while the emitted set spans both schemes; the producer's
-  vocabulary covers both, and the four `TypeFetcherGenerator` sites that recompute the shim FQCN plus
-  `buildConditionCall`'s method-name formula read the minted `UnitRef` instead. The `+ "Condition"`
-  grep from R333 thread I then finds exactly one site.
+  slots each masks to `null` are producer decisions carried on the boundary row; the boundary
+  renderer emits them from the referenced predicate list. Today that knowledge is generator control
+  flow in `buildSuppressedConditionMethod`; as data it becomes assertable in the pipeline tier.
+- **Conjunct order is preserved, exactly.** Today's fold appends the generated predicate first, then
+  authored conditions in argument order (`FieldBuilder.projectFilters` builds the list that way), and
+  the command keeps that order verbatim rather than normalising to SDL order. Reordering conjuncts is
+  semantics-preserving but changes rendered SQL text, and R541's acceptance pins exact SQL strings;
+  an item whose promise is "shape may move, SQL may not" does not spend its budget on a cosmetic
+  reorder.
+- **One renderer per command kind.** The entity renderer groups condition rows by the generated
+  predicate's host class and emits the typed predicate bodies (this is the type-keyed GROUP BY, slice
+  3b's exemplar). The boundary renderer groups boundary rows by root type and emits the env-taking
+  fold, including facet fragments and the outer-argument lift. Both are total, take no
+  `GraphitronSchema` (R549 invariant 1; two more decrements on the 25), and live in `render`. The
+  fold shape itself (seed, guarded AND, single-filter short form) is renderer-internal.
+  `computeLiftedOuters` is not merely internal today: `MultiTablePolymorphicEmitter` calls it as a
+  shared static with a populated map, so its home is a decision this item makes (it moves with the
+  boundary renderer; the out-of-scope polymorphic host keeps a delegating call until its family
+  migrates), and `QueryConditionsGeneratorLiftTest` moves with the helper.
+- **Naming is one locus for the emitted set, with the window stated honestly.** The producer mints
+  every `UnitRef` (entity class by return type or participant, boundary class by root type, method
+  names, facet fragment names) from the naming vocabulary R549 slice 3 moves out of `compile/`.
+  `GeneratedUnits.conditions(parentTypeName)` currently derives only the shim scheme while the
+  emitted set spans both schemes; the producer's vocabulary covers both, and the four
+  `TypeFetcherGenerator` sites that recompute the shim FQCN plus `buildConditionCall`'s method-name
+  formula read the minted `UnitRef` instead. The entity name, though, keeps a second reader until
+  slice 5: the model fact (`GeneratedConditionFilter.className()` / `methodName()`, minted in
+  `FieldBuilder.projectFilters`) is what the out-of-scope inline hosts render calls from. R541's fork
+  2 refused exactly this shape, so the base/view relationship is declared instead of implicit: the
+  producer *derives* its entity `UnitRef` from the model fact (the fact is base, the `UnitRef` is
+  view), a plan-time assertion pins the two equal for every generated predicate, and the fact is
+  listed for retirement when slice 5 removes the last inline reader. The `+ "Condition"` grep from
+  R333 thread I then finds one mint site plus one declared derivation, not two independent formulas.
 
 ## Design forks for the Spec reviewer
 
@@ -245,9 +307,10 @@ same relation instead of re-composing the fold.
    the independently assertable half (seam verdict (c)) and the only condition surface testable
    without graphql-java; the facet fragments depend on calling it with `null` masks; and collapsing
    churns the emitted surface in an item whose acceptance is "shape may move, SQL may not". The cost
-   is carrying two unit names per coordinate on the command, which the producer computes anyway.
+   is a second command kind (the boundary relation), which the grain argument above wants anyway: the
+   two layers are two kinds, not two slots on one row.
 2. **Reach unification.** Fold `RemoteColumnPredicate` and `FkTargetConditionFilter` into one
-   `Reach.ViaPath` wrap (recommended above), or keep two arms mirroring today's types.
+   `Reach.ViaFkPath` wrap (recommended above), or keep two arms mirroring today's types.
    Recommendation: unify. The risk to weigh is that the two sites render the EXISTS at different
    nesting depths (inside the entity body versus around the authored call), so the renderer carries
    a placement switch on the arm; if that switch turns out to need more than the arm itself to
@@ -272,22 +335,28 @@ same relation instead of re-composing the fold.
 Slice 0 is R549 slice 3: `EmitPlan`, `UnitRef`, the `command` / `plan` / `render` packages, and the
 naming vocabulary out of `compile/`. Nothing here starts before that lands.
 
-1. **Command, producer, entity renderer, together.** The record set, the producer minting rows for
-   every conditions-bearing coordinate (participants included, nested coordinates per the R472 walk),
-   and the entity renderer replacing `TypeConditionsGenerator.generate`. Qualified parameter names
-   land here (R475), with a compiling fixture. Per R549's recipe step 5, the two test surfaces land
-   with it: pipeline-tier assertions on produced rows over existing fixtures, and per-arm unit tests
-   on the renderer that retire `TypeConditionsGeneratorTest`'s code-string assertions (R387). The
-   relation's non-vacuity and boundary pins land here for the same reason R541 gives: pins over an
-   empty set are not enforcers.
-2. **Boundary renderer.** The env-taking fold family replacing `QueryConditionsGenerator`: shims,
-   facet fragments as masked renderings, the outer-argument lift, FK-target aliasing. The name lift
-   completes here: the four recomputation sites in `TypeFetcherGenerator` and `buildConditionCall`'s
-   formula read minted `UnitRef`s, and `conditionMethodName` / `facetBaseConditionMethodName` /
-   `facetConditionMethodName` retire. The family's migration dial closes here, windowless: the
-   membership enforcer (the derived fact's true-set, live filter set nonempty plus the participant
-   expansion, equals the relation's key-set) lands in the same commit that retires the generator,
-   per R549 recipe step 6.
+1. **Command, producer, entity renderer, together.** The record set, the producer minting condition
+   rows for every covered `(coordinate, resolvedTable)` key (participants expanded, nested
+   coordinates per the R472 note), and the entity renderer replacing
+   `TypeConditionsGenerator.generate`. Qualified parameter names land here (R475), with a compiling
+   fixture; every call site passes arguments positionally, so the rename does not cross into the
+   unmigrated inline hosts. Per R549's recipe step 5, the two test surfaces land with it:
+   pipeline-tier assertions on produced rows over existing fixtures, and per-arm renderer unit tests
+   that retire `TypeConditionsGeneratorTest` (R387). The arm tests assert unit identity, parameter
+   names and types, and arm-coverage totality, never `code().toString()` shapes; body correctness
+   stays where the tier doctrine puts it, at the compilation and execution tiers. The relation's
+   non-vacuity and boundary pins land here for the same reason R541 gives: pins over an empty set
+   are not enforcers.
+2. **Boundary relation and renderer.** The env-taking fold family replacing
+   `QueryConditionsGenerator`: shims, facet fragments as masked renderings, the outer-argument lift,
+   FK-target aliasing. The name lift completes here: the four recomputation sites in
+   `TypeFetcherGenerator` and `buildConditionCall`'s formula read minted `UnitRef`s, and
+   `conditionMethodName` / `facetBaseConditionMethodName` / `facetConditionMethodName` /
+   `CLASS_NAME_SUFFIX` retire. This slice owns its own SQL enforcer (see Acceptance) and lands the
+   `contextArguments` deferred rejection in the same commit that deletes the comment documenting the
+   breakage. The family's migration dial closes here, windowless: the membership enforcer (the
+   derived fact's true-set equals the relation's key-set) lands in the same commit that retires the
+   generator, matching R541's closing slice.
 3. **The launcher handshake.** `LauncherCommand.where` resolves as a `UnitRef` into this relation
    (jointly with R541 slice 1; see fork 4 for the ordering). The cross-kind edge appears in the edge
    view, typed emitted-or-external, and the plan-time closure check covers it. A covered launcher
@@ -297,25 +366,32 @@ naming vocabulary out of `compile/`. Nothing here starts before that lands.
 
 ## Acceptance
 
-- **SQL equivalence, not byte equivalence.** The execution tier stays green unchanged; R541's
-  equivalence pin suite covers the WHERE clauses of the covered root shapes once both items are in
-  flight, and the existing condition execution tests (`GraphQLQueryTest`,
+- **SQL equivalence, not byte equivalence, with an enforcer this item owns.** The execution tier
+  stays green unchanged, and conjunct order is preserved exactly, so whichever of R541 and R552 lands
+  first, the other does not edit its pinned strings. A borrowed suite is not this item's enforcer:
+  before slice 2's cutover, a boundary-family equivalence pin lands in `graphitron-sakila-example`
+  (the same per-test-class `SQL_LOG` `ExecuteListener` idiom R541 specifies), asserting exact
+  rendered SQL for one representative faceted, one lifted-outer, and one FK-target coordinate, the
+  three riskiest boundary shapes. The existing condition execution tests (`GraphQLQueryTest`,
   `MultiTableFilterExecutionTest`, the fixtures in `graphitron-sakila-service`'s conditions package)
-  pin the rest. Where slice 1 changes emitted Java shape (parameter names), SQL does not move. Per
-  R549 recipe step 6, a SQL-neutral cutover wants its exact-SQL pin authored before the cutover, so
-  if R541's suite is not yet in place when slice 2 cuts over, this item authors exact-SQL WHERE pins
-  for the covered root shapes itself rather than leaning on execution assertions that are
-  substring-shaped.
-- **The relation is non-vacuous and correctly bounded.** Every conditions-bearing coordinate in the
-  corpus appears exactly once (once per participant where the interface/union expansion applies, per
-  the key stated in the design); coordinates whose live filter set is empty appear zero times; the
-  `boundary` slot is present exactly on the root SELECT family and absent elsewhere.
+  keep pinning behaviour. Where slice 1 changes emitted Java shape (parameter names), SQL does not
+  move.
+- **The relations are non-vacuous and correctly bounded.** One condition row per covered
+  `(coordinate, resolvedTable)` key: a polymorphic root's row count equals its participant count, and
+  a coordinate with an empty live filter set appears zero times. Boundary rows exist exactly for the
+  conditions-bearing members of the root SELECT family. The named exclusions hold: no lookup-key predicates, and the two deferred
+  rejections (non-key lookup filters, boundary `contextArguments`) fire on their fixtures.
 - **The two absorbed defects have fixtures.** R472's nested generated condition compiles and
   executes (or, if the nested walk is deferred, fails the build as a deferred rejection rather than
   emitting a dangling reference). R475's sibling same-named filter fields compile.
 - **Closure and edges.** The level-1 oracle (`MethodClosureOracleTest`) stays green over emitted
   output. The plan-time edge view covers boundary-to-body and boundary-to-external edges, and the
-  external arm resolves against the same reflection surface `ConditionResolver` uses today.
+  external arm resolves against the same reflection surface `ConditionResolver` uses today. The
+  base/view naming pin holds: for every generated predicate, the minted entity `UnitRef` equals the
+  model-carried `(className, methodName)` pair, until slice 5 retires the fact.
+- **The seam worklist records the verdict.** Per R549 recipe step 6, R333's row 5 and its `condition`
+  crosswalk row are updated with the landed verdict when this item ships, so the model item and the
+  programme cannot drift on what happened to the seam.
 - **Third-proof findings are written down.** The In Review hand-off states whether the value-shaped
   unit fit the command template, whether the `Reach` unification held (fork 2's placement switch),
   whether the external-callee edge shape worked, and whether the type-keyed GROUP BY validated slice
@@ -329,12 +405,16 @@ naming vocabulary out of `compile/`. Nothing here starts before that lands.
   1 and slice 2 respectively): both become renderers over the relation; two decrements on R549
   invariant 1's ratchet.
 - `QueryConditionsGenerator.conditionMethodName` / `facetBaseConditionMethodName` /
-  `facetConditionMethodName` (slice 2): the R2 formula locus; names are producer-minted.
+  `facetConditionMethodName` / `CLASS_NAME_SUFFIX` (slice 2): the R2 formula locus and the public
+  constant its consumers read; names are producer-minted.
 - The shim-FQCN recomputation in `TypeFetcherGenerator` (four sites) and the method-name formula in
   `buildConditionCall` (slice 2): call sites read the minted `UnitRef`.
+- `computeLiftedOuters` as a shared static on `QueryConditionsGenerator` (slice 2): the helper moves
+  with the boundary renderer and `QueryConditionsGeneratorLiftTest` moves with it;
+  `MultiTablePolymorphicEmitter` keeps a delegating call until its family migrates.
 - `BodyParam.RemoteColumnPredicate` and `FkTargetConditionFilter` as *separate reach expressions*
   (slice 1, conditional on fork 2): the model facts survive until slice-4 re-sourcing, but the
-  command expresses both as `Reach.ViaPath` and the two EXISTS emitters converge.
+  command expresses both as `Reach.ViaFkPath` and the two EXISTS emitters converge.
 
 ## Out of scope
 
