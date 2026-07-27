@@ -44,6 +44,8 @@ The skill's own Procedure (steps 0-6) is untouched in intent: sync-first, ID res
 
 Shipped at 16e45d1: both templates rewritten as goal + invariants + pointers, design-intent paragraph added, Procedure/Output rules/Hard rules untouched. Templates went from 1144 to 968 words combined, with the surviving bulk being the mandated invariants. The implementation-stage materials list now names workflow.adoc (per the Spec → Ready review note: its per-gate obligations were previously unsurfaced) and keeps an optional pointer to the reviewer-prompt taxonomy. Nothing remains unimplemented.
 
+In-review amendment shipped at 11947dd (user request during review): both templates state the review posture explicitly; the review exists to improve the item, not just gate it, so the reviewer surfaces opportunities to land better alongside blocking problems and keeps the two distinct in the verdict. At the Spec gate an opportunity is the author's call; at the Done gate an improvement the contract does not demand becomes a follow-up Backlog item rather than rework; new scope routes to a fresh Backlog item at either gate. This is goal-level framing, not a rubric, consistent with the design-intent paragraph.
+
 Original deliverable text follows.
 
 Rewrite the two templates in `.claude/skills/srp/SKILL.md` along the lines above; both should shrink substantially. The skill's Procedure, Output rules, and Hard rules sections keep their current contracts (one fenced block, pre-filled tokens, no improvising the template per call; template consistency across reviewers is itself a workflow property and is not up for relaxation). Add one short paragraph to the skill noting the design intent (goal + invariants + pointers; no rubrics) so future edits do not re-accrete checklists.
