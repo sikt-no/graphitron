@@ -76,6 +76,12 @@ independence or measured multiplicity, never on aesthetics.**
 | type-keyed commands | `(typeName, unitKind)` | 24 generator entry points that each loop the schema asking "should I emit my kind for this type", with the naming vocabulary already centralised as data in `compile/GeneratedUnits` (`typeClass`, `fetchers`, `conditions`, `inputRecord`, `schemaShape`, plus `singleton` / `rootUnit` for globals) |
 | coordinate-keyed commands | `(coordinate, operation)` | `Operation`'s minted arms, plus `MethodCommandRegistry`'s four-string records minted during rendering |
 
+The type-keyed relation is derived, never independently walked: a `(typeName, unitKind)` row is a fold
+over coordinate-grain facts (emit a conditions class for a type exactly when some coordinate on it carries
+a condition operation), so slice 3b's producers are GROUP BYs over the coordinate relation. Re-asserting
+membership with a per-kind predicate would relocate the 24 loops rather than dissolve them, the same trap
+the per-family recipe's honest note names for leaf dispatch.
+
 The coordinate-keyed relation holds two kinds that must not be conflated. A **projection command** returns
 the select list for one projection unit. A **launcher command** owns a query: it composes a projection
 call with its own extras and adds the FROM, joins, WHERE, ordering, and windowing. The discriminator
@@ -122,9 +128,9 @@ record ProjectionCommand(
 
 sealed interface Contribution {
     /** Terms this unit builds from its own table context. */
-    record Project(String resultKey, List<SelectTerm> terms)          implements Contribution {}
+    record Project(String field, List<SelectTerm> terms)              implements Contribution {}
     /** Fields another projection unit decides. */
-    record Call(String resultKey, UnitRef callee, CallWrap wrap)      implements Contribution {}
+    record Call(String field, UnitRef callee, CallWrap wrap)          implements Contribution {}
 }
 
 sealed interface CallWrap {                            // how the callee's fields arrive
@@ -184,7 +190,14 @@ Consequences, all of them things that stop existing rather than things that get 
 - `@lookupKey` has no projection footprint at all. Its work is the VALUES join, emitted by
   `LookupValuesJoinEmitter`; a lookup *field* projects because it is a field, not because of the argument.
 
-**Every contribution adds fields to this unit's projection when its result key is selected.** That is the
+**The gate is the field, not the result key.** A command is static, and result keys are per-request values:
+the client mints them (`recent: reviews(...)`), so no build-time record can carry one. What a contribution
+carries is the SDL field whose selection gates it; at run time the emitted switch matches on that field name
+and iterates the selected occurrences, each occurrence keyed by its result key. That is exactly the shape
+`$fieldsGrouped` has today (arms per field, iteration per result-key bucket), so the split is a description,
+not a change: field names are the command's vocabulary, result keys are the runtime's.
+
+**Every contribution adds fields to this unit's projection when its field is selected.** That is the
 one thing all of them do, and a `Call` is not an exception: it also lands a field, the difference being that
 the field is a subselect rather than a column on this table. What varies is only where the field expressions
 come from:
@@ -389,13 +402,51 @@ than any signature convention.
 3. Rewrite the emitter as a total function over the command's arms, dropping its `GraphitronSchema`
    parameter.
 4. Point both ratchets down: one entry point off the 25, N leaf references out of `generators/`.
-5. Acceptance: compilation and execution tiers unchanged, closure oracle green, and the family's graph edges
-   now read off the command instead of being predicted.
+5. Land the family's two new test surfaces: pipeline-tier assertions on the produced command rows over
+   existing fixtures (the decisions as data, asserted without javapoet), and per-arm unit tests on the
+   family's renderer (a total function whose inputs are record literals, needing no schema, fixture, or
+   catalog plumbing).
+6. Acceptance: compilation and execution tiers unchanged, closure oracle green, the family's graph edges
+   now read off the command instead of being predicted, and the family's rows in R333's seam worklist (the
+   living table) updated to record the landed verdict, so the model item and this programme cannot drift
+   on seam decisions.
 
 Step 4 deserves an honest note: migrating a family does not delete its leaf dispatch, it **relocates** it
 from `generators/` into a producer, which is where leaf dispatch belongs until slice 4 turns it into fact
 reads. A falling leaf-reference count in `generators/` is progress on the boundary, not evidence that the
 dispatch is gone.
+
+## What the seam buys the test pyramid
+
+The producer/renderer seam is also a testability repair, and the payoff is measured, not aspirational.
+R25's JaCoCo baseline names the emitters as the worst-covered generator code (`JooqRecordInstantiationEmitter`
+40.7%, `FetcherEmitter` 50.2%, `generators/` the lowest-covered package), and the cause is reachability
+cost: covering an emitter branch today means driving the whole pipeline (SDL fixture, schema build,
+classification) into the one leaf configuration that reaches it. The command seam removes that cost at
+three tiers:
+
+- **Renderers become unit-tier testable as total functions.** A renderer takes a command arm and a
+  config-only `RenderContext`; constructing either in a test is a record literal, with no `TestSchemaHelper`,
+  no fixture, no catalog. Every arm of the sealed set is reachable directly, which per-arm coverage of the
+  emit has never had. The tier guide's "pipeline beats unit: per-variant structural tests are bookkeeping"
+  doctrine was written against fixture-plumbed generator tests asserting `TypeSpec`-shape proxies; renderer
+  arm tests are a different species (no plumbing, inputs constructed at the point of assertion), and
+  `docs/architecture/how-to/testing.adoc` gains a rubric row for them when slice 3 lands.
+- **Producers become pipeline-tier assertable without javapoet.** SDL to command rows is a new assertable
+  surface: the decisions as data, cheaper and more precise than asserting the `TypeSpec` shape that encodes
+  them. Recipe step 5 requires this per family, and it is the down payment on slice 8, which generalizes
+  the same assertions into the corpus.
+- **Closure gets a plan-time form.** With typed `UnitRef` edges, referential integrity over the command
+  relation (every callee a committed command) is checkable on `EmitPlan` alone, in the pipeline tier,
+  before any rendering: milliseconds in the inner loop, with `MethodClosureOracleTest` keeping the
+  end-to-end guarantee over the rendered output. The plan-time invariants (one unit one table, no ungated
+  contribution) are likewise plain producer unit tests.
+
+None of this changes the slice set; it changes the per-family recipe (step 5) and slice 2's instrument
+list. The measurement to watch: re-run R25's ad hoc JaCoCo baseline alongside the other numbers after
+slices 1 to 5, expecting renderer coverage to climb family by family as arms become directly
+constructible. Wiring R25 into the build before slice 3 lands would make that signal cheap to read, which
+is a reason to raise its priority, not a dependency.
 
 ## Invariants: what makes this falsifiable rather than believed
 
@@ -412,7 +463,12 @@ installable as a ratchet at its current value before any migration happens.
    triangle above, which needs no ratchet at all.
    The secondary count is leaf references inside `generators/` (roughly 100 `instanceof ChildField.*` /
    `QueryField.*` / `MutationField.*` sites), driven to zero family by family, remembering that those
-   relocate into producers rather than disappearing until slice 4.
+   relocate into producers rather than disappearing until slice 4. The tertiary count guards the
+   relocation itself: leaf references inside `plan/`, which grow through slices 3 and 3b and ratchet to
+   zero during slice 4. During that window the pipeline for migrated families is facts, then leaves, then
+   commands, then render, four layers, and if slice 4 stalls the leaves survive precisely to feed the
+   producers, which is the kept-alive-to-feed-one-consumer failure the progress section warns about. The
+   tertiary count makes that stall a flat line on a named number instead of a feeling.
 2. **Every hierarchy declares its grain and lives in exactly one relation at that key.** This is
    `VariantCoverageTest` generalised from "every leaf is demonstrated" to "every hierarchy has a declared
    grain and a home". It is the guard against the current bug class, where something exists that no
@@ -430,7 +486,7 @@ installable as a ratchet at its current value before any migration happens.
    key at runtime under a federation `_entities` fetch.
 6. **No unconditional columns in a projection command.** Every contribution is gated on client selection;
    anything a mechanism needs regardless belongs to a launcher. Structural, not checked after the fact:
-   every `Contribution` arm carries its result key as a mandatory component, so an ungated contribution is
+   every `Contribution` arm carries its gating field as a mandatory component, so an ungated contribution is
    unrepresentable and the compiler is the enforcer, with renderer totality (one emit path per arm, no
    default) covering the render side. No body-shape meta-test; asserting the statement layout of a
    generated method is the code-string assertion the test tiers ban, and it would fire on a legitimate
@@ -464,7 +520,7 @@ succeed while the directive does nothing), and doing nothing is the one option t
 | # | slice | why here | cost |
 |---|---|---|---|
 | 1 | Global command list: `runPipeline`'s `write(...)` sequence becomes data the core computes and the shell folds over | touches no leaf, no fact, no javapoet, no emitted output; makes "the core decides the entire emit" literally true for the one population where it is currently 20 lines of orchestrator decisions | very low |
-| 2 | Label the hierarchies (walked / resolved / command / error) and install invariants 1 and 3 at their current counts | the labelling is the programme's vocabulary, and a ratchet installed before the migration is what stops the surface growing while the work proceeds | low |
+| 2 | Label the hierarchies (walked / resolved / command / error), install invariants 1 and 3 at their current counts, and ship the programme's two instruments: the exemption-list triage and the corpus pair-independence extension (both below) | the labelling is the programme's vocabulary, a ratchet installed before the migration is what stops the surface growing while the work proceeds, and the pair-independence data validates the two-arm contribution collapse before slice 3 spends the medium cost | low |
 | 3 | **The keystone: projection commands.** One method per projection unit, grouped selection in and select list out, replacing the three `$fields` overloads and renamed to say what it returns (`$project`) uniformly across table-backed and nesting units. Nesting types promoted to units; correlation keys as gated `Project` arms; exhaustive dispatch with no default; a launcher for `@splitQuery` on a nesting field; the demand walk and `ParentProjectionContainmentCheck` deleted. Brings `EmitPlan`, the `command` / `plan` / `render` packages, and `GeneratedUnits` moved out of `compile/` so the producer can name its units. Depends on R516 | designing this validates or breaks the whole model, and it is the only slice that deletes a build-time throw, a duplicated walk, and a runtime over-projection at once | medium |
 | 3c | **The launcher dual: the root SELECT family becomes launcher commands.** Owned by R541, rewritten in command terms: `(coordinate, operation)` rows carrying invocation strategy, return shape, and a `UnitRef` naming the projection unit they select from. Depends on slice 3 | the second proof of concept. Slice 3 proves type grain and a contribution list; this proves the three things it cannot reach, namely coordinate keying, strategy as data, and one command referencing another, which is what slice 7's edge projection rests on. Generalising to slice 5 from two proofs at different grains beats generalising from one | medium |
 | 3b | The type-keyed relation `(typeName, unitKind)` replaces the 24 generator predicates, one kind at a time | inverts "should I emit" from 24 independent loops into one relation the shell folds over; renderers barely move, and the unit vocabulary already landed with slice 3 | medium |
@@ -489,6 +545,16 @@ fact rather than a build break. The lint engine hit exactly this and answered it
 kinds partition the node kinds with no overlap or gap). The equivalent must land with the first visitor,
 not after.
 
+Slice 5 owes its own design decision before any code: **the launcher command's shape.** The keystone
+deliberately designs only the projection half; the launcher half (owns a query, composes projection calls,
+adds FROM, joins, WHERE, ordering, windowing, and the mechanism-entailed extras) has no sketch yet, and
+R541 sitting first in line under this slice makes the gap due early. Two constraints are already known.
+First, a launcher is a fold over the operation rows addressed to its unit, so the coordinate-keyed relation
+must carry forward the anchor column R333's operation relation already names (`anchor address`, which query
+unit the row lands in); dropping it would leave the fold with no grouping key. Second, the design must
+state how `Operation`'s arms partition across launcher renderers, projection calls, and DML rendering,
+because that partition is what slice 5's exhaustive dispatch is total over.
+
 ## The exemption lists are the grain worklist
 
 `VariantCoverageTest.NO_CASE_REQUIRED` (13 entries) and `ClassifiedDslTest.OPERATION_KNOWN_GAPS` (6) each
@@ -496,8 +562,9 @@ state why something the model declares cannot be reached at the grain a test wal
 than one at a time, they should partition into (a) genuinely unimplemented behaviour, (b) synthesised
 things with no SDL origin, and (c) things riding another row's list rather than their own key. Category (c)
 is the direct worklist for slice 6, and (b) is the connection-promotion residue slice 7 clears. Nobody has
-read them as a class yet, and doing so is cheap Spec-time work that would sharpen slices 6 and 7 before
-either starts.
+read them as a class yet. Slice 2 owns the triage: it is cheap, it sharpens slices 6 and 7 before either
+starts, and writing it down alongside the labelling keeps the worklist from being re-derived at each
+slice.
 
 ## Empirically deciding which families are independent
 
@@ -507,13 +574,14 @@ axes to **pairs**: for each pair of families, is the cross-product populated acr
 diagonal? A populated product means independence, so the families must separate; a diagonal means they
 co-vary, so keep them fused and save the machinery. That turns "which families are real" from a judgment
 call into a measurement, and it makes the corpus an instrument for designing the model rather than only
-for pinning it.
+for pinning it. Slice 2 ships this extension alongside the labelling, so the measurement exists before
+slice 3 commits to the two-arm collapse it would falsify.
 
 ## Relationship to existing items
 
 | item | relationship |
 |---|---|
-| R333 (Ready) | governs. This item consumes its model and does not re-litigate it. The fourth-reader note in its consumers section is the corpus's stake in the re-sourcing |
+| R333 (Ready) | governs. This item consumes its model and does not re-litigate it. The fourth-reader note in its consumers section is the corpus's stake in the re-sourcing; its seam worklist stays the living table of seam verdicts, updated by recipe step 6 as families land |
 | R545 (Backlog) | becomes slice 2's invariant 3. Stays as filed; it is a precondition, not an independent win |
 | R546 (Discarded 2026-07-27) | absorbed here. It asked what shape `MethodCommand` should grow into, and this reframing answers "none": the hierarchies are the commands, so a parallel four-string record is exactly the intermediary model this programme says is unnecessary. Its flow-inversion scope became slice 5, its recompile-graph justification became slice 7 (full argument in the audit's gap 7), and its abandon condition became this item's |
 | R543 (Backlog) | slice 8. Its fact half needs slice 4, its command half needs slice 5 |
@@ -523,7 +591,7 @@ for pinning it.
 | R462 (Spec) | fix by hand now, do not generalise; slice 7 dissolves its class. Advisory already noted on the item. Its Spec body cites `GraphitronSchemaValidator.NESTED_WIREABLE_LEAVES`, which no longer exists under that name anywhere in main or test, so the implementer must re-derive the current nested-leaf bound rather than trusting the citation |
 | R10 (Backlog) | dependency of slice 7. Its own body says it wants "a concrete signal"; the fact engine making connection synthesis a relation is that signal |
 | R7 (Backlog) | subsumed in effect. `TypeFetcherGenerator` splits along command kinds under slice 3 and slice 5 rather than by a decomposition pass that regrows |
-| R25 (Backlog) | supplies the coverage half of the falsification baseline |
+| R25 (Backlog) | supplies the coverage half of the falsification baseline, and its per-tier split is the instrument that measures the renderer-testability payoff (see the test-pyramid section); wiring it before slice 3 is cheap and worth a priority bump |
 | R112 / R117 | unaffected, but the KB's "model as projection" framing gets easier once the relations exist |
 
 ## Progress measurement
