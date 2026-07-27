@@ -27,9 +27,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Two links, both bidirectional. SDL to pages: every directive declared in the schema
  * <em>and advertised in the v1 surface</em> must have a {@code <name>.adoc} page, and every
  * page must correspond to a declared directive. Pages to index: every page must be listed in
- * the landing's alphabetical column and filed under one of its categories, and the columns
- * must name no page that does not exist. Failures print the offending names so the fix is
- * mechanical. Lives in {@code graphitron-sakila-example} because that module carries the
+ * the landing's alphabetical column and filed under one of its categories, and the
+ * alphabetical column must name no page that does not exist. Failures print the offending
+ * names so the fix is mechanical. Lives in {@code graphitron-sakila-example} because that module carries the
  * cross-cutting structural tests against the project layout.
  *
  * <p>Carve-out: a directive may be declared in {@code directives.graphqls} (so
