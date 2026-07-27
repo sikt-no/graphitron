@@ -173,20 +173,19 @@ row, and the readability requirement is what pays for the extra emitted methods.
   {}
 
   sealed interface Predicate {
-      /** Graphitron-minted column predicate; its body is ours to emit, into the unit named here.
-          Each ColumnTerm carries its shape (Eq | In | RowEq | RowIn), its presence gate, and its
-          own Reach. */
-      record Generated(UnitRef body, List<ColumnTerm> terms, List<Binding> bindings)
+      /** Graphitron-minted column predicate; its body is ours to emit, into the unit named here. */
+      record Generated(UnitRef body, List<ColumnTerm> terms, List<CallParam> bindings)
           implements Predicate {}
       /** Developer @condition method: an opaque external call, no terms of ours at all. */
-      record Authored(ExternalRef method, List<Binding> bindings, Reach reach)
+      record Authored(MethodRef method, List<CallParam> bindings, List<JoinStep.Hop> reach)
           implements Predicate {}
   }
 
-  sealed interface Reach {          // where the predicate's subject rows live
-      record Local() implements Reach {}                       // this row's resolvedTable
-      record ViaFkPath(List<FkHopRef> hops) implements Reach {} // other rows: correlated EXISTS
-  }
+  /** One comparison. `reach` empty means this row's own table; non-empty means a correlated EXISTS
+      over the hop path. `columns.size() > 1` is the row-value form. */
+  record ColumnTerm(List<ColumnRef> columns, MatchKind match, Gate gate, List<JoinStep.Hop> reach) {}
+
+  enum MatchKind { EQUALITY, MEMBERSHIP }
   ```
 
   The glue slot is total, so it is a slot rather than a second relation: a 1:1 derived unit rides
@@ -230,17 +229,25 @@ row, and the readability requirement is what pays for the extra emitted methods.
   vocabulary decision, not a formula at the emit site). Where parent and return type coincide, the
   entity method (typed parameters) and the glue method (args map) are overloads on one class, which
   is legal and readable.
-- **This family mints the shared term algebra, because it gets there first.** Under R549's ordering
-  this is the first command family to land, and R549's shared-vocabulary rule makes the column
-  reference programme-owned core rather than family vocabulary: `table.COL` is the same SQL shape
-  whether it is projected or compared, and term arms are SQL shapes, never reasons. So the column
-  reference `ColumnTerm` names goes in `command` as core, and slice 3.1's `SelectTerm` extends it
-  rather than standing up a parallel type beside it. The comparison wrapping (`Eq` / `In` / `RowEq` /
-  `RowIn`) is *not* core: those are comparison shapes, condition-family vocabulary holding a core
-  column reference. Getting this split right is cheap here and expensive after two families have
-  shipped their own, which is why R549 names it as one of the two decisions the vocabulary rule
-  forces. The other, whether `Coordinate` in `command` is graphql-java's `FieldCoordinates` or a
-  command-package type adapted at the plan boundary, is settled in R549 slice 1 and consumed here.
+- **The sketch borrows, it does not re-mint, and that is R549's allowlist in its first use.** Every
+  ref in the record set above resolves to a type that already exists: `ColumnRef`, `TableRef`,
+  `MethodRef`, `JoinStep.Hop`, `CallParam` and `CallSiteExtraction` are all in `rewrite/model/`, and
+  `Coordinate` is graphql-java's `FieldCoordinates`. Being the first family to land, this item is
+  where the vocabulary either stays one set of names or forks into two, so it is stated flatly:
+  **this item mints no parallel copy of anything the model already carries.** The earlier draft's
+  `Binding`, `ExternalRef`, `FkHopRef` and a `command`-private column reference were all such copies,
+  each arriving with a rationale that read reasonably one at a time and would have doubled the
+  extraction hierarchy alone by roughly ten arms. `command` imports them under R549's named
+  allowlist, which is the migration dial R545 empties into the shared pure-data floor.
+- **Three collapses, on R549's rules, worth stating because the earlier sketch had all three.** The
+  `Reach` sealed pair is gone: `Local()` was an empty record meaning "no hops", so the slot is the hop
+  list and empty is local. `ColumnTerm`'s `Eq` / `In` / `RowEq` / `RowIn` are gone as arms: they are a
+  2x2 of (scalar, row) by (equality, membership), row-ness is `columns.size() > 1`, and one record
+  plus a two-value `MatchKind` covers all four. The model's `BodyParam` keeps its four arms because
+  its consumers are different; the command has no reason to mirror a hierarchy it reads from. And the
+  column reference itself is `ColumnRef`, the model's, not a condition-private term type, because
+  `table.COL` is one SQL shape whether projected or compared and slice 3.1's `SelectTerm` will name
+  the same thing.
 - **Two predicate arms, on one structural axis: who owns the body.** The projection command collapsed
   its provenance distinctions because every arm still rendered to "add these terms"; here one arm
   literally cannot be rendered by us. A `Generated` predicate's body is ours to emit; an `Authored`
@@ -249,30 +256,35 @@ row, and the readability requirement is what pays for the extra emitted methods.
   emitted versus external, and override suppression reaps only generated rows), which is what an arm
   split has to show. Presence-gating is not part of the split: it is per-term data on the generated
   arm (`BodyParam.nonNull()` today), evidence for the grain note below rather than for the arms.
-- **Reach is one type, attached at each arm's own grain.** Today the "predicate over rows reached
+- **Reach is a hop list, attached at each arm's own grain.** Today the "predicate over rows reached
   through a join path" shape exists twice under different names: `BodyParam.RemoteColumnPredicate`
   (generated, rendered inside the entity method) and `FkTargetConditionFilter` (authored, rendered
   at the fold site). Both render the same SQL shape, a correlated `DSL.exists(selectOne()
   .from(target).where(correlation.and(inner)))`, so under R549's rule (term arms are SQL shapes,
-  never reasons) they share one `Reach` type. The grain differs and the command respects it: on the
-  generated arm reach is decided per body param today (`FieldBuilder` routes each input binding
-  locally or remotely, so one entity method routinely mixes a local `Eq` with a remote EXISTS), and
-  `Reach` therefore sits on the `ColumnTerm`; on the authored arm the wrap covers the whole call, so
-  it sits on the predicate. One narrowing is a genuine capability: both EXISTS emitters accept only
-  FK-derived hops (`JoinStep.Hop` with `On.ColumnPairs`) and throw `IllegalStateException` on
-  anything else, so `ViaFkPath` carries FK hop references by type and the two defensive throws
-  become unrepresentable. Where the EXISTS is *emitted* (inside the entity body for generated,
-  around the call for authored) is renderer placement, not command structure.
-- **Bindings are map-relative, and the command owns its own binding vocabulary.** `CallParam` /
-  `CallSiteExtraction` already describe an extraction; under the glue signature the extraction is
-  always rooted at the args map, so bindings need no source axis at all. The home question is
-  decided here rather than discovered at implementation: `Binding` is `command`-package vocabulary,
-  not a re-export of the model's `CallParam`, which would put a model type inside `command` and
-  break R549 invariant 3 on this family's first row. The extraction and term machinery
-  (`FkTargetConditionEmitter`, `ArgCallEmitter`) is re-parameterised over the command arms and
-  becomes internal to the glue renderer; the call-site convergence slice removes the last inline
-  users, so no `WhereFilter` adapter and no coexistence emitter is needed, and unmigrated hosts
-  interact with this family only by emitting a one-line call to a name.
+  never reasons) they are one thing. The grain differs and the command respects it: on the generated
+  arm reach is decided per body param today (`FieldBuilder` routes each input binding locally or
+  remotely, so one entity method routinely mixes a local equality with a remote EXISTS), so the hop
+  list sits on the `ColumnTerm`; on the authored arm the wrap covers the whole call, so it sits on the
+  predicate. One narrowing is a genuine capability: both EXISTS emitters accept only FK-derived hops
+  (`JoinStep.Hop` with `On.ColumnPairs`) and throw `IllegalStateException` on anything else, so the
+  slot is typed to FK-derived hops and the two defensive throws become unrepresentable. Where the
+  EXISTS is *emitted* (inside the entity body for generated, around the call for authored) is renderer
+  placement, not command structure.
+- **Bindings are map-relative, and the command reads the model's extraction vocabulary.** `CallParam`
+  and `CallSiteExtraction` already describe an extraction; under the glue signature the extraction is
+  always rooted at the args map, so bindings need no source axis at all, which is the only thing the
+  earlier draft's `Binding` was adding. The home question is decided here rather than discovered at
+  implementation, and the earlier answer is reversed: the command carries `CallParam` under R549's
+  allowlist rather than re-minting it. `CallSiteExtraction` alone is roughly ten arms including the
+  nested-path, enum-coercion and node-id-decode cases, and a parallel copy of it would be the single
+  largest piece of duplicated vocabulary in the programme, maintained in two places from this family's
+  first row. What the earlier draft was protecting against, a model type inside `command`, is real but
+  smaller: it is R545's javapoet problem, it is bounded by the allowlist, and it resolves by moving
+  these types to the shared floor rather than by copying them. The extraction and term machinery
+  (`FkTargetConditionEmitter`, `ArgCallEmitter`) is re-parameterised over the command arms and becomes
+  internal to the glue renderer; the call-site convergence slice removes the last inline users, so no
+  `WhereFilter` adapter and no coexistence emitter is needed, and unmigrated hosts interact with this
+  family only by emitting a one-line call to a name.
 - **Suppression stays where it is resolved.** Union-then-suppress (R333's `generated_op ... is live
   iff` rule) is already computed in `FieldBuilder.projectFilters`, and a suppressed generated
   predicate is already absent from `filters()`. The producer reads the resolved lists, per R549's
@@ -368,7 +380,7 @@ row, and the readability requirement is what pays for the extra emitted methods.
    would trade that away. The cost is one more emitted method per conditions-bearing coordinate,
    which the readability requirement pays for.
 2. **Reach unification.** Fold `RemoteColumnPredicate` and `FkTargetConditionFilter` into one
-   `Reach.ViaFkPath` wrap (recommended above), or keep two arms mirroring today's types.
+   FK-hop-list reach slot (recommended above), or keep two expressions mirroring today's types.
    Recommendation: unify. The risk to weigh is that the two sites render the EXISTS at different
    nesting depths (inside the entity body versus around the authored call), so the renderer carries
    a placement switch on the arm; if that switch turns out to need more than the arm itself to
@@ -503,9 +515,12 @@ condition composition is already a one-line call.
   crosswalk row are updated with the landed verdict when this item ships, so the model item and the
   programme cannot drift on what happened to the seam.
 - **Third-proof findings are written down.** The In Review hand-off states whether the value-shaped
-  unit fit the command template, whether the `Reach` unification held (fork 2's placement switch),
+  unit fit the command template, whether the reach unification held (fork 2's placement switch),
   whether the external-callee edge shape worked, and whether the type-keyed GROUP BY validated slice
-  3b's direction. R549 slice 5 generalises from the three proofs together; a hand-off that reports
+  3b's direction. Being the first family, it owes one more: **whether borrowing the model's ref
+  vocabulary under R549's allowlist held**, or whether some type genuinely had to be copied into
+  `command`. That answer sets the pattern for every family after it, and a copy made quietly here
+  becomes the programme's second vocabulary by default. R549 slice 5 generalises from the three proofs together; a hand-off that reports
   nothing has not been read carefully.
 
 ## Retired vocabulary
@@ -529,7 +544,7 @@ condition composition is already a one-line call.
   uses of `FkTargetConditionEmitter` / `ArgCallEmitter` / `declareAliases`.
 - `BodyParam.RemoteColumnPredicate` and `FkTargetConditionFilter` as *separate reach expressions*
   (slice 1, conditional on fork 2): the model facts survive until slice-4 re-sourcing, but the
-  command expresses both as `Reach.ViaFkPath` and the two EXISTS emitters converge.
+  command expresses both as an FK-hop-list reach slot and the two EXISTS emitters converge.
 
 ## Out of scope
 

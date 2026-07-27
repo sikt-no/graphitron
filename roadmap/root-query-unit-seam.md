@@ -195,10 +195,9 @@ composition does not care who invokes it.
       UnitRef projection,       // the projection unit whose $project supplies the select list
       UnitRef where,            // R552's glue unit for this coordinate; absent (no live filters, the
                                 // routine root, the lookup root) composes the neutral condition (fork 1)
-      List<OrderTerm> orderBy,
-      Pagination pagination,    // None | Seek
-      Invocation invocation,    // Direct | FannedOverTenants
-      ResultShape result,       // SingleRecord | RecordList | ConnectionResult
+      UnitRef orderBy,          // the emitted <field>OrderBy helper; absent when the coordinate is unordered
+      Invocation invocation,    // enum: DIRECT | FANNED_OVER_TENANTS
+      ResultShape result,       // SingleRecord | RecordList | Connection(carrier plan, seek pagination)
       List<SelectTerm> extras)  // launcher-owned projection additions: cursor columns, __idx__, __rn__
   {}
   ```
@@ -206,9 +205,17 @@ composition does not care who invokes it.
   Every slot is build-time composition. Runtime values (argument filter values, seek cursor values,
   orderBy argument values) arrive through the rendered method's parameters and never through the command,
   which is the same static/runtime line R549 draws at the projection gate: field names are the command's
-  vocabulary, result keys and argument values are the runtime's. A reader must not mistake
-  `List<OrderTerm> orderBy` for concrete ordering values; it names the composition, and the emitted body
-  binds the request's values into it.
+  vocabulary, result keys and argument values are the runtime's.
+
+  **Three slots were cut against R549's vocabulary rule, and the cuts are the interesting part of this
+  sketch.** `List<OrderTerm> orderBy` became a `UnitRef`, because ordering is already a named emitted
+  unit: `TypeFetcherGenerator` builds a `private static <field>OrderBy(env, table)` helper and both the
+  root and child paths call it. Modelling order terms here would have re-derived a unit that exists and
+  pre-built R333 row 9's family, which owns ordering as its own seam. `Pagination` folded into
+  `ResultShape.Connection`, executing the recommendation below rather than leaving `Seek` and
+  `SingleRecord` pairable. And `Invocation` is an enum, not a sealed interface: two payload-free
+  records are ceremony, and the arm that will carry data (`Batched`, when the child family folds in)
+  promotes it in two lines at the point it stops being ceremony.
 
   `extras` is the slot that makes this command the projection command's dual. R549 establishes that
   anything a mechanism needs regardless of client selection belongs to a launcher rather than to a
@@ -227,32 +234,38 @@ composition does not care who invokes it.
   term does; what makes it an extra is which list it sits in). So `extras` reuses the projection command's
   `SelectTerm` algebra, and slice 5's `__rn__` extends that shared algebra with a window-function arm when
   it arrives, a new SQL shape and therefore a legitimate extension rather than a parallel type.
-- **Invocation, with two arms and deliberately not three.**
+- **Invocation, with two values and deliberately not three.**
 
   ```java
-  sealed interface Invocation {
+  enum Invocation {
       /** The fetcher resolves one dsl and calls the launcher once. */
-      record Direct() implements Invocation {}
+      DIRECT,
       /** The same composition invoked once per tenant connection, results concatenated. */
-      record FannedOverTenants() implements Invocation {}
+      FANNED_OVER_TENANTS
   }
   ```
 
-  The child path's batched arm is **not** declared here. It is the obvious third arm and it is what
+  The child path's batched arm is **not** declared here. It is the obvious third value and it is what
   would make "one command kind shared by root and child" literally true, but declaring an arm before
   any row populates it adds untested surface, which R549's non-vacuity discipline is against. Slice 5
-  declares `Batched` together with its first row, when the child path folds in. Two populated arms are
+  declares `Batched` together with its first row, when the child path folds in. Two populated values are
   enough to prove the real point, that invocation strategy is expressible as a command field rather
   than as emitter control flow.
+
+  An enum rather than a sealed interface, because neither value carries anything. `Batched` is the
+  value that will (a loader registration, a scatter key), and it is also the one that promotes the type
+  when it arrives; doing that promotion at the point the payload exists is the same discipline as
+  declaring the arm at the point the row exists.
 - **Return shape as data.** `ResultShape` is derived once, in the producer, from the coordinate's
   cardinality and whether pagination is present, so the renderer reads a return shape instead of
   deriving one. `RowsMethodShape.outerRowsReturnType` is the keyed derivation and does not fit these
-  three shapes; nothing bends it. That derivation also says the `Pagination` and `ResultShape` slots
-  co-vary: `Seek` appears exactly when the shape is `ConnectionResult`, so the two slots as sketched make
-  the illegal pairs (`Seek` with `SingleRecord`) representable. Fold them, carrying the seek pagination
-  on the `ConnectionResult` arm and dropping the separate slot, unless the producer walk turns up a
-  covered coordinate that breaks the correlation. This is the mirror of R549's correlated-families rule:
-  a point in a product space beats the product exactly while the axes co-vary.
+  three shapes; nothing bends it. The `Pagination` slot is **folded in, not merely recommended for
+  folding**: `Seek` appears exactly when the shape is a connection, so two slots made the illegal pair
+  (`Seek` with `SingleRecord`) representable for no gain. The seek pagination rides the `Connection`
+  arm alongside the carrier plan of fork 5, which is what that arm needs to be carrying anyway. This is
+  the mirror of R549's correlated-families rule: a point in a product space beats the product exactly
+  while the axes co-vary. If the producer walk turns up a covered coordinate that breaks the
+  correlation, that is a finding for the hand-off, and the slot splits back out with its first row.
 - **The covered family, derived and never tagged.** The producer mints a row for exactly one thing: a
   `RootField` whose `operation()` is one of `Fetch` / `Paginate` / `Lookup` and whose target
   shape is `Table` (peeling the `Connection` wrapper). Walking `QueryField`'s permits against
@@ -367,7 +380,7 @@ composition does not care who invokes it.
 
    `LauncherCommand` as sketched carries one `where` ref and a payload-free
    `ResultShape.ConnectionResult`, so it can express none of that. Three consequences the implementer
-   should not have to discover mid-slice: slice 2 is scoped to `Pagination.Seek` and `extras`, which is
+   should not have to discover mid-slice: slice 2 is scoped to seek pagination and `extras`, which is
    the easy half of that builder; the "thinness is a type property" acceptance does not hold for
    connection roots while the carrier binding is renderer knowledge rather than command data; and the
    equivalence pin's statement-count claim is only as good as whether a faceted query and a
@@ -406,7 +419,7 @@ sentence for an item whose cutover is after the keystone.
    non-vacuity pin and boundary pins land with it: a first slice whose pins assert over an empty set is
    not an enforcer, which is why the command and its first rows ship in one slice rather than two.
 2. **Connection root, page query only.** `buildQueryConnectionFetcher`'s seek/limit chain, which is
-   where `Pagination.Seek` and the `extras` slot first carry weight. If the connection helper's
+   where seek pagination and the `extras` slot first carry weight. If the connection helper's
    `selectFields` union does not decompose into "projection command output plus launcher extras", that
    is the R549 boundary failing, and it fails here first. That finding is the whole reason this item
    is the second proof, so it gets a slice that cannot be held up by anything else.

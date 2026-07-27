@@ -397,7 +397,7 @@ while the migration runs. `rewrite` goes away wholesale once nothing is left in 
 
 | package | holds | may import |
 |---|---|---|
-| `no.sikt.graphitron.command` | command records and their sealed arms, pure data | neither the emit library nor the model |
+| `no.sikt.graphitron.command` | command records and their sealed arms, pure data | never the emit library; from the model, only the named ref allowlist (see the vocabulary section) |
 | `no.sikt.graphitron.plan` | producers, and `EmitPlan` | the model (for now), never the emit library |
 | `no.sikt.graphitron.render` | interpreters, one per command kind | the emit library, never the model |
 
@@ -406,6 +406,12 @@ instead of ratcheted. R545's "no emit vocabulary in the model" becomes "only `re
 library", enforceable from the first file with no allowlist, leaving the allowlist to cover only legacy
 `rewrite.model`. And "the shell decides nothing" becomes an import-direction rule, which is a simpler check
 than any signature convention.
+
+The one softening is `command`'s model-import line, and it is deliberate rather than a leak. A blanket
+ban reads cleaner but buys its cleanliness by forcing a parallel copy of `TableRef`, `ColumnRef`,
+`MethodRef` and the extraction hierarchy, which is a larger and more permanent cost than a checked
+allowlist. The allowlist is enumerated, is the migration dial, and empties into a shared pure-data
+floor as R545 de-javapoets its entries; the vocabulary section carries the reasoning and the list.
 
 **The per-family recipe**, since the intent is to run every slice serially:
 
@@ -467,46 +473,113 @@ This also fixes an ordering hazard in the family rule as written. R541 and R552 
 "before its own cutover", which for R541 means after the keystone; without a programme-level baseline
 the keystone itself is the one cutover in the programme with no pin on either side of it.
 
-## The shared command vocabulary, and who owns it
+## The shared command vocabulary, and why it is narrower than it looks
 
-Three specs now mint command types, and between them they already name `UnitRef`, `TableRef`,
-`Coordinate`, `SelectTerm`, `ColumnTerm`, `Binding`, `Reach`, `ExternalRef`, `FkHopRef`, `OrderTerm`,
-`Pagination`, `Invocation`, `ResultShape`, `CallWrap` and `Arity`. Reuse across them is currently
-asserted in prose, family by family, with no rule for when one family may add an arm to another's
-type and no owner for the ones all three touch. That is the second-order version of exactly the zoo
-this programme exists to collapse, and it is cheap to prevent now and expensive to unpick later.
+Three specs now sketch command types, and between them they name `UnitRef`, `TableRef`, `ColumnRef`,
+`Coordinate`, `SelectTerm`, `ColumnTerm`, `Binding`, `Reach`, `ExternalRef`, `FkHopRef`, `JoinRef`,
+`OrderTerm`, `Pagination`, `Invocation`, `ResultShape`, `CallWrap`, `Arity` and `FacetFragment`, on
+top of three command records and their arms. Read as a list that is alarming, and the alarm is
+partly justified and partly an artifact of how the sketches are written. Sorting it is worth doing
+once, here, because the answer changes what slice 1 builds.
 
-**A small core is programme-owned; everything else is family-owned.** The core is `UnitRef`,
-`TableRef`, `Coordinate`, and the term algebra: the column reference and whatever else more than one
-family renders. It changes only by adding an arm that arrives with a populated row, per the
-non-vacuity discipline, and a family adding a core arm names it in that item's vocabulary section, so
-the growth is readable off the roadmap rather than off a diff. Family-owned types (`Invocation`,
-`ResultShape`, `Reach`, `CallWrap`) live with their family and are not shared until a second family
-has a row that needs them.
+**Most of the list is not new vocabulary. It is renaming things the model already has.** A code walk
+against `rewrite/model/` (124 types):
 
-Slice 1 mints `UnitRef`, `Coordinate` and `TableRef`. The term algebra is minted by whichever family
-lands first and needs it, which under the ordering decided below is **R552 slice 1**, not slice 3.1:
-the condition relation's column reference and the projection's are the same SQL shape, so slice 3.1's
-`SelectTerm` extends what R552 minted rather than standing up a parallel type. Being explicit about
-that is the whole point of naming an owner, since the alternative is that the second family to arrive
-quietly builds its own and the rule is satisfied only in prose.
+[cols="1,3"]
+|===
+| sketch name | what it already is
 
-Two decisions this rule forces, both cheaper to make now than to discover:
+| `TableRef`, `ColumnRef`
+| `model/TableRef.java`, `model/ColumnRef.java`, verbatim
 
-- **Is a predicate's column reference a `SelectTerm`?** The rule is that term arms are SQL shapes,
-  never reasons, and `table.COL` renders identically whether it is projected or compared. R552's
-  `ColumnTerm` carries `Eq` / `In` / `RowEq` / `RowIn`, which are *comparison* shapes rather than
-  column shapes, so the likely correct reading is that the column reference is core and shared while
-  the comparison wrapping is condition-family vocabulary that holds one. R552 slice 1 makes the call,
-  because it gets there first; if it mints a condition-private column type instead, two parallel term
-  algebras land and the shapes-never-reasons rule quietly becomes per-family.
-- **What is a `Coordinate` in `command`?** The model keys on graphql-java's `FieldCoordinates`
-  (`GraphitronSchema.fields`), so carrying it on command records puts graphql-java inside the pure
-  data package. That is not what invariant 3 bans (javapoet is the emit library) but it is the same
-  smell, and it sits awkwardly beside R552's point that graphql-java is absent from the condition
-  unit's signature entirely. Slice 1 mints a `command`-package `Coordinate` and adapts at the plan
-  boundary, or accepts the dependency deliberately and records why. Either is defensible; discovering
-  it in slice 3c is not.
+| `ExternalRef`
+| `model/MethodRef.java`, the authored-callee ref R552's `Authored` arm already reads
+
+| `FkHopRef`, `JoinRef`
+| `JoinStep.Hop` plus `On.ColumnPairs` and its `Keying`, which the two EXISTS emitters already narrow to
+
+| `Binding`
+| `CallParam` plus `CallSiteExtraction`, a sealed hierarchy of roughly ten arms including the nested-path, enum-coercion and node-id-decode cases
+
+| `Coordinate`
+| graphql-java's `FieldCoordinates`, which `GraphitronSchema.fields` keys on
+|===
+
+Genuinely new: `UnitRef`, the command records, and their arms. That is the honest size of the
+invention, and it is small. What made the list read as large is that each spec, obeying the package
+triangle's "`command` may import neither the emit library nor the model", quietly implied a parallel
+copy of vocabulary that exists. Nobody wrote "re-mint `CallSiteExtraction`", but "`Binding` is
+`command`-package vocabulary, not a re-export of the model's `CallParam`" means exactly that, and for
+the extraction hierarchy it means ten arms.
+
+**So the decision is not which arms to trim, it is one dependency question: does `command` borrow the
+model's ref vocabulary or copy it?** Copying doubles the surface and creates two definitions that
+drift, which is R268's bug class at the type level. The obstacle to borrowing is that `TableRef`,
+`ColumnRef` and `MethodRef` hold javapoet `ClassName` / `TypeName` today, so they are themselves
+among R545's 31 offending model files; borrowing them into `command` would drag the emit library in
+behind them, which invariant 3 exists to stop.
+
+The target is a **shared pure-data floor**: those refs shed javapoet (FQCN strings in, `ClassName.get`
+at the renderer) and move to a package below everything, imported by `model`, `plan`, `command` and
+`render` alike. One definition, no adapters, and `command` still imports neither the emit library nor
+the model.
+
+The target is not slice 1's job, because de-javapoeting `TableRef` alone touches every consumer of
+`tableClass()` and that is not a cost the cheapest slice should carry. **Slice 1 borrows instead: the
+`command` package may import a named, enumerated allowlist of model ref types (`TableRef`,
+`ColumnRef`, `MethodRef`, `JoinStep`, `On`, `CallParam`, `CallSiteExtraction`, `FieldCoordinates`) and
+nothing else from the model.** The import-direction check enforces the allowlist rather than a blanket
+ban, the allowlist is the migration dial, and R545's cleanup empties it by moving each entry to the
+floor. That keeps the rule mechanical from the first file while refusing the duplication, which is
+what the blanket ban would have bought at the price of a second vocabulary.
+
+**What actually gets cut.** Applying the programme's own rules (a split earns its place by counted
+downstream consumers; term arms are SQL shapes, never reasons; no arm before a populated row) to the
+genuinely new types:
+
+[cols="1,1,3"]
+|===
+| type | verdict | why
+
+| `OrderTerm`
+| delete
+| ordering is already a named emitted unit, the `private static <field>OrderBy(env, table)` helper `TypeFetcherGenerator` builds and both root and child call. The launcher slot is a `UnitRef`, absent when unordered. Modelling order terms here also pre-builds R333 row 9's family, which is its own seam
+
+| `Pagination`
+| delete
+| `Seek` appears exactly when the shape is `ConnectionResult`, so the two slots make illegal pairs representable. R541 already recommends the fold; it is now made rather than recommended
+
+| `Reach`
+| delete
+| `Local()` is an empty record meaning "no hops". The slot is the hop list, and empty is local. A sealed pair whose first arm is empty is an `Optional` wearing a name
+
+| `ColumnTerm`'s four arms
+| collapse
+| `Eq` / `In` / `RowEq` / `RowIn` is a 2x2 of (scalar, row) x (equality, membership), and row-ness is `columns.size() > 1`. One record plus a two-value match kind covers it. The model's `BodyParam` keeps its four arms; the command has no reason to mirror them
+
+| `Invocation`, `Arity`
+| demote to enum
+| two payload-free records each. A sealed interface earns its shape when an arm carries data; `Batched` will, and promoting then is a two-line change. Until then the interface is ceremony
+
+| `FkHopRef` vs `JoinRef`
+| unify
+| two names for one join-path reference, minted in two specs for the same underlying `JoinStep.Hop`
+|===
+
+And the contrast cases, kept deliberately, so the rule is a filter rather than a mood: `UnitRef`
+against the model's `MethodRef` stays two types because the closure oracle resolves them differently
+(against the plan, against `ServiceCatalog` reflection), which is two counted consumers, and the
+distinction is the emitted-versus-external split slice 7's edge view is built on; `CallWrap`'s
+`Splice` / `Multiset` stays because same-row and other-rows are two counted consumers even though
+`Splice` is empty; `Contribution` and `Predicate` keep their two arms on the arguments their own items
+already make.
+
+**Per-slice budget, so the width is checkable rather than felt.** After slice 1 the entire command
+vocabulary is `UnitRef`, a unit-kind enum and the global command record: three names. R552 slice 1
+adds the condition command, two predicate arms, the column term and its match kind. Slice 3.1 adds
+the projection command, `Contribution`, `CallWrap`, the select-term arms and `Arity`. R541 adds the
+launcher command, `Invocation` and `ResultShape`. Anything else appearing in a slice is a finding to
+report, not a detail to absorb.
 
 ## What the seam buys the test pyramid
 
