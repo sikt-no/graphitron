@@ -191,16 +191,99 @@ wrapping in the inline paths). The runtime dedup is also evidence that overlap b
 name collision to reconcile at runtime, not a build-time invariant to enforce, which is a second argument
 against the demand walk.
 
+## Production path and coexistence
+
+**Where commands come from.** The producer/renderer seam already exists as a function boundary.
+`TypeClassGenerator.generateForType(schema, typeName, outputPackage)` partitions `schema.fieldsOf(typeName)`
+into seven per-leaf-kind buckets, computes the required projection, runs the containment check, and hands
+all of it to `buildTypeSpec(typeName, table, sevenLists..., outputPackage)`. Everything above that last call
+is production; the last call is rendering. So slice 3 is mostly a change of shape: the seven positional
+buckets become one ordered `List<Contribution>`, the required projection becomes a `CorrelationKey` arm, the
+containment check goes away, and `buildTypeSpec` becomes `render(ProjectionCommand, RenderContext)`.
+
+The producer reads exactly where the generator reads today, so **slice 3 needs no fact walk**. Slice 4 later
+re-sources the producer onto fact relations and the renderer never notices, which is what makes 3-before-4
+safe rather than merely convenient. The reshape also fixes emit order by accident: today's arms are grouped
+by leaf kind because the buckets are, whereas one ordered list makes SDL declaration order natural, and
+deterministic emit is what the dev loop's changed-set detection wants.
+
+**Produce eagerly, render second.** The whole command relation materialises before any rendering. Lazy
+per-unit production would reintroduce the pull this design exists to remove, and eager production is what
+makes the relation assertable by the corpus, projectable into the recompile graph, and countable for the
+ratchets.
+
+**Commands are not stored on `GraphitronSchema`.** They are a derived artifact of a distinct core step
+(working name `EmitPlan`). That keeps the fact/command distinction structural rather than conventional,
+keeps the fact store from growing an emit concern, and leaves the language-server and model-context
+projections untouched, since they read the model and have no use for commands.
+
+**Coexistence: one new step, and `runPipeline` becomes the scoreboard.**
+
+```java
+var bundle = GraphitronSchemaBuilder.buildBundle(attributed, ctx);
+var schema = bundle.model();
+var plan   = EmitPlan.produce(schema);                                        // new core step
+
+write(TypeClassGenerator.render(plan.projections(), ctx),      "types",      log);  // migrated
+write(TypeConditionsGenerator.generate(schema, outputPackage), "conditions", log);  // not yet
+```
+
+Migrated and unmigrated families sit in the same list, so migration state is readable off the call sites:
+anything still passing `schema` is unmigrated. No feature flag, no dual-source period inside a family, and
+the pipeline's order does not change.
+
+**The interpreter is typed, not generic.** One renderer per command kind, total over the sealed arm set,
+with no default arm. Not an evaluator walking a command tree: that would relocate the generic-fact-bus
+mistake into the shell, trading compile-time coverage for flexibility this domain does not need.
+
+**New code drops the `rewrite` package.** `no.sikt.graphitron` currently contains nothing but `rewrite/`, so
+new packages sit directly under it and the absence of `rewrite` in an import is a reliable pre/post marker
+while the migration runs. `rewrite` goes away wholesale once nothing is left in it. The split that follows:
+
+| package | holds | may import |
+|---|---|---|
+| `no.sikt.graphitron.command` | command records and their sealed arms, pure data | neither the emit library nor the model |
+| `no.sikt.graphitron.plan` | producers, and `EmitPlan` | the model (for now), never the emit library |
+| `no.sikt.graphitron.render` | interpreters, one per command kind | the emit library, never the model |
+
+That dependency triangle is worth more than a visual aid: it makes two invariants structural for new code
+instead of ratcheted. R545's "no emit vocabulary in the model" becomes "only `render` imports the emit
+library", enforceable from the first file with no allowlist, leaving the allowlist to cover only legacy
+`rewrite.model`. And "the shell decides nothing" becomes an import-direction rule, which is a simpler check
+than any signature convention.
+
+**The per-family recipe**, since the intent is to run every slice serially:
+
+1. Find the emitter's decisions: its `instanceof` and switch sites, plus its "should I emit for this unit"
+   predicate.
+2. Move them into a producer that emits command rows in SDL order.
+3. Rewrite the emitter as a total function over the command's arms, dropping its `GraphitronSchema`
+   parameter.
+4. Point both ratchets down: one entry point off the 25, N leaf references out of `generators/`.
+5. Acceptance: compilation and execution tiers unchanged, closure oracle green, and the family's graph edges
+   now read off the command instead of being predicted.
+
+Step 4 deserves an honest note: migrating a family does not delete its leaf dispatch, it **relocates** it
+from `generators/` into a producer, which is where leaf dispatch belongs until slice 4 turns it into fact
+reads. A falling leaf-reference count in `generators/` is progress on the boundary, not evidence that the
+dispatch is gone.
+
 ## Invariants: what makes this falsifiable rather than believed
 
 The current statements of the cut ("commands must be complete", "the shell assembles nothing") are not
 checkable, which is why the boundary drifts. Under the labelling they become mechanical, and each one is
 installable as a ratchet at its current value before any migration happens.
 
-1. **The shell pattern-matches over command hierarchies only.** A generator that reaches for a walked-fact
-   hierarchy is a leak, and it means the command it renders is incomplete. Today this fails roughly 100
-   times (`instanceof ChildField.*` / `QueryField.*` / `MutationField.*` in `generators/`). Install the
-   count as a ratchet, drive it to zero family by family. This replaces the aspirational law with a grep.
+1. **A command-based emitter takes no `GraphitronSchema`.** This is the sharp form of "the shell decides
+   nothing", and it cannot be satisfied halfway: an emitter either holds the model or it does not. Today 25
+   generator entry points take it, so the ratchet is 25 to 0. Renderers may take a `RenderContext` carrying
+   config (output package, tenant key type, federation flag, helper-name registries), but that context must
+   have no field typed `GraphitronSchema` or any model hierarchy, or the rule is defeated by smuggling; both
+   halves check in one meta-test. For new code the same rule is an import-direction check on the package
+   triangle above, which needs no ratchet at all.
+   The secondary count is leaf references inside `generators/` (roughly 100 `instanceof ChildField.*` /
+   `QueryField.*` / `MutationField.*` sites), driven to zero family by family, remembering that those
+   relocate into producers rather than disappearing until slice 4.
 2. **Every hierarchy declares its grain and lives in exactly one relation at that key.** This is
    `VariantCoverageTest` generalised from "every leaf is demonstrated" to "every hierarchy has a declared
    grain and a home". It is the guard against the current bug class, where something exists that no
@@ -246,8 +329,8 @@ is already wrong.
 |---|---|---|---|
 | 1 | Global command list: `runPipeline`'s `write(...)` sequence becomes data the core computes and the shell folds over | touches no leaf, no fact, no javapoet, no emitted output; makes "the core decides the entire emit" literally true for the one population where it is currently 20 lines of orchestrator decisions | very low |
 | 2 | Label the hierarchies (walked / resolved / command / error) and install invariants 1 and 3 at their current counts | the labelling is the programme's vocabulary, and a ratchet installed before the migration is what stops the surface growing while the work proceeds | low |
-| 3 | **The keystone: projection commands.** One method per projection unit, grouped selection in and select list out, replacing the three `$fields` overloads and renamed to say what it returns (`$project`) uniformly across table-backed and nesting units. Nesting types promoted to units; `CorrelationKey` as the missing arm; exhaustive dispatch with no default; a launcher for `@splitQuery` on a nesting field; the demand walk and `ParentProjectionContainmentCheck` deleted. Depends on R516 | designing this validates or breaks the whole model, and it is the only slice that deletes a build-time throw, a duplicated walk, and a runtime over-projection at once | medium |
-| 3b | `GeneratedUnits` moves to the core; the type-keyed relation `(typeName, unitKind)` replaces the 24 generator predicates, one kind at a time | the vocabulary is already data, so this is a re-homing plus an inversion of "should I emit" from 24 loops into one relation; renderers barely move | medium |
+| 3 | **The keystone: projection commands.** One method per projection unit, grouped selection in and select list out, replacing the three `$fields` overloads and renamed to say what it returns (`$project`) uniformly across table-backed and nesting units. Nesting types promoted to units; `CorrelationKey` as the missing arm; exhaustive dispatch with no default; a launcher for `@splitQuery` on a nesting field; the demand walk and `ParentProjectionContainmentCheck` deleted. Brings `EmitPlan`, the `command` / `plan` / `render` packages, and `GeneratedUnits` moved out of `compile/` so the producer can name its units. Depends on R516 | designing this validates or breaks the whole model, and it is the only slice that deletes a build-time throw, a duplicated walk, and a runtime over-projection at once | medium |
+| 3b | The type-keyed relation `(typeName, unitKind)` replaces the 24 generator predicates, one kind at a time | inverts "should I emit" from 24 independent loops into one relation the shell folds over; renderers barely move, and the unit vocabulary already landed with slice 3 | medium |
 | 4 | Fact-visitor engine: one shared traversal dispatching to per-fact visitors, on the `LintEngine` pattern, with the registry-coverage meta-test, one genuinely independent fact as beachhead | dissolves the central switch that made `FieldBuilder` the largest file in the tree, using an architecture that already shipped here | medium |
 | 5 | Coordinate-keyed command relation: `Operation` rows become the command set the shell consumes; `MethodCommandRegistry`'s parallel four-string record retires into it | this is where the flow finally inverts from shell-asks-core to core-tells-shell | medium |
 | 6 | Grain repair, worked from the exemption lists | 21 stated data points about where the grain is wrong, already written down with reasons | medium |
