@@ -129,6 +129,43 @@ sealed interface CallWrap {                            // how the callee's field
 }
 ```
 
+**Two kinds, because provenance is not a distinction.** Read off what the current arms emit: a scalar column
+adds `table.TITLE`; a composite adds N of those; a direct `@reference` adds `table.COL.as(alias)`; a remote
+one adds `DSL.field(DSL.select(ref.COL)...).as(alias)`; a computed field adds `Helper.method(args).as(...)`;
+a pivot adds a multiset of `max(...).filterWhere(...)` terms; a batched or `@service` child needs its
+correlation columns added. Every one of those is "add these terms when this field is selected", differing
+only in how the term expression is built. The two that genuinely differ are the ones whose terms another
+unit decides, which is what `Call` is for. Modelling a correlation key, a node key, a service key and a
+plain scalar as separate contribution kinds records *why* a column is wanted, which nothing downstream needs.
+
+`Splice` versus `Multiset` is likewise not provenance: it is whether the callee projects the **same row** (a
+nesting unit, so its terms merge into this list) or **other rows** (a child table, so its terms sit inside a
+correlated subquery). Row identity is a structural fact, and it is the only axis a call needs.
+
+**No unconditional rows.** The "always included" category in today's emit is an artifact, not a
+requirement. The selection switch has arms for exactly the seven leaf kinds that project data of their
+own; `BatchedTableField`, `BatchedLookupTableField` and `@service` children have **no arm at all**, because
+from the switch's point of view they project nothing. When it turned out they do need their correlation key
+in the parent SELECT, the only available home was an unconditional append at the end of the method. That is
+the origin of the whole category, and of the chain that widened it (R425 force-included, R426 promised the
+full row, R436 built the reserved-alias scheme, R516 narrows it back). The missing arm is an ordinary `Project`
+contribution carrying the correlation columns: project them when the child is selected, project nothing when
+it is not.
+
+Consequences, all of them things that stop existing rather than things that get built:
+
+- The required-projection walk (`TypeClassGenerator.collectRequiredProjection`) has nothing left to
+  discover, since no demand crosses a key without travelling through a call.
+- `ParentProjectionContainmentCheck` loses its subject. It throws `IllegalStateException` at generation
+  time today to catch a demand omitted from an append; with demand co-located in arms there is no append.
+- Over-projection goes away as a runtime effect. A query selecting only `title` on a type with three split
+  children currently projects the union of all their keys.
+- Node key columns need no forcing. Node-id-ness is a wrap applied at the fetcher value, not in the SELECT
+  ("Compaction does not affect projection: the SELECT terms are the same columns in both cases"), so
+  selecting `id` projects those columns through the ordinary column arm and not selecting it needs nothing.
+- `@lookupKey` has no projection footprint at all. Its work is the VALUES join, emitted by
+  `LookupValuesJoinEmitter`; a lookup *field* projects because it is a field, not because of the argument.
+
 **Every contribution adds fields to this unit's projection when its result key is selected.** That is the
 one thing all of them do, and a `Call` is not an exception: it also lands a field, the difference being that
 the field is a subselect rather than a column on this table. What varies is only where the field expressions
@@ -150,18 +187,6 @@ no callee unit and no edge, so it is a `Project` term whose expression happens t
 algebra therefore covers columns, scalar subselects, aggregates, and helper invocations, with aliasing a
 slot on the expression arms rather than an arm of its own (see the alias rule below).
 
-**Two kinds, because provenance is not a distinction.** Read off what the current arms emit: a scalar column
-adds `table.TITLE`; a composite adds N of those; a direct `@reference` adds `table.COL.as(alias)`; a remote
-one adds `DSL.field(DSL.select(ref.COL)...).as(alias)`; a computed field adds `Helper.method(args).as(...)`;
-a pivot adds a multiset of `max(...).filterWhere(...)` terms; a batched or `@service` child needs its
-correlation columns added. Every one of those is "add these terms when this field is selected", differing
-only in how the term expression is built. The two that genuinely differ are the ones whose terms another
-unit decides, which is what `Call` is for. Modelling a correlation key, a node key, a service key and a
-plain scalar as separate contribution kinds records *why* a column is wanted, which nothing downstream needs.
-
-`Splice` versus `Multiset` is likewise not provenance: it is whether the callee projects the **same row** (a
-nesting unit, so its terms merge into this list) or **other rows** (a child table, so its terms sit inside a
-correlated subquery). Row identity is a structural fact, and it is the only axis a call needs.
 
 **Aliases are mostly inherited complexity, and the consumer decoupling lets us drop them.** The consumer of
 a projected column is a generated DataFetcher, and several fetchers reading the same projected column is
@@ -207,29 +232,6 @@ emitted methods. Small walk, worth stating so nobody reads the arm list as the c
 projection, so it is a launcher extra alongside `__idx__` and `__rn__`, and it belongs nowhere in this
 command.
 
-**No unconditional rows.** The "always included" category in today's emit is an artifact, not a
-requirement. The selection switch has arms for exactly the seven leaf kinds that project data of their
-own; `BatchedTableField`, `BatchedLookupTableField` and `@service` children have **no arm at all**, because
-from the switch's point of view they project nothing. When it turned out they do need their correlation key
-in the parent SELECT, the only available home was an unconditional append at the end of the method. That is
-the origin of the whole category, and of the chain that widened it (R425 force-included, R426 promised the
-full row, R436 built the reserved-alias scheme, R516 narrows it back). The missing arm is an ordinary `Project`
-contribution carrying the correlation columns: project them when the child is selected, project nothing when
-it is not.
-
-Consequences, all of them things that stop existing rather than things that get built:
-
-- The required-projection walk (`TypeClassGenerator.collectRequiredProjection`) has nothing left to
-  discover, since no demand crosses a key without travelling through a call.
-- `ParentProjectionContainmentCheck` loses its subject. It throws `IllegalStateException` at generation
-  time today to catch a demand omitted from an append; with demand co-located in arms there is no append.
-- Over-projection goes away as a runtime effect. A query selecting only `title` on a type with three split
-  children currently projects the union of all their keys.
-- Node key columns need no forcing. Node-id-ness is a wrap applied at the fetcher value, not in the SELECT
-  ("Compaction does not affect projection: the SELECT terms are the same columns in both cases"), so
-  selecting `id` projects those columns through the ordinary column arm and not selecting it needs nothing.
-- `@lookupKey` has no projection footprint at all. Its work is the VALUES join, emitted by
-  `LookupValuesJoinEmitter`; a lookup *field* projects because it is a field, not because of the argument.
 
 **Return, do not mutate.** A nested projection takes the scoped selection and returns its contributions;
 the caller merges. Mutating a passed accumulator would make the callee's contract include the caller's
