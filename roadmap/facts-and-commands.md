@@ -72,10 +72,22 @@ independence or measured multiplicity, never on aesthetics.**
 | type-keyed commands | `(typeName, unitKind)` | 24 generator entry points that each loop the schema asking "should I emit my kind for this type", with the naming vocabulary already centralised as data in `compile/GeneratedUnits` (`typeClass`, `fetchers`, `conditions`, `inputRecord`, `schemaShape`, plus `singleton` / `rootUnit` for globals) |
 | coordinate-keyed commands | `(coordinate, operation)` | `Operation`'s minted arms, plus `MethodCommandRegistry`'s four-string records minted during rendering |
 
-Commands nest: a type command's body reaches coordinate-level facts, since `$fields` folds over its
-children's column facts and recurses through nesting. So *complete* means the core decided everything,
-not that a command contains everything inline. R333's closure invariant is the right test for that, and
-an inlining rule is not.
+The coordinate-keyed relation holds two kinds that must not be conflated. A **projection command** returns
+the select list for one projection unit. A **launcher command** owns a query: it composes a projection
+call with its own extras and adds the FROM, joins, WHERE, ordering, and windowing. The discriminator
+between them is what a column's presence depends on:
+
+> **Projection contributions are gated on client selection. Launcher extras are entailed by the
+> mechanism.**
+
+`__idx__` (scatter correlation), `__rn__` (the window ordinal), the seek columns cursors are built from,
+and the `__typename` literal are all needed whenever their mechanism runs, so they belong to launchers,
+which is where they already are. Everything a projection command emits is there because the client asked
+for it.
+
+Commands nest: a projection command calls other projection commands (nested units, inline table children),
+so *complete* means the core decided everything, not that a command contains everything inline. R333's
+closure invariant is the right test for that, and an inlining rule is not.
 
 Three observations follow that the plan leans on. First, the emit's identity scheme is already data, in
 `GeneratedUnits`, but it lives in `compile/` because the dependency graph was the first consumer to need
@@ -86,6 +98,93 @@ Third, `GraphitronType`'s five synthesised permits (`ConnectionType`, `EdgeType`
 `FacetsType`, `FacetValueType`) are command *outputs* stored in the fact map, which the model already
 admits through the `NO_CASE_REQUIRED` exemptions stating that no SDL declaration exists to carry a
 `@classifiedType` for them.
+
+## The keystone: the projection command
+
+The `$fields` method is the keystone, and designing its command first is what validates or breaks
+everything above. Five properties make it so: it is the only command whose body aggregates contributions
+from other keys; it is the hub of the emitted call graph (`fetchers.X` to `types.Y#$fields`, and type
+classes calling each other); it straddles the static/runtime line, since the arm set is closed at build
+time while which arms fire is a per-request selection value; its demand computation is already duplicated
+by an independent checker that throws at generation time; and its grain is the one the model cannot
+currently express.
+
+```java
+record ProjectionCommand(
+    String unit,                       // types.Film, or a nesting type's own unit
+    TableRef table,                    // the table whose columns the contributions name
+    List<Contribution> contributions)  // every one gated on client selection
+{}
+
+sealed interface Contribution {
+    record Column(String resultKey, ColumnRef column)                        implements Contribution {}
+    record ReferencedColumn(String resultKey, ColumnRef column, JoinRef join) implements Contribution {}
+    record NestedProjection(String resultKey, String calleeUnit)              implements Contribution {}
+    record ChildProjection(String resultKey, String calleeUnit)               implements Contribution {}
+    record PivotSlots(String resultKey, PivotRef pivot)                       implements Contribution {}
+    record Literal(String resultKey, Object constant)                         implements Contribution {}
+    record CorrelationKey(String resultKey, List<ColumnRef> keyColumns)       implements Contribution {}
+}
+```
+
+**No unconditional rows.** The "always included" category in today's emit is an artifact, not a
+requirement. The selection switch has arms for exactly the seven leaf kinds that project data of their
+own; `BatchedTableField`, `BatchedLookupTableField` and `@service` children have **no arm at all**, because
+from the switch's point of view they project nothing. When it turned out they do need their correlation key
+in the parent SELECT, the only available home was an unconditional append at the end of the method. That is
+the origin of the whole category, and of the chain that widened it (R425 force-included, R426 promised the
+full row, R436 built the reserved-alias scheme, R516 narrows it back). `CorrelationKey` is the missing arm:
+project the key when the child is selected, project nothing when it is not.
+
+Consequences, all of them things that stop existing rather than things that get built:
+
+- The required-projection walk (`TypeClassGenerator.collectRequiredProjection`) has nothing left to
+  discover, since no demand crosses a key without travelling through a call.
+- `ParentProjectionContainmentCheck` loses its subject. It throws `IllegalStateException` at generation
+  time today to catch a demand omitted from an append; with demand co-located in arms there is no append.
+- Over-projection goes away as a runtime effect. A query selecting only `title` on a type with three split
+  children currently projects the union of all their keys.
+- Node key columns need no forcing. Node-id-ness is a wrap applied at the fetcher value, not in the SELECT
+  ("Compaction does not affect projection: the SELECT terms are the same columns in both cases"), so
+  selecting `id` projects those columns through the ordinary column arm and not selecting it needs nothing.
+- `@lookupKey` has no projection footprint at all. Its work is the VALUES join, emitted by
+  `LookupValuesJoinEmitter`; a lookup *field* projects because it is a field, not because of the argument.
+
+**Return, do not mutate.** A nested projection takes the scoped selection and returns its contributions;
+the caller merges. Mutating a passed accumulator would make the callee's contract include the caller's
+state and make call order significant, in the one place where nothing else is, and it would defeat the
+independent assertability that motivates cutting the seam at all.
+
+**Every projection unit is caller-parameterised.** A nesting type shares the parent's table alias by
+definition: if it had its own table instance it would not be a nesting type. Since table-backed units also
+take their instance from the caller (`$fields(sel, table, env)`), there is no "owns its alias" case and no
+alias axis on the command. What distinguishes a nesting unit is that it has no key of its own.
+
+**Nesting types become projection units.** Giving a nesting type its own unit collapses the contribution
+key from `(host, pathFromHost)` to `typeName`, retires the depth-suffixed generated locals that exist only
+to dodge JLS shadowing when everything inlines into one method, and hands the dependency graph a node and
+edges for free, which is the grain R459 and R462 both stumbled on. This rests on a precondition:
+nesting types are single-reach today (the first-wins `NestingType` registration guard, and
+`MixedSourceReachIndex` treating a pure nesting target as single reach). `ColumnRef` carries no table, so
+contributions name columns resolved against whatever instance the caller passes; the host binding lives in
+the emitted parameter type, not in the projection. If the single-reach guard is ever lifted, the unit key
+gains the host table and this collapse reverses.
+
+**Polymorphic projection needs no folding in.** `MultiTablePolymorphicEmitter` already emits
+`Type.$fields(PolymorphicSelectionSet.restrictTo(env.getSelectionSet(), "Film"), t, env)` per participant
+and states that the discriminator's "real column is projected by the participant `$fields`". So the
+polymorphic path is a launcher that consumes projection commands, and the only thing the contribution set
+owes it is the `Literal` arm for `__typename`. Both scoping adapters (`restrictTo` by concrete type,
+`SelectionOccurrences.mergeByResultKey` by depth) sit at the call site and converge on the same callee
+input, which is also why the three `$fields` overloads collapse to one.
+
+**Pagination is already outside `$fields`, and correctly so.** `ConnectionHelperClassGenerator` computes
+`selectFields` as "selection ∪ extraFields, name-deduped", a runtime union of what the client selected with
+what cursors need. Four sites already append to a projection's output this way (`__idx__` in the scatter
+path, `__idx__` plus `__rn__` in the ROW_NUMBER envelope, `__typename` in the polymorphic path, `multiset`
+wrapping in the inline paths). The runtime dedup is also evidence that overlap between the two sets is a
+name collision to reconcile at runtime, not a build-time invariant to enforce, which is a second argument
+against the demand walk.
 
 ## Invariants: what makes this falsifiable rather than believed
 
@@ -108,7 +207,14 @@ installable as a ratchet at its current value before any migration happens.
    growing surface into a shrinking one.
 4. **Closure stays green** (`MethodClosureOracleTest`): every callee name resolves to a committed command.
    This already exists and works for the load-bearing families; every slice below must hold it.
-5. **Concentration ratchet** (optional but recommended): share of package LOC in the top five files, and
+5. **Projection dispatch is exhaustive over the sealed set, with no default arm.** This is what closes
+   R425's bug class rather than one of its instances: a leaf that demands a correlation key and has no arm
+   becomes a compile error instead of a forgotten entry in a global append that silently nulls a DataLoader
+   key at runtime under a federation `_entities` fetch.
+6. **No unconditional columns in a projection command.** Every contribution is gated on client selection;
+   anything a mechanism needs regardless belongs to a launcher. Checkable as an emit-shape property: a
+   projection method's body has statements outside its selection switch only for the switch scaffolding.
+7. **Concentration ratchet** (optional but recommended): share of package LOC in the top five files, and
    largest single file per package. Today 46% / 7,102 for `generators/` and 52% / 7,754 for the core.
    Totals are a poor discriminator, since they can stay flat while structure degrades; concentration is
    what actually tests the direction. It also constrains the regrowth that defeated R6 and R7, where
@@ -124,7 +230,8 @@ intermediate states are observable. Ordered by cost and independence, cheapest a
 |---|---|---|---|
 | 1 | Global command list: `runPipeline`'s `write(...)` sequence becomes data the core computes and the shell folds over | touches no leaf, no fact, no javapoet, no emitted output; makes "the core decides the entire emit" literally true for the one population where it is currently 20 lines of orchestrator decisions | very low |
 | 2 | Label the hierarchies (walked / resolved / command / error) and install invariants 1 and 3 at their current counts | the labelling is the programme's vocabulary, and a ratchet installed before the migration is what stops the surface growing while the work proceeds | low |
-| 3 | `GeneratedUnits` moves to the core; the type-keyed command relation `(typeName, unitKind)` replaces the 24 generator predicates, one kind at a time | the vocabulary is already data, so this is a re-homing plus an inversion of "should I emit" from 24 loops into one relation; renderers barely move | medium |
+| 3 | **The keystone: projection commands.** One method per projection unit (grouped selection in, select list out), nesting types promoted to units, `CorrelationKey` as the missing arm, exhaustive dispatch with no default, and the demand walk plus `ParentProjectionContainmentCheck` deleted. Depends on R516 landing first | designing this validates or breaks the whole model, and it is the only slice that deletes a build-time throw, a duplicated walk, and a runtime over-projection at once | medium |
+| 3b | `GeneratedUnits` moves to the core; the type-keyed relation `(typeName, unitKind)` replaces the 24 generator predicates, one kind at a time | the vocabulary is already data, so this is a re-homing plus an inversion of "should I emit" from 24 loops into one relation; renderers barely move | medium |
 | 4 | Fact-visitor engine: one shared traversal dispatching to per-fact visitors, on the `LintEngine` pattern, with the registry-coverage meta-test, one genuinely independent fact as beachhead | dissolves the central switch that made `FieldBuilder` the largest file in the tree, using an architecture that already shipped here | medium |
 | 5 | Coordinate-keyed command relation: `Operation` rows become the command set the shell consumes; `MethodCommandRegistry`'s parallel four-string record retires into it | this is where the flow finally inverts from shell-asks-core to core-tells-shell | medium |
 | 6 | Grain repair, worked from the exemption lists | 21 stated data points about where the grain is wrong, already written down with reasons | medium |
@@ -176,7 +283,8 @@ for pinning it.
 | R543 (Backlog) | slice 8. Its fact half needs slice 4, its command half needs slice 5 |
 | R544 (Backlog) | independent, and this reframing strengthens it: the error-channel hierarchies are a first-class fourth kind at 43 permits, so pinning them declaratively is model work, not only test hygiene |
 | R541 (Spec) | first family to flip under slice 5, already spending the command registry |
-| R462 (Spec) | fix by hand now, do not generalise; slice 7 dissolves its class. Advisory already noted on the item |
+| R516 (Ready, priority 2) | **dependency of slice 3.** It deletes the `reservedFullRow` axis and the reserved-alias scheme, which is the one demand no parent-owned fact can serve, and it ships independently as correctness work. Its force-include of PK plus node key is an interim expression that slice 3 converts to a gated `CorrelationKey` arm, and the node-key half is redundant once the `id` arm projects those columns; its scope item 5 (update `ParentProjectionContainmentCheck`) should be the minimum that keeps the check honest, since slice 3 deletes it |
+| R462 (Spec) | fix by hand now, do not generalise; slice 7 dissolves its class. Advisory already noted on the item. Its Spec body cites `GraphitronSchemaValidator.NESTED_WIREABLE_LEAVES`, which no longer exists under that name anywhere in main or test, so the implementer must re-derive the current nested-leaf bound rather than trusting the citation |
 | R10 (Backlog) | dependency of slice 7. Its own body says it wants "a concrete signal"; the fact engine making connection synthesis a relation is that signal |
 | R7 (Backlog) | subsumed in effect. `TypeFetcherGenerator` splits along command kinds under slice 3 and slice 5 rather than by a decomposition pass that regrows |
 | R25 (Backlog) | supplies the coverage half of the falsification baseline |
