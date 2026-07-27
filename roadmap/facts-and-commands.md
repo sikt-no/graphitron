@@ -147,7 +147,8 @@ record at read time. So cardinality is a slot on the call (it decides the limit 
 different wrap, and nobody should later "optimise" a to-one into a row. And a scalar `@reference` is *not* a
 call: it emits `DSL.field(DSL.select(terminal.COL)...).as(alias)`, a scalar subselect over one column with
 no callee unit and no edge, so it is a `Project` term whose expression happens to be a subselect. The term
-algebra therefore covers columns, aliased columns, scalar subselects, aggregates, and helper invocations.
+algebra therefore covers columns, scalar subselects, aggregates, and helper invocations, with aliasing a
+slot on the expression arms rather than an arm of its own (see the alias rule below).
 
 **Two kinds, because provenance is not a distinction.** Read off what the current arms emit: a scalar column
 adds `table.TITLE`; a composite adds N of those; a direct `@reference` adds `table.COL.as(alias)`; a remote
@@ -162,12 +163,38 @@ plain scalar as separate contribution kinds records *why* a column is wanted, wh
 nesting unit, so its terms merge into this list) or **other rows** (a child table, so its terms sit inside a
 correlated subquery). Row identity is a structural fact, and it is the only axis a call needs.
 
+**Aliases are mostly inherited complexity, and the consumer decoupling lets us drop them.** The consumer of
+a projected column is a generated DataFetcher, and several fetchers reading the same projected column is
+fine, so a column does not need a per-occurrence name. Sorting today's alias uses by whether they carry
+weight: a plain column is already projected unaliased; a **standalone `@reference` whose start table equals
+its target** aliases the parent's own column as `__rk_<resultKey>` purely so its reader matches the subquery
+shape's reader, which is inherited, not load-bearing; a multiset, scalar subselect, aggregate or helper call
+genuinely needs *a* name, since there is no column identity to read by; and two occurrences with different
+arguments (`recent: reviews(first: 5)` versus `old: reviews(first: 1)`) genuinely need distinguishing,
+because the expressions differ. The `__src_<col>__` reservation goes away with R516.
+
+> **Alias a term only when it has no column identity to read by, and alias by result key only when its
+> expression is occurrence-dependent.**
+
+That drops the reader-uniformity alias, because a command tells each end which shape it is rather than
+forcing one convention on both, and it removes `AliasedColumn` from the term algebra: aliasing becomes a slot
+on expression terms, not a term kind.
+
+**Deduplication then becomes safe, with a stated scope.** A term readable by column identity is added **once**
+no matter how many selected occurrences reference it; an occurrence-dependent term is added per occurrence.
+That is a property of the term arm, decided in the producer, not a runtime name check like the connection
+helper's `selectedNames.contains(...)`. The scope limit comes from the emit: result-key bucketing already
+unions sub-selections per result key, so `a: reviews { id }` and `b: reviews { text }` yield two multisets
+even with identical arguments, and deduplicating those would mean comparing merged sub-selections at runtime.
+So the win is column terms, which is the common case, and no attempt should be made to dedupe delegated
+fields.
+
 **The rule that keeps this collapsed**, because the risk is that the zoo reappears one level down:
 
 > **Term arms are SQL shapes, never reasons.** Two contributions that render to the same SQL shape use the
 > same arm.
 
-That keeps `SelectTerm` small (a column, an aliased column, an aggregate, a scalar subquery, a helper
+That keeps `SelectTerm` small (a column, an aggregate, a scalar subselect, a helper
 invocation) and rejects a proposed `CorrelationKeyTerm` on sight, since it renders `table.COL` exactly as a
 plain column does.
 
