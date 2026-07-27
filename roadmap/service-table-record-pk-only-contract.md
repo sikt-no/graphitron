@@ -1,13 +1,13 @@
 ---
 id: R516
 title: "Narrow SourceKey.Wrap.TableRecord contract to PK-only, revert full-row projection"
-status: Ready
+status: In Progress
 bucket: correctness
 priority: 2
 theme: service
 depends-on: []
 created: 2026-07-23
-last-updated: 2026-07-24
+last-updated: 2026-07-27
 ---
 
 # Narrow SourceKey.Wrap.TableRecord contract to PK-only, revert full-row projection
@@ -56,7 +56,7 @@ the root premise:
 
 ### The core mechanism is a narrowing, not a rebuild
 
-`TypeClassGenerator.collectRequiredProjection` (`TypeClassGenerator.java:569-616`) already computes
+`TypeClassGenerator.collectRequiredProjection` (`TypeClassGenerator.java:532-576`) already computes
 `bk.sourceKey().columns()` as the parent's PK columns for the `Wrap.TableRecord` case — identical to
 every other wrap — and then discards it in favor of `reservedFullRow = true`:
 
@@ -76,7 +76,7 @@ as `Wrap.Row`/`Wrap.Record`. `RequiredProjection` collapses from its current two
 "regardless of the user's SDL selection, unconditionally emit the whole row" special case for this one
 wrap.
 
-`GeneratorUtils.buildKeyExtraction`'s `TableRecord` arm (`GeneratorUtils.java:580-648`) collapses from
+`GeneratorUtils.buildKeyExtraction`'s `TableRecord` arm (`GeneratorUtils.java:537-577`) collapses from
 the R511 runtime `instanceof` fork to one unconditional form: for each PK `ColumnRef`, read it off
 `source` by field identity/base name and set it on the freshly constructed key record —
 
@@ -97,7 +97,8 @@ reserved-alias scheme does not reopen the multiset-alias-collision hazard it exi
 strictly field-identity, scoped to PK columns only, which is exactly the safety profile
 `Wrap.Row`/`Wrap.Record` already ship with today.
 
-`ParentProjectionContainmentCheck` (`ParentProjectionContainmentCheck.java:62-145`) updates in step:
+`ParentProjectionContainmentCheck` (the `TableRecord` arm at
+`ParentProjectionContainmentCheck.java:88-100`) updates in step:
 the `Wrap.TableRecord` arm's guarantee becomes a PK-only `baseColumns` demand like the other wraps,
 not a special-cased whole-row guarantee.
 
@@ -105,8 +106,9 @@ not a special-cased whole-row guarantee.
 
 A `@table` type with no primary key cannot support `@service`/`@splitQuery` via a `Set<XRecord>` /
 `List<XRecord>` Sources parameter at all under a PK-only contract — there is no key to build. Today
-this case (`primaryKeyColumns()` empty) falls through `ServiceCatalog.classifySourcesType` into a
-generic arg-name-mismatch diagnostic (`ServiceCatalog.java:959-997`, `:269`, `:292`) that does not name
+this case (`primaryKeyColumns()` empty) falls through `ServiceCatalog.classifySourcesType`
+(`ServiceCatalog.java:855`, called at `:229`) into a
+generic arg-name-mismatch diagnostic (`:229-305`) that does not name
 the real cause. This item adds a build-time rejection: when a `Set<XRecord>`/`List<XRecord>` Sources
 shape is recognized on a parent whose table has empty `primaryKeyColumns()`, fire a dedicated
 `Rejection`/`ServiceMethodCallError` variant naming the PK-less table as the cause, sited at the same
@@ -132,7 +134,7 @@ stay covered by the same force-inclusion computation rather than requiring two i
 mechanisms that can silently drift apart.
 
 Implementation note for whoever picks this up: `ChildField.SingleRecordIdField`
-(`ChildField.java:255-277`) is the one existing `SourceKey.Wrap.TableRecord` consumer keyed on
+(`ChildField.java:231-253`) is the one existing `SourceKey.Wrap.TableRecord` consumer keyed on
 `nodeKeyColumns()` rather than PK, but per its own javadoc it "declines `BatchKeyField` (no
 DataLoader)" and is sourced from a `@service`/DML producer's own returned record (`SourceShape.Record`),
 not from the type's own `$fields`-projected parent row — so it does not appear to route through
@@ -248,6 +250,19 @@ because from the switch's point of view they project nothing: their data arrives
 their correlation key turned out to be needed in the parent SELECT, the only available home was the
 unconditional append this item narrows, and getting a new shape right meant remembering to widen the append
 rather than adding a case. R425's "missed pattern-match arm" is that gap seen from the inside.
+
+**Premise re-verified at pickup (2026-07-27, no scope change).** Three things worth having confirmed
+before the first edit, since the whole item rests on them. The service-side `Wrap.TableRecord` key is
+built from `MethodRef.Param.Sourced`, which `ServiceCatalog` constructs with `parentPkColumns`
+verbatim (`ServiceCatalog.java:307-308`), so `bk.sourceKey().columns()` for that wrap already *is* the
+parent PK list: deleting the special case yields PK-only force-inclusion with no new computation, and
+the Design section's "narrowing, not a rebuild" claim holds literally. There are exactly two
+`SourceKey.Wrap.TableRecord` mint sites, `ServiceCatalog.java:891` (the service Sources shape, PK-keyed)
+and `FieldBuilder.java:5966` (`SingleRecordIdField`, `nodeKeyColumns()`-keyed), which settles the
+node-key question the Design section leaves open: the one node-key-keyed consumer is precisely the one
+that does not route through `collectRequiredProjection`, so scope item 2's narrowing to PK alone is
+confirmed rather than assumed. And this item shares no file with R552's slices, so it can run alongside
+the first command family rather than queueing behind it.
 
 The end state (R549's keystone slice) is a gated arm that projects the key when the child is selected and
 nothing when it is not, which retires the append, the walk, the containment check, and the over-projection
