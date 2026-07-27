@@ -43,10 +43,10 @@ a|
 == By category
 
 *Mapping* +
-xref:table.adoc[`@table`], xref:field.adoc[`@field`], xref:enum.adoc[`@enum`], xref:scalarType.adoc[`@scalarType`]
+xref:table.adoc[`@table`], xref:field.adoc[`@field`], xref:enum.adoc[`@enum`], xref:scalarType.adoc[`@scalarType`], xref:record.adoc[`@record`] (deprecated, ignored)
 
 *Joining* +
-xref:reference.adoc[`@reference`]
+xref:reference.adoc[`@reference`], xref:referenceFor.adoc[`@referenceFor`]
 
 *Querying* +
 xref:asConnection.adoc[`@asConnection`], xref:asFacet.adoc[`@asFacet`], xref:condition.adoc[`@condition`], xref:externalField.adoc[`@externalField`], xref:lookupKey.adoc[`@lookupKey`], xref:pivot.adoc[`@pivot`], xref:routine.adoc[`@routine`], xref:splitQuery.adoc[`@splitQuery`], xref:tenantFanOut.adoc[`@tenantFanOut`]

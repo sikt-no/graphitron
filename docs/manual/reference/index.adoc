@@ -27,66 +27,6 @@ Authoritative descriptions of every directive, every Maven plugin parameter, eve
 
 == Directives
 
-[cols="1,1",frame=none,grid=none]
-|===
-a|
-=== Alphabetical
-
-* xref:directives/asConnection.adoc[`@asConnection`]
-* xref:directives/condition.adoc[`@condition`]
-* xref:directives/defaultOrder.adoc[`@defaultOrder`]
-* xref:directives/discriminate.adoc[`@discriminate`]
-* xref:directives/discriminator.adoc[`@discriminator`]
-* xref:directives/enum.adoc[`@enum`]
-* xref:directives/error.adoc[`@error`]
-* xref:directives/externalField.adoc[`@externalField`]
-* xref:directives/field.adoc[`@field`]
-* xref:directives/index-directive.adoc[`@index`] _(deprecated, use `@order(index:)`)_
-* xref:directives/lookupKey.adoc[`@lookupKey`]
-* xref:directives/multitableReference.adoc[`@multitableReference`] _(rejected, remove from the schema)_
-* xref:directives/mutation.adoc[`@mutation`]
-* xref:directives/node.adoc[`@node`]
-* xref:directives/nodeId.adoc[`@nodeId`]
-* xref:directives/notGenerated.adoc[`@notGenerated`] _(rejected, remove from the schema)_
-* xref:directives/order.adoc[`@order`]
-* xref:directives/orderBy.adoc[`@orderBy`]
-* xref:directives/record.adoc[`@record`] _(deprecated, ignored, remove from the schema)_
-* xref:directives/reference.adoc[`@reference`]
-* xref:directives/referenceFor.adoc[`@referenceFor`]
-* xref:directives/service.adoc[`@service`]
-* xref:directives/splitQuery.adoc[`@splitQuery`]
-* xref:directives/table.adoc[`@table`]
-
-a|
-=== By category
-
-*Mapping* +
-xref:directives/table.adoc[`@table`], xref:directives/field.adoc[`@field`], xref:directives/enum.adoc[`@enum`], xref:directives/record.adoc[`@record`] (deprecated, ignored)
-
-*Joining* +
-xref:directives/reference.adoc[`@reference`]
-
-*Querying* +
-xref:directives/asConnection.adoc[`@asConnection`], xref:directives/condition.adoc[`@condition`], xref:directives/externalField.adoc[`@externalField`], xref:directives/lookupKey.adoc[`@lookupKey`], xref:directives/splitQuery.adoc[`@splitQuery`]
-
-*Mutating* +
-xref:directives/mutation.adoc[`@mutation`], xref:directives/service.adoc[`@service`]
-
-*Sorting* +
-xref:directives/orderBy.adoc[`@orderBy`], xref:directives/order.adoc[`@order`], xref:directives/defaultOrder.adoc[`@defaultOrder`], xref:directives/index-directive.adoc[`@index`] (deprecated)
-
-*Error handling* +
-xref:directives/error.adoc[`@error`]
-
-*Polymorphism* +
-xref:directives/discriminate.adoc[`@discriminate`], xref:directives/discriminator.adoc[`@discriminator`]
-
-*Global ID* +
-xref:directives/node.adoc[`@node`], xref:directives/nodeId.adoc[`@nodeId`]
-
-*Rejected by the rewrite* +
-xref:directives/notGenerated.adoc[`@notGenerated`], xref:directives/multitableReference.adoc[`@multitableReference`] (remove from the schema)
-
-|===
+* xref:directives/index.adoc[Directive reference]: every directive in the rewrite's `directives.graphqls`, listed alphabetically and grouped by category. Each directive page carries its SDL signature, parameter table, canonical examples from the Sakila example schema, constraints, and cross-links to the recipes and explanation pages that frame it.
 
 xref:../index.adoc[← Back to the manual landing]
