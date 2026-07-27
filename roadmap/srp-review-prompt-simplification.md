@@ -42,7 +42,7 @@ The skill's own Procedure (steps 0-6) is untouched in intent: sync-first, ID res
 
 ## Deliverable
 
-Shipped at a9d1355: both templates rewritten as goal + invariants + pointers, design-intent paragraph added, Procedure/Output rules/Hard rules untouched. Templates went from 1144 to 968 words combined, with the surviving bulk being the mandated invariants. The implementation-stage materials list now names workflow.adoc (per the Spec → Ready review note: its per-gate obligations were previously unsurfaced) and keeps an optional pointer to the reviewer-prompt taxonomy. Nothing remains unimplemented.
+Shipped at 16e45d1: both templates rewritten as goal + invariants + pointers, design-intent paragraph added, Procedure/Output rules/Hard rules untouched. Templates went from 1144 to 968 words combined, with the surviving bulk being the mandated invariants. The implementation-stage materials list now names workflow.adoc (per the Spec → Ready review note: its per-gate obligations were previously unsurfaced) and keeps an optional pointer to the reviewer-prompt taxonomy. Nothing remains unimplemented.
 
 Original deliverable text follows.
 
