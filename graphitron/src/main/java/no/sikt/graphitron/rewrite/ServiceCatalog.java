@@ -153,18 +153,42 @@ class ServiceCatalog {
             ArgBindingMap argBindings, Set<String> ctxKeys, List<ColumnRef> parentPkColumns,
             TypeName expectedReturnType) {
         return reflectServiceMethod(className, methodName, argBindings, ctxKeys,
-            parentPkColumns, expectedReturnType, Map.of());
+            parentPkColumns, expectedReturnType, Map.of(), null);
     }
+
+    /** @see #reflectServiceMethod(String, String, ArgBindingMap, Set, List, TypeName, Map, PkLessParent) */
+    ServiceReflectionResult reflectServiceMethod(String className, String methodName,
+            ArgBindingMap argBindings, Set<String> ctxKeys, List<ColumnRef> parentPkColumns,
+            TypeName expectedReturnType, Map<String, GraphQLInputType> slotTypes) {
+        return reflectServiceMethod(className, methodName, argBindings, ctxKeys,
+            parentPkColumns, expectedReturnType, slotTypes, null);
+    }
+
+    /**
+     * The one coordinate shape an empty {@code parentPkColumns} does <em>not</em> describe: a child
+     * whose parent type maps a real table that happens to declare no primary key. Root coordinates
+     * pass {@code null} here, which is what keeps the root diagnostics reachable.
+     *
+     * @param typeName  the parent GraphQL type
+     * @param tableName the table it maps, named in the rejection so the author can find it
+     */
+    record PkLessParent(String typeName, String tableName) {}
 
     /**
      * Suggestion-aware overload: {@code slotTypes} lets a parameter-mismatch rejection pre-fill
      * an unambiguous reachable path in its argMapping suggestion. The production caller
      * ({@link ServiceDirectiveResolver}) threads the real slot types from
      * {@link FieldBuilder#argSlotTypes(graphql.schema.GraphQLFieldDefinition)}.
+     *
+     * <p>{@code pkLessParent} disambiguates the two coordinates that both arrive with an empty
+     * {@code parentPkColumns}: pass the parent's type and table when it maps a table with no
+     * primary key, {@code null} at a root operation type. Only the former can raise
+     * {@link ServiceMethodCallError.SourcesOnPkLessParent}.
      */
     ServiceReflectionResult reflectServiceMethod(String className, String methodName,
             ArgBindingMap argBindings, Set<String> ctxKeys, List<ColumnRef> parentPkColumns,
-            TypeName expectedReturnType, Map<String, GraphQLInputType> slotTypes) {
+            TypeName expectedReturnType, Map<String, GraphQLInputType> slotTypes,
+            PkLessParent pkLessParent) {
         var argByJavaName = argBindings.byJavaName();
         if (className == null || methodName == null) {
             return new ServiceReflectionResult(null, Rejection.structural("service reference is incomplete"));
@@ -226,7 +250,19 @@ class ServiceCatalog {
                 } else if (pName != null && ctxKeys.contains(pName)) {
                     params.add(new MethodRef.Param.Typed(displayName, typeName, javaType, new ParamSource.Context()));
                 } else {
-                    Optional<SourcesShape> sourcesShape = classifySourcesType(p.getParameterizedType(), parentPkColumns);
+                    // One recognition, two readings. The shape says "this parameter is a SOURCES
+                    // batch"; whether it can be honoured is the coordinate's question, and the two
+                    // empty-PK coordinates answer it differently. A PK-less parent table is
+                    // rejected by name here rather than at the arg-mismatch arm below, which would
+                    // describe a problem the author does not have.
+                    Optional<SourcesShape> recognisedShape = classifySourcesType(p.getParameterizedType());
+                    if (recognisedShape.isPresent() && parentPkColumns.isEmpty() && pkLessParent != null) {
+                        return new ServiceReflectionResult(null,
+                            new ServiceMethodCallError.SourcesOnPkLessParent(
+                                displayName, methodName, pkLessParent.typeName(), pkLessParent.tableName()));
+                    }
+                    Optional<SourcesShape> sourcesShape =
+                        parentPkColumns.isEmpty() ? Optional.empty() : recognisedShape;
                     if (sourcesShape.isEmpty()) {
                         if (pName == null) {
                             return new ServiceReflectionResult(null,
@@ -238,8 +274,8 @@ class ServiceCatalog {
                         // / List<RecordN>) at root get the dedicated batch-at-root diagnostic;
                         // List<TableRecord> at root is the canonical InputBeanResolver shape and
                         // falls through to the arg-mismatch arm when the name doesn't bind
-                        // (looksLikeSourcesShape excludes TableRecord). classifySourcesType
-                        // returns empty for empty parentPkColumns, so detection happens here on
+                        // (looksLikeSourcesShape excludes TableRecord). The recognised shape is
+                        // discarded for empty parentPkColumns above, so detection happens here on
                         // the parameter type directly.
                         if (parentPkColumns.isEmpty() && looksLikeSourcesShape(p.getParameterizedType())) {
                             return new ServiceReflectionResult(null,
@@ -848,15 +884,15 @@ class ServiceCatalog {
 
     /**
      * Classifies the element type of a {@code List<?>} or {@code Set<?>} SOURCES parameter into
-     * a {@link SourcesShape}, or returns {@link Optional#empty()} when the type is not
-     * recognised or when {@code parentPkColumns} is empty (root-op case: the diagnostic is
-     * produced upstream by {@link #looksLikeSourcesShape}).
+     * a {@link SourcesShape}, or returns {@link Optional#empty()} when the type is not recognised.
+     *
+     * <p>Purely a type question. Whether a recognised shape can actually be honoured depends on the
+     * coordinate (a root type and a PK-less parent table both lack a batch key, for different
+     * reasons), and the caller decides that; keeping it out of here is what lets one recognition
+     * serve both the {@link MethodRef.Param.Sourced} construction and the
+     * {@link ServiceMethodCallError.SourcesOnPkLessParent} rejection.
      */
-    static Optional<SourcesShape> classifySourcesType(java.lang.reflect.Type paramType,
-            List<ColumnRef> parentPkColumns) {
-        if (parentPkColumns.isEmpty()) {
-            return Optional.empty();
-        }
+    static Optional<SourcesShape> classifySourcesType(java.lang.reflect.Type paramType) {
         var split = peelContainer(paramType, java.util.EnumSet.of(ContainerKind.LIST, ContainerKind.SET));
         if (split.isEmpty()) {
             return Optional.empty();

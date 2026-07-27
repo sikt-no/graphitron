@@ -39,7 +39,7 @@ class TypeClassGeneratorTest {
             List.of(),
             List.of(),
             List.of(),
-            new TypeClassGenerator.RequiredProjection(false, List.of()),
+            List.of(),
             DEFAULT_OUTPUT_PACKAGE);
     }
 
@@ -88,7 +88,7 @@ class TypeClassGeneratorTest {
             List.of(),
             List.of(),
             List.of(),
-            new TypeClassGenerator.RequiredProjection(false, List.of()),
+            List.of(),
             DEFAULT_OUTPUT_PACKAGE);
         assertThat(TypeSpecAssertions.hasFieldsArm(spec, "id")).isTrue();
     }

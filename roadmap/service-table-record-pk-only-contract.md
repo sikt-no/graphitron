@@ -212,12 +212,21 @@ latent gap or is confirmed a no-op.
 
 ## Retired vocabulary
 
-Expected to retire at the Done gate: `reservedFullRow`, `reservedSourceAlias`, the `__src_<col>__`
+Expected to retire at the Done gate: `reservedFullRow`, `reservedSourceAlias`,
+`RESERVED_SRC_ALIAS_PREFIX` / `RESERVED_SRC_ALIAS_SUFFIX`, the `__src_<col>__`
 alias scheme (javadoc-prose-only in `GeneratedSourcesLintTest` — no allowlist entry exists, per Scope
 item 3), the "fully-populated parent record" / "every column on the parent table" framing in docs,
 and the `TableRecord`-arm `instanceof` runtime fork. Note the SDL description prose in
 `graphitron-sakila-example/src/main/resources/graphql/schema.graphqls` (around the smallint-convert
 comment) narrates the reserved-alias projection; the sweep's `__src_` grep catches it.
+
+Retiring with them, as the shape of Scope item 1 rather than a separate decision: the
+`TypeClassGenerator.RequiredProjection` record itself. With one axis left it was an
+`List<ColumnRef>` wearing a name, so the walk returns the list and
+`ParentProjectionContainmentCheck.check` takes it. On the test side, `TypeSpecAssertions`'s
+`appendsFullParentRow` goes (the shape it detected no longer exists, and `appendsRequiredColumn`
+is the check) and `serviceChildKeyExtractionForksOnTypedRecord` becomes
+`serviceChildKeyExtractionIsUnconditional`, since the absence of the fork is now the observable.
 
 ## Migration / compatibility
 

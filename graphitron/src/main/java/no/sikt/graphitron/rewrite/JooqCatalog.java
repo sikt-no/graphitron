@@ -1317,9 +1317,9 @@ public class JooqCatalog {
         /**
          * Every column on the table as fully-resolved {@link ColumnRef}s, in generated-jOOQ-class
          * declaration order (the same order {@code table.fields()} yields at runtime). Backs
-         * {@link no.sikt.graphitron.rewrite.model.TableRef#allColumns()}: the typed-record key
-         * reconstruction and reserved-alias full-row projection enumerate this at generation time
-         * rather than reflecting the catalog at emit time. Mirrors {@link #allColumnsOf(String)}'s
+         * {@link no.sikt.graphitron.rewrite.model.TableRef#allColumns()}: the interface base/detail
+         * split and the pivot-column search enumerate this at generation time rather than
+         * reflecting the catalog at emit time. Mirrors {@link #allColumnsOf(String)}'s
          * reflection but keyed off this entry's already-resolved {@code table()}.
          */
         public List<ColumnRef> allColumnRefs() {

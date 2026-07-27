@@ -129,18 +129,25 @@ public final class FilmService {
      * Sibling fixture exercising the typed-{@link FilmRecord} source-shape arm. The
      * developer signs {@code Set<FilmRecord>} on the parameter and {@code Map<FilmRecord, String>}
      * on the return, which classifies as {@code SourceKey.Wrap.TableRecord}
-     * (the variant carries the typed record class). The framework's emitted lambda extracts the
-     * parent's {@code FilmRecord} via {@code env.getSource().into(Tables.FILM)} and calls this
-     * method directly with the typed-record set.
+     * (the variant carries the typed record class). The framework builds one {@code FilmRecord}
+     * per parent row carrying the primary key and calls this method with the typed-record set.
      *
-     * <p>Reads each {@code FilmRecord}'s {@code title} via {@link FilmRecord#getTitle()} and
-     * returns the title-case rendition. No SQL fetch is required because the typed record
-     * already carries every column on the parent table.
+     * <p>The contract is PK-only: the keys carry {@code FILM_ID} and nothing else, so a service
+     * needing another column fetches it, in one batched query, through the injected
+     * {@code DSLContext}. That is what makes this a correct example rather than one that happens
+     * to work when the client's own selection includes the column. {@link CityService#cityUppercase}
+     * is the same pattern on a parent with no other force-projecting children.
      */
-    public static Map<FilmRecord, String> titleTitlecase(Set<FilmRecord> films) {
+    public static Map<FilmRecord, String> titleTitlecase(Set<FilmRecord> films, DSLContext dsl) {
+        List<Integer> ids = films.stream().map(FilmRecord::getFilmId).toList();
+        Map<Integer, String> titleById = dsl
+            .selectFrom(Film.FILM)
+            .where(Film.FILM.FILM_ID.in(ids))
+            .fetchMap(Film.FILM.FILM_ID, Film.FILM.TITLE);
+
         Map<FilmRecord, String> result = new LinkedHashMap<>();
         for (FilmRecord film : films) {
-            String title = film.getTitle();
+            String title = titleById.get(film.getFilmId());
             result.put(film, title == null ? null : toTitleCase(title));
         }
         return result;

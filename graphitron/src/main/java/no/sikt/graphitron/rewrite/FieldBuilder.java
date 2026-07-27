@@ -6997,7 +6997,12 @@ class FieldBuilder {
         }
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
-            var resolved = serviceResolver.resolve(parentTypeName, fieldDef, tableType.table().primaryKeyColumns());
+            var parentTable = tableType.table();
+            var resolved = serviceResolver.resolve(parentTypeName, fieldDef,
+                parentTable.primaryKeyColumns(),
+                parentTable.primaryKeyColumns().isEmpty()
+                    ? new ServiceCatalog.PkLessParent(parentTypeName, parentTable.tableName())
+                    : null);
             if (resolved instanceof ServiceDirectiveResolver.Resolved.Rejected r) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());
             }

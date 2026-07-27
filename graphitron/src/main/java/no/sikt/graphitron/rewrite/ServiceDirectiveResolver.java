@@ -105,7 +105,18 @@ final class ServiceDirectiveResolver {
      * </ul>
      */
     Resolved resolve(String parentTypeName, GraphQLFieldDefinition fieldDef, List<ColumnRef> parentPkColumns) {
-        boolean isRoot = parentPkColumns.isEmpty();
+        return resolve(parentTypeName, fieldDef, parentPkColumns, null);
+    }
+
+    /**
+     * Table-parent overload. {@code pkLessParent} is non-null only when the parent type maps a
+     * table that declares no primary key, the one case an empty {@code parentPkColumns} would
+     * otherwise be read as "root". Everything gated on {@code isRoot} below stays gated on the
+     * genuinely-root reading.
+     */
+    Resolved resolve(String parentTypeName, GraphQLFieldDefinition fieldDef,
+            List<ColumnRef> parentPkColumns, ServiceCatalog.PkLessParent pkLessParent) {
+        boolean isRoot = parentPkColumns.isEmpty() && pkLessParent == null;
         String rawTypeName = baseTypeName(fieldDef);
         String elementTypeName = ctx.isConnectionType(rawTypeName)
             ? ctx.connectionElementTypeName(rawTypeName)
@@ -141,7 +152,7 @@ final class ServiceDirectiveResolver {
 
         var result = svc.reflectServiceMethod(serviceRef.className(), serviceRef.methodName(),
             argBindings, new HashSet<>(contextArgs), parentPkColumns, expectedReturnType,
-            slotTypes);
+            slotTypes, pkLessParent);
         if (result.failed()) {
             return new Resolved.Rejected(result.rejection().prefixedWith("service method could not be resolved — "));
         }

@@ -206,9 +206,9 @@ class GeneratedSourcesLintTest {
      * External tokens we consume but do not own, allowed to appear as emitted identifiers: jOOQ's
      * reflective NodeId metadata constants. Nothing else needs an entry: the Apollo-Federation
      * {@code federation__} / {@code link__} SDL scalar names do not lead with a double underscore
-     * and never match {@link #DUNDER_IDENTIFIER}, and the {@code __typename} meta-field and the
-     * {@code __src_<col>__} full-parent-row aliases reach generated code only as string literals,
-     * masked before the scan. See development-principles.adoc, "Readability rules".
+     * and never match {@link #DUNDER_IDENTIFIER}, and the {@code __typename} meta-field reaches
+     * generated code only as a string literal, masked before the scan. See
+     * development-principles.adoc, "Readability rules".
      */
     private static final List<String> EXTERNAL_TOKEN_PREFIXES = List.of("__NODE_");
 
@@ -219,7 +219,7 @@ class GeneratedSourcesLintTest {
      * prefix ({@code arg_<name>}, {@code c_<name>}), never a blanket {@code __}.
      *
      * <p>Synthetic SQL column aliases ({@code __sort__}, {@code __idx__}, {@code __rn__},
-     * {@code __typename}, {@code __pkN__}, {@code __src_<col>__}) share the result-set column
+     * {@code __typename}, {@code __pkN__}) share the result-set column
      * namespace with consumer-controlled table columns and wrap in {@code __} precisely to
      * avoid colliding with a real column. They reach generated code only as string literals,
      * so masking literals and comments before the scan leaves them alone; the discriminator is

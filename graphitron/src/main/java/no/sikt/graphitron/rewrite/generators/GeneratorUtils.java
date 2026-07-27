@@ -49,38 +49,6 @@ class GeneratorUtils {
     static final ClassName SELECTED_FIELD   = ClassName.get("graphql.schema", "SelectedField");
 
     /**
-     * Reserved SQL-alias affixes for the full-parent-row projection that backs a
-     * {@link SourceKey.Wrap.TableRecord} key read. The parent {@code $fields} SELECT projects
-     * every column re-aliased as {@code __src_<sqlColumnName>__}, and
-     * {@link #buildKeyExtraction(SourceKey, TableRef)}'s {@code TableRecord} arm reads those same
-     * aliases back to reconstruct the typed record. The {@code __}-lead is deliberate: GraphQL
-     * reserves leading-{@code __} names for introspection, so no client-driven sibling projection
-     * alias (multiset object fields, {@code .as(fieldName)} scalar aliases, interface-participant
-     * aliases) can ever collide with one. This keeps the whole-row read out of the shared
-     * base-column namespace, where a by-name {@code into(Tables.X)} map crashes on a colliding
-     * alias. Producer and consumer must agree on the exact string, so both
-     * {@link #reservedSourceAlias(String)} (the sole formatter) and the two emit sites drive off
-     * {@link TableRef#allColumns()}: the column set and the alias basis are single-homed there and
-     * cannot drift. Reaches generated code only as a string literal, never a Java identifier, so it
-     * is invisible to the dunder-identifier lints.
-     *
-     * @see TypeClassGenerator (the producer: reserved-alias full-row projection in {@code $fields})
-     */
-    static final String RESERVED_SRC_ALIAS_PREFIX = "__src_";
-    static final String RESERVED_SRC_ALIAS_SUFFIX = "__";
-
-    /**
-     * The reserved SQL alias a parent column is projected under for the full-parent-row read; the
-     * inverse operation the {@code TableRecord} key reconstruction reads back by. Basis is the
-     * column's SQL name ({@link ColumnRef#sqlName()}, i.e. jOOQ's {@code Field.getName()}), so the
-     * projection and extraction sites resolve to byte-identical strings. See
-     * {@link #RESERVED_SRC_ALIAS_PREFIX}.
-     */
-    static String reservedSourceAlias(String columnSqlName) {
-        return RESERVED_SRC_ALIAS_PREFIX + columnSqlName + RESERVED_SRC_ALIAS_SUFFIX;
-    }
-
-    /**
      * Reserved SQL-alias prefix for result-key-distinct projection of inline reference and
      * computed fields. Aliasing a duplicate reference selection under its runtime <em>result
      * key</em> rather than the schema field name lets {@code a: ref { x } b: ref { y }} mint two
@@ -95,14 +63,13 @@ class GeneratorUtils {
      *
      * <p>The reserved {@code __}-lead moves the alias out of the client-reachable namespace:
      * GraphQL reserves leading-{@code __} names for introspection only in the schema, and
-     * document aliases are unrestricted, so a client could write {@code __src_actor_id__: ref}
+     * document aliases are unrestricted, so a client could write {@code __actor_id__: ref}
      * or {@code __discriminator__: ref}. The prefix keeps a
-     * client-chosen alias from ever colliding with a base-column projection, a
-     * {@link #RESERVED_SRC_ALIAS_PREFIX} full-row alias, the polymorphic discriminator
-     * projection, or another result key (result keys are unique per flattened selection map by
-     * construction; an adversarial {@code __rk_foo} alias mints {@code __rk___rk_foo}, still
-     * distinct). Like {@link #RESERVED_SRC_ALIAS_PREFIX} it is a string literal in generated
-     * output, never a Java identifier, so the dunder-identifier lints do not see it.
+     * client-chosen alias from ever colliding with a base-column projection, the polymorphic
+     * discriminator projection, or another result key (result keys are unique per flattened
+     * selection map by construction; an adversarial {@code __rk_foo} alias mints
+     * {@code __rk___rk_foo}, still distinct). It is a string literal in generated output, never a
+     * Java identifier, so the dunder-identifier lints do not see it.
      */
     static final String RESERVED_RK_ALIAS_PREFIX = "__rk_";
 
@@ -496,9 +463,10 @@ class GeneratorUtils {
      *       {@code DSL.row((Record) env.getSource().get(table.col), ...)}</li>
      *   <li>{@link SourceKey.Wrap.Record}:
      *       {@code ((Record) env.getSource()).into(table.col, ...)}</li>
-     *   <li>{@link SourceKey.Wrap.TableRecord}: a typed record reconstructed per-column, forked at
-     *       runtime on the source's own type. The comment on the arm below carries the
-     *       discriminator's rationale and its test pin.</li>
+     *   <li>{@link SourceKey.Wrap.TableRecord}: a fresh typed record carrying the key columns,
+     *       each copied off the source by field identity. The contract with the service author is
+     *       PK-only; a service needing other columns fetches them itself through the injected
+     *       {@code DSLContext}.</li>
      * </ul>
      *
      * <p>The container axis (positional list vs mapped set) is orthogonal and not consulted
@@ -538,41 +506,18 @@ class GeneratorUtils {
                 var out = CodeBlock.builder();
                 out.addStatement("$T source = ($T) env.getSource()", RECORD, RECORD);
                 out.addStatement("$T key = new $T()", keyType, keyType);
-                // Runtime fork on the source's own type. The parent row reaches this fetcher by one
-                // of two arrival paths that graphql-java fuses onto the same (type, field) fetcher,
-                // and no classification-time fact can tell them apart:
-                //   - a service (or DML) returning the typed record straight to graphql-java, e.g.
-                //     selectFrom(FILM) yielding a FilmRecord — no framework SELECT to widen, so no
-                //     reserved __src_*__ aliases exist on the row; and
-                //   - the SQL-projected generic row a parent <Type>.$fields query builds, which
-                //     carries the whole parent row re-aliased under __src_<col>__ (see
-                //     reservedSourceAlias) and is a generic Record, never the typed subclass.
-                // The typed arm copies each column off the record by jOOQ field-identity (never a
-                // by-name into(...) map), so the multiset-alias collision the reserved scheme exists
-                // to avoid cannot re-enter here. The else arm rebuilds from the reserved aliases.
-                // Both arms mint a fresh record over the same allColumns() enumeration, so the key
-                // is structurally identical whichever path produced the parent and the live parent
-                // object is never aliased as the DataLoader key.
-                //
-                // The discriminator is sound because the $fields SQL path materialises generic
-                // Record implementations, never the typed subclass; that invariant is pinned by the
-                // graphitron-sakila-example internal-tier test
-                // ServiceParentTableRecordKeyExtractionTest (a downstream module not on this
-                // module's classpath, so named in prose rather than by a javadoc link).
-                out.beginControlFlow("if (source instanceof $T typedSource)", keyType);
-                for (ColumnRef col : parentTable.allColumns()) {
-                    out.addStatement("key.set($T.$L.$L, typedSource.get($T.$L.$L))",
+                // One unconditional read, because only the key columns are ever copied and they are
+                // present under their base names on both arrival paths that graphql-java fuses onto
+                // this fetcher: a service (or DML) handing back the typed record carries its own PK
+                // as a real column, and the SQL-projected generic row a parent <Type>.$fields query
+                // builds has the same columns force-included by the required-projection walk. Reads
+                // are by jOOQ field identity, never a by-name into(...) map, so a sibling multiset
+                // alias shadowing a column name cannot poison the extraction.
+                for (ColumnRef col : pkCols) {
+                    out.addStatement("key.set($T.$L.$L, source.get($T.$L.$L))",
                         tablesClass, tableField, col.javaName(),
                         tablesClass, tableField, col.javaName());
                 }
-                out.nextControlFlow("else");
-                for (ColumnRef col : parentTable.allColumns()) {
-                    out.addStatement("key.set($T.$L.$L, source.get($S, $T.class))",
-                        tablesClass, tableField, col.javaName(),
-                        reservedSourceAlias(col.sqlName()),
-                        col.columnType());
-                }
-                out.endControlFlow();
                 yield out.build();
             }
         };

@@ -31,9 +31,9 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
  * carries <em>no</em> other force-projecting child ({@code @splitQuery} sibling), so a regression of the {@code BatchKeyField} arm turns these red rather than being
  * masked by an unrelated sibling's projection.
  *
- * <p>When the child's key wrap is {@code SourceKey.Wrap.TableRecord} (typed-record Sources
- * parameter), the projection requirement widens from the key columns to the full parent row;
- * see the typed-record test group below and {@code TypeClassGenerator.RequiredProjection}.
+ * <p>A {@code SourceKey.Wrap.TableRecord} child (typed-record Sources parameter) demands the same
+ * thing as every other wrap: its key columns, nothing wider. The typed-record group below pins
+ * that non-specialness on both sides, projection and key read.
  */
 @PipelineTier
 class ServiceProjectionPipelineTest {
@@ -97,17 +97,17 @@ class ServiceProjectionPipelineTest {
             .isTrue();
     }
 
-    // ===== typed-TableRecord source shape → full parent-row projection =====
+    // ===== typed-TableRecord source shape → the same key-columns-only projection =====
     //
     // When the @service child's Sources parameter is a typed TableRecord (Set<LanguageRecord>),
-    // the key wrap is SourceKey.Wrap.TableRecord and the key extraction is
-    // env.getSource().into(Tables.LANGUAGE); the service body may read ANY parent column off
-    // the record, per the documented contract ("fully-populated parent records"). The parent
-    // $fields must therefore project the whole parent row, not just the key columns.
+    // the key wrap is SourceKey.Wrap.TableRecord. The contract with the service author is PK-only,
+    // so this wrap demands exactly what every other wrap demands: its SourceKey columns, under
+    // their base names. The group exists to pin that the wrap is NOT special, which is the whole
+    // content of the narrowing.
 
     /** List-valued typed-record {@code @service} return → {@code ServiceTableField}. */
     @Test
-    void serviceTableFieldChild_tableRecordSource_projectsFullParentRow() {
+    void serviceTableFieldChild_tableRecordSource_projectsKeyColumnsOnly() {
         var languageType = findType("Language", """
             type Language @table(name: "language") { languageId: Int @field(name: "language_id") }
             type Film @table(name: "film") { title: String }
@@ -119,14 +119,17 @@ class ServiceProjectionPipelineTest {
             }
             """);
 
-        assertThat(TypeSpecAssertions.appendsFullParentRow(languageType))
-            .as("parent $fields projects the full parent row for a TableRecord-sourced @service child")
+        assertThat(TypeSpecAssertions.appendsRequiredColumn(languageType, "LANGUAGE_ID"))
+            .as("parent $fields force-projects the TableRecord-sourced child's key column")
             .isTrue();
+        assertThat(TypeSpecAssertions.appendsRequiredColumn(languageType, "NAME"))
+            .as("and projects no non-key column on the child's behalf")
+            .isFalse();
     }
 
     /** Scalar typed-record {@code @service} return → {@code ServiceRecordField}. */
     @Test
-    void serviceRecordFieldChild_tableRecordSource_projectsFullParentRow() {
+    void serviceRecordFieldChild_tableRecordSource_projectsKeyColumnsOnly() {
         var languageType = findType("Language", """
             type Language @table(name: "language") {
                 name: String @field(name: "name")
@@ -137,18 +140,18 @@ class ServiceProjectionPipelineTest {
             type Query { language: Language }
             """);
 
-        assertThat(TypeSpecAssertions.appendsFullParentRow(languageType))
-            .as("parent $fields projects the full parent row for a TableRecord-sourced @service child")
+        assertThat(TypeSpecAssertions.appendsRequiredColumn(languageType, "LANGUAGE_ID"))
+            .as("parent $fields force-projects the TableRecord-sourced child's key column")
             .isTrue();
     }
 
     /**
-     * Contrast: a {@code Record1}-sourced sibling of the same shape keeps the key-columns-only
-     * projection and gets no full-row append; the full-row widening is gated on the key wrap
-     * ({@code SourceKey.Wrap.TableRecord}), not on the {@code @service} field variants.
+     * Contrast: a {@code Record1}-sourced sibling of the same shape projects the same thing. Once
+     * the wrap stops widening the projection the two are indistinguishable here, which is the
+     * point; the wrap axis survives only in how the key is <em>read</em>, pinned below.
      */
     @Test
-    void record1SourcedServiceChild_projectsKeyColumnsOnly_noFullRowAppend() {
+    void record1SourcedServiceChild_projectsSameKeyColumnsAsTableRecordSibling() {
         var languageType = findType("Language", """
             type Language @table(name: "language") {
                 name: String @field(name: "name")
@@ -160,23 +163,20 @@ class ServiceProjectionPipelineTest {
             """);
 
         assertThat(TypeSpecAssertions.appendsRequiredColumn(languageType, "LANGUAGE_ID"))
-            .as("Record1-sourced @service child still force-projects its SourceKey column")
+            .as("Record1-sourced @service child force-projects its SourceKey column")
             .isTrue();
-        assertThat(TypeSpecAssertions.appendsFullParentRow(languageType))
-            .as("Record1-sourced @service child must NOT widen the projection to the full row")
-            .isFalse();
     }
 
     /**
      * A TableRecord-sourced {@code @service} child nested under a plain-object
      * {@code NestingField} shares the outer table type's {@code $fields}; the recursion in
-     * {@code collectRequiredProjection} must surface the full-row requirement onto the outer
-     * parent. The projected fields are the outer parent table's by construction:
+     * {@code collectRequiredProjection} must surface the key requirement onto the outer parent.
+     * The projected fields are the outer parent table's by construction:
      * {@code emitSelectionSwitch} threads {@code tableArg} unchanged into nested depths, so the
-     * nested child's {@code into(Tables.LANGUAGE)} reads against the outer table's row.
+     * nested child's key read resolves against the outer table's row.
      */
     @Test
-    void nestedTableRecordServiceChild_projectsFullParentRowOnOuterParent() {
+    void nestedTableRecordServiceChild_projectsKeyColumnOnOuterParent() {
         var languageType = findType("Language", """
             type Language @table(name: "language") { info: LanguageInfo }
             type LanguageInfo {
@@ -187,20 +187,18 @@ class ServiceProjectionPipelineTest {
             type Query { language: Language }
             """);
 
-        assertThat(TypeSpecAssertions.appendsFullParentRow(languageType))
-            .as("outer parent $fields projects the full parent row for a nested TableRecord-sourced @service child")
+        assertThat(TypeSpecAssertions.appendsRequiredColumn(languageType, "LANGUAGE_ID"))
+            .as("outer parent $fields force-projects the nested TableRecord-sourced child's key column")
             .isTrue();
     }
 
     /**
-     * Two-axis: a parent with <em>both</em> a {@code TableRecord}-wrap {@code @service} child
-     * (flips the {@code reservedFullRow} axis) and a {@code Wrap.Row} {@code @splitQuery} sibling
-     * (adds a base-named key column) must emit both the reserved-aliased full row and the
-     * base-named force-included column; the {@code RequiredProjection} product record carries
-     * both axes, so neither absorbs the other.
+     * A parent with both a {@code TableRecord}-wrap {@code @service} child and a {@code Wrap.Row}
+     * {@code @splitQuery} sibling. Both demand the same base-named key column and the deduping
+     * accumulator collapses them to one projection term; nothing widens.
      */
     @Test
-    void tableRecordServiceChild_withSplitRowSibling_projectsReservedFullRowAndBaseKeyColumn() {
+    void tableRecordServiceChild_withSplitRowSibling_projectsTheSharedKeyColumn() {
         var languageType = findType("Language", """
             type Language @table(name: "language") { languageId: Int @field(name: "language_id") }
             type Film @table(name: "film") { title: String }
@@ -213,26 +211,24 @@ class ServiceProjectionPipelineTest {
             }
             """);
 
-        assertThat(TypeSpecAssertions.appendsFullParentRow(languageType))
-            .as("the TableRecord-wrap @service child flips the reserved-full-row axis")
-            .isTrue();
         assertThat(TypeSpecAssertions.appendsRequiredColumn(languageType, "LANGUAGE_ID"))
-            .as("the Wrap.Row @splitQuery sibling still force-projects its base-named key column "
-                + "(no absorption by the full-row axis)")
+            .as("both children force-project the same base-named key column")
             .isTrue();
+        assertThat(TypeSpecAssertions.appendsRequiredColumn(languageType, "NAME"))
+            .as("neither child widens the projection beyond the key")
+            .isFalse();
     }
 
     /**
      * The consumer side of the typed-record shape: the generated {@code @service}-child fetcher's
-     * key extraction must fork at runtime on the parent source's type, emitting both the typed
-     * arm (a service/DML-returned {@code LanguageRecord}, read by jOOQ field-identity) and the
-     * reserved-alias arm (an SQL-projected generic row, read back by {@code __src_<col>__}). The
-     * two producer-side tests above pin that {@code $fields} projects the reserved full row; this
-     * pins that the reader handles both parent kinds. A shape assertion over the two read
-     * families, not a full code-string pin.
+     * key extraction is one unconditional per-key-column read, with no runtime branch on the
+     * parent source's type. It can be unconditional because the key columns are present under
+     * their base names on both parent arrival shapes: force-projected when the parent came from
+     * {@code $fields} (pinned by the producer-side tests above), and carried as real columns when
+     * a service hands back its own typed record. A shape assertion, not a full code-string pin.
      */
     @Test
-    void tableRecordServiceChild_fetcherKeyExtractionForksOnParentSourceType() {
+    void tableRecordServiceChild_fetcherKeyExtractionIsUnconditional() {
         var schema = TestSchemaHelper.buildSchema("""
             type Language @table(name: "language") { languageId: Int @field(name: "language_id") }
             type Film @table(name: "film") { title: String }
@@ -249,9 +245,9 @@ class ServiceProjectionPipelineTest {
             .findFirst()
             .orElseThrow(() -> new AssertionError("LanguageFetchers not generated"));
 
-        assertThat(TypeSpecAssertions.serviceChildKeyExtractionForksOnTypedRecord(languageFetchers, "films"))
-            .as("the TableRecord-sourced @service child fetcher emits both the typed-parent "
-                + "instanceof fork and the reserved-alias read")
+        assertThat(TypeSpecAssertions.serviceChildKeyExtractionIsUnconditional(languageFetchers, "films"))
+            .as("the TableRecord-sourced @service child fetcher reads the key columns with no "
+                + "runtime fork on the parent's shape")
             .isTrue();
     }
 

@@ -171,7 +171,7 @@ public static Map<Record1<Integer>, String> titleUppercase(Set<Record1<Integer>>
 
 The `Set<Record1<Integer>>` parameter is the framework's batch: one entry per distinct parent the request touched. The returned `Map`'s keys must be the same instances (or value-equal substitutes) the framework supplied; the framework reads each parent's value out of the map by lookup. Missing keys yield `null` for the field on that parent.
 
-The accepted source shapes are `Set<Row<N>>`, `Set<Record<N>>`, and `Set<X extends TableRecord>`. `ServiceCatalog.classifySourcesType` picks the matching batch shape from the parameter's reflected element type. `Row<N>` works (use `DSL.row(value)` to construct keys back); `Record<N>` lets you call `.value1()`/`.value2()` to extract column values directly; the typed-record arm hands you fully-populated parent records when the parent has a `@table`.
+The accepted source shapes are `Set<Row<N>>`, `Set<Record<N>>`, and `Set<X extends TableRecord>`. `ServiceCatalog.classifySourcesType` picks the matching batch shape from the parameter's reflected element type. `Row<N>` works (use `DSL.row(value)` to construct keys back); `Record<N>` lets you call `.value1()`/`.value2()` to extract column values directly; the typed-record arm hands you a typed record carrying the parent's primary key, which is often the most convenient key to write SQL against.
 
 == `@service` on a child field: the `@splitQuery` contract
 
@@ -179,7 +179,7 @@ The accepted source shapes are `Set<Row<N>>`, `Set<Record<N>>`, and `Set<X exten
 
 Under `@splitQuery`, the runtime contract is:
 
-. The framework runs the parent query first. The parent's selection set is collected into a `Set<KeyType>` where `KeyType` is one of `Row<N>` / `Record<N>` / a typed `TableRecord`. On the `Row<N>` / `Record<N>` shapes the `Set` carries only the parent's key columns; on the typed-`TableRecord` shape it carries fully-populated parent records, because declaring that shape makes the parent SELECT project the full parent row (see below).
+. The framework runs the parent query first. The parent's selection set is collected into a `Set<KeyType>` where `KeyType` is one of `Row<N>` / `Record<N>` / a typed `TableRecord`. Every shape carries the same thing: the parent's key columns, which for a `@table` parent are its primary key. The shapes differ in how you read them, not in what they contain.
 . The framework dispatches the child `@service` once per request with that `Set`.
 . The service returns a `Map<KeyType, ChildValue>`. The framework reads each parent's value from the map and resolves the child for that parent.
 
@@ -198,21 +198,40 @@ type Film @table(name: "film") {
 ----
 public static Map<Record1<Integer>, String> titleUppercase(Set<Record1<Integer>> filmIds, DSLContext dsl) { ... }
 public static Map<Row1<Integer>,    String> titleLowercase(Set<Row1<Integer>>    filmIds, DSLContext dsl) { ... }
-public static Map<FilmRecord,       String> titleTitlecase(Set<FilmRecord>       films) { ... }
+public static Map<FilmRecord,       String> titleTitlecase(Set<FilmRecord>       films,   DSLContext dsl) { ... }
 ----
 
 The classifier picks the variant by inspecting the `Set<E>`'s element type:
 
 * `Row<N>`. Keys carry no value accessors; reconstruct keys with `DSL.row(value)` if you need to read or rebuild them. Use this when the SQL side composes against the row (`DSL.row(FILM_ID).in(filmIds)`).
 * `Record<N>`. Keys expose `.value1()`/`.value2()`/etc. Use this when the body needs to extract column values from each key.
-* `X extends TableRecord`. The framework supplies a parent record carrying every column on the parent table, and the key extraction reconstructs it per column from whichever shape the parent arrived in. Use this when the body needs columns beyond the parent's PK; `titleTitlecase` reads `film.getTitle()` straight off the record.
+* `X extends TableRecord`. The framework supplies a typed record carrying the parent's primary key. Use this when a typed record is the shape your SQL wants to work with; read the key off it with the generated accessor (`film.getFilmId()`).
 
-The typed-record arm serves two parent kinds and reads each on its own terms:
+[IMPORTANT]
+====
+*The keys carry the parent's primary key, and nothing else.* This is the contract in every shape, typed record included: a `FilmRecord` the framework hands you has `FILM_ID` populated and its other columns unset. If the body needs another column, fetch it, in one batched query, through the injected `DSLContext`.
 
-* *SQL-projected parent* (the parent came from a framework SELECT, e.g. a `@table` query or a split-query parent). The SELECT projects the full parent row under reserved `__src_<col>__` aliases (so a client-selected field can never collide with it), and the framework rebuilds the record column by column from those aliases. Every column is present. The cost: selecting a typed-record `@service` child opts the parent SELECT into projecting the full parent row whenever the field is selected, regardless of how narrow the client's selection is.
-* *Service-returned parent* (the parent is itself a `@service` handing back a hand-rolled record, e.g. `selectFrom(FILM)` returning `Result<FilmRecord>`). There is no framework SELECT to widen, so the record is copied as the producing service populated it, and is only as complete as that service made it. Plan accordingly.
+That is what `titleTitlecase` does:
 
-The framework picks the read at runtime from the parent record's own type, so the same typed-record `@service` child works under both parent kinds without any change to its Java signature.
+[source,java]
+----
+public static Map<FilmRecord, String> titleTitlecase(Set<FilmRecord> films, DSLContext dsl) {
+    List<Integer> ids = films.stream().map(FilmRecord::getFilmId).toList();
+    Map<Integer, String> titleById = dsl
+        .selectFrom(FILM)
+        .where(FILM.FILM_ID.in(ids))
+        .fetchMap(FILM.FILM_ID, FILM.TITLE);
+    // ... look each parent's title up by key and title-case it
+}
+----
+
+One statement for the whole batch, which is what the DataLoader dispatch exists to make possible. Reading `film.getTitle()` off the key instead would work only when the client's own selection happened to include `title`, and return `null` the rest of the time.
+====
+
+The contract holds identically under both parent kinds, so the same typed-record `@service` child works under either without a change to its Java signature:
+
+* *SQL-projected parent* (the parent came from a framework SELECT, e.g. a `@table` query or a split-query parent). The framework force-includes the parent's key columns in that SELECT even when the client's selection contains no field mapping to them, and builds the key record from them.
+* *Service-returned parent* (the parent is itself a `@service` handing back a hand-rolled record, e.g. `selectFrom(FILM)` returning `Result<FilmRecord>`). A jOOQ-generated record always carries its own primary key, so the same read works with no framework SELECT involved.
 
 === One DataLoader per request, per field
 
@@ -228,7 +247,8 @@ The performance shape: one `Set<Key>`-input call, one `Map<Key, Value>`-output r
 * *Non-root `@service` requires `@splitQuery`.* The classifier rejects a child `@service` without it. The shape on the child is `Set<Key>` → `Map<Key, Value>`, not `(Parent, Args) → Value`. Single-statement nested resolution is not supported on the service path.
 * *Map keys must round-trip.* The returned `Map` is read by `framework-supplied Set` element. If your body constructs new keys (not `Row<N>` instances backed by the same value-equals semantics), the lookup misses and the field returns `null` for every parent. Prefer to rebuild keys from the framework's `Set` rather than constructing fresh ones.
 * *`Result<TableRecord>` returns skip framework projection.* The service is responsible for selecting every column the schema may eventually ask for. A schema field added later that reads a column the service didn't include returns `null` from records that lack it.
-* *Child fields without typed-record source-shape pay an extra fetch.* `Row<N>`/`Record<N>` shapes do not carry parent column data; the body must SELECT what it needs. The typed-`TableRecord` shape is the only one where the framework supplies fully-populated parent records.
+* *A child `@service` body fetches its own non-key data.* No source shape, typed record included, carries parent columns beyond the key. Take the `DSLContext` and issue one batched query for what you need; the framework does not smuggle extra columns through the parent SELECT on your behalf.
+* *A `@table` parent with no primary key cannot host a batched child `@service`.* The batch key is the parent's primary key, so there is nothing to key on; the classifier rejects the coordinate at build time and names the table.
 * *Conditions on a `@service` field are ignored.* The reference is explicit: the generator does not splice generated SQL into a custom method's body. If the service needs filtering, take the filter as an argument or read it from the input type.
 * *`@service` and xref:../reference/directives/mutation.adoc[`@mutation`] are mutually exclusive.* One field can have one or the other, never both. Use `@mutation` when the framework should generate the INSERT/UPDATE/UPSERT; use `@service` when you need custom logic.
 

@@ -531,18 +531,21 @@ class FederationEntitiesDispatchTest {
 
     /**
      * A representations-driven {@code _entities} fetch that selects <em>only</em> a
-     * typed-{@code TableRecord}-sourced {@code @service} child whose body reads a
-     * <em>non-key</em> column ({@code title}) off the source record. The sibling test
-     * ({@link #entities_serviceChildOnly_keyNotReselected_resolvesNonNull}) pins the key-column
-     * half of the silent-null family; this pins the residual surface: nothing in the selection
-     * projects {@code title}. The entity dispatch SELECT goes through {@code Film.$fields},
-     * which must project the full parent row for the TableRecord-sourced child so
-     * {@code .into(Tables.FILM)} hands the service a fully-populated record; otherwise
-     * {@code getTitle()} is {@code null} and the child resolves to a titlecased {@code null}.
+     * typed-{@code TableRecord}-sourced {@code @service} child, under the PK-only key contract:
+     * the framework supplies the key, the service fetches the {@code title} it needs for itself.
+     * The sibling test ({@link #entities_serviceChildOnly_keyNotReselected_resolvesNonNull}) pins
+     * the same shape for a {@code Row}-sourced child; this one pins it where the key rides a
+     * typed record.
+     *
+     * <p>The federation scenario is what makes it worth pinning separately: the key arrives in the
+     * representation rather than in the client's selection, so nothing in the selection projects
+     * {@code FILM_ID}. If the required-projection walk stopped force-including it, the entity
+     * dispatch SELECT would omit it, the key record would carry a {@code null} id, and the
+     * service's batched fetch would miss every row.
      */
     @Test
     @SuppressWarnings("unchecked")
-    void entities_tableRecordServiceChildOnly_nonKeyColumnReadResolvesNonNull() {
+    void entities_tableRecordServiceChildOnly_serviceFetchedColumnResolvesNonNull() {
         // Seed: film_id 1 = 'ACADEMY DINOSAUR' (first row of the film INSERT in init.sql).
         Map<String, Object> data = execute(
             "query Q($reps: [_Any!]!) { _entities(representations: $reps) {"
@@ -552,8 +555,8 @@ class FederationEntitiesDispatchTest {
         assertThat(entities).hasSize(1);
         assertThat(entities.get(0)).containsEntry("__typename", "Film");
         assertThat((String) entities.get(0).get("titleTitlecase"))
-            .as("TableRecord-sourced service child must read non-key columns off a fully-populated "
-                + "source record when the key is supplied only via the representation")
+            .as("TableRecord-sourced service child resolves when its key is supplied only via the "
+                + "representation and its own batched fetch supplies the non-key data")
             .isEqualTo("Academy Dinosaur");
     }
 

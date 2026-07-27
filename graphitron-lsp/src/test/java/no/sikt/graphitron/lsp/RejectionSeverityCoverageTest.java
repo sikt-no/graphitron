@@ -233,6 +233,10 @@ class RejectionSeverityCoverageTest {
             return new no.sikt.graphitron.rewrite.model.ServiceMethodCallError.UnrecognizedSourcesType(
                 "input", "getFilms", "java.util.List<com.example.Weird>");
         }
+        if (permit == no.sikt.graphitron.rewrite.model.ServiceMethodCallError.SourcesOnPkLessParent.class) {
+            return new no.sikt.graphitron.rewrite.model.ServiceMethodCallError.SourcesOnPkLessParent(
+                "keys", "getRank", "FilmList", "film_list");
+        }
         // ReflectionError sub-seal of AuthorError (shared reflection-intrinsic arms). One
         // sample per arm; lspCodeOf forwards each arm's stable graphitron.reflect.* code.
         if (permit == no.sikt.graphitron.rewrite.model.ReflectionError.ClassNotLoaded.class) {

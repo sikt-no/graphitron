@@ -258,11 +258,12 @@ class DmlBulkMutationsExecutionTest {
                 .build();
             List<org.jooq.Record> payload =
                 no.sikt.graphitron.generated.fetchers.MutationFetchers.rowsUpdateFilms(keys, env);
-            // The projection always carries the reserved-alias full parent row (__src_*__), so
-            // the assertion reads titles through it; the empty selection set adds nothing else.
-            assertThat(payload).extracting(r -> r.get("__src_title__", String.class))
+            // The empty selection set adds nothing, so the only column the projection carries is
+            // the force-included key the service children batch on. That is enough to pin what
+            // this test is about: one payload row per keys row, in keys order.
+            assertThat(payload).extracting(r -> r.get(film.FILM_ID))
                 .as("one payload row per keys row, aligned with keys order")
-                .containsExactly(tB, tA, tA);
+                .containsExactly(idB, idA, idA);
         } finally {
             deleteFilmById(idA);
             deleteFilmById(idB);

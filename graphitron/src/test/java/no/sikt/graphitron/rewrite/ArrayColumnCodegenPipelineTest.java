@@ -16,12 +16,17 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
  * {@code flags boolean[]} column (jOOQ {@code Field<Boolean[]>}, whose {@code getType().getName()}
  * is the binary descriptor {@code [Ljava.lang.Boolean;}). Its {@code rank} child is a typed-record
  * {@code @service} ({@code getArrayHolderRankByRecord(Set<ArrayHolderRecord>)}), so its key wrap is
- * {@code SourceKey.Wrap.TableRecord}: the generated service datafetcher's key extraction
- * reconstructs the full {@code array_holder} row per column via {@code TableRef.allColumns()}
- * ({@code GeneratorUtils.buildKeyExtraction}, the full-record arm). Before the catalog-boundary type-lift
- * that reconstruction called {@code ClassName.bestGuess("[Ljava.lang.Boolean;")} while building the
- * emitted {@code $T.class} argument and aborted with
- * {@code IllegalArgumentException: couldn't make a guess for [Ljava.lang.Boolean;}.
+ * {@code SourceKey.Wrap.TableRecord}, so the generated service datafetcher's key extraction runs
+ * over this table ({@code GeneratorUtils.buildKeyExtraction}, the typed-record arm).
+ *
+ * <p>The original crash was narrower than what this now pins: before the catalog-boundary type-lift,
+ * the extraction enumerated every column and called {@code ClassName.bestGuess("[Ljava.lang.Boolean;")}
+ * while building an emitted {@code $T.class} argument, aborting with
+ * {@code IllegalArgumentException: couldn't make a guess for [Ljava.lang.Boolean;}. Under the PK-only
+ * key contract the extraction copies only the key columns and emits no {@code Class} literal, so that
+ * exact site is gone; the type-lift itself stays pinned by {@code ArrayColumnTypeDecodeTest}. What is
+ * left here is the cheap end-to-end assurance that an array-typed column anywhere on a typed-record
+ * service parent does not break generation.
  *
  * <p>The fetcher generator ({@code TypeFetcherGenerator}, not the type-class generator) is the one
  * that reaches {@code buildKeyExtraction}, so this drives it directly. The assertion is behavioural

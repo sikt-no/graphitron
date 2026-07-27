@@ -141,7 +141,7 @@ public class TypeClassGenerator {
             List<ChildField.NestingField> nestingFields,
             List<ChildField.ComputedField> computedFields,
             List<ChildField.PivotField> pivotFields,
-            RequiredProjection requiredProjection,
+            List<ColumnRef> requiredProjection,
             String outputPackage) {
         var builder = TypeSpec.classBuilder(typeName)
             .addModifiers(Modifier.PUBLIC);
@@ -248,7 +248,7 @@ public class TypeClassGenerator {
             List<ChildField.NestingField> nestingFields,
             List<ChildField.ComputedField> computedFields,
             List<ChildField.PivotField> pivotFields,
-            RequiredProjection requiredProjection,
+            List<ColumnRef> requiredProjection,
             String outputPackage,
             CompositeDecodeHelperRegistry registry) {
         var names = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
@@ -298,23 +298,11 @@ public class TypeClassGenerator {
 
         emitSelectionSwitch(builder, 0, flat, "table", entryType, outputPackage, registry);
 
-        // Required-projection append: what the parent SELECT must include regardless of the SDL
-        // selection (see RequiredProjection for the two axes). Both axes are emitted; base and
-        // reserved-aliased projections of the same column are distinct Field instances (.as(...)
-        // mints a fresh Field) and coexist by design, so plain adds into the deduping set are safe.
-        //
-        // The reserved-alias append drives off tableRef.allColumns() at generation time, the same
-        // list GeneratorUtils.buildKeyExtraction reads the values back by, so the projected alias
-        // names and the extraction's lookup names are single-homed and cannot drift. `table` is the
-        // caller's (possibly aliased) instance; table.<COL>.as(reserved) keeps values/converters
-        // and only moves the projected name out of the client-reachable base namespace.
-        if (requiredProjection.reservedFullRow()) {
-            for (ColumnRef col : tableRef.allColumns()) {
-                builder.addStatement("fields.add(table.$L.as($S))",
-                    col.javaName(), reservedSourceAlias(col.sqlName()));
-            }
-        }
-        for (ColumnRef col : requiredProjection.baseColumns()) {
+        // Required-projection append: the columns the parent SELECT must include regardless of the
+        // SDL selection, all under their base names (see collectRequiredProjection). A column a
+        // switch arm already projected collapses into the same entry, since jOOQ caches TableField
+        // references per aliased Table instance, so plain adds into the deduping set are safe.
+        for (ColumnRef col : requiredProjection) {
             builder.addStatement("fields.add(table.$L)", col.javaName());
         }
 
@@ -473,48 +461,18 @@ public class TypeClassGenerator {
     }
 
     /**
-     * The projection a table-parent's {@code $fields} SELECT must include regardless of the
-     * user's SDL selection. Two orthogonal axes with no absorbing combine (the full row is
-     * projected under reserved aliases, not base names, so it supplies no base-named columns);
-     * both are accumulated and both are emitted:
-     *
-     * <ul>
-     *   <li>{@code reservedFullRow}: some child's DataLoader key wrap is
-     *       {@link SourceKey.Wrap.TableRecord}, whose key read rebuilds the typed record
-     *       from the whole parent row projected under reserved {@code __src_<col>__} aliases (see
-     *       {@code GeneratorUtils.buildKeyExtraction}). When set, {@code $fields} appends every
-     *       parent column re-aliased to its reserved name.</li>
-     *   <li>{@code baseColumns}: specific columns (possibly none) that must be projected under
-     *       their <em>base</em> names because a {@code Wrap.Row}/{@code Wrap.Record} key read
-     *       ({@code get(Tables.X.COL)} / {@code into(Tables.X.COL, …)}) or a
-     *       {@link ParentRowDemand} correlation read
-     *       ({@code parentRecord.get(DSL.name("<src>"), …)}) resolves them by base name.</li>
-     * </ul>
-     *
-     * <p>Key columns can then appear twice in the SELECT (once base-named, once reserved); the
-     * {@code LinkedHashSet} accumulator dedupes exact base-name repeats, and the minor
-     * base/reserved duplication is accepted.
-     */
-    record RequiredProjection(boolean reservedFullRow, List<ColumnRef> baseColumns) {
-        RequiredProjection { baseColumns = List.copyOf(baseColumns); }
-    }
-
-    /**
-     * Walks the children of a type and surfaces what the parent SELECT must project regardless
-     * of the user's SDL selection, as a {@link RequiredProjection}. Sources:
+     * Walks the children of a type and surfaces the columns the parent SELECT must project
+     * under their <em>base</em> names regardless of the user's SDL selection. Sources:
      *
      * <ul>
      *   <li>Table-parent {@link BatchKeyField} implementers' {@code SourceKey} columns: their
      *       DataLoader fetchers extract the parent-row key off {@code env.getSource()} after the
      *       parent {@code $fields()} SELECT runs (via {@code GeneratorUtils.buildKeyExtraction}),
-     *       so every {@code sourceKey().columns()} column must be in that SELECT (the
-     *       {@code baseColumns} axis). When the key wrap is {@link SourceKey.Wrap.TableRecord} the
-     *       requirement instead flips the {@code reservedFullRow} axis:
-     *       {@code buildKeyExtraction}'s wrap-forked read for that arm rebuilds the typed record
-     *       from the whole parent row projected under reserved {@code __src_<col>__} aliases, and
-     *       the documented contract of the typed-record source shape is a fully-populated parent
-     *       record. Gated on the wrap, not the field variants, so any future {@code BatchKeyField}
-     *       acquiring the wrap gets the right projection for free.</li>
+     *       so every {@code sourceKey().columns()} column must be in that SELECT. Every wrap
+     *       contributes the same way, {@link SourceKey.Wrap.TableRecord} included: its columns are
+     *       the parent's primary key, and {@code buildKeyExtraction} reads exactly those off the
+     *       row by field identity. Gated on the field capability rather than the leaf variants, so
+     *       any future {@code BatchKeyField} gets the right projection for free.</li>
      *   <li>{@link ParentRowDemand} implementers on a table-bound parent: their
      *       {@link ParentRowDemand#parentRowColumns()} columns, read off the parent's
      *       already-materialized row by base name. The multi-table
@@ -524,13 +482,12 @@ public class TypeClassGenerator {
      * </ul>
      *
      * <p>Recurses into {@link ChildField.NestingField} so nested fields whose fetchers need
-     * parent-row columns (or the full row) surface that into the outer table-class's
-     * {@code $fields}. The nested type shares the parent's table context ({@code tableArg} is
-     * threaded through {@code emitSelectionSwitch} unchanged), so a nested full-row requirement
-     * correctly projects the <em>outer</em> parent table's fields.
+     * parent-row columns surface that into the outer table-class's {@code $fields}. The nested
+     * type shares the parent's table context ({@code tableArg} is threaded through
+     * {@code emitSelectionSwitch} unchanged), so a nested requirement correctly projects the
+     * <em>outer</em> parent table's columns.
      */
-    private static RequiredProjection collectRequiredProjection(List<? extends GraphitronField> fields) {
-        boolean reservedFullRow = false;
+    private static List<ColumnRef> collectRequiredProjection(List<? extends GraphitronField> fields) {
         var columns = new ArrayList<ColumnRef>();
         for (var f : fields) {
             // Soundness invariant of the blanket BatchKeyField arm below: SourceKey.columns() is
@@ -555,25 +512,15 @@ public class TypeClassGenerator {
             // plain per-parent service delegation, not DataLoader-backed, and its fetcher reads
             // no key columns off the parent row — nothing to force-project.
             switch (f) {
-                case BatchKeyField bk when bk.sourceKey() != null -> {
-                    if (bk.sourceKey().wrap() instanceof SourceKey.Wrap.TableRecord) {
-                        // TableRecord key reads rebuild from the reserved-aliased full row, not
-                        // base-named columns, so this axis alone flips — no base columns added.
-                        reservedFullRow = true;
-                    } else {
-                        columns.addAll(bk.sourceKey().columns());
-                    }
-                }
+                case BatchKeyField bk when bk.sourceKey() != null ->
+                    columns.addAll(bk.sourceKey().columns());
                 case ParentRowDemand prd -> columns.addAll(prd.parentRowColumns());
-                case ChildField.NestingField nf -> {
-                    RequiredProjection nested = collectRequiredProjection(nf.nestedFields());
-                    reservedFullRow |= nested.reservedFullRow();
-                    columns.addAll(nested.baseColumns());
-                }
+                case ChildField.NestingField nf ->
+                    columns.addAll(collectRequiredProjection(nf.nestedFields()));
                 default -> { }
             }
         }
-        return new RequiredProjection(reservedFullRow, columns.stream().distinct().toList());
+        return columns.stream().distinct().toList();
     }
 
 }

@@ -6,12 +6,12 @@ import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.ParentRowDemand;
-import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.SourceShape;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -27,16 +27,15 @@ import java.util.Set;
  * ({@link TypeClassGenerator#generateForType}):
  *
  * <ul>
- *   <li><b>Guarantee</b>: the {@link TypeClassGenerator.RequiredProjection} that
+ *   <li><b>Guarantee</b>: the base-named column list that
  *       {@code TypeClassGenerator.collectRequiredProjection} computed for the anchor type (the
  *       walk under audit).</li>
  *   <li><b>Requirement</b>: this class's own enumeration of every table-sourced
  *       {@link BatchKeyField} and {@link ParentRowDemand} coordinate rooted at the anchor,
  *       read off the classifier's flat field index ({@link GraphitronSchema#fields()}) and
  *       descending {@link ChildField.NestingField} sub-trees with a local worklist (nested
- *       plain-object fields are not flat-indexed). Each coordinate's demanded columns, or the
- *       reserved full parent row for {@link SourceKey.Wrap.TableRecord}, must be contained in
- *       the guarantee.</li>
+ *       plain-object fields are not flat-indexed). Each coordinate's demanded columns must be
+ *       contained in the guarantee, every key wrap alike.</li>
  * </ul>
  *
  * <p><b>Independence is the hard requirement, not a preference.</b> The requirement side must not
@@ -62,11 +61,11 @@ final class ParentProjectionContainmentCheck {
     /**
      * Cross-checks {@code guaranteed} (the audited walk's output for {@code anchorTypeName})
      * against this class's own demand enumeration. Throws {@link IllegalStateException} on the
-     * first demanded column (or reserved-full-row requirement) the projection does not contain.
+     * first demanded column the projection does not contain.
      */
     static void check(GraphitronSchema schema, String anchorTypeName,
-                      TypeClassGenerator.RequiredProjection guaranteed) {
-        Set<ColumnRef> guaranteedColumns = new HashSet<>(guaranteed.baseColumns());
+                      List<ColumnRef> guaranteed) {
+        Set<ColumnRef> guaranteedColumns = new HashSet<>(guaranteed);
         Deque<GraphitronField> pending = new ArrayDeque<>();
         for (GraphitronField f : schema.fields().values()) {
             if (anchorTypeName.equals(f.parentTypeName())) {
@@ -85,33 +84,22 @@ final class ParentProjectionContainmentCheck {
             if (!(f instanceof ChildField cf) || cf.sourceShape() != SourceShape.Table) {
                 continue;
             }
+            // Every key wrap demands the same thing: its SourceKey columns, present in the parent
+            // SELECT under their base names. Wrap.TableRecord is not special here: its columns
+            // are the parent's primary key, which buildKeyExtraction reads by field identity.
             if (f instanceof BatchKeyField bk && bk.sourceKey() != null) {
-                if (bk.sourceKey().wrap() instanceof SourceKey.Wrap.TableRecord) {
-                    if (!guaranteed.reservedFullRow()) {
+                for (ColumnRef col : bk.sourceKey().columns()) {
+                    if (!guaranteedColumns.contains(col)) {
                         throw new IllegalStateException(
                             "Graphitron generator bug (parent-projection containment): field '"
-                                + f.parentTypeName() + "." + f.name() + "' keys its DataLoader batch on the typed"
-                                + " parent record (SourceKey.Wrap.TableRecord), which requires the reserved"
-                                + " full parent row in type '" + anchorTypeName + "'s $fields SELECT, but the"
-                                + " projection walk (TypeClassGenerator.collectRequiredProjection) did not"
-                                + " flip reservedFullRow. The requirement walk (this check, over the"
-                                + " classified field index) found a demand the guarantee walk missed — a"
-                                + " projection-walk omission, not a schema authoring error.");
-                    }
-                } else {
-                    for (ColumnRef col : bk.sourceKey().columns()) {
-                        if (!guaranteedColumns.contains(col)) {
-                            throw new IllegalStateException(
-                                "Graphitron generator bug (parent-projection containment): field '"
-                                    + f.parentTypeName() + "." + f.name() + "' is DataLoader-backed off a table"
-                                    + " parent and its key extraction reads column '" + col.sqlName() + "' off"
-                                    + " the parent row, but the projection walk"
-                                    + " (TypeClassGenerator.collectRequiredProjection) for type '"
-                                    + anchorTypeName + "' did not include it in the $fields SELECT. The"
-                                    + " requirement walk (this check, over the classified field index) found a"
-                                    + " demand the guarantee walk missed — a projection-walk omission, not a"
-                                    + " schema authoring error.");
-                        }
+                                + f.parentTypeName() + "." + f.name() + "' is DataLoader-backed off a table"
+                                + " parent and its key extraction reads column '" + col.sqlName() + "' off"
+                                + " the parent row, but the projection walk"
+                                + " (TypeClassGenerator.collectRequiredProjection) for type '"
+                                + anchorTypeName + "' did not include it in the $fields SELECT. The"
+                                + " requirement walk (this check, over the classified field index) found a"
+                                + " demand the guarantee walk missed — a projection-walk omission, not a"
+                                + " schema authoring error.");
                     }
                 }
             }

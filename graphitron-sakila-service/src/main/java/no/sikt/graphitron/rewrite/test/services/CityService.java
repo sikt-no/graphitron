@@ -30,18 +30,23 @@ public final class CityService {
     private CityService() {}
 
     /**
-     * Typed-{@link CityRecord} source shape ({@code SourceKey.Wrap.TableRecord}) — the
-     * <em>silent-null</em> reproducer arm: the framework's key extraction is
-     * {@code ((Record) env.getSource()).into(Tables.CITY)}, and {@code into} leaves absent
-     * columns {@code null} instead of throwing. Without the force-projection this method
-     * receives records whose {@code cityId} is {@code null} and every lookup misses.
+     * Typed-{@link CityRecord} source shape ({@code SourceKey.Wrap.TableRecord}), the
+     * <em>silent-null</em> reproducer arm: the framework's key extraction copies the key columns
+     * off the parent row by field identity, and a column absent from that row yields {@code null}
+     * rather than throwing. Without the force-projection this method receives records whose
+     * {@code cityId} is {@code null} and every lookup misses.
+     *
+     * <p>Also the canonical shape for the PK-only contract: the keys carry {@code CITY_ID} alone,
+     * so the value the field resolves to is fetched here, in one batched query, through the
+     * injected {@code DSLContext}. {@link FilmService#titleTitlecase} is the same pattern.
      */
     public static Map<CityRecord, String> cityUppercase(Set<CityRecord> cities, DSLContext dsl) {
         List<Integer> ids = cities.stream().map(CityRecord::getCityId).toList();
-        Map<Integer, String> namesById = new LinkedHashMap<>();
-        for (CityRecord r : dsl.selectFrom(City.CITY).where(City.CITY.CITY_ID.in(ids)).fetch()) {
-            namesById.put(r.getCityId(), r.getCity());
-        }
+        Map<Integer, String> namesById = dsl
+            .selectFrom(City.CITY)
+            .where(City.CITY.CITY_ID.in(ids))
+            .fetchMap(City.CITY.CITY_ID, City.CITY.CITY_);
+
         Map<CityRecord, String> result = new LinkedHashMap<>();
         for (CityRecord key : cities) {
             String name = namesById.get(key.getCityId());

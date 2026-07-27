@@ -29,7 +29,8 @@ public sealed interface ServiceMethodCallError extends Rejection.AuthorError per
     ServiceMethodCallError.InstanceHolderUnconstructible,
     ServiceMethodCallError.ArgumentParameterMismatch,
     ServiceMethodCallError.DtoSourcesUnsupported,
-    ServiceMethodCallError.UnrecognizedSourcesType
+    ServiceMethodCallError.UnrecognizedSourcesType,
+    ServiceMethodCallError.SourcesOnPkLessParent
 {
     /** LSP wire code under the {@code graphitron.service-method-call.} namespace. */
     String lspCode();
@@ -171,5 +172,28 @@ public sealed interface ServiceMethodCallError extends Rejection.AuthorError per
                 + "' has an unrecognized sources type: '" + typeName + "'";
         }
         @Override public String lspCode() { return "graphitron.service-method-call.unrecognized-sources-type"; }
+    }
+
+    /**
+     * A {@code @service} SOURCES batch parameter sits on a child coordinate whose parent table has
+     * no primary key. The batch key is the parent's PK, so there is nothing to build one from; the
+     * classifier recognises the parameter's shape and this arm names the table rather than letting
+     * the coordinate fall through to the argument-name-mismatch diagnostic, which describes a
+     * different problem. Distinct from the root case, where there is no parent table at all.
+     */
+    record SourcesOnPkLessParent(
+        String paramName,
+        String methodName,
+        String parentTypeName,
+        String tableName
+    ) implements ServiceMethodCallError {
+        @Override public String message() {
+            return "parameter '" + paramName + "' in method '" + methodName
+                + "' is a SOURCES batch parameter, but type '" + parentTypeName + "' maps table '"
+                + tableName + "', which has no primary key. The DataLoader batch key is the"
+                + " parent's primary key, so there is nothing to key the batch on. Add a primary"
+                + " key to the table, or resolve this field without @service batching";
+        }
+        @Override public String lspCode() { return "graphitron.service-method-call.sources-on-pk-less-parent"; }
     }
 }

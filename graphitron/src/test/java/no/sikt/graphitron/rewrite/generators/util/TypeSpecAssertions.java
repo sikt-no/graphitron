@@ -107,31 +107,16 @@ public final class TypeSpecAssertions {
     }
 
     /**
-     * True when {@code type}'s {@code $fields} method appends the whole parent row to the
-     * projection under the reserved {@code __src_<col>__} aliases — the full-parent-row projection
-     * (a per-column reserved-alias append, reshaped from an earlier
-     * {@code Collections.addAll(fields, table.fields())} form) emitted when a child's DataLoader key wrap is
-     * {@code SourceKey.Wrap.TableRecord}. Detects the reserved-alias family
-     * ({@code fields.add(table.<COL>.as("__src_..."))}) rather than a specific column, so it stays
-     * a shape assertion. Sibling of {@link #appendsRequiredColumn}.
+     * True when the fetcher method {@code fieldName} in {@code fetcherType} extracts a
+     * {@code SourceKey.Wrap.TableRecord} key with no runtime branch on the parent's shape: a
+     * {@code key.set(...)} per key column and no {@code instanceof}. The PK-only contract is what
+     * makes one read serve both parent arrival shapes, so the <em>absence</em> of the fork is the
+     * observable. A shape assertion over the read family rather than a full code-string pin. See
+     * {@code GeneratorUtils.buildKeyExtraction}.
      */
-    public static boolean appendsFullParentRow(TypeSpec type) {
-        String body = methodBody(type, "$fieldsGrouped").orElse("");
-        return body.contains(".as(\"__src_");
-    }
-
-    /**
-     * True when the fetcher method {@code fieldName} in {@code fetcherType} emits the runtime
-     * {@code SourceKey.Wrap.TableRecord} key-extraction fork: both the typed-parent arm
-     * ({@code if (source instanceof XRecord typedSource) … typedSource.get(…)}) and the
-     * reserved-alias arm ({@code source.get("__src_…", …)}). A shape assertion over the two read
-     * families rather than a full code-string pin. See {@code GeneratorUtils.buildKeyExtraction}.
-     */
-    public static boolean serviceChildKeyExtractionForksOnTypedRecord(TypeSpec fetcherType, String fieldName) {
+    public static boolean serviceChildKeyExtractionIsUnconditional(TypeSpec fetcherType, String fieldName) {
         String body = methodBody(fetcherType, fieldName).orElse("");
-        boolean typedArm = body.contains("instanceof") && body.contains("typedSource.get(");
-        boolean reservedArm = body.contains(".get(\"__src_");
-        return typedArm && reservedArm;
+        return body.contains("key.set(") && !body.contains("instanceof");
     }
 
     /**

@@ -5,6 +5,7 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
@@ -97,7 +98,7 @@ class ParentProjectionContainmentCheckTest {
     void nestedSplitKeyColumnMissingFromProjection_throwsGeneratorInvariant() {
         var schema = schemaWith(nesting("Language", "details",
             splitField("LanguageDetails", "films", TestFixtures.splitSourceKey(List.of(languageIdCol())))));
-        var walkOmittedNestingRecursion = new TypeClassGenerator.RequiredProjection(false, List.of());
+        var walkOmittedNestingRecursion = List.<ColumnRef>of();
         assertThatThrownBy(() ->
             ParentProjectionContainmentCheck.check(schema, "Language", walkOmittedNestingRecursion))
             .isInstanceOf(IllegalStateException.class)
@@ -110,35 +111,35 @@ class ParentProjectionContainmentCheckTest {
     void nestedSplitKeyColumnPresentInProjection_passes() {
         var schema = schemaWith(nesting("Language", "details",
             splitField("LanguageDetails", "films", TestFixtures.splitSourceKey(List.of(languageIdCol())))));
-        var projected = new TypeClassGenerator.RequiredProjection(false, List.of(languageIdCol()));
+        var projected = List.of(languageIdCol());
         assertThatCode(() ->
             ParentProjectionContainmentCheck.check(schema, "Language", projected))
             .doesNotThrowAnyException();
     }
 
-    // ===== The table-record axis: a TableRecord key wrap demands the reserved full parent row =====
+    // ===== The table-record axis: a TableRecord key wrap demands its key columns like any other =====
 
     @Test
-    void nestedTableRecordWrapWithoutReservedFullRow_throwsGeneratorInvariant() {
+    void nestedTableRecordWrapWithoutItsKeyColumn_throwsGeneratorInvariant() {
         var tableRecordWrap = new SourceKey.Wrap.TableRecord(ClassName.get("com.example.records", "LanguageRecord"));
         var schema = schemaWith(nesting("Language", "details",
             serviceField("LanguageDetails", "films", tableRecordWrap)));
-        var walkOmittedNestingRecursion = new TypeClassGenerator.RequiredProjection(false, List.of());
+        var walkOmittedNestingRecursion = List.<ColumnRef>of();
         assertThatThrownBy(() ->
             ParentProjectionContainmentCheck.check(schema, "Language", walkOmittedNestingRecursion))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("LanguageDetails.films")
-            .hasMessageContaining("reservedFullRow");
+            .hasMessageContaining("language_id")
+            .hasMessageContaining("generator bug");
     }
 
     @Test
-    void nestedTableRecordWrapWithReservedFullRow_passes() {
+    void nestedTableRecordWrapWithItsKeyColumn_passes() {
         var tableRecordWrap = new SourceKey.Wrap.TableRecord(ClassName.get("com.example.records", "LanguageRecord"));
         var schema = schemaWith(nesting("Language", "details",
             serviceField("LanguageDetails", "films", tableRecordWrap)));
-        var projected = new TypeClassGenerator.RequiredProjection(true, List.of());
         assertThatCode(() ->
-            ParentProjectionContainmentCheck.check(schema, "Language", projected))
+            ParentProjectionContainmentCheck.check(schema, "Language", List.of(languageIdCol())))
             .doesNotThrowAnyException();
     }
 
@@ -157,7 +158,7 @@ class ParentProjectionContainmentCheckTest {
         var schema = schemaWith(recordLeaf);
         assertThatCode(() ->
             ParentProjectionContainmentCheck.check(schema, "Language",
-                new TypeClassGenerator.RequiredProjection(false, List.of())))
+                List.<ColumnRef>of()))
             .doesNotThrowAnyException();
     }
 
@@ -167,7 +168,7 @@ class ParentProjectionContainmentCheckTest {
             splitField("Film", "sequels", TestFixtures.splitSourceKey(List.of(languageIdCol()))));
         assertThatCode(() ->
             ParentProjectionContainmentCheck.check(schema, "Language",
-                new TypeClassGenerator.RequiredProjection(false, List.of())))
+                List.<ColumnRef>of()))
             .doesNotThrowAnyException();
     }
 }

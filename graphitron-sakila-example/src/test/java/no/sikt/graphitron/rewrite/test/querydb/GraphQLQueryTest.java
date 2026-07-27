@@ -442,7 +442,7 @@ class GraphQLQueryTest {
     // Note: the Film service-child tests below do NOT pin the SourceKey force-projection
     // (parent SELECT must include FILM_ID even when unselected) — Film's cast/castByKey
     // @splitQuery siblings already force-project FILM_ID into every parent SELECT, so these
-    // stay green if the @service arm of TypeClassGenerator.collectRequiredProjectionColumns
+    // stay green if the @service arm of TypeClassGenerator.collectRequiredProjection
     // regresses. They cover the with-projecting-sibling scenario; the unmasked fixture is the
     // City service children (cities_cityUppercase_* / cities_cityLowercase_* below).
     @Test
@@ -468,11 +468,11 @@ class GraphQLQueryTest {
     void films_titleTitlecase_resolvesViaServiceRecordFieldDataLoader_tableRecordSource() {
         // Identical wiring to titleUppercase / titleLowercase but the developer-side method
         // takes Set<FilmRecord> (Wrap.TableRecord source shape) and returns
-        // Map<FilmRecord, String>. Confirms the typed extraction round-trips through the
-        // DataLoader and the developer can read column values via FilmRecord.getTitle()
-        // without an extra fetch. Note: this query selects `title` alongside, so it does not
-        // by itself pin the "fully-populated parent records" contract; that lives in
-        // films_titleTitlecase_withoutSelectingTitle_readsNonKeyColumnOffSourceRecord.
+        // Map<FilmRecord, String>. Confirms the typed key round-trips through the DataLoader:
+        // the framework's FilmRecord keys are the ones the returned Map is read back by. This
+        // query also selects `title`, so it cannot tell a service that fetched its own data
+        // from one that read the parent row; the unmasked case is
+        // films_titleTitlecase_withoutSelectingTitle_serviceFetchesItsOwnColumn.
         Map<String, Object> data = execute("{ films { title titleTitlecase } }");
         assertThat(data).extractingByKey("films", as(list(Map.class)))
             .hasSize(5)
@@ -487,17 +487,16 @@ class GraphQLQueryTest {
     }
 
     @Test
-    void films_titleTitlecase_withoutSelectingTitle_readsNonKeyColumnOffSourceRecord() {
-        // The unmasked fixture for the typed-TableRecord source-shape contract. The query
-        // selects ONLY the service child (no `title`, no `id`), so nothing in the client
-        // selection projects the `title` column. The service body reads film.getTitle() off the
-        // source record (a non-key column), which the manual documents as supported: "The
-        // framework supplies fully-populated parent records (every column on the parent table)"
-        // (handle-services.adoc). Film.$fields must therefore project the full parent row
-        // whenever a TableRecord-sourced service child is selected; on a partial record,
-        // getTitle() reads null and the field silently resolves to a titlecased null. This test
-        // is the live behaviour behind the manual's claim: if the projection regresses, this
-        // goes red, not just the docs stale.
+    void films_titleTitlecase_withoutSelectingTitle_serviceFetchesItsOwnColumn() {
+        // The unmasked fixture for the typed-TableRecord source-shape contract. The query selects
+        // ONLY the service child (no `title`, no `id`), so nothing in the client selection
+        // projects either the key or the column the service needs. Two things have to hold for
+        // this to come back non-null, and each is a live claim in handle-services.adoc: the
+        // framework force-includes FILM_ID in Film.$fields whenever a keyed child is selected, so
+        // the key record is populated; and the service issues its own batched fetch for `title`
+        // rather than expecting it on the key. Regress either and the field resolves to a
+        // titlecased null, so this test is the behaviour behind the manual's claim rather than
+        // the docs going quietly stale.
         Map<String, Object> data = execute("{ films { titleTitlecase } }");
         assertThat(data).extractingByKey("films", as(list(Map.class)))
             .extracting(f -> f.get("titleTitlecase"))
@@ -515,11 +514,11 @@ class GraphQLQueryTest {
         // Multiset alias collision in key extraction. Film.Length is a multiset-backed object
         // field whose projection is aliased "Length", case-insensitively shadowing the physical
         // FILM.LENGTH (smallint) column. titleTitlecase is a Wrap.TableRecord @service child
-        // that projects the full parent row and rebuilds a FilmRecord from it. A by-column-name
-        // rebuild (env.getSource().into(Tables.FILM)) lets the "Length" multiset Result shadow
+        // that builds a FilmRecord key off the parent row. A by-column-name rebuild
+        // (env.getSource().into(Tables.FILM)) lets the "Length" multiset Result shadow
         // FILM.LENGTH, fail the smallint conversion, and crash every film with a
-        // MappingException; the full row is therefore projected under reserved __src_<col>__
-        // aliases and rebuilt column by column, so the multiset alias cannot collide.
+        // MappingException; the key columns are therefore copied by jOOQ field identity, which
+        // a shadowing alias cannot reach.
         // Selecting only the two colliding participants isolates the seam.
         Map<String, Object> data = execute("{ films { titleTitlecase Length { inventoryId } } }");
         var films = (java.util.List<Map<String, Object>>) data.get("films");
@@ -542,19 +541,18 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void filmsByService_titleTitlecase_resolvesOnServiceReturnedTypedParent() {
-        // The service-returned-parent kind for the Wrap.TableRecord key extraction fork.
+        // The service-returned-parent kind for the Wrap.TableRecord key extraction.
         // filmsByService runs its own selectFrom(FILM) and hands back Result<FilmRecord> with no
-        // framework projection, so the parent row carries the real columns and NO reserved
-        // __src_*__ aliases. The runtime `source instanceof FilmRecord` fork must copy the typed
-        // parent's columns directly; an unconditional source.get("__src_film_id__", ...) read
-        // throws IllegalArgumentException (field not contained in row type) on every film.
-        // The SQL-parent kind of the same field stays pinned by
-        // films_titleTitlecase_withCollidingMultisetSibling_bothResolve_noMappingException.
+        // framework projection at all. One unconditional read serves this parent and the
+        // SQL-projected one alike, because a jOOQ-generated record carries its own primary key
+        // and the framework force-includes that same key when it builds the parent SELECT. This
+        // is the arrival path that has no force-inclusion to rely on, so it is the one that
+        // proves the read needs no runtime fork. The SQL-parent kind of the same field stays
+        // pinned by films_titleTitlecase_withCollidingMultisetSibling_bothResolve_noMappingException.
         Map<String, Object> data = execute("{ filmsByService(ids: [1, 2]) { titleTitlecase } }");
         var films = (java.util.List<Map<String, Object>>) data.get("filmsByService");
         assertThat(films)
-            .as("titleTitlecase resolves on a service-returned FilmRecord parent — pre-fix this "
-                + "threw IllegalArgumentException on the missing __src_ aliases")
+            .as("titleTitlecase resolves on a service-returned FilmRecord parent")
             .extracting(f -> f.get("titleTitlecase"))
             .containsExactly("Academy Dinosaur", "Ace Goldfinger");
     }
@@ -2503,7 +2501,7 @@ class GraphQLQueryTest {
     // City carries no @splitQuery sibling, so its @service children are the only
     // reason CITY_ID lands in the parent SELECT. Both queries deliberately select NO field that
     // maps to CITY_ID; if the BatchKeyField arm in
-    // TypeClassGenerator.collectRequiredProjectionColumns regresses, cityUppercase resolves to
+    // TypeClassGenerator.collectRequiredProjection regresses, cityUppercase resolves to
     // null (silent .into(Tables.CITY) extraction) and cityLowercase fails the request (loud
     // per-column get(...) extraction), turning these red.
 

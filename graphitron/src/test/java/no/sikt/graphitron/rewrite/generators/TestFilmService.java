@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.rewrite.test.jooq.tables.records.ArrayHolderRecord;
+import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmListRecord;
 import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
 import no.sikt.graphitron.rewrite.test.jooq.tables.records.LanguageRecord;
 import org.jooq.Record1;
@@ -103,11 +104,18 @@ public class TestFilmService {
      * Fixture: typed-{@code TableRecord} source-shape keyed on {@code array_holder}, whose row
      * carries array-typed columns ({@code flags boolean[]}, {@code tags text[]}). {@code Set<
      * ArrayHolderRecord>} keys classify the wrap as {@code SourceKey.Wrap.TableRecord}, so the
-     * parent {@code $fields} SELECT reconstructs the full {@code array_holder} row per column. That
-     * per-column reconstruction is the arm that crashed on {@code ClassName.bestGuess} for the
-     * array columns' binary descriptors before the catalog-boundary type-lift.
+     * generated fetcher's key extraction runs over that table.
      */
     public static Map<ArrayHolderRecord, Integer> getArrayHolderRankByRecord(Set<ArrayHolderRecord> holderKeys) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Fixture: a SOURCES batch parameter keyed on {@code film_list}, a table with no primary key.
+     * The batch key is the parent's PK, so this coordinate cannot be honoured; it is the
+     * {@code SourcesOnPkLessParent} rejection's fixture.
+     */
+    public static Map<FilmListRecord, Integer> getFilmListRankByRecord(Set<FilmListRecord> listKeys) {
         throw new UnsupportedOperationException();
     }
 }
