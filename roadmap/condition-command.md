@@ -329,6 +329,10 @@ same relations instead of re-composing the fold.
    consuming what this item produces. Sequencing follows: R552 slices 1 and 2 land before (or with)
    R541 slice 1. If the reviewer prefers R541 to land first, option (a) stands there and this item's
    slice 2 shrinks to re-homing what R541 built; both orders are safe, one builds the seam twice.
+   R541's fork 1 was re-posed at its Spec review 2026-07-27 and the paraphrase above is stale in one
+   respect: its option (a) is not a "bounded slice of row 5" being pulled in, because the root builders
+   already call named `<field>Condition` methods, so (a) is only row 5's naming lift for the covered
+   family. Same conclusion, smaller premise; this item's ownership claim is unaffected.
 
 ## Slices
 
