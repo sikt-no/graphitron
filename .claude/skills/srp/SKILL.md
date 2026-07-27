@@ -74,95 +74,81 @@ For other statuses (Backlog, Ready, In Progress), no formal review handoff appli
 
 6. **Emit the prompt.** Output exactly one fenced block, pre-filled with the resolved values. Use the appropriate template below verbatim.
 
+## Template design intent
+
+Both templates are goal + hard invariants + pointers, deliberately. They state the question the gate answers, the mechanical facts a fresh session cannot infer (sync-first, the reviewer rule, the two outcomes and their state-machine actions, non-inferable project facts), and where the judgment materials live. They do not prescribe a reading order, an assessment rubric, or a per-finding output format: rubrics get completed rather than thought about, and the fresh-context reviewer exists to apply independent judgment. When editing the templates, prefer deleting instructions over adding them; do not re-accrete checklists.
+
 ## Spec-stage template
 
 Emit this as a fenced ```text``` block, replacing the `{{...}}` tokens.
 
 ````text
 You are an independent reviewer doing the Spec → Ready sign-off on roadmap item
-{{Rn}} in graphitron-rewrite. Goal: a go/no-go. Either flip the spec's status
-to Ready (so the implementer can start), or request specific revisions (stays
-in Spec for another pass).
+{{Rn}} in graphitron-rewrite. The gate answers one question: would you hand
+this plan to an implementer as-is? Either flip the status to Ready, or request
+specific revisions (the item stays in Spec for another pass).
 
 Repo:    {{repo-root}}
 Spec:    {{spec-path}}  (id: {{Rn}}, title: {{title}}, status: Spec)
 
-# Workflow rule
+# Sync first (hard requirement)
 
-Per roadmap/workflow.adoc § "States and transitions", the
-Spec → Ready guard is "reviewer ≠ last committer". The "Reviewer rule"
-paragraph below the state diagram pins the identifier: the comparison is by
+The spec body may live in a commit that hasn't reached your local branch, and
+reviewing a stale copy invalidates the gate:
+
+    git fetch origin claude/graphitron-rewrite
+    git rebase origin/claude/graphitron-rewrite
+
+If the rebase conflicts, surface and stop until resolved.
+
+# Reviewer rule (hard requirement)
+
+Per roadmap/workflow.adoc § "States and transitions", Spec → Ready requires a
+reviewer different from the last committer of the spec file, compared by
 Claude Code session ID, recorded as the `https://claude.ai/code/session_<id>`
-trailer on each commit, not by git author or human identity.
+trailer on each commit; not git author, not human identity. Your own session
+ID is in your system prompt, embedded in that trailer URL. If it matches the
+disqualified ID below, hand off to a different session.
 
 Recent spec-touching commits (most recent first):
 
 {{recent-commits}}
 
 Disqualified session ID: {{disqualified-session-id}}
-(Fallback identifier — git author of the same commit: {{disqualified-author}}.
-Used only when the disqualified session ID resolves to `<no-trailer>`, meaning
-the spec-file commit predates the trailer-tracking convention; in that case
-defer to the user's judgment that you are an independent session.)
+(If that is `<no-trailer>`, the commit predates the trailer convention; fall
+back to git author {{disqualified-author}} and defer to the user's judgment
+that you are an independent session.)
 
-Your own session ID is in your system prompt, embedded in the trailer URL
-Claude Code stamps on every commit. If it matches the disqualified ID, hand
-off to a different session.
+# Materials
 
-# Sync first
+- {{spec-path}}: the plan under review.
+- docs/architecture/explanation/development-principles.adoc: where "good" is
+  defined for this codebase.
+- docs/architecture/index.adoc: architectural orientation when the spec's
+  domain is unfamiliar.
+- roadmap/workflow.adoc: the state machine and reviewer rule, if you need the
+  source.
 
-Before reading the spec, sync with trunk — the spec body may live in a commit
-that hasn't reached your local branch:
+Depth and order are your call. You are an agent, not a reader: grep the tree,
+open the code the spec touches, check the spec's claims against reality. One
+check is non-negotiable because specs rot silently without it: every
+code/test/symbol the spec names must exist as named (the "Documentation names
+only live tests/code" principle); FQN-aware grep (`grep -rn the.full.Name`)
+catches mismatches that partial-name searches miss.
 
-    git fetch origin claude/graphitron-rewrite
-    git rebase origin/claude/graphitron-rewrite
+# Outcomes (exactly two)
 
-If the rebase conflicts, surface and stop until resolved. Don't review a
-13-line stub that should be a 100-line plan.
-
-# Read first (in this order)
-
-1. {{spec-path}}  (the spec under review)
-2. docs/architecture/explanation/development-principles.adoc  (technical principles, esp. "Documentation names only live tests/code")
-3. roadmap/workflow.adoc  (state machine + reviewer-rule paragraph)
-4. docs/architecture/index.adoc  (architectural orientation)
-
-# What to assess
-
-Spec-stage framing: "is this plan sound enough to hand to an implementer", not
-"is this code correct".
-
-- **Architectural soundness against principles.** Does the proposed shape align  with the development principles? Sealed hierarchies, decide-once classification,
-  classifier guarantees, validator-mirrors-classifier, etc. Surface any place
-  the spec pushes against a principle without justifying the trade.
-- **Plan completeness.** Decisions left implicit that the implementer would have
-  to invent. Hedges where the spec should pick a side.
-- **Test coverage adequacy.** Pipeline-tier, execution-tier, audit, resolver-tier
-  coverage as called for. Does the named coverage exercise what the spec
-  changes? Any scenarios missing?
-- **Scope.** Is the "Out of scope" list honest?
-- **Stale-reference rule.** Per "Documentation names only live tests/code":
-  every concrete code/test/symbol the spec names must exist as named, with the
-  cited paths and line numbers. Spot-check liberally; FQN-aware grep
-  (`grep -rn everyGraphitronFieldLeafHasAKnownDispatchStatus` rather than a
-  partial-symbol search) catches false negatives that a simple-name search misses.
-
-# Two acceptable outcomes
-
-1. **Sign off.** Use the `roadmap` skill to flip status from Spec → Ready, then
+1. Sign off. Use the `roadmap` skill to flip status Spec → Ready, then
    `publish` to push and fast-forward trunk.
-2. **Request revisions.** Either commit revisions yourself on a fresh feature
-   branch (status stays Spec; the next pass's reviewer-session must be
-   different from yours, since you've now become the last committer), or
-   leave a note for the original author. Use the `roadmap` skill if you need a
-   `Spec → Spec` revise transition recorded.
+2. Request revisions. Either commit spec revisions yourself on a fresh feature
+   branch (status stays Spec; you become the last committer, so the next pass
+   needs a different reviewer session), or leave notes for the original
+   author. Use the `roadmap` skill for a recorded Spec → Spec revise
+   transition if needed.
 
-# Output
-
-For each material finding (if any): one line summarising, the spec section / line
-it touches, the principle or workflow rule it bears on, and the suggested
-revision shape. Then a final line: "Sign off: yes/no (and what to do next)". A
-clean review can be three sentences. Don't pad.
+Report what materially bears on the go/no-go, anchored so the author can act
+on it. A clean spec is a valid outcome; say so plainly instead of inventing
+findings. End with an unambiguous verdict and what happens next.
 ````
 
 ## Implementation-stage template
@@ -171,91 +157,84 @@ Emit this as a fenced ```text``` block, replacing the `{{...}}` tokens.
 
 ````text
 You are an independent reviewer doing the In Review → Done approval on roadmap
-item {{Rn}} in graphitron-rewrite. Goal: a go/no-go. Either approve (delete the
-spec file, optionally entry the changelog), or request rework (status flips
-back to Ready for another implementation pass).
+item {{Rn}} in graphitron-rewrite. The gate answers one question: does the
+delivery honor the contract the spec set? Either approve (the item ships and
+its spec file is deleted), or request rework (status flips back to Ready for
+another pass).
 
 Repo:    {{repo-root}}
 Spec:    {{spec-path}}  (id: {{Rn}}, title: {{title}}, status: In Review)
 
-# Workflow rule
+# Sync first (hard requirement)
 
-Per roadmap/workflow.adoc § "States and transitions", the
-In Review → Done guard is "reviewer ≠ implementer". The "Reviewer rule"
-paragraph below the state diagram pins the identifier: the comparison is by
-Claude Code session ID, recorded as the `https://claude.ai/code/session_<id>`
-trailer on each commit, not by git author or human identity.
+Implementation commits may live on trunk and not yet on your local branch, and
+reviewing a partial delivery invalidates the gate:
+
+    git fetch origin claude/graphitron-rewrite
+    git rebase origin/claude/graphitron-rewrite
+
+If the rebase conflicts, surface and stop until resolved.
+
+# Reviewer rule (hard requirement)
+
+Per roadmap/workflow.adoc § "States and transitions", In Review → Done requires
+a reviewer different from the implementer, compared by Claude Code session ID,
+recorded as the `https://claude.ai/code/session_<id>` trailer on each commit;
+not git author, not human identity. Your own session ID is in your system
+prompt, embedded in that trailer URL. If it matches any disqualified ID below,
+hand off to a different session.
 
 Recent commits referencing {{Rn}} (most recent first):
 
 {{recent-commits}}
 
-Disqualified session IDs (any session that authored a commit in the
-implementation range): {{disqualified-session-ids}}
-(Fallback identifiers — git authors of the same commits: {{disqualified-authors}}.
-Used only for entries that resolve to `<no-trailer>`, meaning the commit
-predates the trailer-tracking convention; in those cases defer to the user's
-judgment that you are an independent session.)
+Disqualified session IDs (any session that authored an implementation commit):
+{{disqualified-session-ids}}
+(For entries that are `<no-trailer>`, the commit predates the trailer
+convention; fall back to the git authors {{disqualified-authors}} and defer to
+the user's judgment that you are an independent session.)
 
-Your own session ID is in your system prompt, embedded in the trailer URL
-Claude Code stamps on every commit. If it matches any disqualified ID, hand
-off to a different session.
+# Materials
 
-# Sync first
+- {{spec-path}}: the contract; what the implementer promised to deliver.
+- The implementation commits (`git log --oneline -20`, then `git show`): the
+  delivery.
+- docs/architecture/explanation/development-principles.adoc: where "good" is
+  defined for this codebase.
+- roadmap/workflow.adoc: this gate carries obligations of its own; its
+  "User-facing-doc check" and "Retirement sweep" paragraphs apply before
+  approval.
+- docs/architecture/index.adoc: architectural orientation when the touched
+  area is unfamiliar.
+- The `reviewer-prompt` skill's "What to look for" section: the project's
+  canonical review taxonomy, if you want one.
 
-Before reading anything, sync with trunk — implementation commits may live on
-trunk and not yet on your local branch:
+Depth and order are your call. You are an agent, not a reader: run the build,
+grep, read the diff and the code around it.
 
-    git fetch origin claude/graphitron-rewrite
-    git rebase origin/claude/graphitron-rewrite
+# Approval preconditions (non-inferable project facts)
 
-If the rebase conflicts, surface and stop until resolved. Reviewing a partial
-diff is worse than waiting for a clean checkout.
+- `mvn install -Plocal-db` passes. A failing build is automatic rework.
+- No code-string assertions on generated method bodies anywhere in the
+  delivered tests; development-principles.adoc pins this test-tier rule.
+- The spec body reflects what shipped: phases collapsed to one-line
+  "shipped at <sha>" notes, remaining work clearly named.
 
-# Read first (in this order)
+# Outcomes (exactly two)
 
-1. {{spec-path}}  (the contract; what the implementer was building)
-2. The implementation diff: `git log --oneline -20` and
-   `git show <sha>` on the implementation commits.
-3. docs/architecture/explanation/development-principles.adoc  (technical principles)
-4. docs/architecture/index.adoc  (architectural orientation)
+1. Approve. Delete the spec file (`rm {{spec-path}}`); if the milestone is
+   worth preserving, append a one-line entry to roadmap/changelog.md naming
+   the {{Rn}} ID and the landing commit SHAs. Regenerate the README via the
+   `roadmap` skill, commit on a fresh feature branch, then `publish` to push
+   and fast-forward trunk.
+2. Request rework. Use the `roadmap` skill to flip In Review → Ready and
+   capture the review feedback in the spec body for the next pass. The
+   reviewer rule applies again next cycle.
 
-# What to assess
-
-Implementation-stage framing: spec is the contract, diff is the delivery.
-
-- **Spec → diff alignment.** Does the implementation deliver what the spec
-  promised? Anything the spec marked out-of-scope but landed anyway, or
-  anything in scope that didn't ship?
-- **Architectural soundness in the diff.** Apply the principles from
-  development-principles.adoc; surface any place the diff weakens or
-  contradicts them. The `reviewer-prompt` skill's "What to look for" list is
-  the canonical taxonomy if you want a checklist.
-- **Test coverage.** Spec-named pipeline-tier, execution-tier, audit, and unit
-  tests are present and assert what the spec said they would assert. No
-  code-string assertions on generated method bodies.
-- **Build green.** `mvn install -Plocal-db` passes.
-  A failing build is automatic rework.
-- **Plan housekeeping.** The spec body should be marked up to reflect what
-  shipped: phases collapsed to one-line `shipped at <sha>` notes, remaining
-  work clearly named.
-
-# Two acceptable outcomes
-
-1. **Approve.** Delete the spec file (`rm {{spec-path}}`); if the milestone is
-   worth preserving, append a one-line entry to roadmap/
-   changelog.md naming the {{Rn}} ID and landing commit SHAs. Regenerate the
-   README via the `roadmap` skill, commit on a fresh feature branch, then
-   `publish` to push and fast-forward trunk.
-2. **Request rework.** Use the `roadmap` skill to flip status from In Review →
-   Ready and capture review feedback in the spec body for the next pass. The
-   reviewer-session ≠ implementer-session rule applies again next cycle.
-
-# Output
-
-For each material finding (if any): one line summarising, the file:line it
-touches, the principle or spec section it bears on, and the suggested fix.
-Then a final line: "Approve: yes/no (and what to do next)". Don't pad.
+Report what materially bears on the go/no-go, anchored (file:line) so the
+implementer can act on it. A clean delivery is a valid outcome; say so
+plainly instead of inventing findings. End with an unambiguous verdict and
+what happens next.
 ````
 
 ## Output rules
