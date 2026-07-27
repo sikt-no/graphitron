@@ -149,8 +149,15 @@ latent gap or is confirmed a no-op.
 1. Fold `Wrap.TableRecord`'s key requirement into the existing `baseColumns` axis of
    `TypeClassGenerator.RequiredProjection` — delete the `reservedFullRow` axis and its unconditional
    whole-row append entirely; `RequiredProjection` becomes a single `baseColumns` list.
-2. Force-include the union of `primaryKeyColumns()` and `nodeKeyColumns()` (for `@node` table types) in
-   the required-projection walk, per the Design section above.
+2. Force-include `primaryKeyColumns()` in the required-projection walk, per the Design section above.
+   **Narrowed 2026-07-27 (was: the union of `primaryKeyColumns()` and `nodeKeyColumns()`).** The node-key
+   half has no counterpart in the Design section, whose key-extraction sketch loops
+   `parentTable.primaryKeyColumns()` alone, and node-id-ness does not affect projection: the selection
+   switch's own comment states that "Compaction (Direct vs NodeIdEncodeKeys) does not affect projection,
+   the SELECT terms are the same columns in both cases. The wrapping happens at the fetcher value, not in
+   the SELECT clause." So a `@node` type's key columns reach the SELECT through the ordinary column arm
+   when `id` is selected, and are not needed when it is not. If there is a reason the node-key union was
+   specified that this narrowing misses, reinstate it with that reason written down.
 3. Remove the `__src_<col>__` reserved-alias scheme: `reservedSourceAlias` and the projection append
    it drives. Note the scheme has *no* allowlist entry in `GeneratedSourcesLintTest`
    (`EXTERNAL_TOKEN_PREFIXES` carries only `__NODE_`; the aliases are string-literal-only and masked
@@ -159,7 +166,10 @@ latent gap or is confirmed a no-op.
    `DunderFreeEmissionPipelineTest`'s class javadoc.
 4. Remove the runtime `instanceof` parent-shape fork in `GeneratorUtils.buildKeyExtraction`'s
    `TableRecord` arm; replace with the single direct field-identity PK read described above.
-5. Update `ParentProjectionContainmentCheck` accordingly.
+5. Update `ParentProjectionContainmentCheck` accordingly. Keep the update to the minimum that leaves the
+   check honest against the narrowed demand: R549's keystone slice deletes both this check and the
+   required-projection walk it audits, so effort spent generalising either is effort spent on something
+   already scheduled for removal.
 6. Add a build-time rejection for a `Set<XRecord>`/`List<XRecord>` Sources shape on a PK-less parent
    table (see Design section), sited in `ServiceCatalog`.
 7. Rewrite `FilmService.titleTitlecase` using an idiomatic jOOQ batch-fetch (e.g.
@@ -228,3 +238,19 @@ full-row behavior.
 This item corrects R426's premise and unwinds R436's and R511's downstream complexity. R425 remains
 valid; this item is what actually completes R425's fix correctly, re-scoped to PK-only rather than
 full-row.
+
+**Why an unconditional append exists at all (added 2026-07-27, no scope change).** Worth knowing while
+implementing, because it explains why this chain kept recurring. `TypeClassGenerator`'s selection switch
+has arms for exactly the seven leaf kinds that project data of their own (`ColumnBackedField`,
+`ColumnBackedReferenceField`, `TableField`, `LookupTableField`, `NestingField`, `ComputedField`,
+`PivotField`). A `BatchedTableField`, a `BatchedLookupTableField` and a `@service` child have **no arm**,
+because from the switch's point of view they project nothing: their data arrives via a DataLoader. So when
+their correlation key turned out to be needed in the parent SELECT, the only available home was the
+unconditional append this item narrows, and getting a new shape right meant remembering to widen the append
+rather than adding a case. R425's "missed pattern-match arm" is that gap seen from the inside.
+
+The end state (R549's keystone slice) is a gated arm that projects the key when the child is selected and
+nothing when it is not, which retires the append, the walk, the containment check, and the over-projection
+together. This item's force-include is therefore an interim expression of the same demand, chosen because a
+priority-2 correctness fix should not wait on a programme in Spec. Implement it as the smallest thing that
+narrows the contract correctly; do not build machinery around it.

@@ -163,12 +163,17 @@ alias axis on the command. What distinguishes a nesting unit is that it has no k
 **Nesting types become projection units.** Giving a nesting type its own unit collapses the contribution
 key from `(host, pathFromHost)` to `typeName`, retires the depth-suffixed generated locals that exist only
 to dodge JLS shadowing when everything inlines into one method, and hands the dependency graph a node and
-edges for free, which is the grain R459 and R462 both stumbled on. This rests on a precondition:
-nesting types are single-reach today (the first-wins `NestingType` registration guard, and
-`MixedSourceReachIndex` treating a pure nesting target as single reach). `ColumnRef` carries no table, so
-contributions name columns resolved against whatever instance the caller passes; the host binding lives in
-the emitted parameter type, not in the projection. If the single-reach guard is ever lifted, the unit key
-gains the host table and this collapse reverses.
+edges for free, which is the grain R459 and R462 both stumbled on.
+
+The invariant that makes this work is **locality: a projection method never looks beyond its own nesting
+level.** Its own level's contributions are columns and calls; anything deeper is another unit's business,
+reached by a call and returned as a list. That is what makes a projection unit self-contained, and it is
+the property to state and hold rather than any claim about how many parents reach a nesting type.
+`ColumnRef` carries no table, so contributions name columns resolved against whatever instance the caller
+passes; the only thing that cares about the host is the emitted parameter type, which binds one unit to one
+jOOQ table class. So a nesting type reached from two hosts with different tables is a signature question at
+emit time, not a projection-design question, and it is not a live one today (nesting registration is
+first-wins and `MixedSourceReachIndex` treats a pure nesting target as single reach).
 
 **Polymorphic projection needs no folding in.** `MultiTablePolymorphicEmitter` already emits
 `Type.$fields(PolymorphicSelectionSet.restrictTo(env.getSelectionSet(), "Film"), t, env)` per participant
@@ -224,13 +229,24 @@ installable as a ratchet at its current value before any migration happens.
 ## Slices
 
 Numbered because these are real seams: each ships to trunk on its own with the build green, and the
-intermediate states are observable. Ordered by cost and independence, cheapest and least contested first.
+intermediate states are observable. **The intent is to deliver all of them, serially**, so the numbering is
+an ease-of-execution ordering rather than a set of decision points: sequence by what is cheapest to do next
+given what has landed, not by which slice earns the next one. Slice 3 stays ahead of slice 4 on that basis,
+since projection commands can be derived from today's leaves and re-sourced onto facts when the walk exists,
+whereas doing 4 first means building the engine before anything consumes it.
+
+`@splitQuery` on a nesting field is in slice 3's scope as a consequence of promoting nesting types to
+projection units: the split launches a keyed query against the parent's table selecting that unit's columns,
+correlated by the parent's key. Today the directive is accepted there and `NestingField` carries no delivery
+slot, so it appears to be silently ignored; confirm that at implementation, because if it is, the same slice
+either implements the launcher or the shape needs a lint advisory, and doing nothing is the one option that
+is already wrong.
 
 | # | slice | why here | cost |
 |---|---|---|---|
 | 1 | Global command list: `runPipeline`'s `write(...)` sequence becomes data the core computes and the shell folds over | touches no leaf, no fact, no javapoet, no emitted output; makes "the core decides the entire emit" literally true for the one population where it is currently 20 lines of orchestrator decisions | very low |
 | 2 | Label the hierarchies (walked / resolved / command / error) and install invariants 1 and 3 at their current counts | the labelling is the programme's vocabulary, and a ratchet installed before the migration is what stops the surface growing while the work proceeds | low |
-| 3 | **The keystone: projection commands.** One method per projection unit (grouped selection in, select list out), nesting types promoted to units, `CorrelationKey` as the missing arm, exhaustive dispatch with no default, and the demand walk plus `ParentProjectionContainmentCheck` deleted. Depends on R516 landing first | designing this validates or breaks the whole model, and it is the only slice that deletes a build-time throw, a duplicated walk, and a runtime over-projection at once | medium |
+| 3 | **The keystone: projection commands.** One method per projection unit, grouped selection in and select list out, replacing the three `$fields` overloads and renamed to say what it returns (`$project`) uniformly across table-backed and nesting units. Nesting types promoted to units; `CorrelationKey` as the missing arm; exhaustive dispatch with no default; a launcher for `@splitQuery` on a nesting field; the demand walk and `ParentProjectionContainmentCheck` deleted. Depends on R516 | designing this validates or breaks the whole model, and it is the only slice that deletes a build-time throw, a duplicated walk, and a runtime over-projection at once | medium |
 | 3b | `GeneratedUnits` moves to the core; the type-keyed relation `(typeName, unitKind)` replaces the 24 generator predicates, one kind at a time | the vocabulary is already data, so this is a re-homing plus an inversion of "should I emit" from 24 loops into one relation; renderers barely move | medium |
 | 4 | Fact-visitor engine: one shared traversal dispatching to per-fact visitors, on the `LintEngine` pattern, with the registry-coverage meta-test, one genuinely independent fact as beachhead | dissolves the central switch that made `FieldBuilder` the largest file in the tree, using an architecture that already shipped here | medium |
 | 5 | Coordinate-keyed command relation: `Operation` rows become the command set the shell consumes; `MethodCommandRegistry`'s parallel four-string record retires into it | this is where the flow finally inverts from shell-asks-core to core-tells-shell | medium |
@@ -290,9 +306,12 @@ for pinning it.
 | R25 (Backlog) | supplies the coverage half of the falsification baseline |
 | R112 / R117 | unaffected, but the KB's "model as projection" framing gets easier once the relations exist |
 
-## Abandon condition
+## Progress measurement
 
-The programme must be able to fail. The facts half of R333 has been paying its way slice by slice (R432
+The owner's stated intent is to deliver every slice, serially, without a stop gate, so the measurements
+below are an instrument rather than a decision procedure: they say whether the direction is doing what it
+claims, and a slice that moves none of them is a slice worth re-examining before the next one starts. The
+facts half of R333 has been paying its way slice by slice (R432
 collapsed four leaves to two, R438 made join facts orthogonal, R435 shipped a user-facing feature off the
 fact model), and the discipline that produced that record is the one to keep: **no slice that is purely a
 migration payment.** Each slice above ships a simplification, a deletion, or a capability.
@@ -302,11 +321,12 @@ roughly 100 leaf-naming `instanceof` sites, 29,837 generator LOC, 400 `Classific
 top-five concentration 46% (`generators/`) and 52% (core), largest files 7,102 and 7,754, and R25's
 emitter coverage figures (`JooqRecordInstantiationEmitter` 40.7%, `FetcherEmitter` 50.2%).
 
-Re-run after slices 1 to 5. If the numbers have not moved in the right direction, stop: keep the facts
-half, keep the labelling and the ratchets (which pay for themselves by constraining regrowth), and
-abandon the rest rather than accept a half-migrated shell. A partial migration is the one outcome worse
-than either endpoint, and R333 says so itself: leaves kept alive to feed one consumer is how the leaf zoo
-returns as a second model.
+Re-run after slices 1 to 5. What matters is direction, not a threshold. The one risk the numbers guard
+against is stalling mid-migration, since a partly-converted shell is worse than either endpoint: R333 says
+so itself, that leaves kept alive to feed one consumer is how the leaf zoo returns as a second model. Given
+the intent to run the slices to completion, the mitigation is sequencing rather than an exit: the ratchets
+in the invariants section hold each conversion once it lands, so an interruption leaves a smaller shell
+rather than two half-models.
 
 ## Non-goals
 
@@ -316,9 +336,20 @@ returns as a second model.
 - A query-engine runtime for the model.
 - Re-platforming the whole shell in one program. Slices ship independently; the shell's renderers mostly
   do not move, they stop deciding.
-- Any change to emitted output. Slices 1, 3, and 5 should be byte-identical at the output, which is the
-  cheapest acceptance test available for each of them.
-- Changing what any directive means, or the user-facing surface. This is entirely internal.
+- **Byte-identical emitted output as an acceptance test.** Tempting for a re-platforming, and wrong for the
+  same reason code-string assertions are wrong: it makes generated text the contract, and it forbids
+  improving the emit (slice 3 renames a method and adds arms, so it cannot hold anyway). Acceptance for
+  every slice is the tiers that already exist: the compilation tier proves the emit compiles, the execution
+  tier proves it runs against PostgreSQL, `MethodClosureOracleTest` proves the graph is closed,
+  `IncrementalCompileHarnessTest` proves the recompile set is right, and the corpus proves the
+  classification. For a pure rename, ordinary refactoring practice (rename at the definition, let the
+  compiler and the closure oracle find every reference) is the discipline, not output diffing.
+- Any change to emitted *behaviour*. Slices 1 and 3b change who decides what to emit, not what runs; where
+  a slice does change output (slice 3's rename, its new arms, and the projection it stops emitting for
+  unselected children), it changes shape and never semantics.
+- Changing what any directive means. The one directive whose *reach* grows is `@splitQuery` on a nesting
+  field, which today is accepted and appears to do nothing; slice 3 gives it the launcher it implies.
+  Otherwise this is entirely internal.
 
 ## Acceptance
 
