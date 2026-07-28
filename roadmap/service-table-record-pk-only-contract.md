@@ -1,7 +1,7 @@
 ---
 id: R516
 title: "Narrow SourceKey.Wrap.TableRecord contract to PK-only, revert full-row projection"
-status: In Review
+status: Ready
 bucket: correctness
 priority: 2
 theme: service
@@ -12,11 +12,14 @@ last-updated: 2026-07-28
 
 # Narrow SourceKey.Wrap.TableRecord contract to PK-only, revert full-row projection
 
-## Status: third rework applied, back for a fourth gate (2026-07-28)
+## Status: fourth gate bounced on one manual sentence (2026-07-28)
 
-Everything the contract asks for was delivered and verified at all three gates. The third bounce
-was two false claims in one javadoc block; both are fixed, along with all four non-blocking notes.
-See "Third rework applied" below. Nothing is outstanding.
+The third rework is confirmed good in full: both blocking findings fixed correctly, all four
+non-blocking notes applied, every factual claim in the rewritten javadoc verified against the
+emitted fetchers and the SDL. What bounced this gate is one sentence in the user manual, authored
+at `cc270f1` and read sentence-by-sentence by no previous gate: the same defect class a fourth
+time, now on the item's most user-facing surface. See "Fourth gate" below. One blocking finding,
+one non-blocking note in the same sentence family.
 
 Shipped and accepted:
 
@@ -37,6 +40,74 @@ the deleted mechanism as live; nothing behavioural was in question. All eight ar
 at the second gate. The re-sweep that followed found four more (9 through 12 below), one of them
 introduced by the `ffce130` self-review sweep itself. The first reviewer's second improvement note
 is Backlog item R554 (filed, confirmed); the other three are addressed or answered in place.
+
+## Fourth gate: rework, one blocking finding (independent reviewer, In Review → Ready, 2026-07-28)
+
+Confirmed independently at this gate before the finding below. Build green: `mvn install
+-Plocal-db`, 13/13 modules SUCCESS, exit 0, execution tier and docs render included. Both jOOQ
+behaviours re-verified by running them against 3.20.11 rather than inherited: `Record.get(Field)`
+on a field absent from the row type throws `IllegalArgumentException`, `Record.into(Field...)`
+yields `null` for the absent field. The third rework is good work and every claim in it held up
+under adversarial re-verification: both federated fetchers emit
+`key.set(col, source.get(col))` inside the fetcher's try/catch routing to `ErrorRouter`
+(`.../generated/federated/fetchers/CityFetchers.java:39-48`, `FilmFetchers.java:49-58`);
+`cityUppercase` takes `Set<CityRecord>` so both federation children are `Wrap.TableRecord`;
+`cityLowercase` exists only in the non-federated SDL; `collectRequiredProjection` has exactly one
+blanket `BatchKeyField` arm (`TypeClassGenerator.java:516-517`); the linked
+`cities_cityLowercase_withoutKeyFieldSelected_resolvesViaRow1Source` exists; the corrected
+`Wrap.Row` sketch matches the emitted form. Retirement token sweep clean (the six graduated tokens
+occur only as their own registry entries); the `docs/` diff is clean under the workflow's
+user-facing-doc marker check; no generated-body string assertions in delivered tests; the spec
+body is current.
+
+**Blocking. `docs/manual/how-to/handle-services.adoc:228` states a false consequence of the
+narrowed mechanism, in the chapter Scope 8 exists to correct.** The closing sentence of the
+central `[IMPORTANT]` contract block reads: "Reading `film.getTitle()` off the key instead would
+work only when the client's own selection happened to include `title`, and return `null` the rest
+of the time."
+
+Post-narrowing that is false in both halves. The emitted extraction builds a **fresh**
+`FilmRecord` and copies only the PK (`key.set(Tables.FILM.FILM_ID, source.get(Tables.FILM.FILM_ID))`,
+verified in the generated `fetchers/FilmFetchers.java:1349-1358`), and the DataLoader hands the
+service exactly those fresh key records. `TITLE` is never populated on the key, on either arrival
+shape, regardless of what the client selected — so `film.getTitle()` off the key returns `null`
+unconditionally, not "only when the selection excludes `title`". The selection-dependent success
+mode the sentence describes is the retired pre-narrowing behaviour (the by-name `into(Tables.FILM)`
+whole-row map picking up whatever the SELECT projected), imported from this spec's own Problem
+section into present-conditional manual prose at `cc270f1`.
+
+Three things make it blocking rather than a note:
+
+- It is the fourth consecutive instance of the defect class every previous bounce was about —
+  prose describing the deleted mechanism's consequences as live — and it sits on the one surface
+  none of the three gates read sentence-by-sentence: the published manual at `graphitron.sikt.no`,
+  the exact chapter Scope 8 names as a deliverable.
+- It contradicts the same block's own opening sentence, three lines above: "a `FilmRecord` the
+  framework hands you has `FILM_ID` populated and its other columns unset." Unset columns read
+  `null`, full stop; there is no selection under which `getTitle()` works.
+- It has operational teeth: a service author reading it can conclude "our clients always select
+  `title`, so reading it off the key is fine" and ship a service that returns `null` for every
+  row — the exact coincidental coupling this item exists to retire, taught by the item's own
+  documentation.
+
+Fix: state that reading a non-key column off the key returns `null` always — the key is a fresh
+record carrying the primary key and nothing else, whatever the client selected. If the historical
+"worked when the selection happened to include it" behaviour is worth keeping as motivation, mark
+it unambiguously as the retired behaviour, past tense.
+
+Non-blocking, same sentence family, cheapest to tighten in the same edit:
+
+- `FilmService.java:137-139`: "rather than one that happens to work when the client's own
+  selection includes the column." Present-tense "happens to work" is true only of the retired
+  projection; today the alternative never works. Soft-ambiguous between history and live claim
+  (it reads as a description of the old example), unlike the manual sentence, which is
+  unambiguously live. Recast as explicit history or drop the clause.
+
+Everything else was checked and passes; nothing beyond these two surfaces needs touching. Not
+re-litigated, per all three previous passes: `TypeSpecAssertions`'s body-scan family (R554 owns
+it), the seven-argument `reflectServiceMethod` overload, the `isRoot` disambiguation, the absent
+`Wrap.Row` federation fixture (the third rework's reasoning for not adding one is verified
+correct and now lives in the test javadoc).
 
 ## Third rework applied (2026-07-28)
 
