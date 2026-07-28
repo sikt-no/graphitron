@@ -1,7 +1,7 @@
 ---
 id: R516
 title: "Narrow SourceKey.Wrap.TableRecord contract to PK-only, revert full-row projection"
-status: Ready
+status: In Review
 bucket: correctness
 priority: 2
 theme: service
@@ -25,7 +25,7 @@ What sent it back is the retirement sweep, which `roadmap/workflow.adoc` makes a
 obligation for any item declaring a `Retired vocabulary` section. Eight prose surfaces still named
 the deleted mechanism as live. Nothing behavioural was in question.
 
-**Rework landed, all eight, at the SHA recorded in the findings list below.** The sweep that found
+**Rework landed at `b811bdb`, all eight.** The sweep that found
 them was rerun wider afterwards, on the mechanism's vocabulary rather than on a phrase list, which
 turned up four more the reviewer had not flagged; those are recorded as 9 through 12. One of the
 four was introduced by the `ffce130` self-review sweep itself, so it is called out as such rather
