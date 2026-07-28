@@ -6,7 +6,7 @@ bucket: architecture
 theme: classification-model
 depends-on: []
 created: 2026-07-27
-last-updated: 2026-07-27
+last-updated: 2026-07-28
 ---
 
 # Facts and commands: grain-first hierarchies and the three command relations
@@ -75,7 +75,7 @@ independence or measured multiplicity, never on aesthetics.**
 
 | relation | key | where it lives today |
 |---|---|---|
-| global commands | unit kind | the roughly thirty `write(...)` calls in `GraphQLRewriteGenerator.runPipeline`, including an inline `federationLink && usesOneOf` gate |
+| global commands | unit kind | the 34 `write(...)` calls in `GraphQLRewriteGenerator.runPipeline`, including an inline `federationLink && usesOneOf` gate |
 | type-keyed commands | `(typeName, unitKind)` | 24 generator entry points that each loop the schema asking "should I emit my kind for this type", with the naming vocabulary already centralised as data in `compile/GeneratedUnits` (`typeClass`, `fetchers`, `conditions`, `inputRecord`, `schemaShape`, plus `singleton` / `rootUnit` for globals) |
 | coordinate-keyed commands | `(coordinate, operation)` | `Operation`'s minted arms, plus `MethodCommandRegistry`'s four-string records minted during rendering |
 
@@ -234,7 +234,9 @@ its target** aliases the parent's own column as `__rk_<resultKey>` purely so its
 shape's reader, which is inherited, not load-bearing; a multiset, scalar subselect, aggregate or helper call
 genuinely needs *a* name, since there is no column identity to read by; and two occurrences with different
 arguments (`recent: reviews(first: 5)` versus `old: reviews(first: 1)`) genuinely need distinguishing,
-because the expressions differ. The `__src_<col>__` reservation goes away with R516.
+because the expressions differ. The one further alias class today's emit had, the reserved namespace
+carrying a parent's full row for typed-record `@service` keys, is already deleted and needs no verdict
+here.
 
 > **Alias a term only when it has no column identity to read by, and alias by result key only when its
 > expression is occurrence-dependent.**
@@ -355,6 +357,14 @@ bug class verbatim. The slice re-sources the bucket instead: projected-ness beco
 plan (a leaf is projected exactly when the producer mints a contribution for it), the partition test reads
 it from there, and a leaf the producer cannot yet mint for surfaces as a validate-time deferred rejection,
 not a producer-side throw.
+
+Two authored doc surfaces name that partition and go false the moment it re-sources, so slice 3.1 updates
+them in the same commit: the "Rejections: validator mirrors classifier invariants" section of
+`docs/architecture/explanation/development-principles.adoc`, which enumerates the four-way partition and
+justifies the enumeration by the test that pins it, and `docs/architecture/reference/code-generation-triggers.adoc`,
+whose inline-projection bullet names `TypeClassGenerator.$fields` and `PROJECTED_LEAVES` directly. Both are
+the principles doc's own rule about unguarded inventories applied to this change; the `testing.adoc` rubric
+row below is the third.
 
 The producer reads exactly where the generator reads today, so **slice 3 needs no fact walk**. Slice 4 later
 re-sources the producer onto fact relations and the renderer never notices, which is what makes 3-before-4
@@ -806,7 +816,7 @@ slice 3.1 commits to the two-arm collapse it would falsify.
 | R544 (Backlog) | independent, and this reframing strengthens it: the error-channel hierarchies are a first-class fourth kind at 43 permits, so pinning them declaratively is model work, not only test hygiene |
 | R541 (reopened to Spec 2026-07-27) | **the second proof of concept**, slice 3c. Rewritten in command terms, which dissolves rather than defers most of its previous design: its `QueryUnitField` naming capability, its `declareRootQueryUnit` registry seam and its bidirectional oracle were all machinery for facts an emitter reads directly, and under a coordinate-keyed relation the name is a producer-computed field and "exactly one command per coordinate" is the key. Building them first would have been a migration payment slice 5 then retires. Its five root emit shapes stay the real content, and its exact-SQL equivalence pin gets simpler rather than narrower: authored after slice 3, the select list is already final, so the pin covers whole statements with no carve-out. Its conditions fork was re-posed at Spec review 2026-07-27: the root builders already call named `<field>Condition` methods, so what the fork actually does is finish R333 row 5's naming lift (the `QueryConditionsGenerator` end, R2 today) for the covered family's coordinates; the slot resolves as a `UnitRef` into R552's condition relation and the scope question moved there (its fork 4). Its live open fork is now the connection root's `ConnectionResult` carrier plan (`totalCount`'s `(table, condition)` binding and the facet condition fragments), which the launcher sketch has no slot for. Two notes from the rollout review: it is the one proof of the three with no capability payload, which the "no slice that is purely a migration payment" rule makes a thing to name in its own body rather than discover at review; and it runs after R552, per the ordering decision in the Slices section |
 | R552 (Spec) | **the third proof of concept**, slice 3d, and the first family to land. The WHERE family as one coordinate-keyed condition relation with a total glue unit per row: the first value-shaped unit, the second cross-kind edge including the first external callees, argument marshalling as data, and the type-keyed GROUP BY that hands slice 3b its exemplar rows. Dissolves R541's conditions fork by owning condition production; the ordering question its fork 4 leaves open is decided in the Slices section (R552 first). Absorbs R472, R475, R387 and R334 for its family, which is why it is also the right family to run first: the programme's earliest visible commits fix output that does not compile today |
-| R516 (Ready, priority 2) | **dependency of slice 3.2**, and of nothing earlier: the keystone's reshape half does not need it, which is part of why the split is worth having. It deletes the `reservedFullRow` axis and the reserved-alias scheme, which is the one demand no parent-owned fact can serve, and it ships independently as correctness work. Its force-include of the parent PK is an interim expression that slice 3 converts to a gated `Project` arm; it was scoped as PK plus node key until 2026-07-27, when the node-key half was dropped for the reason stated here, that node-id-ness does not affect projection. Its scope item 5 (update `ParentProjectionContainmentCheck`) should be the minimum that keeps the check honest, since slice 3 deletes it |
+| R516 (Ready after a second rework, priority 2) | **dependency of slice 3.2**, and of nothing earlier: the keystone's reshape half does not need it, which is part of why the split is worth having. It has already deleted the full-row parent projection for typed-record `@service` keys and the reserved alias namespace that carried it, which was the one demand no parent-owned fact could serve, and it ships independently as correctness work. Its force-include of the parent PK is an interim expression that slice 3 converts to a gated `Project` arm; it was scoped as PK plus node key until 2026-07-27, when the node-key half was dropped for the reason stated here, that node-id-ness does not affect projection. Whatever it leaves in `ParentProjectionContainmentCheck` should be the minimum that keeps the check honest, since slice 3.2 deletes it. Re-read its body at slice 3.2 pickup rather than trusting this row: it has bounced the Done gate twice, so its scope and its status both move faster than this table |
 | R462 (Spec) | fix by hand now, do not generalise; slice 7 dissolves its class. Advisory already noted on the item. Its Spec body cites `GraphitronSchemaValidator.NESTED_WIREABLE_LEAVES`, which no longer exists under that name anywhere in main or test, so the implementer must re-derive the current nested-leaf bound rather than trusting the citation |
 | R10 (Backlog) | dependency of slice 7. Its own body says it wants "a concrete signal"; the fact engine making connection synthesis a relation is that signal |
 | R7 (Backlog) | subsumed in effect. `TypeFetcherGenerator` splits along command kinds under slice 3 and slice 5 rather than by a decomposition pass that regrows |
@@ -844,6 +854,29 @@ that is a fine answer for serial single-session work: say so plainly and the ris
 hidden. If the work is ever parallelised across sessions, the four-layer window stops being self-
 closing, and the thing to do then is name slice 4's owner before slice 3.1 lands rather than after
 the count flattens.
+
+## Retired vocabulary
+
+Declared per the item-file conventions in `roadmap/workflow.adoc`, so the Done-gate retirement sweep
+has a grep list. Each term names the slice that retires it; a slice landing before its term's retirement
+leaves the term live, so the sweep runs against whatever has actually shipped. The `$fields` family is the
+widest by far (roughly 75 Java and AsciiDoc files name it today), which is the recurrence risk
+`RetiredVocabularyGuardTest`'s registry exists to catch, and the reason this list is worth carrying rather
+than re-deriving at the gate.
+
+| term | slice | successor |
+|---|---|---|
+| `$fields`, `$fieldsGrouped` | 3.1 | `$project`, one method per projection unit |
+| `TypeClassGenerator.buildTypeSpec` | 3.1 | `render(ProjectionCommand, RenderContext)` |
+| `TypeFetcherGenerator.PROJECTED_LEAVES` | 3.1 | projected-ness derived from the plan |
+| `TypeClassGenerator.collectRequiredProjection` | 3.2 | gated `Project` contribution carrying the correlation columns |
+| `ParentProjectionContainmentCheck`, `ParentProjectionContainmentCheckTest` | 3.2 | single-sourced correlation columns, so there is no second derivation to compare |
+| `MethodCommandRegistry`, `MethodCommand` | 5 | the coordinate-keyed command relation |
+| `CompileDependencyGraphBuilder` | 7 | the recompile graph as a projection over the command relation |
+| the `no.sikt.graphitron.rewrite` package | end state | `command` / `plan` / `render` and the shared pure-data floor |
+
+The sibling items declare their own: R541's launcher terms and R552's condition terms are swept at their
+own gates, not here.
 
 ## Non-goals
 
