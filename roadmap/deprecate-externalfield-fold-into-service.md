@@ -29,7 +29,10 @@ accepted deliberately and mitigated through the LSP (see Decisions). A
 referenced method that takes a single jOOQ `Table<>`-subtype parameter and
 returns a parameterised `Field<X>` classifies to `ChildField.ComputedField`
 exactly as `@externalField` does today, while every existing `@service`
-signature keeps its current classification unchanged.
+signature keeps its current classification unchanged, with the two narrow
+cells named and accepted in Decisions: an omitted `method:` that now finds a
+`Field`-returning method, and a `Field`-returning method the Sources-less
+child path tolerated because it never read the return type.
 
 ## Why the shapes do not collide
 
@@ -41,11 +44,27 @@ The two contracts are structurally disjoint in `ServiceCatalog`:
   (`SourceKey.Wrap`). It has no `Table<?>`-parameter arm.
 - `reflectExternalField` requires `public static`, exactly one parameter
   assignable from `org.jooq.Table`, and a return type of exactly
-  parameterised `org.jooq.Field`. `@service` return classification has no
-  `Field<X>` arm.
+  parameterised `org.jooq.Field`. `@service` has no arm that accepts a
+  `Field<X>` return, but absence of an arm is not rejection: the service
+  path reads the reflected return type only at root (the strict
+  expected-type comparison in `reflectServiceMethod`, backed by
+  `validateRootListTableBoundReturnPair` for the list cell) and on
+  Sources-bearing child methods (`validateChildServiceReturnType`, which no
+  `Field<X>` satisfies). A child `@service` method with no Sources
+  parameter never has its return type read
+  (`validateChildServiceReturnType` returns early without a `Sourced`
+  param, and `validateServiceRecordField` does not require one), so a
+  service-parameterised `Field`-returning method, say
+  `public static Field<Boolean> m(DSLContext dsl)` on a table-backed child,
+  classifies to `ServiceRecordField` today. Every such field is
+  runtime-broken (the fetcher hands the jOOQ `Field` object to graphql-java
+  as the field value), so this is tolerance, not support.
 
 So a return-type dispatch between the computed-field shape and the service
-shapes is unambiguous today. The risk is not collision but
+shapes is unambiguous for every signature the service path validates; the
+one shape it merely tolerates (the Sources-less `Field`-returning cell
+above) flips from silently green to a computed-contract rejection, accepted
+by name in Decisions. The remaining risk is not collision but
 diagnostics: a user who writes a broken signature must get a message that
 names the contract they were aiming for, not a confusing rejection from the
 other contract's validator. `pickMethod` already rejects same-name overloads
@@ -233,10 +252,24 @@ javadoc to scope the invariant accordingly.
   consequence, accepted: on a class that happens to hold a `Field`-returning
   method named after the field, an omitted `method:` now classifies where it
   previously rejected. That is the new capability, not a regression, and it is
-  the one cell where "every existing `@service` signature keeps its current
-  classification unchanged" needs this qualification to stay true. Pipeline
+  one of the two cells where "every existing `@service` signature keeps its
+  current classification unchanged" needs qualification to stay true (the
+  other is the tolerated `Field`-returning method, next bullet). Pipeline
   coverage: all three cells (`Field`-returning default accepts, service-shaped
   default rejects as incomplete, no-match rejects as incomplete).
+- **A `Field`-returning method the service path tolerated now rejects.** As
+  established under "Why the shapes do not collide", a child `@service`
+  reference with an explicit `method:` naming a service-parameterised method
+  that returns `Field<X>` and takes no Sources parameter classifies to
+  `ServiceRecordField` today with a green validator, and is broken at request
+  time. After the fold the return-type dispatch routes it to the computed
+  arm, whose enforcer rejects it (the parameter list is not a single
+  `Table<?>`). Accepted: the fold converts a silently-green-but-broken schema
+  into a build-time rejection naming the computed-field contract, which is
+  the second qualification on "every existing `@service` signature keeps its
+  current classification unchanged". The changelog migration note names this
+  cell. Pipeline coverage: one row pinning the new rejection on exactly this
+  shape.
 - **Inert directive parameters are author errors.** `contextArguments` and
   the reference's `argMapping` are meaningful for service methods but can
   never bind on the computed-field arm (the method's only parameter is the
@@ -292,8 +325,9 @@ javadoc to scope the invariant accordingly.
    the `Computed` arm; the `ChildField.ComputedField.method` narrowing to
    `MethodRef.StaticOnly`; the rejection arms (root and class-backed
    coordinates, `@splitQuery` composition, `contextArguments` /
-   `argMapping` presence, and the existing signature rejections respelled
-   for the `@service` entry point). The return-type fork at the head of
+   `argMapping` presence, the previously-tolerated Sources-less
+   `Field`-returning service-shaped method, and the existing signature
+   rejections respelled for the `@service` entry point). The return-type fork at the head of
    `RecordBindingResolver`'s grounding pass, routing a `Field`-returning
    reference to the computed grounding logic whichever directive spelled it.
    Two directive-specific strings respelled so neither misnames the spelling
@@ -390,7 +424,9 @@ javadoc to scope the invariant accordingly.
    response-shape overview; `external-code.adoc` and
    `classifier-mental-model.adoc` updated where they name the directive;
    `deprecations.adoc` gains the whole-directive row per Deliverable 2.
-   Changelog entry carries the one-line migration rewrite. Four sentences
+   Changelog entry carries the one-line migration rewrite and names the
+   newly-rejecting cell (a `Field`-returning method previously tolerated as
+   a child `@service`). Four sentences
    asserting non-root `@service` *requires* `@splitQuery` become wrong the
    moment the computed arm exists (it is a non-root `@service` that rejects
    `@splitQuery`) and must be qualified rather than left standing:
@@ -431,7 +467,9 @@ In order:
    accept coverage plus the structural-equality-across-spellings row.
 3. Add the rejection arms and their pipeline-tier coverage: root and
    class-backed coordinates, `@splitQuery` composition, inert parameters,
-   broken signatures, and the three omitted-`method:` cells. Respell the two
+   broken signatures (including the previously-green Sources-less
+   `Field`-returning service-shaped cell), and the three omitted-`method:`
+   cells. Respell the two
    directive-specific strings
    (`validateComputedField`'s join-path rejection, the
    `FieldClassification.Computed` javadoc).
