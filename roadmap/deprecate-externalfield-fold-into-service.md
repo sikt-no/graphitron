@@ -92,6 +92,33 @@ entry points by type instead of by comment.
 enforcer during the migration window, so the two spellings cannot drift
 apart while both are alive.
 
+Second dispatch site: `RecordBindingResolver`. The producer-grounding pass
+runs *ahead of* classification, does its own reflection, and gates on the
+directive name at two entry points: `groundServiceField` on `@service` and
+`groundComputedField` on `@externalField`. It cannot read the classifier's
+sealed verdict, so it needs the same return-type fork independently, and the
+two entries are not interchangeable on three axes:
+
+- Return-element peel. `groundComputedField` uses `jooqFieldElement`
+  (`Field<X>` to `X`); `groundServiceField` uses `peelReturnElement`, whose
+  container list has no `org.jooq.Field` arm, so `Field<FilmRecord>` grounds
+  the raw `org.jooq.Field` as the SDL type's backing class instead of
+  `FilmRecord`. This misgrounds silently; nothing rejects.
+- Method-name default. `groundComputedField` defaults an omitted `method:`
+  to the GraphQL field name, matching the convention
+  `ExternalFieldDirectiveResolver` documents and the existing pipeline
+  fixtures rely on; `groundServiceField` returns early when `method:` is
+  absent, so grounding would be skipped for a field that classifies fine.
+- Carrier-only side effects. `serviceCarrierProducerArrivalMemo` and
+  `groundServicePayloadBinding` are service-carrier facts and must not run
+  on a computed field.
+
+The fork belongs at the top of grounding: read the picked method's raw
+return type once, route `org.jooq.Field` to `groundComputedField`'s logic
+(including its method-name default) and everything else to
+`groundServiceField`. Factor the shared reflection so the two passes cannot
+disagree about which method a reference names.
+
 Join paths: on the computed arm a `@reference` path parses from the parent
 table exactly as `@externalField` does today, and the existing validator
 rejection for a `ComputedField` carrying a join path continues to fire;
@@ -124,10 +151,19 @@ javadoc to scope the invariant accordingly.
   with `@splitQuery` present is an author error ("the embedded
   computed-field shape rides the parent SELECT; remove @splitQuery").
   Named cost, accepted: the rule is conditional on a reflected fact, so it
-  cannot live in the declarative pairwise directive-conflict table, and
-  the fold likewise retires the `@service` x `@externalField` `Conflict`
-  pair from that table; one composition axis moves from SDL-only conflict
-  checking to reflection-conditional checking.
+  cannot live in the declarative pairwise directive-conflict table; one
+  composition axis moves from SDL-only conflict checking to
+  reflection-conditional checking.
+- **`@service` with `@externalField` on one field keeps rejecting.** Both
+  stay classification-claiming directives for the whole migration window, so
+  co-occurrence stays a conflict, and nothing here retires it. The pair has
+  no entry in `pairVerdict` (it takes the default `Conflict` verdict); what
+  names the two directives is the `present` list in
+  `detectChildFieldConflict`. Dropping either would let `@service` win
+  silently, since `classifyChildFieldOnTableType` tests `@service` ahead of
+  `@externalField` and would discard the second reference with no
+  diagnostic. The `@externalField` slot leaves that list at the cutover,
+  when the directive itself goes.
 - **Inert directive parameters are author errors.** `contextArguments` and
   the reference's `argMapping` are meaningful for service methods but can
   never bind on the computed-field arm (the method's only parameter is the
@@ -180,12 +216,24 @@ javadoc to scope the invariant accordingly.
    `MethodRef.StaticOnly`; the rejection arms (root and class-backed
    coordinates, `@splitQuery` composition, `contextArguments` /
    `argMapping` presence, and the existing signature rejections respelled
-   for the `@service` entry point). Pipeline-tier coverage in
-   `GraphitronSchemaBuilderTest` for the accept arm and every rejection
-   arm, reusing `TestExternalFieldStub`, plus one row asserting both
-   spellings of the same method produce a structurally equal
-   `ComputedField`, which is the fold's actual contract pinned at the tier
-   that owns it.
+   for the `@service` entry point). The return-type fork at the head of
+   `RecordBindingResolver`'s grounding pass, routing a `Field`-returning
+   reference to the computed grounding logic whichever directive spelled it.
+   Two directive-specific strings respelled so neither misnames the spelling
+   the author used: the join-path rejection in
+   `GraphitronSchemaValidator.validateComputedField` ("@externalField with a
+   @reference path ...") and the javadoc on `FieldClassification.Computed`
+   ("A child field using `@externalField`"). Pipeline-tier coverage for the
+   accept arm and every rejection arm, reusing `TestExternalFieldStub`, plus
+   one row asserting both spellings of the same method produce a
+   structurally equal `ComputedField`, which is the fold's actual contract
+   pinned at the tier that owns it. Where that coverage lands is an
+   implementation choice between the `GraphitronSchemaBuilderTest` enum
+   table and the spec-by-example corpus: `ClassifiedCorpus` already carries
+   an `@externalField` classification example and is the source of truth
+   `VariantCoverageTest` reads for output-field leaves, so the
+   both-spellings-converge row plausibly belongs there and renders into the
+   docs for free. Decide once and keep the whole set in one place.
 2. **Deprecation surfaces.** Docstring `@deprecated` on the `@externalField`
    definition with a reason naming `@service`; the
    `NoDeprecatedDirectiveUsageVisitor` finding carries the two-token
@@ -193,19 +241,30 @@ javadoc to scope the invariant accordingly.
    `graphitron/src/test/.../lint/`) proving an `@externalField` call site
    is flagged and the fix is attached. `@externalField` classification
    behaviour is otherwise unchanged.
-3. **Sakila proof.** Migrate one existing fixture (`Film.isEnglish`) to the
-   `@service` spelling to prove the fold end-to-end at the execution tier;
-   keep at least one `@externalField` fixture (the `Inventory` lift trio) in
-   place to prove the migration window. Execution-tier tests updated
-   accordingly, including one asserting both spellings coexist in a schema.
+3. **Sakila proof.** Migrate two existing fixtures to the `@service`
+   spelling: `Film.isEnglish` (`Field<Boolean>`, the scalar element) and one
+   of the `Inventory` lift trio (`Field<XRecord>`, the class-backed element).
+   Both elements are needed, because the grounding fork above is only
+   observable on the record-returning shape; a scalar-only proof passes with
+   the pass still on the wrong branch. Keep the rest of the `Inventory` trio
+   on `@externalField` to prove the migration window. Execution-tier tests
+   updated accordingly, including one asserting both spellings coexist in a
+   schema, and one omitting `method:` on a `@service`-spelled computed field
+   so the field-name default is pinned on the new entry point too.
 4. **LSP surfaces.** Hover text for the two `FieldClassification` shapes
    states the execution model ("embedded in the parent SELECT" vs
    "DataLoader-backed service call"). Completions stop discriminating by
-   directive name (post-fold there is no name to discriminate on): the
-   catalog carries the contract arm as a fact, and both hover and the
-   `@service` method-reference completions project off that one
-   classification, so `Field`-returning static methods surface at eligible
-   coordinates without re-deriving the contract heuristically. The
+   directive name (post-fold there is no name to discriminate on).
+   Hover and completions read different carriers and both need work; they do
+   not share one projection. Hover switches on `FieldClassification`, a
+   post-classify per-field fact. Method-name completions filter *candidate*
+   methods before any field classifies, off `CompletionData.Method`, so the
+   contract fact has to land there: carry the parameter's `ParamSource.Table`
+   resolution on the method entry, which is exactly the projection
+   `ExternalFieldCompletions` names as missing and approximates today with a
+   one-parameter-plus-`Field`-return shape filter. With that carried,
+   `Field`-returning static methods surface at eligible `@service`
+   coordinates off a resolved fact instead of the heuristic. The
    quick-fix code action on every `@externalField` site is the deprecation
    `LintFix` rendered through the existing lint-to-code-action machinery,
    rewriting to the `@service(service: {...})` spelling with the inner
@@ -218,7 +277,14 @@ javadoc to scope the invariant accordingly.
    spelling; `handle-services.adoc` adds the embedded shape to its
    response-shape overview; `external-code.adoc` and
    `classifier-mental-model.adoc` updated where they name the directive.
-   Changelog entry carries the one-line migration rewrite.
+   Changelog entry carries the one-line migration rewrite. Three sentences
+   asserting non-root `@service` *requires* `@splitQuery` become wrong the
+   moment the computed arm exists (it is a non-root `@service` that rejects
+   `@splitQuery`) and must be qualified rather than left standing:
+   `service.adoc`'s "On non-root fields, `@service` requires `@splitQuery`"
+   bullet, and `handle-services.adoc`'s "`@service` on a non-root field is
+   allowed *only* under `@splitQuery`" plus its "Non-root `@service` requires
+   `@splitQuery`" gotcha bullet.
 
 ## Tasks
 
@@ -230,16 +296,18 @@ In order:
    `ChildField.ComputedField.method` to `MethodRef.StaticOnly`; verify
    `@externalField` behaviour is unchanged (existing tests stay green).
 2. Add the `Resolved.Computed` arm and place it at all four `FieldBuilder`
-   call sites; pipeline-tier accept coverage plus the
-   structural-equality-across-spellings row.
+   call sites; add the `RecordBindingResolver` grounding fork; pipeline-tier
+   accept coverage plus the structural-equality-across-spellings row.
 3. Add the rejection arms and their pipeline-tier coverage: root and
    class-backed coordinates, `@splitQuery` composition, inert parameters,
-   broken signatures; retire the `@service` x `@externalField` pair from
-   the directive-conflict table.
+   broken signatures. Respell the two directive-specific strings
+   (`validateComputedField`'s join-path rejection, the
+   `FieldClassification.Computed` javadoc).
 4. Add the deprecation surfaces (docstring `@deprecated`, the `LintFix` on
    the visitor's finding) and lint-test coverage.
-5. Migrate the `Film.isEnglish` Sakila fixture to `@service`; add the
-   coexistence execution test; full `mvn install -Plocal-db` green.
+5. Migrate the `Film.isEnglish` and one `Inventory`-trio Sakila fixture to
+   `@service`; add the coexistence and method-name-default execution tests;
+   full `mvn install -Plocal-db` green.
 6. LSP hover text, catalog-fact-driven completions, and the quick-fix code
    action carried by the `LintFix`; LSP tests including a rewrite
    round-trip (applying the quick-fix yields a site the classifier accepts
@@ -252,7 +320,10 @@ In order:
 - A `@service` reference to a `public static Field<X> m(ParentTable t)`
   method on a table-backed child field resolves end-to-end (Sakila
   execution test green), with generated code identical to what
-  `@externalField` produces for the same method.
+  `@externalField` produces for the same method. Proven for both a scalar
+  `X` and a record `X`, so the grounding fork is covered.
+- `@service` with `@externalField` on one field still rejects as a directive
+  conflict, with a pipeline-tier test pinning it for the migration window.
 - Every pre-existing `@service` and `@externalField` test stays green;
   `@externalField` call sites now produce the located lint finding, in the
   build log and the LSP, with the rewrite fix attached.
