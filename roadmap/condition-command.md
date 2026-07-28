@@ -1,7 +1,7 @@
 ---
 id: R552
 title: "Condition command: the WHERE family as coordinate-keyed condition units"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 4
 theme: classification-model
@@ -700,7 +700,7 @@ its reasoning live with the rest of the sequencing in R549's Slices section.
 
 | item | relationship |
 |---|---|
-| R549 (Spec) | governs; this item is the third proof by argument and the **first by landing order**, running on R549 slices 1 and 2 alone. Slice 5's generalisation gate widens from two proofs to three, slice 3b gains its exemplar rows from the glue renderer's GROUP BY, and this item is the allowlist's first use, borrowing the model's refs rather than minting a parallel vocabulary |
+| R549 (In Progress; slices 1 and 2 landed 2026-07-28) | governs; this item is the third proof by argument and the **first by landing order**, running on R549 slices 1 and 2 alone, both of which have landed, so nothing upstream blocks pickup. Slice 5's generalisation gate widens from two proofs to three, slice 3b gains its exemplar rows from the glue renderer's GROUP BY, and this item is the allowlist's first use, borrowing the model's refs rather than minting a parallel vocabulary |
 | R541 (Spec) | consumer, and lands after this item. Its fork 1 and this item's fork 4 both resolve at R549: the launcher's `where` slot is the row's glue `UnitRef`, and row 5's naming lift is wholly this item's. Cross-referenced there |
 | R333 (Ready) | owns row 5 and the target condition semantics; this item executes the row's "finish lift" verdict in command form and does not touch the `Single` value-gating semantic or the raw-relation re-sourcing |
 | R475 (Backlog) | absorbed, by dissolution: the colliding generated parameter list stops existing when the entity layer retires (slice 3), and glue locals are producer-named collision-free. Tombstone at pickup, delete when this item reaches Done |

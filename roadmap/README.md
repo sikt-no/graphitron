@@ -17,8 +17,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-07-20 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R333` | The Graphitron data model | Ready | 2026-07-20 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
-| `R552` | Condition command: the WHERE family as coordinate-keyed condition units <sub>blocked by: [facts-and-commands](facts-and-commands.md)</sub> | Spec | 2026-07-28 <sub>created 2026-07-27</sub> | [plan](condition-command.md) |
 | `R541` | Root query launcher: the root SELECT family as launcher commands <sub>blocked by: [facts-and-commands](facts-and-commands.md)</sub> | Spec | 2026-07-27 <sub>created 2026-07-26</sub> | [plan](root-query-unit-seam.md) |
+| `R552` | Condition command: the WHERE family as coordinate-keyed condition units <sub>blocked by: [facts-and-commands](facts-and-commands.md)</sub> | Ready | 2026-07-28 <sub>created 2026-07-27</sub> | [plan](condition-command.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-07-28 | [plan](deprecate-externalfield-fold-into-service.md) |
@@ -200,7 +200,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R523` [**Carry field SourceLocations through the tenant-binding fold rejections**](tenant-fold-rejection-source-locations.md) — Backlog, tech-debt
 - `R222` [**Dimensional model pivot: slots over cross-product permits**](dimensional-model-pivot.md) — Spec, structural
 - `R333` [**The Graphitron data model**](coordinate-lowers-to-datafetcher-queryparts.md) — Ready, structural
-- `R552` [**Condition command: the WHERE family as coordinate-keyed condition units**](condition-command.md) — Spec, architecture, blocked by [facts-and-commands](facts-and-commands.md)
+- `R552` [**Condition command: the WHERE family as coordinate-keyed condition units**](condition-command.md) — Ready, architecture, blocked by [facts-and-commands](facts-and-commands.md)
 - `R249` [**Nested @argMapping syntax via GraphQLSelectionParser**](nested-argmapping-syntax.md) — Backlog, feature
 - `R302` [**Rename ChildField to SourceField (carrier-named field hierarchy)**](rename-childfield-to-sourcefield.md) — Backlog, structural
 - `R541` [**Root query launcher: the root SELECT family as launcher commands**](root-query-unit-seam.md) — Spec, architecture, blocked by [facts-and-commands](facts-and-commands.md)
