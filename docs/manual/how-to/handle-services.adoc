@@ -225,7 +225,7 @@ public static Map<FilmRecord, String> titleTitlecase(Set<FilmRecord> films, DSLC
 }
 ----
 
-One statement for the whole batch, which is what the DataLoader dispatch exists to make possible. Reading `film.getTitle()` off the key instead would work only when the client's own selection happened to include `title`, and return `null` the rest of the time.
+One statement for the whole batch, which is what the DataLoader dispatch exists to make possible. Reading `film.getTitle()` off the key instead returns `null` for every row in the batch: the key is a fresh `FilmRecord` carrying `FILM_ID` and nothing else, so every other column reads `null` regardless of what the client selected.
 ====
 
 The contract holds identically under both parent kinds, so the same typed-record `@service` child works under either without a change to its Java signature:

@@ -134,9 +134,10 @@ public final class FilmService {
      *
      * <p>The contract is PK-only: the keys carry {@code FILM_ID} and nothing else, so a service
      * needing another column fetches it, in one batched query, through the injected
-     * {@code DSLContext}. That is what makes this a correct example rather than one that happens
-     * to work when the client's own selection includes the column. {@link CityService#cityUppercase}
-     * is the same pattern on a parent with no other force-projecting children.
+     * {@code DSLContext}. Reading {@code film.getTitle()} off the key instead would return
+     * {@code null} for every row, whatever the client selected, the key having no column set but
+     * the primary key. {@link CityService#cityUppercase} is the same pattern on a parent with no
+     * other force-projecting children.
      */
     public static Map<FilmRecord, String> titleTitlecase(Set<FilmRecord> films, DSLContext dsl) {
         List<Integer> ids = films.stream().map(FilmRecord::getFilmId).toList();
