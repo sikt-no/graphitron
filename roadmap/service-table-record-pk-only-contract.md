@@ -1,7 +1,7 @@
 ---
 id: R516
 title: "Narrow SourceKey.Wrap.TableRecord contract to PK-only, revert full-row projection"
-status: Ready
+status: In Review
 bucket: correctness
 priority: 2
 theme: service
@@ -12,11 +12,11 @@ last-updated: 2026-07-28
 
 # Narrow SourceKey.Wrap.TableRecord contract to PK-only, revert full-row projection
 
-## Status: third gate bounced it, two blocking findings (2026-07-28)
+## Status: third rework applied, back for a fourth gate (2026-07-28)
 
-Everything the contract asks for was delivered and verified at all three gates. The remaining work
-is prose: two false claims in `FederationEntitiesDispatchTest`, both confirmed against the emitted
-code. See "Third gate" below; that section is the only outstanding work.
+Everything the contract asks for was delivered and verified at all three gates. The third bounce
+was two false claims in one javadoc block; both are fixed, along with all four non-blocking notes.
+See "Third rework applied" below. Nothing is outstanding.
 
 Shipped and accepted:
 
@@ -24,6 +24,7 @@ Shipped and accepted:
 - Self-review prose sweep **shipped at `ffce130`**.
 - Retirement-sweep rework, twelve surfaces, **shipped at `b811bdb`**.
 - Second-bounce rework, six surfaces plus the registry graduation, **shipped at `25d7e17`**.
+- Third-bounce rework, two blocking claims plus all four non-blocking notes, **shipped at `3e41334`**.
 
 Verified independently at all three gates: full reactor green under `mvn install -Plocal-db`, 13
 modules, execution tier and docs render included. The narrowing itself, the `SourcesOnPkLessParent`
@@ -36,6 +37,57 @@ the deleted mechanism as live; nothing behavioural was in question. All eight ar
 at the second gate. The re-sweep that followed found four more (9 through 12 below), one of them
 introduced by the `ffce130` self-review sweep itself. The first reviewer's second improvement note
 is Backlog item R554 (filed, confirmed); the other three are addressed or answered in place.
+
+## Third rework applied (2026-07-28)
+
+Landed at `3e41334`. Full reactor green under `mvn install -Plocal-db`, 13 modules,
+execution tier and docs render included.
+
+Both blocking findings are confirmed and fixed, and the fix was checked against the emitted
+federated fetchers rather than reasoned from the SDL.
+
+1. **The false consequence** (`FederationEntitiesDispatchTest`, the typed-record test). The javadoc
+   now states what the emitted `source.get(Tables.FILM.FILM_ID)` actually does when the projection
+   regresses: jOOQ rejects the read, no key record is built, the service is never entered, and the
+   request fails through `ErrorRouter`. The sibling's own tail (the reviewer's first non-blocking
+   note) is corrected in the same edit and now names the same read and the same outcome, so the two
+   javadocs cannot drift apart again on this point.
+2. **The false wrap attribution.** Both federation service children are
+   `SourceKey.Wrap.TableRecord`, verified in the generated
+   `federated/fetchers/{City,Film}Fetchers` (both emit `key.set(col, source.get(col))`), so the
+   javadoc no longer claims a `Row`-versus-typed-record contrast. Finding the real axis took a
+   second pass: the obvious replacement, that the sibling's service reads only its key while this
+   one fetches non-key data, is also false. `CityService.cityUppercase` batch-fetches `CITY.CITY_`
+   through the injected `DSLContext` exactly as `titleTitlecase` fetches `TITLE`; both are canonical
+   PK-only examples and `CityService` says so itself. What actually separates them is the method's
+   provenance: `titleTitlecase` is the example the reverted full-row premise was introduced for,
+   having read `film.getTitle()` off the parent record, so pinning its corrected form with `title`
+   unselected is the direct check that the revert holds under federation. That is what the javadoc
+   now says.
+
+**On the `Wrap.Row` federation-coverage question, which the review left open.** No fixture is added
+and no Backlog item is filed, because the coverage is not missing in any way that matters: the walk
+this test guards reads `sourceKey.columns()` for every wrap alike post-narrowing, so it cannot vary
+by wrap, and the Row arm's own resolution is already pinned at the execution tier by
+`GraphQLQueryTest.cities_cityLowercase_withoutKeyFieldSelected_resolvesViaRow1Source`. Adding a
+third federated service child would pin the same walk a third time. That reasoning is now in the
+test javadoc rather than only here, so the next reader sees why the arm is absent instead of reading
+the absence as a gap.
+
+The remaining three non-blocking notes are fixed as recommended:
+
+- `ParentProjectionContainmentCheck`'s class javadoc keeps the historical framing and drops the
+  single-outcome claim, matching what its caller (`TypeClassGenerator`) already said: the
+  `into(...)` wrap reads the absent column as `null`, the per-column wraps have jOOQ reject the
+  read, and the check is indifferent to which.
+- `RetiredVocabularyGuardTest`'s registry comment drops the occurrence counts and keeps the
+  load-bearing half ("two consecutive sweeps"), per `development-principles.adoc`'s
+  "Principles are stated at altitude".
+- `GeneratorUtils`'s `Wrap.Row` code sketch is parenthesized as emitted.
+
+The reviewer's registry-scope observation is now stated where it stays true after this file is
+deleted: the two test-helper entries carry a comment saying only their prose habitat is guarded,
+since the identifier scan skips test code regions and the reverse-enforcer reads main sources only.
 
 ## Third gate: rework, two blocking findings (independent reviewer, In Review → Ready, 2026-07-28)
 
