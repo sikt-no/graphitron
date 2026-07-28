@@ -62,6 +62,21 @@ returns a sealed contract classification. `ServiceDirectiveResolver`
 switches on that value and never sees a `java.lang.reflect.Method` or an
 `org.jooq` class.
 
+Obtaining the dispatch key comes first, and it is not free: reading a return
+type requires having picked a method, and the method-name default is itself
+arm-dependent. `parseExternalRef` hands back a null `methodName` when
+`method:` is omitted and does no defaulting; today the `@externalField` arm
+defaults it to the GraphQL field name while the `@service` path passes the
+null into `reflectServiceMethod`, which rejects with "service reference is
+incomplete". The dispatch entry therefore defaults before it knows the arm;
+see the omitted-`method:` Decision for the rule that keeps that from changing
+`@service` behaviour. Threading matters too: `reflectServiceMethod` runs its
+own `pickMethod`, so "picks the method once" means the dispatch entry passes
+its pick down rather than letting the service path re-reflect. Passing the
+picked method into the existing service reflection is the intended shape; a
+second independent pick would be a silent double-reflection on every
+`@service` field in the schema.
+
 - Raw return type `org.jooq.Field` at a child coordinate on a
   `@table`-backed parent: the computed-field arm. The full contract
   (public static, exactly one parameter assignable from `org.jooq.Table`,
@@ -164,6 +179,26 @@ javadoc to scope the invariant accordingly.
   `@externalField` and would discard the second reference with no
   diagnostic. The `@externalField` slot leaves that list at the cutover,
   when the directive itself goes.
+- **An omitted `method:` defaults for the pick, then the arm decides whether
+  the default was legal.** The computed shape's field-name convention has to
+  reach the `@service` entry (a migrated site that omitted `method:` must keep
+  working), but the arm is unknown until a method is picked, so the default
+  cannot be gated on the arm. Rule: the dispatch entry defaults an absent
+  `method:` to the GraphQL field name for the pick only. If the picked method
+  returns `org.jooq.Field`, the computed arm accepts and the default stands.
+  If it returns anything else, the entry restores today's "service reference
+  is incomplete" rejection verbatim, so no service-shaped method becomes newly
+  reachable through an omitted `method:`. If nothing matches the field name at
+  all, the same incomplete-reference rejection fires rather than a
+  method-not-found from either contract: with no `method:` and no arm to
+  attribute the failure to, the omission is the actionable diagnosis. Named
+  consequence, accepted: on a class that happens to hold a `Field`-returning
+  method named after the field, an omitted `method:` now classifies where it
+  previously rejected. That is the new capability, not a regression, and it is
+  the one cell where "every existing `@service` signature keeps its current
+  classification unchanged" needs this qualification to stay true. Pipeline
+  coverage: all three cells (`Field`-returning default accepts, service-shaped
+  default rejects as incomplete, no-match rejects as incomplete).
 - **Inert directive parameters are author errors.** `contextArguments` and
   the reference's `argMapping` are meaningful for service methods but can
   never bind on the computed-field arm (the method's only parameter is the
@@ -241,9 +276,28 @@ javadoc to scope the invariant accordingly.
    `graphitron/src/test/.../lint/`) proving an `@externalField` call site
    is flagged and the fix is attached. `@externalField` classification
    behaviour is otherwise unchanged.
+   Two seams carry the whole-directive deprecation and neither fails on its
+   own, so both must be done deliberately. `DeprecationsDocCoverageTest` is the
+   bidirectional drift seam for exactly this change, and its whole-directive
+   half iterates a hardcoded `WHOLE_DIRECTIVE_DEPRECATIONS` allow-list
+   (`index`, `record`, `table`) rather than detecting the docstring marker:
+   `externalField` joins that list. Its counterpart is a row in
+   `docs/manual/reference/deprecations.adoc`, in the whole-directive table
+   alongside `@table` and `@index`, with `@service` named as the migration.
+   Adding the docstring marker without both leaves the deprecation invisible to
+   the seam built to catch it and absent from the index authors read, with a
+   green build either way. Reassurance in the other direction:
+   `no-deprecated-directive-usage` is a `LintRule.Source.ENGINE` rule and
+   `FixtureWarningsGateTest` filters `ENGINE` findings out, so the
+   `@externalField` sites Deliverable 3 deliberately retains do not trip the
+   sakila warnings-as-errors gate.
 3. **Sakila proof.** Migrate two existing fixtures to the `@service`
    spelling: `Film.isEnglish` (`Field<Boolean>`, the scalar element) and one
-   of the `Inventory` lift trio (`Field<XRecord>`, the class-backed element).
+   of the `Inventory` lift trio (`Field<XRecord>`, the class-backed element);
+   `filmRef` is the sharpest of the three, since its `Field<FilmRecord>`
+   grounds `FilmCard`'s backing class directly, whereas `filmCardData` and
+   `filmCardDataMaybeMissing` reach `FilmRecord` through a custom-record
+   accessor hop that could mask a wrong-branch grounding.
    Both elements are needed, because the grounding fork above is only
    observable on the record-returning shape; a scalar-only proof passes with
    the pass still on the wrong branch. Keep the rest of the `Inventory` trio
@@ -264,7 +318,23 @@ javadoc to scope the invariant accordingly.
    `ExternalFieldCompletions` names as missing and approximates today with a
    one-parameter-plus-`Field`-return shape filter. With that carried,
    `Field`-returning static methods surface at eligible `@service`
-   coordinates off a resolved fact instead of the heuristic. The
+   coordinates off a resolved fact instead of the heuristic.
+   `CompletionData.Parameter` already declares a `source` component documented
+   against the `ParamSource` taxonomy including `Table`, so no new carrier is
+   needed; the work is populating it, and that is where the constraint bites.
+   `ClasspathScanner` is the sole producer of `CompletionData.Method`, it
+   passes `null` for every `source` today, and it is deliberately parse-only:
+   its own comment on the `returnsCondition` field records "Exact descriptor
+   compare, not assignability: the parse-only scan resolves no type
+   hierarchy". `Table`-ness is an assignability question, and a parent table
+   class is consumer-generated under an arbitrary name, so neither the
+   `returnsCondition` trick (a known FQN to compare against) nor a simple-name
+   match settles it. Resolution: compare the parameter descriptor by exact FQN
+   against the set of generated table classes the jOOQ catalog already
+   enumerates generator-side, which keeps the scanner's exact-descriptor
+   discipline intact and needs no hierarchy walk. Do not widen the scanner to
+   load and walk supertypes; that trades the invariant plus LSP-hot-path
+   classloading for a fact the catalog can already answer. The
    quick-fix code action on every `@externalField` site is the deprecation
    `LintFix` rendered through the existing lint-to-code-action machinery,
    rewriting to the `@service(service: {...})` spelling with the inner
@@ -276,22 +346,35 @@ javadoc to scope the invariant accordingly.
    recipes to `@service` and names `@externalField` as the deprecated
    spelling; `handle-services.adoc` adds the embedded shape to its
    response-shape overview; `external-code.adoc` and
-   `classifier-mental-model.adoc` updated where they name the directive.
-   Changelog entry carries the one-line migration rewrite. Three sentences
+   `classifier-mental-model.adoc` updated where they name the directive;
+   `deprecations.adoc` gains the whole-directive row per Deliverable 2.
+   Changelog entry carries the one-line migration rewrite. Four sentences
    asserting non-root `@service` *requires* `@splitQuery` become wrong the
    moment the computed arm exists (it is a non-root `@service` that rejects
    `@splitQuery`) and must be qualified rather than left standing:
    `service.adoc`'s "On non-root fields, `@service` requires `@splitQuery`"
    bullet, and `handle-services.adoc`'s "`@service` on a non-root field is
-   allowed *only* under `@splitQuery`" plus its "Non-root `@service` requires
-   `@splitQuery`" gotcha bullet.
+   allowed *only* under `@splitQuery`", its "Non-root `@service` requires
+   `@splitQuery`" gotcha bullet, and its see-also line calling `@splitQuery`
+   "the per-parent batch wrapper non-root services require".
+   `directives.graphqls` is a doc surface too, and two of its description
+   blocks go stale: `ExternalCodeReference.argMapping`'s "Use on `@service` and
+   every `@condition` site" plus its "Structurally inert on `@externalField`
+   and `@enum` (rejected at parse time)" (inert on the `@service` computed arm
+   as well, and rejected there post-dispatch rather than at parse time, since
+   the parse-time gate in `parseExternalRef` keys on the `@externalField`
+   directive name), and `@service`'s own docstring, whose "The signature of the
+   method must match the inputs of the mutation or query" describes only the
+   service shapes.
 
 ## Tasks
 
 In order:
 
 1. Build the `ServiceCatalog` dispatch entry and the single contract
-   enforcer (column-collision check moves in); delegate
+   enforcer (column-collision check moves in), threading one `pickMethod`
+   result into both arms and applying the omitted-`method:` default rule;
+   delegate
    `ExternalFieldDirectiveResolver` to it; narrow
    `ChildField.ComputedField.method` to `MethodRef.StaticOnly`; verify
    `@externalField` behaviour is unchanged (existing tests stay green).
@@ -300,15 +383,19 @@ In order:
    accept coverage plus the structural-equality-across-spellings row.
 3. Add the rejection arms and their pipeline-tier coverage: root and
    class-backed coordinates, `@splitQuery` composition, inert parameters,
-   broken signatures. Respell the two directive-specific strings
+   broken signatures, and the three omitted-`method:` cells. Respell the two
+   directive-specific strings
    (`validateComputedField`'s join-path rejection, the
    `FieldClassification.Computed` javadoc).
 4. Add the deprecation surfaces (docstring `@deprecated`, the `LintFix` on
-   the visitor's finding) and lint-test coverage.
+   the visitor's finding, the `WHOLE_DIRECTIVE_DEPRECATIONS` allow-list entry,
+   the `deprecations.adoc` row) and lint-test coverage.
 5. Migrate the `Film.isEnglish` and one `Inventory`-trio Sakila fixture to
    `@service`; add the coexistence and method-name-default execution tests;
    full `mvn install -Plocal-db` green.
-6. LSP hover text, catalog-fact-driven completions, and the quick-fix code
+6. LSP hover text, catalog-fact-driven completions (populate
+   `CompletionData.Parameter.source` from the catalog's table-class set, no
+   scanner hierarchy walk), and the quick-fix code
    action carried by the `LintFix`; LSP tests including a rewrite
    round-trip (applying the quick-fix yields a site the classifier accepts
    unchanged).
@@ -326,7 +413,12 @@ In order:
   conflict, with a pipeline-tier test pinning it for the migration window.
 - Every pre-existing `@service` and `@externalField` test stays green;
   `@externalField` call sites now produce the located lint finding, in the
-  build log and the LSP, with the rewrite fix attached.
+  build log and the LSP, with the rewrite fix attached. The deprecation is
+  visible on both drift seams: `WHOLE_DIRECTIVE_DEPRECATIONS` names
+  `externalField` and `deprecations.adoc` carries its row.
+- An omitted `method:` on a `@service`-spelled computed field resolves by
+  field-name default, while an omitted `method:` on a service-shaped method
+  still rejects as an incomplete reference.
 - Each rejection arm has a pipeline-tier test asserting its message names
   the computed-field contract, and the structural-equality row proves both
   spellings converge on the same `ComputedField`.
