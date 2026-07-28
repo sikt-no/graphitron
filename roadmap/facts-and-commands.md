@@ -1,7 +1,7 @@
 ---
 id: R549
 title: "Facts and commands: grain-first hierarchies and the three command relations"
-status: Spec
+status: Ready
 bucket: architecture
 theme: classification-model
 depends-on: []
