@@ -22,23 +22,25 @@ import java.util.Set;
  * {@code TypeClassGenerator.collectRequiredProjection} regresses.
  *
  * <p>Both methods look the key column up in the database (the opptak reproducer shape,
- * {@code WHERE <keyCol> IN (...)}), so a {@code null} key produces a {@code null} field value
- * rather than being papered over by a key-independent body.
+ * {@code WHERE <keyCol> IN (...)}), so neither can paper over a bad key with a key-independent
+ * body. Neither method is entered at all if the projection regresses: both key extractions read
+ * {@code CITY_ID} off the parent row by jOOQ field identity, which throws on a field absent from
+ * the row type, so the failure surfaces through {@code ErrorRouter} before the batch is
+ * dispatched.
  */
 public final class CityService {
 
     private CityService() {}
 
     /**
-     * Typed-{@link CityRecord} source shape ({@code SourceKey.Wrap.TableRecord}), the
-     * <em>silent-null</em> reproducer arm: the framework's key extraction copies the key columns
-     * off the parent row by field identity, and a column absent from that row yields {@code null}
-     * rather than throwing. Without the force-projection this method receives records whose
-     * {@code cityId} is {@code null} and every lookup misses.
+     * Typed-{@link CityRecord} source shape ({@code SourceKey.Wrap.TableRecord}), the shape that
+     * surfaced the federation {@code _entities}-fetch bug. The framework copies the key columns
+     * onto a fresh typed record with {@code key.set(CITY_ID, source.get(CITY_ID))}; without the
+     * force-projection that read throws and the request fails before this method is entered.
      *
-     * <p>Also the canonical shape for the PK-only contract: the keys carry {@code CITY_ID} alone,
-     * so the value the field resolves to is fetched here, in one batched query, through the
-     * injected {@code DSLContext}. {@link FilmService#titleTitlecase} is the same pattern.
+     * <p>The canonical shape for the PK-only contract: the keys carry {@code CITY_ID} alone, so
+     * the value the field resolves to is fetched here, in one batched query, through the injected
+     * {@code DSLContext}. {@link FilmService#titleTitlecase} is the same pattern.
      */
     public static Map<CityRecord, String> cityUppercase(Set<CityRecord> cities, DSLContext dsl) {
         List<Integer> ids = cities.stream().map(CityRecord::getCityId).toList();
@@ -56,10 +58,11 @@ public final class CityService {
     }
 
     /**
-     * {@code Row1} source shape ({@code SourceKey.Wrap.Row}) — the <em>loud-throw</em> arm: the
-     * framework's key extraction reads {@code ((Record) env.getSource()).get(Tables.CITY.CITY_ID)}
-     * per column, which throws on an absent field instead of yielding {@code null}. Without the
-     * force-projection this shape fails the request with a jOOQ field-lookup error.
+     * {@code Row1} source shape ({@code SourceKey.Wrap.Row}), the same guarantee reached through a
+     * different key shape. The framework wraps the same per-column read in
+     * {@code DSL.row(((Record) env.getSource()).get(Tables.CITY.CITY_ID))} instead of setting it
+     * on a typed record, so the pair differs in the shape of the key it builds and not in what the
+     * projection owes it, nor in how either fails without it.
      */
     public static Map<Row1<Integer>, String> cityLowercase(Set<Row1<Integer>> cityIds, DSLContext dsl) {
         if (cityIds.isEmpty()) return new LinkedHashMap<>();

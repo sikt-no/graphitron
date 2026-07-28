@@ -309,8 +309,8 @@ public final class TestFixtures {
             ClassName.get(TEST_JOOQ_ROOT, "Tables"),
             pkColumns,
             // allColumns: fixtures that build a TableRef by hand don't enumerate the whole row. Its
-            // readers are classification-time (interface base/detail split, pivot-column search)
-            // and are exercised through the real-catalog pipeline tests, not these hand-built refs.
+            // readers are all classification-time and are exercised through the real-catalog
+            // pipeline tests, not these hand-built refs.
             List.of());
     }
 

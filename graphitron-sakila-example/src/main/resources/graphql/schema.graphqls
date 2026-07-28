@@ -681,7 +681,7 @@ type City @table(name: "city") {
         className: "no.sikt.graphitron.rewrite.test.services.CityService",
         method: "cityUppercase"
     })
-    # cityLowercase: Row1 source (Wrap.Row) — the loud-throw shape (jOOQ throws on an absent field).
+    # cityLowercase: Row1 source (Wrap.Row), the same guarantee through a different key shape.
     cityLowercase: String @service(service: {
         className: "no.sikt.graphitron.rewrite.test.services.CityService",
         method: "cityLowercase"

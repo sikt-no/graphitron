@@ -1,7 +1,7 @@
 ---
 id: R516
 title: "Narrow SourceKey.Wrap.TableRecord contract to PK-only, revert full-row projection"
-status: Ready
+status: In Review
 bucket: correctness
 priority: 2
 theme: service
@@ -12,18 +12,18 @@ last-updated: 2026-07-28
 
 # Narrow SourceKey.Wrap.TableRecord contract to PK-only, revert full-row projection
 
-## Status: bounced a second time on the retirement sweep, one surface left (2026-07-28)
+## Status: second rework applied, back for a third gate (2026-07-28)
 
-Everything the contract asks for is delivered and verified. What is left is a single false
-statement in the delivery's own prose; see "Second gate" below. The remaining work is that one
-javadoc plus two adjacent surfaces in the same file, and the recommended registry graduation
-that stops a fourth sweep from being needed.
+Everything the contract asks for was delivered and verified at both prior gates. The second
+bounce was one false statement in the delivery's own prose; that and the rest of its family are
+fixed, see "Second rework applied" below.
 
 Shipped and accepted:
 
 - Scope items 1 through 8 and the whole declared test surface **shipped at `cc270f1`**.
 - Self-review prose sweep **shipped at `ffce130`**.
 - Retirement-sweep rework, twelve surfaces, **shipped at `b811bdb`**.
+- Second-bounce rework, six surfaces plus the registry graduation, **shipped at `SECOND_REWORK_SHA`**.
 
 Verified independently at both gates: full reactor green under `mvn install -Plocal-db`, 13
 modules, execution tier and docs render included. The narrowing itself, the `SourcesOnPkLessParent`
@@ -125,6 +125,67 @@ is the project's sanctioned confinement point for it and R554 owns retiring it, 
 `serviceChildKeyExtractionIsUnconditional`'s `!body.contains("instanceof")` is the family's only
 negative assertion and the most brittle member); the seven-argument `reflectServiceMethod` overload;
 the `isRoot` disambiguation.
+
+## Second rework applied (2026-07-28)
+
+Landed at `SECOND_REWORK_SHA`. Full reactor green under `mvn install -Plocal-db`, 13 modules,
+execution tier and docs render included.
+
+The blocking finding is confirmed and fixed. Both jOOQ behaviours were verified directly against
+3.20.11 rather than taken on report, because the fix depends on which arm does what:
+
+- `Record.get(Field)` on a field absent from the row type throws
+  `IllegalArgumentException: Field "B" is not contained in row type ("A")`.
+- `Record.into(Field...)` yields `null` for an absent field.
+
+So post-narrowing the silent-null arm is `Wrap.Record` alone. `Wrap.Row` and `Wrap.TableRecord`
+both emit `source.get(col)` and both throw, which is precisely the pairing the false javadoc had
+backwards: it named `TableRecord` the silent-null arm and `Row` the loud-throw one, when the two
+are now identical in failure mode and differ only in the shape of the key they build.
+
+Fixed, the blocking family in `CityService.java`:
+
+1. `cityUppercase`, the false claim. Now states the emitted
+   `key.set(CITY_ID, source.get(CITY_ID))` and that the read throws without the force-projection,
+   so the method is never entered.
+2. Class javadoc, the "`null` key produces a `null` field value" claim. There is no null-key
+   state for either method; replaced with the actual regression path through `ErrorRouter`.
+3. `cityLowercase`, the "loud-throw arm" framing. Still true, but it stopped distinguishing the
+   method from its sibling and so invited the contradiction back. Reframed onto key shape.
+
+Fixed, the same family elsewhere, found by sweeping the semantics again rather than the file the
+reviewer named:
+
+4. `schema.graphqls`, the SDL-side echo of finding 3 (the reviewer's fourth non-blocking note).
+5. `federated-schema.graphqls`, "or the DataLoader key extraction reads null". A live claim, now
+   false. This is the third consecutive pass to correct this one file, and the second time the
+   correcting edit itself carried the retired consequence forward.
+6. `NestingFieldPipelineTest`, "every batch hits a `NullPointerException` reading FILM_ID from a
+   Record whose SELECT omitted it". Pre-dates the item and sits on the split path, not the
+   service path, but it is the same false claim about the same jOOQ call: split children emit
+   `DSL.row(((Record) env.getSource()).get(FILM_ID))`, verified in the generated
+   `FilmFetchers`, so the failure is jOOQ's rejection and not an NPE.
+
+`TypeClassGenerator:120` (the reviewer's third non-blocking note) was over-general rather than
+false: "absent from the parent row and silently null" holds for the `into(...)` wrap only. Now
+states both outcomes.
+
+The two inventory notes are fixed by deletion rather than by extending the roster, per
+`development-principles.adoc`'s "Principles are stated at altitude": `TableRef` no longer
+enumerates `allColumns` readers at all (it keeps the load-bearing claims, that every reader is
+classification-time and that no generator drives a per-column emit off it), and `TestFixtures`
+drops its two-item echo of the same roster. Neither count can now disagree with the other.
+
+**Registry graduation, and its limit.** The six identifier-shaped tokens are now in
+`RetiredVocabularyGuardTest`'s `REGISTRY` as the workflow prescribes, entered green. That is
+worth having, but it should not be read as closing this hole: the defect that recurred three
+times was never identifier-shaped. "yields `null` rather than throwing" contains no retired
+identifier, so no token scan can see it. What actually recurs is a *semantic* claim about the
+retired mechanism's consequences, re-authored each time by the very edit that was correcting the
+previous instance. The registry lowers the cost of the next sweep; it does not remove the need
+for one. `RequiredProjection` was deliberately left out of the registry despite being retired and
+currently absent: it is a plausible name for a future type, and the reverse-enforcer would
+forbid it in main sources.
 
 ## Review findings (independent reviewer, In Review → Ready, 2026-07-28)
 
@@ -461,6 +522,11 @@ Retiring with them, as the shape of Scope item 1 rather than a separate decision
 `appendsFullParentRow` goes (the shape it detected no longer exists, and `appendsRequiredColumn`
 is the check) and `serviceChildKeyExtractionForksOnTypedRecord` becomes
 `serviceChildKeyExtractionIsUnconditional`, since the absence of the fork is now the observable.
+
+Six of these graduated into `RetiredVocabularyGuardTest`'s `REGISTRY` at the second rework, having
+survived two sweeps. See "Second rework applied" for what that does and does not cover: the
+semantic claims retired alongside the identifiers (the silent-null failure mode of the
+`TableRecord` arm above all) are outside any token scan's reach.
 
 ## Migration / compatibility
 

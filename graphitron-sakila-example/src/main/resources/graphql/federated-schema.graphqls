@@ -75,8 +75,8 @@ type Film implements Node @table(name: "film") @node
 # R425 fixture: an entity whose ONLY force-projecting child is a @service field. A
 # representations-driven _entities fetch that selects just the service child (the key arrives
 # via the representation and is NOT re-selected in the sub-selection) is the exact Apollo
-# Router shape that surfaced the silent-null bug: the entity dispatch SELECT must still
-# project CITY_ID (the child's SourceKey column) or the DataLoader key extraction reads null.
+# Router shape that surfaced the bug: the entity dispatch SELECT must still project CITY_ID
+# (the child's SourceKey column) or the DataLoader key extraction has no column to read.
 type City @table(name: "city") @key(fields: "cityId") {
     cityId:   Int!    @field(name: "CITY_ID")
     cityName: String! @field(name: "CITY")

@@ -69,7 +69,15 @@ class RetiredVocabularyGuardTest {
         new Retired("MappedRowKeyed", "SourcesShape over SourceKey.Wrap.Row"),
         new Retired("MappedRecordKeyed", "SourcesShape over SourceKey.Wrap.Record"),
         new Retired("MappedTableRecordKeyed", "SourcesShape over SourceKey.Wrap.TableRecord"),
-        new Retired("planSlug", "Rejection.Deferred carries only its summary")
+        new Retired("planSlug", "Rejection.Deferred carries only its summary"),
+        // The full-row parent projection for typed-record @service keys. Two sweeps found prose
+        // still naming it live (eight surfaces, then five more), which is the recurrence bar.
+        new Retired("reservedFullRow", "the base-named required-projection column list"),
+        new Retired("reservedSourceAlias", "the base-named required-projection column list"),
+        new Retired("RESERVED_SRC_ALIAS_PREFIX", "the base-named required-projection column list"),
+        new Retired("RESERVED_SRC_ALIAS_SUFFIX", "the base-named required-projection column list"),
+        new Retired("appendsFullParentRow", "appendsRequiredColumn"),
+        new Retired("serviceChildKeyExtractionForksOnTypedRecord", "serviceChildKeyExtractionIsUnconditional")
     );
 
     /** One reviewed lineage mention: repository-root-relative path (with {@code /} separators) plus the term. */

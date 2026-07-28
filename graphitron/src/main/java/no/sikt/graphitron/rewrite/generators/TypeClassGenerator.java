@@ -117,7 +117,8 @@ public class TypeClassGenerator {
         var requiredProjection = collectRequiredProjection(schema.fieldsOf(typeName));
         // Cross-check the walk above against an independent demand enumeration (the
         // parent-projection containment invariant); the omission it exists to catch is a child's
-        // DataLoader key column being absent from the parent row and silently null.
+        // DataLoader key column being absent from the parent row, which costs the child its key
+        // either way: the into(...) wrap reads it as null, the per-column wraps throw.
         ParentProjectionContainmentCheck.check(schema, typeName, requiredProjection);
         return buildTypeSpec(typeName, type.table(), columnFields, columnReferenceFields, tableFields, lookupTableFields, nestingFields, computedFields, pivotFields, requiredProjection, outputPackage);
     }
