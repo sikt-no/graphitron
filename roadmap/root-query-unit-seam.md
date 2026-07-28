@@ -342,7 +342,7 @@ composition does not care who invokes it.
    The resolution: R552 owns condition production wholesale and lands first, per the ordering decision
    in R549's Slices section, which settles what this fork and R552's fork 4 were each deferring to the
    other item's reviewer. So `where` is a `UnitRef` naming the row's glue method, this item consumes
-   rather than builds, and the R2 locus is R552's to dissolve. R552's own walk reaches the same
+   rather than builds, and the regime-2 naming locus is R552's to dissolve. R552's own walk reaches the same
    diagnosis, so the two items agree on the premise as well as on the owner.
 
    One consumption detail survives, for the implementer rather than the reviewer: **the slot is not

@@ -19,7 +19,7 @@ is **the third leg of R549's proof sequence**: slice 3 (the projection command) 
 a contribution list, R541 (slice 3c, the launcher command) proves coordinate keying, strategy as
 data, and the first cross-command edge, and this item proves the four things neither can reach
 (below). It finishes row 5's lift as a command family rather than as a per-edge naming migration,
-which dissolves the R2 locus instead of repointing it.
+which dissolves the regime-2 naming locus instead of repointing it.
 
 One model correction up front, so the spec is read against the code rather than the target
 vocabulary. R549's hierarchy table lists `condition` among `Operation`'s minted members; that is
@@ -39,7 +39,10 @@ of the command architecture have no instance until this family ships one:
 - **A value-shaped unit.** A projection command returns a select-term list; a launcher command owns a
   query. A condition unit returns one `org.jooq.Condition` value, composed into someone else's query,
   and its signature is free of graphql-java entirely: a jOOQ table and a `java.util` argument map in,
-  one `Condition` out, so the unit is exercised in a test with a record literal and a `HashMap`. That
+  one `Condition` out, so the unit is exercised in a test with a record literal and a `HashMap`. The
+  `contextArguments` rider is the stated exception: a row taking the env-appending signature carries
+  graphql-java in its glue, so this proof is evaluated on the plain rows, and is preserved outright
+  if slice 1 lands the rejection instead. That
   tests that the command vocabulary (UnitRef, producer, total renderer) is not select-specific. It is
   also the first
   member of R333's operation crosswalk (the `condition` row) realized as a command; `orderBy` (row 9)
@@ -104,7 +107,7 @@ Three emit hosts read the same `List<WhereFilter>`; only the first two produce n
   filter list with per-parameter `null` masks. **Names are recomputed here** (`fieldName +
   "Condition"` in `conditionMethodName` and the two facet variants), and recomputed *again* at the
   consumer: `TypeFetcherGenerator` derives the shim FQCN at four separate sites and
-  `buildConditionCall` re-derives the method name. This is the R2 end row 5 wants lifted.
+  `buildConditionCall` re-derives the method name. This is the regime-2 end row 5 wants lifted.
 - **Everything else composes the identical fold inline.** The complete
   `FkTargetConditionEmitter.emitTerm` caller set outside the two named-unit generators:
   `SplitRowsMethodEmitter.buildWhereCondition` (child rows methods), `InlineTableFieldEmitter` and
@@ -112,7 +115,9 @@ Three emit hosts read the same `List<WhereFilter>`; only the first two produce n
   (per-branch WHERE), and `TypeFetcherGenerator.buildQueryLookupRowsMethod` (the root lookup
   coordinate: lookup keys ride the VALUES join, and the method deliberately folds the coordinate's
   non-key filters inline, with `Env` reads and static FK-target aliases). Each seeds
-  `DSL.noCondition()`, ANDs hop filters and field filters through the same `emitTerm`, and differs
+  `DSL.noCondition()` and ANDs the coordinate's field filters through the same `emitTerm` (hop
+  filters take their own path, `JoinPathEmitter.emitTwoArgMethodCall` over `hop.filter()`, and
+  never reach it), and differs
   only in `ArgumentValueSource` (`Env` versus `FromSelectedField`), alias-prefixing mode, and the
   outer-argument lift (`SplitRowsMethodEmitter` and the inline `$fields` arms pass
   `liftedOuters = null`; `MultiTablePolymorphicEmitter` reuses `computeLiftedOuters` with a
@@ -155,7 +160,7 @@ shim was this rule applied to one consumer; this item applies it to all of them.
 layer (`<ReturnType>Conditions`, the per-participant classes) survives only through the migration
 window, feeding not-yet-converged call sites, and retires when the last one converges: once every
 consumer calls glue, a second layer whose only caller would be glue itself serves nobody (fork 1).
-The R2 naming locus dissolves into the naming vocabulary, the one formula both ends read (see
+The regime-2 naming locus dissolves into the naming vocabulary, the one formula both ends read (see
 Design).
 
 This is a deliberate strengthening over the previous draft, recorded so the reviewer sees the
@@ -193,14 +198,18 @@ naming scheme (entity by return type, glue by parent type) reduces to one.
       record Generated(List<ColumnTerm> terms, List<CallParam> bindings)
           implements Predicate {}
       /** Developer @condition method: an opaque external call, no terms of ours at all. */
-      record Authored(MethodRef method, List<CallParam> bindings, List<JoinStep.Hop> reach)
+      record Authored(MethodRef method, List<CallParam> bindings, List<FkHop> reach)
           implements Predicate {}
   }
+
+  /** A hop the producer has proven FK-derived: `pairs` is `hop.on()` narrowed once, at
+      production, so renderers read the pairs directly instead of re-checking the arm. */
+  record FkHop(JoinStep.Hop hop, On.ColumnPairs pairs) {}
 
   /** One comparison. `reach` empty means this row's own table; non-empty means a correlated EXISTS
       over the hop path. `columns.size() > 1` is the row-value form. `nonNull` is the presence-gating
       fact (`BodyParam.nonNull()` today): false means the rendered term is guarded on the value. */
-  record ColumnTerm(List<ColumnRef> columns, MatchKind match, boolean nonNull, List<JoinStep.Hop> reach) {}
+  record ColumnTerm(List<ColumnRef> columns, MatchKind match, boolean nonNull, List<FkHop> reach) {}
 
   enum MatchKind { EQUALITY, MEMBERSHIP }
   ```
@@ -217,8 +226,11 @@ naming scheme (entity by return type, glue by parent type) reduces to one.
   Both surfaces expose the same coerced `Map<String, Object>`, so the glue takes the map:
   `public static Condition <field>Condition(<JooqTable> table, Map<String, Object> args)`. The
   caller supplies `env.getArguments()` or `<sf>.getArguments()`, the fork moves out of the emit
-  machinery and into one call-site expression, and `ArgumentValueSource` retires with the last
-  inline fold. Two riders. A coordinate whose authored condition consumes `contextArguments` gets
+  machinery and into one call-site expression, and the condition-path uses of
+  `ArgumentValueSource` retire with the last inline fold. The type itself is not this family's to
+  delete: `RoutineCallEmitter` switches on it for `@routine` IN-parameter binding, reached from
+  every alias-declaration loop through `JoinPathEmitter.emitTableExpression`, and that use
+  retires with the routine family, not here. Two riders. A coordinate whose authored condition consumes `contextArguments` gets
   `DataFetchingEnvironment env` appended to its glue signature, producer-decided per row; that is
   also what turns the known-broken `contextArguments` emit (the shim calling a `graphitronContext`
   helper it does not have) from a deferred rejection into an implementable slot, since context is
@@ -269,8 +281,11 @@ naming scheme (entity by return type, glue by parent type) reduces to one.
   column reference itself is `ColumnRef`, the model's, not a condition-private term type, because
   `table.COL` is one SQL shape whether projected or compared and slice 3.1's `SelectTerm` will name
   the same thing. What the item does mint is not a copy of anything: `ConditionCommand`,
-  `Predicate`, `ColumnTerm`, `MatchKind` and `FacetFragment` are command shapes with no model
-  counterpart, and every slot inside them is a borrowed ref, a primitive, or one of these records.
+  `Predicate`, `ColumnTerm`, `MatchKind`, `FacetFragment` and `FkHop` are command shapes with no
+  model counterpart, and every slot inside them is a borrowed ref, a primitive, or one of these
+  records. `FkHop` is not the cut `FkHopRef` resurrected: that draft type copied the hop's slots,
+  where this one carries the borrowed `JoinStep.Hop` itself plus its `On` arm proven once at
+  production, a narrowing pair rather than a parallel copy.
 - **Two predicate arms, on one structural axis: who owns the body.** The projection command collapsed
   its provenance distinctions because every arm still rendered to "add these terms"; here one arm
   literally cannot be rendered by us. A `Generated` predicate's terms are ours to render; an
@@ -279,6 +294,9 @@ naming scheme (entity by return type, glue by parent type) reduces to one.
   an external callee only for authored rows, and override suppression reaps only generated rows),
   which is what an arm split has to show. Presence-gating is not part of the split: it is per-term data on the generated
   arm (`BodyParam.nonNull()` today), evidence for the grain note below rather than for the arms.
+  One naming heads-up for readers: `Predicate` here shadows the model's `On.Predicate`, and `On`
+  is on the same allowlist this sketch imports for the reach slot; the two never meet in one
+  expression, and the name is the natural one, so this is a note, not a rename.
 - **Reach is a hop list, attached at each arm's own grain.** Today the "predicate over rows reached
   through a join path" shape exists twice under different names: `BodyParam.RemoteColumnPredicate`
   (generated, rendered inside the entity method) and `FkTargetConditionFilter` (authored, rendered
@@ -288,10 +306,13 @@ naming scheme (entity by return type, glue by parent type) reduces to one.
   arm reach is decided per body param today (`FieldBuilder` routes each input binding locally or
   remotely, so one entity method routinely mixes a local equality with a remote EXISTS), so the hop
   list sits on the `ColumnTerm`; on the authored arm the wrap covers the whole call, so it sits on the
-  predicate. One narrowing is a genuine capability: both EXISTS emitters accept only FK-derived hops
-  (`JoinStep.Hop` with `On.ColumnPairs`) and throw `IllegalStateException` on anything else, so the
-  slot is typed to FK-derived hops and the four defensive throws (two per emitter) become
-  unrepresentable. The
+  predicate. One narrowing is a genuine capability, and it has a named shape rather than a claim: both EXISTS
+  emitters accept only FK-derived hops (`JoinStep.Hop` whose `on()` is `On.ColumnPairs`) and throw
+  `IllegalStateException` on anything else, four throws, two per emitter. `JoinStep.Hop` alone
+  cannot carry the narrowing (its `on()` still admits `Predicate` and `Lateral`), so reach is a
+  list of `FkHop`, the command-local pair of the borrowed hop with its proven `On.ColumnPairs`,
+  minted by the producer in the one place that checks the arm; the four render-time throws become
+  one produce-time check and the renderers stop branching. The
   single-layer glue also dissolves the placement asymmetry the two-layer draft had to carry: both
   arms' EXISTS render in the glue body, one site, one shape.
 - **Bindings are map-relative, and the command reads the model's extraction vocabulary.** `CallParam`
@@ -463,8 +484,9 @@ sequencing question in fork 4 is closed rather than open.
 R549 slice 3.1 is a **soft** dependency of exactly one thing: the nested-coordinate walk that fixes
 R472. Promoting nesting types to projection units is what gives a nested `GeneratedConditionFilter` a
 walkable home; without it, the producer cannot see those coordinates and R472 converts to a deferred
-rejection instead of a fix, per the R472 note in Design. Everything else here runs against slice 1
-alone.
+rejection instead of a fix, per the R472 note in Design. Everything else here runs against R549 slices 1 and 2 alone: slice 1
+for the vocabulary skeleton, slice 2 for the programme-level equivalence harness the slice-1 SQL
+pins extend.
 
 One hard ordering constraint runs the other way: **this item's slice 2 (call-site convergence) must
 land before R549 slice 3.1**, because both edit the inline `$fields` arm emitters. The constraint and
@@ -495,8 +517,10 @@ its reasoning live with the rest of the sequencing in R549's Slices section.
    today): each stops composing extraction and terms inline and emits the one-line glue
    call, deriving the name through the shared `GeneratedUnits` vocabulary. This is a bounded edit to
    those hosts' condition composition, not a migration of the hosts; hop filters and parent
-   correlation stay theirs. `ArgumentValueSource` and the inline uses of `FkTargetConditionEmitter`
-   / `ArgCallEmitter` / `declareAliases` retire with it. The execution tier pins the behaviour; the
+   correlation stay theirs. `FkTargetConditionEmitter` deletes in full with this slice (its public
+   API, `emitTerm` and `declareAliases`, has no caller left once slice 1 replaced the shim end and
+   the last host converges; one javadoc mention repoints), the inline uses of `ArgCallEmitter`
+   retire, and the condition-path uses of `ArgumentValueSource` go with them. The execution tier pins the behaviour; the
    readability requirement is what this slice delivers.
 3. **Entity-layer retirement, and the dial closes.** With no caller left, `TypeConditionsGenerator`
    and the `<ReturnType>Conditions` / `<Participant>Conditions` classes are deleted,
@@ -536,10 +560,12 @@ its reasoning live with the rest of the sequencing in R549's Slices section.
   that land (generated column filters mixed onto lookup coordinates, and `contextArguments` if
   slice 1 rejects rather than implements) fire on their fixtures; authored conditions on lookup
   coordinates stay emitted, as rows in the relation.
-- **Convergence is structural, not asserted on strings.** Slice 2's observable is retirement: the
-  `ArgumentValueSource` type and the inline hosts' uses of the extraction and term machinery are
-  deleted, so a host that wanted to compose a fold inline again would have nothing to call; the
-  compiler enforces what a body-shape assertion cannot without violating the tier doctrine.
+- **Convergence is structural, not asserted on strings.** Slice 2's observable is retirement:
+  `FkTargetConditionEmitter` is deleted in full, so a host that wanted to compose a fold inline
+  again would have nothing to call; the compiler enforces what a body-shape assertion cannot
+  without violating the tier doctrine. The condition-path uses of `ArgumentValueSource` and the
+  inline hosts' extraction machinery go with it (the type itself survives for routine
+  IN-parameter binding; see the glue-signature note in Design).
 - **The absorbed defects have fixtures.** R472's nested generated condition fails the build as a
   deferred rejection rather than emitting a dangling reference, and the same fixture flips to
   compiling and executing when R549 slice 3.1 supplies the nested coordinates; both states are
@@ -567,17 +593,23 @@ its reasoning live with the rest of the sequencing in R549's Slices section.
 
 - `QueryConditionsGenerator` (slice 1): replaced by the glue renderer; with it
   `conditionMethodName` / `facetBaseConditionMethodName` / `facetConditionMethodName` /
-  `CLASS_NAME_SUFFIX` (the R2 formula locus and the public constant its consumers read), the
+  `CLASS_NAME_SUFFIX` (the regime-2 formula locus and the public constant its consumers read), the
   shim-FQCN recomputation in `TypeFetcherGenerator` (four sites), and the method-name formula in
   `buildConditionCall`: call sites read the minted `UnitRef`.
 - `computeLiftedOuters` and `QueryConditionsGeneratorLiftTest` (slices 1 and 2): the lift dissolves
   into the glue body's one-local-per-argument convention; its two callers
   (`QueryConditionsGenerator`, `MultiTablePolymorphicEmitter`'s branch folds) are both replaced by
   glue calls.
-- `ArgumentValueSource` (slice 2): the source fork moves to the call site as
-  `env.getArguments()` versus `<sf>.getArguments()`, so the sealed two-variant type and the
-  threading through the emitters retire with the last inline fold, together with the inline hosts'
-  uses of `FkTargetConditionEmitter` / `ArgCallEmitter` / `declareAliases`.
+- `FkTargetConditionEmitter`, the whole class (slice 2): its public API (`emitTerm`,
+  `declareAliases`) is called only by `QueryConditionsGenerator`, replaced in slice 1, and the
+  convergence hosts, so the class deletes when the last host converges and the compiler enforces
+  the consumption rule; the one javadoc mention (`CompileDependencyGraphBuilder`) repoints. The
+  inline hosts' uses of `ArgCallEmitter` retire with it.
+- `ArgumentValueSource`, condition-path uses only (slice 2): the source fork moves to the call
+  site as `env.getArguments()` versus `<sf>.getArguments()`, so the condition emitters stop
+  threading it. The sealed type itself survives: `RoutineCallEmitter` switches on it for
+  `@routine` IN-parameter binding, a non-condition path, and that use retires with the routine
+  family.
 - `TypeConditionsGenerator`, the `<ReturnType>Conditions` and `<Participant>Conditions` entity
   classes, `GeneratedConditionFilter.className()` / `methodName()`, and
   `TypeConditionsGeneratorTest` (slice 3): the entity layer and its naming facts, deleted when the
@@ -610,7 +642,7 @@ its reasoning live with the rest of the sequencing in R549's Slices section.
 
 | item | relationship |
 |---|---|
-| R549 (Spec) | governs; this item is the third proof by argument and the **first by landing order**, running on slice 1 alone. Slice 5's generalisation gate widens from two proofs to three, slice 3b gains its exemplar rows from the glue renderer's GROUP BY, and this item is the allowlist's first use, borrowing the model's refs rather than minting a parallel vocabulary |
+| R549 (Spec) | governs; this item is the third proof by argument and the **first by landing order**, running on R549 slices 1 and 2 alone. Slice 5's generalisation gate widens from two proofs to three, slice 3b gains its exemplar rows from the glue renderer's GROUP BY, and this item is the allowlist's first use, borrowing the model's refs rather than minting a parallel vocabulary |
 | R541 (Spec) | consumer, and lands after this item. Its fork 1 and this item's fork 4 both resolve at R549: the launcher's `where` slot is the row's glue `UnitRef`, and row 5's naming lift is wholly this item's. Cross-referenced there |
 | R333 (Ready) | owns row 5 and the target condition semantics; this item executes the row's "finish lift" verdict in command form and does not touch the `Single` value-gating semantic or the raw-relation re-sourcing |
 | R475 (Backlog) | absorbed, by dissolution: the colliding generated parameter list stops existing when the entity layer retires (slice 3), and glue locals are producer-named collision-free. Tombstone at pickup, delete when this item reaches Done |
