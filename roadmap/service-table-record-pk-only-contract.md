@@ -1,7 +1,7 @@
 ---
 id: R516
 title: "Narrow SourceKey.Wrap.TableRecord contract to PK-only, revert full-row projection"
-status: In Review
+status: Ready
 bucket: correctness
 priority: 2
 theme: service
@@ -11,6 +11,88 @@ last-updated: 2026-07-28
 ---
 
 # Narrow SourceKey.Wrap.TableRecord contract to PK-only, revert full-row projection
+
+## Status: reworking after an In Review → Ready bounce (2026-07-28)
+
+Scope items 1 through 8 and the whole declared test surface shipped at `cc270f1`, with a
+self-review prose sweep at `ffce130`. The full reactor is green under `mvn install -Plocal-db`
+(13 modules, execution tier and docs render included), independently re-verified at the gate.
+The narrowing itself, the rejection arm, the service rewrites, and the manual correction are all
+accepted as delivered; the sections below describe work that already landed and are kept only for
+context.
+
+What sent it back is the retirement sweep, which `roadmap/workflow.adoc` makes a Done-gate
+obligation for any item declaring a `Retired vocabulary` section. Eight prose surfaces still name
+the deleted mechanism as live. Nothing behavioural is in question. The remaining work is the list
+under "Review findings" below, then a fresh In Review.
+
+## Review findings (independent reviewer, In Review → Ready, 2026-07-28)
+
+Rework, in descending order of how wrong the surviving prose is:
+
+1. `graphitron/src/main/java/no/sikt/graphitron/rewrite/model/TableRef.java:41-47`. The
+   `allColumns` javadoc still says the component "exists so emit-time consumers can enumerate the
+   whole row", naming "the `SourceKey.Wrap.TableRecord` key reconstruction
+   (`GeneratorUtils.buildKeyExtraction`) and the reserved-alias full-parent-row projection
+   (`TypeClassGenerator`)" as those consumers, and asserts a single-homing invariant over the
+   reserved-alias names. All of it is now false: `TableRef.allColumns()` has zero consumers in the
+   generators package, the key read drives off `sourceKey().columns()`, and the alias scheme is
+   deleted. The live consumers are classification-time (`TypeBuilder` interface base/detail split,
+   `BuildContext`, `FieldBuilder` pivot-column search). This is the sharpest one because
+   `cc270f1` corrected the counterpart javadoc on `JooqCatalog.allColumnRefs` (which explicitly
+   says it "Backs `TableRef#allColumns()`") and left this side saying the opposite, so a reader
+   following the link gets two contradictory answers.
+2. `docs/architecture/explanation/dispatch-axes.adoc:103`. The consumer-side dispatch bullet says
+   `GeneratorUtils.buildKeyExtraction` "switches over `sourceKey.wrap()` to choose between
+   `DSL.row(...)`, `parent.into(table.col, ...)`, and the reserved-alias full-row reconstruction".
+   The third arm no longer exists. This renders to the published site and is exactly what the
+   "Documentation names only live tests/code" principle rules out.
+3. `graphitron-sakila-example/src/test/java/no/sikt/graphitron/rewrite/test/querydb/FederationEntitiesDispatchTest.java:511`.
+   Present-tense claim that "the DataLoader key extraction (`.into(Tables.CITY)`) reads a non-null
+   key". The sibling test's javadoc in the same file was rewritten correctly; this one was missed.
+4. `graphitron-sakila-example/src/test/java/no/sikt/graphitron/rewrite/test/querydb/GraphQLQueryTest.java:2504-2505`.
+   Same shape: "cityUppercase resolves to null (silent `.into(Tables.CITY)` extraction)". The
+   extraction is now a per-column `key.set(...)` copy, so the silent-versus-loud contrast the
+   comment draws against `cityLowercase` no longer rests on `into`.
+5. `graphitron/src/test/java/no/sikt/graphitron/rewrite/TestFixtures.java:311-312`. The
+   hand-built-`TableRef` comment still explains the empty `allColumns` by pointing at "the
+   reserved-alias full-row emit / TableRecord key reconstruction that read this". Neither reads it.
+6. `graphitron/src/test/java/no/sikt/graphitron/rewrite/ArrayColumnCodegenPipelineTest.java:54`.
+   The class javadoc was honestly rewritten to say the `ClassName.bestGuess` crash site is gone
+   and no `Class` literal is emitted, but the assertion description two screens below still reads
+   `"full-row key reconstruction over an array-typed column must not crash ClassName.bestGuess"`,
+   contradicting it.
+7. `graphitron-sakila-db/src/main/resources/init.sql:704-707`. "Any code generation that
+   reconstructs this table's full row per column, notably the `SourceKey.Wrap.TableRecord`
+   key-extraction arm, crashed ..." The historical framing is fine; the clause naming the
+   TableRecord arm as a full-row reconstructor is not.
+8. `graphitron/src/test/java/no/sikt/graphitron/rewrite/ArrayColumnTypeDecodeTest.java:63`.
+   "The full-row iterator (the reachable crash path's column source)". `allColumnsOf` is still a
+   full-row iterator, but the TableRecord path no longer reaches it, so the parenthetical is stale.
+
+Also unmet at the gate, and cheap to fold into the same pass: the spec body was still written
+entirely as future work with no landing SHAs when it arrived In Review. This section and the one
+above are the fix; keep them current if the item bounces again.
+
+Not rework, and not conditions on the next gate. Recorded so the next reviewer does not
+re-litigate them:
+
+- `TypeSpecAssertions.serviceChildKeyExtractionIsUnconditional` asserts
+  `body.contains("key.set(") && !body.contains("instanceof")` on a generated method body, which is
+  the pattern `development-principles.adoc` bans, and the negative half is brittle in a new way
+  (any unrelated future `instanceof` in that fetcher method flips it). The delivery did not
+  introduce the pattern: it is a pre-existing four-helper family in that file, and this item net
+  removes one member of it. Retiring the family belongs in its own Backlog item, and R549's
+  keystone slice deletes the walk these helpers audit anyway. Fixing it here is welcome but not
+  required.
+- `ServiceCatalog.reflectServiceMethod`'s seven-argument overload (slotTypes, no `pkLessParent`) is
+  now reached only from `ServiceCatalogTest`; production threads the eight-argument form.
+- `ParentProjectionContainmentCheckTest`'s section header still reads "The table-record axis"
+  after the axis was retired.
+- The `isRoot` disambiguation in `ServiceDirectiveResolver.resolve` genuinely changes which
+  validation arm a PK-less-parent child reaches (child arms instead of root arms). The direction is
+  toward correct classification and the test javadoc is honest that the flip is unpinned rather
+  than claiming to pin it, which is the right call for an arm that is currently inert.
 
 ## Problem
 
