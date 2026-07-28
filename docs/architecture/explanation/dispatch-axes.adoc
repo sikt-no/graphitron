@@ -100,7 +100,7 @@ Each emit site reads off whichever axis it actually forks on, without re-derivin
 
 * `GeneratorUtils.buildRecordParentKeyExtraction` switches exhaustively over the field's `KeyLift` to choose the parent-side extraction emit shape, then within the arity-bearing arms reads the arm's own `Arity` to choose single-vs-list emit. Two axes, two reads; the dispatch is exhaustive over each axis independently.
 
-* `GeneratorUtils.buildKeyExtraction` (for table-bound parents on the split-query and service paths) switches over `sourceKey.wrap()` to choose between `DSL.row(...)`, `parent.into(table.col, ...)`, and the reserved-alias full-row reconstruction; one axis, one read.
+* `GeneratorUtils.buildKeyExtraction` (for table-bound parents on the split-query and service paths) switches over `sourceKey.wrap()` to choose between `DSL.row(...)`, `parent.into(table.col, ...)`, and a per-column copy onto a fresh typed record; one axis, one read. All three arms read the same `sourceKey.columns()`, so the axis picks the shape of the key and never its contents.
 
 * `DataLoaderFetcherEmitter.build` reads `registration.container()` to pick `DataLoaderFactory.newDataLoader` vs `newMappedDataLoader`, and `registration.dispatch()` to pick `loader.load(key)` vs `loader.loadMany(keys)`. Two axes, two reads; the same `SourceKey` can be paired with either container.
 

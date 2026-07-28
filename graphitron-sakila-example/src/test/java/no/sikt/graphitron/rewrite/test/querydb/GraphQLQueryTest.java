@@ -2501,14 +2501,16 @@ class GraphQLQueryTest {
     // City carries no @splitQuery sibling, so its @service children are the only
     // reason CITY_ID lands in the parent SELECT. Both queries deliberately select NO field that
     // maps to CITY_ID; if the BatchKeyField arm in
-    // TypeClassGenerator.collectRequiredProjection regresses, cityUppercase resolves to
-    // null (silent .into(Tables.CITY) extraction) and cityLowercase fails the request (loud
-    // per-column get(...) extraction), turning these red.
+    // TypeClassGenerator.collectRequiredProjection regresses, neither child can key its batch and
+    // both turn red. The pair covers two key wraps over one guarantee: cityUppercase sources a
+    // typed CityRecord (Wrap.TableRecord), cityLowercase a Row1 (Wrap.Row). Under the PK-only
+    // contract both read CITY_ID off the parent row by jOOQ field identity, so the wraps differ in
+    // the shape of the key they build and not in what the projection owes them.
 
     @SuppressWarnings("unchecked")
     @Test
     void cities_cityUppercase_withoutKeyFieldSelected_resolvesViaTableRecordSource() {
-        // Wrap.TableRecord — the silent-null reproducer shape from the opptak federation bug.
+        // Wrap.TableRecord: the shape that surfaced the opptak federation bug.
         Map<String, Object> data = execute("{ citiesByCountryName { cityName cityUppercase } }");
         assertThat(data).extractingByKey("citiesByCountryName", as(list(Map.class)))
             .hasSize(3)
@@ -2524,7 +2526,7 @@ class GraphQLQueryTest {
     @SuppressWarnings("unchecked")
     @Test
     void cities_cityLowercase_withoutKeyFieldSelected_resolvesViaRow1Source() {
-        // Wrap.Row — the loud-throw shape (jOOQ throws on an absent field at key extraction).
+        // Wrap.Row: the same guarantee reached through a different key shape.
         Map<String, Object> data = execute("{ citiesByCountryName { cityName cityLowercase } }");
         assertThat(data).extractingByKey("citiesByCountryName", as(list(Map.class)))
             .hasSize(3)

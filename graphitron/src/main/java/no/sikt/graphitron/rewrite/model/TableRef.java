@@ -38,13 +38,14 @@ import java.util.Optional;
  *
  * <p>{@code allColumns} is the ordered list of every column on the table (each a fully resolved
  * {@link ColumnRef}), populated in the same catalog traversal that fixes
- * {@code primaryKeyColumns}. It exists so emit-time consumers can enumerate the whole row without
- * reaching back for the catalog (which is closed by then): the {@code SourceKey.Wrap.TableRecord}
- * key reconstruction ({@code GeneratorUtils.buildKeyExtraction}) and the reserved-alias
- * full-parent-row projection ({@code TypeClassGenerator}) both drive their per-column emit off
- * this one list, so the projected reserved-alias names and the names the key read looks them up
- * by are single-homed and cannot drift. Empty only when constructed outside the catalog flow
- * (test fixtures that do not exercise those paths).
+ * {@code primaryKeyColumns}. It exists so consumers can enumerate the whole row without reaching
+ * back for the catalog (which is closed by then). The consumers are classification-time and all
+ * answer "what columns does this table have?": {@code TypeBuilder}'s interface base/detail split,
+ * {@code BuildContext}'s source-column resolution, and {@code FieldBuilder}'s pivot-column search
+ * (all package-private in the enclosing package, hence named rather than linked). No generator
+ * drives a per-column emit off it; a key extraction takes the columns it needs from the field's own
+ * {@link SourceKey}. Empty only when constructed outside the catalog flow (test fixtures that do
+ * not exercise those paths).
  *
  * <p>A type carrying both {@code @table} and {@code @node} is classified as
  * {@link GraphitronType.NodeType} rather than {@link GraphitronType.TableType}.

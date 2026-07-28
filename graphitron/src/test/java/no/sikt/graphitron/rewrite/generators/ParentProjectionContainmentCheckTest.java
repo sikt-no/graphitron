@@ -117,7 +117,7 @@ class ParentProjectionContainmentCheckTest {
             .doesNotThrowAnyException();
     }
 
-    // ===== The table-record axis: a TableRecord key wrap demands its key columns like any other =====
+    // ===== A TableRecord key wrap demands its key columns like any other wrap =====
 
     @Test
     void nestedTableRecordWrapWithoutItsKeyColumn_throwsGeneratorInvariant() {

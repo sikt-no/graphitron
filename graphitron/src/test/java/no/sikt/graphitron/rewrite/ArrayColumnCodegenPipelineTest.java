@@ -52,7 +52,7 @@ class ArrayColumnCodegenPipelineTest {
     void tableRecordKeyExtraction_overArrayColumnRow_emitsWithoutBestGuessCrash() {
         assertThatCode(() ->
             TypeFetcherGenerator.generate(TestSchemaHelper.buildSchema(SDL), DEFAULT_OUTPUT_PACKAGE))
-            .as("full-row key reconstruction over an array-typed column must not crash ClassName.bestGuess")
+            .as("generation over a typed-record service parent whose row carries array columns completes")
             .doesNotThrowAnyException();
 
         var fetchers = TypeFetcherGenerator.generate(TestSchemaHelper.buildSchema(SDL), DEFAULT_OUTPUT_PACKAGE);

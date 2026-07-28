@@ -18,9 +18,9 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
  * <p>The {@code @service} DataLoader shapes ({@link no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField},
  * {@link no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField}) build their DataLoader
  * key off the parent source record, so the parent SELECT must project the key columns even when
- * the client's selection contains no field mapping to them; otherwise the key extraction reads
- * {@code null} and the child silently resolves to {@code null} (the federation
- * {@code _entities}-fetch shape). Split-{@code @reference} children get the same treatment via
+ * the client's selection contains no field mapping to them; otherwise the key extraction has no
+ * key column to read and the child cannot resolve (the federation {@code _entities}-fetch shape,
+ * which is how this first surfaced). Split-{@code @reference} children get the same treatment via
  * the shared {@link no.sikt.graphitron.rewrite.model.BatchKeyField} arm in
  * {@code TypeClassGenerator.collectRequiredProjection}; their coverage lives in
  * {@link NestingFieldPipelineTest}.

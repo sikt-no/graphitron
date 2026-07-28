@@ -12,7 +12,7 @@ last-updated: 2026-07-28
 
 # Narrow SourceKey.Wrap.TableRecord contract to PK-only, revert full-row projection
 
-## Status: reworking after an In Review → Ready bounce (2026-07-28)
+## Status: reworked after an In Review → Ready bounce, back for a second gate (2026-07-28)
 
 Scope items 1 through 8 and the whole declared test surface shipped at `cc270f1`, with a
 self-review prose sweep at `ffce130`. The full reactor is green under `mvn install -Plocal-db`
@@ -22,9 +22,15 @@ accepted as delivered; the sections below describe work that already landed and 
 context.
 
 What sent it back is the retirement sweep, which `roadmap/workflow.adoc` makes a Done-gate
-obligation for any item declaring a `Retired vocabulary` section. Eight prose surfaces still name
-the deleted mechanism as live. Nothing behavioural is in question. The remaining work is the list
-under "Review findings" below, then a fresh In Review.
+obligation for any item declaring a `Retired vocabulary` section. Eight prose surfaces still named
+the deleted mechanism as live. Nothing behavioural was in question.
+
+**Rework landed, all eight, at the SHA recorded in the findings list below.** The sweep that found
+them was rerun wider afterwards, on the mechanism's vocabulary rather than on a phrase list, which
+turned up four more the reviewer had not flagged; those are recorded as 9 through 12. One of the
+four was introduced by the `ffce130` self-review sweep itself, so it is called out as such rather
+than folded in silently. The reviewer's second improvement note is now Backlog item R554; the other
+three are addressed or answered in place.
 
 ## Review findings (independent reviewer, In Review → Ready, 2026-07-28)
 
@@ -73,6 +79,58 @@ Rework, in descending order of how wrong the surviving prose is:
 Also unmet at the gate, and cheap to fold into the same pass: the spec body was still written
 entirely as future work with no landing SHAs when it arrived In Review. This section and the one
 above are the fix; keep them current if the item bounces again.
+
+## Rework applied (2026-07-28)
+
+All eight findings above are fixed. Notes where the fix was a judgment call rather than a
+substitution:
+
+- Finding 1 (`TableRef.allColumns`) now names the three live classification-time readers instead of
+  the two retired emit-time ones. They are package-private in `no.sikt.graphitron.rewrite` while
+  `TableRef` is in `.model`, so javadoc cannot link them; they are named in `{@code}` with the
+  reason stated inline, so the next reader does not "fix" it into a dangling `{@link}`.
+- Finding 2 (`dispatch-axes.adoc`) replaces the retired third arm with the per-column copy and adds
+  the sentence that makes the axis claim true post-narrowing: all three arms read the same
+  `sourceKey.columns()`, so the wrap picks the shape of the key and never its contents.
+- Finding 7 (`init.sql`) keeps the historical framing the reviewer accepted and drops only the
+  clause naming the TableRecord arm as a full-row reconstructor, restating the crash condition as
+  what it actually was: enumerating columns and emitting a per-column `Class` literal.
+- Finding 8 (`ArrayColumnTypeDecodeTest`) keeps "full-row iterator", which is still accurate for
+  `allColumnsOf`, and replaces the stale parenthetical with why the type-lift is pinned there:
+  it is the widest decode surface in the catalog, not one consumer's crash path.
+
+Four more the wider sweep found, fixed in the same pass:
+
+9. `graphitron-sakila-example/.../GraphQLQueryTest.java`, the two `City` service-child execution
+   tests. Their comments drew a silent-null (`Wrap.TableRecord`) versus loud-throw (`Wrap.Row`)
+   contrast on the regression failure mode. That contrast was real only while the TableRecord arm
+   mapped by name through `into(...)`; both wraps now read by field identity, so the pair covers
+   two key shapes over one guarantee and the block comment says that instead.
+10. `graphitron-sakila-example/src/main/resources/graphql/schema.graphqls`, the `cityUppercase`
+    fixture label, same stale "silent-null reproducer shape" phrasing.
+11. `graphitron/src/test/java/no/sikt/graphitron/rewrite/ServiceProjectionPipelineTest.java` class
+    javadoc: "the key extraction reads `null` and the child silently resolves to `null`". Predates
+    this item and describes a failure mode no wrap now has.
+12. `graphitron-sakila-example/src/main/resources/graphql/federated-schema.graphqls`. Introduced by
+    the `ffce130` self-review sweep in this item: the rewritten comment carried the old
+    "reads null and the child silently resolves to null" clause forward into new prose. Corrected
+    to say the extraction has no key column to read.
+
+Findings 9 through 12 share one root cause with the reviewer's eight: the first two sweeps grepped
+for phrases naming the *deleted mechanism* (`__src_`, `reservedFullRow`, "full parent row") and so
+could not see prose that described the mechanism's *observable consequences* without naming it. The
+third sweep grepped the semantics instead (`into\(Tables\.`, "silently resolv", "wrap-gated",
+`buildKeyExtraction`), which is what surfaced them.
+
+Also applied from the reviewer's non-blocking notes: the retired-axis section header in
+`ParentProjectionContainmentCheckTest` is renamed. The `TypeSpecAssertions` string-scan family is
+filed as Backlog item R554 rather than fixed here, per the reviewer's own scoping. The seven-argument
+`ServiceCatalog.reflectServiceMethod` overload is left in place: it is a test-facing convenience
+alongside an equally test-facing six-argument sibling, so removing one of a pair is churn without a
+principle behind it.
+
+Verification: full reactor green under `mvnd install -Plocal-db`, 13 modules, execution tier and
+docs render included.
 
 Not rework, and not conditions on the next gate. Recorded so the next reviewer does not
 re-litigate them:

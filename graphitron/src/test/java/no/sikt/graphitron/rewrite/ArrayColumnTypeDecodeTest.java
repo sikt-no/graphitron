@@ -60,8 +60,9 @@ class ArrayColumnTypeDecodeTest {
 
     @Test
     void allColumnsOf_carriesColumnTypeForEveryColumn() {
-        // The full-row iterator (the reachable crash path's column source) decodes every column,
-        // so a mixed scalar/array row all carries a non-null columnType.
+        // The full-row iterator decodes every column, so a mixed scalar/array row all carries a
+        // non-null columnType. It is the widest decode surface in the catalog, which is why the
+        // type-lift is pinned here rather than at any one consumer.
         var cols = catalog().allColumnsOf("array_holder");
         assertThat(cols).isNotEmpty();
         assertThat(cols).allSatisfy(c -> assertThat(c.columnType()).isNotNull());

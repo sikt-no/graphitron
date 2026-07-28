@@ -509,9 +509,8 @@ class FederationEntitiesDispatchTest {
      * selects just the fields it needs and supplies key columns through the representation).
      * The entity dispatch SELECT goes through {@code City.$fields}, which must force-project
      * {@code CITY_ID} (the service child's SourceKey column) so the DataLoader key extraction
-     * ({@code .into(Tables.CITY)}) reads a non-null key; otherwise the child silently resolves
-     * to {@code null}. City is the unmasked fixture: no other child of City force-projects the
-     * key column.
+     * finds it on the row; otherwise the batch cannot be keyed and the child does not resolve.
+     * City is the unmasked fixture: no other child of City force-projects the key column.
      */
     @Test
     @SuppressWarnings("unchecked")

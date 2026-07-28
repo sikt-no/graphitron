@@ -703,10 +703,10 @@ INSERT INTO converter_campus (campus_id, campus_name, org_code) VALUES
 
 -- R446 array-column fixture: a table carrying array-typed columns. jOOQ maps a PostgreSQL
 -- `boolean[]` to `Field<Boolean[]>`, whose `getType().getName()` is the JVM binary descriptor
--- `[Ljava.lang.Boolean;` (not a source-form FQCN), which `ClassName.bestGuess` rejects. Any code
--- generation that reconstructs this table's full row per column, notably the
--- `SourceKey.Wrap.TableRecord` key-extraction arm, crashed with
--- `IllegalArgumentException: couldn't make a guess for [Ljava.lang.Boolean;` before the type-lift.
+-- `[Ljava.lang.Boolean;` (not a source-form FQCN), which `ClassName.bestGuess` rejects. Before the
+-- catalog-boundary type-lift, any code generation that enumerated this table's columns and emitted
+-- a per-column `Class` literal crashed with
+-- `IllegalArgumentException: couldn't make a guess for [Ljava.lang.Boolean;`.
 -- `id` is the scalar PK a TableRecord-keyed @service child batches on; `flags` / `tags` are the
 -- single-dimension array columns; `label` is a scalar control column.
 CREATE TABLE array_holder (
