@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators;
 
+import no.sikt.graphitron.render.CompositeDecodeHelperRegistry;
 import no.sikt.graphitron.javapoet.AnnotationSpec;
 import no.sikt.graphitron.javapoet.ArrayTypeName;
 import no.sikt.graphitron.javapoet.ClassName;
@@ -1379,10 +1380,9 @@ public final class MultiTablePolymorphicEmitter {
      *       once per participant with the participant's {@code stage1_<Type>} base alias so the
      *       Java locals stay unique across participants within the one enclosing method;</li>
      *   <li>one {@code List<String> <name>Keys} local per {@code JooqConvert}-list arg name,
-     *       deduped across participants (the env argument is the same for every branch), matching
-     *       the single-table {@code QueryConditionsGenerator} pre-lift;</li>
+     *       deduped across participants (the env argument is the same for every branch);</li>
      *   <li>one {@code Map<?, ?>} local per nested-input outer arg referenced ≥2 times across all
-     *       participants' filters ({@link QueryConditionsGenerator#computeLiftedOuters}) — on this
+     *       participants' filters ({@link #computeLiftedOuters}); on this
      *       path two branches filtering on the same input object share the read.</li>
      * </ul>
      *
@@ -1415,12 +1415,40 @@ public final class MultiTablePolymorphicEmitter {
                 }
             }
         }
-        var liftedOuters = QueryConditionsGenerator.computeLiftedOuters(allFilters);
+        var liftedOuters = computeLiftedOuters(allFilters);
         for (var entry : liftedOuters.entrySet()) {
             b.addStatement("$T<?, ?> $L = env.getArgument($S) instanceof $T<?, ?> map ? map : null",
                 Map.class, entry.getValue(), entry.getKey(), Map.class);
         }
         return new FilterPlumbing(fkTargetAliases, liftedOuters);
+    }
+
+    /**
+     * Returns the per-method outer-arg lift map: {@code outerArgName → localName} for each
+     * {@link CallSiteExtraction.NestedInputField#outerArgName()} referenced by ≥2 callParams
+     * across all of the method's filters. The local name is {@code <camelCaseOuterArg>Map}; the
+     * suffix prevents collision with JooqConvert lifts ({@code <name>Keys}) and with the base
+     * alias locals. Insertion-ordered so the emitted declarations follow first-occurrence order.
+     * This host is the lift's last inline user: the glue renderer expresses the same decision as
+     * producer data ({@code OuterLift} rows), and the call-site convergence slice retires this
+     * copy with the branch folds that read it.
+     */
+    static Map<String, String> computeLiftedOuters(List<? extends WhereFilter> filters) {
+        var counts = new java.util.LinkedHashMap<String, Integer>();
+        for (var filter : filters) {
+            for (var param : filter.callParams()) {
+                if (param.extraction() instanceof CallSiteExtraction.NestedInputField nif) {
+                    counts.merge(nif.outerArgName(), 1, Integer::sum);
+                }
+            }
+        }
+        var lifted = new java.util.LinkedHashMap<String, String>();
+        for (var e : counts.entrySet()) {
+            if (e.getValue() >= 2) {
+                lifted.put(e.getKey(), toCamelCase(e.getKey()) + "Map");
+            }
+        }
+        return lifted;
     }
 
     /**
@@ -1463,9 +1491,9 @@ public final class MultiTablePolymorphicEmitter {
      * filter carries a call param whose extraction emits an unchecked cast
      * ({@link CallParam#emitsUncheckedCast()}; the model owns that fact): a list-typed
      * {@link CallSiteExtraction.NestedInputField} extracting as {@code (List<X>) map.get(key)} at the
-     * branch call site. The single-table {@code QueryConditionsGenerator} folds over the same
-     * model predicate for its {@code <field>Condition} method, so the two paths cannot drift. Stamped
-     * only when such a param is present, at the narrowest enclosing member.
+     * branch call site. Stamped only when such a param is present, at the narrowest enclosing
+     * member. (The single-table root path now renders through the condition glue, which owns its
+     * own map-read cast predicate; this host retires from the fold at call-site convergence.)
      */
     private static void stampUncheckedSuppressionIfNeeded(
             MethodSpec.Builder builder, Map<String, List<WhereFilter>> participantFilters) {

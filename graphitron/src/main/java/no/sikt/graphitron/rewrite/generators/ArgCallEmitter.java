@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators;
 
+import no.sikt.graphitron.render.CompositeDecodeHelperRegistry;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
@@ -101,8 +102,8 @@ public final class ArgCallEmitter {
      * @param method            the developer method to call.
      * @param tableExpression   every caller passes {@code null}: a {@code @service} method
      *                          declares no Table parameter. The {@link ParamSource.Table} slot
-     *                          exists for {@code @condition}, whose emission lives in
-     *                          {@link QueryConditionsGenerator}. The slot is retained so a
+     *                          exists for {@code @condition}, whose emission lives in the
+     *                          condition glue renderer. The slot is retained so a
      *                          leaked Table param surfaces as a clear
      *                          {@link IllegalStateException} rather than a NPE.
      * @param sourcesExpression the {@link CodeBlock} to emit at the {@link ParamSource.Sources}
@@ -110,16 +111,15 @@ public final class ArgCallEmitter {
      *                          {@code null} arm rejects a Sources param outright and is
      *                          caller-unreachable today, retained as a guard for a future
      *                          caller with no batch to supply.
-     * @param conditionsClassName  no extraction arm reads it.
      */
     public static CodeBlock buildMethodBackedCallArgs(TypeFetcherEmissionContext ctx, MethodRef method, CodeBlock tableExpression,
-            CodeBlock sourcesExpression, String conditionsClassName) {
+            CodeBlock sourcesExpression) {
         var args = CodeBlock.builder();
         boolean first = true;
         for (var param : method.params()) {
             if (!first) args.add(", ");
             first = false;
-            args.add(emitForParam(ctx, param, tableExpression, sourcesExpression, conditionsClassName));
+            args.add(emitForParam(ctx, param, tableExpression, sourcesExpression));
         }
         return args.build();
     }
@@ -158,10 +158,10 @@ public final class ArgCallEmitter {
     }
 
     private static CodeBlock emitForParam(TypeFetcherEmissionContext ctx, MethodRef.Param param, CodeBlock tableExpression,
-            CodeBlock sourcesExpression, String conditionsClassName) {
+            CodeBlock sourcesExpression) {
         var source = param.source();
         return switch (source) {
-            case ParamSource.Arg arg -> emitArgExpression(ctx, arg, param, conditionsClassName);
+            case ParamSource.Arg arg -> emitArgExpression(ctx, arg, param);
             case ParamSource.Context ignored ->
                 CodeBlock.of("($T) $L.getContextArgument(env, $S)",
                     rawTypeOf(param), ctx.graphitronContextCall(), param.name());
@@ -205,7 +205,7 @@ public final class ArgCallEmitter {
      * everything else routes through {@link #extractionForArg} and {@link #buildArgExtraction}.
      */
     private static CodeBlock emitArgExpression(TypeFetcherEmissionContext ctx, ParamSource.Arg arg,
-            MethodRef.Param param, String conditionsClassName) {
+            MethodRef.Param param) {
         if (hasIntermediateListSegment(arg.path())) {
             if (!(arg.extraction() instanceof CallSiteExtraction.Direct)) {
                 throw new IllegalStateException(
@@ -221,7 +221,7 @@ public final class ArgCallEmitter {
             new CallParam(arg.graphqlArgName(),
                 extractionForArg(arg),
                 false, param.typeName()),
-            conditionsClassName,
+            null,
             null);
     }
 
@@ -294,7 +294,7 @@ public final class ArgCallEmitter {
             // -Xlint:all -Werror compile. val coerces eagerly, so getValue() yields the column's
             // Java type with any custom converter applied; null in, null out. The list form reads
             // the shared <name>Keys local the enclosing generator pre-declares
-            // (QueryConditionsGenerator / MultiTablePolymorphicEmitter for Env;
+            // (MultiTablePolymorphicEmitter for Env;
             // emitJooqConvertKeyLifts for the inline FromSelectedField sites), so the list arm is
             // source-independent here; only the pre-lift declaration forks. The scalar arm swaps
             // the wire read (no cast: DSL.val takes Object).
@@ -364,8 +364,8 @@ public final class ArgCallEmitter {
      * Emits the {@code <name>Keys} pre-lift local(s) that the {@link CallSiteExtraction.JooqConvert}
      * list arm of {@link #buildArgExtraction} reads: the arm composes as an expression and cannot
      * introduce the local itself, and without the pre-lift the emitted code references an
-     * undeclared local and fails the consumer's compile. {@link QueryConditionsGenerator} and
-     * {@link MultiTablePolymorphicEmitter} declare it inline under {@link ArgumentValueSource.Env};
+     * undeclared local and fails the consumer's compile. {@link MultiTablePolymorphicEmitter}
+     * declares it inline under {@link ArgumentValueSource.Env};
      * only the two inline emitters route it here, always under
      * {@link ArgumentValueSource.FromSelectedField} (hence the narrowed parameter type: there is no
      * {@code Env} caller, so no {@code Env} branch), where {@code sf.getArguments().get(name)} is
@@ -453,7 +453,7 @@ public final class ArgCallEmitter {
         if (registry == null) {
             // Every NodeId-decoded condition argument is emitted through a generator that owns a
             // CompositeDecodeHelperRegistry and drains it onto the class hosting the call site:
-            // QueryConditionsGenerator (<Root>Conditions) for the single-table shim layer, and the
+            // the condition glue renderer (<Root>Conditions) for the glue layer, and the
             // <Type>Fetchers collectInto bracket for the fetcher-inline sites (split/lookup rows
             // methods; the multitable branch path). A registry-less call site reaching a decode is
             // a wiring bug: there would be nowhere to emit the lifted helper. Fail loudly.
@@ -522,9 +522,9 @@ public final class ArgCallEmitter {
         // When the outer arg has already been lifted to a typed Map<?, ?> local, depth 0 of the
         // chain references the local directly under a null-check; otherwise it falls back to the
         // inline `env.getArgument(outer) instanceof Map<?, ?> map1` rebind.
-        // liftedOuters is populated only by the Env sites (QueryConditionsGenerator /
-        // MultiTablePolymorphicEmitter); the two inline sites pass null, so under FromSelectedField
-        // topBinding is always null and the depth-0 read routes through the source.
+        // liftedOuters is populated only by the Env site (MultiTablePolymorphicEmitter); the two
+        // inline sites pass null, so under FromSelectedField topBinding is always null and the
+        // depth-0 read routes through the source.
         String topBinding = liftedOuters != null ? liftedOuters.get(outerArgName) : null;
         CodeBlock root = topBinding != null
             ? CodeBlock.of("$L", topBinding)

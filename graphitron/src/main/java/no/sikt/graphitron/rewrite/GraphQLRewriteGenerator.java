@@ -13,7 +13,6 @@ import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import no.sikt.graphitron.rewrite.generators.QueryConditionsGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeConditionsGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
@@ -169,10 +168,21 @@ public class GraphQLRewriteGenerator {
         private final Map<String, TypeSpec> emittedUnits = new LinkedHashMap<>();
         private final Set<String> changedUnits = new LinkedHashSet<>();
 
-        /** Records a compilation-unit write, folding its {@code changed} flag into both deltas. */
+        /**
+         * Records a compilation-unit write, folding its {@code changed} flag into both deltas.
+         * A duplicate landing address is a hard failure: two families writing one FQCN would
+         * clobber silently (second write wins) and surface as a missing-symbol error at the
+         * consumer's javac, the failure class this guard exists to remove. The condition glue
+         * and entity conditions classes share one {@code <Type>Conditions} name template through
+         * the entity layer's retirement window, so this is that window's backstop.
+         */
         void record(String fqcn, TypeSpec spec, JavaFile.WriteResult result) {
             emitted.add(result.path());
-            emittedUnits.put(fqcn, spec);
+            if (emittedUnits.putIfAbsent(fqcn, spec) != null) {
+                throw new IllegalStateException(
+                    "two generators landed a unit at '" + fqcn + "' in one run; the second write"
+                    + " would silently clobber the first and fail at the consumer's compile");
+            }
             if (result.changed()) {
                 changed.add(result.path());
                 changedUnits.add(fqcn);
@@ -322,6 +332,13 @@ public class GraphQLRewriteGenerator {
                 renderGlobal(command, schema, assembled, fetcherBodies.keySet(), tenantKeyType, federationLink),
                 emittedThisRun);
         }
+        // The condition command relation: the plan committed which rows this run renders glue for
+        // (the migration dial), the renderer is total over those rows, and every rendered class
+        // lands at the address its row committed.
+        writeUnits("condition glue",
+            plan.conditions().committedUnits(),
+            no.sikt.graphitron.render.ConditionGlueRenderer.render(plan.conditions().committedRows(), outputPackage),
+            emittedThisRun);
 
         write(EnumTypeGenerator.generate(schema),                                                 "schema",     emittedThisRun);
         write(InputTypeGenerator.generate(schema),                                                "schema",     emittedThisRun);
@@ -329,7 +346,6 @@ public class GraphQLRewriteGenerator {
         write(ObjectTypeGenerator.generate(schema, assembled, fetcherBodies),                     "schema",     emittedThisRun);
         write(TypeClassGenerator.generate(schema, outputPackage),                                 "types",      emittedThisRun);
         write(TypeConditionsGenerator.generate(schema, outputPackage),                            "conditions", emittedThisRun);
-        write(QueryConditionsGenerator.generate(schema, outputPackage),                           "conditions", emittedThisRun);
         write(fetcherClasses,                                                                      "fetchers",   emittedThisRun);
         write(ConnectionFetcherClassGenerator.generate(schema, outputPackage),                     "fetchers",   emittedThisRun);
         write(ErrorTypeFetcherClassGenerator.generate(schema, outputPackage),                      "fetchers",   emittedThisRun);
@@ -386,23 +402,27 @@ public class GraphQLRewriteGenerator {
         };
     }
 
+    private void writeCommand(GlobalCommand command, List<TypeSpec> specs, EmissionLog emittedThisRun) {
+        writeUnits("global command " + command.kind(), command.units(), specs, emittedThisRun);
+    }
+
     /**
-     * Writes one global command's rendered units at the addresses the plan committed. The
+     * Writes one command family's rendered units at the addresses the plan committed. The
      * {@link UnitRef} is the single naming derivation: each spec lands at the ref carrying its
      * simple name, a spec no ref names has nowhere to go, and a committed ref no spec matched is
      * a dropped unit; both fail the run loudly instead of drifting into the compile graph as a
      * silent gap.
      */
-    private void writeCommand(GlobalCommand command, List<TypeSpec> specs, EmissionLog emittedThisRun) {
+    private void writeUnits(String family, List<UnitRef> units, List<TypeSpec> specs, EmissionLog emittedThisRun) {
         var refsByName = new LinkedHashMap<String, UnitRef>();
-        for (UnitRef ref : command.units()) {
+        for (UnitRef ref : units) {
             refsByName.put(ref.simpleName(), ref);
         }
         for (TypeSpec spec : specs) {
             UnitRef ref = refsByName.remove(spec.name());
             if (ref == null) {
                 throw new IllegalStateException(
-                    "global command " + command.kind() + " emitted unit '" + spec.name()
+                    family + " emitted unit '" + spec.name()
                         + "' that the plan did not commit; the producer and the generator disagree"
                         + " about this family's unit set");
             }
@@ -416,7 +436,7 @@ public class GraphQLRewriteGenerator {
         }
         if (!refsByName.isEmpty()) {
             throw new IllegalStateException(
-                "global command " + command.kind() + " committed units " + refsByName.keySet()
+                family + " committed units " + refsByName.keySet()
                     + " that its renderer never emitted; the producer and the generator disagree"
                     + " about this family's unit set");
         }

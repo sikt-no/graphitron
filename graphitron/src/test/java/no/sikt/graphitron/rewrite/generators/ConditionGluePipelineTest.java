@@ -15,9 +15,10 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Pipeline-tier coverage for {@link QueryConditionsGenerator}'s composite-key NodeId helper
- * registry: when two distinct {@code QueryTableField}s on the same root type consume the same
- * NodeId type via {@code [ID!] @nodeId(typeName: T)}, the generator emits exactly one shared
+ * Pipeline-tier coverage for the condition glue's composite-key NodeId helper registry
+ * ({@link no.sikt.graphitron.render.ConditionGlueRenderer} over the produced rows): when two
+ * distinct {@code QueryTableField}s on the same root type consume the same
+ * NodeId type via {@code [ID!] @nodeId(typeName: T)}, the renderer emits exactly one shared
  * {@code decode<T>RowsOrThrow} private static helper on the {@code QueryConditions} class (authored
  * filters throw on a bad id), and both condition methods reference it.
  *
@@ -26,7 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * SDL alone.
  */
 @PipelineTier
-class QueryConditionsPipelineTest {
+class ConditionGluePipelineTest {
 
     private static final String FIXTURE_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.nodeidfixture";
     private static final RewriteContext FIXTURE_CTX = new RewriteContext(
@@ -48,7 +49,7 @@ class QueryConditionsPipelineTest {
             }
             """, FIXTURE_CTX);
 
-        var classes = QueryConditionsGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE);
+        var classes = no.sikt.graphitron.rewrite.ConditionRenderTestSupport.renderCommittedConditions(schema, DEFAULT_OUTPUT_PACKAGE);
         var queryConditions = classes.stream()
             .filter(t -> t.name().equals("QueryConditions")).findFirst().orElseThrow();
 
@@ -96,7 +97,7 @@ class QueryConditionsPipelineTest {
             }
             """, FIXTURE_CTX);
 
-        var classes = QueryConditionsGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE);
+        var classes = no.sikt.graphitron.rewrite.ConditionRenderTestSupport.renderCommittedConditions(schema, DEFAULT_OUTPUT_PACKAGE);
         var queryConditions = classes.stream()
             .filter(t -> t.name().equals("QueryConditions")).findFirst().orElseThrow();
 
@@ -126,7 +127,7 @@ class QueryConditionsPipelineTest {
             }
             """, FIXTURE_CTX);
 
-        var classes = QueryConditionsGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE);
+        var classes = no.sikt.graphitron.rewrite.ConditionRenderTestSupport.renderCommittedConditions(schema, DEFAULT_OUTPUT_PACKAGE);
         var queryConditions = classes.stream()
             .filter(t -> t.name().equals("QueryConditions")).findFirst().orElseThrow();
 

@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators;
 
+import no.sikt.graphitron.render.CompositeDecodeHelperRegistry;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
@@ -556,12 +557,10 @@ public class TypeFetcherGenerator {
                     // rows-method calls the service, then re-projects the returned records by identity
                     // through Type.$fields(...). See SplitRowsMethodEmitter.buildServiceTableLift.
                     var stfService = (MethodRef.Service) stf.method();
-                    String stfConditionsClass = outputPackage + ".conditions."
-                        + stf.parentTypeName() + QueryConditionsGenerator.CLASS_NAME_SUFFIX;
                     CodeBlock stfServiceCall = CodeBlock.of("$L.$L($L)",
                         serviceCallTarget(stfService, ClassName.bestGuess(stf.method().className())),
                         stf.method().methodName(),
-                        ArgCallEmitter.buildMethodBackedCallArgs(ctx, stf.method(), null, CodeBlock.of("keys"), stfConditionsClass));
+                        ArgCallEmitter.buildMethodBackedCallArgs(ctx, stf.method(), null, CodeBlock.of("keys")));
                     builder.addMethod(buildServiceDataFetcher(ctx, stf.name(), stf, stf.method(), stf.returnType(), parentTable, RECORD, className, outputPackage, stf.errorChannel()));
                     builder.addMethod(SplitRowsMethodEmitter.buildServiceTableLift(ctx, stf, stfServiceCall, outputPackage));
                 }
@@ -1108,7 +1107,7 @@ public class TypeFetcherGenerator {
         builder.beginControlFlow("try");
         builder.addCode(GeneratorUtils.declareTableLocal(names, tableRef));
         String tableLocal = names.tableLocalName();
-        builder.addCode(buildConditionCall(qtif.parentTypeName(), qtif.name(), tableLocal, outputPackage));
+        builder.addCode(buildConditionCall(qtif.parentTypeName(), qtif.name(), qtif.filters(), tableLocal, outputPackage));
 
         var tenantDsl = TenantDslEmitter.resolve(ctx, qtif, outputPackage);
         builder.addCode(tenantDsl.declaration());
@@ -1622,17 +1621,35 @@ public class TypeFetcherGenerator {
     }
 
     private static CodeBlock buildConditionCall(QueryField.QueryTableField qtf, String srcAlias, String outputPackage) {
-        return buildConditionCall(qtf.parentTypeName(), qtf.name(), srcAlias, outputPackage);
+        return buildConditionCall(qtf.parentTypeName(), qtf.name(), qtf.filters(), srcAlias, outputPackage);
     }
 
-    private static CodeBlock buildConditionCall(String parentTypeName, String fieldName, String srcAlias, String outputPackage) {
-        var queryConditionsClass = ClassName.get(
-            outputPackage + ".conditions",
-            parentTypeName + QueryConditionsGenerator.CLASS_NAME_SUFFIX);
+    /**
+     * The one-line glue call every root fetcher with live filters emits:
+     * {@code Condition condition = <Parent>Conditions.<field>Condition(<alias>, env.getArguments());}.
+     * The class and method names are the minted
+     * {@link no.sikt.graphitron.plan.GeneratedUnits#conditionMethod} reference, the same formula
+     * the condition producer commits, so the two ends cannot drift; the argument map is the env's
+     * coerced arguments ({@code getArgument} is {@code getArguments().get}).
+     *
+     * <p>A coordinate with no live filters has no condition row and no glue method; its fetcher
+     * composes the neutral condition from that absence. (The retired shim emitted a
+     * {@code return DSL.noCondition();} method for these; the empty-set shims stop existing, a
+     * shape change with no SQL effect.)
+     */
+    private static CodeBlock buildConditionCall(String parentTypeName, String fieldName,
+            java.util.List<WhereFilter> filters, String srcAlias, String outputPackage) {
+        if (filters.isEmpty()) {
+            return CodeBlock.builder()
+                .addStatement("$T condition = $T.noCondition()", CONDITION, DSL)
+                .build();
+        }
+        var glue = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage)
+            .conditionMethod(parentTypeName, fieldName);
         return CodeBlock.builder()
-            .addStatement("$T condition = $T.$L($L, env)",
-                CONDITION, queryConditionsClass,
-                QueryConditionsGenerator.conditionMethodName(fieldName), srcAlias)
+            .addStatement("$T condition = $T.$L($L, env.getArguments())",
+                CONDITION, ClassName.get(glue.owner().packageName(), glue.owner().simpleName()),
+                glue.methodName(), srcAlias)
             .build();
     }
 
@@ -5313,20 +5330,20 @@ public class TypeFetcherGenerator {
             builder.addStatement("$T payload = new $T(result, page, $L, condition" + carrierDslTail + ")",
                 valueType, connectionResultClass, tableLocal);
         } else {
-            var conditionsClass = ClassName.get(outputPackage + ".conditions",
-                qtf.parentTypeName() + QueryConditionsGenerator.CLASS_NAME_SUFFIX);
+            var units = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage);
+            var baseRef = units.facetBaseConditionMethod(qtf.parentTypeName(), qtf.name());
+            var conditionsClass = ClassName.get(baseRef.owner().packageName(), baseRef.owner().simpleName());
             var conditionClass = ClassName.get("org.jooq", "Condition");
             var facetSpecRuntime = connectionResultClass.nestedClass("FacetSpec");
-            builder.addStatement("$T facetBase = $T.$L($L, env)",
-                conditionClass, conditionsClass,
-                QueryConditionsGenerator.facetBaseConditionMethodName(qtf.name()), tableLocal);
+            builder.addStatement("$T facetBase = $T.$L($L, env.getArguments())",
+                conditionClass, conditionsClass, baseRef.methodName(), tableLocal);
             builder.addStatement("$T<String, $T> facetConditions = new $T<>()",
                 ClassName.get("java.util", "Map"), conditionClass,
                 ClassName.get("java.util", "LinkedHashMap"));
             for (var facet : facets) {
-                builder.addStatement("facetConditions.put($S, $T.$L($L, env))",
+                builder.addStatement("facetConditions.put($S, $T.$L($L, env.getArguments()))",
                     facet.inputFieldName(), conditionsClass,
-                    QueryConditionsGenerator.facetConditionMethodName(qtf.name(), facet.inputFieldName()),
+                    units.facetConditionMethod(qtf.parentTypeName(), qtf.name(), facet.inputFieldName()).methodName(),
                     tableLocal);
             }
             var specsArgs = CodeBlock.builder();
@@ -6628,8 +6645,6 @@ public class TypeFetcherGenerator {
             .outerRowsReturnType(perKeyType, schemaReturnType, sourceKey.keyElementType(), isMapped);
 
         var serviceClass = ClassName.bestGuess(method.className());
-        String conditionsClassName = outputPackage + ".conditions."
-            + parentTypeName + QueryConditionsGenerator.CLASS_NAME_SUFFIX;
         var service = (MethodRef.Service) method;
         boolean needsDsl = needsDsl(service.callShape());
         CodeBlock callTarget = serviceCallTarget(service, serviceClass);
@@ -6638,7 +6653,7 @@ public class TypeFetcherGenerator {
             .addStatement("return $L.$L($L)",
                 callTarget,
                 method.methodName(),
-                ArgCallEmitter.buildMethodBackedCallArgs(ctx, method, null, CodeBlock.of("keys"), conditionsClassName))
+                ArgCallEmitter.buildMethodBackedCallArgs(ctx, method, null, CodeBlock.of("keys")))
             .build();
 
         return RowsMethodSkeleton.build(

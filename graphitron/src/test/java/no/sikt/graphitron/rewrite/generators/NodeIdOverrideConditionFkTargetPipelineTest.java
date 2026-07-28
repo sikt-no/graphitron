@@ -23,7 +23,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * FK-target table {@code X}, not the parent's own root table.
  *
  * <p>Previously the field's developer condition surfaced as a plain {@code ConditionFilter} whose
- * implicit {@code Table} slot {@link QueryConditionsGenerator} fills with the root {@code table}
+ * implicit {@code Table} slot the condition rendering fills with the root {@code table}
  * local — handing {@code iRegelverksamling(Regelverksamling, ...)} a {@code Soknadsmangeltype} and
  * failing at consumer compile. The fix lifts the FK correlation onto a
  * {@link FkTargetConditionFilter} so the emitter produces a correlated {@code EXISTS} over the FK
@@ -73,8 +73,10 @@ class NodeIdOverrideConditionFkTargetPipelineTest {
         assertThat(fkFilter.joinPath()).hasSize(1);
         assertThat(fkFilter.methodName()).isEqualTo("argConditionTypeUnique");
 
-        // And the emitter consumes it without throwing (the correlated EXISTS arm).
-        assertThatCode(() -> QueryConditionsGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE))
+        // And the producer narrows the hop path and the renderer consumes the row without
+        // throwing (the correlated EXISTS arm).
+        assertThatCode(() -> no.sikt.graphitron.rewrite.ConditionRenderTestSupport
+                .renderCommittedConditions(schema, DEFAULT_OUTPUT_PACKAGE))
             .doesNotThrowAnyException();
     }
 
@@ -115,8 +117,10 @@ class NodeIdOverrideConditionFkTargetPipelineTest {
         assertThat(fkFilter.targetTable().tableName()).isEqualTo("reordered_pk_parent");
         assertThat(fkFilter.keyColumns().size()).isGreaterThan(1);
 
-        // And the emitter consumes it without throwing (the composite correlated EXISTS arm).
-        assertThatCode(() -> QueryConditionsGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE))
+        // And the producer narrows the hop path and the renderer consumes the row without
+        // throwing (the composite correlated EXISTS arm).
+        assertThatCode(() -> no.sikt.graphitron.rewrite.ConditionRenderTestSupport
+                .renderCommittedConditions(schema, DEFAULT_OUTPUT_PACKAGE))
             .doesNotThrowAnyException();
     }
 }

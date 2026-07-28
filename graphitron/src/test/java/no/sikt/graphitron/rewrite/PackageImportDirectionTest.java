@@ -22,19 +22,23 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <ul>
  *   <li>{@code no.sikt.graphitron.command} holds pure data. It may import nothing of the emit
  *       library ({@code no.sikt.graphitron.javapoet}), nothing of {@code plan} or {@code render},
- *       and from the legacy tree only the named model-ref allowlist below. The allowlist is the
- *       migration dial: entries leave it as the refs move to a shared pure-data floor, and the
- *       list is enforced instead of a blanket ban so the model's ref vocabulary is borrowed,
- *       never copied. From graphql-java, only {@code FieldCoordinates} (the coordinate key).</li>
+ *       and from the legacy tree only the named borrow dial below. The dial is the migration
+ *       dial: entries leave it as the refs move to a shared pure-data floor, and the list is
+ *       enforced instead of a blanket ban so the model's ref vocabulary is borrowed, never
+ *       copied. From graphql-java, only {@code FieldCoordinates} (the coordinate key).</li>
  *   <li>{@code no.sikt.graphitron.plan} produces commands from the model: it may not import the
  *       emit library or {@code render}.</li>
- *   <li>{@code no.sikt.graphitron.render} interprets commands into emitted output: it may not
- *       import the model or legacy core ({@code no.sikt.graphitron.rewrite}) or {@code plan}.</li>
+ *   <li>{@code no.sikt.graphitron.render} interprets commands into emitted output: it holds no
+ *       {@code GraphitronSchema} and no fact hierarchy. From the legacy tree it may import
+ *       exactly what {@code command} may (the refs that ride the rows must be readable by the
+ *       renderer of those rows, so the two legs read one dial and shrink in lockstep), and never
+ *       {@code plan}.</li>
  * </ul>
  *
- * <p>The guard also pins {@code UnitRef}'s minting site: a unit name enters the world through the
- * plan's naming vocabulary ({@code GeneratedUnits}) and nowhere else, so a command naming a unit
- * no scheme produces is unrepresentable in practice.
+ * <p>The guard also pins the minting site of {@code UnitRef} and {@code UnitMethodRef}: a unit
+ * or unit-method name enters the world through the plan's naming vocabulary
+ * ({@code GeneratedUnits}) and nowhere else, so a command naming a unit no scheme produces is
+ * unrepresentable in practice.
  */
 @UnitTier
 class PackageImportDirectionTest {
@@ -42,18 +46,52 @@ class PackageImportDirectionTest {
     private static final Pattern IMPORT = Pattern.compile("^\\s*import\\s+(?:static\\s+)?([\\w.]+)\\s*;");
 
     /**
-     * The model refs {@code command} may borrow, exactly as the roadmap's shared-vocabulary
-     * decision enumerates them. An import of a nested member (e.g. {@code JoinStep.Hop}) or a
-     * static member counts as its enclosing entry.
+     * The one borrow dial both {@code command} and {@code render} read: the model refs they may
+     * import, exactly as the shared-vocabulary decision enumerates them. An import of a nested
+     * member (e.g. {@code JoinStep.Hop}) or a static member counts as its enclosing entry.
+     * {@code HelperRef} is not new surface: it rides {@code CallSiteExtraction.NodeIdDecodeKeys}
+     * as a component, so the enumeration was already implicitly admitting it (see the closure
+     * census below).
      */
-    private static final Set<String> COMMAND_MODEL_ALLOWLIST = Set.of(
+    private static final Set<String> BORROWED_MODEL_REFS = Set.of(
         "no.sikt.graphitron.rewrite.model.TableRef",
         "no.sikt.graphitron.rewrite.model.ColumnRef",
         "no.sikt.graphitron.rewrite.model.MethodRef",
         "no.sikt.graphitron.rewrite.model.JoinStep",
         "no.sikt.graphitron.rewrite.model.On",
         "no.sikt.graphitron.rewrite.model.CallParam",
-        "no.sikt.graphitron.rewrite.model.CallSiteExtraction"
+        "no.sikt.graphitron.rewrite.model.CallSiteExtraction",
+        "no.sikt.graphitron.rewrite.model.HelperRef"
+    );
+
+    /**
+     * The legacy-tree surface the borrow dial <em>implicitly</em> admits: the transitive closure
+     * of the borrowed refs' sealed arms and record components. A hand-listed dial drifts the
+     * moment a component is added to a borrowed type, so the census is computed by reflection
+     * and pinned here; growing it is a deliberate edit to this list, not a silent widening.
+     * (javapoet types also appear as components of several refs; that is the emit-vocabulary
+     * debt the model guard's allowlist tracks, not new information here, so the census pins
+     * only the {@code no.sikt.graphitron.rewrite} types.)
+     */
+    private static final Set<String> BORROWED_COMPONENT_CLOSURE = Set.of(
+        "no.sikt.graphitron.rewrite.PathExpr",
+        "no.sikt.graphitron.rewrite.model.CallParam",
+        "no.sikt.graphitron.rewrite.model.CallSiteExtraction",
+        "no.sikt.graphitron.rewrite.model.ColumnRef",
+        "no.sikt.graphitron.rewrite.model.ConditionFilter",
+        "no.sikt.graphitron.rewrite.model.ForeignKeyRef",
+        "no.sikt.graphitron.rewrite.model.HelperRef",
+        "no.sikt.graphitron.rewrite.model.JoinConditionRef",
+        "no.sikt.graphitron.rewrite.model.JoinSlot",
+        "no.sikt.graphitron.rewrite.model.JoinStep",
+        "no.sikt.graphitron.rewrite.model.LoaderRegistration",
+        "no.sikt.graphitron.rewrite.model.MethodRef",
+        "no.sikt.graphitron.rewrite.model.On",
+        "no.sikt.graphitron.rewrite.model.ParamSource",
+        "no.sikt.graphitron.rewrite.model.RoutineRef",
+        "no.sikt.graphitron.rewrite.model.SourceKey",
+        "no.sikt.graphitron.rewrite.model.TableExpr",
+        "no.sikt.graphitron.rewrite.model.TableRef"
     );
 
     private static final String COMMAND_GRAPHQL_ALLOWED = "graphql.schema.FieldCoordinates";
@@ -76,12 +114,9 @@ class PackageImportDirectionTest {
             if (imp.startsWith("no.sikt.graphitron.plan") || imp.startsWith("no.sikt.graphitron.render")) {
                 return "command sits below plan and render";
             }
-            if (imp.startsWith("no.sikt.graphitron.") && !imp.startsWith("no.sikt.graphitron.command.")) {
-                boolean allowlisted = COMMAND_MODEL_ALLOWLIST.stream()
-                    .anyMatch(entry -> imp.equals(entry) || imp.startsWith(entry + "."));
-                if (!allowlisted) {
-                    return "command may borrow only the enumerated model-ref allowlist";
-                }
+            if (imp.startsWith("no.sikt.graphitron.") && !imp.startsWith("no.sikt.graphitron.command.")
+                && !isBorrowedRef(imp)) {
+                return "command may borrow only the enumerated model-ref dial";
             }
             if (imp.startsWith("graphql.") && !imp.equals(COMMAND_GRAPHQL_ALLOWED)) {
                 return "command's only graphql-java borrow is FieldCoordinates";
@@ -100,8 +135,8 @@ class PackageImportDirectionTest {
         });
 
         int renderFiles = scan(sourceRoot.resolve("render"), findings, (file, imp) -> {
-            if (imp.startsWith("no.sikt.graphitron.rewrite")) {
-                return "render never imports the model or legacy core";
+            if (imp.startsWith("no.sikt.graphitron.rewrite") && !isBorrowedRef(imp)) {
+                return "render reads the borrowed refs that ride the rows and nothing else of the legacy core";
             }
             if (imp.startsWith("no.sikt.graphitron.plan")) {
                 return "render interprets commands; it never sees producers";
@@ -112,7 +147,82 @@ class PackageImportDirectionTest {
         assertThat(findings).as("package-triangle import-direction violations").isEmpty();
         assertThat(commandFiles).as("command sources scanned (walk must not be vacuous)").isGreaterThanOrEqualTo(4);
         assertThat(planFiles).as("plan sources scanned (walk must not be vacuous)").isGreaterThanOrEqualTo(3);
-        assertThat(renderFiles).as("render sources scanned (walk must not be vacuous)").isGreaterThanOrEqualTo(1);
+        assertThat(renderFiles).as("render sources scanned (walk must not be vacuous)").isGreaterThanOrEqualTo(3);
+    }
+
+    private static boolean isBorrowedRef(String imp) {
+        return BORROWED_MODEL_REFS.stream()
+            .anyMatch(entry -> imp.equals(entry) || imp.startsWith(entry + "."));
+    }
+
+    /**
+     * The closure census: what the borrow dial implicitly admits is computed, not remembered.
+     * Walks the borrowed refs' sealed arms, record components (with type arguments), nested
+     * types, and interface accessor returns, and pins the reachable
+     * {@code no.sikt.graphitron.rewrite} top-level types against
+     * {@link #BORROWED_COMPONENT_CLOSURE}, so adding a component to a borrowed type surfaces
+     * here as a deliberate census edit instead of silently widening the admitted surface.
+     */
+    @Test
+    void borrowDialComponentClosureIsPinned() throws Exception {
+        var visited = new java.util.HashSet<Class<?>>();
+        var reachable = new java.util.TreeSet<String>();
+        for (String root : BORROWED_MODEL_REFS) {
+            walkClosure(Class.forName(root), visited, reachable);
+        }
+        assertThat(reachable)
+            .as("legacy-tree types reachable from the borrow dial's components")
+            .containsExactlyInAnyOrderElementsOf(BORROWED_COMPONENT_CLOSURE);
+    }
+
+    private static void walkClosure(Class<?> c, java.util.Set<Class<?>> visited, java.util.Set<String> reachable) {
+        if (c == null || c.isPrimitive()) {
+            return;
+        }
+        while (c.isArray()) {
+            c = c.getComponentType();
+        }
+        if (!c.getName().startsWith("no.sikt.graphitron.rewrite") || !visited.add(c)) {
+            return;
+        }
+        Class<?> top = c;
+        while (top.getEnclosingClass() != null) {
+            top = top.getEnclosingClass();
+        }
+        reachable.add(top.getName());
+        if (c.isSealed()) {
+            for (Class<?> p : c.getPermittedSubclasses()) {
+                walkClosure(p, visited, reachable);
+            }
+        }
+        if (c.isRecord()) {
+            for (var rc : c.getRecordComponents()) {
+                walkClosure(rc.getType(), visited, reachable);
+                walkTypeArguments(rc.getGenericType(), visited, reachable);
+            }
+        }
+        for (Class<?> nested : c.getDeclaredClasses()) {
+            walkClosure(nested, visited, reachable);
+        }
+        if (c.isInterface()) {
+            for (var m : c.getDeclaredMethods()) {
+                if (!m.isSynthetic()) {
+                    walkClosure(m.getReturnType(), visited, reachable);
+                    walkTypeArguments(m.getGenericReturnType(), visited, reachable);
+                }
+            }
+        }
+    }
+
+    private static void walkTypeArguments(java.lang.reflect.Type type, java.util.Set<Class<?>> visited,
+            java.util.Set<String> reachable) {
+        if (type instanceof java.lang.reflect.ParameterizedType pt) {
+            for (var arg : pt.getActualTypeArguments()) {
+                if (arg instanceof Class<?> cls) {
+                    walkClosure(cls, visited, reachable);
+                }
+            }
+        }
     }
 
     @Test
@@ -125,14 +235,15 @@ class PackageImportDirectionTest {
             for (Path file : files.filter(p -> p.toString().endsWith(".java")).toList()) {
                 scanned++;
                 if (file.equals(mintingSite)) continue;
-                if (Files.readString(file).contains("new UnitRef(")) {
+                String source = Files.readString(file);
+                if (source.contains("new UnitRef(") || source.contains("new UnitMethodRef(")) {
                     offenders.add(file);
                 }
             }
         }
         assertThat(offenders)
-            .as("UnitRef is minted only by GeneratedUnits' naming schemes; mint through a scheme"
-                + " (or add one) instead of constructing a ref ad hoc")
+            .as("UnitRef and UnitMethodRef are minted only by GeneratedUnits' naming schemes; mint"
+                + " through a scheme (or add one) instead of constructing a ref ad hoc")
             .isEmpty();
         assertThat(scanned).as("main sources scanned (walk must not be vacuous)").isGreaterThan(300);
     }

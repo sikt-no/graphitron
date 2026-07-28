@@ -72,7 +72,8 @@ class FacetEmitterTest {
     }
 
     private static TypeSpec queryConditions(GraphitronSchema schema) {
-        return QueryConditionsGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+        return no.sikt.graphitron.rewrite.ConditionRenderTestSupport
+            .renderCommittedConditions(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("QueryConditions"))
             .findFirst().orElseThrow();
     }

@@ -11,10 +11,13 @@ import java.util.List;
  * a flag: a plain {@link ConditionFilter}'s implicit first parameter is the field's <em>own</em>
  * table (emitted as the {@code table} local), but here the developer method's first parameter is
  * the FK-<em>target</em> table {@code X}; handing it the own-table local fails at consumer
- * compile with a mistyped table argument.
- * {@link no.sikt.graphitron.rewrite.generators.QueryConditionsGenerator QueryConditionsGenerator}
- * forks on this type and emits a correlated {@code EXISTS} over {@code joinPath} so the developer
- * method receives an alias for {@code X} rather than the root {@code table}.
+ * compile with a mistyped table argument. The condition producer narrows this filter onto the
+ * authored predicate's reach slot, and
+ * {@link no.sikt.graphitron.render.ConditionGlueRenderer ConditionGlueRenderer} (plus the
+ * not-yet-converged inline hosts through
+ * {@link no.sikt.graphitron.rewrite.generators.FkTargetConditionEmitter FkTargetConditionEmitter})
+ * emits a correlated {@code EXISTS} over {@code joinPath} so the developer method receives an
+ * alias for {@code X} rather than the root {@code table}.
  *
  * <p>The condition method itself is held as {@link #delegate()} (already rewrapped for nested
  * extraction by {@code ConditionResolver.rewrapForNested} when this filter is built); the

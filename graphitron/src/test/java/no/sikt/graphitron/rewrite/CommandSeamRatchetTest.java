@@ -36,20 +36,27 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>For new code the same boundary is structural rather than ratcheted:
  * {@link PackageImportDirectionTest} keeps the emit library out of {@code command} and {@code
- * plan} and the model out of {@code render}, which covers the render-side half of the rule (a
- * render context must not smuggle the model back in) until a render context type exists to
- * inspect directly.
+ * plan} and restricts {@code render}'s legacy-tree imports to the borrowed ref dial, which covers
+ * the render-side half of the rule (a renderer reads the refs riding the rows, never the schema
+ * or a fact hierarchy).
  *
  * <p>When a count drops, lower its pin in the same commit; never raise the generators-side pins.
  */
 @UnitTier
 class CommandSeamRatchetTest {
 
-    /** Entry points in {@code generators/} still taking the model. Ratchets down to zero. */
-    private static final int MODEL_TAKING_ENTRY_POINTS = 24;
+    /**
+     * Entry points in {@code generators/} still taking the model. Ratchets down to zero.
+     * Lowered 24 to 23 when the root conditions shim generator retired into the condition
+     * command's producer and glue renderer.
+     */
+    private static final int MODEL_TAKING_ENTRY_POINTS = 23;
 
-    /** {@code instanceof} sites in {@code generators/} naming a leaf of the seven hierarchies. */
-    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 104;
+    /**
+     * {@code instanceof} sites in {@code generators/} naming a leaf of the seven hierarchies.
+     * Lowered 104 to 100 with the conditions shim generator's retirement.
+     */
+    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 100;
 
     /** {@code case} patterns in {@code generators/} naming a leaf of the seven hierarchies. */
     private static final int GENERATOR_LEAF_CASE_PATTERNS = 89;
@@ -57,12 +64,13 @@ class CommandSeamRatchetTest {
     /**
      * Leaf references ({@code instanceof} plus {@code case}) inside {@code plan/}: the relocation
      * guard. Rises as families migrate their dispatch into producers, ratchets to zero when the
-     * fact walk replaces it. Update deliberately per slice, in either direction. The starting
-     * value is 1: the node-fetcher membership gate in
-     * {@link no.sikt.graphitron.plan.EmitPlan#produce} already reads a
-     * {@link no.sikt.graphitron.rewrite.model.GraphitronType} leaf.
+     * fact walk replaces it. Update deliberately per slice, in either direction. Opened at 1 (the
+     * node-fetcher membership gate in {@link no.sikt.graphitron.plan.EmitPlan#produce} reads a
+     * {@link no.sikt.graphitron.rewrite.model.GraphitronType} leaf); raised to 10 when the
+     * condition command's producer ({@link no.sikt.graphitron.plan.ConditionCommands}) relocated
+     * the WHERE family's coordinate dispatch out of the retired shim generator.
      */
-    private static final int PLAN_LEAF_REFERENCES = 1;
+    private static final int PLAN_LEAF_REFERENCES = 10;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide

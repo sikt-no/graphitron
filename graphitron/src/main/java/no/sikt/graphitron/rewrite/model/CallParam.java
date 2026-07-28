@@ -55,8 +55,8 @@ public record CallParam(
     /**
      * True when emitting this argument's extraction produces a Java unchecked cast, so the enclosing
      * generated method must carry {@code @SuppressWarnings("unchecked")}. The single source of truth
-     * for this fact: every generator that hosts a condition-method call (the single-table
-     * {@code QueryConditionsGenerator} method and the multitable {@code MultiTablePolymorphicEmitter}
+     * for this fact: every generator that hosts an inline condition-method call (the multitable
+     * {@code MultiTablePolymorphicEmitter}
      * fetcher) folds over its {@link CallParam}s and asks here, rather than each re-deriving the same
      * {@code list() && extraction instanceof …} predicate (Generation-thinking: a fact two consumers
      * branch on belongs on the model).
@@ -79,8 +79,8 @@ public record CallParam(
      * True when emitting this argument under the {@code FromSelectedField} argument source (the
      * two inline emission sites) produces a Java unchecked cast, so the enclosing {@code $fields}
      * method must carry {@code @SuppressWarnings("unchecked")}. This is the source-aware companion to
-     * {@link #emitsUncheckedCast()}: the {@code $fields} host asks here, while the {@code Env} hosts
-     * ({@code QueryConditionsGenerator}, {@code MultiTablePolymorphicEmitter}) ask
+     * {@link #emitsUncheckedCast()}: the {@code $fields} host asks here, while the {@code Env} host
+     * ({@code MultiTablePolymorphicEmitter}) asks
      * {@link #emitsUncheckedCast()}. Keeping both predicates on the model, keyed by source, is why
      * broadening the source-agnostic {@code emitsUncheckedCast} would wrongly stamp the {@code Env}
      * hosts (whose reads target-type and are warning-free) and break their byte-identical output.

@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators;
 
+import no.sikt.graphitron.render.CompositeDecodeHelperRegistry;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.rewrite.model.FkTargetConditionFilter;
@@ -15,9 +16,11 @@ import java.util.Map;
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
 
 /**
- * Shared emission for {@code @condition} filter terms, factored out so every WHERE-emitting site
- * (the {@link QueryConditionsGenerator} shim plus the inline fetcher emitters) treats an FK-target
- * {@code @nodeId} override condition identically.
+ * Shared emission for {@code @condition} filter terms at the not-yet-converged inline fetcher
+ * emitters, so every remaining inline WHERE site treats an FK-target {@code @nodeId} override
+ * condition identically. The root shim end retired into the condition glue renderer
+ * ({@link no.sikt.graphitron.render.ConditionGlueRenderer}); this class deletes in full when the
+ * inline call sites converge onto glue calls.
  *
  * <p>A plain {@link WhereFilter} hands the developer method the caller's own table local. An
  * {@link FkTargetConditionFilter} cannot: its method expects the FK-<em>target</em> table {@code X}

@@ -2067,7 +2067,7 @@ class FieldBuilder {
                     // table X, not the input's own table, so the plain ConditionFilter (whose Table
                     // slot the emitter fills with the root `table` local) would hand the method the
                     // wrong table and fail at consumer compile. Wrap it in an FkTargetConditionFilter
-                    // carrying the FK correlation so QueryConditionsGenerator emits a correlated
+                    // carrying the FK correlation so the condition renderers emit a correlated
                     // EXISTS that hands the method an alias for X. An empty joinPath means start
                     // table == target table (the column lives on the parent's own table), so `table`
                     // is genuinely correct and the plain ConditionFilter stands. Composite-key

@@ -7,7 +7,6 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
-import no.sikt.graphitron.rewrite.generators.QueryConditionsGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -68,9 +67,9 @@ class MultiSchemaPipelineTest {
         }
 
         type Query {
-            widgets: [Widget!]!
-            events: [Event!]!
-            gadgets: [Gadget!]!
+            widgets(name: String @field(name: "name")): [Widget!]!
+            events(name: String @field(name: "name")): [Event!]!
+            gadgets(note: String @field(name: "note")): [Gadget!]!
         }
         """;
 
@@ -193,7 +192,7 @@ class MultiSchemaPipelineTest {
     @Test
     void queryConditions_emitsAllThreeBackingTableClassesAsReachableClassNames() {
         var schema = buildSchema();
-        var queryConditions = QueryConditionsGenerator.generate(schema, MULTI_OUTPUT_PACKAGE).stream()
+        var queryConditions = ConditionRenderTestSupport.renderCommittedConditions(schema, MULTI_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("QueryConditions"))
             .findFirst()
             .orElseThrow();
@@ -224,7 +223,7 @@ class MultiSchemaPipelineTest {
     private static List<TypeSpec> allEmittedTypeSpecs(GraphitronSchema schema) {
         var out = new java.util.ArrayList<TypeSpec>();
         out.addAll(TypeClassGenerator.generate(schema, MULTI_OUTPUT_PACKAGE));
-        out.addAll(QueryConditionsGenerator.generate(schema, MULTI_OUTPUT_PACKAGE));
+        out.addAll(ConditionRenderTestSupport.renderCommittedConditions(schema, MULTI_OUTPUT_PACKAGE));
         return out;
     }
 

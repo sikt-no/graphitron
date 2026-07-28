@@ -15,21 +15,26 @@ import java.util.List;
  * Commands are a derived artifact of this step, never stored on {@link GraphitronSchema}: the
  * fact store carries what the schema means, the plan carries what this run emits.
  *
- * <p>Currently the plan holds the global command relation: one {@link GlobalCommand} row per
- * global emit family, keyed by {@link GlobalUnitKind}, each naming the exact units it commits.
+ * <p>The plan holds the global command relation (one {@link GlobalCommand} row per global emit
+ * family, keyed by {@link GlobalUnitKind}, each naming the exact units it commits) and the
+ * condition command relation ({@link ConditionRelation}: one row per covered
+ * {@code (coordinate, resolvedTable)} key, with the committed subset this run renders glue for).
  * The shell folds over the rows and renders; membership decisions that used to sit in the shell
  * (the federation {@code @oneOf} gate) or inside a generator's early return (entity dispatch on a
  * schema without entities, the node fetcher on a schema without node types, the dev executor on a
  * federated schema) are all made here. The schema-level inputs arrive as facts landed once by the
  * builder ({@code Bundle.federationLink()}, {@code Bundle.usesOneOf()}), not re-derived.
  */
-public record EmitPlan(List<GlobalCommand> globals) {
+public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions) {
 
     public EmitPlan {
         globals = List.copyOf(globals);
         long distinctKinds = globals.stream().map(GlobalCommand::kind).distinct().count();
         if (distinctKinds != globals.size()) {
             throw new IllegalArgumentException("the global command relation is keyed by unit kind; a kind appeared twice");
+        }
+        if (conditions == null) {
+            throw new IllegalArgumentException("the plan carries the condition relation; an empty relation is a value, not null");
         }
     }
 
@@ -91,7 +96,7 @@ public record EmitPlan(List<GlobalCommand> globals) {
         if (!federationLink) {
             globals.add(one(GlobalUnitKind.DEV_EXECUTOR, units.rootUnit("GraphitronDevExecutor")));
         }
-        return new EmitPlan(globals);
+        return new EmitPlan(globals, ConditionCommands.produce(schema, outputPackage));
     }
 
     /** A global command committing exactly one unit. */

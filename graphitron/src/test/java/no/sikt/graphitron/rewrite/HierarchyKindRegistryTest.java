@@ -187,6 +187,7 @@ class HierarchyKindRegistryTest {
         Map.entry(DomainReturnType.class, HierarchyKind.RESOLVED_VIEW),
 
         // Minted at emit grain: these describe what the emit does. The commands-in-waiting.
+        Map.entry(no.sikt.graphitron.command.Predicate.class, HierarchyKind.COMMAND),
         Map.entry(Operation.class, HierarchyKind.COMMAND),
         Map.entry(BodyParam.class, HierarchyKind.COMMAND),
         Map.entry(DmlReturnExpression.class, HierarchyKind.COMMAND),

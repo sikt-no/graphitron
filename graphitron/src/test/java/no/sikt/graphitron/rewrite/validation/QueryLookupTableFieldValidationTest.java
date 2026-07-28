@@ -48,21 +48,30 @@ class QueryLookupTableFieldValidationTest {
             filters, orderBy, null, EMPTY_LOOKUP);
     }
 
+    private static final String GENERATED_FILTER_ON_LOOKUP =
+        "Field 'Query.filmById': generated column filters on a lookup coordinate are not emitted: "
+        + "lookup keys ride the VALUES join and no conditions method is generated for a lookup field, "
+        + "so the emitted call would not compile; use an authored @condition method, or drop the filter";
+
     enum Case implements ValidatorCase {
 
         VALID("single return type, no filters — valid",
             singleReturn(List.of(), new OrderBySpec.None()),
             List.of()),
 
-        VALID_WITH_COLUMN_ARG("GeneratedConditionFilter scalar (no list) — valid with single return",
+        // Cardinality-consistent, but the generated filter's method has no emitter on a lookup
+        // coordinate (the entity conditions layer skips LookupField), so the shape defers at
+        // validate time instead of shipping a dangling call; these two pin the rejected state,
+        // and flip back to valid when the lookup fold converges onto glue.
+        COLUMN_ARG_DEFERRED("GeneratedConditionFilter scalar on lookup: deferred, no emitter",
             singleReturn(List.of(columnFilter("id", false, false)), new OrderBySpec.None()),
-            List.of()),
+            List.of(GENERATED_FILTER_ON_LOOKUP)),
 
-        VALID_WITH_LIST_COLUMN_ARG("GeneratedConditionFilter list — valid with list return",
+        LIST_COLUMN_ARG_DEFERRED("GeneratedConditionFilter list on lookup: deferred, no emitter",
             new QueryLookupTableField("Query", "filmById", null,
                 new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE, new FieldWrapper.List(true, true)),
                 List.of(columnFilter("id", false, true)), PK_ORDER, null, EMPTY_LOOKUP),
-            List.of()),
+            List.of(GENERATED_FILTER_ON_LOOKUP)),
 
         VALID_WITH_TABLE_INPUT_TYPE_ARG("table-bound input type arg — skipped, empty filters, valid with single return",
             singleReturn(List.of(), new OrderBySpec.None()),
@@ -74,9 +83,10 @@ class QueryLookupTableFieldValidationTest {
                 List.of(), PK_ORDER, null, EMPTY_LOOKUP),
             List.of("Field 'Query.filmById': result type does not match input cardinality")),
 
-        SINGLE_RETURN_LIST_ARG("single return with list filter — cardinality mismatch",
+        SINGLE_RETURN_LIST_ARG("single return with list filter: cardinality mismatch, and the filter defers",
             singleReturn(List.of(columnFilter("id", false, true)), new OrderBySpec.None()),
-            List.of("Field 'Query.filmById': result type does not match input cardinality")),
+            List.of("Field 'Query.filmById': result type does not match input cardinality",
+                GENERATED_FILTER_ON_LOOKUP)),
 
         CONNECTION_RETURN("connection return — never valid on lookup",
             new QueryLookupTableField("Query", "filmById", null,

@@ -1,5 +1,6 @@
 package no.sikt.graphitron.plan;
 
+import no.sikt.graphitron.command.UnitMethodRef;
 import no.sikt.graphitron.command.UnitRef;
 
 import java.nio.file.Path;
@@ -53,6 +54,35 @@ public final class GeneratedUnits {
     /** {@code <pkg>.conditions.<Type>Conditions} — the per-parent generated-condition class. */
     public UnitRef conditions(String parentTypeName) {
         return unit(SUB_CONDITIONS, parentTypeName + CONDITIONS_SUFFIX);
+    }
+
+    /**
+     * {@code <Parent>Conditions#<field>Condition}: a coordinate's glue method, the fold every
+     * WHERE consumer calls. One formula for both ends: the producer mints the ref onto the
+     * condition row, and the not-yet-migrated call sites derive the same ref here instead of
+     * recomputing the class or method name locally.
+     */
+    public UnitMethodRef conditionMethod(String parentTypeName, String fieldName) {
+        return new UnitMethodRef(conditions(parentTypeName), fieldName + "Condition");
+    }
+
+    /** {@code <field>FacetBaseCondition}: the faceted carrier's filter-minus-every-facet fragment. */
+    public UnitMethodRef facetBaseConditionMethod(String parentTypeName, String fieldName) {
+        return new UnitMethodRef(conditions(parentTypeName), fieldName + "FacetBaseCondition");
+    }
+
+    /** {@code <field>Facet_<inputField>Condition}: one facet's own predicate alone. */
+    public UnitMethodRef facetConditionMethod(String parentTypeName, String fieldName, String facetInputFieldName) {
+        return new UnitMethodRef(conditions(parentTypeName), fieldName + "Facet_" + facetInputFieldName + "Condition");
+    }
+
+    /**
+     * {@code <field>Participant_<Type>Condition}: a polymorphic root coordinate's per-participant
+     * glue method; participant rows on one coordinate disambiguate by minted name, mirroring the
+     * facet-fragment scheme.
+     */
+    public UnitMethodRef participantConditionMethod(String parentTypeName, String fieldName, String participantTypeName) {
+        return new UnitMethodRef(conditions(parentTypeName), fieldName + "Participant_" + participantTypeName + "Condition");
     }
 
     /** {@code <pkg>.inputs.<Input>} — the per-input-type record class. */

@@ -15,12 +15,15 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Structural tests for {@link QueryConditionsGenerator#computeLiftedOuters}: the per-method
+ * Structural tests for {@link MultiTablePolymorphicEmitter#computeLiftedOuters}: the per-method
  * outer-arg lift that dedupes {@code env.getArgument(outer) instanceof Map<?, ?> map1} by
- * rebinding when ≥2 NestedInputField call params share an outer arg.
+ * rebinding when ≥2 NestedInputField call params share an outer arg. The lift relocated here
+ * with its last inline caller (the polymorphic branch folds) when the root shim retired into the
+ * condition glue renderer, whose producer expresses the same decision as data; both retire at
+ * call-site convergence.
  */
 @UnitTier
-class QueryConditionsGeneratorLiftTest {
+class MultiTablePolymorphicEmitterLiftTest {
 
     private static final TableRef FILM = TestFixtures.tableRef("film", "FILM", "Film", List.of());
 
@@ -40,14 +43,14 @@ class QueryConditionsGeneratorLiftTest {
         var filter = filterWith(
             nestedDirect("filmId", "filter"),
             nestedDirect("title", "filter"));
-        Map<String, String> lifted = QueryConditionsGenerator.computeLiftedOuters(List.of(filter));
+        Map<String, String> lifted = MultiTablePolymorphicEmitter.computeLiftedOuters(List.of(filter));
         assertThat(lifted).containsExactly(Map.entry("filter", "filterMap"));
     }
 
     @Test
     void computeLiftedOuters_singleBodyParam_doesNotLift() {
         var filter = filterWith(nestedDirect("filmId", "filter"));
-        assertThat(QueryConditionsGenerator.computeLiftedOuters(List.of(filter))).isEmpty();
+        assertThat(MultiTablePolymorphicEmitter.computeLiftedOuters(List.of(filter))).isEmpty();
     }
 
     @Test
@@ -55,14 +58,14 @@ class QueryConditionsGeneratorLiftTest {
         var filter = filterWith(
             nestedDirect("filmId", "filter"),
             nestedDirect("title", "search"));
-        assertThat(QueryConditionsGenerator.computeLiftedOuters(List.of(filter))).isEmpty();
+        assertThat(MultiTablePolymorphicEmitter.computeLiftedOuters(List.of(filter))).isEmpty();
     }
 
     @Test
     void computeLiftedOuters_acrossMultipleFilters_counts() {
         var f1 = filterWith(nestedDirect("filmId", "filter"));
         var f2 = filterWith(nestedDirect("title", "filter"));
-        Map<String, String> lifted = QueryConditionsGenerator.computeLiftedOuters(List.of(f1, f2));
+        Map<String, String> lifted = MultiTablePolymorphicEmitter.computeLiftedOuters(List.of(f1, f2));
         assertThat(lifted).containsExactly(Map.entry("filter", "filterMap"));
     }
 
@@ -71,7 +74,7 @@ class QueryConditionsGeneratorLiftTest {
         var filter = filterWith(
             nestedDirect("filmId", "search_input"),
             nestedDirect("title", "search_input"));
-        Map<String, String> lifted = QueryConditionsGenerator.computeLiftedOuters(List.of(filter));
+        Map<String, String> lifted = MultiTablePolymorphicEmitter.computeLiftedOuters(List.of(filter));
         assertThat(lifted).containsExactly(Map.entry("search_input", "searchInputMap"));
     }
 }

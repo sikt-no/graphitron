@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.generators;
+package no.sikt.graphitron.render;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
@@ -38,9 +38,9 @@ import java.util.Map;
  * The throw is statement-form, so a developer can breakpoint the decode and read a meaningful
  * stack frame.
  */
-final class CompositeDecodeHelperRegistry {
+public final class CompositeDecodeHelperRegistry {
 
-    enum Mode { SKIP, THROW }
+    public enum Mode { SKIP, THROW }
 
     record Key(ClassName encoderClass, String methodName, Mode mode, boolean list) {}
 
@@ -55,7 +55,7 @@ final class CompositeDecodeHelperRegistry {
      */
     private final String outputPackage;
 
-    CompositeDecodeHelperRegistry(String outputPackage) {
+    public CompositeDecodeHelperRegistry(String outputPackage) {
         this.outputPackage = outputPackage;
     }
 
@@ -66,10 +66,11 @@ final class CompositeDecodeHelperRegistry {
      * only as a dangling {@code decode<Type>(...)} reference and a downstream consumer compile
      * error, not a generator failure.
      *
-     * <p>Used by {@link QueryConditionsGenerator}, {@link TypeClassGenerator}, and
-     * {@link TypeFetcherGenerator}; each owns the {@link TypeSpec.Builder} the helpers land on.
+     * <p>Used by {@link ConditionGlueRenderer} and the legacy fetcher-side hosts
+     * ({@code TypeClassGenerator}, {@code TypeFetcherGenerator}); each owns the
+     * {@link TypeSpec.Builder} the helpers land on.
      */
-    static void collectInto(TypeSpec.Builder classBuilder, String outputPackage,
+    public static void collectInto(TypeSpec.Builder classBuilder, String outputPackage,
             java.util.function.Consumer<CompositeDecodeHelperRegistry> body) {
         var registry = new CompositeDecodeHelperRegistry(outputPackage);
         body.accept(registry);
@@ -80,7 +81,7 @@ final class CompositeDecodeHelperRegistry {
      * Registers a helper for {@code (decode, mode, list)} if not already present and returns its
      * method name.
      */
-    String register(HelperRef.Decode decode, Mode mode, boolean list) {
+    public String register(HelperRef.Decode decode, Mode mode, boolean list) {
         Key key = new Key(decode.encoderClass(), decode.methodName(), mode, list);
         String existing = helperNames.get(key);
         if (existing != null) return existing;
@@ -91,8 +92,22 @@ final class CompositeDecodeHelperRegistry {
     }
 
     /** All collected helper specs in registration order. Empty when nothing was registered. */
-    Collection<MethodSpec> emit() {
+    public Collection<MethodSpec> emit() {
         return helpers.values();
+    }
+
+    /**
+     * The Java type a decode helper returns for {@code (decode, list)}: the single key column's
+     * type at arity 1, the typed {@code Row<N><T1, ..., TN>} above, wrapped in {@code List} on
+     * the list axis. Exposed so a caller declaring a typed local for the helper's result derives
+     * the type from the same shape the helper body is built from.
+     */
+    public static TypeName decodedType(HelperRef.Decode decode, boolean list) {
+        int arity = decode.outputColumnShape().size();
+        TypeName elementType = arity == 1
+            ? decode.outputColumnShape().getFirst().columnType()
+            : typedRow(decode.outputColumnShape());
+        return list ? ParameterizedTypeName.get(ClassName.get(List.class), elementType) : elementType;
     }
 
     private static String helperName(String decodeMethod, Mode mode, boolean list, int arity) {

@@ -637,6 +637,98 @@ its reasoning live with the rest of the sequencing in R549's Slices section.
   becomes the programme's second vocabulary by default. R549 slice 5 generalises from the three proofs together; a hand-off that reports
   nothing has not been read carefully.
 
+## Slice log
+
+### Slice 1 (2026-07-28): command, producer, glue renderer, root cutover
+
+Landed as one commit: the record set in `command/` (`ConditionCommand`, `Predicate` with its
+`Generated` / `Authored` arms, `ColumnTerm`, `MatchKind`, `FkHop`, `FacetFragment`), the producer
+(`plan/ConditionCommands`, riding `EmitPlan` as a `ConditionRelation`), the glue renderer
+(`render/ConditionGlueRenderer`), and the root cutover: `QueryConditionsGenerator` deleted, the
+four recomputation sites and `buildConditionCall`'s formula read minted refs, root fetchers pass
+`env.getArguments()`, and `conditionMethodName` / `facetBaseConditionMethodName` /
+`facetConditionMethodName` / `CLASS_NAME_SUFFIX` retired. `computeLiftedOuters` relocated to
+`MultiTablePolymorphicEmitter` (its last inline caller) and the lift test with it. Invariant 1's
+ratchet moved: entry points 24 to 23, generator leaf `instanceof` 104 to 100, plan leaf
+references 1 to 10 (the relocated coordinate dispatch, deliberately).
+
+**Which rows render: root rows only, and the restriction lives in the plan.** The producer mints
+the full relation (participants expanded, lookup and child coordinates included; pipeline pins
+cover each population), and commits glue for exactly the coordinates whose fetchers already call
+a conditions method (`ConditionCommands.rendersIntoConditionsClass`, root `QueryTableField` +
+`QueryTableInterfaceField`). The renderer is total over the rows it is handed and the shell folds
+blindly; the committed set is the migration dial, and slice 3's closing enforcer is committed set
+equals relation. Consequence found in implementation: the retired shim emitted
+`return DSL.noCondition();` methods for filterless coordinates and every root fetcher called
+them; under absence-is-data those shims stop existing and filterless fetchers compose the
+neutral condition inline, exactly as the Target section promised.
+
+**Fork 5 resolved: runtime-prefixed SQL aliases everywhere in glue** (`table.getName() +
+"_fkt<p>_<h>"`, and the generated remote-reach aliases likewise). No pinned string anywhere
+carried the old static aliases, so the sanctioned alias delta broke nothing; the new SQL pins are
+authored against the post-decision strings.
+
+**`contextArguments` resolved: the deferred rejection, scoped on the fact.** The validator
+rejects a committed-coordinate condition whose bindings read the request context, reading the
+producer's own committed-set predicate rather than a parallel host list, so the rejection widens
+in lockstep as convergence commits more rows and deletes in one place if the env-appending
+signature ever lands. The known-broken emit comment died with its generator. The value-shaped
+proof is preserved outright: every glue signature is `(JooqTable, Map<String, Object>)`, and the
+`env.getArgument` versus `getArguments().get` equivalence was verified against graphql-java 25.0
+(`DataFetchingEnvironmentImpl.getArgument` compiles to `arguments.get(name)`).
+
+**The dual-scheme window rule, decided:** when a glue class name coincides with an entity class
+name, the glue renderer folds its methods into that class's `TypeSpec` rather than emitting a
+second file (implemented at the convergence slice, where non-root glue first renders). Landed
+now as its backstop: `EmissionLog.record` fails hard on a duplicate landing address, so a
+collision in the window is a build failure instead of a silent clobber surfacing at the
+consumer's javac.
+
+**The borrowed-vocabulary verdict (the hand-off obligation): the borrow held; nothing was
+copied.** Two shapes the sketch did not have, both borrow-plus-producer-data pairs like `FkHop`,
+recorded as findings against the five-type budget: `ArgBinding(CallParam, localName)` (the
+binding invariant's carrier; the local-name uniqueness rule is a compact-constructor failure, one
+local one value, which is the sibling-name-collision dissolution made mechanical) and
+`OuterLift(outerArgName, localName)` (the shared-outer lift as method-grain data). A third,
+`UnitMethodRef(UnitRef, methodName)`, exists because `UnitRef` is class-grained and the glue slot
+is method-grained; `GeneratedUnits` gained the method schemes (`conditionMethod`,
+`facetBaseConditionMethod`, `facetConditionMethod`, `participantConditionMethod`) and the minting
+pin covers it, so the method-name formula has one home and slice 2's convergence sites read it.
+Bindings ride the terms (a `ColumnTerm` carries its `ArgBinding`), not a sibling list, so the
+`CallParam`/`BodyParam` positional pairing is not re-created in `command`.
+
+**One structural correction to the triangle, consulted and adopted:** the flat "render never
+imports the model" rule was unsatisfiable for any borrowing family, since the renderer of rows
+that carry borrowed refs must read those refs. `PackageImportDirectionTest` now has one borrow
+dial both `command` and `render` read (with `HelperRef` added: it rides
+`CallSiteExtraction.NodeIdDecodeKeys`, surface the enumeration already implicitly admitted), plus
+a reflection-computed closure census pinning the eighteen legacy types the dial's components
+transitively admit, so a component addition is a deliberate census edit rather than silent
+widening. `CompositeDecodeHelperRegistry` moved to `render/` as declared helper-drain machinery
+(legacy hosts import it back), and the two proven-FK join fragments moved to
+`render/JoinFragments` with `JoinPathEmitter` delegating, keeping one derivation.
+
+**Facet fragments as data, one behaviour carried over deliberately:** an authored `@condition`
+consuming a facet's input field is emitted unmasked in the base fragment and dropped wholesale
+from the per-facet fragment, exactly what the retired emitter's `instanceof`-gated rebuild did;
+as producer data this is now a visible decision rather than an emitter accident. The fragment
+partition (base plus per-facet generated terms equal the row's, pairwise disjoint) is a
+constructor failure, and static omission's SQL-equivalence to the runtime null-guard rests on
+facet bindings being guaranteed nullable (the classify-time facet-misuse rejection).
+
+Deferred rejections landed with fixture-pinned messages: env-bound bindings on committed
+coordinates (above), generated column filters on lookup coordinates (the entity layer skips
+`LookupField`, so the emitted call could never compile; authored lookup conditions stay accepted
+as ordinary uncommitted rows), and generated column filters on nested fields (the two-step
+absorption's first step; the same fixture flips to a produced row when nesting types become
+walkable).
+
+Deliberately not built: no coexistence emitter or `WhereFilter` adapter (unmigrated hosts keep
+their inline folds untouched until slice 2), no entity-layer edits (`TypeConditionsGenerator`
+emits unchanged through the window; the guarded-AND fold now exists twice, there and in the glue
+renderer, until slice 3 deletes the entity half), and no re-sourcing (production reads
+`filters()` / `participantFilters()` exactly where the generators read).
+
 ## Retired vocabulary
 
 - `QueryConditionsGenerator` (slice 1): replaced by the glue renderer; with it

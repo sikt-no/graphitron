@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * throwing. The {@code @nodeId} decode is lifted into a per-class private static helper drained
  * onto the class hosting the filter call site ({@code <Type>} for inline {@code @reference}
  * fields, {@code <Type>Fetchers} for {@code @splitQuery} fields), the same own-and-drain lifecycle
- * {@link QueryConditionsGenerator} uses for root query fields.
+ * {@link no.sikt.graphitron.render.ConditionGlueRenderer} uses for root query fields.
  *
  * <p>Part B: a condition-only filter input (no {@code @nodeId}/key fields) must also generate,
  * including the degenerate empty-join-path (same-table) reference that previously crashed with an

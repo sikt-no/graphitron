@@ -115,7 +115,7 @@ public final class JoinPathEmitter {
      * @param hopAlias  the hop's own alias (already in scope in the enclosing FROM/JOIN chain)
      */
     public static CodeBlock emitBridgingJoin(On.ColumnPairs cp, String prevAlias, String hopAlias) {
-        return emitKeyedJoin(cp, /*joinedAlias=*/prevAlias, prevAlias, hopAlias);
+        return no.sikt.graphitron.render.JoinFragments.emitBridgingJoin(cp, prevAlias, hopAlias);
     }
 
     /**
@@ -124,7 +124,7 @@ public final class JoinPathEmitter {
      * joins its <em>own</em> alias in ({@code .join(hop)}) with the same keying-dispatched ON.
      */
     public static CodeBlock emitForwardJoin(On.ColumnPairs cp, String prevAlias, String hopAlias) {
-        return emitKeyedJoin(cp, /*joinedAlias=*/hopAlias, prevAlias, hopAlias);
+        return no.sikt.graphitron.render.JoinFragments.emitForwardJoin(cp, prevAlias, hopAlias);
     }
 
     /**
@@ -167,49 +167,14 @@ public final class JoinPathEmitter {
         };
     }
 
-    private static CodeBlock emitKeyedJoin(On.ColumnPairs cp, String joinedAlias,
-            String prevAlias, String hopAlias) {
-        return switch (cp.keying()) {
-            case On.Keying.ForeignKey k -> CodeBlock.of(".join($L).onKey($T.$L)",
-                joinedAlias, k.fk().keysClass(), k.fk().constantName());
-            case On.Keying.NameMatchedKey ignored -> {
-                var on = CodeBlock.builder();
-                int i = 0;
-                for (var slot : cp.slots()) {
-                    if (i > 0) on.add(".and(");
-                    on.add("$L.$L.eq($L.$L)",
-                        prevAlias, slot.sourceSide().javaName(),
-                        hopAlias, slot.targetSide().javaName());
-                    if (i > 0) on.add(")");
-                    i++;
-                }
-                yield CodeBlock.of(".join($L).on($L)", joinedAlias, on.build());
-            }
-        };
-    }
-
     /**
      * Emits the correlation WHERE predicate relating the first-hop's target alias to the parent
-     * alias: {@code first.alias().<slot.targetSide()> = parent.<slot.sourceSide()>} for each
-     * slot, ANDed together. Direction-blind because each slot is oriented at synthesis time:
-     * {@code sourceSide} is always the column on the source (parent) table and
-     * {@code targetSide} the column on the target (first-hop) table, regardless of which end of
-     * the catalog FK each maps to. Slots are never empty; {@link On.ColumnPairs} rejects the
-     * degenerate shape at construction.
+     * alias; the emission lives in {@link no.sikt.graphitron.render.JoinFragments} (the condition
+     * glue renderer reads the same fragment), this entry point survives for the unmigrated hosts.
      */
     public static CodeBlock emitCorrelationWhere(On.ColumnPairs first, String firstAlias,
             String parentAlias) {
-        var code = CodeBlock.builder();
-        int i = 0;
-        for (var slot : first.slots()) {
-            if (i > 0) code.add(".and(");
-            code.add("$L.$L.eq($L.$L)",
-                firstAlias, slot.targetSide().javaName(),
-                parentAlias, slot.sourceSide().javaName());
-            if (i > 0) code.add(")");
-            i++;
-        }
-        return code.build();
+        return no.sikt.graphitron.render.JoinFragments.emitCorrelationWhere(first, firstAlias, parentAlias);
     }
 
     /**

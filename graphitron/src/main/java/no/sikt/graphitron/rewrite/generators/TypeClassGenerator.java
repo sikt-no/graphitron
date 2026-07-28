@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.generators;
 
 
+import no.sikt.graphitron.render.CompositeDecodeHelperRegistry;
 import no.sikt.graphitron.javapoet.AnnotationSpec;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
@@ -289,7 +290,7 @@ public class TypeClassGenerator {
         // Stamp @SuppressWarnings("unchecked") on $fieldsGrouped, the narrowest enclosing member,
         // when any inline field's filter param emits an unchecked cast under the FromSelectedField
         // argument source. The predicate is source-aware (CallParam.emitsUncheckedCastFromSelectedField):
-        // the casts exist only here, so the Env hosts (QueryConditionsGenerator /
+        // the casts exist only here, so the Env hosts (the condition glue renderer /
         // MultiTablePolymorphicEmitter) keep their warning-free, byte-identical output.
         if (inlineFiltersNeedUncheckedSuppression(flat)) {
             builder.addAnnotation(AnnotationSpec.builder(SuppressWarnings.class)
