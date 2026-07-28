@@ -155,13 +155,20 @@ readability and debuggability of the generated output: **every WHERE consumer ca
 composes the fold inline.** The root fetcher, the child rows method, the inline `$fields` arm, and
 the polymorphic branch all emit the same one-line call,
 `<Parent>Conditions.<field>Condition(<alias>, <argsMap>)`, and the extraction ternaries exist in
-exactly one generated place per coordinate, as named locals inside the glue body. Today's root-only
-shim was this rule applied to one consumer; this item applies it to all of them. The typed entity
-layer (`<ReturnType>Conditions`, the per-participant classes) survives only through the migration
-window, feeding not-yet-converged call sites, and retires when the last one converges: once every
-consumer calls glue, a second layer whose only caller would be glue itself serves nobody (fork 1).
-The regime-2 naming locus dissolves into the naming vocabulary, the one formula both ends read (see
-Design).
+exactly one generated place per coordinate, as named locals inside the glue body. Node-id decode
+helpers dedup along with them, partially: they are per-host-class today
+(`CompositeDecodeHelperRegistry.collectInto` builds a fresh registry per `TypeSpec.Builder`, called
+from `QueryConditionsGenerator`, `TypeClassGenerator` and `TypeFetcherGenerator`, which is why
+`decodeFilmKeysOrThrow` is minted into three generated hosts), and glue hosts are per parent type, so
+the two `Language` copies collapse onto `LanguageConditions` while the `Query` copy stays on
+`QueryConditions`. The win is one helper per parent type instead of one per host class; the bound is
+worth stating so no slice is written against a collapse-to-one the output will not show. Today's
+root-only shim was this rule applied to one consumer; this item applies it to all of them. The typed
+entity layer (`<ReturnType>Conditions`, the per-participant classes) survives only through the
+migration window, feeding not-yet-converged call sites, and retires when the last one converges: once
+every consumer calls glue, a second layer whose only caller would be glue itself serves nobody
+(fork 1). The regime-2 naming locus dissolves into the naming vocabulary, the one formula both ends
+read (see Design).
 
 This is a deliberate strengthening over the previous draft, recorded so the reviewer sees the
 reasoning and not just the result. The draft modelled a root-only "boundary" relation; the code walk
@@ -533,8 +540,17 @@ its reasoning live with the rest of the sequencing in R549's Slices section.
    existing fixtures, and per-arm renderer unit tests asserting unit identity, locals, and
    arm-coverage totality, never `code().toString()` shapes; body correctness stays at the
    compilation and execution tiers. The relation's non-vacuity and bounding pins land here too:
-   pins over an empty set are not enforcers. `TypeConditionsGenerator` is untouched; the entity
-   layer keeps feeding the not-yet-converged call sites.
+   pins over an empty set are not enforcers. The existing tests this slice rewrites, named so the
+   churn is budgeted rather than discovered: four call `QueryConditionsGenerator.generate` directly
+   (`QueryConditionsPipelineTest`, `FacetEmitterTest`, `NodeIdOverrideConditionFkTargetPipelineTest`,
+   `MultiSchemaPipelineTest`), and `QueryConditionsGeneratorLiftTest` calls `computeLiftedOuters`
+   five times, so it relocates with the lift rather than being edited. Three more are
+   `{@link QueryConditionsGenerator}` javadoc references that fail the Javadoc reference gate at
+   `verify` rather than at compilation, one of them in main sources
+   (`CompositeDecodeHelperRegistry`, plus `CompositeDecodeHelperRegistryTest` and
+   `NodeIdReferenceFilterPipelineTest`); `-Pquick` skips that gate, so an inner loop stays green
+   through the slice and the failure arrives on the first full build. `TypeConditionsGenerator` is
+   untouched; the entity layer keeps feeding the not-yet-converged call sites.
 2. **Call-site convergence: every inline fold becomes a glue call.** `SplitRowsMethodEmitter`'s
    field-filter fold, the inline `$fields` arm emitters (`sf.getArguments()` as the map),
    `MultiTablePolymorphicEmitter`'s per-branch folds, and
@@ -550,9 +566,15 @@ its reasoning live with the rest of the sequencing in R549's Slices section.
    readability requirement is what this slice delivers.
 3. **Entity-layer retirement, and the dial closes.** With no caller left, `TypeConditionsGenerator`
    and the `<ReturnType>Conditions` / `<Participant>Conditions` classes are deleted,
-   `GeneratedConditionFilter.className()` / `methodName()` retire from the model,
-   `TypeConditionsGeneratorTest` retires (completing R387), and the R475 fixture compiles. The
-   membership enforcer (the derived fact's true-set equals the relation's key-set) lands in the
+   `GeneratedConditionFilter.className()` / `methodName()` retire from the model, and because those
+   two are declared on the sealed `WhereFilter` itself and read generically by the fold, the abstract
+   declarations retire with them (authored arms already carry their name in a `MethodRef`), along
+   with the interface javadoc's `{@link}` to the deleted generator;
+   `TypeConditionsGeneratorTest` retires (completing R387), and the R475 fixture compiles. Two
+   further tests name `TypeConditionsGenerator` and so fall out here rather than in slice 1:
+   `FetcherPipelineTest` calls its `generate`, and `ReferenceFilterRemoteColumnPipelineTest` points
+   at `TypeConditionsGeneratorTest` in prose. The membership enforcer (the derived fact's true-set
+   equals the relation's key-set) lands in the
    same commit, closing the family's migration dial windowless, matching R541's closing slice.
 4. **The launcher handshake.** `LauncherCommand.where` resolves as the row's glue `UnitRef`
    (jointly with R541 slice 1; see fork 4 for the ordering), and the handshake is wider than
@@ -621,7 +643,10 @@ its reasoning live with the rest of the sequencing in R549's Slices section.
   `conditionMethodName` / `facetBaseConditionMethodName` / `facetConditionMethodName` /
   `CLASS_NAME_SUFFIX` (the regime-2 formula locus and the public constant its consumers read), the
   shim-FQCN recomputation in `TypeFetcherGenerator` (four sites), and the method-name formula in
-  `buildConditionCall`: call sites read the minted `UnitRef`.
+  `buildConditionCall`: call sites read the minted `UnitRef`. Three `{@link}` references to the
+  deleted generator repoint in the same commit, since the Javadoc reference gate fails the build on
+  them: `CompositeDecodeHelperRegistry` (main sources), `CompositeDecodeHelperRegistryTest` and
+  `NodeIdReferenceFilterPipelineTest`.
 - `computeLiftedOuters` and `QueryConditionsGeneratorLiftTest` (slices 1 and 2): the lift dissolves
   into the glue body's one-local-per-argument convention; its two callers
   (`QueryConditionsGenerator`, `MultiTablePolymorphicEmitter`'s branch folds) are both replaced by
@@ -643,10 +668,11 @@ its reasoning live with the rest of the sequencing in R549's Slices section.
   `@routine` IN-parameter binding, a non-condition path, and that use retires with the routine
   family.
 - `TypeConditionsGenerator`, the `<ReturnType>Conditions` and `<Participant>Conditions` entity
-  classes, `GeneratedConditionFilter.className()` / `methodName()`, and
-  `TypeConditionsGeneratorTest` (slice 3): the entity layer and its naming facts, deleted when the
-  last converged call site stops naming them. Together with slice 1 this is two decrements on R549
-  invariant 1's ratchet.
+  classes, `GeneratedConditionFilter.className()` / `methodName()` *together with their abstract
+  declarations on the sealed `WhereFilter`*, and `TypeConditionsGeneratorTest` (slice 3): the entity
+  layer and its naming facts, deleted when the last converged call site stops naming them.
+  `FetcherPipelineTest`'s `TypeConditionsGenerator.generate` call goes here too. Together with
+  slice 1 this is two decrements on R549 invariant 1's ratchet.
 - `BodyParam.RemoteColumnPredicate` and `FkTargetConditionFilter` as *separate reach expressions*
   (slice 1, conditional on fork 2): the model facts survive until slice-4 re-sourcing, but the
   command expresses both as an FK-hop-list reach slot and the two EXISTS emitters converge.
