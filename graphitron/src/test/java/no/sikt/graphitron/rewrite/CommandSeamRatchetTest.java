@@ -1,0 +1,142 @@
+package no.sikt.graphitron.rewrite;
+
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import org.junit.jupiter.api.Test;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * The command-migration ratchets: "a command-based emitter takes no {@link GraphitronSchema}"
+ * made mechanical, installed at the measured current counts so the boundary can only move in the
+ * stated direction. Each count carries its counting rule here, in the pattern constants, because
+ * a number whose derivation does not travel with it gets re-derived differently by the next
+ * reader; these patterns are the definition, not an approximation of one.
+ *
+ * <ul>
+ *   <li><b>Primary</b>: {@code generate} entry points under {@code rewrite/generators/} that take
+ *       the model. Entry points only; the non-entry-point helpers in {@code generators/} that
+ *       also take the model are out of scope until their family migrates. Drives to zero as
+ *       families move onto command relations.</li>
+ *   <li><b>Secondary</b>: leaf-naming dispatch sites under {@code rewrite/generators/}, counted
+ *       as {@code instanceof} matches and {@code case} patterns over the seven sealed hierarchies
+ *       named in {@link #LEAF_HIERARCHIES}, as two separate figures because they move at
+ *       different times. Falls family by family; a migrated family's dispatch relocates into a
+ *       producer rather than disappearing.</li>
+ *   <li><b>Tertiary</b>: the same two greps inside {@code plan/}. This one is expected to rise
+ *       while producers are fed by leaf dispatch and to ratchet back to zero when the fact-visitor
+ *       engine re-sources them, so its pin moves in both directions, consciously, one slice at a
+ *       time. It exists to make a stalled relocation a flat line on a named number.</li>
+ * </ul>
+ *
+ * <p>For new code the same boundary is structural rather than ratcheted:
+ * {@link PackageImportDirectionTest} keeps the emit library out of {@code command} and {@code
+ * plan} and the model out of {@code render}, which covers the render-side half of the rule (a
+ * render context must not smuggle the model back in) until a render context type exists to
+ * inspect directly.
+ *
+ * <p>When a count drops, lower its pin in the same commit; never raise the generators-side pins.
+ */
+@UnitTier
+class CommandSeamRatchetTest {
+
+    /** Entry points in {@code generators/} still taking the model. Ratchets down to zero. */
+    private static final int MODEL_TAKING_ENTRY_POINTS = 24;
+
+    /** {@code instanceof} sites in {@code generators/} naming a leaf of the seven hierarchies. */
+    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 104;
+
+    /** {@code case} patterns in {@code generators/} naming a leaf of the seven hierarchies. */
+    private static final int GENERATOR_LEAF_CASE_PATTERNS = 89;
+
+    /**
+     * Leaf references ({@code instanceof} plus {@code case}) inside {@code plan/}: the relocation
+     * guard. Rises as families migrate their dispatch into producers, ratchets to zero when the
+     * fact walk replaces it. Update deliberately per slice, in either direction. The starting
+     * value is 1: the node-fetcher membership gate in
+     * {@link no.sikt.graphitron.plan.EmitPlan#produce} already reads a
+     * {@link no.sikt.graphitron.rewrite.model.GraphitronType} leaf.
+     */
+    private static final int PLAN_LEAF_REFERENCES = 1;
+
+    /**
+     * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide
+     * definition (all seven, {@code instanceof} and {@code case} counted separately); the
+     * narrower three-field-hierarchy figure that has circulated is a different number under a
+     * different rule and must not be swapped in here.
+     */
+    private static final String LEAF_HIERARCHIES =
+        "(?:ChildField|QueryField|MutationField|InputField|OutputField|GraphitronType|GraphitronField)";
+
+    private static final Pattern ENTRY_POINT =
+        Pattern.compile("static\\s+[\\w<>,.\\[\\]\\s?]+?\\s+generate\\([^)]*GraphitronSchema");
+
+    private static final Pattern LEAF_INSTANCEOF =
+        Pattern.compile("instanceof " + LEAF_HIERARCHIES + "[.A-Za-z]*");
+
+    private static final Pattern LEAF_CASE =
+        Pattern.compile("case " + LEAF_HIERARCHIES + "[.A-Za-z]*");
+
+    private static Path mainSourceRoot() {
+        return GuardScope.locateRepoRoot().resolve("graphitron/src/main/java/no/sikt/graphitron");
+    }
+
+    @Test
+    void modelTakingEntryPointsInGenerators() throws IOException {
+        int count = countMatches(mainSourceRoot().resolve("rewrite/generators"), ENTRY_POINT);
+        assertThat(count)
+            .as("generate(...GraphitronSchema...) entry points under generators/; a rise is a new "
+                + "model-holding emitter (add a producer instead), a drop means lowering the pin "
+                + "in the same commit")
+            .isEqualTo(MODEL_TAKING_ENTRY_POINTS);
+    }
+
+    @Test
+    void leafDispatchSitesInGenerators() throws IOException {
+        Path generators = mainSourceRoot().resolve("rewrite/generators");
+        assertThat(countMatches(generators, LEAF_INSTANCEOF))
+            .as("instanceof sites in generators/ naming a leaf of the seven hierarchies; a rise "
+                + "is new emit dispatch on leaf identity, a drop means lowering the pin in the "
+                + "same commit")
+            .isEqualTo(GENERATOR_LEAF_INSTANCEOF_SITES);
+        assertThat(countMatches(generators, LEAF_CASE))
+            .as("case patterns in generators/ naming a leaf of the seven hierarchies; same rule "
+                + "as the instanceof pin")
+            .isEqualTo(GENERATOR_LEAF_CASE_PATTERNS);
+    }
+
+    @Test
+    void leafReferencesInPlan() throws IOException {
+        Path plan = mainSourceRoot().resolve("plan");
+        int count = countMatches(plan, LEAF_INSTANCEOF) + countMatches(plan, LEAF_CASE);
+        assertThat(count)
+            .as("leaf references (instanceof + case) inside plan/: producers may hold relocated "
+                + "leaf dispatch while it awaits the fact walk, and every move of this number is "
+                + "a deliberate pin update, not drift")
+            .isEqualTo(PLAN_LEAF_REFERENCES);
+    }
+
+    /** Line-based occurrence count over every {@code .java} file under {@code root}. */
+    private static int countMatches(Path root, Pattern pattern) throws IOException {
+        if (!Files.isDirectory(root)) {
+            return 0;
+        }
+        int count = 0;
+        try (Stream<Path> files = Files.walk(root)) {
+            for (Path file : files.filter(p -> p.toString().endsWith(".java")).toList()) {
+                for (String line : Files.readAllLines(file)) {
+                    var matcher = pattern.matcher(line);
+                    while (matcher.find()) {
+                        count++;
+                    }
+                }
+            }
+        }
+        return count;
+    }
+}

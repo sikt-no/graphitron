@@ -898,6 +898,47 @@ R541's single-operation launchers never need it, and a general launcher cannot d
     `CompileDependencyGraphBuilder.addSingletonNodes`) remain; the completeness oracle already
     pins the graph against the real emitted set, and both copies retire with slice 7.
 
+- **Slice 2 landed 2026-07-28.** The labelling, both ratchets at the audit script's printed
+  counts, and the three instruments. Findings to report:
+  - The labelling is `HierarchyKindRegistryTest`: a coverage-checked registry over the fact
+    base's top-level sealed hierarchies (68 today: 67 under `rewrite/model` plus `BuildWarning`,
+    the error channel's non-fatal half, enumerated by name from the core package). Scope
+    exclusions are by principle, not path habit: builder-internal result channels are gathering
+    scaffolding, `catalog/` seals are projections over the model, `plan/` internals are producer
+    scaffolding. The `command` package is in the scan from day one so slice 3.1's arms cannot
+    land unlabelled. The four kinds are documented as cells of a provenance-by-phase product,
+    not a closed partition; the derived-view-at-emit-grain cell joins the enum when slice 7's
+    projections exist.
+  - `GraphitronType`'s five synthesised permits moved from prose to data
+    (`SYNTHESISED_TYPE_PERMITS`), and the exemption lists' synthesised category is pinned to
+    stay inside that set.
+  - Invariant 1 landed as `CommandSeamRatchetTest` with the counting rules in the pattern
+    constants: 24 model-taking entry points, 104 `instanceof` plus 89 `case` leaf references in
+    `generators/` (the seven-hierarchy definition), and the tertiary count opened at 1, not 0:
+    slice 1's `EmitPlan` already relocated the node-fetcher membership gate (an `instanceof
+    GraphitronType.NodeType`) into `plan/`, which is the relocation the tertiary count exists to
+    make visible. Invariant 3 landed as `ModelEmitVocabularyGuardTest`, allowlisting the 29
+    model files importing the emit library, shrink-only in both directions.
+  - The exemption triage landed as typed data (`Exemption(category, reason)`) on both lists
+    rather than prose; the predicted three-way partition needed a fourth category
+    (`FIXTURE_GAP`, 8 of 19 entries), the grain-repair category holds exactly one entry
+    (`PivotSlotField`), and the verdict paragraph lives in the exemption-lists section above.
+  - The pair census landed in `ClassifiedDslTest.axisPairCensusIsDerivable`, sharing one axis
+    extraction with the single-axis exercise test so the two instruments cannot drift. Measured
+    verdicts are recorded in the census section above, along with the correction that the
+    census is slice 6's instrument and cannot falsify the keystone's two-arm collapse, which
+    validates by counted consumers instead.
+  - The SQL baseline landed as `ProjectionSqlBaselineTest` in `graphitron-sakila-example`:
+    whole rendered statements over six projection shapes, statement counts pinned by
+    exact-log assertions, on the purpose-built fixtures already in `schema.graphqls`
+    (`SplitParent`, `FilmSummary`, `OccupantLocation` under both hosts, `Customer.address`,
+    `Query.search`, and the one-scalar `Customer` probe, whose select list today carries
+    `address_id` and `store_id` for unselected children: the over-projection the re-baseline
+    diff will remove). Framed as behaviour at the execution tier, not a carve-out from the
+    code-string ban: SQL is the contract with the database.
+  - Deliberately not built, per the consult: no validator mirror (slice 2 adds no classifier
+    branch) and no concentration ratchet (invariant 7 is optional and not in this slice's row).
+
 ## The exemption lists are the grain worklist
 
 `VariantCoverageTest.NO_CASE_REQUIRED` (13 entries) and `ClassifiedDslTest.OPERATION_KNOWN_GAPS` (6) each
@@ -909,6 +950,20 @@ read them as a class yet. Slice 2 owns the triage: it is cheap, it sharpens slic
 starts, and writing it down alongside the labelling keeps the worklist from being re-derived at each
 slice.
 
+**Triage verdict (slice 2, 2026-07-28).** The triage lives as data on the lists themselves, not as prose
+here: both maps now carry a typed `Exemption(category, reason)` value, so the worklist is a filter over
+the live lists and a new entry must pick a category. Two findings from reading the 19 entries as a set.
+First, the predicted three-way partition did not close: eight entries are neither unimplemented nor
+synthesised nor mis-keyed but *demonstrated outside the corpus's reach* (composite-PK node types,
+synthesised node-id metadata and plain jOOQ records missing from the fixture catalog, plus one entry whose
+demonstration lives in a test shape the coverage walker does not read), so the taxonomy gained a fourth
+category, `FIXTURE_GAP`. Second, the measured partition is: unimplemented behaviour 6 (UPSERT and its
+operation-arm mirror, condition-matched UPDATE and DELETE, the errors field, federation `_entities`),
+synthesised with no SDL origin 4 (the facet pair, connection `Count` and `Facet`), riding another row's
+key exactly 1 (`PivotSlotField`, slice 6's whole current worklist at this grain), fixture gaps 8. The
+synthesised rows are additionally pinned against the labelling's `SYNTHESISED_TYPE_PERMITS` set
+(`HierarchyKindRegistryTest`), so a sixth synthesised type fails a test rather than drifting a paragraph.
+
 ## Empirically deciding which families are independent
 
 The corpus already records, per coordinate, which arm each axis lands on, and
@@ -919,6 +974,24 @@ co-vary, so keep them fused and save the machinery. That turns "which families a
 call into a measurement, and it makes the corpus an instrument for designing the model rather than only
 for pinning it. Slice 2 ships this extension alongside the labelling, so the measurement exists before
 slice 3.1 commits to the two-arm collapse it would falsify.
+
+**Measured (slice 2, 2026-07-28; re-derive by running `ClassifiedDslTest.axisPairCensusIsDerivable`,
+which prints the matrix).** Over 83 corpus coordinates, with denominators built from corpus-observed
+values so known-gap arms cannot inflate a product, and source-wrapper-by-source-shape skipped as a
+containment rather than a pair: three pairs are fully populated products (source x target wrapper 8/8,
+source shape x target wrapper 4/4, target wrapper x target shape 12/14 with the two holes structural,
+since a connection is single-wrapped by construction), which is measured independence. The sharpest
+diagonal is operation x target shape at 20 of 77: the verb largely pins the projection shape, which is
+measured co-variation and supports keeping the operation-shape families fused. Source x operation sits
+between (17/44), most holes being structural (no mutation verbs on child sources, no DML on Query).
+
+**One correction from the consult, recorded so the instrument is not oversold.** The census measures
+co-variation between classification axes at the coordinate grain, and that is what it feeds slice 6's
+grain repair and the split-on-measured-independence rule with. It cannot falsify the keystone's two-arm
+contribution collapse, whose discriminator is structural (the callee is a projection unit) and whose
+splitting rule is counted downstream consumers, not provenance. The sentence above claiming the
+measurement exists "before slice 3.1 commits to the two-arm collapse it would falsify" over-claimed;
+the collapse validates at slice 3.1 by consumer count, and the census stands as slice 6's instrument.
 
 ## Relationship to existing items
 

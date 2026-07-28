@@ -49,61 +49,74 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 class VariantCoverageTest {
 
     /**
-     * Leaves that legitimately need no classification test case. Each entry carries a
-     * one-line reason. The goal is for this map to stay small; every schema-reachable
-     * leaf should have a case showing the classifier lands there.
+     * Leaves that legitimately need no classification test case. Each entry carries its triage
+     * category and reason ({@link Exemption}); the category is the grain worklist read directly
+     * off this list, so a new entry must pick one. The goal is for this map to stay small; every
+     * schema-reachable leaf should have a case showing the classifier lands there.
      */
-    private static final Map<Class<?>, String> NO_CASE_REQUIRED = Map.ofEntries(
+    static final Map<Class<?>, Exemption> NO_CASE_REQUIRED = Map.ofEntries(
         Map.entry(no.sikt.graphitron.rewrite.model.MutationField.MutationUpsertTableField.class,
+            new Exemption(Exemption.Category.UNIMPLEMENTED_BEHAVIOUR,
             "R144 retires UPSERT generation pending R145 (mutation-cardinality-safety-upsert); "
             + "the classifier rejects every UPSERT mutation at MutationInputResolver, so no "
             + "schema-reachable case lands on this leaf. Add a fresh case when R145 lifts the "
-            + "upstream rejection."),
+            + "upstream rejection.")),
         Map.entry(no.sikt.graphitron.rewrite.model.MutationField.MutationDeletePayloadField.class,
+            new Exemption(Exemption.Category.FIXTURE_GAP,
             "R287: a payload-returning DELETE's only admissible data field is an ID-element (the "
             + "@table-element projection is rejected — the row is gone, RETURNING carries only the "
             + "PK), which requires the synthesised __NODE_TYPE_ID metadata absent from the corpus "
-            + "catalog. Covered by MutationDmlNodeIdClassificationTest under the nodeidfixture."),
+            + "catalog. Covered by MutationDmlNodeIdClassificationTest under the nodeidfixture.")),
         Map.entry(no.sikt.graphitron.rewrite.model.MutationField.MutationBulkDeletePayloadField.class,
+            new Exemption(Exemption.Category.FIXTURE_GAP,
             "R287: bulk sibling of MutationDeletePayloadField — same ID-element-only constraint and "
-            + "same nodeidfixture coverage (MutationDmlNodeIdClassificationTest)."),
+            + "same nodeidfixture coverage (MutationDmlNodeIdClassificationTest).")),
         Map.entry(GraphitronType.FacetsType.class,
+            new Exemption(Exemption.Category.SYNTHESISED_NO_SDL_ORIGIN,
             "R13: synthesised-only (the @asFacet expansion on a directive-driven @asConnection "
             + "carrier); no SDL declaration exists to carry @classifiedType, so the corpus cannot "
             + "demonstrate it (the corpus's connection example uses the structural form, which "
             + "facets have no analogue of). Covered by FacetedConnectionPipelineTest and "
-            + "ConnectionPromoterTest."),
+            + "ConnectionPromoterTest.")),
         Map.entry(GraphitronType.FacetValueType.class,
+            new Exemption(Exemption.Category.SYNTHESISED_NO_SDL_ORIGIN,
             "R13: synthesised-only sibling of FacetsType (one reusable entry per (scalar, "
             + "nullability) pair); same no-SDL-declaration constraint. Covered by "
-            + "FacetedConnectionPipelineTest and ConnectionPromoterTest."),
+            + "FacetedConnectionPipelineTest and ConnectionPromoterTest.")),
         Map.entry(GraphitronType.JooqRecordType.class,
+            new Exemption(Exemption.Category.FIXTURE_GAP,
             "No plain jOOQ Record<?> (non-TableRecord) fixture class in the test classpath; "
-            + "add a corpus example when a suitable fixture is introduced."),
+            + "add a corpus example when a suitable fixture is introduced.")),
         Map.entry(GraphitronType.JooqRecordInputType.class,
+            new Exemption(Exemption.Category.FIXTURE_GAP,
             "No plain jOOQ Record<?> (non-TableRecord) input fixture class in the test classpath; "
-            + "add a corpus example when a suitable fixture is introduced."),
+            + "add a corpus example when a suitable fixture is introduced.")),
         Map.entry(ChildField.ErrorsField.class,
+            new Exemption(Exemption.Category.UNIMPLEMENTED_BEHAVIOUR,
             "Permit added in R12 (error-handling-parity) C2 alongside the ErrorChannel slot; "
             + "the classifier doesn't produce it until C3 lifts the five PolymorphicReturnType "
-            + "rejection sites in FieldBuilder. Add a corpus example when that lift lands."),
+            + "rejection sites in FieldBuilder. Add a corpus example when that lift lands.")),
         Map.entry(InputField.ColumnBackedField.class,
+            new Exemption(Exemption.Category.FIXTURE_GAP,
             "Covered by NodeIdPipelineTest.InputCase (composite-PK same-table NodeId filter, "
             + "arity > 1) and the synthesized-shim composite path. Lives in NodeIdPipelineTest "
-            + "because the standard sakila catalog has no composite-PK NodeType."),
+            + "because the standard sakila catalog has no composite-PK NodeType.")),
         Map.entry(InputField.ColumnBackedReferenceField.class,
+            new Exemption(Exemption.Category.FIXTURE_GAP,
             "Composite-key input reference (arity > 1 FK target). The canonical and synthesis-"
             + "shim cases land via the same buildInputNodeIdReference helper for the "
             + "[ID!] @nodeId(typeName: T) branch, but no test fixture exercises an arity > 1 FK "
             + "target yet (the fixtures use `bar` (composite PK) only for same-table NodeId "
-            + "paths). Add a NodeIdPipelineTest case when a composite-PK FK target lands."),
+            + "paths). Add a NodeIdPipelineTest case when a composite-PK FK target lands.")),
         Map.entry(ChildField.PivotSlotField.class,
+            new Exemption(Exemption.Category.RIDES_ANOTHER_ROWS_KEY,
             "A @pivot projection slot rides the consuming leaf's PivotSpec.slots(), never "
             + "schema.fields(), so no @classified coordinate can land on it (the corpus collects "
             + "leaves off top-level coordinates only). Its classification is pinned by the "
             + "'pivot' corpus example's field assertions via the consuming PivotField / "
-            + "BatchedPivotField and the pivot cases in GraphitronSchemaBuilderTest."),
+            + "BatchedPivotField and the pivot cases in GraphitronSchemaBuilderTest.")),
         Map.entry(ChildField.SingleRecordIdFieldFromReturning.class,
+            new Exemption(Exemption.Category.FIXTURE_GAP,
             "R156: produced by the @mutation classifier for @mutation(typeName: DELETE) carriers "
             + "with an ID-typed data field. Covered structurally by the four "
             + "MutationDmlNodeIdClassificationTest admission cells (bulk/single × implicit/"
@@ -111,8 +124,9 @@ class VariantCoverageTest {
             + "DmlBulkMutationsExecutionTest#deleteFilmsIdCarrier_returnsEncodedNodeIdsOfDeletedRows. "
             + "The corpus runs against the default Sakila catalog (no synthesized "
             + "__NODE_TYPE_ID metadata), so the Id admission case lives in the pipeline-tier "
-            + "test that can swap to the nodeidfixture RewriteContext."),
+            + "test that can swap to the nodeidfixture RewriteContext.")),
         Map.entry(InputField.UnboundField.class,
+            new Exemption(Exemption.Category.FIXTURE_GAP,
             "R215: input field with no column binding. Covers @condition(override: true) "
             + "with or without a matching column (the §5 collapse of R210's ConditionOnlyField "
             + "plus ColumnField + override:true), and the cascade-admitted bare-field case where "
@@ -121,7 +135,7 @@ class VariantCoverageTest {
             + "plainInput_overrideTrueWithoutMatchingColumn_classifiesAsUnboundField "
             + "and tableInput_overrideTrueWithoutMatchingColumn_classifiesAsUnboundField "
             + "@Test methods (one carries @ProjectionFor(UnboundField.class)), which "
-            + "land outside the enum-style ClassificationCase shape this coverage walker reads.")
+            + "land outside the enum-style ClassificationCase shape this coverage walker reads."))
     );
 
     private static final List<Class<?>> ROOTS = List.of(

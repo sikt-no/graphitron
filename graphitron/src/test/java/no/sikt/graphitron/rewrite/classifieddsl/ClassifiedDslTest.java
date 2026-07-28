@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.classifieddsl;
 
+import no.sikt.graphitron.rewrite.Exemption;
 import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedCorpus.Example;
 import no.sikt.graphitron.rewrite.model.Operation;
 import no.sikt.graphitron.rewrite.model.Source;
@@ -9,11 +10,16 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -82,19 +88,61 @@ class ClassifiedDslTest {
     private static final Map<String, String> SOURCE_KNOWN_GAPS = Map.of();
 
     /**
-     * Operation arms the model declares but the current leaf set cannot populate, each with the
-     * reason no fixture lands on it. An arm leaves this list the moment a fixture exercises it; an
-     * unexercised arm not listed here fails {@link #everyDimensionValueIsExercised()}.
+     * Operation arms the model declares but the current leaf set cannot populate, each with its
+     * triage category and the reason no fixture lands on it ({@link Exemption}). An arm leaves
+     * this list the moment a fixture exercises it; an unexercised arm not listed here fails
+     * {@link #everyDimensionValueIsExercised()}.
      */
-    private static final Map<Class<? extends Operation>, String> OPERATION_KNOWN_GAPS = Map.of(
-        Operation.EntityResolve.class, "Federation _entities is not a classified leaf yet (separate item).",
-        Operation.Count.class, "Connection totalCount is generator-only emit behind the ConnectionType quarantine.",
-        Operation.Facet.class, "Connection facets are generator-only emit behind the ConnectionType quarantine.",
-        Operation.UpdateMatching.class, "Condition-matched UPDATE is unimplemented.",
-        Operation.DeleteMatching.class, "Condition-matched DELETE is unimplemented.",
-        Operation.Upsert.class, "R144 retires UPSERT generation pending R145; the classifier rejects every "
+    private static final Map<Class<? extends Operation>, Exemption> OPERATION_KNOWN_GAPS = Map.of(
+        Operation.EntityResolve.class, new Exemption(Exemption.Category.UNIMPLEMENTED_BEHAVIOUR,
+            "Federation _entities is not a classified leaf yet (separate item)."),
+        Operation.Count.class, new Exemption(Exemption.Category.SYNTHESISED_NO_SDL_ORIGIN,
+            "Connection totalCount is generator-only emit behind the ConnectionType quarantine."),
+        Operation.Facet.class, new Exemption(Exemption.Category.SYNTHESISED_NO_SDL_ORIGIN,
+            "Connection facets are generator-only emit behind the ConnectionType quarantine."),
+        Operation.UpdateMatching.class, new Exemption(Exemption.Category.UNIMPLEMENTED_BEHAVIOUR,
+            "Condition-matched UPDATE is unimplemented."),
+        Operation.DeleteMatching.class, new Exemption(Exemption.Category.UNIMPLEMENTED_BEHAVIOUR,
+            "Condition-matched DELETE is unimplemented."),
+        Operation.Upsert.class, new Exemption(Exemption.Category.UNIMPLEMENTED_BEHAVIOUR,
+            "R144 retires UPSERT generation pending R145; the classifier rejects every "
             + "UPSERT mutation at MutationInputResolver, so no schema-reachable fixture lands on it "
-            + "(mirrors VariantCoverageTest.NO_CASE_REQUIRED for MutationUpsertTableField).");
+            + "(mirrors VariantCoverageTest.NO_CASE_REQUIRED for MutationUpsertTableField)."));
+
+    /**
+     * One corpus coordinate's classified position on the five axes; {@code sourceShape} is null
+     * on Root rows (the shape exists only on the nested source arms). Extracted once and shared
+     * by {@link #everyDimensionValueIsExercised()} and {@link #axisPairCensusIsDerivable()} so
+     * the two instruments cannot drift on what an axis value is.
+     */
+    private record CoordinateAxes(
+        String source, SourceShape sourceShape, String operation, String targetWrapper, String targetShape) {}
+
+    private static List<CoordinateAxes> corpusAxes;
+
+    private static List<CoordinateAxes> corpusAxes() {
+        if (corpusAxes == null) {
+            var rows = new ArrayList<CoordinateAxes>();
+            for (var example : ClassifiedCorpus.examples()) {
+                for (var fc : ClassifiedHarness.classify(example.sdl()).fields()) {
+                    Source source = fc.actual().source();
+                    SourceShape shape = switch (source) {
+                        case Source.OnlyChild(var s) -> s;
+                        case Source.Child(var s) -> s;
+                        case Source.Root ignored -> null;
+                    };
+                    rows.add(new CoordinateAxes(
+                        source.getClass().getSimpleName(),
+                        shape,
+                        fc.actual().operation().getSimpleName(),
+                        fc.actual().target().wrapper().getSimpleName(),
+                        fc.actual().target().shape().getSimpleName()));
+                }
+            }
+            corpusAxes = List.copyOf(rows);
+        }
+        return corpusAxes;
+    }
 
     @Test
     void everyDimensionValueIsExercised() {
@@ -104,19 +152,14 @@ class ClassifiedDslTest {
         var targetWrappers = new HashSet<String>();
         var targetShapes = new HashSet<String>();
 
-        for (var example : ClassifiedCorpus.examples()) {
-            for (var fc : ClassifiedHarness.classify(example.sdl()).fields()) {
-                Source source = fc.actual().source();
-                sourceArms.add(source.getClass().getSimpleName());
-                switch (source) {
-                    case Source.OnlyChild(var shape) -> sourceShapes.add(shape);
-                    case Source.Child(var shape) -> sourceShapes.add(shape);
-                    case Source.Root ignored -> { }
-                }
-                operations.add(fc.actual().operation().getSimpleName());
-                targetWrappers.add(fc.actual().target().wrapper().getSimpleName());
-                targetShapes.add(fc.actual().target().shape().getSimpleName());
+        for (var row : corpusAxes()) {
+            sourceArms.add(row.source());
+            if (row.sourceShape() != null) {
+                sourceShapes.add(row.sourceShape());
             }
+            operations.add(row.operation());
+            targetWrappers.add(row.targetWrapper());
+            targetShapes.add(row.targetShape());
         }
 
         // Target wrapper and shape arms are fully exercised (no declared gaps).
@@ -157,6 +200,75 @@ class ClassifiedDslTest {
         assertThat(operationGapNames)
             .as("a known-gap operation that a fixture now exercises must be removed from OPERATION_KNOWN_GAPS")
             .doesNotContainAnyElementsOf(operations);
+    }
+
+    /**
+     * The axis-pair census: for each pair of classification axes, is the cross product of the
+     * corpus-observed values populated, or only a diagonal? A populated product is measured
+     * independence, so the families must separate; a diagonal is measured co-variation, so they
+     * stay fused and the machinery is saved. The census turns "which families are real" from a
+     * judgment call into a measurement, and its consumers are the grain worklist and the
+     * split-on-measured-independence rule.
+     *
+     * <p>Stated so the instrument is not mistaken for a different one: this measures co-variation
+     * between classification axes at the coordinate grain. It cannot falsify the projection
+     * command's contribution-arm split, which is decided by counted downstream consumers of the
+     * distinction, not by provenance and not by this census.
+     *
+     * <p>Mechanics: denominators use corpus-observed values only, so a known-gap arm (never
+     * observed) cannot inflate a product. Pairs involving the source shape exclude Root rows,
+     * where no shape exists; source-wrapper-by-source-shape is skipped outright because the
+     * shape is a component of the nested wrapper arms, a containment rather than two independent
+     * axes. The assertion is non-vacuity; the measured matrix prints to the test output as the
+     * re-derivable figure.
+     */
+    @Test
+    void axisPairCensusIsDerivable() {
+        Map<String, Function<CoordinateAxes, String>> axes = new LinkedHashMap<>();
+        axes.put("source", CoordinateAxes::source);
+        axes.put("sourceShape", row -> row.sourceShape() == null ? null : row.sourceShape().name());
+        axes.put("operation", CoordinateAxes::operation);
+        axes.put("targetWrapper", CoordinateAxes::targetWrapper);
+        axes.put("targetShape", CoordinateAxes::targetShape);
+
+        var rows = corpusAxes();
+        assertThat(rows.size()).as("corpus coordinates measured (census must not be vacuous)")
+            .isGreaterThan(50);
+
+        List<String> names = List.copyOf(axes.keySet());
+        for (int i = 0; i < names.size(); i++) {
+            for (int j = i + 1; j < names.size(); j++) {
+                if (names.get(i).equals("source") && names.get(j).equals("sourceShape")) {
+                    continue; // containment, not a pair of independent axes
+                }
+                var first = axes.get(names.get(i));
+                var second = axes.get(names.get(j));
+                var firstValues = new TreeSet<String>();
+                var secondValues = new TreeSet<String>();
+                var observedPairs = new TreeSet<String>();
+                for (var row : rows) {
+                    String a = first.apply(row);
+                    String b = second.apply(row);
+                    if (a == null || b == null) continue;
+                    firstValues.add(a);
+                    secondValues.add(b);
+                    observedPairs.add(a + "*" + b);
+                }
+                assertThat(observedPairs)
+                    .as("axis pair %s x %s must be observable over the corpus", names.get(i), names.get(j))
+                    .isNotEmpty();
+                var missing = new ArrayList<String>();
+                for (String a : firstValues) {
+                    for (String b : secondValues) {
+                        if (!observedPairs.contains(a + "*" + b)) missing.add(a + "*" + b);
+                    }
+                }
+                System.out.printf("PAIR %s x %s: observed %d of %d (%d x %d), missing %s%n",
+                    names.get(i), names.get(j), observedPairs.size(),
+                    firstValues.size() * secondValues.size(),
+                    firstValues.size(), secondValues.size(), missing);
+            }
+        }
     }
 
     @Test
