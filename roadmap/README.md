@@ -20,9 +20,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R333` | The Graphitron data model | Ready | 2026-07-20 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R552` | Condition command: the WHERE family as coordinate-keyed condition units <sub>blocked by: [facts-and-commands](facts-and-commands.md)</sub> | Spec | 2026-07-28 <sub>created 2026-07-27</sub> | [plan](condition-command.md) |
 | `R541` | Root query launcher: the root SELECT family as launcher commands <sub>blocked by: [facts-and-commands](facts-and-commands.md)</sub> | Spec | 2026-07-27 <sub>created 2026-07-26</sub> | [plan](root-query-unit-seam.md) |
-| `R555` | Deprecate @externalField: fold the computed-field shape into @service | Spec | 2026-07-28 | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
+| `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-07-28 | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-07-15 | [plan](catalog-check-constraint-validation.md) |
 | `R427` | Type-ahead search backed by native database indexes | Ready | 2026-07-17 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
@@ -265,7 +265,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R516` [**Narrow SourceKey.Wrap.TableRecord contract to PK-only, revert full-row projection**](service-table-record-pk-only-contract.md) — In Review, correctness
 - `R402` [**Retire the ValueShape to synthetic CallSiteExtraction.InputBean round-trip in the bean-helper queue**](retire-bean-helper-queue-valueshape-roundtrip.md) — Backlog, structural
-- `R555` [**Deprecate @externalField: fold the computed-field shape into @service**](deprecate-externalfield-fold-into-service.md) — Spec, cleanup
+- `R555` [**Deprecate @externalField: fold the computed-field shape into @service**](deprecate-externalfield-fold-into-service.md) — Ready, cleanup
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
 - `R72` [**Slim ServiceCatalog down to a lookup primitive**](slim-servicecatalog-to-lookup.md) — Backlog, architecture
 - `R11` [**`DSLContext` on `@condition` methods**](dslcontext-on-condition-tablemethod.md) — Backlog, architecture

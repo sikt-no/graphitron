@@ -1,7 +1,7 @@
 ---
 id: R555
 title: "Deprecate @externalField: fold the computed-field shape into @service"
-status: Spec
+status: Ready
 bucket: cleanup
 priority: 5
 theme: service
