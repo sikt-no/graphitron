@@ -1,13 +1,13 @@
 ---
 id: R516
 title: "Narrow SourceKey.Wrap.TableRecord contract to PK-only, revert full-row projection"
-status: In Progress
+status: In Review
 bucket: correctness
 priority: 2
 theme: service
 depends-on: []
 created: 2026-07-23
-last-updated: 2026-07-27
+last-updated: 2026-07-28
 ---
 
 # Narrow SourceKey.Wrap.TableRecord contract to PK-only, revert full-row projection
