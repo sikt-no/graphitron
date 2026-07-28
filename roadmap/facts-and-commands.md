@@ -34,8 +34,8 @@ The discriminator is not subject matter, it is **how a row comes to exist**: wal
 |---|---|---|
 | walked facts | read off the SDL or catalog by a traversal | `Source`, `Target`, `TargetShape`, `TenantBinding`, `ScalarResolution`, `ProducerBinding`, 19 of `GraphitronType`'s 24 permits |
 | resolved views | a coalesce or inference over facts, with no walk of its own | `JoinStep` / `On`, the `reference` resolution, `resolvedTable` |
-| commands | minted at emit grain from facts | `Operation` (19 permits), `BodyParam`, `DmlReturnExpression`, `CallSiteExtraction`, `OrderBySpec`, `RowsMethodShape` |
-| the walk's error channel | facts minted by the gathering pass rather than read off a traversal, the `Err` arm of classification | `Rejection` (14), `PivotError` (12), `UpdateRowsError`, `ServiceMethodCallError`, `ErrorChannelWalkerError` |
+| commands | minted at emit grain from facts | `Operation` (17 permits), `BodyParam`, `DmlReturnExpression`, `CallSiteExtraction`, `OrderBySpec`, `RowsMethodShape` |
+| the walk's error channel | facts minted by the gathering pass rather than read off a traversal, the `Err` arm of classification | `Rejection`'s 13 own leaves plus the nine seals `AuthorError` delegates to: `PivotError` (12), `ServiceMethodCallError` (7), `UpdateRowsError` (6), `ErrorChannelWalkerError` (5), `ReflectionError` (4), `DeleteRowsError` (3), `WireCoercionError` (2), `ServiceCarrierShapeError` (2), `MutationTableArgError` (1) |
 
 `Operation` is the proof that commands are already written: R333 describes its members as *minted by
 triggers* (a table-bound return type mints `select`, pagination args mint `paginate`, `@condition` mints
@@ -43,12 +43,13 @@ triggers* (a table-bound return type mints `select`, pagination args mint `pagin
 anybody walks for. One entry in that list is target vocabulary rather than tree: `Operation` has no
 `condition` arm today, the filter surface riding as `WhereFilter` components on its `Fetch` and
 `Paginate` arms (R552's model correction), and nothing in this programme turns on whether R333 later
-promotes it. The error-channel kind is a genuine fourth at 44 permits across five seals, larger than
-`Operation`, but it is still inside the fact base: the development principles say rejections are facts too,
-located violations asserted once and rendered into views. What distinguishes the kind is provenance (minted
-by the gathering pass, not read off SDL or catalog), not membership, and its grain is the located violation
-keyed by location plus code. Stated that way, invariant 2's grain-and-home rule covers all 44 permits with
-no exemption.
+promotes it. The error-channel kind is a genuine fourth at 55 leaf records across `Rejection` and the nine
+seals its `AuthorError` arm delegates to (counting rule: concrete `record` arms in `Rejection.java` plus the
+nine delegated seal files, measured 2026-07-28), far larger than `Operation`, but it is still inside the
+fact base: the development principles say rejections are facts too, located violations asserted once and
+rendered into views. What distinguishes the kind is provenance (minted by the gathering pass, not read off
+SDL or catalog), not membership, and its grain is the located violation keyed by location plus code. Stated
+that way, invariant 2's grain-and-home rule covers all 55 leaves with no exemption.
 
 ## Grain decides what a leaf can hold
 
@@ -126,9 +127,12 @@ it that way. Second, that makes three separate copies of emit knowledge outside 
 (`CompileDependencyGraphBuilder` duplicating the call graph, `MethodCommandRegistry` auditing the names,
 `GeneratedUnits` holding the vocabulary), each built where its consumer sat rather than in the core.
 Third, `GraphitronType`'s five synthesised permits (`ConnectionType`, `EdgeType`, `PageInfoType`,
-`FacetsType`, `FacetValueType`) are command *outputs* stored in the fact map, which the model already
-admits through the `NO_CASE_REQUIRED` exemptions stating that no SDL declaration exists to carry a
-`@classifiedType` for them.
+`FacetsType`, `FacetValueType`) are command *outputs* stored in the fact map. The model admits it for the
+facet pair, whose `NO_CASE_REQUIRED` exemptions state that no SDL declaration exists to carry a
+`@classifiedType`; the connection triple carries no exemption because the structural hand-written form also
+exists in source SDL (the corpus's connection example carries `@classifiedType` on it), so those three are
+dual-provenance, synthesised by `@asConnection` or walked when authored structurally, and it is their
+synthesised population that is a command output.
 
 ## The keystone: the projection command
 
@@ -406,15 +410,21 @@ is the split line between the keystone's two halves: the bucket-to-contribution-
 `buildTypeSpec` rewrite are slice 3.1, the gated correlation arm and the two deletions it enables are
 slice 3.2.
 
-**The dispatch partition moves with the dispatch.** `TypeFetcherGenerator.PROJECTED_LEAVES` hand-states
-exactly the leaf set whose projection `$fields` emits inline, and
-`GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` plus `ValidateMojo` rest on that
-four-way partition staying exhaustive and disjoint. Slice 3.1 relocates the arm set into a producer that the
-generator package cannot import, so leaving the set behind as a hand-maintained restatement would be R268's
-bug class verbatim. The slice re-sources the bucket instead: projected-ness becomes a fact derived from the
-plan (a leaf is projected exactly when the producer mints a contribution for it), the partition test reads
-it from there, and a leaf the producer cannot yet mint for surfaces as a validate-time deferred rejection,
-not a producer-side throw.
+**The dispatch partition moves with the dispatch.** `TypeFetcherGenerator.PROJECTED_LEAVES` is not the
+`$fields` arm set: its javadoc states the narrower semantic, leaves whose projection is emitted inline *and*
+for which the dispatch switch emits no fetcher method. The `$fields` switch covers seven leaf kinds, but two
+of them (`ColumnBackedField`, `ComputedField`) also get fetcher methods and so sit in `IMPLEMENTED_LEAVES`,
+and `PivotSlotField` sits in `PROJECTED_LEAVES` with no arm of its own because its projection rides the
+pivot arm's emission. `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` plus
+`ValidateMojo` rest on the four-way partition staying exhaustive and disjoint. Slice 3.1 relocates the arm
+set into a producer that the generator package cannot import, so leaving the set behind as a hand-maintained
+restatement would be R268's bug class verbatim. The slice re-sources the bucket instead, and the derived
+fact must carry both halves of the semantic or it breaks the disjointness it feeds: a leaf is projected
+exactly when the producer mints a contribution for it (directly, or through the contribution of the arm it
+rides, which is how `PivotSlotField` stays covered) **and** the fetcher dispatch mints nothing for it.
+Deriving from contribution coverage alone would put `ColumnBackedField` and `ComputedField` in two buckets
+at once. The partition test reads the derived fact, and a leaf the producer cannot yet mint for surfaces as
+a validate-time deferred rejection, not a producer-side throw.
 
 Two authored doc surfaces name that partition and go false the moment it re-sources, so slice 3.1 updates
 them in the same commit: the "Rejections: validator mirrors classifier invariants" section of
@@ -590,7 +600,8 @@ the extraction hierarchy it means ten arms.
 model's ref vocabulary or copy it?** Copying doubles the surface and creates two definitions that
 drift, which is R268's bug class at the type level. The obstacle to borrowing is that `TableRef`,
 `ColumnRef` and `MethodRef` hold javapoet `ClassName` / `TypeName` today, so they are themselves
-among R545's 31 offending model files; borrowing them into `command` would drag the emit library in
+among R545's roughly 30 offending model files (the audit's import histogram is the counting rule); borrowing
+them into `command` would drag the emit library in
 behind them, which invariant 3 exists to stop.
 
 The target is a **shared pure-data floor**: those refs shed javapoet (FQCN strings in, `ClassName.get`
@@ -708,7 +719,8 @@ installable as a ratchet at its current value before any migration happens.
    count is leaf references inside `generators/` under the audit's own grep, which spans seven hierarchies
    (`ChildField`, `QueryField`, `MutationField`, `InputField`, `OutputField`, `GraphitronType`,
    `GraphitronField`) and stands at 104 `instanceof` sites. Narrowing it to the three field hierarchies
-   gives 59, and counting `case` patterns as well as `instanceof` adds 75 more, so the definition has to
+   gives 59, and counting `case` patterns as well as `instanceof` adds 89 more (the audit's grep with
+   `case` in place of `instanceof`, seven hierarchies, measured 2026-07-28), so the definition has to
    travel with the number or slice 2 installs the ratchet at whichever of the three it guesses. Driven to
    zero family by family, remembering that those
    relocate into producers rather than disappearing until slice 4. The tertiary count guards the
@@ -885,10 +897,10 @@ slice 3.1 commits to the two-arm collapse it would falsify.
 | R545 (Backlog) | becomes slice 2's invariant 3. Stays as filed; it is a precondition, not an independent win |
 | R546 (Discarded 2026-07-27) | absorbed here. It asked what shape `MethodCommand` should grow into, and this reframing answers "none": the hierarchies are the commands, so a parallel four-string record is exactly the intermediary model this programme says is unnecessary. Its flow-inversion scope became slice 5, its recompile-graph justification became slice 7 (full argument in the audit's gap 7), and its abandon condition became this item's |
 | R543 (Backlog) | slice 8. Its fact half needs slice 4, its command half needs slice 5 |
-| R544 (Backlog) | independent, and this reframing strengthens it: the error-channel hierarchies are a first-class fourth kind at 44 permits, so pinning them declaratively is model work, not only test hygiene |
+| R544 (Backlog) | independent, and this reframing strengthens it: the error-channel hierarchies are a first-class fourth kind at 55 leaf records across ten seals, so pinning them declaratively is model work, not only test hygiene |
 | R541 (reopened to Spec 2026-07-27) | **the second proof of concept**, slice 3c. Rewritten in command terms, which dissolves rather than defers most of its previous design: its `QueryUnitField` naming capability, its `declareRootQueryUnit` registry seam and its bidirectional oracle were all machinery for facts an emitter reads directly, and under a coordinate-keyed relation the name is a producer-computed field and "exactly one command per coordinate" is the key. Building them first would have been a migration payment slice 5 then retires. Its five root emit shapes stay the real content, and its exact-SQL equivalence pin gets simpler rather than narrower: authored after slice 3, the select list is already final, so the pin covers whole statements with no carve-out. Its conditions fork was re-posed at Spec review 2026-07-27: the root builders already call named `<field>Condition` methods, so what the fork actually does is finish R333 row 5's naming lift (the `QueryConditionsGenerator` end, R2 today) for the covered family's coordinates; the slot resolves as a `UnitRef` into R552's condition relation and the scope question moved there (its fork 4). Its live open fork is now the connection root's `ConnectionResult` carrier plan (`totalCount`'s `(table, condition)` binding and the facet condition fragments), which the launcher sketch has no slot for. Two notes from the rollout review: it is the one proof of the three with no capability payload, which the "no slice that is purely a migration payment" rule makes a thing to name in its own body rather than discover at review; and it runs after R552, per the ordering decision in the Slices section |
 | R552 (Spec) | **the third proof of concept**, slice 3d, and the first family to land. The WHERE family as one coordinate-keyed condition relation with a total glue unit per row: the first value-shaped unit, the second cross-kind edge including the first external callees, argument marshalling as data, and the type-keyed GROUP BY that hands slice 3b its exemplar rows. Dissolves R541's conditions fork by owning condition production; the ordering question its fork 4 leaves open is decided in the Slices section (R552 first). Absorbs R472, R475, R387 and R334 for its family, which is why it is also the right family to run first: the programme's earliest visible commits fix output that does not compile today |
-| R516 (Ready after a second rework, priority 2) | **dependency of slice 3.2**, and of nothing earlier: the keystone's reshape half does not need it, which is part of why the split is worth having. It has already deleted the full-row parent projection for typed-record `@service` keys and the reserved alias namespace that carried it, which was the one demand no parent-owned fact could serve, and it ships independently as correctness work. Its force-include of the parent PK is an interim expression that slice 3 converts to a gated `Project` arm; it was scoped as PK plus node key until 2026-07-27, when the node-key half was dropped for the reason stated here, that node-id-ness does not affect projection. Whatever it leaves in `ParentProjectionContainmentCheck` should be the minimum that keeps the check honest, since slice 3.2 deletes it. Re-read its body at slice 3.2 pickup rather than trusting this row: it has bounced the Done gate twice, so its scope and its status both move faster than this table |
+| R516 (Ready again after a fourth gate pass, priority 2) | **dependency of slice 3.2**, and of nothing earlier: the keystone's reshape half does not need it, which is part of why the split is worth having. It has already deleted the full-row parent projection for typed-record `@service` keys and the reserved alias namespace that carried it, which was the one demand no parent-owned fact could serve, and it ships independently as correctness work. Its force-include of the parent PK is an interim expression that slice 3 converts to a gated `Project` arm; it was scoped as PK plus node key until 2026-07-27, when the node-key half was dropped for the reason stated here, that node-id-ness does not affect projection. Whatever it leaves in `ParentProjectionContainmentCheck` should be the minimum that keeps the check honest, since slice 3.2 deletes it. Re-read its body at slice 3.2 pickup rather than trusting this row: it has bounced the Done gate repeatedly, so its scope and its status both move faster than this table |
 | R462 (Spec) | fix by hand now, do not generalise; slice 7 dissolves its class. Advisory already noted on the item. Its Spec body cites `GraphitronSchemaValidator.NESTED_WIREABLE_LEAVES`, which no longer exists under that name anywhere in main or test, so the implementer must re-derive the current nested-leaf bound rather than trusting the citation |
 | R10 (Backlog) | dependency of slice 7. Its own body says it wants "a concrete signal"; the fact engine making connection synthesis a relation is that signal |
 | R7 (Backlog) | subsumed in effect. `TypeFetcherGenerator` splits along command kinds under slice 3 and slice 5 rather than by a decomposition pass that regrows |

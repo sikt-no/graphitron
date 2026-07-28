@@ -46,7 +46,8 @@ core-tells-shell, and its coverage is the reentry rows-method family plus a DML 
 Branch density (`if`, ternary, `case`) is 1,641 across 29,837 LOC in `generators/` against 434
 across 12,690 in `model/`: 0.055 per line versus 0.034, so the shell is about 1.6x denser in
 decisions per line and about 3.8x larger in absolute branch count. Roughly 100 `instanceof` sites in
-`generators/` name model leaves, plus about 60 `case` arms on leaf types. Emit dispatches on leaf
+`generators/` name model leaves, plus about 90 `case` arms on leaf types (89 by the script's grep,
+re-measured 2026-07-28). Emit dispatches on leaf
 identity, which is the dispatch R333 replaces with facts.
 
 ### 4. Deciding and rendering are interleaved in the same files
@@ -151,9 +152,11 @@ done
 
 # leaf-identity dispatch in the shell. Seven hierarchies, instanceof only: this is the definition the
 # "roughly 100" figure belongs to. Narrowing it to the three field hierarchies gives 59 instead, and
-# counting "case" patterns as well as "instanceof" adds another 75, so a consumer of this number has to
-# carry the grep with it.
+# counting "case" patterns as well as "instanceof" adds another 89 (grep below; re-measured 2026-07-28,
+# the original hand-stated 75 matched no derivation), so a consumer of this number has to carry the
+# grep with it.
 grep -roh "instanceof \(ChildField\|QueryField\|MutationField\|InputField\|OutputField\|GraphitronType\|GraphitronField\)[.A-Za-z]*" generators/ | sort | uniq -c | sort -rn
+grep -roh "case \(ChildField\|QueryField\|MutationField\|InputField\|OutputField\|GraphitronType\|GraphitronField\)[.A-Za-z]*" generators/ | sort | uniq -c | sort -rn
 
 # model-holding entry points in the shell: the population invariant 1's primary ratchet drives to zero.
 # "generate" methods only; helpers that also take the model are out of scope until their family migrates.
