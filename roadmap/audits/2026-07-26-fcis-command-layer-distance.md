@@ -24,8 +24,10 @@ numbers.
 ### 1. There is no command layer; the handoff is the whole model
 
 `GraphQLRewriteGenerator.runPipeline` reads: `GraphitronSchemaBuilder.buildBundle`, validate, then
-about thirty direct `XGenerator.generate(schema, …)` calls, then `write`. Twenty-five generator
-entry points take `GraphitronSchema` itself. No artifact sits between core and shell, so each
+33 `write(...)` calls, sixteen of them passing `schema` straight through, then `write`. Twenty-four
+generator `generate` entry points take `GraphitronSchema` itself (this figure was hand-counted as
+twenty-five on 2026-07-26; the script below now produces it, and 24 is what it produces). No artifact
+sits between core and shell, so each
 generator re-decides from the god object what it should emit. The orchestrator carries decisions of
 its own; the `OneOfDirectiveSdlGenerator` emission is gated on `federationLink &&
 OneOfDirectiveSdl.usesOneOf(assembled)` at the call site.
@@ -147,8 +149,33 @@ for d in generators model catalog schema compile lint walker selection session m
   echo "$(cat $(find $d -name '*.java') | wc -l) LOC  $(find $d -name '*.java' | wc -l) files  $d"
 done
 
-# leaf-identity dispatch in the shell
+# leaf-identity dispatch in the shell. Seven hierarchies, instanceof only: this is the definition the
+# "roughly 100" figure belongs to. Narrowing it to the three field hierarchies gives 59 instead, and
+# counting "case" patterns as well as "instanceof" adds another 75, so a consumer of this number has to
+# carry the grep with it.
 grep -roh "instanceof \(ChildField\|QueryField\|MutationField\|InputField\|OutputField\|GraphitronType\|GraphitronField\)[.A-Za-z]*" generators/ | sort | uniq -c | sort -rn
+
+# model-holding entry points in the shell: the population invariant 1's primary ratchet drives to zero.
+# "generate" methods only; helpers that also take the model are out of scope until their family migrates.
+grep -rhoP 'static\s+[\w<>,.\[\]\s?]+?\s+\Kgenerate(?=\([^)]*GraphitronSchema)' generators/ --include=*.java | wc -l
+
+# of those entry points, which loop the schema (slice 3b's per-type population) versus emit one unit
+for f in $(grep -rlP 'static\s+[\w<>,.\[\]\s?]+\s+generate\([^)]*GraphitronSchema' . --include=*.java); do
+  grep -qP 'typesOf|allTypes|types\(\)\.|schema\.types|forEach|for \(var \w+ : .*[Tt]ype' "$f" \
+    && echo "LOOPS  $f" || echo "single $f"
+done | sort
+
+# corpus size: classification enum constants implementing ClassificationCase
+grep -cP '^\s+[A-Z][A-Z0-9_]{2,}\(' ../../../../../../test/java/no/sikt/graphitron/rewrite/GraphitronSchemaBuilderTest.java
+
+# concentration: top-five share of package LOC, and the largest single file.
+# "the core" is the rewrite package's own top-level files; "the shell" is generators/ recursively.
+for p in generators .; do
+  files=$([ "$p" = "." ] && echo *.java || find $p -name '*.java')
+  top=$(wc -l $files | grep -v total$ | sort -rn | head -5 | awk '{s+=$1} END {print s}')
+  all=$(cat $files | wc -l)
+  echo "$p: top-five $top / $all = $((top*100/all))%, largest $(wc -l $files | grep -v total$ | sort -rn | head -1)"
+done
 
 # branch density
 for p in generators model; do

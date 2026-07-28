@@ -43,11 +43,11 @@ triggers* (a table-bound return type mints `select`, pagination args mint `pagin
 anybody walks for. One entry in that list is target vocabulary rather than tree: `Operation` has no
 `condition` arm today, the filter surface riding as `WhereFilter` components on its `Fetch` and
 `Paginate` arms (R552's model correction), and nothing in this programme turns on whether R333 later
-promotes it. The error-channel kind is a genuine fourth at 43 permits across five seals, larger than
+promotes it. The error-channel kind is a genuine fourth at 44 permits across five seals, larger than
 `Operation`, but it is still inside the fact base: the development principles say rejections are facts too,
 located violations asserted once and rendered into views. What distinguishes the kind is provenance (minted
 by the gathering pass, not read off SDL or catalog), not membership, and its grain is the located violation
-keyed by location plus code. Stated that way, invariant 2's grain-and-home rule covers all 43 permits with
+keyed by location plus code. Stated that way, invariant 2's grain-and-home rule covers all 44 permits with
 no exemption.
 
 ## Grain decides what a leaf can hold
@@ -58,10 +58,18 @@ stuffed into a per-coordinate row.
 
 | grain vs coordinate | leaf-able | families | tell in the code |
 |---|---|---|---|
-| 1:1 | yes, and should stay a sealed record | source, target, tenancy binding, node identity | `Source`, `Target`, `TenantBinding`, `NodeMetadata` |
+| 1:1 | yes, and should stay a sealed record | source, target, tenancy binding | `Source`, `Target`, `TenantBinding` |
 | 1:N | no, must be a relation | operations, join hops, conditions, arguments, pivot slots | `List<JoinStep> joinPath()`, `List<WhereFilter> filters()`, `PivotSpec.slots()`, `callParams()`, and ten more list accessors |
-| type grain | belongs to the type, not the field | the `$fields` fold, input record shape | `$fields` is type-granular and a fold |
+| type grain | belongs to the type, not the field | the `$fields` fold, input record shape, node identity | `$fields` is type-granular and a fold; `EntityResolution` rides the `entitiesByType` sidecar |
 | 0:1, two populations | authored and inferred, resolved by a view | reference, defaults, ordering | `reference` is authored `@reference` *or* inferred unique FK |
+
+Node identity is the instructive row-3 entry, because it is the one a coordinate reader reaches for first
+and gets wrong. `EntityResolution` is keyed by type name on the `entitiesByType` sidecar, not by coordinate,
+and its `alternatives` is a list of `KeyAlternative` (including the synthesised `NodeId` arm), so it is
+type-grain *and* 1:N within the type. That is the same fact the keystone spends later: node-id-ness is a
+wrap applied at the fetcher value, so it has no projection footprint at all. (The `NodeMetadata` record is
+not this fact. It lives on `catalog/CompletionData` as a `Map<String, NodeMetadata>` for the language server
+and the model-context projection, which is a downstream view, not a hierarchy in the fact base.)
 
 This also explains why the leaf model reached "ok, but not 100%". A leaf names a point in a product
 space, which is strictly *better* than a relation while the families co-vary (one name, compile-checked
@@ -75,15 +83,25 @@ independence or measured multiplicity, never on aesthetics.**
 
 | relation | key | where it lives today |
 |---|---|---|
-| global commands | unit kind | the 34 `write(...)` calls in `GraphQLRewriteGenerator.runPipeline`, including an inline `federationLink && usesOneOf` gate |
-| type-keyed commands | `(typeName, unitKind)` | 24 generator entry points that each loop the schema asking "should I emit my kind for this type", with the naming vocabulary already centralised as data in `compile/GeneratedUnits` (`typeClass`, `fetchers`, `conditions`, `inputRecord`, `schemaShape`, plus `singleton` / `rootUnit` for globals) |
+| global commands | unit kind | the 33 `write(...)` calls in `GraphQLRewriteGenerator.runPipeline`, including an inline `federationLink && usesOneOf` gate |
+| type-keyed commands | `(typeName, unitKind)` | roughly 11 generators that each loop the schema asking "should I emit my kind for this type", with the naming vocabulary already centralised as data in `compile/GeneratedUnits` (`typeClass`, `fetchers`, `conditions`, `inputRecord`, `schemaShape`, plus `singleton` / `rootUnit` for globals) |
 | coordinate-keyed commands | `(coordinate, operation)` | `Operation`'s minted arms, plus `MethodCommandRegistry`'s four-string records minted during rendering |
 
 The type-keyed relation is derived, never independently walked: a `(typeName, unitKind)` row is a fold
 over coordinate-grain facts (emit a conditions class for a type exactly when some coordinate on it carries
 a condition operation), so slice 3b's producers are GROUP BYs over the coordinate relation. Re-asserting
-membership with a per-kind predicate would relocate the 24 loops rather than dissolve them, the same trap
+membership with a per-kind predicate would relocate those loops rather than dissolve them, the same trap
 the per-family recipe's honest note names for leaf dispatch.
+
+**Sizing that population, because the obvious number over-counts it.** 24 `generate` entry points in
+`generators/` take `GraphitronSchema`, but that is invariant 1's count and not this relation's. They sit in
+17 files; three of those never loop at all (`GraphitronFacadeGenerator`,
+`GraphitronDevExecutorGenerator`, `EntityFetcherDispatchClassGenerator`), and several of the rest loop to
+build **one** aggregate unit rather than one per type: `GraphitronSchemaClassGenerator`,
+`NodeIdEncoderClassGenerator` and `ErrorMappingsClassGenerator` are `GeneratedUnits`' `singleton` /
+`rootUnit` schemes, which is slice 1's global population by this item's own vocabulary. What is left is the
+per-type-emitting families, around 11, and those are slice 3b's. Sizing 3b off the 24 would have it
+re-migrate what slice 1 already owns.
 
 The coordinate-keyed relation holds two kinds that must not be conflated. A **projection command** returns
 the select list for one projection unit. A **launcher command** owns a query: it composes a projection
@@ -182,12 +200,17 @@ Consequences, all of them things that stop existing rather than things that get 
 
 - The required-projection walk (`TypeClassGenerator.collectRequiredProjection`) has nothing left to
   discover, since no demand crosses a key without travelling through a call.
-- `ParentProjectionContainmentCheck` loses its subject, for the single-sourcing reason and not merely the
-  exhaustiveness one. The check cross-checks two *independent* derivations of the key columns (its javadoc
-  states the independence as a hard requirement), and exhaustive dispatch alone would not replace it: the
-  shipped bug it guards against was an arm projecting the wrong column subset, which a coverage check
-  cannot see. What deletes it is the constraint above, that the correlation arm and the extraction emitter
-  read the same accessors, so only one derivation remains and there is nothing left to compare.
+- `ParentProjectionContainmentCheck` loses its subject, for the single-sourcing reason and not the
+  exhaustiveness one. The check cross-checks two *independent* derivations of the key columns, and its
+  javadoc states the independence as a hard requirement rather than a preference, with the reason: the
+  shipped bug was a pattern-match omission *inside* the projection walk, so a requirement side that shared
+  that traversal would reproduce the omission on both sides and pass green over the exact bug family the
+  check exists to catch. Exhaustive dispatch does close that particular omission, which is invariant 5's
+  job, but it is not what retires the check, because a coverage check cannot see a present arm reading the
+  wrong columns. What retires it is the constraint above, that the correlation arm and the extraction
+  emitter read the same accessors, so only one derivation remains and there is nothing left to compare.
+  That is deliberately the opposite of the check's independence requirement: single-sourcing is safe only
+  because supply and demand become the *same read*, not two reads that happen to agree.
 - Over-projection goes away as a runtime effect. A query selecting only `title` on a type with three split
   children currently projects the union of all their keys.
 - Node key columns need no forcing. Node-id-ness is a wrap applied at the fetcher value, not in the SELECT
@@ -291,23 +314,57 @@ definition: if it had its own table instance it would not be a nesting type. Sin
 take their instance from the caller (`$fields(sel, table, env)`), there is no "owns its alias" case and no
 alias axis on the command. What distinguishes a nesting unit is that it has no key of its own.
 
-**Nesting types become projection units.** Giving a nesting type its own unit collapses the contribution
-key from `(host, pathFromHost)` to `typeName`, retires the depth-suffixed generated locals that exist only
-to dodge JLS shadowing when everything inlines into one method, and hands the dependency graph a node and
-edges for free, which is the grain R459 and R462 both stumbled on.
+**Nesting types become projection units, keyed by anchor and prefixed by it.** Giving a nesting type its own
+unit collapses the contribution key from `(host, pathFromHost)` to `(anchor, typeName)`: the path drops out,
+the host does not. That retires the depth-suffixed generated locals that exist only to dodge JLS shadowing
+when everything inlines into one method, and hands the dependency graph a node and edges for free, which is
+the grain R459 and R462 both stumbled on.
 
-The invariant that makes this work is **locality: a projection method never looks beyond its own nesting
-level.** Its own level's contributions are columns and calls; anything deeper is another unit's business,
-reached by a call and returned as a list. That is what makes a projection unit self-contained, and it is
-the property to state and hold rather than any claim about how many parents reach a nesting type.
+The host stays in the key because **sharing one nesting type across hosts with different tables is a
+supported shape today, not a hypothetical.** `GraphitronSchemaBuilderTest.NestingFieldCase.SHARED_NESTED_TYPE_ACROSS_PARENTS_COMPATIBLE`
+reaches one `FilmDetails` from `Film` (`film`) and `FilmList` (`film_list`), and
+`ChildField.NestingField`'s javadoc states both the support and the mechanism: the parent's table varies
+across reuse sites, the children read by column name on the generic `org.jooq.Record`, and the
+domain-return identity is that generic `Record` precisely so "any nesting reuse-site agrees on" it. Today's
+emit dodges the question by inlining, so no unit exists to be ambiguous. Promoting nesting types to units
+creates the question, and the answer is the key: **one unit per `(anchor, nesting type name)`, with the
+generated class name prefixed by the anchor type.**
+
+Three consequences worth stating, because each is a decision an implementer would otherwise have to make
+mid-slice:
+
+- **The prefix is the anchor, not the immediate parent.** Nesting is a pass-through (`env -> env.getSource()`),
+  so every nesting descendant reads the table-backed anchor's row, and the anchor is what fixes the emitted
+  parameter type. At depth 1 anchor and parent coincide; at depth 2 and beyond only the anchor disambiguates,
+  since two anchors reaching the same parent-child nesting pair would collide again under an
+  immediate-parent prefix.
+- **One unit, one table becomes structural rather than checked.** The anchor determines the table class, so
+  a unit cannot carry two `TableRef`s by construction. The plan-build rejection on differing `TableRef` for
+  one unit stays as a backstop, but it is now a genuine invariant guard rather than a bet on a shape being
+  absent, and it can no longer fire on `SHARED_NESTED_TYPE_ACROSS_PARENTS_COMPATIBLE`.
+- **The prefixed name needs a collision verdict.** `<Anchor><Nested>` can collide with an authored type name
+  (`Film` plus `Details` renders the same class as an authored `FilmDetails`), and `GeneratedUnits` has no
+  prefixed-unit scheme today. Slice 3.1 owns the naming, and the rejection vocabulary already exists:
+  `Rejection.InvalidSchema.CaseFoldCollision` is the sibling verdict, and R475 is the precedent for a
+  generated-name collision being a typed rejection rather than a silent overwrite. A separator that cannot
+  appear in an SDL type name is the cheaper answer if one is available in a Java identifier.
+
+The invariant that makes all of this work is **locality: a projection method never looks beyond its own
+nesting level.** Its own level's contributions are columns and calls; anything deeper is another unit's
+business, reached by a call and returned as a list. That is what makes a projection unit self-contained, and
+it is the property to state and hold rather than any claim about how many parents reach a nesting type.
 `ColumnRef` carries no table, so contributions name columns resolved against whatever instance the caller
-passes; the only thing that cares about the host is the emitted parameter type, which binds one unit to one
-jOOQ table class. So a nesting type reached from two hosts with different tables is a signature question at
-emit time, not a projection-design question, and it is not a live one today (nesting registration is
-first-wins and `MixedSourceReachIndex` treats a pure nesting target as single reach). First-wins is a silent
-overwrite, though, not an enforcer, so plan production guards it: minting two `ProjectionCommand`s for one
-unit with differing `TableRef` fails the plan build with a typed rejection, which converts "not live today"
-from an unguarded claim into a guarded one.
+passes.
+
+One residual for slice 3.1 to confirm rather than assume, on the same footing as slice 3.3's directive
+question. A `@pivot` field's projection type is registered as an ordinary `GraphitronType.NestingType`, and
+its columns come from the attribute table rather than the anchor's, so a type reached by both a nesting edge
+and a pivot edge would want two tables under one `(anchor, typeName)` key. `MixedSourceReachIndex` cannot
+tell the two edges apart, deliberately: `GraphitronSchema.reachableSourceShapes` maps every `NestingType` to
+`NESTING_RECORD` alone, and the pivot edge "contributes the identical `NESTING_RECORD` reach to the union".
+So the reach axis will not answer this, and the backstop above is what surfaces it. Confirm at
+implementation whether the double-reach shape is author-reachable; if it is, the pivot-reached projection is
+its own unit kind keyed on the attribute table, not a nesting unit.
 
 **Polymorphic projection needs no folding in.** `MultiTablePolymorphicEmitter` already emits
 `Type.$fields(PolymorphicSelectionSet.restrictTo(env.getSelectionSet(), "Film"), t, env)` per participant
@@ -315,7 +372,8 @@ and states that the discriminator's "real column is projected by the participant
 polymorphic path is a launcher that consumes projection commands, and the only thing the contribution set
 owes it is nothing at all, since `__typename` is appended by the launcher. Both scoping adapters (`restrictTo` by concrete type,
 `SelectionOccurrences.mergeByResultKey` by depth) sit at the call site and converge on the same callee
-input, which is also why the three `$fields` overloads collapse to one.
+input, which is also why the `$fields` family collapses to one method: two public overloads, one per
+adapter, plus the private `$fieldsGrouped` they both delegate into.
 
 **Pagination is already outside `$fields`, and correctly so.** `ConnectionHelperClassGenerator` computes
 `selectFields` as "selection ∪ extraFields, name-deduped", a runtime union of what the client selected with
@@ -433,7 +491,7 @@ floor as R545 de-javapoets its entries; the vocabulary section carries the reaso
    conjunction over `operation()` and target shape with no exemption list anywhere, is the exemplar).
 3. Rewrite the emitter as a total function over the command's arms, dropping its `GraphitronSchema`
    parameter.
-4. Point both ratchets down: one entry point off the 25, N leaf references out of `generators/`.
+4. Point both ratchets down: one entry point off the 24, N leaf references out of `generators/`.
 5. Land the family's three new test surfaces: pipeline-tier assertions on the produced command rows over
    existing fixtures (the decisions as data, asserted without javapoet), per-arm unit tests on the
    family's renderer (a total function whose inputs are record literals, needing no schema, fixture, or
@@ -468,8 +526,14 @@ keystone precisely so it needs no carve-out. So the programme owns one thing the
 output.** Same mechanism the families use (a per-test-class `SQL_LOG` `ExecuteListener` in
 `graphitron-sakila-example`, exact rendered strings and statement counts, not `contains`), with a
 representative set chosen for projection shapes rather than for one family: a type with split
-children, a nesting type, a multiset child, a polymorphic root, and a query selecting one scalar on a
+children, a nesting type, **one nesting type shared across two hosts with different tables**, a multiset
+child, a polymorphic root, and a query selecting one scalar on a
 type with several children, which is the over-projection case itself.
+
+The shared-nesting case is in that list on purpose. It is the shape slice 3.1's anchor-prefixed unit key
+exists to serve, `SHARED_NESTED_TYPE_ACROSS_PARENTS_COMPATIBLE` proves it classifies, and pinning its SQL
+here turns "prefixing preserved both hosts' projections" into a test the keystone either keeps green or
+does not, rather than a property argued in a plan body.
 
 Slice 3.1 keeps that baseline green unchanged, which is what makes "the reshape moved no SQL" a
 result rather than a claim. **Slice 3.2 re-baselines it exactly once, and that diff is the
@@ -631,14 +695,22 @@ checkable, which is why the boundary drifts. Under the labelling they become mec
 installable as a ratchet at its current value before any migration happens.
 
 1. **A command-based emitter takes no `GraphitronSchema`.** This is the sharp form of "the shell decides
-   nothing", and it cannot be satisfied halfway: an emitter either holds the model or it does not. Today 25
-   generator entry points take it, so the ratchet is 25 to 0. Renderers may take a `RenderContext` carrying
+   nothing", and it cannot be satisfied halfway: an emitter either holds the model or it does not. Today 24
+   `generate` entry points in `generators/` take it, so the ratchet is 24 to 0. Renderers may take a
+   `RenderContext` carrying
    config (output package, tenant key type, federation flag, helper-name registries), but that context must
    have no field typed `GraphitronSchema` or any model hierarchy, or the rule is defeated by smuggling; both
    halves check in one meta-test. For new code the same rule is an import-direction check on the package
    triangle above, which needs no ratchet at all.
-   The secondary count is leaf references inside `generators/` (roughly 100 `instanceof ChildField.*` /
-   `QueryField.*` / `MutationField.*` sites), driven to zero family by family, remembering that those
+   **Take every count in this invariant from the audit script, do not restate it**, because the counting
+   rule is what makes a ratchet mean anything: `generate` methods only, so the 14 non-entry-point helpers
+   in `generators/` that also take the model are out of scope until their family migrates. The secondary
+   count is leaf references inside `generators/` under the audit's own grep, which spans seven hierarchies
+   (`ChildField`, `QueryField`, `MutationField`, `InputField`, `OutputField`, `GraphitronType`,
+   `GraphitronField`) and stands at 104 `instanceof` sites. Narrowing it to the three field hierarchies
+   gives 59, and counting `case` patterns as well as `instanceof` adds 75 more, so the definition has to
+   travel with the number or slice 2 installs the ratchet at whichever of the three it guesses. Driven to
+   zero family by family, remembering that those
    relocate into producers rather than disappearing until slice 4. The tertiary count guards the
    relocation itself: leaf references inside `plan/`, which grow through slices 3 and 3b and ratchet to
    zero during slice 4. During that window the pipeline for migrated families is facts, then leaves, then
@@ -720,14 +792,14 @@ should not carry one.
 
 | # | slice | why here | cost |
 |---|---|---|---|
-| 1 | **Global command list, and the vocabulary skeleton.** `runPipeline`'s 34 `write(...)` calls become a relation the core computes and the shell folds over, and the slice brings the machinery that relation cannot exist without: `EmitPlan`, the `command` / `plan` / `render` packages, the import-direction check over them, `UnitRef`, and `GeneratedUnits` moved out of `compile/` | touches no leaf, no fact, no javapoet, no emitted output, so the cheapest slice in the programme is also its first complete vertical; makes "the core decides the entire emit" literally true for the one population where it is currently orchestrator control flow, and puts the package triangle in trunk before anything expensive rests on it | very low |
+| 1 | **Global command list, and the vocabulary skeleton.** `runPipeline`'s 33 `write(...)` calls become a relation the core computes and the shell folds over, and the slice brings the machinery that relation cannot exist without: `EmitPlan`, the `command` / `plan` / `render` packages, the import-direction check over them, `UnitRef`, and `GeneratedUnits` moved out of `compile/` | touches no leaf, no fact, no javapoet, no emitted output, so the cheapest slice in the programme is also its first complete vertical; makes "the core decides the entire emit" literally true for the one population where it is currently orchestrator control flow, and puts the package triangle in trunk before anything expensive rests on it | very low |
 | 2 | Label the hierarchies (walked / resolved / command / error), install invariants 1 and 3 at their current counts, and ship the programme's three instruments: the exemption-list triage, the corpus pair-independence extension (both below), and the SQL equivalence harness with its projection-covering baseline | the labelling is the programme's vocabulary, a ratchet installed before the migration is what stops the surface growing while the work proceeds, the pair-independence data validates the two-arm contribution collapse before slice 3.1 spends the medium cost, and the baseline is what makes the keystone's SQL change a reviewable diff instead of a claim | low |
-| 3.1 | **The keystone, part one: the projection command.** One method per projection unit, grouped selection in and select list out, replacing the three `$fields` overloads and renamed to say what it returns (`$project`) uniformly across table-backed and nesting units. Nesting types promoted to units; the seven positional buckets become one ordered `List<Contribution>`; exhaustive dispatch with no default | designing this validates or breaks the whole model. It reshapes the producer/renderer seam and renames a method without moving any SQL, so it lands against the frozen baseline and proves the reshape in isolation | medium |
+| 3.1 | **The keystone, part one: the projection command.** One method per projection unit, grouped selection in and select list out, replacing the two `$fields` overloads and their private `$fieldsGrouped` and renamed to say what it returns (`$project`) uniformly across table-backed and nesting units. Nesting types promoted to units, keyed `(anchor, typeName)` and anchor-prefixed, with the naming collision verdict; the seven positional buckets become one ordered `List<Contribution>`; exhaustive dispatch with no default | designing this validates or breaks the whole model. It reshapes the producer/renderer seam and renames a method without moving any SQL, so it lands against the frozen baseline and proves the reshape in isolation | medium |
 | 3.2 | **The keystone, part two: correlation keys, and the end of over-projection.** The correlation columns become a gated `Project` arm reading the same accessors the extraction emitter consumes; the required-projection walk and `ParentProjectionContainmentCheck` are deleted; an unselected child projects nothing. Depends on R516 and on 3.1 | the only slice that deletes a build-time throw, a duplicated walk and a runtime over-projection at once, and the only part of the keystone that changes SQL, which is what makes it the part that re-baselines the pin | medium |
 | 3.3 | **The keystone, part three: `@splitQuery` on a nesting field.** Confirm the directive is accepted and silently ignored there; implement the launcher it implies, or land the validate-time deferred rejection. Depends on 3.1 | the one part whose scope is a finding rather than a plan, so it is separated from the two parts R541 and R552 wait on | low |
 | 3c | **The launcher dual: the root SELECT family becomes launcher commands.** Owned by R541, rewritten in command terms: `(coordinate, operation)` rows carrying invocation strategy, return shape, and a `UnitRef` naming the projection unit they select from. Depends on 3.1 and 3.2 (it names projection units, and its exact-SQL pin wants the select list final) | the second proof of concept. Slice 3 proves type grain and a contribution list; this proves the three things it cannot reach, namely coordinate keying, strategy as data, and one command referencing another, which is what slice 7's edge projection rests on. Generalising to slice 5 from two proofs at different grains beats generalising from one | medium |
 | 3d | **The third proof: condition commands.** The WHERE family becomes coordinate-keyed condition units, owned by R552: one relation, one glue rendering per row, every WHERE consumer (root, child, inline, polymorphic) calling glue instead of composing the fold inline, the typed entity layer retiring once its last caller converges. Depends on slice 1 only; 3.1 is what unlocks its R472 fix, and without it that defect converts to a deferred rejection instead. Runs before 3c (ordering below) | reaches what neither sibling proof can: a QueryPart-valued unit proves the command vocabulary is not select-specific, authored `@condition` methods give the edge view its emitted-versus-external split before the service family needs it at scale, and the glue GROUP BY hands slice 3b its exemplar rows | medium |
-| 3b | The type-keyed relation `(typeName, unitKind)` replaces the 24 generator predicates, one kind at a time | inverts "should I emit" from 24 independent loops into one relation the shell folds over; renderers barely move, and the unit vocabulary already landed with slice 1 | medium |
+| 3b | The type-keyed relation `(typeName, unitKind)` replaces the roughly 11 per-type generator predicates (sized above; the 24 that take the model include slice 1's globals), one kind at a time | inverts "should I emit" from 11 independent loops into one relation the shell folds over; renderers barely move, and the unit vocabulary already landed with slice 1 | medium |
 | 4 | Fact-visitor engine: one shared traversal dispatching to per-fact visitors, on the `LintEngine` pattern, with the registry-coverage meta-test, one genuinely independent fact as beachhead | dissolves the central switch that made `FieldBuilder` the largest file in the tree, using an architecture that already shipped here | medium |
 | 5 | Coordinate-keyed command relation: `Operation` rows become the command set the shell consumes; `MethodCommandRegistry`'s parallel four-string record retires into it | this is where the flow finally inverts from shell-asks-core to core-tells-shell | medium |
 | 6 | Grain repair, worked from the exemption lists | 19 stated data points about where the grain is wrong, already written down with reasons | medium |
@@ -813,7 +885,7 @@ slice 3.1 commits to the two-arm collapse it would falsify.
 | R545 (Backlog) | becomes slice 2's invariant 3. Stays as filed; it is a precondition, not an independent win |
 | R546 (Discarded 2026-07-27) | absorbed here. It asked what shape `MethodCommand` should grow into, and this reframing answers "none": the hierarchies are the commands, so a parallel four-string record is exactly the intermediary model this programme says is unnecessary. Its flow-inversion scope became slice 5, its recompile-graph justification became slice 7 (full argument in the audit's gap 7), and its abandon condition became this item's |
 | R543 (Backlog) | slice 8. Its fact half needs slice 4, its command half needs slice 5 |
-| R544 (Backlog) | independent, and this reframing strengthens it: the error-channel hierarchies are a first-class fourth kind at 43 permits, so pinning them declaratively is model work, not only test hygiene |
+| R544 (Backlog) | independent, and this reframing strengthens it: the error-channel hierarchies are a first-class fourth kind at 44 permits, so pinning them declaratively is model work, not only test hygiene |
 | R541 (reopened to Spec 2026-07-27) | **the second proof of concept**, slice 3c. Rewritten in command terms, which dissolves rather than defers most of its previous design: its `QueryUnitField` naming capability, its `declareRootQueryUnit` registry seam and its bidirectional oracle were all machinery for facts an emitter reads directly, and under a coordinate-keyed relation the name is a producer-computed field and "exactly one command per coordinate" is the key. Building them first would have been a migration payment slice 5 then retires. Its five root emit shapes stay the real content, and its exact-SQL equivalence pin gets simpler rather than narrower: authored after slice 3, the select list is already final, so the pin covers whole statements with no carve-out. Its conditions fork was re-posed at Spec review 2026-07-27: the root builders already call named `<field>Condition` methods, so what the fork actually does is finish R333 row 5's naming lift (the `QueryConditionsGenerator` end, R2 today) for the covered family's coordinates; the slot resolves as a `UnitRef` into R552's condition relation and the scope question moved there (its fork 4). Its live open fork is now the connection root's `ConnectionResult` carrier plan (`totalCount`'s `(table, condition)` binding and the facet condition fragments), which the launcher sketch has no slot for. Two notes from the rollout review: it is the one proof of the three with no capability payload, which the "no slice that is purely a migration payment" rule makes a thing to name in its own body rather than discover at review; and it runs after R552, per the ordering decision in the Slices section |
 | R552 (Spec) | **the third proof of concept**, slice 3d, and the first family to land. The WHERE family as one coordinate-keyed condition relation with a total glue unit per row: the first value-shaped unit, the second cross-kind edge including the first external callees, argument marshalling as data, and the type-keyed GROUP BY that hands slice 3b its exemplar rows. Dissolves R541's conditions fork by owning condition production; the ordering question its fork 4 leaves open is decided in the Slices section (R552 first). Absorbs R472, R475, R387 and R334 for its family, which is why it is also the right family to run first: the programme's earliest visible commits fix output that does not compile today |
 | R516 (Ready after a second rework, priority 2) | **dependency of slice 3.2**, and of nothing earlier: the keystone's reshape half does not need it, which is part of why the split is worth having. It has already deleted the full-row parent projection for typed-record `@service` keys and the reserved alias namespace that carried it, which was the one demand no parent-owned fact could serve, and it ships independently as correctness work. Its force-include of the parent PK is an interim expression that slice 3 converts to a gated `Project` arm; it was scoped as PK plus node key until 2026-07-27, when the node-key half was dropped for the reason stated here, that node-id-ness does not affect projection. Whatever it leaves in `ParentProjectionContainmentCheck` should be the minimum that keeps the check honest, since slice 3.2 deletes it. Re-read its body at slice 3.2 pickup rather than trusting this row: it has bounced the Done gate twice, so its scope and its status both move faster than this table |
@@ -833,10 +905,21 @@ collapsed four leaves to two, R438 made join facts orthogonal, R435 shipped a us
 fact model), and the discipline that produced that record is the one to keep: **no slice that is purely a
 migration payment.** Each slice above ships a simplification, a deletion, or a capability.
 
-Baseline, measured 2026-07-26 and re-derivable from the audit's script: 1,641 branches in `generators/`,
-roughly 100 leaf-naming `instanceof` sites, 29,837 generator LOC, 400 `ClassificationCase` constants,
-top-five concentration 46% (`generators/`) and 52% (core), largest files 7,102 and 7,754, and R25's
+Baseline, measured 2026-07-26: 1,641 branches in `generators/`, 104 leaf-naming `instanceof` sites,
+29,837 generator LOC, 366 `ClassificationCase` constants, top-five concentration 46% (`generators/`) and
+52% (core), largest files 7,102 (`TypeFetcherGenerator`) and 7,754 (`FieldBuilder`), and R25's
 emitter coverage figures (`JooqRecordInstantiationEmitter` 40.7%, `FetcherEmitter` 50.2%).
+
+**Every figure above is now script-derived, which it was not when this item was drafted.** The audit's
+script block originally produced only the branch, LOC and `instanceof` counts; the entry-point count, the
+`ClassificationCase` count and the concentration figures were hand-counted, and two of the three were
+wrong by more than drift (25 entry points against the script's 24, 400 `ClassificationCase` constants
+against 366). The missing greps are now in the audit's script block, so slice 2's job is to run it and
+install invariants 1 and 3 at what it prints, not to re-derive a counting rule. A number with no counting
+rule attached is a number the next reader re-derives differently, which is how invariant 1's secondary
+count came to carry a seven-hierarchy figure under a three-hierarchy definition. Small drift against the
+measurement date is expected and fine (branches and LOC have both moved by well under a percent, and the
+core's largest file by five lines); a figure nobody can reproduce is not.
 
 Re-run after slices 1 to 5. What matters is direction, not a threshold. The one risk the numbers guard
 against is stalling mid-migration, since a partly-converted shell is worse than either endpoint: R333 says
