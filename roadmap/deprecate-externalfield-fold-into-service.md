@@ -116,11 +116,14 @@ drift apart while both are alive.
   lint still see it and migration tooling can grep it.
 - **Migration window and tooling.** The window is open-ended: removal is a
   follow-up Backlog item filed when this ships, prioritised on observed
-  remaining call sites. Tooling is documentation plus grep (the changelog
-  entry and the manual's migration note carry the exact one-line rewrite:
-  `@externalField(reference: {...})` becomes `@service(service: {...})`);
-  Sikt's ~49 known call sites are tractable by hand, so no mojo or LSP
-  quick-fix ships in this item.
+  remaining call sites. The migration rewrite is mechanical and total:
+  `@externalField(reference: {...})` becomes `@service(service: {...})`,
+  directive name and argument name swap, the inner `ExternalCodeReference`
+  carries over verbatim. Two tooling surfaces ship in this item: the
+  documented one-line rewrite (changelog entry and the manual's migration
+  note, grep finds the sites), and an LSP quick-fix code action on
+  `@externalField` sites that performs the rewrite in place. No migration
+  mojo ships; the quick-fix plus grep covers Sikt's ~49 known call sites.
 
 ## Deliverables
 
@@ -147,7 +150,10 @@ drift apart while both are alive.
    states the execution model ("embedded in the parent SELECT" vs
    "DataLoader-backed service call"); `@service` method-reference
    completions include `Field`-returning static methods at eligible
-   coordinates. `ExternalFieldCompletions` stays alive for the window.
+   coordinates; a quick-fix code action on every `@externalField` site
+   rewrites it in place to the `@service(service: {...})` spelling,
+   preserving the inner `ExternalCodeReference` fields verbatim.
+   `ExternalFieldCompletions` stays alive for the window.
 5. **Docs.** `service.adoc` gains the embedded computed-field shape
    (signature, worked example, constraints); `externalField.adoc` gains a
    deprecation banner pointing at it; `computed-fields.adoc` respells its
@@ -172,7 +178,10 @@ In order:
    and lint-tier coverage.
 5. Migrate the `Film.isEnglish` Sakila fixture to `@service`; add the
    coexistence execution test; full `mvn install -Plocal-db` green.
-6. LSP hover text and completions; LSP-tier tests.
+6. LSP hover text, completions, and the `@externalField` to `@service`
+   quick-fix code action; LSP-tier tests including a rewrite round-trip
+   (applying the quick-fix yields a site the classifier accepts
+   unchanged).
 7. Docs and changelog.
 
 ## Done means
@@ -186,7 +195,9 @@ In order:
   build-log WARN.
 - Each rejection arm has a unit-tier test asserting its message names the
   computed-field contract.
-- LSP hover distinguishes embedded from DataLoader-backed `@service` fields.
+- LSP hover distinguishes embedded from DataLoader-backed `@service`
+  fields, and the quick-fix rewrites an `@externalField` site to an
+  equivalent `@service` site the classifier accepts unchanged.
 - Docs render cleanly (`mvn install -Plocal-db` without `-P!docs`); the
   manual nowhere recommends `@externalField` as the primary spelling.
 - On Done, discard R54 (`rename-externalfield-directive`) per the mutual
