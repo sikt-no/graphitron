@@ -67,6 +67,35 @@ class PkLessParentServiceSourcesRejectionTest {
             .doesNotContain("no primary key");
     }
 
+    /**
+     * Over-fire guard. The rejection is keyed on the SOURCES <em>shape</em>, not on the parent
+     * being PK-less, so a PK-less parent hosting an ordinary no-SOURCES {@code @service} (a plain
+     * per-parent delegation, which needs no batch key) must still classify. Ordering the
+     * coordinate test before the shape recognition would reject every {@code @service} on such a
+     * parent and turn this red.
+     *
+     * <p>Disambiguating the coordinate also stops an empty parent-PK list from reading as "root"
+     * here, so this field now reaches the child validation arm rather than the root one. That
+     * flip is currently inert (the arms agree on every shape reachable without a SOURCES
+     * parameter, which the rejection above intercepts first), so this test does not pin it.
+     */
+    @Test
+    void noSourcesChildOnPkLessParent_stillClassifies() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type FilmList @table(name: "film_list") {
+                title: String @field(name: "title")
+                rank(filter: String): Int @service(
+                    service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getConstantRank"}
+                )
+            }
+            type Query { filmList: FilmList }
+            """);
+
+        assertThat(schema.field("FilmList", "rank"))
+            .as("a PK-less parent's no-SOURCES child needs no batch key and classifies")
+            .isNotInstanceOf(UnclassifiedField.class);
+    }
+
     @Test
     void sourcesBatchParam_onParentWithPrimaryKey_classifies() {
         // Control: the same shape on a keyed parent is the ordinary supported case.

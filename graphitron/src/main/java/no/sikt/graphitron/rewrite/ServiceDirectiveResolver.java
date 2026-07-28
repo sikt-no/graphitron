@@ -188,11 +188,10 @@ final class ServiceDirectiveResolver {
     /**
      * Parent-table consistency check for the typed-{@code TableRecord} source-shape arm
      * ({@link SourceKey.Wrap.TableRecord}): the declared {@code Set<X>} / {@code List<X>} element
-     * {@code X} must be the parent type's backing record class, otherwise the emitted
-     * {@code ((Record) env.getSource()).into(Tables.X)} extraction would silently project the
-     * parent's runtime record into a wrong-typed {@code TableRecord}. The
-     * {@link SourceKey.Wrap.Row} / {@link SourceKey.Wrap.Record} arms carry no typed record
-     * class to mismatch.
+     * {@code X} must be the parent type's backing record class, otherwise the emitted extraction
+     * would set the parent's key columns on a record of an unrelated table, which does not even
+     * declare them. The {@link SourceKey.Wrap.Row} / {@link SourceKey.Wrap.Record} arms carry no
+     * typed record class to mismatch.
      */
     private String validateTableRecordSourceParentTable(String parentTypeName, MethodRef method) {
         var sourced = method.params().stream()

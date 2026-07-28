@@ -63,9 +63,9 @@ public class TestFilmService {
     /**
      * Fixture: typed-{@code TableRecord} source-shape sibling of {@link #getRankMapped}.
      * {@code Set<LanguageRecord>} keys classify the wrap as {@code SourceKey.Wrap.TableRecord},
-     * which obliges the parent {@code $fields} SELECT to project the full parent row (the
-     * documented contract of the typed-record arm; the generated key extraction is
-     * {@code env.getSource().into(Tables.LANGUAGE)} and the body may read any parent column).
+     * which obliges the parent {@code $fields} SELECT to project the wrap's key columns, the
+     * parent's primary key. The generated extraction copies exactly those onto a fresh typed
+     * record by jOOQ field identity; a body needing any other column fetches it itself.
      */
     public static Map<LanguageRecord, Integer> getRankMappedByRecord(Set<LanguageRecord> languageKeys) {
         throw new UnsupportedOperationException();
@@ -80,9 +80,9 @@ public class TestFilmService {
     }
 
     /**
-     * Contrast fixture: {@code Record1}-keyed sibling of {@link #getRankMappedByRecord}.
-     * {@code Wrap.Record} keys carry exactly the key columns, so the parent projection stays
-     * key-columns-only — pins that the full-row widening is wrap-gated.
+     * Contrast fixture: {@code Record1}-keyed sibling of {@link #getRankMappedByRecord}. Both
+     * wraps demand the same key columns and nothing wider, so the pair pins that the projection
+     * does not vary with the wrap; only the shape of the emitted key read does.
      */
     public static Map<Record1<Integer>, Integer> getRankRecordWrap(Set<Record1<Integer>> languageKeys) {
         throw new UnsupportedOperationException();
@@ -116,6 +116,16 @@ public class TestFilmService {
      * {@code SourcesOnPkLessParent} rejection's fixture.
      */
     public static Map<FilmListRecord, Integer> getFilmListRankByRecord(Set<FilmListRecord> listKeys) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Fixture: a child {@code @service} with no SOURCES batch parameter, a plain per-parent
+     * delegation with no key read and so no need of a batch key. Paired with a PK-less parent it
+     * is the over-fire guard for the {@code SourcesOnPkLessParent} rejection, which is keyed on
+     * the parameter shape rather than on the parent lacking a primary key.
+     */
+    public static Integer getConstantRank(String filter) {
         throw new UnsupportedOperationException();
     }
 }

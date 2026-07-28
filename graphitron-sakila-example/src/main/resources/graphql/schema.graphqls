@@ -674,7 +674,7 @@ type City @table(name: "city") {
     # R425 unmasked @service-child fixtures. City deliberately carries no @splitQuery
     # sibling, so the @service children themselves are the only reason CITY_ID is force-projected
     # into the parent SELECT (via the BatchKeyField arm in
-    # TypeClassGenerator.collectRequiredProjectionColumns). Film's service children cannot pin
+    # TypeClassGenerator.collectRequiredProjection). Film's service children cannot pin
     # this: its cast/castByKey split siblings already project FILM_ID into every parent SELECT.
     # cityUppercase: typed-CityRecord source (Wrap.TableRecord) — the silent-null reproducer shape.
     cityUppercase: String @service(service: {
