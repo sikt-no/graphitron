@@ -70,12 +70,15 @@ class RetiredVocabularyGuardTest {
         new Retired("MappedRecordKeyed", "SourcesShape over SourceKey.Wrap.Record"),
         new Retired("MappedTableRecordKeyed", "SourcesShape over SourceKey.Wrap.TableRecord"),
         new Retired("planSlug", "Rejection.Deferred carries only its summary"),
-        // The full-row parent projection for typed-record @service keys. Two sweeps found prose
-        // still naming it live (eight surfaces, then five more), which is the recurrence bar.
+        // The full-row parent projection for typed-record @service keys. Two consecutive sweeps
+        // found prose still naming it live, which is the recurrence bar.
         new Retired("reservedFullRow", "the base-named required-projection column list"),
         new Retired("reservedSourceAlias", "the base-named required-projection column list"),
         new Retired("RESERVED_SRC_ALIAS_PREFIX", "the base-named required-projection column list"),
         new Retired("RESERVED_SRC_ALIAS_SUFFIX", "the base-named required-projection column list"),
+        // These two name test helpers, so only their prose habitat is guarded: the identifier scan
+        // skips test code regions and the reverse-enforcer reads main sources only. A stale mention
+        // fails the build; a helper revived under the old name would not.
         new Retired("appendsFullParentRow", "appendsRequiredColumn"),
         new Retired("serviceChildKeyExtractionForksOnTypedRecord", "serviceChildKeyExtractionIsUnconditional")
     );

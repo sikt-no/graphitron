@@ -18,10 +18,11 @@ import java.util.Set;
  * The parent-projection containment invariant: <em>when a child's key tuple is lifted off the
  * parent's held object, the parent anchor's projection must contain the key columns.</em> A
  * shipped bug shows what its absence costs: a pattern-match omission inside the projection walk
- * left a DataLoader key
- * column out of the parent SELECT, surfacing as a silent {@code null} key at runtime; the level-1
- * closure oracle (method-name resolution) cannot see it because the projection is a value set,
- * not a name binding.
+ * left a DataLoader key column out of the parent SELECT, and the child lost its key. Which way
+ * that surfaces is the reading wrap's business, not this check's: the {@code into(...)} wrap reads
+ * the absent column as {@code null}, the per-column wraps have jOOQ reject the read. Either way the
+ * level-1 closure oracle (method-name resolution) cannot see it, because the projection is a value
+ * set, not a name binding.
  *
  * <p>Two walks are cross-checked at the {@code $fields} emit site
  * ({@link TypeClassGenerator#generateForType}):

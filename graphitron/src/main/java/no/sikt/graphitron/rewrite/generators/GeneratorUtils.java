@@ -460,7 +460,7 @@ class GeneratorUtils {
      * source-shape choice:
      * <ul>
      *   <li>{@link SourceKey.Wrap.Row}:
-     *       {@code DSL.row((Record) env.getSource().get(table.col), ...)}</li>
+     *       {@code DSL.row(((Record) env.getSource()).get(table.col), ...)}</li>
      *   <li>{@link SourceKey.Wrap.Record}:
      *       {@code ((Record) env.getSource()).into(table.col, ...)}</li>
      *   <li>{@link SourceKey.Wrap.TableRecord}: a fresh typed record carrying the key columns,

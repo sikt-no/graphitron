@@ -509,8 +509,10 @@ class FederationEntitiesDispatchTest {
      * selects just the fields it needs and supplies key columns through the representation).
      * The entity dispatch SELECT goes through {@code City.$fields}, which must force-project
      * {@code CITY_ID} (the service child's SourceKey column) so the DataLoader key extraction
-     * finds it on the row; otherwise the batch cannot be keyed and the child does not resolve.
-     * City is the unmasked fixture: no other child of City force-projects the key column.
+     * finds it on the row; without it the extraction's {@code source.get(Tables.CITY.CITY_ID)}
+     * reads a field the SELECT omitted, which jOOQ rejects, and the request fails before the
+     * batch is dispatched. City is the unmasked fixture: no other child of City force-projects
+     * the key column.
      */
     @Test
     @SuppressWarnings("unchecked")
@@ -530,17 +532,30 @@ class FederationEntitiesDispatchTest {
 
     /**
      * A representations-driven {@code _entities} fetch that selects <em>only</em> a
-     * typed-{@code TableRecord}-sourced {@code @service} child, under the PK-only key contract:
-     * the framework supplies the key, the service fetches the {@code title} it needs for itself.
-     * The sibling test ({@link #entities_serviceChildOnly_keyNotReselected_resolvesNonNull}) pins
-     * the same shape for a {@code Row}-sourced child; this one pins it where the key rides a
-     * typed record.
+     * typed-{@code TableRecord}-sourced {@code @service} child whose body needs a column the
+     * framework does not supply. This is the PK-only contract end to end: the framework hands over
+     * {@code FILM_ID} and nothing else, and the service batch-fetches the {@code title} it needs
+     * through the injected {@code DSLContext}.
+     *
+     * <p>Both children are {@code SourceKey.Wrap.TableRecord} and both services fetch their own
+     * non-key data, so neither the wrap nor the fetch separates this from its sibling
+     * ({@link #entities_serviceChildOnly_keyNotReselected_resolvesNonNull}). The method does:
+     * {@code titleTitlecase} is the example the reverted full-row premise was introduced for, having
+     * read {@code film.getTitle()} straight off the parent record instead of fetching it. Pinning
+     * its corrected form here, with {@code title} deliberately unselected, is the direct check that
+     * the revert holds under federation. No federation fixture pins the {@code Wrap.Row} arm and
+     * none needs to: {@code collectRequiredProjection} has one blanket {@code BatchKeyField} arm
+     * taking {@code sourceKey().columns()} for every wrap alike, so the walk this test guards cannot
+     * vary by wrap, and the Row arm's own resolution is pinned at the execution tier by
+     * {@link GraphQLQueryTest#cities_cityLowercase_withoutKeyFieldSelected_resolvesViaRow1Source}.
      *
      * <p>The federation scenario is what makes it worth pinning separately: the key arrives in the
      * representation rather than in the client's selection, so nothing in the selection projects
      * {@code FILM_ID}. If the required-projection walk stopped force-including it, the entity
-     * dispatch SELECT would omit it, the key record would carry a {@code null} id, and the
-     * service's batched fetch would miss every row.
+     * dispatch SELECT would omit it and the extraction's
+     * {@code source.get(Tables.FILM.FILM_ID)} would read a field absent from the row type, which
+     * jOOQ rejects. No key record is built and the service is never entered; the request fails
+     * through {@code ErrorRouter} rather than resolving against a partial key.
      */
     @Test
     @SuppressWarnings("unchecked")
