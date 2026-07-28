@@ -85,7 +85,14 @@ second independent pick would be a silent double-reflection on every
   parent `TableRef` and the catalog handle, so the collision check moves
   in with the reflection checks instead of staying behind in
   `ExternalFieldDirectiveResolver` and splitting the contract across two
-  homes. Success mints `MethodRef.StaticOnly` and classifies to
+  homes. That move reorders the check on the legacy entry, where today it
+  runs first, ahead of `parseExternalRef` and reflection alike: a site whose
+  field name collides with a column *and* whose method signature is broken
+  now reports the signature. Accepted, and forced, since on the `@service`
+  entry the collision check cannot precede dispatch (a colliding field name
+  is not an error until the return type says the arm is the computed one).
+  No existing test pins the old order; the collision fixture's method is
+  valid. Success mints `MethodRef.StaticOnly` and classifies to
   `ChildField.ComputedField`. Every rejection on this arm names the
   computed-field contract, not the service contract.
 - Any other return type: the existing service arms, byte-for-byte unchanged
@@ -94,11 +101,42 @@ second independent pick would be a silent double-reflection on every
 The resolver surface is a new sealed arm, not a helper call:
 `ServiceDirectiveResolver.Resolved` gains a `Computed` arm, kept outside
 `Success` (whose `method()` is the sealed root `MethodRef`) so the narrower
-carrier survives in the signature. All four `serviceResolver.resolve` call
-sites in `FieldBuilder` then fail to compile until each coordinate places
-the arm deliberately: root query, root mutation, and class-backed
-coordinates map it to their dedicated rejections; the table-backed child
-coordinate maps it to `ComputedField`. Riding along:
+carrier survives in the signature. That placement is what decides which call
+sites break, and only two of the four break on their own. The root query and
+root mutation sites switch on the sealed root, so they stop compiling the
+moment the arm lands. The class-backed child site and the table-backed child
+site instead guard `Rejected` and `ErrorsLifted` with `instanceof` and then
+narrow, `switch ((ServiceDirectiveResolver.Resolved.Success) resolved)`, so a
+`Computed` arm outside `Success` leaves both switches exhaustive, compiles
+clean, and reaches an unguarded downcast that throws `ClassCastException` at
+build time. The class-backed site is the worse of the two: its computed
+rejection is an odd author error that a test suite can plausibly miss
+entirely, so the cast would ship. Rewriting both switches to select on
+`Resolved` is therefore part of this deliverable, not incidental cleanup; it
+is what makes the compiler force the placement the design relies on it to
+force. With that done, each coordinate places the arm deliberately: root
+query, root mutation, and class-backed coordinates map it to their dedicated
+rejections; the table-backed child coordinate maps it to `ComputedField`.
+
+Rewriting the table-backed site's switch also moves its join-path parse.
+That site parses the service reconnect path
+(`ctx.parsePath(fieldDef, name, null, null)`, starting from the service
+return type's table) above the switch, so on the computed arm it would run
+against the wrong start table before the arm is reached, and a path error
+there would surface a reconnect-flavoured message on a computed field. Handle
+`Computed` ahead of that parse and give it the parent-table-rooted call
+`ctx.parsePath(fieldDef, name, tableType.table().tableName(), null)`, which
+is the same call the `@externalField` arm makes a few lines below.
+
+Threading the parent table is the other consequence. The enforcer needs the
+parent `TableRef` for the collision check, and the computed arm needs it for
+the path root, but `ServiceDirectiveResolver.resolve` carries only
+`parentPkColumns` and `PkLessParent` today. It gains a nullable parent
+`TableRef`, and its absence is exactly the reject signal: `Resolved.Computed`
+is minted only on the `TableRef`-bearing path, so root and class-backed
+coordinates get their dedicated rejection from the resolver and their
+`Computed` switch arms exist to keep the compiler honest rather than to fire.
+Riding along:
 `ChildField.ComputedField.method` narrows from `MethodRef` to
 `MethodRef.StaticOnly`, which both producers already mint, binding the two
 entry points by type instead of by comment.
@@ -245,9 +283,13 @@ javadoc to scope the invariant accordingly.
 1. **Classifier fold.** The `ServiceCatalog` dispatch entry returning the
    sealed contract classification; the single contract enforcer (including
    the column-collision check, moved in from
-   `ExternalFieldDirectiveResolver`); the `Resolved.Computed` arm on
+   `ExternalFieldDirectiveResolver`); the nullable parent `TableRef` on
+   `ServiceDirectiveResolver.resolve`; the `Resolved.Computed` arm on
    `ServiceDirectiveResolver.Resolved` placed at all four `FieldBuilder`
-   call sites; the `ChildField.ComputedField.method` narrowing to
+   call sites, which includes rewriting the two `(Resolved.Success)`
+   narrowing switches (class-backed child, table-backed child) to select on
+   `Resolved` and moving the table-backed site's reconnect path parse below
+   the `Computed` arm; the `ChildField.ComputedField.method` narrowing to
    `MethodRef.StaticOnly`; the rejection arms (root and class-backed
    coordinates, `@splitQuery` composition, `contextArguments` /
    `argMapping` presence, and the existing signature rejections respelled
@@ -377,9 +419,15 @@ In order:
    delegate
    `ExternalFieldDirectiveResolver` to it; narrow
    `ChildField.ComputedField.method` to `MethodRef.StaticOnly`; verify
-   `@externalField` behaviour is unchanged (existing tests stay green).
-2. Add the `Resolved.Computed` arm and place it at all four `FieldBuilder`
-   call sites; add the `RecordBindingResolver` grounding fork; pipeline-tier
+   `@externalField` behaviour is unchanged apart from the collision-check
+   reordering noted in Design (existing tests stay green).
+2. Thread the nullable parent `TableRef` through
+   `ServiceDirectiveResolver.resolve`; rewrite the two `(Resolved.Success)`
+   narrowing switches in `FieldBuilder` to select on `Resolved` (otherwise
+   the new arm compiles clean into a `ClassCastException`), add the
+   `Resolved.Computed` arm and place it at all four call sites, and give the
+   table-backed site's computed arm its own parent-table-rooted path parse;
+   add the `RecordBindingResolver` grounding fork; pipeline-tier
    accept coverage plus the structural-equality-across-spellings row.
 3. Add the rejection arms and their pipeline-tier coverage: root and
    class-backed coordinates, `@splitQuery` composition, inert parameters,
