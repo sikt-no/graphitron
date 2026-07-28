@@ -24,7 +24,7 @@ Shipped and accepted:
 - Self-review prose sweep **shipped at `ffce130`**.
 - Retirement-sweep rework, twelve surfaces, **shipped at `b811bdb`**.
 - Second-bounce rework, six surfaces plus the registry graduation, **shipped at `25d7e17`**.
-- Third-bounce rework, two blocking claims plus all four non-blocking notes, **shipped at `3e41334`**.
+- Third-bounce rework, two blocking claims plus all four non-blocking notes, **shipped at `2b64dc4`**.
 
 Verified independently at all three gates: full reactor green under `mvn install -Plocal-db`, 13
 modules, execution tier and docs render included. The narrowing itself, the `SourcesOnPkLessParent`
@@ -40,7 +40,7 @@ is Backlog item R554 (filed, confirmed); the other three are addressed or answer
 
 ## Third rework applied (2026-07-28)
 
-Landed at `3e41334`. Full reactor green under `mvn install -Plocal-db`, 13 modules,
+Landed at `2b64dc4`. Full reactor green under `mvn install -Plocal-db`, 13 modules,
 execution tier and docs render included.
 
 Both blocking findings are confirmed and fixed, and the fix was checked against the emitted
