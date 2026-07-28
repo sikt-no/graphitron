@@ -1,7 +1,7 @@
 ---
 id: R516
 title: "Narrow SourceKey.Wrap.TableRecord contract to PK-only, revert full-row projection"
-status: In Review
+status: Ready
 bucket: correctness
 priority: 2
 theme: service
@@ -12,25 +12,119 @@ last-updated: 2026-07-28
 
 # Narrow SourceKey.Wrap.TableRecord contract to PK-only, revert full-row projection
 
-## Status: reworked after an In Review → Ready bounce, back for a second gate (2026-07-28)
+## Status: bounced a second time on the retirement sweep, one surface left (2026-07-28)
 
-Scope items 1 through 8 and the whole declared test surface shipped at `cc270f1`, with a
-self-review prose sweep at `ffce130`. The full reactor is green under `mvn install -Plocal-db`
-(13 modules, execution tier and docs render included), independently re-verified at the gate.
-The narrowing itself, the rejection arm, the service rewrites, and the manual correction are all
-accepted as delivered; the sections below describe work that already landed and are kept only for
-context.
+Everything the contract asks for is delivered and verified. What is left is a single false
+statement in the delivery's own prose; see "Second gate" below. The remaining work is that one
+javadoc plus two adjacent surfaces in the same file, and the recommended registry graduation
+that stops a fourth sweep from being needed.
 
-What sent it back is the retirement sweep, which `roadmap/workflow.adoc` makes a Done-gate
+Shipped and accepted:
+
+- Scope items 1 through 8 and the whole declared test surface **shipped at `cc270f1`**.
+- Self-review prose sweep **shipped at `ffce130`**.
+- Retirement-sweep rework, twelve surfaces, **shipped at `b811bdb`**.
+
+Verified independently at both gates: full reactor green under `mvn install -Plocal-db`, 13
+modules, execution tier and docs render included. The narrowing itself, the `SourcesOnPkLessParent`
+rejection arm, the service rewrites, and the manual correction are accepted as delivered. The
+sections from "Problem" down describe work that already landed and are kept only for context.
+
+The first bounce was the retirement sweep, which `roadmap/workflow.adoc` makes a Done-gate
 obligation for any item declaring a `Retired vocabulary` section. Eight prose surfaces still named
-the deleted mechanism as live. Nothing behavioural was in question.
+the deleted mechanism as live; nothing behavioural was in question. All eight are fixed, confirmed
+at the second gate. The re-sweep that followed found four more (9 through 12 below), one of them
+introduced by the `ffce130` self-review sweep itself. The first reviewer's second improvement note
+is Backlog item R554 (filed, confirmed); the other three are addressed or answered in place.
 
-**Rework landed at `b811bdb`, all eight.** The sweep that found
-them was rerun wider afterwards, on the mechanism's vocabulary rather than on a phrase list, which
-turned up four more the reviewer had not flagged; those are recorded as 9 through 12. One of the
-four was introduced by the `ffce130` self-review sweep itself, so it is called out as such rather
-than folded in silently. The reviewer's second improvement note is now Backlog item R554; the other
-three are addressed or answered in place.
+## Second gate: rework, one blocking finding (independent reviewer, In Review → Ready, 2026-07-28)
+
+Confirmed at this gate before the finding below: build green (13/13, exit 0); all twelve prose
+surfaces from the first bounce fixed; the token sweep over every declared retired term
+(`reservedFullRow`, `reservedSourceAlias`, `RESERVED_SRC_ALIAS_PREFIX`/`_SUFFIX`, `__src_`,
+`appendsFullParentRow`, `serviceChildKeyExtractionForksOnTypedRecord`,
+`ServiceParentTableRecordKeyExtractionTest`, the `RequiredProjection` record, "fully-populated
+parent record", "every column on the parent table") returns clean outside `roadmap/`;
+`docs/` diff clean under the workflow's user-facing-doc check (no `R<n>`, `Phase <n>`, TODO or
+plan-slug markers in the manual); no code-string assertions on generated method bodies in any
+delivered test class. `PkLessParentServiceSourcesRejectionTest` is exemplary: positive case plus
+three controls (root, no-SOURCES over-fire, keyed parent), honest assertion descriptions.
+
+**Blocking. `graphitron-sakila-service/.../services/CityService.java:33-37`, authored by this
+delivery at `cc270f1`, states something that is false.** The `cityUppercase` javadoc says the key
+extraction copies columns "by field identity, and a column absent from that row yields `null`
+rather than throwing", concluding "this method receives records whose `cityId` is `null` and every
+lookup misses".
+
+Verified against jOOQ 3.20.11: `Record.get(Field)` on a field absent from the row type throws
+`IllegalArgumentException: Field B is not contained in row type (A)`. It does not yield `null`.
+The emitted extraction is
+`key.set(Tables.CITY.CITY_ID, source.get(Tables.CITY.CITY_ID))`
+(`graphitron-sakila-example/target/generated-sources/graphitron/.../fetchers/CityFetchers.java`,
+`cityUppercase`), so if the force-projection regressed the request would fail loudly through
+`ErrorRouter`, and `CityService.cityUppercase` would never be entered. The javadoc describes the
+fixture's own regression mode, which is the fixture's entire reason for existing, and describes it
+wrongly.
+
+Three things make this the same defect class as the first bounce rather than a nitpick:
+
+- It is finding 12's failure mode repeated. `cc270f1` rewrote this exact sentence (`into` "leaves
+  absent columns `null` instead of throwing" → "a column absent from that row yields `null` rather
+  than throwing"), carrying the retired contract's consequence forward into new prose it was itself
+  authoring.
+- It contradicts the sibling javadoc twenty lines below. `cityLowercase:58-62` calls itself "the
+  *loud-throw* arm: the framework's key extraction reads
+  `((Record) env.getSource()).get(Tables.CITY.CITY_ID)` ... which throws on an absent field instead
+  of yielding `null`". Post-narrowing that is the identical jOOQ call `cityUppercase` now emits, so
+  one expression is documented with opposite failure modes in one file. This is finding 1's shape,
+  which the first reviewer called the sharpest one.
+- It contradicts prose this delivery corrected elsewhere. `GraphQLQueryTest:2503-2508` now reads
+  "both read CITY_ID off the parent row by jOOQ field identity, so the wraps differ in the shape of
+  the key they build and not in what the projection owes them", and `TestFilmService:82-86` now
+  reads "Both wraps demand the same key columns and nothing wider". The silent-null-versus-loud-throw
+  contrast was retired by finding 9; it survived in the service fixture those very tests drive, and
+  the manual points readers at this method pair as the canonical `@service` example (Scope 7/8).
+
+**Fix the whole silent-null family in `CityService.java` in one pass**, not just the one false
+sentence. Two adjacent surfaces are the same retired framing (both pre-date the item, both are in
+its touched area, which the workflow's retirement sweep puts in scope):
+
+- `:24-26`, class javadoc: "so a `null` key produces a `null` field value rather than being papered
+  over by a key-independent body." There is no null-key state for either method now.
+- `:58-62`, `cityLowercase`: "loud-throw" is still true of the Row arm but no longer distinguishes
+  it from the TableRecord arm, so the framing invites the contradiction back.
+
+Recommended in the same pass, and the thing that stops a fourth sweep: **graduate this item's
+retired tokens into `RetiredVocabularyGuardTest`'s `REGISTRY`.** `roadmap/workflow.adoc`'s
+Retirement-sweep paragraph says recurrently-surviving terms graduate, and these survived two
+sweeps (eight findings, then four more). They are all identifier-shaped, which is exactly what that
+registry scans, and the token sweep is clean right now so entries would go in green:
+`reservedFullRow`, `reservedSourceAlias`, `RESERVED_SRC_ALIAS_PREFIX`, `RESERVED_SRC_ALIAS_SUFFIX`,
+`appendsFullParentRow`, `serviceChildKeyExtractionForksOnTypedRecord`. Successor strings are
+straightforward (`the base-named required-projection column list`, `the per-column key copy`,
+`appendsRequiredColumn`, `serviceChildKeyExtractionIsUnconditional`).
+
+Non-blocking, fix if convenient, do not hold a third gate on them:
+
+- `graphitron/.../model/TableRef.java:41-47` names three live `allColumns()` readers; there are four
+  distinct call sites (`TypeBuilder:854-855`, `BuildContext:1744` and `:1752`, `FieldBuilder:1186`
+  *and* `:7147`, the last a candidate list for an unknown-column rejection, not the pivot search).
+  The load-bearing claims are correct, and the umbrella "all answer what columns does this table
+  have?" covers the fourth. `development-principles.adoc`'s "unguarded inventory" clause argues for
+  dropping the enumeration rather than extending it.
+- `graphitron/src/test/.../TestFixtures.java:311-312` names two of those readers where `TableRef`
+  names three. Same inventory, two counts, one commit.
+- `graphitron/.../generators/TypeClassGenerator.java:120` ("the omission it exists to catch is a
+  child's DataLoader key column being absent from the parent row and silently null") pre-dates the
+  item and stays true for the `Wrap.Record` arm, so it is stale-in-kind at worst.
+- `graphitron-sakila-example/.../schema.graphqls:684` labels `cityLowercase` "the loud-throw shape",
+  the SDL-side echo of the `CityService:58-62` framing. Accurate; no longer distinguishing.
+
+Not re-litigated, per the previous pass's request: `TypeSpecAssertions`'s body-scan family (the file
+is the project's sanctioned confinement point for it and R554 owns retiring it, though note
+`serviceChildKeyExtractionIsUnconditional`'s `!body.contains("instanceof")` is the family's only
+negative assertion and the most brittle member); the seven-argument `reflectServiceMethod` overload;
+the `isRoot` disambiguation.
 
 ## Review findings (independent reviewer, In Review → Ready, 2026-07-28)
 
