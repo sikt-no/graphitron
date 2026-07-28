@@ -1,7 +1,7 @@
 ---
 id: R516
 title: "Narrow SourceKey.Wrap.TableRecord contract to PK-only, revert full-row projection"
-status: Ready
+status: In Review
 bucket: correctness
 priority: 2
 theme: service
@@ -12,14 +12,11 @@ last-updated: 2026-07-28
 
 # Narrow SourceKey.Wrap.TableRecord contract to PK-only, revert full-row projection
 
-## Status: fourth gate bounced on one manual sentence (2026-07-28)
+## Status: fourth rework applied, back for a fifth gate (2026-07-28)
 
-The third rework is confirmed good in full: both blocking findings fixed correctly, all four
-non-blocking notes applied, every factual claim in the rewritten javadoc verified against the
-emitted fetchers and the SDL. What bounced this gate is one sentence in the user manual, authored
-at `cc270f1` and read sentence-by-sentence by no previous gate: the same defect class a fourth
-time, now on the item's most user-facing surface. See "Fourth gate" below. One blocking finding,
-one non-blocking note in the same sentence family.
+The third rework was confirmed good in full at the fourth gate. That gate found one false sentence
+in the user manual and one soft sibling in `FilmService`; both are fixed. See "Fourth rework
+applied" below. Nothing is outstanding.
 
 Shipped and accepted:
 
@@ -28,11 +25,14 @@ Shipped and accepted:
 - Retirement-sweep rework, twelve surfaces, **shipped at `b811bdb`**.
 - Second-bounce rework, six surfaces plus the registry graduation, **shipped at `25d7e17`**.
 - Third-bounce rework, two blocking claims plus all four non-blocking notes, **shipped at `2b64dc4`**.
+- Fourth-bounce rework, the manual sentence plus its `FilmService` sibling, **shipped at `696b939`**.
 
-Verified independently at all three gates: full reactor green under `mvn install -Plocal-db`, 13
+Verified independently at all four gates: full reactor green under `mvn install -Plocal-db`, 13
 modules, execution tier and docs render included. The narrowing itself, the `SourcesOnPkLessParent`
-rejection arm, the service rewrites, and the manual correction are accepted as delivered. The
-sections from "Problem" down describe work that already landed and are kept only for context.
+rejection arm and the service rewrites have been accepted as delivered since the first gate. The
+manual rewrite is the one deliverable a gate later reopened: the fourth found a false sentence in
+it, fixed at `696b939`. The sections from "Problem" down describe work that already landed and are
+kept only for context.
 
 The first bounce was the retirement sweep, which `roadmap/workflow.adoc` makes a Done-gate
 obligation for any item declaring a `Retired vocabulary` section. Eight prose surfaces still named
@@ -40,6 +40,41 @@ the deleted mechanism as live; nothing behavioural was in question. All eight ar
 at the second gate. The re-sweep that followed found four more (9 through 12 below), one of them
 introduced by the `ffce130` self-review sweep itself. The first reviewer's second improvement note
 is Backlog item R554 (filed, confirmed); the other three are addressed or answered in place.
+
+## Fourth rework applied (2026-07-28)
+
+Landed at `696b939`. Full reactor green under `mvn install -Plocal-db`, 13 modules,
+execution tier and docs render included.
+
+The blocking finding is confirmed and fixed, and the mechanism was verified rather than inferred.
+A probe against the built sakila jOOQ classes confirms the exact shape of the key the service
+receives: `new FilmRecord()` with only `FILM_ID` set carries the full 13-column FILM row type, so
+`TITLE` is *present in the row type but unset*. `getTitle()` therefore returns `null`; it does not
+throw. That distinction is what the fix turns on, and it is worth stating because it is the
+opposite of the neighbouring failure mode: a read off the *parent SQL row*
+(`source.get(Tables.FILM.FILM_ID)`) throws when the SELECT omitted the column, while a read off the
+*key record* returns `null` because the typed record's row type is complete and only its values are
+unset. Two objects, two behaviours, and the manual sentence was about the second.
+
+- `docs/manual/how-to/handle-services.adoc:228` now reads: reading `film.getTitle()` off the key
+  returns `null` for every row in the batch, the key being a fresh `FilmRecord` carrying `FILM_ID`
+  and nothing else, whatever the client selected. The retired selection-dependent success mode is
+  not restated even as history: this is the published manual, its audience has no context on our
+  process, and the live fact is the stronger warning anyway. The `[IMPORTANT]` block is now
+  internally consistent, its opening sentence ("other columns unset") and its closing sentence
+  ("reads `null`") saying the same thing.
+- `FilmService.java:135-140` (the reviewer's non-blocking note) drops "happens to work when the
+  client's own selection includes the column" for the same live statement.
+
+A sweep for the whole sentence family (`happens to work`, `would work only`, `selection happened
+to`) returns empty across the tree outside `roadmap/`, so these two were the only members.
+
+Beyond the two surfaces named, the rest of `handle-services.adoc` was read sentence-by-sentence
+this pass rather than grepped, since the gate's point was that no previous pass had done so. Every
+other claim holds: the row-type-versus-values distinction above makes the `Result<TableRecord>`
+pitfall ("returns `null` from records that lack it") correct as written, the `Row<N>`-has-no-value-
+accessors claim matches `RowN` versus `RecordN`, and the PK-less-parent pitfall matches the
+shipped `SourcesOnPkLessParent` arm. No further edits were needed.
 
 ## Fourth gate: rework, one blocking finding (independent reviewer, In Review → Ready, 2026-07-28)
 
