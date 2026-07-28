@@ -7,7 +7,7 @@ priority: 4
 theme: codegen-correctness
 depends-on: []
 created: 2026-07-24
-last-updated: 2026-07-24
+last-updated: 2026-07-28
 ---
 
 # Generated-output readability and hygiene sweep
@@ -74,7 +74,12 @@ Verified byte-identical by hashing every copy:
   `NodeIdEncoderClassGenerator`, `QueryNodeFetcherClassGenerator`) ship in generated javadoc;
   they are unresolvable on the consumer classpath, and one leaks into introspection via the
   `Query.nodes` description. Reference only symbols that exist in the generated artifact; use
-  `{@code}` or prose for provenance.
+  `{@code}` or prose for provenance. The reason these ship past an existing gate is now pinned
+  down: `graphitron-sakila-example/pom.xml` sets `maven.javadoc.skip`, so the parent's
+  `{@link}`-reference gate never sees the generated tree. That opt-out is load-bearing for its
+  stated reason (the module's sources are not on the gate's sourcepath), so the fix is a
+  reference check that runs against the generated output on its own terms, not deleting the
+  opt-out. Until then no dangling link in emitted javadoc can fail a build.
 - `$fields` switch arms splice pre-formatted blocks at a fixed indent column, so nested bodies
   render flush-left of their own `case` label (e.g. `types/Film.java`); the highest-traffic file
   a consumer opens looks malformed. Build arms with proper control-flow emission or post-format.
@@ -135,6 +140,44 @@ diagnostics are collected here:
   `@error` handler.
 - `ConstraintViolationsClassGenerator`'s emitted javadoc restates its generator class doc at
   length; align with whatever per-class on-ramp convention this item lands.
+
+## Mechanized detection
+
+Everything above was assembled by hand. By the altitude rule that makes it an unguarded census:
+true when written, silently falsified as the emitters move. It is already drifting, the header's
+691 files / 54k lines reads 692 / 54,098 as of 2026-07-28, so the counts in this file should be
+treated as provenance for *why* each defect matters, never as current state.
+
+Part of the inventory is mechanically derivable. Error Prone 2.50.0 runs clean over the generated
+tree on JDK 25 (`javac --release 17` across
+`graphitron-sakila-example/target/generated-sources`, Error Prone on the processorpath, the
+`jdk.compiler` `--add-exports` set including `javac.code`, and `-Xmaxwarns` raised because javac
+truncates at 100 and quietly reports exactly that). Baseline 2026-07-28, 413 warnings:
+
+| Check | Count | Relation to this item |
+|---|---|---|
+| `StringConcatToTextBlock` | 302 | Readability, not enumerated above |
+| `UnusedVariable` | 57 | Dead emitted locals, not enumerated above |
+| `UnusedMethod` | 29 | The `graphitronContext` cluster, found without hashing copies |
+| `MutablePublicArray` | 12 | New: `ErrorMappings` hands consumers mutable public arrays |
+| `UnnecessaryParentheses` | 6 | Readability |
+| `PatternMatchingInstanceof` | 5 | Advisory only; emitted output targets Java 17 |
+| `InvalidLink` | 1 | Corroborates the dangling-`{@link}` bullet above |
+
+Calibration, and the reason this is advisory rather than gate-grade: `ModifyCollectionInEnhancedForLoop`
+also fires once, on `TenantConnections`'s `pinnedByTenant.remove(key)` inside a `keySet()` loop.
+It is a false positive. The field is a `ConcurrentHashMap`, its iterator is weakly consistent, and
+the emitted comment shows the removal is deliberate ownership arbitration. Each check earns
+gate status individually, on evidence, or stays a report.
+
+The direction this suggests: land the mechanizable subset as a regenerated view over the generated
+tree rather than re-running the sweep by hand, on the precedent that anything enumerable becomes a
+materialized view. Whatever stabilizes at zero graduates into a build gate; the rest reports
+deltas against a committed baseline. The hand-authored sections above stay the home for the
+defects no checker can express, which is most of the naming, protocol-comment, and util-template
+work. Sizing note for Spec: the mechanized half changes what this item *verifies*, not what it
+fixes, so it is separable from the four landable slices and could reasonably become its own item
+if it grows a nightly-reporting surface.
 
 Statement-form defects (nested instanceof-ternary chains, insert-value ternaries, repeated inline
 discriminator expressions) are tracked by R334, whose scope this audit expands; they are out of
