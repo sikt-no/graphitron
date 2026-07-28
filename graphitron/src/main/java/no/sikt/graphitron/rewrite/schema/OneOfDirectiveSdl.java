@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.generators.schema;
+package no.sikt.graphitron.rewrite.schema;
 
 import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLSchema;
@@ -18,7 +18,8 @@ import graphql.schema.GraphQLSchema;
  *
  * <p>graphql-java's own {@code SchemaPrinter} (the non-federation arm) prints the definition, so
  * only the two federation seams need correcting: the on-disk {@code schema.graphqls}
- * ({@link SchemaSdlEmitter}) and the runtime {@code _Service.sdl} baked into the generated
+ * ({@link no.sikt.graphitron.rewrite.generators.schema.SchemaSdlEmitter}) and the runtime
+ * {@code _Service.sdl} baked into the generated
  * {@code GraphitronSchema.build}. Both string-augment the printer's output against this one
  * constant. The file arm calls this class directly; the runtime arm cannot link against the
  * {@code graphitron} module, so

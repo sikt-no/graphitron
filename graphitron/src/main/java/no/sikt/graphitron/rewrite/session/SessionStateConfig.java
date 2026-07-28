@@ -23,6 +23,21 @@ import java.util.List;
  */
 public sealed interface SessionStateConfig permits SessionStateConfig.None, SessionStateConfig.FunctionHooks, SessionStateConfig.Variables {
 
+    /**
+     * True when the configured form emits a generated {@code GraphitronSessionHook} implementation
+     * (the function-hook and variables forms); the none form keeps the runtime on the no-op hook.
+     * The one fact both the emit plan (naming the connection runtime's committed units) and
+     * {@code ConnectionRuntimeClassGenerator} (attaching the implementation) read, so the two
+     * cannot disagree about whether the unit exists.
+     */
+    default boolean emitsHookImplementation() {
+        return switch (this) {
+            case None ignored -> false;
+            case FunctionHooks ignored -> true;
+            case Variables ignored -> true;
+        };
+    }
+
     /** No {@code <sessionState>} configured: the runtime keeps the no-op {@code SessionHook.NONE}. */
     record None() implements SessionStateConfig {
         public static final None INSTANCE = new None();

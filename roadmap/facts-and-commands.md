@@ -867,6 +867,37 @@ exhaustive dispatch is total over. And where a unit composes several operation r
 which unit each row lands in, the anchor column R333's operation relation already names (`anchor address`);
 R541's single-operation launchers never need it, and a general launcher cannot do without it.
 
+## Slice log
+
+- **Slice 1 landed 2026-07-28.** The `command` / `plan` / `render` packages exist with
+  `PackageImportDirectionTest` enforcing the triangle; `EmitPlan.produce` computes the global
+  command relation and `runPipeline` folds over it, landing each unit at the address its row
+  committed; the vocabulary budget held at three names (`UnitRef`, `GlobalUnitKind`,
+  `GlobalCommand`). Findings to report, per the budget rule:
+  - `QueryNodeFetcher` is a keyless fixed-name singleton gated on node-type presence, so it is a
+    23rd global kind by this item's own definition, not a slice 3b family; the per-type-emitting
+    population 3b migrates is 10.
+  - `usesOneOf` landed as a bundle fact beside `federationLink` (computed once in
+    `GraphitronSchemaBuilder.buildBundle`), so the producer reads two booleans and `plan` never
+    imports graphql-java. `OneOfDirectiveSdl` moved from `generators/schema` to the core
+    `rewrite/schema` package because the builder now reads it.
+  - The connection runtime's 4-versus-5 unit set is single-sourced on
+    `SessionStateConfig.emitsHookImplementation()`; the producer and
+    `ConnectionRuntimeClassGenerator` read the same fact.
+  - `GeneratedUnits` landed in `plan` (this item already calls it the plan's naming vocabulary)
+    and mints `UnitRef`s; the import guard pins the minting site. Legacy `compile/` keeps a
+    pure-delegation String view (`UnitNames`) that retires with the graph builder at slice 7.
+  - `UnitRef` carries `(packageName, simpleName)` and the write step lands units at the committed
+    ref, so there is one naming derivation; a renderer emitting an undeclared unit or dropping a
+    committed one fails the run.
+  - Deliberately not absorbed: per-family argument assembly stays shell-side (including
+    `tenantKeyType`, a javapoet `TypeName` the plan must not hold), and the migrated generators
+    keep their `GraphitronSchema` signatures, so invariant 1's entry-point count does not move in
+    this slice; slice 2 installs the ratchet at whatever the audit script prints.
+  - The two hand-maintained copies of the global census in `compile/` (`UtilSingleton.ALL` and
+    `CompileDependencyGraphBuilder.addSingletonNodes`) remain; the completeness oracle already
+    pins the graph against the real emitted set, and both copies retire with slice 7.
+
 ## The exemption lists are the grain worklist
 
 `VariantCoverageTest.NO_CASE_REQUIRED` (13 entries) and `ClassifiedDslTest.OPERATION_KNOWN_GAPS` (6) each

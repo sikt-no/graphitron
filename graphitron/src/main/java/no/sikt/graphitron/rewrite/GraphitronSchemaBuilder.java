@@ -27,6 +27,7 @@ import graphql.schema.idl.TypeDefinitionRegistry;
 import graphql.schema.idl.errors.SchemaProblem;
 
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.schema.OneOfDirectiveSdl;
 import no.sikt.graphitron.rewrite.model.DomainReturnType;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.EmitsPerTypeFile;
@@ -106,8 +107,13 @@ public class GraphitronSchemaBuilder {
      * {@link FederationLinkApplier#apply}'s return value; tests that hand-craft a registry use
      * the convenience overload {@link #buildBundle(TypeDefinitionRegistry, RewriteContext)},
      * which derives the flag via {@link AttributedRegistry#from(TypeDefinitionRegistry)}.
+     *
+     * <p>{@code usesOneOf} is {@code federationLink}'s sibling schema-level fact, landed once
+     * here (from {@link no.sikt.graphitron.rewrite.schema.OneOfDirectiveSdl#usesOneOf}) so
+     * downstream steps read the decision instead of re-walking the assembled schema.
      */
-    public record Bundle(GraphitronSchema model, graphql.schema.GraphQLSchema assembled, boolean federationLink) {}
+    public record Bundle(GraphitronSchema model, graphql.schema.GraphQLSchema assembled, boolean federationLink,
+                         boolean usesOneOf) {}
 
     /**
      * Convenience overload for tests that hand-craft a {@link TypeDefinitionRegistry} without
@@ -168,7 +174,8 @@ public class GraphitronSchemaBuilder {
         var fieldBuilder = new FieldBuilder(bctx, svc);
         fieldBuilder.setTypeBuilder(typeBuilder);
         var result = buildSchema(bctx, typeBuilder, fieldBuilder);
-        return new Bundle(result.model, result.assembled, federationLink);
+        return new Bundle(result.model, result.assembled, federationLink,
+            OneOfDirectiveSdl.usesOneOf(result.assembled));
     }
 
     /**

@@ -7,6 +7,7 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.schema.OneOfDirectiveSdl;
 import no.sikt.graphitron.rewrite.generators.MultiTablePolymorphicEmitter;
 import no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator;
 import no.sikt.graphitron.rewrite.model.GraphitronType;

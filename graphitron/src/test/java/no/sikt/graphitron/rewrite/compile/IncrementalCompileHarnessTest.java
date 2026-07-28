@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.compile;
 
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
+import no.sikt.graphitron.plan.GeneratedUnits;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.javapoet.JavaFile;
 import no.sikt.graphitron.javapoet.TypeSpec;
@@ -234,9 +235,9 @@ class IncrementalCompileHarnessTest {
         Generated g = generate(workDir, SCHEMA);
         var graph = CompileDependencyGraphBuilder.fromModel(g.model, OUTPUT_PACKAGE);
         var units = new GeneratedUnits(OUTPUT_PACKAGE);
-        String filmType = units.typeClass("Film");            // referenced by the root + DML fetchers
-        String queryFetchers = units.fetchers("Query");
-        String mutationFetchers = units.fetchers("Mutation");
+        String filmType = units.typeClass("Film").fqcn();            // referenced by the root + DML fetchers
+        String queryFetchers = units.fetchers("Query").fqcn();
+        String mutationFetchers = units.fetchers("Mutation").fqcn();
 
         // Sanity: the graph really does route both fetchers at the Film projection.
         assertThat(graph.directDependents(filmType)).contains(queryFetchers, mutationFetchers);
@@ -248,7 +249,7 @@ class IncrementalCompileHarnessTest {
         // ABI edit to the Film projection: its transitive dependents are pulled in.
         assertThat(RecompileSet.compute(graph, Set.of(filmType), Set.of(filmType)))
             .contains(filmType, queryFetchers, mutationFetchers,
-                units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronSchema"));
+                units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronSchema").fqcn());
     }
 
     // ------------------------------------------------------------------------------------------------
@@ -259,7 +260,7 @@ class IncrementalCompileHarnessTest {
         var frozen = new java.util.LinkedHashSet<String>();
         for (var singleton : UtilSingleton.ALL) {
             if (singleton instanceof UtilSingleton.FrozenScaffold fs) {
-                frozen.add(units.singleton(fs.subPackage(), fs.simpleName()));
+                frozen.add(units.singleton(fs.subPackage(), fs.simpleName()).fqcn());
             }
         }
         return frozen;

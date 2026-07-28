@@ -245,9 +245,8 @@ public final class ConnectionRuntimeClassGenerator {
         units.add(runtime(sessionHook, pinnedConnection, instrumentation, projection, tenantKey, multiTenant));
         units.add(tenantConnections(tenantConnections, runtime, pinnedConnection, provider, commitPolicy, tenantKey,
             multiTenant));
-        TypeSpec impl = sessionHookImpl(sessionHook, sessionState);
-        if (impl != null) {
-            units.add(impl);
+        if (sessionState.emitsHookImplementation()) {
+            units.add(sessionHookImpl(sessionHook, sessionState));
         }
         return List.copyOf(units);
     }
@@ -1930,13 +1929,16 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /**
-     * Emits the concrete {@code SessionHook} baked into the runtime, or {@code null} for {@link None}
-     * (the runtime uses {@code SessionHook.NONE}). Forks on an exhaustive {@code switch} over the sealed
-     * config so a fourth form is a compile error here.
+     * Emits the concrete {@code SessionHook} baked into the runtime. Called only when
+     * {@link SessionStateConfig#emitsHookImplementation()} holds, the single membership fact the
+     * emit plan also reads; {@link None} therefore cannot reach here (the runtime uses
+     * {@code SessionHook.NONE}). Forks on an exhaustive {@code switch} over the sealed config so a
+     * fourth form is a compile error here.
      */
     private static TypeSpec sessionHookImpl(ClassName sessionHook, SessionStateConfig config) {
         return switch (config) {
-            case None ignored -> null;
+            case None ignored -> throw new IllegalStateException(
+                "no session hook implementation exists for the none form; gate on emitsHookImplementation()");
             case FunctionHooks fh -> functionHookImpl(sessionHook, fh);
             case Variables v -> variablesHookImpl(sessionHook, v);
         };

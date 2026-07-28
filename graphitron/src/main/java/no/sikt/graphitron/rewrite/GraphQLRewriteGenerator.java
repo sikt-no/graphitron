@@ -1,7 +1,12 @@
 package no.sikt.graphitron.rewrite;
 
+import graphql.schema.GraphQLSchema;
+import no.sikt.graphitron.command.GlobalCommand;
+import no.sikt.graphitron.command.UnitRef;
 import no.sikt.graphitron.javapoet.JavaFile;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.plan.EmitPlan;
 import no.sikt.graphitron.rewrite.compile.CompileDependencyGraph;
 import no.sikt.graphitron.rewrite.compile.CompileDependencyGraphBuilder;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
@@ -35,7 +40,6 @@ import no.sikt.graphitron.rewrite.generators.schema.GraphitronSchemaClassGenerat
 import no.sikt.graphitron.rewrite.generators.schema.InputRecordGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.InputTypeGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.ObjectTypeGenerator;
-import no.sikt.graphitron.rewrite.generators.schema.OneOfDirectiveSdl;
 import no.sikt.graphitron.rewrite.generators.schema.OutcomeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.SchemaSdlEmitter;
 import no.sikt.graphitron.rewrite.generators.util.LightFetcherClassGenerator;
@@ -303,46 +307,32 @@ public class GraphQLRewriteGenerator {
         var tenantKeyType = schema.tenantScopes() instanceof no.sikt.graphitron.rewrite.model.TenantScopes.Configured configuredTenancy
             ? configuredTenancy.tenantType()
             : null;
-        write(GraphitronValuesClassGenerator.generate(),                                          "util",       emittedThisRun);
-        write(LightFetcherClassGenerator.generate(outputPackage),                                 "util",       emittedThisRun);
-        write(NodeIdEncoderClassGenerator.generate(schema),                                       "util",       emittedThisRun);
-        write(EntityFetcherDispatchClassGenerator.generate(schema, outputPackage),                "util",       emittedThisRun);
-        write(ConnectionResultClassGenerator.generate(outputPackage, tenantKeyType != null),      "util",       emittedThisRun);
-        write(ConnectionHelperClassGenerator.generate(outputPackage, tenantKeyType != null),      "util",       emittedThisRun);
-        // The runtime _Service.sdl helper serves only the federation build arm (the wrapped
-        // `return` in GraphitronSchemaClassGenerator's two-arg build, itself inside `if
-        // (federationLink)`). A non-federation schema that uses @oneOf has no _Service.sdl to
-        // correct (its file arm prints the definition through SchemaPrinter already), so gating on
-        // usesOneOf alone would emit a dead, uncalled helper into a non-federation consumer's util.
-        if (federationLink && OneOfDirectiveSdl.usesOneOf(assembled)) {
-            write(OneOfDirectiveSdlGenerator.generate(outputPackage),                              "util",       emittedThisRun);
+
+        // The global command relation: the core decided the family membership (the federation
+        // @oneOf gate, the entity-dispatch, node-fetcher and dev-executor gates, the session-hook
+        // unit) when it produced the plan; the shell folds over the rows, rendering each family
+        // and landing every unit at the address its row committed. What the fold does not absorb
+        // stays deliberately shell-side: per-family argument assembly (including tenantKeyType,
+        // a javapoet TypeName the plan must not hold), and the generators' own model reads. The
+        // per-type-emitting families below are not yet command-driven: anything still passing
+        // `schema` to a generator is unmigrated.
+        var plan = EmitPlan.produce(schema, federationLink, bundle.usesOneOf(), ctx.sessionStateConfig(), outputPackage);
+        for (GlobalCommand command : plan.globals()) {
+            writeCommand(command,
+                renderGlobal(command, schema, assembled, fetcherBodies.keySet(), tenantKeyType, federationLink),
+                emittedThisRun);
         }
-        write(PolymorphicSelectionSetClassGenerator.generate(),                                   "util",       emittedThisRun);
-        write(SelectionOccurrencesClassGenerator.generate(outputPackage),                         "util",       emittedThisRun);
-        write(OrderByResultClassGenerator.generate(),                                             "util",       emittedThisRun);
-        write(GraphitronContextInterfaceGenerator.generate(),                                     "schema",     emittedThisRun);
-        write(ConnectionRuntimeClassGenerator.generate(outputPackage, ctx.sessionStateConfig(), tenantKeyType), "schema", emittedThisRun);
-        write(GraphitronTransactionProviderGenerator.generate(outputPackage),                       "schema",     emittedThisRun);
-        write(GraphitronConnectionInstrumentationGenerator.generate(outputPackage, tenantKeyType != null), "schema", emittedThisRun);
-        write(ConstraintViolationsClassGenerator.generate(),                                      "schema",     emittedThisRun);
-        write(GraphitronClientExceptionClassGenerator.generate(),                                 "schema",     emittedThisRun);
-        write(ErrorRouterClassGenerator.generate(outputPackage),                                  "schema",     emittedThisRun);
-        write(OutcomeClassGenerator.generate(outputPackage),                                      "schema",     emittedThisRun);
-        write(ErrorMappingsClassGenerator.generate(schema, outputPackage),                        "schema",     emittedThisRun);
+
         write(EnumTypeGenerator.generate(schema),                                                 "schema",     emittedThisRun);
         write(InputTypeGenerator.generate(schema),                                                "schema",     emittedThisRun);
         write(InputRecordGenerator.generate(schema, assembled, outputPackage),                    "inputs",     emittedThisRun);
         write(ObjectTypeGenerator.generate(schema, assembled, fetcherBodies),                     "schema",     emittedThisRun);
-        write(GraphitronSchemaClassGenerator.generate(schema, assembled, fetcherBodies.keySet(), outputPackage, federationLink), "schema", emittedThisRun);
-        write(GraphitronFacadeGenerator.generate(schema, outputPackage, federationLink),          "",           emittedThisRun);
-        write(GraphitronDevExecutorGenerator.generate(schema, outputPackage, ctx.sessionStateConfig(), federationLink), "",  emittedThisRun);
         write(TypeClassGenerator.generate(schema, outputPackage),                                 "types",      emittedThisRun);
         write(TypeConditionsGenerator.generate(schema, outputPackage),                            "conditions", emittedThisRun);
         write(QueryConditionsGenerator.generate(schema, outputPackage),                           "conditions", emittedThisRun);
         write(fetcherClasses,                                                                      "fetchers",   emittedThisRun);
         write(ConnectionFetcherClassGenerator.generate(schema, outputPackage),                     "fetchers",   emittedThisRun);
         write(ErrorTypeFetcherClassGenerator.generate(schema, outputPackage),                      "fetchers",   emittedThisRun);
-        write(QueryNodeFetcherClassGenerator.generate(schema, outputPackage),                      "fetchers",   emittedThisRun);
         emittedThisRun.add(SchemaSdlEmitter.emit(assembled, schema, federationLink, ctx.outputResourcesDirectory(), outputPackage));
         sweepOrphans(emittedThisRun.emitted);
         var result = new GenerationResult(
@@ -358,6 +348,78 @@ public class GraphQLRewriteGenerator {
             ? CompileDependencyGraphBuilder.fromModel(schema, outputPackage)
             : null;
         return new IncrementalGeneration(result, graph);
+    }
+
+    /**
+     * The typed interpreter over the global command relation: one renderer invocation per
+     * {@link no.sikt.graphitron.command.GlobalUnitKind}, total over the enum with no default arm,
+     * so a new kind is a compile error here rather than a silently unrendered row. The generators
+     * it dispatches to still take the model; they migrate family by family.
+     */
+    private List<TypeSpec> renderGlobal(GlobalCommand command, GraphitronSchema schema, GraphQLSchema assembled,
+                                        Set<String> fetcherBodyKeys, TypeName tenantKeyType, boolean federationLink) {
+        String outputPackage = ctx.outputPackage();
+        return switch (command.kind()) {
+            case GRAPHITRON_VALUES -> GraphitronValuesClassGenerator.generate();
+            case LIGHT_FETCHER -> LightFetcherClassGenerator.generate(outputPackage);
+            case NODE_ID_ENCODER -> NodeIdEncoderClassGenerator.generate(schema);
+            case ENTITY_FETCHER_DISPATCH -> EntityFetcherDispatchClassGenerator.generate(schema, outputPackage);
+            case CONNECTION_RESULT -> ConnectionResultClassGenerator.generate(outputPackage, tenantKeyType != null);
+            case CONNECTION_HELPER -> ConnectionHelperClassGenerator.generate(outputPackage, tenantKeyType != null);
+            case ONE_OF_DIRECTIVE_SDL -> OneOfDirectiveSdlGenerator.generate(outputPackage);
+            case POLYMORPHIC_SELECTION_SET -> PolymorphicSelectionSetClassGenerator.generate();
+            case SELECTION_OCCURRENCES -> SelectionOccurrencesClassGenerator.generate(outputPackage);
+            case ORDER_BY_RESULT -> OrderByResultClassGenerator.generate();
+            case GRAPHITRON_CONTEXT -> GraphitronContextInterfaceGenerator.generate();
+            case CONNECTION_RUNTIME -> ConnectionRuntimeClassGenerator.generate(outputPackage, ctx.sessionStateConfig(), tenantKeyType);
+            case TRANSACTION_PROVIDER -> GraphitronTransactionProviderGenerator.generate(outputPackage);
+            case CONNECTION_INSTRUMENTATION -> GraphitronConnectionInstrumentationGenerator.generate(outputPackage, tenantKeyType != null);
+            case CONSTRAINT_VIOLATIONS -> ConstraintViolationsClassGenerator.generate();
+            case CLIENT_EXCEPTION -> GraphitronClientExceptionClassGenerator.generate();
+            case ERROR_ROUTER -> ErrorRouterClassGenerator.generate(outputPackage);
+            case OUTCOME -> OutcomeClassGenerator.generate(outputPackage);
+            case ERROR_MAPPINGS -> ErrorMappingsClassGenerator.generate(schema, outputPackage);
+            case SCHEMA_CLASS -> GraphitronSchemaClassGenerator.generate(schema, assembled, fetcherBodyKeys, outputPackage, federationLink);
+            case QUERY_NODE_FETCHER -> QueryNodeFetcherClassGenerator.generate(schema, outputPackage);
+            case FACADE -> GraphitronFacadeGenerator.generate(schema, outputPackage, federationLink);
+            case DEV_EXECUTOR -> GraphitronDevExecutorGenerator.generate(schema, outputPackage, ctx.sessionStateConfig(), federationLink);
+        };
+    }
+
+    /**
+     * Writes one global command's rendered units at the addresses the plan committed. The
+     * {@link UnitRef} is the single naming derivation: each spec lands at the ref carrying its
+     * simple name, a spec no ref names has nowhere to go, and a committed ref no spec matched is
+     * a dropped unit; both fail the run loudly instead of drifting into the compile graph as a
+     * silent gap.
+     */
+    private void writeCommand(GlobalCommand command, List<TypeSpec> specs, EmissionLog emittedThisRun) {
+        var refsByName = new LinkedHashMap<String, UnitRef>();
+        for (UnitRef ref : command.units()) {
+            refsByName.put(ref.simpleName(), ref);
+        }
+        for (TypeSpec spec : specs) {
+            UnitRef ref = refsByName.remove(spec.name());
+            if (ref == null) {
+                throw new IllegalStateException(
+                    "global command " + command.kind() + " emitted unit '" + spec.name()
+                        + "' that the plan did not commit; the producer and the generator disagree"
+                        + " about this family's unit set");
+            }
+            try {
+                var result = JavaFile.builder(ref.packageName(), spec).indent("    ").build()
+                    .writeToPathReporting(ctx.outputDirectory(), StandardCharsets.UTF_8);
+                emittedThisRun.record(ref.fqcn(), spec, result);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+        if (!refsByName.isEmpty()) {
+            throw new IllegalStateException(
+                "global command " + command.kind() + " committed units " + refsByName.keySet()
+                    + " that its renderer never emitted; the producer and the generator disagree"
+                    + " about this family's unit set");
+        }
     }
 
     private void write(List<TypeSpec> specs, String subPackage, EmissionLog emittedThisRun) {

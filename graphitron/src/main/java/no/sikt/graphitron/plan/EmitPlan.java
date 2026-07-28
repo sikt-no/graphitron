@@ -1,0 +1,118 @@
+package no.sikt.graphitron.plan;
+
+import no.sikt.graphitron.command.GlobalCommand;
+import no.sikt.graphitron.command.GlobalUnitKind;
+import no.sikt.graphitron.command.UnitRef;
+import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.session.SessionStateConfig;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * The emit decisions of one generation run, produced eagerly by the core before any rendering.
+ * Commands are a derived artifact of this step, never stored on {@link GraphitronSchema}: the
+ * fact store carries what the schema means, the plan carries what this run emits.
+ *
+ * <p>Currently the plan holds the global command relation: one {@link GlobalCommand} row per
+ * global emit family, keyed by {@link GlobalUnitKind}, each naming the exact units it commits.
+ * The shell folds over the rows and renders; membership decisions that used to sit in the shell
+ * (the federation {@code @oneOf} gate) or inside a generator's early return (entity dispatch on a
+ * schema without entities, the node fetcher on a schema without node types, the dev executor on a
+ * federated schema) are all made here. The schema-level inputs arrive as facts landed once by the
+ * builder ({@code Bundle.federationLink()}, {@code Bundle.usesOneOf()}), not re-derived.
+ */
+public record EmitPlan(List<GlobalCommand> globals) {
+
+    public EmitPlan {
+        globals = List.copyOf(globals);
+        long distinctKinds = globals.stream().map(GlobalCommand::kind).distinct().count();
+        if (distinctKinds != globals.size()) {
+            throw new IllegalArgumentException("the global command relation is keyed by unit kind; a kind appeared twice");
+        }
+    }
+
+    /**
+     * Produces the plan for one run. {@code federationLink} and {@code usesOneOf} are the
+     * bundle's schema-level facts; {@code sessionStateConfig} decides the connection runtime's
+     * session-hook unit; {@code outputPackage} anchors every unit name.
+     */
+    public static EmitPlan produce(GraphitronSchema schema,
+                                   boolean federationLink,
+                                   boolean usesOneOf,
+                                   SessionStateConfig sessionStateConfig,
+                                   String outputPackage) {
+        var units = new GeneratedUnits(outputPackage);
+        var globals = new ArrayList<GlobalCommand>();
+
+        globals.add(one(GlobalUnitKind.GRAPHITRON_VALUES, units.singleton(GeneratedUnits.SUB_UTIL, "GraphitronValues")));
+        globals.add(one(GlobalUnitKind.LIGHT_FETCHER, units.singleton(GeneratedUnits.SUB_UTIL, "LightFetcher")));
+        globals.add(one(GlobalUnitKind.NODE_ID_ENCODER, units.singleton(GeneratedUnits.SUB_UTIL, "NodeIdEncoder")));
+        if (!schema.entitiesByType().isEmpty()) {
+            globals.add(one(GlobalUnitKind.ENTITY_FETCHER_DISPATCH,
+                units.singleton(GeneratedUnits.SUB_UTIL, "EntityFetcherDispatch")));
+        }
+        globals.add(one(GlobalUnitKind.CONNECTION_RESULT, units.singleton(GeneratedUnits.SUB_UTIL, "ConnectionResult")));
+        globals.add(one(GlobalUnitKind.CONNECTION_HELPER, units.singleton(GeneratedUnits.SUB_UTIL, "ConnectionHelper")));
+        // The runtime _Service.sdl helper serves only the federation build arm (the wrapped
+        // `return` in GraphitronSchemaClassGenerator's two-arg build, itself inside `if
+        // (federationLink)`). A non-federation schema that uses @oneOf has no _Service.sdl to
+        // correct (its file arm prints the definition through SchemaPrinter already), so gating on
+        // usesOneOf alone would commit a dead, uncalled helper into a non-federation consumer's util.
+        if (federationLink && usesOneOf) {
+            globals.add(one(GlobalUnitKind.ONE_OF_DIRECTIVE_SDL,
+                units.singleton(GeneratedUnits.SUB_UTIL, "OneOfDirectiveSdl")));
+        }
+        globals.add(one(GlobalUnitKind.POLYMORPHIC_SELECTION_SET,
+            units.singleton(GeneratedUnits.SUB_UTIL, "PolymorphicSelectionSet")));
+        globals.add(one(GlobalUnitKind.SELECTION_OCCURRENCES,
+            units.singleton(GeneratedUnits.SUB_UTIL, "SelectionOccurrences")));
+        globals.add(one(GlobalUnitKind.ORDER_BY_RESULT, units.singleton(GeneratedUnits.SUB_UTIL, "OrderByResult")));
+        globals.add(one(GlobalUnitKind.GRAPHITRON_CONTEXT, units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronContext")));
+        globals.add(connectionRuntime(units, sessionStateConfig));
+        globals.add(one(GlobalUnitKind.TRANSACTION_PROVIDER,
+            units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronTransactionProvider")));
+        globals.add(one(GlobalUnitKind.CONNECTION_INSTRUMENTATION,
+            units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronConnectionInstrumentation")));
+        globals.add(one(GlobalUnitKind.CONSTRAINT_VIOLATIONS,
+            units.singleton(GeneratedUnits.SUB_SCHEMA, "ConstraintViolations")));
+        globals.add(one(GlobalUnitKind.CLIENT_EXCEPTION,
+            units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronClientException")));
+        globals.add(one(GlobalUnitKind.ERROR_ROUTER, units.singleton(GeneratedUnits.SUB_SCHEMA, "ErrorRouter")));
+        globals.add(one(GlobalUnitKind.OUTCOME, units.singleton(GeneratedUnits.SUB_SCHEMA, "Outcome")));
+        globals.add(one(GlobalUnitKind.ERROR_MAPPINGS, units.singleton(GeneratedUnits.SUB_SCHEMA, "ErrorMappings")));
+        globals.add(one(GlobalUnitKind.SCHEMA_CLASS, units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronSchema")));
+        if (schema.types().values().stream().anyMatch(t -> t instanceof GraphitronType.NodeType)) {
+            globals.add(one(GlobalUnitKind.QUERY_NODE_FETCHER,
+                units.singleton(GeneratedUnits.SUB_FETCHERS, "QueryNodeFetcher")));
+        }
+        globals.add(one(GlobalUnitKind.FACADE, units.rootUnit("Graphitron")));
+        if (!federationLink) {
+            globals.add(one(GlobalUnitKind.DEV_EXECUTOR, units.rootUnit("GraphitronDevExecutor")));
+        }
+        return new EmitPlan(globals);
+    }
+
+    /** A global command committing exactly one unit. */
+    private static GlobalCommand one(GlobalUnitKind kind, UnitRef unit) {
+        return new GlobalCommand(kind, List.of(unit));
+    }
+
+    /**
+     * The connection runtime's unit set: the four fixed units, plus the generated session-hook
+     * implementation exactly when the configured session state form emits one
+     * ({@link SessionStateConfig#emitsHookImplementation()}, the same fact the generator gates on).
+     */
+    private static GlobalCommand connectionRuntime(GeneratedUnits units, SessionStateConfig sessionStateConfig) {
+        var refs = new ArrayList<UnitRef>();
+        refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "SessionHook"));
+        refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "PinnedConnection"));
+        refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronRuntime"));
+        refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "TenantConnections"));
+        if (sessionStateConfig.emitsHookImplementation()) {
+            refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronSessionHook"));
+        }
+        return new GlobalCommand(GlobalUnitKind.CONNECTION_RUNTIME, refs);
+    }
+}

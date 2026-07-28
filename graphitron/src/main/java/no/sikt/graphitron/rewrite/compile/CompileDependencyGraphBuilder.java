@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.compile;
 
+import no.sikt.graphitron.plan.GeneratedUnits;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
@@ -41,12 +42,12 @@ import java.util.List;
 public final class CompileDependencyGraphBuilder {
 
     private final GraphitronSchema schema;
-    private final GeneratedUnits units;
+    private final UnitNames units;
     private final MapCompileDependencyGraph.Accumulator acc = new MapCompileDependencyGraph.Accumulator();
 
     private CompileDependencyGraphBuilder(GraphitronSchema schema, String outputPackage) {
         this.schema = schema;
-        this.units = new GeneratedUnits(outputPackage);
+        this.units = new UnitNames(outputPackage);
     }
 
     /**

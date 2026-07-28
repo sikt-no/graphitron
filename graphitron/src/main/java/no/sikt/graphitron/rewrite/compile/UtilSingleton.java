@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.compile;
 
+import no.sikt.graphitron.plan.GeneratedUnits;
+
 import java.util.List;
 
 /**
