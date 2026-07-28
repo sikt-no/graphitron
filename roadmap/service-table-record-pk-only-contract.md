@@ -1,7 +1,7 @@
 ---
 id: R516
 title: "Narrow SourceKey.Wrap.TableRecord contract to PK-only, revert full-row projection"
-status: In Review
+status: Ready
 bucket: correctness
 priority: 2
 theme: service
@@ -12,11 +12,11 @@ last-updated: 2026-07-28
 
 # Narrow SourceKey.Wrap.TableRecord contract to PK-only, revert full-row projection
 
-## Status: second rework applied, back for a third gate (2026-07-28)
+## Status: third gate bounced it, two blocking findings (2026-07-28)
 
-Everything the contract asks for was delivered and verified at both prior gates. The second
-bounce was one false statement in the delivery's own prose; that and the rest of its family are
-fixed, see "Second rework applied" below.
+Everything the contract asks for was delivered and verified at all three gates. The remaining work
+is prose: two false claims in `FederationEntitiesDispatchTest`, both confirmed against the emitted
+code. See "Third gate" below; that section is the only outstanding work.
 
 Shipped and accepted:
 
@@ -25,7 +25,7 @@ Shipped and accepted:
 - Retirement-sweep rework, twelve surfaces, **shipped at `b811bdb`**.
 - Second-bounce rework, six surfaces plus the registry graduation, **shipped at `25d7e17`**.
 
-Verified independently at both gates: full reactor green under `mvn install -Plocal-db`, 13
+Verified independently at all three gates: full reactor green under `mvn install -Plocal-db`, 13
 modules, execution tier and docs render included. The narrowing itself, the `SourcesOnPkLessParent`
 rejection arm, the service rewrites, and the manual correction are accepted as delivered. The
 sections from "Problem" down describe work that already landed and are kept only for context.
@@ -36,6 +36,94 @@ the deleted mechanism as live; nothing behavioural was in question. All eight ar
 at the second gate. The re-sweep that followed found four more (9 through 12 below), one of them
 introduced by the `ffce130` self-review sweep itself. The first reviewer's second improvement note
 is Backlog item R554 (filed, confirmed); the other three are addressed or answered in place.
+
+## Third gate: rework, two blocking findings (independent reviewer, In Review → Ready, 2026-07-28)
+
+Confirmed independently at this gate before the findings below. Build green: `mvn install
+-Plocal-db`, 13/13 modules SUCCESS, exit 0, execution tier and docs render included. Both jOOQ
+behaviours re-verified by running them against 3.20.11 rather than inherited from the previous
+pass: `Record.get(Field)` on a field absent from the row type throws `IllegalArgumentException:
+Field B is not contained in row type (A)`; `Record.into(Field...)` yields `null` for the absent
+field. The emitted code was read rather than the prose about it: `Wrap.Row` emits
+`DSL.row(((Record) env.getSource()).get(col))`, `Wrap.Record` emits `into(col, ...)`,
+`Wrap.TableRecord` emits `key.set(col, source.get(col))` (`GeneratorUtils.java:445-522`, and the
+generated `CityFetchers`/`FilmFetchers` under both the plain and federated output packages). Token
+sweep over every declared retired term is clean: the only occurrences outside `roadmap/` are the
+six new `RetiredVocabularyGuardTest` `REGISTRY` entries themselves, which the forward scan does not
+see because registry strings are test-source literals. `docs/` diff clean under the workflow's
+user-facing-doc check; `handle-services.adoc` states the PK-only contract correctly and documents
+the PK-less rejection. The second gate's whole `CityService` family is fixed and its three
+statements now match the emitted code exactly. `PkLessParentServiceSourcesRejectionTest` and the
+rewritten `titleTitlecase`/`cityUppercase` pair are good work.
+
+**Blocking 1. `FederationEntitiesDispatchTest.java:541-543` repeats the second gate's blocking
+claim, same wrap, in a file this delivery rewrote.** The javadoc on
+`entities_tableRecordServiceChildOnly_serviceFetchedColumnResolvesNonNull` says that if the
+required-projection walk stopped force-including `FILM_ID`, "the entity dispatch SELECT would omit
+it, the key record would carry a `null` id, and the service's batched fetch would miss every row."
+
+`titleTitlecase` is `Wrap.TableRecord`; the federated fetcher emits
+`key.set(Tables.FILM.FILM_ID, source.get(Tables.FILM.FILM_ID))`
+(`target/generated-sources/graphitron/.../generated/federated/fetchers/FilmFetchers.java:52`). The
+`source.get` throws on an absent field, so no key record is ever constructed, nothing carries a
+`null` id, and the service is never called: the request fails loudly through `ErrorRouter`. This is
+the "receives records whose key is `null` and every lookup misses" claim the second gate blocked
+on, restated for the same wrap. It is also the third consecutive pass to leave a false claim in
+this file: it was finding 3 at the first gate, corrected at `b811bdb`, and the correcting pass
+authored this one.
+
+**Blocking 2. `FederationEntitiesDispatchTest.java:535-537` misattributes the sibling test's wrap,
+which dissolves the reason the test says it exists.** The javadoc says the sibling
+(`entities_serviceChildOnly_keyNotReselected_resolvesNonNull`) "pins the same shape for a `Row`-sourced
+child; this one pins it where the key rides a typed record."
+
+The sibling selects `City { cityUppercase }`, and `CityService.cityUppercase` takes
+`Set<CityRecord>`, so it is `Wrap.TableRecord` too: the federated fetcher emits
+`key.set(Tables.CITY.CITY_ID, source.get(Tables.CITY.CITY_ID))`
+(`.../generated/federated/fetchers/CityFetchers.java:42`). `cityLowercase`, the actual `Wrap.Row`
+child, exists only in `schema.graphqls` and has no counterpart in `federated-schema.graphqls`
+(`federated-schema.graphqls:80-88` declares `cityId`, `cityName`, `cityUppercase` and nothing
+else). So both federation tests pin the typed-record arm, the stated contrast between them is
+false, and the federation tier pins the `Row` arm zero times.
+
+Fix the claim; the coverage question underneath it is a separate call. Either restate what the
+second test actually adds over the sibling (a different parent table, and a service that fetches
+non-key data for itself, versus one that does not), or, if `Row`-arm federation coverage is
+genuinely wanted, add the fixture and pin it. Do not leave the javadoc asserting coverage the
+fixture does not provide. If the coverage is wanted but out of scope here, file it.
+
+Non-blocking, fix if convenient, do not hold a fourth gate on them:
+
+- `FederationEntitiesDispatchTest.java:512`, the sibling's own tail: "the batch cannot be keyed and
+  the child does not resolve." Soft-true rather than false, but it is the same sentence position as
+  Blocking 1 and cheapest to tighten in the same edit.
+- `ParentProjectionContainmentCheck.java:20-24`. "A shipped bug shows what its absence costs: a
+  pattern-match omission ... left a DataLoader key column out of the parent SELECT, surfacing as a
+  silent `null` key at runtime." True as history (the arm went through `into(...)` then), and the
+  first gate accepted historical framing at `init.sql`, so this is not rework. But "what its
+  absence costs" reads timeless, and this delivery corrected the *caller's* comment on this exact
+  check (`TypeClassGenerator.java:117-120`, now "the `into(...)` wrap reads it as null, the
+  per-column wraps throw") while leaving the callee's class javadoc naming one outcome. Caller and
+  callee, one claim, one commit apart.
+- `RetiredVocabularyGuardTest.java:73-74`: "Two sweeps found prose still naming it live (eight
+  surfaces, then five more)." The item's own record is eight, then four (`b811bdb`, "twelve
+  surfaces"), then six at `25d7e17`. `development-principles.adoc`'s "Principles are stated at
+  altitude" names an unguarded occurrence count as the smell; drop the counts and keep "survived
+  two sweeps", which is the load-bearing half and is true.
+- `GeneratorUtils.java:463`, the `Wrap.Row` sketch in the `buildKeyExtraction` javadoc reads
+  `DSL.row((Record) env.getSource().get(table.col), ...)`; the emitted form parenthesizes the cast,
+  `DSL.row(((Record) env.getSource()).get(table.col))`. Cosmetic.
+
+One note on the registry graduation, not a defect and not rework: `appendsFullParentRow` and
+`serviceChildKeyExtractionForksOnTypedRecord` are test-facing helper names, and the guard leaves
+test-source *identifiers* out of scope, scanning only comment/javadoc prose there. So those two
+entries catch a stale prose mention but would not catch a helper actually revived under the old
+name. Worth stating alongside the limitation already recorded, so a later reader does not
+over-trust the registry in the direction it does not cover.
+
+Not re-litigated, per both previous passes: `TypeSpecAssertions`'s body-scan family (confirmed
+pre-existing, confined to that file, net one member smaller after this item, and R554 is filed and
+owns retiring it), the seven-argument `reflectServiceMethod` overload, the `isRoot` disambiguation.
 
 ## Second gate: rework, one blocking finding (independent reviewer, In Review → Ready, 2026-07-28)
 
