@@ -260,6 +260,26 @@ naming scheme (entity by return type, glue by parent type) reduces to one.
   classes and the per-participant classes exist only through the migration window. Participant rows
   on one coordinate disambiguate by producer-minted name (the producer computes every name, so this
   is a naming-vocabulary decision, not a formula at the emit site).
+- **The two schemes share one class-name template in one package, so the window needs a stated
+  rule.** Both schemes render `<Type>Conditions` into `<outputPackage>.conditions`, and both
+  generators reach it through the same `write(..., "conditions", ...)` call in
+  `GraphQLRewriteGenerator.runPipeline`, whose `EmissionLog.record` is a map `put` and whose writer
+  writes the path again: a name produced by both schemes clobbers silently, second write wins, and
+  the missing half surfaces as `cannot find symbol` at the *consumer's* javac, the failure class this
+  item exists to remove. The collision condition is a type that is both the parent of a covered
+  coordinate and the return type of one, which is ordinary in a real schema (`Query.films` returning
+  `Film` alongside any filtered `Film.*` coordinate). `Query` is safe by construction, since slice 1
+  replaces the generator that owns that name; every other parent type is not. Today's fixture set
+  escapes by luck rather than by rule: glue parents are `Query`, `Language` and `Store` while the
+  entity classes are `Address`, `City`, `Customer`, `FilmActor`, `Film`, `FilmEndorsementNode`,
+  `ProjectNote` and `Staff`, disjoint sets with no invariant holding them apart, and one filtered
+  `Film.*` or `Customer.*` coordinate closes the gap. **The window rule is slice 1's to decide before
+  it emits any non-root glue**, alongside the fork-5 alias decision. Recommendation: when a glue
+  class name coincides with an entity class name, the glue renderer folds its methods into that
+  class's `TypeSpec` rather than emitting a second file, so one file carries both method sets through
+  the window and slice 3 removes the entity half from it; that keeps the promise that root output
+  keeps its shape and adds no window-only name. A window-only suffix on the glue class is the
+  alternative and costs a rename at slice 3.
 - **The sketch borrows, it does not re-mint, and that is R549's allowlist in its first use.** Every
   ref in the record set above resolves to a type that already exists: `ColumnRef`, `TableRef`,
   `MethodRef`, `JoinStep.Hop`, `CallParam` and `CallSiteExtraction` are all in `rewrite/model/`, and
@@ -441,8 +461,11 @@ naming scheme (entity by return type, glue by parent type) reduces to one.
    costs: a mixed body (marshalling then predicates in one method); a migration window in which
    `TypeConditionsGenerator` still emits the entity layer for not-yet-converged callers, so the
    guarded-AND fold over generated terms exists twice through slices 1 to 3 (there and in the glue
-   renderer), the duplication the slice-1 implementer meets first and slice 3 deletes; and churn
-   of the generated conditions package, bounded to that package and SQL-neutral.
+   renderer), the duplication the slice-1 implementer meets first and slice 3 deletes; the two
+   schemes sharing one `<Type>Conditions` name template in one package for the length of that
+   window, which is the hosting rule stated in Design and needs deciding before the first non-root
+   glue class is emitted; and churn of the generated conditions package, bounded to that package
+   and SQL-neutral.
 2. **Reach unification.** Fold `RemoteColumnPredicate` and `FkTargetConditionFilter` into one
    FK-hop-list reach slot (recommended above), or keep two expressions mirroring today's types.
    Recommendation: unify. The single-layer glue removed the old risk (the two EXISTS forms rendered
@@ -500,7 +523,10 @@ its reasoning live with the rest of the sequencing in R549's Slices section.
    authored. The name lift completes for the root family: the four recomputation sites in
    `TypeFetcherGenerator` and `buildConditionCall`'s formula read minted `UnitRef`s, the root
    fetchers pass `env.getArguments()`, and `conditionMethodName` / `facetBaseConditionMethodName` /
-   `facetConditionMethodName` / `CLASS_NAME_SUFFIX` retire. `contextArguments` is settled here
+   `facetConditionMethodName` / `CLASS_NAME_SUFFIX` retire. The slice states which rows it renders
+   glue for: root rows only, or every row with the non-root glue unreferenced until slice 2
+   converges its callers. That is what opens the dual-scheme window, so the hosting rule in Design
+   is decided in whichever of the two this slice picks. `contextArguments` is settled here
    (implement via the env-appending signature with a fixture, or land the `ValidateMojo` deferred
    rejection) in the same commit that deletes the comment documenting the breakage. Per R549's
    recipe step 5, the two test surfaces land with it: pipeline-tier assertions on produced rows over
@@ -603,8 +629,14 @@ its reasoning live with the rest of the sequencing in R549's Slices section.
 - `FkTargetConditionEmitter`, the whole class (slice 2): its public API (`emitTerm`,
   `declareAliases`) is called only by `QueryConditionsGenerator`, replaced in slice 1, and the
   convergence hosts, so the class deletes when the last host converges and the compiler enforces
-  the consumption rule; the one javadoc mention (`CompileDependencyGraphBuilder`) repoints. The
-  inline hosts' uses of `ArgCallEmitter` retire with it.
+  the consumption rule. Three `{@link}` references repoint in the same commit, because the Javadoc
+  reference gate fails the build on a dangling one: two in `MultiTablePolymorphicEmitter` (the
+  `declareAliases` and `emitTerm` links in its alias and per-branch-fold javadoc) and one in
+  `TypeConditionsGenerator`, which this slice deliberately keeps alive, so that repoint is the one
+  edit slice 2 makes to a class it otherwise does not touch. Three further mentions are `{@code}` or
+  plain comments and are ungated but stale: `CompileDependencyGraphBuilder`,
+  `GraphitronSchemaValidator`, `FieldBuilder`, plus one in a `graphitron-sakila-service` fixture
+  javadoc. The inline hosts' uses of `ArgCallEmitter` retire with it.
 - `ArgumentValueSource`, condition-path uses only (slice 2): the source fork moves to the call
   site as `env.getArguments()` versus `<sf>.getArguments()`, so the condition emitters stop
   threading it. The sealed type itself survives: `RoutineCallEmitter` switches on it for
@@ -648,7 +680,7 @@ its reasoning live with the rest of the sequencing in R549's Slices section.
 | R475 (Backlog) | absorbed, by dissolution: the colliding generated parameter list stops existing when the entity layer retires (slice 3), and glue locals are producer-named collision-free. Tombstone at pickup, delete when this item reaches Done |
 | R472 (Backlog) | absorbed, in two steps under the decided ordering: slice 1 converts it to a deferred rejection (the walk does not exist yet), and R549 slice 3.1 supplies the nested coordinates that turn the rejection into an emitted body. Tombstone at pickup, delete when the second step lands |
 | R387 (Backlog) | absorbed: slice 1's per-arm glue renderer tests are R549 recipe step 5 applied to this family, and `TypeConditionsGeneratorTest` retires with its subject in slice 3 |
-| R334 (Backlog) | absorbed: the glue body's one-local-per-argument convention is its fix for the condition family, and slice 2 removes the ternary chains from every call site. Tombstone at pickup, delete when this item reaches Done |
+| R334 (Backlog) | **partially** absorbed: the glue body's one-local-per-argument convention is its fix for the condition family, and slice 2 removes the ternary chains from every condition call site. Its 2026-07-24 expanded scope reaches past this family, to the mutation insert-value ternaries, the polymorphic discriminator expression rebuilt per method, and the `$fields`-mapper deep-path extraction with its `inputs/*.fromMap` reuse finding; none of that is this item's, so R334 stays open and keeps those. Note the narrowing at pickup, do not delete the item |
 | R11 (Backlog) | untouched: resolver-side, feeds new binding rows into the same relation when it lands |
 | R245 (Backlog) | untouched: mutation conditions join the relation when their emit exists |
 
