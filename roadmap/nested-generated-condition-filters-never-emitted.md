@@ -12,6 +12,15 @@ last-updated: 2026-07-13
 
 # Generated condition filters on nested fields reference a conditions method that is never emitted
 
+> **Tombstone (2026-07-28, R552 pickup).** Absorbed by R552 (`condition-command`), in two steps
+> under R549's decided ordering: R552 slice 1 lands option (b), the floor, as a `ValidateMojo`
+> deferred rejection (the nested-coordinate walk cannot exist yet, since nesting types become
+> walkable projection units only at R549 slice 3.1), converting the wrong-output bug into a
+> build-time rejection; R549 slice 3.1 then supplies the nested coordinates that flip the same
+> fixture from rejected to emitted, which is option (a) and closes this item. Both states are
+> pinned by fixture, so the transition is a test changing its expectation. Delete this file when
+> the second step lands.
+
 ## Problem
 
 `TypeConditionsGenerator.generate` collects `GeneratedConditionFilter`s by iterating

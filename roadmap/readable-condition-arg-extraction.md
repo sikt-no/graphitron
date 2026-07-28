@@ -7,7 +7,7 @@ priority: 3
 theme: model-cleanup
 depends-on: []
 created: 2026-06-18
-last-updated: 2026-07-24
+last-updated: 2026-07-28
 ---
 
 # Generated argument extraction is unreadable nested-ternary one-liners
@@ -26,6 +26,16 @@ routes through a small generated helper, so the call site reads as
 `Conditions.method(table, brukerId)` and each extraction is independently debuggable. Scope:
 emitter-only, generated output changes shape but not behaviour; pipeline tests must not assert on
 generated method bodies, so coverage stays at the compile/execution tier.
+
+## Narrowed for the condition family (2026-07-28, R552 pickup)
+
+R552 (`condition-command`) absorbs this item's fix for `@condition` argument extraction: the glue
+body's one-local-per-argument convention delivers the named-locals shape by construction (R552
+slice 1 for the root family, slice 2 for every inline call site), so the ternary chains stop
+appearing at condition call sites entirely. Everything below in the expanded scope stays here:
+the mutation insert-value ternaries, the polymorphic discriminator expression, and the
+`$fields`-mapper deep-path extraction with its `inputs/*.fromMap` reuse finding are not condition
+content and remain this item's. Do not delete this item when R552 closes.
 
 ## Expanded scope (2026-07-24 audit)
 

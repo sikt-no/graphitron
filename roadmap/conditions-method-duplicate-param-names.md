@@ -10,6 +10,13 @@ last-updated: 2026-07-14
 
 # Generated <Type>Conditions methods break on same-named filter fields across sibling arguments
 
+> **Tombstone (2026-07-28, R552 pickup).** Absorbed by R552 (`condition-command`), by dissolution
+> rather than by either fix this body proposes: under the single-layer glue there is no generated
+> parameter list left to collide, since arguments become producer-named, collision-free body
+> locals. The colliding entity method is emitted unchanged through the migration window, so the
+> fixture this body describes compiles once R552 slice 3 retires the entity layer. Delete this
+> file when R552 reaches Done.
+
 A query field with two input-object filter arguments whose input types carry a same-named
 field (e.g. `films(filter: FilmFilter, extra: FilmExtra)` where both inputs declare `length`)
 emits an entity-scoped `<Type>Conditions.<field>Condition` method with one Java parameter per

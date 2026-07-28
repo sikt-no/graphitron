@@ -1,7 +1,7 @@
 ---
 id: R552
 title: "Condition command: the WHERE family as coordinate-keyed condition units"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 4
 theme: classification-model
