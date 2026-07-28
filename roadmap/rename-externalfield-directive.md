@@ -20,6 +20,13 @@ method, inlined into the SELECT projection at the alias). A clearer name
 ships in this plan; the old name stays accepted for one consumer-migration
 window.
 
+**Competing resolution: R555** (`deprecate-externalfield-fold-into-service`)
+resolves the same deprecation without a successor name, by extending
+`@service` to classify the `Table<>`-parameter / `Field<X>`-return method
+shape as `ChildField.ComputedField`. The two items are mutually exclusive:
+whichever completes first discards the other (R555 carries the matching
+back-pointer).
+
 ## Open design questions
 
 - **Successor name.** `@computed` and `@calculated` are both candidates.

@@ -58,6 +58,13 @@ outright, which keeps the branch deterministic.
   shapes, and the SQL-inlined form is strictly the better default when it
   applies. Argument against: a schema reader can no longer see from SDL
   whether a field costs a batched sub-query or rides the parent SELECT.
+  Mitigation (agreed direction): surface the distinction through the LSP.
+  The hover/classification catalog already separates the two shapes
+  (`FieldClassification.Computed` vs `FieldClassification.ServiceBacked`),
+  so the editor can tell users whether a `@service` field is embedded in
+  the parent SELECT or is a DataLoader field; the fold adds that hover
+  text as a deliverable rather than treating SDL as the only reading
+  surface.
   Related: `@service` on a non-root field currently hard-requires
   `@splitQuery`; the computed-field arm must relax that requirement for the
   `Table<> -> Field<X>` signature only, which makes the `@splitQuery`
@@ -76,15 +83,16 @@ outright, which keeps the branch deterministic.
 
 ## Relationship to existing items
 
-- **Supersedes the rename direction of R54**
-  (`rename-externalfield-directive`). R54 proposed a successor directive name
-  (`@computed` / `@calculated`); this item answers the successor-name
-  question with "no new name, the successor surface is `@service`". R54's
-  remaining open questions carry over verbatim and should be absorbed into
-  this item's Spec: deprecation-warning channel (warn-not-fail tier for the
+- **Competes with R54** (`rename-externalfield-directive`), which resolves
+  the same deprecation by renaming instead (`@computed` / `@calculated`
+  candidates); this item answers the successor-name question with "no new
+  name, the successor surface is `@service`". The two items are mutually
+  exclusive resolutions of the same problem: whichever completes first
+  discards the other (R54 carries the matching back-pointer). R54's
+  remaining open questions apply here too and should be absorbed into this
+  item's Spec: deprecation-warning channel (warn-not-fail tier for the
   classifier), parallel-support window length, and migration tooling for the
-  ~49 known Sikt call sites. If this item is accepted, discard R54 or
-  repoint it.
+  ~49 known Sikt call sites.
 - **R109** (`list-valued-external-field-multiset`, Spec) authors docs and
   fixtures that name `@externalField`; if both land, whichever lands second
   updates the directive spelling in the other's surfaces.
