@@ -23,7 +23,7 @@ Shipped and accepted:
 - Scope items 1 through 8 and the whole declared test surface **shipped at `cc270f1`**.
 - Self-review prose sweep **shipped at `ffce130`**.
 - Retirement-sweep rework, twelve surfaces, **shipped at `b811bdb`**.
-- Second-bounce rework, six surfaces plus the registry graduation, **shipped at `SECOND_REWORK_SHA`**.
+- Second-bounce rework, six surfaces plus the registry graduation, **shipped at `25d7e17`**.
 
 Verified independently at both gates: full reactor green under `mvn install -Plocal-db`, 13
 modules, execution tier and docs render included. The narrowing itself, the `SourcesOnPkLessParent`
@@ -128,7 +128,7 @@ the `isRoot` disambiguation.
 
 ## Second rework applied (2026-07-28)
 
-Landed at `SECOND_REWORK_SHA`. Full reactor green under `mvn install -Plocal-db`, 13 modules,
+Landed at `25d7e17`. Full reactor green under `mvn install -Plocal-db`, 13 modules,
 execution tier and docs render included.
 
 The blocking finding is confirmed and fixed. Both jOOQ behaviours were verified directly against
