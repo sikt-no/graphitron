@@ -7,7 +7,7 @@ priority: 4
 theme: classification-model
 depends-on: [facts-and-commands]
 created: 2026-07-27
-last-updated: 2026-07-27
+last-updated: 2026-07-28
 ---
 
 # Condition command: the WHERE family as coordinate-keyed condition units
@@ -77,7 +77,7 @@ The family is also well-bounded the same way R541's is: membership is derived fr
 already carries (a coordinate's live filter set is nonempty), with no exemption list anywhere, so
 "did we cover it" is decidable.
 
-## Current topology (2026-07-27 code walk)
+## Current topology (2026-07-27 code walk; census re-verified 2026-07-28)
 
 Three emit hosts read the same `List<WhereFilter>`; only the first two produce named units.
 
@@ -105,14 +105,22 @@ Three emit hosts read the same `List<WhereFilter>`; only the first two produce n
   "Condition"` in `conditionMethodName` and the two facet variants), and recomputed *again* at the
   consumer: `TypeFetcherGenerator` derives the shim FQCN at four separate sites and
   `buildConditionCall` re-derives the method name. This is the R2 end row 5 wants lifted.
-- **Everything else composes the identical fold inline.** `SplitRowsMethodEmitter.buildWhereCondition`
-  (child rows methods), `InlineTableFieldEmitter` and its column/lookup siblings (inline `$fields`
-  arms), `MultiTablePolymorphicEmitter` (per-branch WHERE), `LookupValuesJoinEmitter` and
-  `SelectMethodBody`: each seeds `DSL.noCondition()`, ANDs hop filters and field filters through the
-  same `FkTargetConditionEmitter.emitTerm`, and differs only in `ArgumentValueSource` (`Env` versus
-  `FromSelectedField`), alias-prefixing mode, and the outer-argument lift (`SplitRowsMethodEmitter`
-  and the inline `$fields` arms pass `liftedOuters = null`; `MultiTablePolymorphicEmitter` reuses
-  `computeLiftedOuters` with a populated map, the one lift outside the root shims).
+- **Everything else composes the identical fold inline.** The complete
+  `FkTargetConditionEmitter.emitTerm` caller set outside the two named-unit generators:
+  `SplitRowsMethodEmitter.buildWhereCondition` (child rows methods), `InlineTableFieldEmitter` and
+  `InlineLookupTableFieldEmitter` (inline `$fields` arms), `MultiTablePolymorphicEmitter`
+  (per-branch WHERE), and `TypeFetcherGenerator.buildQueryLookupRowsMethod` (the root lookup
+  coordinate: lookup keys ride the VALUES join, and the method deliberately folds the coordinate's
+  non-key filters inline, with `Env` reads and static FK-target aliases). Each seeds
+  `DSL.noCondition()`, ANDs hop filters and field filters through the same `emitTerm`, and differs
+  only in `ArgumentValueSource` (`Env` versus `FromSelectedField`), alias-prefixing mode, and the
+  outer-argument lift (`SplitRowsMethodEmitter` and the inline `$fields` arms pass
+  `liftedOuters = null`; `MultiTablePolymorphicEmitter` reuses `computeLiftedOuters` with a
+  populated map, the one lift outside the root shims). Two near-misses are excluded so the census
+  stays exact: `SelectMethodBody` declares a `condition` local nothing ever ANDs into (its own
+  comment says jOOQ folds the `noCondition()` away), and `LookupValuesJoinEmitter` consumes a
+  caller-seeded condition local without composing filters of its own (it is R333 row 7's input-rows
+  unit). Neither is a condition host, and neither is a convergence target.
 
 Model facts in place: the sealed `WhereFilter` (`GeneratedConditionFilter` with its `bodyParams`,
 `ConditionFilter` as the authored `MethodRef` pinned to return `org.jooq.Condition`,
@@ -190,8 +198,9 @@ naming scheme (entity by return type, glue by parent type) reduces to one.
   }
 
   /** One comparison. `reach` empty means this row's own table; non-empty means a correlated EXISTS
-      over the hop path. `columns.size() > 1` is the row-value form. */
-  record ColumnTerm(List<ColumnRef> columns, MatchKind match, Gate gate, List<JoinStep.Hop> reach) {}
+      over the hop path. `columns.size() > 1` is the row-value form. `nonNull` is the presence-gating
+      fact (`BodyParam.nonNull()` today): false means the rendered term is guarded on the value. */
+  record ColumnTerm(List<ColumnRef> columns, MatchKind match, boolean nonNull, List<JoinStep.Hop> reach) {}
 
   enum MatchKind { EQUALITY, MEMBERSHIP }
   ```
@@ -249,15 +258,19 @@ naming scheme (entity by return type, glue by parent type) reduces to one.
   each arriving with a rationale that read reasonably one at a time and would have doubled the
   extraction hierarchy alone by roughly ten arms. `command` imports them under R549's named
   allowlist, which is the migration dial R545 empties into the shared pure-data floor.
-- **Three collapses, on R549's rules, worth stating because the earlier sketch had all three.** The
+- **Four collapses, on R549's rules, worth stating because the earlier sketch had all four.** The
   `Reach` sealed pair is gone: `Local()` was an empty record meaning "no hops", so the slot is the hop
   list and empty is local. `ColumnTerm`'s `Eq` / `In` / `RowEq` / `RowIn` are gone as arms: they are a
   2x2 of (scalar, row) by (equality, membership), row-ness is `columns.size() > 1`, and one record
-  plus a two-value `MatchKind` covers all four. The model's `BodyParam` keeps its four arms because
+  plus a two-value `MatchKind` covers all four. `Gate` is gone as a type: the only gating fact is
+  `BodyParam.nonNull()`, a boolean, so the slot is `boolean nonNull` on the term; a wrapper type
+  would be re-minting a boolean. The model's `BodyParam` keeps its four arms because
   its consumers are different; the command has no reason to mirror a hierarchy it reads from. And the
   column reference itself is `ColumnRef`, the model's, not a condition-private term type, because
   `table.COL` is one SQL shape whether projected or compared and slice 3.1's `SelectTerm` will name
-  the same thing.
+  the same thing. What the item does mint is not a copy of anything: `ConditionCommand`,
+  `Predicate`, `ColumnTerm`, `MatchKind` and `FacetFragment` are command shapes with no model
+  counterpart, and every slot inside them is a borrowed ref, a primitive, or one of these records.
 - **Two predicate arms, on one structural axis: who owns the body.** The projection command collapsed
   its provenance distinctions because every arm still rendered to "add these terms"; here one arm
   literally cannot be rendered by us. A `Generated` predicate's terms are ours to render; an
@@ -277,7 +290,8 @@ naming scheme (entity by return type, glue by parent type) reduces to one.
   list sits on the `ColumnTerm`; on the authored arm the wrap covers the whole call, so it sits on the
   predicate. One narrowing is a genuine capability: both EXISTS emitters accept only FK-derived hops
   (`JoinStep.Hop` with `On.ColumnPairs`) and throw `IllegalStateException` on anything else, so the
-  slot is typed to FK-derived hops and the two defensive throws become unrepresentable. The
+  slot is typed to FK-derived hops and the four defensive throws (two per emitter) become
+  unrepresentable. The
   single-layer glue also dissolves the placement asymmetry the two-layer draft had to carry: both
   arms' EXISTS render in the glue body, one site, one shape.
 - **Bindings are map-relative, and the command reads the model's extraction vocabulary.** `CallParam`
@@ -329,11 +343,16 @@ naming scheme (entity by return type, glue by parent type) reduces to one.
   relation, so its population needs no rule of its own: a coordinate with no live filters has no
   row, no glue, and no call site, and every consumer composes the neutral condition from that
   absence (today's emitted `return DSL.noCondition();` shims stop existing, a shape change with no
-  SQL effect). Two edge cases are named rather than glossed. Lookup coordinates: lookup keys go through the VALUES join and are not
-  predicates, and today `TypeConditionsGenerator` silently skips every `LookupField` with an
-  in-source "no such schema exists today" note; the producer keeps lookup keys out by the fact, and a
-  lookup coordinate carrying a *non-key* filter becomes a `ValidateMojo` deferred rejection instead
-  of a silent skip. `@condition(contextArguments:)`: the emit is known-broken today (the shim emits
+  SQL effect). Two edge cases are named rather than glossed. Lookup coordinates: lookup keys go through the
+  VALUES join and are not predicates, so the producer keeps them out by the fact; the coordinate's
+  *non-key* filters then split by arm, and the rejection is scoped to the arm that is actually
+  broken. Authored `@condition` entries are composed today
+  (`TypeFetcherGenerator.buildQueryLookupRowsMethod` deliberately folds them inline), so they
+  become ordinary rows in this relation and converge on glue like any other consumer; rejecting
+  them would convert implemented, working emit into a build failure. A *generated column* filter
+  mixed onto a lookup coordinate is the genuinely unemitted case (`TypeConditionsGenerator` skips
+  every `LookupField` with an in-source "no such schema exists today" note), and that narrow case
+  becomes a `ValidateMojo` deferred rejection instead of a silent skip. `@condition(contextArguments:)`: the emit is known-broken today (the shim emits
   a call to a `graphitronContext(env)` helper the class does not have, documented only in a source
   comment slice 1 deletes); the env-appending glue signature makes it implementable, so slice 1
   either implements it with a fixture or lands the `ValidateMojo` deferred rejection, and the one
@@ -345,7 +364,9 @@ naming scheme (entity by return type, glue by parent type) reduces to one.
   (`<field>FacetBaseCondition`, one `<field>Facet_<g>Condition` per facet input) and which parameter
   slots each masks to `null` are producer decisions carried on the row, present exactly when the
   coordinate carries facet inputs (gated by a fact, so the slot-implies-slot coupling the previous
-  draft had is gone); the glue renderer emits them from the same predicate list. Today that
+  draft had is gone); the glue renderer emits them from the same predicate list. Each fragment
+  carries its own minted `UnitRef` alongside its mask, which is the shape R541's connection carrier
+  plan consumes across the slice-4 handshake. Today that
   knowledge is generator control flow in `buildSuppressedConditionMethod`; as data it becomes
   assertable in the pipeline tier.
 - **Conjunct order is preserved, exactly.** Today's fold appends the generated predicate first, then
@@ -396,8 +417,10 @@ naming scheme (entity by return type, glue by parent type) reduces to one.
    WHERE. What the collapse buys beyond that: the dual class-naming scheme reduces to one, R475
    dissolves instead of being patched (fixed parameter lists become producer-named locals), and the
    `CallParam` / `BodyParam` pairing pressure in the model loses its structural cause. The honest
-   costs: a mixed body (marshalling then predicates in one method), a migration window in which
-   `TypeConditionsGenerator` still emits the entity layer for not-yet-converged callers, and churn
+   costs: a mixed body (marshalling then predicates in one method); a migration window in which
+   `TypeConditionsGenerator` still emits the entity layer for not-yet-converged callers, so the
+   guarded-AND fold over generated terms exists twice through slices 1 to 3 (there and in the glue
+   renderer), the duplication the slice-1 implementer meets first and slice 3 deletes; and churn
    of the generated conditions package, bounded to that package and SQL-neutral.
 2. **Reach unification.** Fold `RemoteColumnPredicate` and `FkTargetConditionFilter` into one
    FK-hop-list reach slot (recommended above), or keep two expressions mirroring today's types.
@@ -466,8 +489,10 @@ its reasoning live with the rest of the sequencing in R549's Slices section.
    layer keeps feeding the not-yet-converged call sites.
 2. **Call-site convergence: every inline fold becomes a glue call.** `SplitRowsMethodEmitter`'s
    field-filter fold, the inline `$fields` arm emitters (`sf.getArguments()` as the map),
-   `MultiTablePolymorphicEmitter`'s per-branch folds, `LookupValuesJoinEmitter` and
-   `SelectMethodBody`: each stops composing extraction and terms inline and emits the one-line glue
+   `MultiTablePolymorphicEmitter`'s per-branch folds, and
+   `TypeFetcherGenerator.buildQueryLookupRowsMethod`'s non-key fold (`env.getArguments()` as the
+   map, with a fixture added for the authored-condition-on-lookup shape, which no fixture exercises
+   today): each stops composing extraction and terms inline and emits the one-line glue
    call, deriving the name through the shared `GeneratedUnits` vocabulary. This is a bounded edit to
    those hosts' condition composition, not a migration of the hosts; hop filters and parent
    correlation stay theirs. `ArgumentValueSource` and the inline uses of `FkTargetConditionEmitter`
@@ -480,10 +505,14 @@ its reasoning live with the rest of the sequencing in R549's Slices section.
    membership enforcer (the derived fact's true-set equals the relation's key-set) lands in the
    same commit, closing the family's migration dial windowless, matching R541's closing slice.
 4. **The launcher handshake.** `LauncherCommand.where` resolves as the row's glue `UnitRef`
-   (jointly with R541 slice 1; see fork 4 for the ordering). The cross-kind edge appears in the edge
-   view, and the plan-time closure check covers it. A covered launcher coordinate whose live filter
-   set is empty has no row in this relation; the launcher's `where` slot is absent there and its
-   renderer composes the neutral condition, so absence is data rather than an inline escape hatch.
+   (jointly with R541 slice 1; see fork 4 for the ordering), and the handshake is wider than
+   `where` alone: R541's resolved fork 5 puts the connection carrier plan on its `ConnectionResult`
+   arm, sourced from this row's `facets` slot (the base fragment plus the per-facet fragments), so
+   the fragment `UnitRef`s cross the seam too and R541's carrier slice consumes them. The
+   cross-kind edges appear in the edge view, and the plan-time closure check covers them. A covered
+   launcher coordinate whose live filter set is empty has no row in this relation; the launcher's
+   `where` slot is absent there and its renderer composes the neutral condition, so absence is data
+   rather than an inline escape hatch.
 
 ## Acceptance
 
@@ -504,8 +533,9 @@ its reasoning live with the rest of the sequencing in R549's Slices section.
   `(coordinate, resolvedTable)` key: a polymorphic root's row count equals its participant count, and
   a coordinate with an empty live filter set appears zero times. Glue is total, so it needs no
   separate bound. The named exclusions hold: no lookup-key predicates, and the deferred rejections
-  that land (non-key lookup filters, and `contextArguments` if slice 1 rejects rather than
-  implements) fire on their fixtures.
+  that land (generated column filters mixed onto lookup coordinates, and `contextArguments` if
+  slice 1 rejects rather than implements) fire on their fixtures; authored conditions on lookup
+  coordinates stay emitted, as rows in the relation.
 - **Convergence is structural, not asserted on strings.** Slice 2's observable is retirement: the
   `ArgumentValueSource` type and the inline hosts' uses of the extraction and term machinery are
   deleted, so a host that wanted to compose a fold inline again would have nothing to call; the
@@ -559,9 +589,9 @@ its reasoning live with the rest of the sequencing in R549's Slices section.
 
 ## Out of scope
 
-- **The inline hosts as families.** Slice 3 converges their condition *call sites* onto glue, but
-  `SplitRowsMethodEmitter`, the inline `$fields` arm emitters, `MultiTablePolymorphicEmitter`,
-  `LookupValuesJoinEmitter` and `SelectMethodBody` themselves stay schema-fed generators; their
+- **The inline hosts as families.** Slice 2 converges their condition *call sites* onto glue, but
+  `SplitRowsMethodEmitter`, the inline `$fields` arm emitters, `MultiTablePolymorphicEmitter` and
+  `TypeFetcherGenerator`'s root builders themselves stay schema-fed generators; their
   command migration is R549 slices 3 and 5. Hop filters, parent correlation and everything else in
   their WHERE composition that is not condition content also stays theirs.
 - **Mutation conditions** (R245): `@condition` on mutations is a no-op at emit today; wiring it is
