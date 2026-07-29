@@ -997,7 +997,8 @@ R541's single-operation launchers never need it, and a general launcher cannot d
     (`<Type>Fetchers`, first-occurrence-wins representative), with
     `validateNestingParentCompat` the only thing making the coarser grain safe. The latent
     fetcher-side representative bug between pivot and nesting edges under `@field(name:)` remap
-    is out of this slice's scope and needs its own Backlog item.
+    is out of this slice's scope; filed as R556
+    (`pivot-nesting-representative-read-divergence`).
   - **Deleted:** `TypeClassGenerator`, `InlineTableFieldEmitter`, `InlineLookupTableFieldEmitter`,
     `InlineColumnReferenceFieldEmitter`, `PivotProjectionEmitter`, the depth-suffixed local
     scheme, and the nested-lookup helper hoisting. Moved to `render/` with legacy hosts
