@@ -799,6 +799,15 @@ discipline: authored-on-lookup, nested-authored, and the batched context-bound c
 the sibling same-named filter fixture compiles and executes, closing the collision dissolution
 end to end.
 
+### Slice 4, first half (2026-07-29): the launcher handshake's `where` slot
+
+Landed with R541 slice 1 (see the slice log in `root-query-unit-seam.md`): the launcher command's
+WHERE slot is a `GlueCall` (the shared ref-plus-`takesEnv` record whose javadoc anticipated the
+slot), copied off this relation's row by the launcher producer, never recomputed from filters;
+absence in the relation is the absence, and the launcher renderer composes the neutral condition
+from it. The handshake's second half, the facet-fragment refs crossing into R541's connection
+carrier plan, arrives with R541 slice 3 as planned.
+
 ## Retired vocabulary
 
 - `QueryConditionsGenerator` (slice 1): replaced by the glue renderer; with it

@@ -88,9 +88,13 @@ class CommandSeamRatchetTest {
      * {@code generators/} — the four-layer window the tertiary count exists to make visible,
      * ratcheting back down when the fact walk replaces the relocated dispatch; lowered to 38
      * when the correlation keys became gated contribution arms and the walk and check they
-     * replaced (with their capability {@code instanceof} probes) were deleted.
+     * replaced (with their capability {@code instanceof} probes) were deleted; raised to 56 when
+     * the launcher command's producer ({@link no.sikt.graphitron.plan.LauncherCommands})
+     * relocated the root family's covered-family fact (a total switch over
+     * {@link no.sikt.graphitron.rewrite.model.QueryField}'s twelve permits) and its migration
+     * dial out of the fetcher generator's dispatch, which now routes on row presence.
      */
-    private static final int PLAN_LEAF_REFERENCES = 38;
+    private static final int PLAN_LEAF_REFERENCES = 56;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide

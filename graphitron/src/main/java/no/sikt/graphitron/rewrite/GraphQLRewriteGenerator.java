@@ -305,8 +305,14 @@ public class GraphQLRewriteGenerator {
 
         String outputPackage = ctx.outputPackage();
 
+        // The plan is produced before the per-type generators run: the launcher relation's rows
+        // are read by the fetcher generator (a root coordinate with a row gets the launcher
+        // emission, one without falls through to its legacy builder).
+        var plan = EmitPlan.produce(schema, federationLink, bundle.usesOneOf(), ctx.sessionStateConfig(), outputPackage);
+
         var methodCommands = new MethodCommandRegistry();
-        var fetcherClasses = TypeFetcherGenerator.generate(schema, assembled, outputPackage, methodCommands);
+        var fetcherClasses = TypeFetcherGenerator.generate(schema, assembled, outputPackage, methodCommands,
+            plan.launchers());
         var fetcherBodies  = FetcherRegistrationsEmitter.emit(schema, outputPackage);
 
         EmissionLog emittedThisRun = new EmissionLog();
@@ -324,7 +330,6 @@ public class GraphQLRewriteGenerator {
         // a javapoet TypeName the plan must not hold), and the generators' own model reads. The
         // per-type-emitting families below are not yet command-driven: anything still passing
         // `schema` to a generator is unmigrated.
-        var plan = EmitPlan.produce(schema, federationLink, bundle.usesOneOf(), ctx.sessionStateConfig(), outputPackage);
         for (GlobalCommand command : plan.globals()) {
             writeCommand(command,
                 renderGlobal(command, schema, assembled, fetcherBodies.keySet(), tenantKeyType, federationLink),

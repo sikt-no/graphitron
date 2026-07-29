@@ -1,0 +1,207 @@
+package no.sikt.graphitron.plan;
+
+import graphql.schema.FieldCoordinates;
+import no.sikt.graphitron.command.GlueCall;
+import no.sikt.graphitron.command.LauncherCommand;
+import no.sikt.graphitron.command.Ordering;
+import no.sikt.graphitron.command.ResultShape;
+import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.model.FieldWrapper;
+import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.OrderBySpec;
+import no.sikt.graphitron.rewrite.model.QueryField;
+import no.sikt.graphitron.rewrite.model.TenantBinding;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Produces the launcher command relation: one {@link LauncherCommand} row per covered root
+ * SELECT coordinate that has migrated onto the seam. Membership is the covered-family fact
+ * minus a named, shrink-only migration dial:
+ *
+ * <ul>
+ *   <li>{@link #coveredFamily}: the root coordinates whose fetch is a SELECT launcher against a
+ *       table target, derived from the leaf's kind (table, lookup-table, routine-table and
+ *       single-table-interface roots are in; polymorphic, node, service and DML roots are out by
+ *       the fact, with no exemption list anywhere).</li>
+ *   <li>{@link NotYetMigrated}: the covered shapes whose launcher slices have not landed, each a
+ *       named dial entry a later slice deletes. The closing slice empties the dial and lands the
+ *       derived-fact-equals-key-set membership enforcer in the same commit, so the dial being
+ *       empty <em>is</em> the migration being complete.</li>
+ * </ul>
+ *
+ * <p>The generator's dispatch does not restate this membership: it routes on row presence
+ * (a coordinate with a row gets the launcher emission, one without falls through to its legacy
+ * builder), so the predicate has one home and the non-vacuity pins are its enforcer.
+ *
+ * <p>Production runs after the condition relation, because a launcher row's WHERE slot is a
+ * reference into it: the producer copies the coordinate's glue ref and its env-appending answer
+ * off the condition row (the cross-family handshake; the condition family owns WHERE production
+ * wholesale), and a coordinate with no condition row gets an absent slot, from which the
+ * renderer composes the neutral condition.
+ */
+public final class LauncherCommands {
+
+    /**
+     * The migration dial: covered shapes whose launcher emission has not yet moved onto the
+     * seam. Shrink-only; each entry names the slice that deletes it.
+     */
+    enum NotYetMigrated {
+        /** The connection root's seek/limit page query and carrier plan (connection slices). */
+        CONNECTION,
+        /** The tenant fan-out root, whose row lands together with the invocation-strategy slot. */
+        FANNED_OVER_TENANTS,
+        /** The {@code @routine} root's table-expression composition (tail slice). */
+        ROUTINE,
+        /** The single-table-interface root's discriminator reprojection (tail slice). */
+        TABLE_INTERFACE,
+        /** The lookup root, whose named unit already exists and folds in last (closing slice). */
+        LOOKUP
+    }
+
+    private LauncherCommands() {}
+
+    public static LauncherRelation produce(GraphitronSchema schema, ConditionRelation conditions,
+            String outputPackage) {
+        var units = new GeneratedUnits(outputPackage);
+        var rows = new ArrayList<LauncherCommand>();
+        for (var type : schema.types().values()) {
+            for (var field : schema.fieldsOf(type.name())) {
+                if (coveredFamily(field) && dialEntryOf(schema, (QueryField) field) == null) {
+                    rows.add(row((QueryField.QueryTableField) field, conditions, units));
+                }
+            }
+        }
+        return new LauncherRelation(rows);
+    }
+
+    /**
+     * Row production for a schema-free emission context (the unit-tier fetcher assemblies that
+     * build model records by hand and never construct a {@link GraphitronSchema}). Mirrors what
+     * {@link #produce} would mint given the fields' schema: no schema means no tenancy (the same
+     * fallback the DSL-declaration emitter takes), so no fan-out exclusion arises, and the WHERE
+     * ref derives from the field's own filters through the same naming formula the condition
+     * producer mints (the schema-free sibling of the relation copy; both ends read
+     * {@code GeneratedUnits}, so they cannot disagree).
+     */
+    public static LauncherRelation produceWithoutSchema(List<? extends GraphitronField> fields,
+            String outputPackage) {
+        var units = new GeneratedUnits(outputPackage);
+        var rows = new ArrayList<LauncherCommand>();
+        for (var field : fields) {
+            if (field instanceof QueryField.QueryTableField qtf
+                    && !(qtf.returnType().wrapper() instanceof FieldWrapper.Connection)) {
+                rows.add(row(qtf, glueFromFilters(qtf, units), units));
+            }
+        }
+        return new LauncherRelation(rows);
+    }
+
+    private static GlueCall glueFromFilters(QueryField.QueryTableField qtf, GeneratedUnits units) {
+        if (qtf.filters().isEmpty()) {
+            return null;
+        }
+        return new GlueCall(units.conditionMethod(qtf.parentTypeName(), qtf.name()),
+            no.sikt.graphitron.rewrite.model.WhereFilter.anyReadRequestContext(qtf.filters()));
+    }
+
+    /**
+     * The covered-family fact, written in its final form from the first slice: a root SELECT
+     * launcher against a table target. The switch is total over {@link QueryField}'s permits so
+     * a new root kind is a compile-time decision here, not a silent exclusion.
+     */
+    static boolean coveredFamily(GraphitronField field) {
+        if (!(field instanceof QueryField qf)) {
+            return false;
+        }
+        return switch (qf) {
+            case QueryField.QueryTableField ignored -> true;
+            case QueryField.QueryLookupTableField ignored -> true;
+            case QueryField.QueryRoutineTableField ignored -> true;
+            case QueryField.QueryTableInterfaceField ignored -> true;
+            // Polymorphic targets (their UNION-ALL stage is a dedicated polymorphic-emit
+            // family), node dispatch, and the service-backed roots are outside by the fact.
+            case QueryField.QueryInterfaceField ignored -> false;
+            case QueryField.QueryUnionField ignored -> false;
+            case QueryField.QueryNodeField ignored -> false;
+            case QueryField.QueryNodesField ignored -> false;
+            case QueryField.QueryServiceTableField ignored -> false;
+            case QueryField.QueryServiceRecordField ignored -> false;
+            case QueryField.QueryServicePolymorphicField ignored -> false;
+            case QueryField.QueryServiceTableInterfaceField ignored -> false;
+        };
+    }
+
+    /**
+     * The dial entry excluding a covered coordinate from this run's relation, or {@code null}
+     * when the coordinate's shape has migrated. One classification, read by the producer alone;
+     * the boundary pins assert the dial-excluded shapes appear zero times while their entries
+     * exist.
+     */
+    static NotYetMigrated dialEntryOf(GraphitronSchema schema, QueryField field) {
+        return switch (field) {
+            case QueryField.QueryTableField qtf -> {
+                if (qtf.returnType().wrapper() instanceof FieldWrapper.Connection) {
+                    yield NotYetMigrated.CONNECTION;
+                }
+                if (schema.tenantBindingOf(qtf.parentTypeName(), qtf.name()) instanceof TenantBinding.FanOut) {
+                    yield NotYetMigrated.FANNED_OVER_TENANTS;
+                }
+                yield null;
+            }
+            case QueryField.QueryRoutineTableField ignored -> NotYetMigrated.ROUTINE;
+            case QueryField.QueryTableInterfaceField ignored -> NotYetMigrated.TABLE_INTERFACE;
+            case QueryField.QueryLookupTableField ignored -> NotYetMigrated.LOOKUP;
+            default -> throw new IllegalArgumentException(
+                "dialEntryOf is defined over the covered family; got " + field.getClass().getSimpleName());
+        };
+    }
+
+    private static LauncherCommand row(QueryField.QueryTableField qtf, ConditionRelation conditions,
+            GeneratedUnits units) {
+        return row(qtf, whereOf(qtf, conditions), units);
+    }
+
+    private static LauncherCommand row(QueryField.QueryTableField qtf, GlueCall where, GeneratedUnits units) {
+        boolean isList = qtf.returnType().wrapper().isList();
+        return new LauncherCommand(
+            units.launcherMethod(qtf.parentTypeName(), qtf.name()),
+            FieldCoordinates.coordinates(qtf.parentTypeName(), qtf.name()),
+            qtf.returnType().table(),
+            units.typeClass(qtf.returnType().returnTypeName()),
+            where,
+            isList ? orderingOf(qtf, units) : null,
+            isList ? ResultShape.RECORD_LIST : ResultShape.SINGLE_RECORD);
+    }
+
+    /**
+     * The coordinate's condition glue reference, copied off the condition relation's row
+     * (single-sourcing the env-appending fact on that relation; the launcher never recomputes it
+     * from filters, and absence in the relation <em>is</em> the absence), or {@code null} when
+     * the coordinate has no row.
+     */
+    private static GlueCall whereOf(QueryField.QueryTableField qtf, ConditionRelation conditions) {
+        var coordinate = FieldCoordinates.coordinates(qtf.parentTypeName(), qtf.name());
+        return conditions.rows().stream()
+            .filter(r -> r.coordinate().equals(coordinate))
+            .findFirst()
+            .map(r -> new GlueCall(r.glue(), r.readsRequestContext()))
+            .orElse(null);
+    }
+
+    /**
+     * The ordering slot, from the model's resolved spec: a nonempty fixed order renders inline
+     * ({@link Ordering.Columns}), an argument-driven order dispatches through the emitted helper
+     * whose ref is minted here ({@link Ordering.Helper}), and everything else (no spec, or a
+     * fixed spec with no columns) is unordered, an absent slot.
+     */
+    private static Ordering orderingOf(QueryField.QueryTableField qtf, GeneratedUnits units) {
+        return switch (qtf.orderBy()) {
+            case OrderBySpec.Fixed fixed when !fixed.columns().isEmpty() -> new Ordering.Columns(fixed);
+            case OrderBySpec.Argument ignored ->
+                new Ordering.Helper(units.orderByHelperMethod(qtf.parentTypeName(), qtf.name()));
+            default -> null;
+        };
+    }
+}

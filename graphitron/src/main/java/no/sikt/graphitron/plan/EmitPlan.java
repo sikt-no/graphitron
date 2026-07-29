@@ -19,8 +19,10 @@ import java.util.List;
  * family, keyed by {@link GlobalUnitKind}, each naming the exact units it commits), the
  * condition command relation ({@link ConditionRelation}: one row per covered
  * {@code (coordinate, resolvedTable)} key, with the committed subset this run renders glue for),
- * and the projection command relation ({@link ProjectionRelation}: one row per projection unit,
- * produced after conditions because projection rows reference glue by condition row).
+ * the projection command relation ({@link ProjectionRelation}: one row per projection unit,
+ * produced after conditions because projection rows reference glue by condition row), and the
+ * launcher command relation ({@link LauncherRelation}: one row per migrated root SELECT
+ * coordinate, produced after conditions for the same reason, its WHERE slot is a glue ref).
  * The shell folds over the rows and renders; membership decisions that used to sit in the shell
  * (the federation {@code @oneOf} gate) or inside a generator's early return (entity dispatch on a
  * schema without entities, the node fetcher on a schema without node types, the dev executor on a
@@ -28,7 +30,7 @@ import java.util.List;
  * builder ({@code Bundle.federationLink()}, {@code Bundle.usesOneOf()}), not re-derived.
  */
 public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions,
-                       ProjectionRelation projections) {
+                       ProjectionRelation projections, LauncherRelation launchers) {
 
     public EmitPlan {
         globals = List.copyOf(globals);
@@ -41,6 +43,9 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         }
         if (projections == null) {
             throw new IllegalArgumentException("the plan carries the projection relation; an empty relation is a value, not null");
+        }
+        if (launchers == null) {
+            throw new IllegalArgumentException("the plan carries the launcher relation; an empty relation is a value, not null");
         }
     }
 
@@ -104,7 +109,8 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         }
         var conditions = ConditionCommands.produce(schema, outputPackage);
         return new EmitPlan(globals, conditions,
-            ProjectionCommands.produce(schema, conditions, outputPackage));
+            ProjectionCommands.produce(schema, conditions, outputPackage),
+            LauncherCommands.produce(schema, conditions, outputPackage));
     }
 
     /** A global command committing exactly one unit. */

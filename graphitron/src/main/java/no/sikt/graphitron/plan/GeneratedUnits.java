@@ -114,6 +114,27 @@ public final class GeneratedUnits {
     }
 
     /**
+     * {@code <Parent>Fetchers#rows<Field>}: a root coordinate's launcher method, the named unit
+     * owning the coordinate's whole query composition (the root {@code rows<X>}-equivalent).
+     * Hosted on the coordinate's fetchers class; the thin fetcher entry point calls it with the
+     * resolved {@code DSLContext}. One formula for both ends: the launcher producer mints the
+     * ref onto the row, and the fetcher generator reads the same ref off the relation.
+     */
+    public UnitMethodRef launcherMethod(String parentTypeName, String fieldName) {
+        return new UnitMethodRef(fetchers(parentTypeName), "rows" + upperCamel(fieldName));
+    }
+
+    /**
+     * {@code <Parent>Fetchers#<field>OrderBy}: a coordinate's emitted ordering helper, present
+     * exactly when the ordering rides a runtime {@code @orderBy} argument. Minted onto the
+     * launcher row's {@code Ordering.Helper} arm; the helper itself is emitted by the fetcher
+     * generator with the same formula.
+     */
+    public UnitMethodRef orderByHelperMethod(String parentTypeName, String fieldName) {
+        return new UnitMethodRef(fetchers(parentTypeName), fieldName + "OrderBy");
+    }
+
+    /**
      * {@code <owner>#<field>InputRows}: a lookup coordinate's generated VALUES-rows helper,
      * hosted on the projection unit whose {@code $project} arm consumes it. One formula for both
      * ends: the projection producer mints the ref onto the lookup wrap, and the legacy hosts'

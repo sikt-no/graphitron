@@ -124,11 +124,11 @@ class GeneratorUtils {
          * body (e.g. {@code filmTable}). The jOOQ table class and the generated mapper class
          * typically share a simple name; keeping the local entity-prefixed
          * ({@code filmTable}, not {@code table}) lets the importer import both without
-         * qualifying either.
+         * qualifying either. One derivation with the launcher renderer's bodies:
+         * {@link no.sikt.graphitron.render.TableLocal} owns the formula.
          */
         String tableLocalName() {
-            var simple = jooqTableClass.simpleName();
-            return Character.toLowerCase(simple.charAt(0)) + simple.substring(1) + "Table";
+            return no.sikt.graphitron.render.TableLocal.name(jooqTableClass);
         }
     }
 
@@ -155,14 +155,12 @@ class GeneratorUtils {
      * }</pre>
      *
      * <p>The local name comes from {@link ResolvedTableNames#tableLocalName()}, which documents
-     * the entity-prefixed rationale.
+     * the entity-prefixed rationale; the statement itself has one derivation with the launcher
+     * renderer's bodies in {@link no.sikt.graphitron.render.TableLocal}.
      */
     static CodeBlock declareTableLocal(ResolvedTableNames names, TableRef tableRef) {
-        return CodeBlock.builder()
-            .addStatement("$T $L = $T.$L",
-                names.jooqTableClass(), names.tableLocalName(),
-                names.tablesClass(), tableRef.javaFieldName())
-            .build();
+        return no.sikt.graphitron.render.TableLocal.declare(
+            names.jooqTableClass(), names.tablesClass(), tableRef.javaFieldName());
     }
 
     // -----------------------------------------------------------------------

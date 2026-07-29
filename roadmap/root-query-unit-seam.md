@@ -484,6 +484,87 @@ sentence for an item whose cutover is after the keystone.
   generalises from the three proofs together (slice 3, this item, and R552's condition command). Per
   the honest note above, this hand-off is the item's product, not a formality attached to it.
 
+## Slice log
+
+### Slice 1 (2026-07-29): command, producer, renderer, plain root, together
+
+Landed as one commit: the record set in `command/` (`LauncherCommand`, the sealed `Ordering` with
+its `Columns` / `Helper` arms, `ResultShape`), the producer (`plan/LauncherCommands`, riding
+`EmitPlan` as a `LauncherRelation` produced after conditions), the renderer
+(`render/RootLauncherRenderer`, one `MethodSpec` per row), and the plain-root cutover: every
+non-connection, non-fanned `QueryTableField` coordinate now launches through a rendered
+`public static <Ret> rows<Field>(DSLContext dsl, DataFetchingEnvironment env)` unit hosted on its
+fetchers class, with the fetcher reduced to connection acquisition plus one class-qualified call.
+The SQL baseline (`RootLauncherSqlBaselineTest`, five pins in the programme harness's `SQL_LOG`
+idiom) was authored against the pre-cutover inline emission and held green unchanged through the
+cutover; two sakila fixtures were added to make the pins possible (`customerByPk`, the schema's
+first single-cardinality plain root, previously compilation-tier-only via the multischema
+`eventA`; and `filmsOrdered`, the first argument-ordered non-connection root anywhere in the
+corpus, closing the `Ordering.Helper` arm's end-to-end gap rather than deferring the arm).
+
+**Membership is the covered-family fact minus a named dial, and the dispatch routes on row
+presence.** Consulted and adopted over the draft's narrow-conjunction producer plus restated
+generator predicate: `coveredFamily` is written in its final form from this slice (a total switch
+over `QueryField`'s twelve permits; table, lookup, routine and single-table-interface roots in,
+polymorphic / node / service roots out by the fact), and the shrink-only `NotYetMigrated` dial
+(`CONNECTION`, `FANNED_OVER_TENANTS`, `ROUTINE`, `TABLE_INTERFACE`, `LOOKUP`) names what later
+slices delete; emptying it is the closing slice's membership enforcer. The fetcher generator's
+`QueryTableField` arm no longer evaluates any of that: a coordinate with a row gets the launcher
+emission, one without falls through to its legacy builder, so the predicate has one home and the
+pipeline boundary pins are its enforcer (fact-excluded shapes zero forever, dial-excluded shapes
+zero while their entries exist).
+
+**The spec's `orderBy` premise was false, and the corrected slot is the slice's vocabulary
+finding.** The `<field>OrderBy` helper the spec's `UnitRef orderBy` slot assumed exists only for
+`OrderBySpec.Argument`; the dominant root shape (the synthesised PK default order) renders inline
+with no named unit anywhere. The slot became the sealed `Ordering`, two arms split on the
+discriminator that carries weight downstream, whether the ordering holds an edge to an emitted
+method: `Columns` borrows the model's `OrderBySpec.Fixed` outright (already on the borrow dial;
+narrowed to the `Fixed` arm by type, a deliberate improvement over the multiset wrap's
+whole-spec slot), `Helper` carries the producer-minted `UnitMethodRef`. That callee is a third
+edge category, emitted-but-uncommitted (the helper emission derives its name from the same
+`GeneratedUnits.orderByHelperMethod` scheme, so one formula serves both ends), which a launcher
+closure check must carve out beside committed-command and external callees. Against R549's
+per-slice vocabulary budget ("the launcher command, `Invocation` and `ResultShape`") this slice
+shipped `LauncherCommand`, `Ordering` and `ResultShape`: same count, different membership,
+recorded here as the budget rule requires.
+
+**`Invocation` was deliberately not built.** With fan-out coordinates on the dial, "every row is
+DIRECT" is entailed by membership, so a one-value slot would restate the producer's own predicate
+with nothing binding the two (the same rule the spec applies to `extras`, which also waits for
+its first population in slice 2). The slot lands in slice 4, where it becomes the fact
+distinguishing two otherwise-identical rows. `ResultShape` stays an enum (value-identical to
+`Arity` this slice, but a launcher's return type is not a multiset's unwrap decision; the javadoc
+pins the distinction) and promotes to a sealed interface when the connection arm brings its
+payload.
+
+**Two acceptance sentences do not hold yet, stated here so no reviewer reads them as satisfied.**
+"Thinness is a type property" is true of the launcher (a total renderer over the command cannot
+express what the command does not say) but the entry point is still emitted by a schema-holding
+generator, so its thinness is discipline until it becomes a command row itself. And the
+class-qualified `<Type>Fetchers.rows<Field>` call remains load-bearing, not merely cosmetic: the
+entry point is not a row, so its call to the launcher is emitted text, and an unqualified
+same-class call is exactly the emitted-method closure walk's documented blind spot.
+
+**Shared fragments moved to `render/` with legacy delegation** (the slice 3.1 precedent), so the
+SQL-bearing fragments have one derivation through the migration window: `render/TableLocal` (the
+entity-prefixed local name and its declaration; `GeneratorUtils` delegates) and
+`render/OrderByFragments` (the fixed sort and cursor-column parts; the fetcher generator's three
+fixed-order loops delegate). The orderBy helper emission now takes its method name from the
+naming vocabulary; the unmigrated fetcher bodies still spell the call inline through
+`buildOrderByCode` until their own slices.
+
+**Ratchets:** model-taking entry points stayed at 21 (the canonical `generate` gained the
+relation parameter and the now-callerless four-arg overload was deleted in the same commit);
+plan leaf references rose 38 to 56 (the relocated covered-family fact and dial, the four-layer
+window the tertiary count exists to make visible); the generator-side leaf counts did not move,
+since the dispatch arm survives to route the not-yet-migrated shapes. Tests:
+`LauncherCommandsPipelineTest` (rows, the where-slot handshake copied off the condition relation,
+boundary zeroes), `RootLauncherRendererTest` (per-arm structural pins), `Ordering` registered as
+a command-kind hierarchy. The R552 slice-4 handshake's `where` half is live from this slice
+(`GlueCall` refs copied off the condition relation, absence composing the neutral condition); the
+facet-fragment/carrier half arrives with slice 3 as planned.
+
 ## Retired vocabulary
 
 - `QueryLookupTableField.lookupMethodName()` (slice 6): the producer computes this coordinate's

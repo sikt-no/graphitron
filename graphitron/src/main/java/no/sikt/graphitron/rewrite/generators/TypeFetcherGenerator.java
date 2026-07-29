@@ -108,15 +108,20 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Full entry point. The {@code assembled} parameter is the graphql-java
-     * {@link graphql.schema.GraphQLSchema} the rewrite is being generated against; the
-     * validator pre-step reads it via {@link TypeFetcherEmissionContext#assembledSchema()} to
-     * resolve each SDL arg's input-type-ness and switch input-typed args to the typed-record
-     * walk target ({@code <InputName>.fromMap(...)}).
+     * Overload for callers that hold no {@link no.sikt.graphitron.plan.EmitPlan}. The
+     * {@code assembled} parameter is the graphql-java {@link graphql.schema.GraphQLSchema} the
+     * rewrite is being generated against; the validator pre-step reads it via
+     * {@link TypeFetcherEmissionContext#assembledSchema()} to resolve each SDL arg's
+     * input-type-ness and switch input-typed args to the typed-record walk target
+     * ({@code <InputName>.fromMap(...)}). Produces the launcher relation the root emission
+     * dispatches on from the same schema (and defaults the command registry to a per-call
+     * throwaway), so test callers exercise the real row-presence routing.
      */
     public static List<TypeSpec> generate(GraphitronSchema schema, graphql.schema.GraphQLSchema assembled, String outputPackage) {
         return generate(schema, assembled, outputPackage,
-            new no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry());
+            new no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry(),
+            no.sikt.graphitron.plan.LauncherCommands.produce(schema,
+                no.sikt.graphitron.plan.ConditionCommands.produce(schema, outputPackage), outputPackage));
     }
 
     /**
@@ -124,11 +129,15 @@ public class TypeFetcherGenerator {
      * {@link no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry} the reentry
      * rows/load-method declarations commit into; the pipeline surfaces it on the generation
      * result next to the emitted units so the bidirectional closure oracle can join the two.
-     * The overloads above default to a per-call throwaway registry for callers that don't
-     * consume the command relation.
+     * {@code launchers} is the plan's launcher command relation: a root coordinate with a row
+     * gets the launcher emission (the rendered {@code rows<Field>} unit plus a thin entry
+     * point), one without falls through to its legacy builder, so the covered-family predicate
+     * lives in the producer alone. The overloads above default to a per-call throwaway registry
+     * and a relation produced from the same schema.
      */
     public static List<TypeSpec> generate(GraphitronSchema schema, graphql.schema.GraphQLSchema assembled,
-            String outputPackage, no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry commands) {
+            String outputPackage, no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry commands,
+            no.sikt.graphitron.plan.LauncherRelation launchers) {
         // First-occurrence-wins index of the NestingField embedding each nesting-reached type, so a
         // mixed-source type's ResultType TypeSpec (pass 1) can pair each dual-shape coordinate with its
         // nesting-arm column read. Built over the same schema.fields() iteration order
@@ -145,7 +154,7 @@ public class TypeFetcherGenerator {
             .map(Map.Entry::getKey)
             .sorted()
             .map(typeName -> generateForType(schema, typeName, assembled, outputPackage, commands,
-                nestingByType.get(typeName)))
+                nestingByType.get(typeName), launchers))
             .toList());
 
         // Walk NestingField descendants of TableBackedType roots; emit a narrow Fetchers class
@@ -231,7 +240,8 @@ public class TypeFetcherGenerator {
                 .sorted(Comparator.comparing(GraphitronField::name))
                 .toList();
             if (FetcherEmitter.nestedTypeOwnsFetchers(nestedFields)) {
-                out.add(generateTypeSpec(nestedTypeName, nf.returnType().table(), null, nestedFields, assembled, outputPackage, null, commands, null));
+                out.add(generateTypeSpec(nestedTypeName, nf.returnType().table(), null, nestedFields, assembled, outputPackage, null, commands, null,
+                    no.sikt.graphitron.plan.LauncherCommands.produceWithoutSchema(nestedFields, outputPackage)));
             }
         }
         for (var nested : nf.nestedFields()) {
@@ -242,7 +252,8 @@ public class TypeFetcherGenerator {
     }
 
     private static TypeSpec generateForType(GraphitronSchema schema, String typeName, graphql.schema.GraphQLSchema assembled, String outputPackage,
-            no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry commands, ChildField.NestingField dualWiring) {
+            no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry commands, ChildField.NestingField dualWiring,
+            no.sikt.graphitron.plan.LauncherRelation launchers) {
         var type = schema.type(typeName);
         var fields = schema.fieldsOf(typeName).stream()
             .filter(f -> !(f instanceof GraphitronField.UnclassifiedField))
@@ -250,7 +261,7 @@ public class TypeFetcherGenerator {
             .toList();
         TableRef parentTable = type instanceof GraphitronType.TableBackedType tbt ? tbt.table() : null;
         GraphitronType.ResultType resultType = type instanceof GraphitronType.ResultType rt ? rt : null;
-        return generateTypeSpec(typeName, parentTable, resultType, fields, assembled, outputPackage, schema, commands, dualWiring);
+        return generateTypeSpec(typeName, parentTable, resultType, fields, assembled, outputPackage, schema, commands, dualWiring, launchers);
     }
 
     /**
@@ -432,7 +443,8 @@ public class TypeFetcherGenerator {
             graphql.schema.GraphQLSchema assembled,
             String outputPackage) {
         return generateTypeSpec(typeName, parentTable, resultType, fields, assembled, outputPackage, null,
-            new no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry(), null);
+            new no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry(), null,
+            no.sikt.graphitron.plan.LauncherCommands.produceWithoutSchema(fields, outputPackage));
     }
 
     /**
@@ -440,7 +452,8 @@ public class TypeFetcherGenerator {
      * joined-table interface fetcher can read each participant's classified fields; {@code null}
      * for unit-tier model-only and nested-type callers (which never emit a joined-table interface).
      * {@code commands} is the per-run method-command registry; the non-canonical overloads
-     * default it to a per-call throwaway.
+     * default it to a per-call throwaway. {@code launchers} is the launcher relation the root
+     * emission dispatches on; the schema-free overloads derive it from the fields themselves.
      */
     static TypeSpec generateTypeSpec(String typeName, TableRef parentTable,
             GraphitronType.ResultType resultType, List<GraphitronField> fields,
@@ -448,7 +461,8 @@ public class TypeFetcherGenerator {
             String outputPackage,
             GraphitronSchema graphitronSchema,
             no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry commands,
-            ChildField.NestingField dualWiring) {
+            ChildField.NestingField dualWiring,
+            no.sikt.graphitron.plan.LauncherRelation launchers) {
         var className = typeName + "Fetchers";
         var builder = TypeSpec.classBuilder(className)
             .addModifiers(Modifier.PUBLIC);
@@ -526,7 +540,15 @@ public class TypeFetcherGenerator {
                     builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(qlf, lookupTableClass));
                 }
                 case QueryField.QueryTableField qtf -> {
-                    if (TenantDslEmitter.isFanOut(ctx, qtf.name())) {
+                    // Row-presence dispatch: the launcher producer's membership is the one
+                    // predicate deciding which coordinates launch through the seam; a present
+                    // row gets the rendered launcher unit plus a thin entry point, an absent
+                    // one falls through to its legacy builder (the not-yet-migrated shapes).
+                    var launcherRow = launchers.rowFor(qtf.parentTypeName(), qtf.name());
+                    if (launcherRow.isPresent()) {
+                        builder.addMethod(buildQueryTableFetcher(ctx, qtf, launcherRow.get(), outputPackage));
+                        builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer.render(launcherRow.get()));
+                    } else if (TenantDslEmitter.isFanOut(ctx, qtf.name())) {
                         // The fanned-fetcher emission owns FanOut coordinates; the generic
                         // builders' FanOut arms throw by design. Classification guarantees the
                         // list shape (non-list and @asConnection markers are rejected).
@@ -534,7 +556,10 @@ public class TypeFetcherGenerator {
                     } else if (qtf.returnType().wrapper() instanceof FieldWrapper.Connection) {
                         builder.addMethod(buildQueryConnectionFetcher(ctx, qtf, outputPackage));
                     } else {
-                        builder.addMethod(buildQueryTableFetcher(ctx, qtf, outputPackage));
+                        throw new IllegalStateException(
+                            "Graphitron generator bug (root launcher dispatch): plain root coordinate '"
+                            + qtf.qualifiedName() + "' has no launcher row and no legacy builder;"
+                            + " the producer's membership and this dispatch have drifted");
                     }
                 }
                 case ChildField.ServiceTableField stf -> {
@@ -786,19 +811,28 @@ public class TypeFetcherGenerator {
 
         // Emit orderBy helper methods for fields with a dynamic @orderBy argument. Covers
         // QueryTableField (root connection + list fetchers) and BatchedTableField+Connection
-        // (per-parent paginated rows method; Table-sourced only, by ctor invariant).
+        // (per-parent paginated rows method; Table-sourced only, by ctor invariant). The method
+        // name derives through the naming vocabulary, the same formula the launcher producer
+        // mints onto Ordering.Helper refs, so the helper and its command-side callers cannot
+        // disagree (the unmigrated fetcher bodies still spell the call inline through
+        // buildOrderByCode until their own migration).
+        var namingVocabulary = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage);
         for (var field : fields) {
             if (field instanceof QueryField.QueryTableField qtf
                     && qtf.orderBy() instanceof OrderBySpec.Argument arg) {
                 var tableRef = qtf.returnType().table();
                 var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtf.returnType().returnTypeName(), outputPackage);
-                builder.addMethod(buildOrderByHelperMethod(qtf.name(), arg, names, tableRef, outputPackage));
+                builder.addMethod(buildOrderByHelperMethod(
+                    namingVocabulary.orderByHelperMethod(typeName, qtf.name()).methodName(),
+                    arg, names, tableRef, outputPackage));
             } else if (field instanceof ChildField.BatchedTableField btf
                     && btf.returnType().wrapper() instanceof FieldWrapper.Connection
                     && btf.orderBy() instanceof OrderBySpec.Argument arg) {
                 var tableRef = btf.returnType().table();
                 var names = GeneratorUtils.ResolvedTableNames.of(tableRef, btf.returnType().returnTypeName(), outputPackage);
-                builder.addMethod(buildOrderByHelperMethod(btf.name(), arg, names, tableRef, outputPackage));
+                builder.addMethod(buildOrderByHelperMethod(
+                    namingVocabulary.orderByHelperMethod(typeName, btf.name()).methodName(),
+                    arg, names, tableRef, outputPackage));
             }
         }
 
@@ -916,27 +950,30 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Generates a fetcher for a root-query table field that builds the condition, optional
-     * orderBy, and executes inline SQL using {@code Type.$project(grouped, table, env)} for projection.
+     * Generates the thin fetcher entry point for a root-query table field whose composition
+     * lives in a launcher command: connection acquisition (the tenancy-forked {@code dsl}
+     * declaration), one call to the rendered {@code rows<Field>} launcher unit, and the
+     * error-channel framing. The launcher's name is read off the row's minted ref, never
+     * recomputed here; the call is class-qualified deliberately, since it is the one edge the
+     * emitted-method closure walk cannot see unqualified (both methods share this class) and
+     * the entry point is not itself a command row yet.
      *
      * <p>Generated code (list variant):
      * <pre>{@code
-     * public static Result<Record> films(DataFetchingEnvironment env) {
-     *     var dsl = graphitronContext(env).getDslContext(env);
-     *     FilmTable table = Tables.FILM;
-     *     var condition = DSL.noCondition();
-     *     List<SortField<?>> orderBy = List.of();
-     *     return dsl.select(Film.$project(env.getSelectionSet().getFieldsGroupedByResultKey(), table, env))
-     *               .from(table).where(condition).orderBy(orderBy).fetch();
+     * public static DataFetcherResult<Result<Record>> films(DataFetchingEnvironment env) {
+     *     try {
+     *         DSLContext dsl = graphitronContext(env).getDslContext(env);
+     *         Result<Record> payload = QueryFetchers.rowsFilms(dsl, env);
+     *         return DataFetcherResult.<Result<Record>>newResult().data(payload).build();
+     *     } catch (Exception e) {
+     *         return ErrorRouter.surfaceClientErrorOrRedact(e, env);
+     *     }
      * }
      * }</pre>
      */
-    private static MethodSpec buildQueryTableFetcher(TypeFetcherEmissionContext ctx, QueryField.QueryTableField qtf, String outputPackage) {
-        var tableRef = qtf.returnType().table();
-        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtf.returnType().returnTypeName(), outputPackage);
-        boolean isList = qtf.returnType().wrapper().isList();
-
-        var valueType = isList
+    private static MethodSpec buildQueryTableFetcher(TypeFetcherEmissionContext ctx, QueryField.QueryTableField qtf,
+            no.sikt.graphitron.command.LauncherCommand row, String outputPackage) {
+        var valueType = row.result() == no.sikt.graphitron.command.ResultShape.RECORD_LIST
             ? (TypeName) ParameterizedTypeName.get(RESULT, RECORD)
             : RECORD;
 
@@ -946,36 +983,10 @@ public class TypeFetcherGenerator {
             .addParameter(ENV, "env");
 
         builder.beginControlFlow("try");
-        builder.addCode(GeneratorUtils.declareTableLocal(names, tableRef));
-        String tableLocal = names.tableLocalName();
-        builder.addCode(buildConditionCall(qtf, tableLocal, outputPackage));
-
         var tenantDsl = TenantDslEmitter.resolve(ctx, qtf, outputPackage);
-        if (isList) {
-            builder.addCode(buildOrderByCode(qtf.orderBy(), qtf.name(), tableLocal));
-            builder.addCode(tenantDsl.declaration());
-            builder.addCode(CodeBlock.builder()
-                .add("$T payload = dsl\n", valueType)
-                .indent()
-                .add(".select($L)\n", ProjectionCall.fromEnvSelection(names.typeClass(), tableLocal))
-                .add(".from($L)\n", tableLocal)
-                .add(".where(condition)\n")
-                .add(".orderBy(orderBy)\n")
-                .add(".fetch();\n")
-                .unindent()
-                .build());
-        } else {
-            builder.addCode(tenantDsl.declaration());
-            builder.addCode(CodeBlock.builder()
-                .add("$T payload = dsl\n", valueType)
-                .indent()
-                .add(".select($L)\n", ProjectionCall.fromEnvSelection(names.typeClass(), tableLocal))
-                .add(".from($L)\n", tableLocal)
-                .add(".where(condition)\n")
-                .add(".fetchOne();\n")
-                .unindent()
-                .build());
-        }
+        builder.addCode(tenantDsl.declaration());
+        var launcherClass = ClassName.get(row.unit().owner().packageName(), row.unit().owner().simpleName());
+        builder.addStatement("$T payload = $T.$L(dsl, env)", valueType, launcherClass, row.unit().methodName());
         builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.localContextTail()));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(noChannelCatchArm(outputPackage));
@@ -5401,16 +5412,10 @@ public class TypeFetcherGenerator {
                     code.addStatement("$T orderBy = $T.of()", SORT_FIELD_LIST, LIST);
                     code.addStatement("$T extraFields = $T.of()", listOfField, LIST);
                 } else {
-                    var sortParts = CodeBlock.builder();
-                    var colParts = CodeBlock.builder();
-                    for (int i = 0; i < fixed.columns().size(); i++) {
-                        var col = fixed.columns().get(i);
-                        if (i > 0) { sortParts.add(", "); colParts.add(", "); }
-                        sortParts.add("$L.$L.$L()", srcAlias, col.column().javaName(), col.direction().jooqMethodName());
-                        colParts.add("$L.$L", srcAlias, col.column().javaName());
-                    }
-                    code.addStatement("$T orderBy = $T.of($L)", SORT_FIELD_LIST, LIST, sortParts.build());
-                    code.addStatement("$T extraFields = $T.of($L)", listOfField, LIST, colParts.build());
+                    code.addStatement("$T orderBy = $T.of($L)", SORT_FIELD_LIST, LIST,
+                        no.sikt.graphitron.render.OrderByFragments.fixedSortParts(fixed, srcAlias));
+                    code.addStatement("$T extraFields = $T.of($L)", listOfField, LIST,
+                        no.sikt.graphitron.render.OrderByFragments.fixedColumnParts(fixed, srcAlias));
                 }
             }
             case OrderBySpec.Argument arg -> {
@@ -5446,13 +5451,8 @@ public class TypeFetcherGenerator {
                 if (fixed.columns().isEmpty()) {
                     code.addStatement("$T<$T<?>> orderBy = $T.of()", LIST, SORT_FIELD, LIST);
                 } else {
-                    var parts = CodeBlock.builder();
-                    for (int i = 0; i < fixed.columns().size(); i++) {
-                        var col = fixed.columns().get(i);
-                        if (i > 0) parts.add(", ");
-                        parts.add("$L.$L.$L()", srcAlias, col.column().javaName(), col.direction().jooqMethodName());
-                    }
-                    code.addStatement("$T<$T<?>> orderBy = $T.of($L)", LIST, SORT_FIELD, LIST, parts.build());
+                    code.addStatement("$T<$T<?>> orderBy = $T.of($L)", LIST, SORT_FIELD, LIST,
+                        no.sikt.graphitron.render.OrderByFragments.fixedSortParts(fixed, srcAlias));
                 }
             }
             case OrderBySpec.Argument arg -> {
@@ -5487,9 +5487,13 @@ public class TypeFetcherGenerator {
      * callers with different aliasing schemes share one helper. Root connection fetchers pass
      * their canonical {@code tableLocal} (the un-aliased {@code Tables.FILM}); Split+Connection
      * rows methods pass the FK-chain terminal alias (e.g. {@code Tables.ACTOR.as("actorsConnection_a1")}).
+     *
+     * <p>{@code methodName} arrives from the caller, derived through the naming vocabulary
+     * ({@code GeneratedUnits.orderByHelperMethod}), so the helper's name has one formula with
+     * the launcher rows that reference it.
      */
     private static MethodSpec buildOrderByHelperMethod(
-            String fieldName,
+            String methodName,
             OrderBySpec.Argument arg,
             GeneratorUtils.ResolvedTableNames names,
             TableRef tableRef, String outputPackage) {
@@ -5498,7 +5502,7 @@ public class TypeFetcherGenerator {
             outputPackage + ".util", OrderByResultClassGenerator.CLASS_NAME);
 
         String tableLocal = names.tableLocalName();
-        var builder = MethodSpec.methodBuilder(fieldName + "OrderBy")
+        var builder = MethodSpec.methodBuilder(methodName)
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(orderByResultClass)
             .addParameter(ENV, "env")
@@ -5523,18 +5527,12 @@ public class TypeFetcherGenerator {
         var orderByResultClass = ClassName.get(
             outputPackage + ".util", OrderByResultClassGenerator.CLASS_NAME);
         return switch (base) {
-            case OrderBySpec.Fixed fixed when !fixed.columns().isEmpty() -> {
-                var sortParts = CodeBlock.builder();
-                var colParts = CodeBlock.builder();
-                for (int i = 0; i < fixed.columns().size(); i++) {
-                    if (i > 0) { sortParts.add(", "); colParts.add(", "); }
-                    var col = fixed.columns().get(i);
-                    sortParts.add("$L.$L.$L()", srcAlias, col.column().javaName(), col.direction().jooqMethodName());
-                    colParts.add("$L.$L", srcAlias, col.column().javaName());
-                }
-                yield CodeBlock.of("new $T($T.of($L), $T.of($L))",
-                    orderByResultClass, LIST, sortParts.build(), LIST, colParts.build());
-            }
+            case OrderBySpec.Fixed fixed when !fixed.columns().isEmpty() ->
+                CodeBlock.of("new $T($T.of($L), $T.of($L))",
+                    orderByResultClass, LIST,
+                    no.sikt.graphitron.render.OrderByFragments.fixedSortParts(fixed, srcAlias),
+                    LIST,
+                    no.sikt.graphitron.render.OrderByFragments.fixedColumnParts(fixed, srcAlias));
             default -> CodeBlock.of("new $T($T.of(), $T.of())", orderByResultClass, LIST, LIST);
         };
     }
