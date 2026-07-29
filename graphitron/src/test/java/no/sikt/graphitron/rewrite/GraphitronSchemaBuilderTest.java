@@ -1542,6 +1542,72 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 assertThat(schema.field("Film", "details")).isInstanceOf(NestingField.class);
                 assertThat(schema.field("FilmList", "details")).isInstanceOf(NestingField.class);
+            }),
+
+        SPLIT_QUERY_ON_NESTING_DEFERRED(
+            "@splitQuery on a nesting field → verdict kept, deferred diagnostic on the channel",
+            """
+            type FilmDetails { title: String }
+            type Film @table(name: "film") { details: FilmDetails @splitQuery }
+            type Query { film: Film }
+            """,
+            schema -> {
+                // The verdict is not demoted: the nested subtree stays classified (the editor
+                // view keeps its completions), and the build fails through the diagnostic
+                // drain instead.
+                assertThat(schema.field("Film", "details")).isInstanceOf(NestingField.class);
+                assertThat(schema.diagnostics()).singleElement().satisfies(d -> {
+                    assertThat(d.coordinate()).isEqualTo("Film.details");
+                    assertThat(d.rejection()).isInstanceOf(Rejection.Deferred.class);
+                    assertThat(d.message())
+                        .contains("@splitQuery on a nesting field is not yet supported")
+                        .contains("Remove @splitQuery to keep the inline projection");
+                });
+            }),
+
+        SPLIT_QUERY_ON_MIXED_SOURCE_NESTING_NAMES_PRODUCER(
+            "@splitQuery on a mixed-source nesting field → deferred diagnostic names the producer",
+            """
+            type FilmDetails { rating: String }
+            type Film @table(name: "film") { details: FilmDetails @splitQuery }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmDetailsRating"})
+            }
+            """,
+            schema -> {
+                // An author splitting a type that is also producer-backed most likely meant to
+                // return the produced value; the diagnostic carries the producer hint the
+                // unresolvable-nested-child path already composes.
+                assertThat(schema.field("Film", "details")).isInstanceOf(NestingField.class);
+                assertThat(schema.diagnostics()).singleElement().satisfies(d -> {
+                    assertThat(d.coordinate()).isEqualTo("Film.details");
+                    assertThat(d.rejection()).isInstanceOf(Rejection.Deferred.class);
+                    assertThat(d.message())
+                        .contains("@splitQuery on a nesting field is not yet supported")
+                        .contains("'FilmDetails' is also produced")
+                        .contains("add @service, @reference, or @externalField");
+                });
+            }),
+
+        SPLIT_QUERY_ON_SHARED_NESTED_MEMBER_DIAGNOSED_ONCE(
+            "@splitQuery on a shared nesting type's nested member → one diagnostic, not one per host",
+            """
+            type FilmMeta { title: String }
+            type FilmDetails { meta: FilmMeta @splitQuery }
+            type Film @table(name: "film") { details: FilmDetails }
+            type FilmList @table(name: "film_list") { details: FilmDetails }
+            type Query { film: Film films: [FilmList] }
+            """,
+            schema -> {
+                // Each host classifies the shared type's members independently, so the nested
+                // coordinate is visited once per host; the diagnostic channel carries it once.
+                assertThat(schema.field("Film", "details")).isInstanceOf(NestingField.class);
+                assertThat(schema.field("FilmList", "details")).isInstanceOf(NestingField.class);
+                assertThat(schema.diagnostics()).singleElement().satisfies(d -> {
+                    assertThat(d.coordinate()).isEqualTo("FilmDetails.meta");
+                    assertThat(d.rejection()).isInstanceOf(Rejection.Deferred.class);
+                });
             });
 
         final String sdl;

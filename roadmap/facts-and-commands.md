@@ -1057,8 +1057,8 @@ R541's single-operation launchers never need it, and a general launcher cannot d
   - **The arm-kind audit at this boundary kept three arms.** Of the sealed interface's stated
     consumers, the slot is gone and naming forks before a row exists; what remains is
     structural, not provenance: an anchor unit is the unit other commands may name as a callee,
-    a nested unit is reachable only through its anchor's splice (whether `@splitQuery` on a
-    nesting field additionally launches one is slice 3.3's question), a pivot unit has its own
+    a nested unit is reachable only through its anchor's splice (slice 3.3 settled the
+    `@splitQuery` question: no launcher, a deferred rejection), a pivot unit has its own
     body shape. The javadoc now says that instead of the retired three-consumer list.
   - **Ratchets:** plan leaf references 42 to 38 (the walk and check deleted; the arms reuse the
     existing dispatch). Entry points and generator leaf counts unchanged. Retired-token
@@ -1066,6 +1066,55 @@ R541's single-operation launchers never need it, and a general launcher cannot d
     `requiredProjection`, `appendsRequiredColumn` (successor: the gated arms /
     `TypeSpecAssertions.armProjectsColumn`), and the stale successor strings on the four
     reserved-alias entries were repointed.
+
+- **Slice 3.3 landed 2026-07-29.** The finding confirmed the item's prediction exactly: a
+  `@splitQuery` on a bare nesting field classifies as a plain `NestingField` with zero
+  validation errors (the classifier's nesting arm never read the directive; the supported
+  shapes are `@splitQuery` on table-backed fields *inside* a nesting type and on `@pivot`
+  fields). The fork resolved to the deferred rejection, not the launcher, for the item's own
+  sequencing reason applied verbatim: a nesting-unit launcher built now would be a new launcher
+  family in the pre-command idiom that 3c and slice 5 immediately re-platform (the same
+  migration payment the `ConditionRef` ordering paragraph refuses), and 3.2's gating removed
+  the split's economic motive (an inline nesting field already projects only selected columns).
+  Findings, per the consult:
+  - **The rejection rides the diagnostic channel, not `UnclassifiedField`.** The consult's main
+    correction: demoting the verdict would throw away the nested subtree's classification and
+    with it the editor view's completions, for a schema whose only defect is a deletable token.
+    The classifier's nesting arm keeps returning `NestingField` and registers a fully-formed
+    `ValidationError` (`Rejection.Deferred`) via `ctx.addDiagnostic`, the same
+    instead-of-demoting seam the global soundness reductions use; the build fails through the
+    validator's drain, which also dissolves the classify-time-versus-validate-time question.
+    A contains-guard dedupes the shared-nesting case (two hosts classify the same nested
+    coordinate). Pinned as three `GraphitronSchemaBuilderTest.NestingFieldCase` rows: verdict
+    kept plus diagnostic, the mixed-source variant, and diagnosed-once under two hosts.
+  - **The mixed-source variant gets the producer hint.** An author splitting a type that is
+    also producer-backed most likely meant to return the produced value; the diagnostic reuses
+    the `resultProducerFor` note the unresolvable-nested-child path already composes (add
+    `@service` / `@reference` / `@externalField`), instead of only "remove the directive".
+  - **The delivery-forcing marker set got one home.** The table arm's inline
+    `@splitQuery`-or-`@tenantFanOut` boolean became `FieldBuilder.forcesSplitDelivery`, whose
+    javadoc names both consumers (the table arm reads the whole predicate, the nesting arm's
+    rejection reads the split half), so a third delivery-forcing marker cannot be admitted at
+    one arm and fall through the other unseen.
+  - **The enforcer gap is the real finding, filed as R557** (`split-query-marker-sweep`):
+    `@tenantFanOut` has a completeness sweep (`sweepUnreachedFanOutMarkers`) that turns any
+    marker the classification never consumed into a rejection; `@splitQuery` has none, which is
+    why this instance survived until a slice went looking. The instance fix closes the nesting
+    position; the sweep (total switch: consumed / inert-by-construction / rejected) is its own
+    item so 3.3 stays low-cost. The consult's suspected sibling hole (`@tenantFanOut` on a
+    list-wrapped nesting field of a tenant-scoped parent) was checked and is *not* a hole: it
+    rejects loudly through the reaches-no-tenant-table rung, though with a misleading message
+    ("its data is global"), noted on R557.
+  - **Prose surfaces trued up in the same commit:** `ProjectionCommand`'s sealed-interface
+    javadoc drops the open-question hedge (nested units are splice-only, settled), this file's
+    non-goals bullet no longer claims a directive reach grows, and the `@splitQuery` manual
+    page's Constraints list gains the nesting rejection plus the discriminator the three inert
+    treatments needed stating once: *redundant* (the fetch is already separate: root fields,
+    argument-bearing fields, class-backed parents, at most lint-warned) versus *unimplemented*
+    (honoring the directive needs a delivery that is not generated: nesting fields, rejected).
+  - **No model change, no emit change, no new `Rejection` arm** (the feature-shape
+    `Deferred` factory with null stub class), no ratchet movement; the sakila-example schema's
+    56 `@splitQuery` occurrences all sit on supported positions, so nothing re-baselined.
 
 ## The exemption lists are the grain worklist
 
@@ -1226,9 +1275,10 @@ own gates, not here.
   a slice does change output (slice 3.1's rename and new arms, and slice 3.2's projection it stops emitting for
   unselected children), it changes shape and never semantics. Slice 3.2's SQL change is the single
   exception the baseline rule is built around, and it is a narrowing: fewer columns, same rows.
-- Changing what any directive means. The one directive whose *reach* grows is `@splitQuery` on a nesting
-  field, which today is accepted and appears to do nothing; slice 3.3 gives it the launcher it implies.
-  Otherwise this is entirely internal.
+- Changing what any directive means. When this item was drafted, `@splitQuery` on a nesting field was
+  the one candidate for a reach that grows (accepted and appearing to do nothing, a launcher implied);
+  slice 3.3's finding resolved the fork to the deferred rejection instead, so no directive's reach
+  grows and one silently inert position became a build error. Otherwise this is entirely internal.
 
 ## Acceptance
 

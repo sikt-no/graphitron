@@ -15,8 +15,9 @@ import java.util.Objects;
  * <p>Sealed on unit kind because the kinds differ structurally, not by provenance: an anchor
  * unit projects a row of its own table and is the unit other commands may name as a callee (a
  * root launcher's select list, a multiset subselect's inner list); a nested unit projects the
- * <em>anchor's</em> row and is reachable only by splicing into its anchor's list (whether a
- * {@code @splitQuery} nesting field additionally launches one is that feature's open question);
+ * <em>anchor's</em> row and is reachable only by splicing into its anchor's list (settled: a
+ * {@code @splitQuery} on the embedding field is a build-time deferred rejection at the
+ * classifier's nesting arm, so no launcher reaches a nested unit);
  * a pivot unit projects slot aggregates over an attribute table and renders through its own
  * body shape (slot dedupe by name, the one-record sentinel). The keying follows the structure:
  * type name, {@code (anchor, typeName)}, coordinate.

@@ -896,12 +896,7 @@ class FieldBuilder {
                 buildNodeIdArgPlan(fieldDef, returnType.table()));
             if (components instanceof TableFieldComponents.Rejected rj) return new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
             var tfc = (TableFieldComponents.Ok) components;
-            // @tenantFanOut forces the fetcher boundary the same way @splitQuery does: a fanned
-            // child cannot project into its parent's statement (the parent runs on one source,
-            // the fanned statement runs once per tenant), so the marker classifies the field
-            // batched and the fanned rows method scatters per parent batch.
-            boolean hasSplitQuery = fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY)
-                || fieldDef.hasAppliedDirective(DIR_TENANT_FAN_OUT);
+            boolean hasSplitQuery = forcesSplitDelivery(fieldDef);
             boolean hasLookupKey  = hasLookupKeyAnywhere(fieldDef);
             boolean isList = returnType.wrapper().isList();
             // Synthesise the step-0 parent correlation once per carrier — both inline and
@@ -1053,6 +1048,33 @@ class FieldBuilder {
         if (ctx.schema.getType(elementTypeName) instanceof GraphQLObjectType graphQLObjectType
                 && typeBuilder.isNestingEdgeTarget(elementTypeName)) {
             var wrapper = buildWrapper(fieldDef);
+            // @splitQuery asks for a batched delivery a nesting projection does not have: the
+            // type rides its host's statement as a spliced projection unit, and no launcher
+            // runs it as a separate keyed query. Surface the request as a deferred rejection on
+            // the diagnostic channel instead of demoting the verdict, so the classification and
+            // its nested subtree stay intact for the editor view while the build fails through
+            // the validator's drain. This reads the @splitQuery half of forcesSplitDelivery;
+            // @tenantFanOut here is covered by the tenant-binding fold's unreached-marker sweep.
+            // The contains guard dedupes the shared-nesting case, where two hosts classify the
+            // same nested coordinate.
+            if (fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY)) {
+                String producerNote = typeBuilder.resultProducerFor(elementTypeName)
+                    .map(p -> " Type '" + elementTypeName + "' is also produced (" + p.describe()
+                        + "); if the field should return the produced value rather than project"
+                        + " it off '" + parentTypeName + "', add @service, @reference, or"
+                        + " @externalField on the field.")
+                    .orElse("");
+                var diagnostic = ValidationError.forField(parentTypeName + "." + name,
+                    Rejection.deferred("@splitQuery on a nesting field is not yet supported:"
+                        + " type '" + elementTypeName + "' projects inline off the parent's"
+                        + " table row, and the batched launcher the split implies is not"
+                        + " generated. Remove @splitQuery to keep the inline projection."
+                        + producerNote),
+                    location);
+                if (!ctx.diagnostics().contains(diagnostic)) {
+                    ctx.addDiagnostic(diagnostic);
+                }
+            }
             if (expandingTypes.contains(elementTypeName)) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.invalidSchema("circular type reference detected while expanding '" + elementTypeName + "'"));
             }
@@ -5633,6 +5655,22 @@ class FieldBuilder {
         }
         return new MutationField.MutationDmlRecordField(
             parentTypeName, name, location, returnType, tia, DmlKind.INSERT, dmlChannel);
+    }
+
+    /**
+     * The delivery-forcing markers on a table-backed child field: {@code @splitQuery}, and
+     * {@code @tenantFanOut}, which forces the same fetcher boundary (a fanned child cannot
+     * project into its parent's statement, since the parent runs on one source and the fanned
+     * statement runs once per tenant, so the marker classifies the field batched and the fanned
+     * rows method scatters per parent batch). Single home for the marker set: the table-backed child
+     * arm reads the whole predicate, and the nesting arm's deferred rejection reads its
+     * {@code @splitQuery} half (a nesting type has no batched delivery, so the request is
+     * surfaced instead of ignored; {@code @tenantFanOut} on nesting-reached coordinates is swept
+     * separately by the tenant-binding fold's unreached-marker check).
+     */
+    private static boolean forcesSplitDelivery(GraphQLFieldDefinition fieldDef) {
+        return fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY)
+            || fieldDef.hasAppliedDirective(DIR_TENANT_FAN_OUT);
     }
 
     /**
