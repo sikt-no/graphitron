@@ -1280,6 +1280,69 @@ R541's single-operation launchers never need it, and a general launcher cannot d
     home is decided when the second gathered fact lands, not by accident. Ratchets unchanged
     (the moved reads live in the core package, outside all three scans).
 
+- **Slice 5 design decided (2026-07-29), before any code, from two code walks and a consult;
+  binding for the sub-slices.** The owed general-launcher decision resolves as follows.
+  - **The Operation obligation is discharged, not implemented.** The walk found the emission
+    side reads `Operation`'s arms nowhere: launcher membership is a total switch over
+    `QueryField`'s permits, DML dispatch is `MutationField` leaf identity, projection
+    contributions come off leaf variants, and `Operation`'s real read set is the tenancy fold's
+    routable-argument arms plus the two reFetch predicates on the model. The partition the spec
+    asked for is the command relation's own axes (`LaunchSource`, `Invocation`, result and, at
+    the DML sub-slice, the return-kind arm), with per-family membership total over the leaf
+    permits; the named enforcers are `LauncherCommands.rowOf`, the projection producer's
+    minting-leaves census and the type-unit producer's form switch. Re-sourcing membership onto
+    `Operation` arms would make those enforcers restatements, a migration payment with no
+    visible consumer. Split residual: the declared-but-unpopulated arms (`UpdateMatching`,
+    `DeleteMatching`, `EntityResolve`, `Count`, `Facet`) owe a per-arm answer to "does a schema
+    reaching it get a validate-time rejection" (the validator-mirror rule); the
+    populated-but-unread arms are R333 model cleanup, not slice-5 scope.
+  - **The relation re-keys on the row's own `UnitMethodRef`** (owner unit plus method), with
+    the coordinate as a non-unique index; no `operation` column (it would restate what the arm
+    set already discriminates), and each multi-row family carries the discriminator it actually
+    differs in (participant table for the polymorphic family; named roles for the DML
+    write/reentry pair, the two-ref shape the connection fetchers row landed). "One command per
+    emitted method" is then structural, inheriting `MethodCommand.methodKey()`'s one live
+    invariant; `MethodCommand.typePath` is empty at both commit sites, so the four-string
+    record retires into refs with nothing lost. R333's `anchor address` closes with two answers
+    by direction: the hosting address is the row's ref; the contributes-to address (the
+    ancestor's projection unit) already landed with the keystone's correlation arms, and the
+    residual is a cross-relation pin, not a column.
+  - **Delivery and tenancy are independent axes.** `Batched` joins `Invocation` as a delivery
+    arm; tenancy is its own read (the fanned batched child is a populated corpus cell, so a
+    peer-arm `Batched` beside `FannedOverTenants` would make it unrepresentable or mint the
+    cross-product permit). Return transport stays a derived view over (invocation, tenancy,
+    result), the `valueTypeOf` fold. The `KeyedLookup` backstops relax per axis, restated as
+    source-by-invocation and source-by-result pairs with the mirrored rejections repointed,
+    never scoped "root".
+  - **`__idx__` / `__rn__` are arm-entailed, not an extras slot** (constant per arm; the
+    connection child's two ordering views are one `Ordering` dispatch through
+    `render/OrderingBlock`, the shape that already dissolved the root extras). The item's
+    prediction that this family tests the SelectTerm-as-extras algebra is expected to land as
+    "it does not either", reported rather than built to. The string-concatenated orderBy call
+    on the child connection path is a drift bug fixed by reading the row's `Ordering.Helper`
+    ref.
+  - **The emitted-but-uncommitted population resolves per grain**, one test: does a second
+    relation name it? The orderBy helper does (root launcher and child connection), so it gets
+    its own address both ends copy; the inputRows helper is a slot ref on its owning row; the
+    scatter helpers are class-grain `(typeName, helperKind)` membership, the type-unit
+    relation's shape, and putting them on a coordinate row would be the grain error invariant 2
+    exists to catch. The closure carve-out then has exactly one deliberate member class.
+  - **Sub-slice order:** 5a the plain batched child (`BatchedTableField`; the `Batched` arm,
+    the rows-method rendering through the relation, this kind's opaque `RowsMethodBody`
+    retiring, SQL pins frozen pre-cutover on the VALUES-join shape); 5b the batched lookup and
+    pivot children (backstop relaxation per axis); 5c the service children, whose command
+    carries `RowsMethodShape`'s *inputs* (per-key provenance, key element type, mapped-ness)
+    so the one shape derivation keeps serving validator and renderer alike, and whose
+    non-payment deliverable is folding the mapped-by-list re-wrap tail to one read per axis;
+    5d the polymorphic child regime, whose first act is model-side capability repair
+    (`InterfaceField` / `UnionField` implement `BatchKeyField` with a real loader registration,
+    pinned seal-derived so a fifth DataLoader regime cannot hide) before the four inline-named
+    emitter sites fold; 5e DML verbs and reentry companions (the command carries the return
+    kind, cardinality read off the result shape rather than mirroring
+    `DmlReturnExpression`'s kind-by-cardinality product; `MethodCommandRegistry` empties here
+    and `ReentryCommandClosureTest` repoints at the relation); 5f the entry points, or the
+    recorded decision that they stay formula-derived.
+
 ## The exemption lists are the grain worklist
 
 `VariantCoverageTest.NO_CASE_REQUIRED` (13 entries) and `ClassifiedDslTest.OPERATION_KNOWN_GAPS` (6) each
