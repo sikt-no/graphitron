@@ -105,8 +105,8 @@ class DunderFreeEmissionPipelineTest {
         var validatorBundle = TestSchemaHelper.buildBundle(VALIDATOR_INPUT_SDL);
         emitted.addAll(TypeFetcherGenerator.generate(
             validatorBundle.model(), validatorBundle.assembled(), DEFAULT_OUTPUT_PACKAGE));
-        emitted.addAll(InputRecordGenerator.generate(
-            validatorBundle.model(), validatorBundle.assembled(), DEFAULT_OUTPUT_PACKAGE));
+        emitted.addAll(InputRecordRenderTestSupport.renderInputRecords(
+            validatorBundle.model(), DEFAULT_OUTPUT_PACKAGE));
 
         GraphitronSchema polymorphicSchema = TestSchemaHelper.buildSchema(POLYMORPHIC_SDL);
         emitted.addAll(TypeFetcherGenerator.generate(polymorphicSchema, DEFAULT_OUTPUT_PACKAGE));

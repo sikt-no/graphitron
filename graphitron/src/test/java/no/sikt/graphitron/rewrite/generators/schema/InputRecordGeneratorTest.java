@@ -61,8 +61,8 @@ class InputRecordGeneratorTest {
 
     private TypeSpec onlySpec(String sdl, String typeName) {
         var bundle = TestSchemaHelper.buildBundle(sdl);
-        List<TypeSpec> specs = InputRecordGenerator.generate(
-            bundle.model(), bundle.assembled(), DEFAULT_OUTPUT_PACKAGE);
+        List<TypeSpec> specs = no.sikt.graphitron.rewrite.InputRecordRenderTestSupport
+            .renderInputRecords(bundle.model(), DEFAULT_OUTPUT_PACKAGE);
         return specs.stream()
             .filter(t -> t.name().equals(typeName))
             .findFirst()

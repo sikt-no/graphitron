@@ -348,9 +348,18 @@ public class GraphQLRewriteGenerator {
             no.sikt.graphitron.render.ProjectionUnitRenderer.render(plan.projections().rows(), outputPackage),
             emittedThisRun);
 
+        // The type-unit relation's input-record rows: membership (the argument-reachability
+        // closure intersected with the record-shape capability) was decided by the producer;
+        // the shell renders one class per row and lands it at the committed ref.
+        writeUnits("input records",
+            plan.typeUnits().inputRecordUnits(),
+            plan.typeUnits().inputRecords().stream()
+                .map(row -> InputRecordGenerator.generateFor(schema.type(row.typeName()), outputPackage))
+                .toList(),
+            emittedThisRun);
+
         write(EnumTypeGenerator.generate(schema),                                                 "schema",     emittedThisRun);
         write(InputTypeGenerator.generate(schema),                                                "schema",     emittedThisRun);
-        write(InputRecordGenerator.generate(schema, assembled, outputPackage),                    "inputs",     emittedThisRun);
         write(ObjectTypeGenerator.generate(schema, assembled, fetcherBodies),                     "schema",     emittedThisRun);
         write(fetcherClasses,                                                                      "fetchers",   emittedThisRun);
         write(ConnectionFetcherClassGenerator.generate(schema, outputPackage),                     "fetchers",   emittedThisRun);

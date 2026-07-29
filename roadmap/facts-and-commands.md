@@ -1116,6 +1116,43 @@ R541's single-operation launchers never need it, and a general launcher cannot d
     `Deferred` factory with null stub class), no ratchet movement; the sakila-example schema's
     56 `@splitQuery` occurrences all sit on supported positions, so nothing re-baselined.
 
+- **Slice 3b in progress (2026-07-29); first kind landed: `inputRecord`.** The scope walk
+  re-measured the population: the recorded 10 loops are 8 live (the projection and condition
+  proofs already retired `TypeClassGenerator` and `TypeConditionsGenerator`), and by *unit
+  kind* the whole population is three (`schemaShape`, `fetchers`, `inputRecord`), so "one kind
+  at a time" means three cutovers, in the consult-settled order `inputRecord` then `fetchers`
+  then `schemaShape` (the owns-fetchers fold lands with its own kind, and `registersFetchers`
+  becomes a join on `typeName` for the schemaShape rows). Design decisions recorded from the
+  consult, binding for the remaining two kinds:
+  - **Sealed arms, not an enum-plus-list**: `command/TypeUnitCommand` with one arm per kind,
+    each carrying the kind's own facts (the connection row's 1:2 fan-out becomes a two-ref arm
+    with named roles; the schemaShape row will carry its form and its registersFetchers fact).
+    A `TypeUnitKind` column beside sealed arms would be the discriminator asserted twice; the
+    vocabulary lands over the three-name budget and is reported here per the budget rule
+    (`TypeUnitCommand` + arms + `TypeUnitRelation`, with `SchemaShapeForm` still to come).
+  - **Each kind states its own derivation**; the item's blanket "the producers are GROUP BYs"
+    sentence is true of at most one kind. `inputRecord` is the argument-reachability closure
+    intersected with the record-shape capability, and the closure moved out of the generator
+    into a post-walk fold on the schema (`ArgumentReachableInputs`, landed beside `arrivals` /
+    `reachableSourceShapes`), because it is a type-grain fact with a second consumer waiting
+    (the compile graph's `inputRecord` nodes over-collect today: every `InputType`, not the
+    reachable subset; that divergence is latent and UNENFORCED, since the graph completeness
+    oracle is one-directional and cannot see over-collection, so slice 7's projection is its
+    enforcer and there is no interim pin, correcting the earlier claim that the oracle makes
+    the reconciliation test-visible).
+  - **Shell folds per row** (`writeUnits` over the committed refs, whose two-directional
+    unit-set check is the per-family write enforcer); the generator keeps a per-row
+    `generateFor(type, outputPackage)` build method and loses its whole-population entry point
+    and reach walk. Ratchets: entry points 21 to 20, generator case patterns 78 to 77.
+  - **Membership enforcers are per kind** (`TypeUnitMembershipTest`), two-directional over
+    boundary fixtures (direct reach, transitive reach, dead schema).
+  - Deferred by decision: the compile-graph copy and `EmitsPerTypeFile` retire at slice 7
+    (slice-1 precedent), with 3b completing the marker's replacement input; the fetchers kind
+    cannot be sliced by family (pass 2's membership is a set difference against pass 1's, and
+    three families mint into one address space), so it lands whole; the fetchers key stays
+    bare `typeName` with `validateNestingParentCompat` making the coarse grain safe, and
+    R556's fix is a key widening on this relation.
+
 ## The exemption lists are the grain worklist
 
 `VariantCoverageTest.NO_CASE_REQUIRED` (13 entries) and `ClassifiedDslTest.OPERATION_KNOWN_GAPS` (6) each

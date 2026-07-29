@@ -984,7 +984,8 @@ class FetcherPipelineTest {
             type Query { dummy(in: ReachedInput): String }
             """;
         var bundle = TestSchemaHelper.buildBundle(sdl);
-        var classes = InputRecordGenerator.generate(bundle.model(), bundle.assembled(), DEFAULT_OUTPUT_PACKAGE)
+        var classes = no.sikt.graphitron.rewrite.InputRecordRenderTestSupport
+            .renderInputRecords(bundle.model(), DEFAULT_OUTPUT_PACKAGE)
             .stream().map(TypeSpec::name).toList();
         assertThat(classes).contains("ReachedInput");
         assertThat(classes).doesNotContain("UnreachedInput");
@@ -1052,7 +1053,8 @@ class FetcherPipelineTest {
      */
     private TypeSpec inputRecordSpec(String typeName, String sdl) {
         var bundle = TestSchemaHelper.buildBundle(sdl);
-        var specs = InputRecordGenerator.generate(bundle.model(), bundle.assembled(), DEFAULT_OUTPUT_PACKAGE);
+        var specs = no.sikt.graphitron.rewrite.InputRecordRenderTestSupport
+            .renderInputRecords(bundle.model(), DEFAULT_OUTPUT_PACKAGE);
         return specs.stream()
             .filter(t -> t.name().equals(typeName))
             .findFirst()

@@ -1,12 +1,5 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
-import graphql.schema.GraphQLArgument;
-import graphql.schema.GraphQLFieldDefinition;
-import graphql.schema.GraphQLInputObjectType;
-import graphql.schema.GraphQLObjectType;
-import graphql.schema.GraphQLSchema;
-import graphql.schema.GraphQLType;
-import graphql.schema.GraphQLTypeUtil;
 import no.sikt.graphitron.javapoet.AnnotationSpec;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
@@ -16,7 +9,6 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
-import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.HasInputRecordShape;
 import no.sikt.graphitron.rewrite.model.InputRecordShape;
@@ -24,11 +16,8 @@ import no.sikt.graphitron.rewrite.model.InputRecordShape.InputComponent;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * Emits one Java class per reachable SDL {@code input} type into
@@ -70,70 +59,20 @@ public final class InputRecordGenerator {
     private InputRecordGenerator() {}
 
     /**
-     * Emits the input-record classes for every SDL input type reachable from a field argument
-     * (transitively through nested input components). The returned list is sorted by class
-     * name for deterministic file output.
+     * Renders one input-record row's class: the membership decision (argument-reachable, per
+     * the schema's {@code argumentReachableInputs} fold, intersected with the record-shape
+     * capability) was made by the type-unit producer; this method builds the body for the type
+     * the row names. Throws on a non-carrier type: a row for a type without a record shape is
+     * a producer bug, since the producer's membership requires the capability.
      */
-    public static List<TypeSpec> generate(GraphitronSchema schema, GraphQLSchema assembled, String outputPackage) {
-        Set<String> reachable = reachableInputTypeNames(schema, assembled);
-        var specs = new ArrayList<TypeSpec>(reachable.size());
-        for (var entry : schema.types().entrySet()) {
-            if (!reachable.contains(entry.getKey())) continue;
-            if (!(entry.getValue() instanceof HasInputRecordShape carrier)) continue;
-            specs.add(buildClassSpec(carrier.recordShape(), outputPackage));
+    public static TypeSpec generateFor(GraphitronType type, String outputPackage) {
+        if (!(type instanceof HasInputRecordShape carrier)) {
+            throw new IllegalStateException(
+                "Graphitron generator bug (input-record fold): the type-unit relation committed"
+                + " an input-record row for a type without a record shape ("
+                + (type == null ? "unregistered type" : type.getClass().getSimpleName()) + ")");
         }
-        specs.sort(Comparator.comparing(TypeSpec::name));
-        return specs;
-    }
-
-    /**
-     * Walks every SDL field's argument types in the assembled schema, plus nested input
-     * components transitively, collecting the names of every input type that needs an emitted
-     * carrier. Seeds from every {@code GraphQLObjectType} in the assembled schema (the rewrite
-     * model's {@code RootType} / {@code TableBackedType} variants don't carry a
-     * {@code schemaType()} accessor, so the assembled schema is the authoritative source for
-     * SDL field-arg walking). Introspection (names starting with {@code __}) is excluded.
-     */
-    static Set<String> reachableInputTypeNames(GraphitronSchema schema, GraphQLSchema assembled) {
-        Set<String> reachable = new LinkedHashSet<>();
-        java.util.Deque<String> work = new java.util.ArrayDeque<>();
-
-        for (var namedType : assembled.getAllTypesAsList()) {
-            if (namedType.getName().startsWith("__")) continue;
-            if (!(namedType instanceof GraphQLObjectType objType)) continue;
-            for (GraphQLFieldDefinition field : objType.getFieldDefinitions()) {
-                for (GraphQLArgument arg : field.getArguments()) {
-                    seedInputArg(arg.getType(), reachable, work);
-                }
-            }
-        }
-
-        while (!work.isEmpty()) {
-            String name = work.poll();
-            GraphitronType t = schema.types().get(name);
-            GraphQLInputObjectType schemaType = inputSchemaTypeOf(t);
-            if (schemaType == null) continue;
-            for (var f : schemaType.getFieldDefinitions()) {
-                seedInputArg(f.getType(), reachable, work);
-            }
-        }
-
-        return reachable;
-    }
-
-    private static GraphQLInputObjectType inputSchemaTypeOf(GraphitronType t) {
-        return switch (t) {
-            case GraphitronType.InputType it -> it.schemaType();
-            case null, default -> null;
-        };
-    }
-
-    private static void seedInputArg(GraphQLType type, Set<String> reachable, java.util.Deque<String> work) {
-        var base = GraphQLTypeUtil.unwrapAll(type);
-        if (base instanceof GraphQLInputObjectType in) {
-            String name = in.getName();
-            if (reachable.add(name)) work.add(name);
-        }
+        return buildClassSpec(carrier.recordShape(), outputPackage);
     }
 
     private static TypeSpec buildClassSpec(InputRecordShape shape, String outputPackage) {

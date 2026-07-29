@@ -50,9 +50,11 @@ class CommandSeamRatchetTest {
      * Lowered 24 to 23 when the root conditions shim generator retired into the condition
      * command's producer and glue renderer, then 23 to 22 when call-site convergence deleted the
      * entity conditions generator (the WHERE family's second and last model-taking emitter),
-     * then 22 to 21 when the projection command retired the type-class generator.
+     * then 22 to 21 when the projection command retired the type-class generator, then 21 to
+     * 20 when the type-unit relation's input-record rows retired the input-record generator's
+     * whole-population entry point (the per-row build method takes a type, not the model).
      */
-    private static final int MODEL_TAKING_ENTRY_POINTS = 21;
+    private static final int MODEL_TAKING_ENTRY_POINTS = 20;
 
     /**
      * {@code instanceof} sites in {@code generators/} naming a leaf of the seven hierarchies.
@@ -69,9 +71,11 @@ class CommandSeamRatchetTest {
      * {@code case} patterns in {@code generators/} naming a leaf of the seven hierarchies.
      * Lowered 89 to 87 with call-site convergence (the retired entity conditions generator's
      * participant dispatch), then 87 to 78 when the projection command relocated the retired
-     * type-class generator's selection switch.
+     * type-class generator's selection switch, then 78 to 77 when the input-record fold's
+     * reach walk moved into the schema's argument-reachability fold (its InputType case went
+     * with it, to `rewrite/`, outside both scans).
      */
-    private static final int GENERATOR_LEAF_CASE_PATTERNS = 78;
+    private static final int GENERATOR_LEAF_CASE_PATTERNS = 77;
 
     /**
      * Leaf references ({@code instanceof} plus {@code case}) inside {@code plan/}: the relocation

@@ -301,9 +301,14 @@ public class GraphitronSchemaBuilder {
         // mirror and the routing emitters.
         var tenantBindings = TenantBindingIndex.compute(
             ctx.schema, dedupedFields, entitiesByType, ctx.types, ctx.tenantScopes);
+        // The argument-reachability closure over input types: a type-grain fact with more than
+        // one consumer (the input-record emit membership today, the compile graph's inputRecord
+        // nodes at the graph's migration), computed once here so no emit-side site re-derives it.
+        var argumentReachableInputs = ArgumentReachableInputs.compute(ctx.types, rebuiltAssembled);
         var model = new GraphitronSchema(
             ctx.types, Collections.unmodifiableMap(dedupedFields), entitiesByType, ctx.warnings(),
-            ctx.diagnostics(), arrivals, reachableSourceShapes, ctx.tenantScopes, tenantBindings);
+            ctx.diagnostics(), arrivals, reachableSourceShapes, ctx.tenantScopes, tenantBindings,
+            argumentReachableInputs);
         return new BuildResult(model, rebuiltAssembled);
     }
 

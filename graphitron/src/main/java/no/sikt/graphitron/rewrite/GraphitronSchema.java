@@ -66,7 +66,8 @@ public record GraphitronSchema(
     Map<String, Arrival> arrivals,
     Map<FieldCoordinates, Set<ReachableSourceShape>> reachableSourceShapes,
     TenantScopes tenantScopes,
-    TenantBindingIndex tenantBindings
+    TenantBindingIndex tenantBindings,
+    Set<String> argumentReachableInputs
 ) {
 
     public GraphitronSchema {
@@ -74,6 +75,7 @@ public record GraphitronSchema(
         // other caller (unit tier, hand-built schemas) defaults to single-tenant.
         tenantScopes = tenantScopes == null ? TenantScopes.None.INSTANCE : tenantScopes;
         tenantBindings = tenantBindings == null ? TenantBindingIndex.EMPTY : tenantBindings;
+        argumentReachableInputs = argumentReachableInputs == null ? Set.of() : argumentReachableInputs;
     }
 
     /**
@@ -111,7 +113,7 @@ public record GraphitronSchema(
     public GraphitronSchema(Map<String, GraphitronType> types, Map<FieldCoordinates, GraphitronField> fields) {
         this(types, fields, groupByType(fields), Map.of(), List.of(),
             ContextArgumentClassifier.classify(fields.values()), List.of(), Map.of(), Map.of(),
-            TenantScopes.None.INSTANCE, TenantBindingIndex.EMPTY);
+            TenantScopes.None.INSTANCE, TenantBindingIndex.EMPTY, Set.of());
     }
 
     /**
@@ -142,9 +144,28 @@ public record GraphitronSchema(
                             Map<FieldCoordinates, Set<ReachableSourceShape>> reachableSourceShapes,
                             TenantScopes tenantScopes,
                             TenantBindingIndex tenantBindings) {
+        this(types, fields, entitiesByType, warnings, diagnostics, arrivals, reachableSourceShapes,
+            tenantScopes, tenantBindings, Set.of());
+    }
+
+    /**
+     * The {@link GraphitronSchemaBuilder} constructor with the argument-reachability fold
+     * ({@link ArgumentReachableInputs}); the nine-arg form defaults it empty for callers with
+     * no assembled schema to walk.
+     */
+    public GraphitronSchema(Map<String, GraphitronType> types,
+                            Map<FieldCoordinates, GraphitronField> fields,
+                            Map<String, EntityResolution> entitiesByType,
+                            List<BuildWarning> warnings,
+                            List<ValidationError> diagnostics,
+                            Map<String, Arrival> arrivals,
+                            Map<FieldCoordinates, Set<ReachableSourceShape>> reachableSourceShapes,
+                            TenantScopes tenantScopes,
+                            TenantBindingIndex tenantBindings,
+                            Set<String> argumentReachableInputs) {
         this(types, fields, groupByType(fields), Map.copyOf(entitiesByType), List.copyOf(warnings),
             ContextArgumentClassifier.classify(fields.values()), List.copyOf(diagnostics), Map.copyOf(arrivals),
-            Map.copyOf(reachableSourceShapes), tenantScopes, tenantBindings);
+            Map.copyOf(reachableSourceShapes), tenantScopes, tenantBindings, argumentReachableInputs);
     }
 
     /**
@@ -171,7 +192,7 @@ public record GraphitronSchema(
                             ContextArgumentClassifier.Classification contextArguments,
                             List<ValidationError> diagnostics) {
         this(types, fields, fieldsByType, entitiesByType, warnings, contextArguments, diagnostics, Map.of(), Map.of(),
-            TenantScopes.None.INSTANCE, TenantBindingIndex.EMPTY);
+            TenantScopes.None.INSTANCE, TenantBindingIndex.EMPTY, Set.of());
     }
 
     private static Map<String, List<GraphitronField>> groupByType(Map<FieldCoordinates, GraphitronField> fields) {
