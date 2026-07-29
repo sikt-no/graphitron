@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
 import org.junit.jupiter.api.Test;
@@ -13,7 +12,7 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 /**
  * SDL → classified schema → generated {@code TypeSpec} pipeline tests pinning that a
  * DataLoader-backed {@code @service} child's {@code SourceKey} columns are force-included in the
- * parent type's {@code $fields} projection.
+ * parent type's {@code $project} projection.
  *
  * <p>The {@code @service} DataLoader shapes ({@link no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField},
  * {@link no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField}) build their DataLoader
@@ -22,7 +21,7 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
  * key column to read and the child cannot resolve (the federation {@code _entities}-fetch shape,
  * which is how this first surfaced). Split-{@code @reference} children get the same treatment via
  * the shared {@link no.sikt.graphitron.rewrite.model.BatchKeyField} arm in
- * {@code TypeClassGenerator.collectRequiredProjection}; their coverage lives in
+ * {@code the projection producer's required-projection walk}; their coverage lives in
  * {@link NestingFieldPipelineTest}.
  *
  * <p>Every fixture's service method carries a Sources param ({@code Set<Row1<Integer>>}), so the
@@ -53,7 +52,7 @@ class ServiceProjectionPipelineTest {
             """);
 
         assertThat(TypeSpecAssertions.appendsRequiredColumn(languageType, "LANGUAGE_ID"))
-            .as("parent $fields force-projects the @service child's SourceKey column (parent PK)")
+            .as("parent $project force-projects the @service child's SourceKey column (parent PK)")
             .isTrue();
     }
 
@@ -71,13 +70,13 @@ class ServiceProjectionPipelineTest {
             """);
 
         assertThat(TypeSpecAssertions.appendsRequiredColumn(languageType, "LANGUAGE_ID"))
-            .as("parent $fields force-projects the @service child's SourceKey column (parent PK)")
+            .as("parent $project force-projects the @service child's SourceKey column (parent PK)")
             .isTrue();
     }
 
     /**
      * A {@code @service} child nested under a plain-object {@code NestingField} shares the outer
-     * table type's {@code $fields}; the recursion in {@code collectRequiredProjection}
+     * table type's {@code $project}; the recursion in {@code collectRequiredProjection}
      * must surface its SourceKey column into the outer parent's projection.
      */
     @Test
@@ -93,7 +92,7 @@ class ServiceProjectionPipelineTest {
             """);
 
         assertThat(TypeSpecAssertions.appendsRequiredColumn(languageType, "LANGUAGE_ID"))
-            .as("outer parent $fields force-projects the nested @service child's SourceKey column")
+            .as("outer parent $project force-projects the nested @service child's SourceKey column")
             .isTrue();
     }
 
@@ -120,7 +119,7 @@ class ServiceProjectionPipelineTest {
             """);
 
         assertThat(TypeSpecAssertions.appendsRequiredColumn(languageType, "LANGUAGE_ID"))
-            .as("parent $fields force-projects the TableRecord-sourced child's key column")
+            .as("parent $project force-projects the TableRecord-sourced child's key column")
             .isTrue();
         assertThat(TypeSpecAssertions.appendsRequiredColumn(languageType, "NAME"))
             .as("and projects no non-key column on the child's behalf")
@@ -141,7 +140,7 @@ class ServiceProjectionPipelineTest {
             """);
 
         assertThat(TypeSpecAssertions.appendsRequiredColumn(languageType, "LANGUAGE_ID"))
-            .as("parent $fields force-projects the TableRecord-sourced child's key column")
+            .as("parent $project force-projects the TableRecord-sourced child's key column")
             .isTrue();
     }
 
@@ -169,7 +168,7 @@ class ServiceProjectionPipelineTest {
 
     /**
      * A TableRecord-sourced {@code @service} child nested under a plain-object
-     * {@code NestingField} shares the outer table type's {@code $fields}; the recursion in
+     * {@code NestingField} shares the outer table type's {@code $project}; the recursion in
      * {@code collectRequiredProjection} must surface the key requirement onto the outer parent.
      * The projected fields are the outer parent table's by construction:
      * {@code emitSelectionSwitch} threads {@code tableArg} unchanged into nested depths, so the
@@ -188,7 +187,7 @@ class ServiceProjectionPipelineTest {
             """);
 
         assertThat(TypeSpecAssertions.appendsRequiredColumn(languageType, "LANGUAGE_ID"))
-            .as("outer parent $fields force-projects the nested TableRecord-sourced child's key column")
+            .as("outer parent $project force-projects the nested TableRecord-sourced child's key column")
             .isTrue();
     }
 
@@ -224,7 +223,7 @@ class ServiceProjectionPipelineTest {
      * key extraction is one unconditional per-key-column read, with no runtime branch on the
      * parent source's type. It can be unconditional because the key columns are present under
      * their base names on both parent arrival shapes: force-projected when the parent came from
-     * {@code $fields} (pinned by the producer-side tests above), and carried as real columns when
+     * {@code $project} (pinned by the producer-side tests above), and carried as real columns when
      * a service hands back its own typed record. A shape assertion, not a full code-string pin.
      */
     @Test
@@ -252,7 +251,7 @@ class ServiceProjectionPipelineTest {
     }
 
     private static TypeSpec findType(String className, String sdl) {
-        return TypeClassGenerator.generate(TestSchemaHelper.buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE).stream()
+        return ProjectionRenderTestSupport.renderProjections(TestSchemaHelper.buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals(className))
             .findFirst()
             .orElseThrow(() -> new AssertionError("Type class not found: " + className));

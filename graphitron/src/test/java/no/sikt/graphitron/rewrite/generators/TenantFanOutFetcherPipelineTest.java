@@ -65,7 +65,7 @@ class TenantFanOutFetcherPipelineTest {
             // only its own DSLContext and pre-computed locals, never env.
             .contains("fake.code.generated.schema.TenantConnections.collapseFanOut(env,")
             .contains("fake.code.generated.schema.TenantConnections.fanOutRows(env, dsl -> dsl")
-            .contains("selectFields = fake.code.generated.types.Film.$fields(env.getSelectionSet(), filmTable, env)")
+            .contains("selectFields = fake.code.generated.types.Film.$project(env.getSelectionSet().getFieldsGroupedByResultKey(), filmTable, env)")
             .contains(".select(selectFields)")
             .contains(".where(condition)")
             .contains(".orderBy(orderBy)")

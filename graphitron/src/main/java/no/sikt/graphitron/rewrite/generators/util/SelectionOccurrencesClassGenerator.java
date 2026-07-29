@@ -14,7 +14,7 @@ import java.util.List;
  * <p>One GraphQL result key can carry several {@code SelectedField} occurrences in a
  * {@code DataFetchingFieldSelectionSet.getFieldsGroupedByResultKey()} bucket, because the map
  * flattens the whole subtree: in a Relay connection, {@code edges { node { x } }} and
- * {@code nodes { x }} collapse into one {@code x} entry. The generated {@code <Type>.$fields}
+ * {@code nodes { x }} collapse into one {@code x} entry. The generated {@code <Type>.$project}
  * projection loop must treat such a bucket as one field whose sub-selection is the <em>union</em>
  * of every occurrence's sub-selection, or the sides diverge (a sub-field requested under only one
  * path is missing from the SELECT and the reader fails with a jOOQ "not contained in row type"

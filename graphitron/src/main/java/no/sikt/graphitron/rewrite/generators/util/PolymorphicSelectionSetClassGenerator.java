@@ -19,12 +19,12 @@ import java.util.List;
  *
  * <p>The stage-2 per-typename SELECT in
  * {@link no.sikt.graphitron.rewrite.generators.MultiTablePolymorphicEmitter} feeds the wrapped
- * view into the emitted {@code <Type>.$fields(...)} call so each per-typename SELECT projects
+ * view into the emitted {@code <Type>.$project(...)} call so each per-typename SELECT projects
  * only columns actually selected for that variant, never columns belonging to sibling
  * participants.
  *
  * <p>Design note: a delegating proxy over a graphql-java interface is justified here because the
- * {@code $fields} contract reads {@code SelectedField.getSelectionSet()} during nested-projection
+ * {@code $project} contract reads {@code SelectedField.getSelectionSet()} during nested-projection
  * recursion; a bare {@code Map<String, List<SelectedField>>} argument would not survive that
  * contract. The wrapper sits at the same wire-boundary tier as
  * {@code ConnectionHelper.encodeCursor} / {@code decodeCursor}: <em>wire-format encoding is a

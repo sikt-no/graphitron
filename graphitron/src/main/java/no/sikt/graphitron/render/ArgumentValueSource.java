@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.generators;
+package no.sikt.graphitron.render;
 
 /**
  * Names where a condition/ordering call's <em>runtime argument values</em> are read from at a
@@ -10,21 +10,18 @@ package no.sikt.graphitron.rewrite.generators;
  * {@code env} is the field's own environment.
  *
  * <p>{@link FromSelectedField} reads {@code <sf>.getArguments().get(name)} off an in-scope
- * {@link graphql.schema.SelectedField} local; correct at the two inline emission sites
- * ({@link InlineTableFieldEmitter}, {@link InlineLookupTableFieldEmitter}), which emit inside
- * the generated {@code <Type>.$fields(sel, table, env)} method where {@code env} belongs to the
+ * {@link graphql.schema.SelectedField} local; correct at the inline emission sites (the
+ * projection renderer's multiset arms), which emit inside the generated
+ * {@code <Type>.$project(grouped, table, env)} method where {@code env} belongs to the
  * <em>ancestor</em> fetcher, not the inline field's own environment. The ancestor has no such
  * argument, so {@code env.getArgument(...)} there silently returns {@code null} and drops the
- * argument; the field's own arguments live on the {@code SelectedField} local already threaded
- * into both emitters.
+ * argument; the field's own arguments live on the canonical {@code SelectedField} local.
  *
  * <p>An emission helper (a sibling of {@code CompositeDecodeHelperRegistry}), not a model type:
  * the fork varies by emission scope, not by model content. It is threaded as an explicit
  * parameter rather than carried on {@code TypeFetcherEmissionContext} because the source is
- * emission-point-scoped: {@code NestingField} recursion declares a fresh {@code SelectedField}
- * local per depth, so the source changes per depth exactly like the threaded {@code sfName} it
- * wraps. A sealed two-variant type rather than a nullable {@code String sfName} parameter, which
- * would be a tri-state sentinel.
+ * emission-point-scoped. A sealed two-variant type rather than a nullable {@code String sfName}
+ * parameter, which would be a tri-state sentinel.
  */
 public sealed interface ArgumentValueSource {
 

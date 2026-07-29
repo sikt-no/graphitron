@@ -16,16 +16,19 @@ import java.util.List;
  * fact store carries what the schema means, the plan carries what this run emits.
  *
  * <p>The plan holds the global command relation (one {@link GlobalCommand} row per global emit
- * family, keyed by {@link GlobalUnitKind}, each naming the exact units it commits) and the
+ * family, keyed by {@link GlobalUnitKind}, each naming the exact units it commits), the
  * condition command relation ({@link ConditionRelation}: one row per covered
- * {@code (coordinate, resolvedTable)} key, with the committed subset this run renders glue for).
+ * {@code (coordinate, resolvedTable)} key, with the committed subset this run renders glue for),
+ * and the projection command relation ({@link ProjectionRelation}: one row per projection unit,
+ * produced after conditions because projection rows reference glue by condition row).
  * The shell folds over the rows and renders; membership decisions that used to sit in the shell
  * (the federation {@code @oneOf} gate) or inside a generator's early return (entity dispatch on a
  * schema without entities, the node fetcher on a schema without node types, the dev executor on a
  * federated schema) are all made here. The schema-level inputs arrive as facts landed once by the
  * builder ({@code Bundle.federationLink()}, {@code Bundle.usesOneOf()}), not re-derived.
  */
-public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions) {
+public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions,
+                       ProjectionRelation projections) {
 
     public EmitPlan {
         globals = List.copyOf(globals);
@@ -35,6 +38,9 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         }
         if (conditions == null) {
             throw new IllegalArgumentException("the plan carries the condition relation; an empty relation is a value, not null");
+        }
+        if (projections == null) {
+            throw new IllegalArgumentException("the plan carries the projection relation; an empty relation is a value, not null");
         }
     }
 
@@ -96,7 +102,9 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         if (!federationLink) {
             globals.add(one(GlobalUnitKind.DEV_EXECUTOR, units.rootUnit("GraphitronDevExecutor")));
         }
-        return new EmitPlan(globals, ConditionCommands.produce(schema, outputPackage));
+        var conditions = ConditionCommands.produce(schema, outputPackage);
+        return new EmitPlan(globals, conditions,
+            ProjectionCommands.produce(schema, conditions, outputPackage));
     }
 
     /** A global command committing exactly one unit. */

@@ -74,7 +74,7 @@ class ReFetchDerivationTest {
 
         // The root @service field is the divergence the site-level fact exists for: its value is
         // re-projected (requiresReFetch true), but the emitted fetcher is a direct passthrough —
-        // the re-projection is realized by the downstream child fetchers' $fields, so no keyed
+        // the re-projection is realized by the downstream child fetchers' $project, so no keyed
         // re-query is emitted at the root site.
         OutputField externalFilm = (OutputField) schema.field("Query", "externalFilm");
         assertThat(externalFilm.requiresReFetch()).isTrue();

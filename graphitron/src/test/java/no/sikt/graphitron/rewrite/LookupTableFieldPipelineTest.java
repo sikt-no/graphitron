@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
 import no.sikt.graphitron.rewrite.model.ChildField;
@@ -16,7 +15,7 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
  * SDL → classified schema → generated {@code TypeSpec} pipeline tests for inline
  * {@link no.sikt.graphitron.rewrite.model.ChildField.LookupTableField} emission (argres Phase 2a).
  *
- * <p>Verifies C1's structural contract: the {@code TypeClassGenerator.$fields} method contains
+ * <p>Verifies C1's structural contract: the {@code the type's $project unit} method contains
  * a switch arm for each child-lookup field; the input-rows helper is emitted on the type class;
  * no fetcher method lands in {@code *Fetchers}; and classifier rejection for {@code @asConnection}
  * or single cardinality on an inline {@code @lookupKey} field produces {@code UnclassifiedField}.
@@ -35,13 +34,13 @@ class LookupTableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var filmClass = TypeClassGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+        var filmClass = ProjectionRenderTestSupport.renderProjections(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("Film"))
             .findFirst()
             .orElseThrow();
 
         var methodNames = filmClass.methodSpecs().stream().map(m -> m.name()).toList();
-        assertThat(methodNames).contains("$fields", "actorsInputRows");
+        assertThat(methodNames).contains("$project", "actorsInputRows");
 
         assertThat(TypeSpecAssertions.hasFieldsArm(filmClass, "actors")).isTrue();
     }
@@ -64,7 +63,7 @@ class LookupTableFieldPipelineTest {
 
         var methodNames = filmFetchers.methodSpecs().stream().map(m -> m.name()).toList();
         assertThat(methodNames)
-            .as("R303: LookupTableField projects inline via TypeClassGenerator.$fields; the read of "
+            .as("R303: LookupTableField projects inline via the type's $project unit; the read of "
                 + "that result-key-aliased projection is reified as a named env-dependent method")
             .contains("actors");
     }
@@ -93,7 +92,7 @@ class LookupTableFieldPipelineTest {
     void compositeKeyInputType_producesSwitchArmAndInputRowsHelper() {
         // Phase 3 — @table input type used as a @lookupKey-bearing arg (arg-level
         // @lookupKey drives the binding walk over every admissible input field). Emits inline
-        // via TypeClassGenerator.$fields, with a composite VALUES helper on the type class.
+        // via the type's $project unit, with a composite VALUES helper on the type class.
         var schema = TestSchemaHelper.buildSchema("""
             input FilmActorKey {
                 filmId: Int @field(name: "film_id")
@@ -123,13 +122,13 @@ class LookupTableFieldPipelineTest {
         assertThat(mapping.slotColumns().stream().map(c -> c.sqlName()))
             .containsExactly("film_id", "actor_id");
 
-        var filmClass = TypeClassGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+        var filmClass = ProjectionRenderTestSupport.renderProjections(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("Film"))
             .findFirst()
             .orElseThrow();
 
         var methodNames = filmClass.methodSpecs().stream().map(m -> m.name()).toList();
-        assertThat(methodNames).contains("$fields", "filmActorsInputRows");
+        assertThat(methodNames).contains("$project", "filmActorsInputRows");
         assertThat(TypeSpecAssertions.hasFieldsArm(filmClass, "filmActors")).isTrue();
     }
 

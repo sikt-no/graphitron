@@ -500,7 +500,7 @@ public final class FetcherEmitter {
         }
         if (field instanceof ChildField.PivotField) {
             // Inline @pivot: the projection is a single-row multiset aliased __rk_<resultKey>
-            // (PivotProjectionEmitter); unwrap it as the single-cardinality TableField read does.
+            // (the pivot multiset arm); unwrap it as the single-cardinality TableField read does.
             // The row always exists (a correlated aggregate over an empty set still yields one
             // row of nulls), so the empty-guard is defensive symmetry, not a semantic fork.
             var resultClass = ClassName.get("org.jooq", "Result");
@@ -522,7 +522,7 @@ public final class FetcherEmitter {
                     RECORD, DSL, DSL, slot.readName()));
         }
         if (field instanceof ChildField.ComputedField) {
-            // Wired by name: TypeClassGenerator.$fields() inlines the developer's method call
+            // Wired by name: the type's $project unit inlines the developer's method call
             // aliased to the result key; the read picks the result Record up by that alias.
             return columnByAlias(field.name(), fetchersClass);
         }
@@ -539,7 +539,7 @@ public final class FetcherEmitter {
         }
         if (field instanceof ChildField.ColumnBackedReferenceField crf
                 && crf.compaction() instanceof CallSiteCompaction.Direct) {
-            // Direct-compaction scalar @reference: TypeClassGenerator.$fields() projects an aliased
+            // Direct-compaction scalar @reference: the type's $project unit projects an aliased
             // correlated subquery; read the value out of the parent Record by alias. A
             // NodeIdEncodeKeys instance never reaches emission: the validator rejects it as
             // deferred, and one leaking through falls to the ResultKeyAliasedField guard below
@@ -549,7 +549,7 @@ public final class FetcherEmitter {
         // A ResultKeyAliasedField reaching here would fall through to a plain method-backed
         // reference and never read its __rk_ alias, silently mis-resolving aliased duplicates.
         // Fail loudly: this is the read half of the membership guard that keeps the write and
-        // read alias sets from drifting (the write half is TypeClassGenerator.emitSelectionSwitch's
+        // read alias sets from drifting (the write half is the projection producer's
         // default arm).
         if (field instanceof ResultKeyAliasedField) {
             throw new IllegalStateException(

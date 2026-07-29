@@ -11,7 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Invariant: every {@link JoinStep} permit implements {@link JoinStep.HasTargetTable}.
  * This is what lets {@link no.sikt.graphitron.rewrite.generators.JoinPathEmitter},
- * {@link no.sikt.graphitron.rewrite.generators.InlineTableFieldEmitter}, and the split-rows
+ * {@link no.sikt.graphitron.rewrite.generators.the renderer's multiset arm}, and the split-rows
  * prelude read {@code targetTable()} uniformly through one capability cast without an
  * arm-specific sealed switch.
  *

@@ -12,7 +12,7 @@ import org.jooq.impl.DSL;
  *     public static Field&lt;X&gt; methodName(&lt;ParentTable&gt; table)
  * </pre>
  * The method is invoked at codegen time; its returned {@code Field<X>} is inlined aliased
- * into the parent {@code @table}'s {@code $fields()} projection, and a {@code LightFetcher}-wrapped
+ * into the parent {@code @table}'s {@code $project()} projection, and a {@code LightFetcher}-wrapped
  * read picks the result Record up by the alias at request time.
  */
 public final class FilmExtensions {

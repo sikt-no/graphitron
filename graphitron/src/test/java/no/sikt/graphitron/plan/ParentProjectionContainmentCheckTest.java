@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.generators;
+package no.sikt.graphitron.plan;
 
 import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.javapoet.ClassName;

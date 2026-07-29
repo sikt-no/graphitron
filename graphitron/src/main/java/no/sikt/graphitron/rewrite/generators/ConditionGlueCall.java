@@ -19,7 +19,7 @@ import java.util.List;
  *
  * <p>{@code argsMapExpr} is the caller's one contribution: {@code env.getArguments()} where the
  * enclosing environment is the field's own (root fetchers, rows methods, polymorphic branches),
- * {@code <sf>.getArguments()} at the inline {@code $fields} sites where {@code env} belongs to an
+ * {@code <sf>.getArguments()} at the inline {@code $project} sites where {@code env} belongs to an
  * ancestor. Both expose the same coerced map. The {@code env} literal is uniform: every emitting
  * host has the request environment in scope under that name, and context is request-global, so
  * the ancestor env at inline sites serves it correctly.

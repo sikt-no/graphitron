@@ -156,7 +156,7 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
      * {@link #requiresReFetch()}, which is <em>value-level</em> ("this field's value is
      * re-projected somewhere"): a root {@code @service} field returning a {@code @table} type
      * hands the produced record straight through and its re-projection is realized by the
-     * downstream child fetchers' {@code $fields}, so the value-level fact is true while no
+     * downstream child fetchers' {@code $project}, so the value-level fact is true while no
      * re-query is emitted at the root site. The child {@code @service} arm, the record-sourced
      * batched arms, and the projected DML arms all emit the re-query at their own site.
      *

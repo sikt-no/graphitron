@@ -26,6 +26,16 @@ final class UnitNames {
         return units.typeClass(typeName).fqcn();
     }
 
+    /** {@code <pkg>.types.<Anchor><Nested>}: a nesting type's projection unit under one anchor. */
+    String nestingUnit(String anchorTypeName, String nestedTypeName) {
+        return units.nestingUnit(anchorTypeName, nestedTypeName).fqcn();
+    }
+
+    /** {@code <pkg>.types.<Parent><Field>}: a {@code @pivot} coordinate's projection unit. */
+    String pivotUnit(String parentTypeName, String fieldName) {
+        return units.pivotUnit(parentTypeName, fieldName).fqcn();
+    }
+
     /** {@code <pkg>.conditions.<Type>Conditions}: the per-parent generated-condition class. */
     String conditions(String parentTypeName) {
         return units.conditions(parentTypeName).fqcn();

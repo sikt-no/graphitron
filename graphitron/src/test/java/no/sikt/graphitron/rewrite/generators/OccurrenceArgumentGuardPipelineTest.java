@@ -1,7 +1,13 @@
 package no.sikt.graphitron.rewrite.generators;
 
+import no.sikt.graphitron.command.CallWrap;
+import no.sikt.graphitron.command.Contribution;
+import no.sikt.graphitron.command.ProjectionCommand;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.plan.ConditionCommands;
+import no.sikt.graphitron.plan.ProjectionCommands;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.ProjectionRenderTestSupport;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
 import no.sikt.graphitron.rewrite.model.ChildField;
@@ -14,11 +20,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Pins that the occurrence argument-consistency guard
  * ({@code SelectionOccurrences.requireConsistentArguments(...)}) is emitted into an inline switch
- * arm exactly when that arm's body reads runtime arguments off its canonical {@code SelectedField}
- * — the {@link InlineTableFieldEmitter#readsSelectedFieldArguments} predicate, which mirrors the
- * emitter's {@code ArgumentValueSource.FromSelectedField} consumption sites (filters, pagination,
- * routine-hop args), plus the lookup arm's unconditional {@code @lookupKey} read. Gating on the
- * predicate (rather than guarding universally) keeps an arm that consumes nothing off the
+ * arm exactly when that arm's body reads runtime arguments off its canonical {@code SelectedField}.
+ * The fact is producer-decided ({@code CallWrap.Multiset#guardArguments()}, mirroring the arm's
+ * {@code FromSelectedField} consumption sites: filters, pagination, routine-hop args) and the
+ * lookup arm guards unconditionally (the {@code @lookupKey} read is structural). Gating on the
+ * produced fact (rather than guarding universally) keeps an arm that consumes nothing off the
  * {@code SelectedField} from fail-louding on divergence in arguments nothing reads.
  *
  * <p>The universal name-consistency guard has no per-arm emission to pin here: it runs inside
@@ -57,24 +63,35 @@ class OccurrenceArgumentGuardPipelineTest {
     }
 
     private static TypeSpec typeClass(GraphitronSchema schema, String name) {
-        return TypeClassGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+        return ProjectionRenderTestSupport.renderProjections(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals(name)).findFirst().orElseThrow();
     }
 
-    @Test
-    void predicate_tracksFromSelectedFieldConsumption() {
-        var schema = schema();
-        var bare = (ChildField.TableField) schema.field("Store", "customers");
-        var paginated = (ChildField.TableField) schema.field("Store", "customersFirstN");
-        var filtered = (ChildField.TableField) schema.field("Store", "customersByStoreId");
+    private static boolean guardArguments(GraphitronSchema schema, String typeName, String fieldName) {
+        var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
+        var relation = ProjectionCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE);
+        var row = relation.rows().stream()
+            .filter(r -> r instanceof ProjectionCommand.AnchorUnit && r.unit().simpleName().equals(typeName))
+            .findFirst().orElseThrow();
+        var wrap = row.contributions().stream()
+            .filter(c -> c.field().equals(fieldName))
+            .map(c -> ((Contribution.Call) c).wrap())
+            .findFirst().orElseThrow();
+        return ((CallWrap.Multiset) wrap).guardArguments();
+    }
 
-        assertThat(InlineTableFieldEmitter.readsSelectedFieldArguments(bare))
+    @Test
+    void producedFact_tracksFromSelectedFieldConsumption() {
+        var schema = schema();
+        assertThat(schema.field("Store", "customers")).isInstanceOf(ChildField.TableField.class);
+
+        assertThat(guardArguments(schema, "Store", "customers"))
             .as("a bare FK-path reference reads nothing off its SelectedField")
             .isFalse();
-        assertThat(InlineTableFieldEmitter.readsSelectedFieldArguments(paginated))
+        assertThat(guardArguments(schema, "Store", "customersFirstN"))
             .as("the `first` pagination limit is read off the SelectedField")
             .isTrue();
-        assertThat(InlineTableFieldEmitter.readsSelectedFieldArguments(filtered))
+        assertThat(guardArguments(schema, "Store", "customersByStoreId"))
             .as("filter call params are read off the SelectedField")
             .isTrue();
     }

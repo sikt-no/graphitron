@@ -22,7 +22,7 @@ class ReferenceProjectionAliasNamespaceTest {
     void siblingReferenceNamedLikeSplitRowKeyColumn_noLongerRejected() {
         // Film.languageSplit is a Wrap.Row @splitQuery child keyed on FILM.LANGUAGE_ID, read by the
         // base name "language_id" off the parent record. The sibling multiset reference field is
-        // named "language_id" too, so pre-fix its $fields projection aliased to "language_id" would
+        // named "language_id" too, so pre-fix its $project projection aliased to "language_id" would
         // shadow that base-named key read. Now the projection is aliased "__rk_" + resultKey, out of
         // the base namespace, so there is no shadow and no rejection.
         var schema = TestSchemaHelper.buildSchema("""

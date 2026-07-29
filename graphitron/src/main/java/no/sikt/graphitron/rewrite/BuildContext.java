@@ -1053,7 +1053,7 @@ class BuildContext {
      *
      * <p>The verdict is independent of {@link #errorMessage()}: a {@code Mismatch} is carried on an
      * otherwise non-error {@code ParsedPath} (the resolved elements are present). The inline / split
-     * output callers ({@code InlineTableFieldEmitter}'s {@code $fields(terminalAlias)} projection,
+     * output callers (the projection renderer's {@code $project(terminalAlias)} descent,
      * wired through {@code FieldBuilder}) convert {@code Mismatch} into an
      * {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField} via
      * {@link TerminalTargetVerdict.Mismatch#diagnostic()}; callers with their own terminal-target
@@ -1067,8 +1067,8 @@ class BuildContext {
     /**
      * Typed outcome of {@link #parsePath}'s terminal-hop landing-table check (Check 1): does
      * the {@code @reference} path's terminal hop land on the field return type's {@code @table}?
-     * The emitter ({@code InlineTableFieldEmitter.buildArm}) feeds the terminal hop's alias to a
-     * {@code $fields} overload typed for the return table, so a terminal hop that lands elsewhere
+     * The renderer's multiset arm feeds the terminal hop's alias to a
+     * {@code $project} overload typed for the return table, so a terminal hop that lands elsewhere
      * compiles to generated Java that javac rejects with an incompatible-types error in a
      * downstream consumer's build. This verdict moves that failure to build time.
      *
@@ -1097,7 +1097,7 @@ class BuildContext {
                 return "the @reference terminal hop on field '" + fieldName + "' resolves to table '"
                     + terminalTableName + "', but the field's return type is bound to @table '"
                     + returnTableName + "'; the path must end on '" + returnTableName
-                    + "' (the terminal alias is fed to a $fields overload typed for the return table).";
+                    + "' (the terminal alias is fed to a $project overload typed for the return table).";
             }
         }
 
@@ -1393,8 +1393,8 @@ class BuildContext {
         // The verdict is threaded onto ParsedPath as a typed projection rather than forced into
         // errorMessage here: parsePath is shared by callers that have their own terminal-target
         // invariant (e.g. a directive path's "last hop lands on …" check) and callers whose
-        // emit shape does not feed the terminal alias to a $fields overload at all. Only the inline
-        // / split output projection (InlineTableFieldEmitter) carries the $fields(terminalAlias)
+        // emit shape does not feed the terminal alias to a $project overload at all. Only the inline
+        // / split output projection (the renderer's multiset arm) carries the $project(terminalAlias)
         // invariant this check protects, so its two FieldBuilder callers (TableBoundReturnType,
         // TableInterfaceType) consume the verdict and reject on Mismatch. The LSP layer reads the
         // same projection. This keeps the predicate single-sourced and scoped to where it applies.
@@ -1548,7 +1548,7 @@ class BuildContext {
      * {@code returnTableRef} is null, or the path is empty: the check fires only for the
      * inline/split output projection off a table-backed parent. The {@code @sourceRow} composition
      * (null start) and input-field sites (null return table) are excluded — their paths are not the
-     * {@code $fields(terminalAlias)} projection this invariant protects.
+     * {@code $project(terminalAlias)} projection this invariant protects.
      *
      * <p>The FK-derived arm compares the terminal hop's target against {@code returnTableRef}
      * by jOOQ table-class identity ({@link TableRef#denotesSameTableAs}), not the verbatim

@@ -7,7 +7,7 @@ import java.util.Map;
 /**
  * A child field whose generated fetcher reads one or more columns off the parent's
  * already-materialized row by <em>base</em> name. The parent-projection contract requires every
- * such column to appear in the parent anchor's {@code $fields} SELECT; this capability carries
+ * such column to appear in the parent anchor's {@code $project} SELECT; this capability carries
  * that demand uniformly, so the walks that enforce the contract key on the capability rather
  * than on leaf identity.
  *

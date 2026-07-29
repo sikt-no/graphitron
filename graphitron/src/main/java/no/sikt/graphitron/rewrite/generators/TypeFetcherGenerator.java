@@ -14,7 +14,11 @@ import no.sikt.graphitron.rewrite.generators.schema.OutcomeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.OrderByResultClassGenerator;
-import no.sikt.graphitron.rewrite.generators.util.ValuesJoinRowBuilder;
+import no.sikt.graphitron.render.ArgumentValueSource;
+import no.sikt.graphitron.render.PreviousNodeRef;
+import no.sikt.graphitron.render.ProjectionCall;
+import no.sikt.graphitron.render.RoutineCallEmitter;
+import no.sikt.graphitron.render.ValuesJoinRowBuilder;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.BatchKeyField;
@@ -295,7 +299,8 @@ public class TypeFetcherGenerator {
     /**
      * Leaves with a real arm in {@link #generateTypeSpec}'s switch (no {@code stub(f)} call).
      * Together with {@link #STUBBED_VARIANTS}{@code .keySet()}, {@link #NOT_DISPATCHED_LEAVES},
-     * and {@link #PROJECTED_LEAVES} this forms an exhaustive, disjoint partition of every sealed
+     * and the projected set the census test derives from the projection producer's dispatch,
+     * this forms an exhaustive, disjoint partition of every sealed
      * leaf of {@link GraphitronField};
      * enforced by {@code GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus}.
      * Moving an entry from {@link #STUBBED_VARIANTS} to this set is the expected review signal
@@ -361,26 +366,6 @@ public class TypeFetcherGenerator {
         InputField.UnboundField.class);
 
     /**
-     * Leaves whose SELECT projection is emitted inline by {@link TypeClassGenerator}'s
-     * {@code $fields} method, so the dispatch switch emits no fetcher method for them (the read
-     * of the projected value is reified by {@code FetcherEmitter.bind} and collected
-     * below the switch). Together with
-     * {@link #IMPLEMENTED_LEAVES}, {@link #NOT_DISPATCHED_LEAVES}, and
-     * {@link #STUBBED_VARIANTS}{@code .keySet()}, this forms an exhaustive four-way
-     * disjoint partition of every {@link GraphitronField} sealed leaf; enforced by
-     * {@code GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus}.
-     */
-    public static final Set<Class<? extends GraphitronField>> PROJECTED_LEAVES = Set.of(
-        ChildField.TableField.class,
-        ChildField.LookupTableField.class,
-        ChildField.ColumnBackedReferenceField.class,
-        ChildField.NestingField.class,
-        // The inline pivot projects into $fields (PivotProjectionEmitter arm); its multiset
-        // unwrap and its slots' by-name reads are reified by FetcherEmitter.bind.
-        ChildField.PivotField.class,
-        ChildField.PivotSlotField.class);
-
-    /**
      * Maps each unimplemented field variant class to the {@link Rejection.Deferred} that both the
      * generated stub method ({@link #stub}) and {@code GraphitronSchemaValidator.validateVariantIsImplemented}
      * project. The deferred value carries a {@code summary} and a
@@ -397,8 +382,9 @@ public class TypeFetcherGenerator {
      *   <li>Every key must be a concrete sealed leaf in the {@link GraphitronField} hierarchy.
      *       Enforced by {@code GeneratorCoverageTest.notImplementedReasonsContainsOnlyConcreteSealedLeaves}.</li>
      *   <li>Together with {@link #IMPLEMENTED_LEAVES}, {@link #NOT_DISPATCHED_LEAVES}, and
-     *       {@link #PROJECTED_LEAVES} this forms a disjoint partition of every
-     *       {@link GraphitronField} leaf.
+     *       the projected set the census test derives from the projection producer's dispatch
+     *       ({@code ProjectionCommands.CONTRIBUTION_MINTING_LEAVES} minus the dual-arm kinds),
+     *       this forms a disjoint partition of every {@link GraphitronField} leaf.
      *       Enforced by {@code GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus}.</li>
      *   <li>Adding a case arm that calls {@link #stub} must also add the class here.
      *       Enforced at generator-run time via {@link Objects#requireNonNull} in {@link #stub};
@@ -555,7 +541,7 @@ public class TypeFetcherGenerator {
                     // Lift-back projection. The loader value is the projected Record (carrying
                     // the multiset @reference columns), not the developer-returned XRecord; the lift
                     // rows-method calls the service, then re-projects the returned records by identity
-                    // through Type.$fields(...). See SplitRowsMethodEmitter.buildServiceTableLift.
+                    // through Type.$project(...). See SplitRowsMethodEmitter.buildServiceTableLift.
                     var stfService = (MethodRef.Service) stf.method();
                     CodeBlock stfServiceCall = CodeBlock.of("$L.$L($L)",
                         serviceCallTarget(stfService, ClassName.bestGuess(stf.method().className())),
@@ -657,14 +643,14 @@ public class TypeFetcherGenerator {
                 case MutationField.MutationBulkUpdatePayloadField f -> builder.addMethod(buildMutationBulkUpdatePayloadFetcher(ctx, f, outputPackage));
                 case MutationField.MutationDeletePayloadField f -> builder.addMethod(buildMutationDeletePayloadFetcher(ctx, f, outputPackage));
                 case MutationField.MutationBulkDeletePayloadField f -> builder.addMethod(buildMutationBulkDeletePayloadFetcher(ctx, f, outputPackage));
-                // ColumnBackedReferenceField: inline projection via TypeClassGenerator.$fields
+                // ColumnBackedReferenceField: inline projection via the type's $project unit
                 // (Direct compaction); the read of that aliased projection is reified by
                 // FetcherEmitter.bind and collected below. The validator rejects the
                 // NodeIdEncodeKeys (every arity) and condition-join shapes ahead of generation;
                 // no per-shape carve-out is needed here.
                 case ChildField.ColumnBackedReferenceField ignored -> { }
                 // ChildField.TableField / LookupTableField: inline projection via
-                // TypeClassGenerator.$fields; the alias-pickup read is reified by
+                // the type's $project unit; the alias-pickup read is reified by
                 // FetcherEmitter.bind and collected below.
                 case ChildField.TableField ignored              -> { }
                 case ChildField.LookupTableField ignored        -> { }
@@ -713,7 +699,7 @@ public class TypeFetcherGenerator {
                     }
                 }
                 case ChildField.NestingField ignored            -> { /* source passthrough reified by FetcherEmitter.bind, collected below */ }
-                // Inline @pivot: projection via TypeClassGenerator.$fields (PivotProjectionEmitter
+                // Inline @pivot: projection via the coordinate's pivot $project unit (the multiset
                 // arm); the multiset unwrap read is reified by FetcherEmitter.bind, collected below.
                 case ChildField.PivotField ignored              -> { }
                 // A projection slot's by-name read is reified by FetcherEmitter.bind on the
@@ -728,7 +714,7 @@ public class TypeFetcherGenerator {
                 // narrowing + verbatim projection of the producer's composite record(s) is reified by
                 // FetcherEmitter.bind into a named (DataFetchingEnvironment env) method, collected below.
                 case ChildField.RecordCompositeField ignored    -> { /* source passthrough reified by FetcherEmitter.bind, collected below */ }
-                case ChildField.ComputedField ignored           -> { /* alias-pickup read reified by FetcherEmitter.bind; projected via TypeClassGenerator.$fields() */ }
+                case ChildField.ComputedField ignored           -> { /* alias-pickup read reified by FetcherEmitter.bind; projected via the type's $project unit */ }
                 case ChildField.ErrorsField ignored             -> { /* LocalContext / WrapperArm reified by FetcherEmitter.bind; PayloadAccessor still PropertyDataFetcher.fetching */ }
                 // Cannot occur — filtered by generateForType before dispatch
                 case InputField ignored ->
@@ -931,7 +917,7 @@ public class TypeFetcherGenerator {
 
     /**
      * Generates a fetcher for a root-query table field that builds the condition, optional
-     * orderBy, and executes inline SQL using {@code Type.$fields(sel, table, env)} for projection.
+     * orderBy, and executes inline SQL using {@code Type.$project(grouped, table, env)} for projection.
      *
      * <p>Generated code (list variant):
      * <pre>{@code
@@ -940,7 +926,7 @@ public class TypeFetcherGenerator {
      *     FilmTable table = Tables.FILM;
      *     var condition = DSL.noCondition();
      *     List<SortField<?>> orderBy = List.of();
-     *     return dsl.select(Film.$fields(env.getSelectionSet(), table, env))
+     *     return dsl.select(Film.$project(env.getSelectionSet().getFieldsGroupedByResultKey(), table, env))
      *               .from(table).where(condition).orderBy(orderBy).fetch();
      * }
      * }</pre>
@@ -971,7 +957,7 @@ public class TypeFetcherGenerator {
             builder.addCode(CodeBlock.builder()
                 .add("$T payload = dsl\n", valueType)
                 .indent()
-                .add(".select($T.$$fields(env.getSelectionSet(), $L, env))\n", names.typeClass(), tableLocal)
+                .add(".select($L)\n", ProjectionCall.fromEnvSelection(names.typeClass(), tableLocal))
                 .add(".from($L)\n", tableLocal)
                 .add(".where(condition)\n")
                 .add(".orderBy(orderBy)\n")
@@ -983,7 +969,7 @@ public class TypeFetcherGenerator {
             builder.addCode(CodeBlock.builder()
                 .add("$T payload = dsl\n", valueType)
                 .indent()
-                .add(".select($T.$$fields(env.getSelectionSet(), $L, env))\n", names.typeClass(), tableLocal)
+                .add(".select($L)\n", ProjectionCall.fromEnvSelection(names.typeClass(), tableLocal))
                 .add(".from($L)\n", tableLocal)
                 .add(".where(condition)\n")
                 .add(".fetchOne();\n")
@@ -1001,7 +987,7 @@ public class TypeFetcherGenerator {
     /**
      * The fanned sibling of {@link #buildQueryTableFetcher} for a root field classified
      * {@code TenantBinding.FanOut}: the field's ordinary statement (condition, order, nested
-     * multisets via {@code $fields}) runs once per tenant in the request's fan-out domain through
+     * multisets via {@code $project}) runs once per tenant in the request's fan-out domain through
      * the carrier's bounded scatter helper, and the outcomes union in domain order. Each row comes
      * back wrapped as a per-element {@code DataFetcherResult} carrying its tenant as
      * {@code localContext} (children below the fanned field then classify Inherited and route with
@@ -1017,7 +1003,7 @@ public class TypeFetcherGenerator {
      *         FilmTable table = Tables.FILM;
      *         Condition condition = ...;
      *         List<SortField<?>> orderBy = ...;
-     *         List<Field<?>> selectFields = Film.$fields(env.getSelectionSet(), table, env);
+     *         List<Field<?>> selectFields = Film.$project(env.getSelectionSet().getFieldsGroupedByResultKey(), table, env);
      *         return TenantConnections.collapseFanOut(env, TenantConnections.fanOutRows(env, dsl -> dsl
      *             .select(selectFields)
      *             .from(table).where(condition).orderBy(orderBy).fetch()));
@@ -1048,8 +1034,8 @@ public class TypeFetcherGenerator {
         var listOfField = ParameterizedTypeName.get(LIST,
             ParameterizedTypeName.get(ClassName.get("org.jooq", "Field"),
                 no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class)));
-        builder.addStatement("$T selectFields = $T.$$fields(env.getSelectionSet(), $L, env)",
-            listOfField, names.typeClass(), tableLocal);
+        builder.addStatement("$T selectFields = $L",
+            listOfField, ProjectionCall.fromEnvSelection(names.typeClass(), tableLocal));
         builder.addCode(CodeBlock.builder()
             .add("return $T.collapseFanOut(env, $T.fanOutRows(env, dsl -> dsl\n",
                 tenantConnections, tenantConnections)
@@ -1232,7 +1218,7 @@ public class TypeFetcherGenerator {
      * <ol>
      *   <li>the discriminator {@code IN (knownValues)} restriction, ANDed into {@code condition};</li>
      *   <li>the {@code LinkedHashSet<Field<?>> fields} projection ({@code __discriminator__} first,
-     *       each table-bound participant's {@code $fields}, the joined-table base slice), plus
+     *       each table-bound participant's {@code $project}, the joined-table base slice), plus
      *       {@code alwaysProject} — extra base-table columns projected unconditionally (the shared
      *       table's PK columns for the service by-PK re-map; {@code List.of()} for the read paths, so
      *       their generated output is unchanged);</li>
@@ -1271,7 +1257,7 @@ public class TypeFetcherGenerator {
 
     /**
      * Emits a {@code LinkedHashSet<Field<?>> fields} declaration populated with the discriminator
-     * column and each table-bound participant's {@code $fields} contribution.
+     * column and each table-bound participant's {@code $project} contribution.
      *
      * <p>The {@code LinkedHashSet} preserves insertion order and deduplicates field references so
      * shared columns (e.g. {@code title} declared on both {@code FilmContent} and
@@ -1281,7 +1267,7 @@ public class TypeFetcherGenerator {
      * can route each returned row to the correct concrete type even when the GraphQL selection set
      * does not explicitly request it.
      *
-     * <p>The per-participant {@code $fields} call here passes {@code env.getSelectionSet()}
+     * <p>The per-participant {@code $project} call here passes {@code env.getSelectionSet()}
      * unfiltered; the {@code LinkedHashSet} deduplicates the resulting shared-name over-selection
      * as long as a shared GraphQL field name is backed by the same column. Two participants
      * declaring a shared field name backed by <em>different</em> columns on the same table would
@@ -1309,7 +1295,7 @@ public class TypeFetcherGenerator {
         // from the verbatim @table(name:) string instead would diverge from the rendered FROM token
         // whenever the directive name differs in case or schema.
         // (2) De-duplication: when the interface also exposes the discriminator
-        // as a queryable field, the participant $fields below projects the real catalog column too
+        // as a queryable field, the participant $project below projects the real catalog column too
         // (rendered three-part, "schema"."base"."col"); a TypeResolver reading the bare column name would
         // match both projections ambiguously. Aliasing the routing copy to a synthetic name distinct from
         // any real column (see MultiTablePolymorphicEmitter.DISCRIMINATOR_COLUMN, mirroring the
@@ -1322,11 +1308,11 @@ public class TypeFetcherGenerator {
         for (var participant : participants) {
             if (!(participant instanceof ParticipantRef.TableBound tb)) continue;
             var typeClass = ClassName.get(outputPackage + ".types", tb.typeName());
-            b.addStatement("fields.addAll($T.$$fields(env.getSelectionSet(), $L, env))",
-                typeClass, tableLocal);
+            b.addStatement("fields.addAll($L)",
+                ProjectionCall.fromEnvSelection(typeClass, tableLocal));
         }
         // Joined-table participants: their data splits across the base and their own detail
-        // table, so we cannot call their $fields against the base (its parameter is typed as the
+        // table, so we cannot call their $project against the base (its parameter is typed as the
         // detail table). Instead project the base-resident slice off the base here, reading each
         // participant's classified fields (the emitter reads the field variant, never the catalog):
         //   - an inherited field is a ColumnBackedReferenceField whose column resolves on the base; project
@@ -1657,7 +1643,7 @@ public class TypeFetcherGenerator {
      * singleton, with the routine's IN parameters bound from GraphQL field arguments. Chain hops
      * join forward out of the routine result — the first keyed by the name-matched target key
      * (no {@code Keys} constant exists), later hops by {@code .onKey} / condition — and the
-     * {@code Type.$fields(...)} selection narrowing projects the <em>terminus</em> alias.
+     * {@code Type.$project(...)} selection narrowing projects the <em>terminus</em> alias.
      *
      * <p>Generated code (list variant, single-node):
      * <pre>{@code
@@ -1667,7 +1653,7 @@ public class TypeFetcherGenerator {
      *             env.<String>getArgument("env"), env.<String>getArgument("serviceId"), env.<String>getArgument("feideId"));
      *     DSLContext dsl = graphitronContext(env).getDslContext(env);
      *     Result<Record> payload = dsl
-     *         .select(Tilgang.$fields(env.getSelectionSet(), table, env))
+     *         .select(Tilgang.$project(env.getSelectionSet().getFieldsGroupedByResultKey(), table, env))
      *         .from(table)
      *         .fetch();
      *     ...
@@ -1679,7 +1665,7 @@ public class TypeFetcherGenerator {
      *     FilmsForActor source = Routines.filmsForActor(env.<Integer>getArgument("actorId"), ...);
      *     Film films_0 = Tables.FILM.as("films_0");
      *     Result<Record> payload = dsl
-     *         .select(Film.$fields(env.getSelectionSet(), films_0, env))
+     *         .select(Film.$project(env.getSelectionSet().getFieldsGroupedByResultKey(), films_0, env))
      *         .from(source)
      *         .join(films_0).on(source.FILM_ID.eq(films_0.FILM_ID))
      *         .fetch();
@@ -1729,7 +1715,7 @@ public class TypeFetcherGenerator {
         var sel = CodeBlock.builder()
             .add("$T payload = dsl\n", valueType)
             .indent()
-            .add(".select($T.$$fields(env.getSelectionSet(), $L, env))\n", names.typeClass(), terminalLocal)
+            .add(".select($L)\n", ProjectionCall.fromEnvSelection(names.typeClass(), terminalLocal))
             .add(".from($L)\n", startLocal);
         var filters = new java.util.ArrayList<CodeBlock>();
         for (int i = 0; i < hops.size(); i++) {
@@ -1797,7 +1783,7 @@ public class TypeFetcherGenerator {
      *             .from(source)
      *             .fetch());
      *         Result<Record> payload = dsl
-     *             .select(Rental.$fields(env.getSelectionSet(), rentFilm_0, env))
+     *             .select(Rental.$project(env.getSelectionSet().getFieldsGroupedByResultKey(), rentFilm_0, env))
      *             .from(rentFilm_0)
      *             .where(rentFilm_0.RENTAL_ID.in(keys.getValues(source.RENTAL_ID)))
      *             .fetch();
@@ -1879,7 +1865,7 @@ public class TypeFetcherGenerator {
         var sel = CodeBlock.builder()
             .add("$T payload = dsl\n", valueType)
             .indent()
-            .add(".select($T.$$fields(env.getSelectionSet(), $L, env))\n", names.typeClass(), terminalLocal)
+            .add(".select($L)\n", ProjectionCall.fromEnvSelection(names.typeClass(), terminalLocal))
             .add(".from($L)\n", anchorLocal);
         var filters = new java.util.ArrayList<CodeBlock>();
         for (int i = 1; i < hops.size(); i++) {
@@ -2538,7 +2524,7 @@ public class TypeFetcherGenerator {
     /**
      * Emits a fetcher for {@link MutationField.MutationDeleteTableField}: a synchronous static
      * method that runs {@code dsl.deleteFrom(table).where(<lookupKey predicates>)
-     * .returningResult(<keys or $fields>).fetchOne(...)}.
+     * .returningResult(<keys or $project>).fetchOne(...)}.
      *
      * <p>Empty-match semantics: {@code .fetchOne(...)} returns {@code null} when the WHERE clause
      * matches no row. graphql-java surfaces that as a GraphQL null on a nullable field, or a
@@ -2574,7 +2560,7 @@ public class TypeFetcherGenerator {
     /**
      * Emits a fetcher for {@link MutationField.MutationInsertTableField}: a synchronous static
      * method that runs {@code dsl.insertInto(table, cols...).values(vals...)
-     * .returningResult(<keys or $fields>).fetchOne(...)}.
+     * .returningResult(<keys or $project>).fetchOne(...)}.
      *
      * <p>Column list is every {@code InputField.ColumnBackedField} in {@code tia.fields()} in
      * declaration order; values list is parallel, with each value bound via
@@ -3848,7 +3834,7 @@ public class TypeFetcherGenerator {
     /**
      * Emits a fetcher for {@link MutationField.MutationUpdateTableField}: a synchronous static
      * method that runs {@code dsl.update(table).set(col, val)... .where(<lookupKey predicates>)
-     * .returningResult(<keys or $fields>).fetchOne(...)}.
+     * .returningResult(<keys or $project>).fetchOne(...)}.
      *
      * <p>SET clause is {@code tia.setFields()} (the typed non-{@code @lookupKey}
      * {@code ColumnField} projection on {@code TableInputArg}). Invariant #4 guarantees this
@@ -4087,7 +4073,7 @@ public class TypeFetcherGenerator {
     /**
      * Emits a fetcher for {@link MutationField.MutationUpsertTableField}: a synchronous static
      * method that runs {@code dsl.insertInto(table, cols...).values(vals...).onConflict(<keys>)
-     * .doUpdate().set(col, val)... .returningResult(<keys or $fields>).fetchOne(...)}.
+     * .doUpdate().set(col, val)... .returningResult(<keys or $project>).fetchOne(...)}.
      *
      * <p>Column/values lists are identical to INSERT (every {@code InputField.ColumnBackedField} in
      * declaration order, {@code @lookupKey} fields included so the user-supplied PK lands on the
@@ -4880,7 +4866,7 @@ public class TypeFetcherGenerator {
      * clause; the transaction commits when the lambda returns and yields a {@code Result} (list
      * shape) or a single {@code RecordN<...>} (single shape) of PK keys. The response SELECT
      * then runs against those keys outside the transaction, projecting
-     * {@code Type.$fields(env.getSelectionSet(), table, env)} so graphql-java's per-field
+     * {@code Type.$project(env.getSelectionSet().getFieldsGroupedByResultKey(), table, env)} so graphql-java's per-field
      * fetchers see the full row record. Read errors during the SELECT or during nested
      * traversal propagate as field errors and cannot undo the DML.
      *
@@ -4916,15 +4902,15 @@ public class TypeFetcherGenerator {
                 tablesOnly.tablesClass(), tableRef.javaFieldName());
         if (isList) {
             followUp.add(emitReentryValuesJoinDecls(correlation))
-                .add("return dsl.select($T.$$fields(env.getSelectionSet(), $L, env))\n",
-                    typeClass, tableLocal)
+                .add("return dsl.select($L)\n",
+                    ProjectionCall.fromEnvSelection(typeClass, tableLocal))
                 .add("    .from($L)\n", tableLocal)
                 .add("    .join($L).on($L)\n", REENTRY_KEYS_INPUT, buildReentryValuesJoinOn(correlation))
                 .add("    .orderBy($L)\n", reentryIdxField())
                 .add("    .fetch(r -> r);\n");
         } else {
-            followUp.add("return dsl.select($T.$$fields(env.getSelectionSet(), $L, env))\n",
-                    typeClass, tableLocal)
+            followUp.add("return dsl.select($L)\n",
+                    ProjectionCall.fromEnvSelection(typeClass, tableLocal))
                 .add("    .from($L)\n", tableLocal)
                 .add("    .where(").add(buildReentryKeyEquality(correlation)).add(")\n")
                 .add("    .fetchOne(r -> r);\n");
@@ -5181,7 +5167,7 @@ public class TypeFetcherGenerator {
  * Single-table discriminated interface DML return. The write half is identical to
      * {@link #emitProjected} (a plain single-{@code @table} write, its {@code RETURNING} PK captured
      * by {@link #emitKeysTransaction}); only the follow-up SELECT differs. Rather than the
-     * concrete-type {@code Type.$fields(...)} projection, it re-projects through the shared
+     * concrete-type {@code Type.$project(...)} projection, it re-projects through the shared
      * read-side re-projection ({@link #buildTableInterfaceReprojection}) keyed by the same
      * carried correlation as the projected arm (the VALUES-join primitive at list cardinality,
      * plain key equality at single). The generated row carries
@@ -5285,9 +5271,9 @@ public class TypeFetcherGenerator {
         var pageRequestClass = ClassName.get(
             outputPackage + ".util", "ConnectionHelper", "PageRequest");
         builder.addStatement(
-            "$T page = $T.pageRequest(first, last, after, before, $L, orderBy, extraFields, "
-                + "$T.$$fields(env.getSelectionSet(), $L, env))",
-            pageRequestClass, connectionHelperClass, conn.defaultPageSize(), names.typeClass(), tableLocal);
+            "$T page = $T.pageRequest(first, last, after, before, $L, orderBy, extraFields, $L)",
+            pageRequestClass, connectionHelperClass, conn.defaultPageSize(),
+            ProjectionCall.fromEnvSelection(names.typeClass(), tableLocal));
 
         var tenantDsl = TenantDslEmitter.resolve(ctx, qtf, outputPackage);
         builder.addCode(tenantDsl.declaration());
@@ -5716,7 +5702,7 @@ public class TypeFetcherGenerator {
      *     var dsl = graphitronContext(env).getDslContext(env);
      *     if (rows.length == 0) return dsl.newResult();
      *     Table<?> input = DSL.values(rows).as("filmByIdInput", "idx", "FILM_ID");
-     *     return dsl.select(Film.$fields(env.getSelectionSet(), table, env))
+     *     return dsl.select(Film.$project(env.getSelectionSet().getFieldsGroupedByResultKey(), table, env))
      *               .from(table)
      *               .join(input).using(table.FILM_ID)
      *               .orderBy(input.field("idx"))
@@ -5743,8 +5729,7 @@ public class TypeFetcherGenerator {
         // absence.
         builder.addCode(buildConditionCall(field.parentTypeName(), field.name(), field.filters(), tableLocal, outputPackage));
 
-        var typeFieldsCall = CodeBlock.of("$T.$$fields(env.getSelectionSet(), $L, env)",
-            names.typeClass(), tableLocal);
+        var typeFieldsCall = ProjectionCall.fromEnvSelection(names.typeClass(), tableLocal);
         builder.addCode(LookupValuesJoinEmitter.buildFetcherBody(ctx, field, typeFieldsCall, tableLocal, outputPackage));
         return builder.build();
     }

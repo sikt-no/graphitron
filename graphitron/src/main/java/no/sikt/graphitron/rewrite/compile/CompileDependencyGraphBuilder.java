@@ -98,7 +98,7 @@ public final class CompileDependencyGraphBuilder {
                 acc.addNode(units.schemaShape(t.name()));
                 addConditionsNodeIfSql(t.name());
                 // EntityFetcherDispatch's select<Type>Alt<N> methods project this node type's
-                // $fields, so the dispatch unit recompiles when the projection's ABI moves.
+                // $project, so the dispatch unit recompiles when the projection's ABI moves.
                 acc.addEdge(entityFetcherDispatchFqcn(), units.typeClass(t.name()));
             }
             case GraphitronType.TableInterfaceType t -> {
@@ -180,7 +180,10 @@ public final class CompileDependencyGraphBuilder {
                 addConditionsEdge(fetcher, field.parentTypeName());
                 addConditionGlueEdges(field.parentTypeName(), f.filters());
             }
-            case ChildField.NestingField f -> addTypeClassEdge(fetcher, f.returnType());
+            // Nesting fields wire a pass-through fetcher in the registrations emitter; the
+            // projection reference (the Splice call onto the anchor-prefixed nested unit) is
+            // attributed from the hosting projection unit in addProjectionChildEdges.
+            case ChildField.NestingField ignored -> { }
             case ChildField.InterfaceField f -> addParticipantTypeClassEdges(fetcher, f.participants());
             case ChildField.UnionField f -> addParticipantTypeClassEdges(fetcher, f.participants());
             // NodeId-encoded carriers: precise NodeIdEncoder edge (the one per-type-growing singleton).
@@ -198,11 +201,16 @@ public final class CompileDependencyGraphBuilder {
             case ChildField.ComputedField ignored -> { }
             case ChildField.ServiceRecordField ignored -> { }
             case ChildField.ErrorsField ignored -> { }
-            // Pivot leaves emit raw filtered aggregates over the attribute table (typed Tables
-            // constants, no generated projection class), so they contribute no cross-type edge;
-            // the slot reads live on the projection type's own Fetchers unit.
+            // The inline pivot's projection reference is attributed from the hosting unit in
+            // addProjectionChildEdges; the batched delivery's rows method selects the same
+            // coordinate-keyed pivot unit from this Fetchers class. Slot reads live on the
+            // projection type's own Fetchers unit.
             case ChildField.PivotField ignored -> { }
-            case ChildField.BatchedPivotField ignored -> { }
+            case ChildField.BatchedPivotField f -> {
+                String pivotUnit = units.pivotUnit(f.parentTypeName(), f.name());
+                acc.addNode(pivotUnit);
+                acc.addEdge(fetcher, pivotUnit);
+            }
             case ChildField.PivotSlotField ignored -> { }
             // Root query / mutation fields.
             case QueryField qf -> addRootFieldEdges(fetcher, field.parentTypeName(), qf);
@@ -264,7 +272,7 @@ public final class CompileDependencyGraphBuilder {
                 addDmlProjectionEdges(fetcher, f.returnExpression());
             }
             // The routine-write fetcher projects the terminus type inline in step 2's
-            // post-commit SELECT (Type.$fields(...)), exactly like the query routine fetcher.
+            // post-commit SELECT (Type.$project(...)), exactly like the query routine fetcher.
             case MutationField.MutationRoutineWriteField f -> addTypeClassEdge(fetcher, f.returnType());
             case MutationField.MutationServiceTableField f -> addTypeClassEdge(fetcher, f.returnType());
             case MutationField.MutationServiceTableInterfaceField f -> addTypeClassEdge(fetcher, f.returnType());
@@ -299,18 +307,16 @@ public final class CompileDependencyGraphBuilder {
     }
 
     // ------------------------------------------------------------------------------------------------
-    // Type-to-type projection composition: a top-down walk mirroring TypeClassGenerator's emit seam.
+    // Type-to-type projection composition: a top-down walk mirroring the projection relation's shape.
     // ------------------------------------------------------------------------------------------------
 
     /**
      * Projection-composition edges attributed to the {@code types.<Type>} class, mirroring
-     * {@link no.sikt.graphitron.rewrite.generators.TypeClassGenerator}'s emit seam exactly: only
-     * {@link GraphitronType.TableType} / {@link GraphitronType.NodeType} parents get a type class
-     * (the same {@code generate()} filter), and that class's {@code $fields} method composes each
+     * the projection producer's unit walk exactly: only
+     * {@link GraphitronType.TableType} / {@link GraphitronType.NodeType} parents get an anchor unit,
+     * and that unit's {@code $project} method composes each
      * inline {@link ChildField.TableField} / {@link ChildField.LookupTableField}'s target projection
-     * via {@code Target.$fields(...)} (see
-     * {@link no.sikt.graphitron.rewrite.generators.TypeClassGenerator#emitSelectionSwitch} /
-     * {@link no.sikt.graphitron.rewrite.generators.InlineTableFieldEmitter}). This walk is kept
+     * via {@code Target.$project(...)}. This walk is kept
      * <em>separate</em> from {@link #addFieldEdges}: that switch keys edges off each field's immediate
      * {@code parentTypeName()} and cannot recover the hosting type class for nesting-hosted fields
      * without re-deriving nesting ancestry, whereas {@code emitSelectionSwitch} emits a nested inline
@@ -333,14 +339,14 @@ public final class CompileDependencyGraphBuilder {
             // rather than gated on the helper because the target is a UtilSingleton.FrozenScaffold,
             // so an over-approximated edge onto it never fires a recompile (its ABI is schema-invariant).
             acc.addEdge(hostClass, graphitronClientExceptionFqcn());
-            // Blanket frozen-scaffold edge: every type class's $fields loop leans on the
+            // Blanket frozen-scaffold edge: every type class's $project loop leans on the
             // SelectionOccurrences merge/guard statics (occurrence-union descent for shared result
             // keys). Structural to the emitted shape, so unconditional; the target is ABI-frozen,
             // so the blanket never fires a recompile.
             acc.addEdge(hostClass, units.singleton(GeneratedUnits.SUB_UTIL, "SelectionOccurrences"));
             for (var field : schema.fieldsOf(host)) {
                 if (field instanceof ChildField cf) {
-                    addProjectionChildEdges(hostClass, cf);
+                    addProjectionChildEdges(host, hostClass, cf);
                 }
             }
         }
@@ -348,20 +354,20 @@ public final class CompileDependencyGraphBuilder {
 
     /**
      * Per-child projection dispatch, a no-{@code default} exhaustive switch over the {@link ChildField}
-     * leaves (following {@link #addFieldEdges}' drift-guard discipline rather than
-     * {@code emitSelectionSwitch}'s {@code default -> {}}): a future inline-projecting leaf fails to
-     * compile here until its edge contribution is declared. Today the projecting set is exactly
-     * {@code {TableField, LookupTableField}} plus {@link ChildField.NestingField} recursion; every
-     * other leaf gets an explicit empty arm.
+     * leaves (following {@link #addFieldEdges}' drift-guard discipline): a future inline-projecting
+     * leaf fails to compile here until its edge contribution is declared. Today the projecting set is
+     * {@code {TableField, LookupTableField}} plus the two cross-unit calls: {@link ChildField.NestingField}
+     * onto its anchor-prefixed nested unit, {@link ChildField.PivotField} onto its coordinate's pivot unit.
      *
-     * <p>Edges attribute to {@code hostClass} (the hosting type class), not the field's
-     * {@code parentTypeName()}: a {@code NestingField}'s children emit into the outer table type's
-     * {@code $fields} method, so {@code hostClass} is threaded through the recursion unchanged.
+     * <p>Edges attribute to {@code hostClass} (the hosting projection unit): a {@code NestingField}'s
+     * children emit into the {@code (anchor, typeName)} nested unit's own {@code $project}, so the
+     * recursion re-homes {@code hostClass} onto that unit while {@code anchorTypeName} stays fixed
+     * (the anchor prefixes every deeper unit's name).
      */
-    private void addProjectionChildEdges(String hostClass, ChildField field) {
+    private void addProjectionChildEdges(String anchorTypeName, String hostClass, ChildField field) {
         switch (field) {
-            // Inline-projecting leaves: the $fields switch arm composes Target.$fields(...) inline,
-            // so this type class references the target's projection class. Its inline filters add
+            // Inline-projecting leaves: the $project switch arm composes Target.$project(...) inline,
+            // so this unit references the target's projection class. Its inline filters add
             // further edges (generated condition class, NodeIdEncoder decode-helper lift).
             case ChildField.TableField f -> {
                 acc.addEdge(hostClass, units.typeClass(f.returnType().returnTypeName()));
@@ -371,21 +377,28 @@ public final class CompileDependencyGraphBuilder {
                 acc.addEdge(hostClass, units.typeClass(f.returnType().returnTypeName()));
                 addInlineFilterEdges(hostClass, f.parentTypeName(), f.filters());
             }
-            // Nesting projections inline into the same outer type class; recurse with hostClass fixed.
+            // A nesting projection is a Splice call onto its own anchor-prefixed unit, which
+            // carries the same blanket scaffold edges the anchor does (its $project loop leans on
+            // SelectionOccurrences, and its lookup helpers can lift decode plumbing).
             case ChildField.NestingField f -> {
+                String nestedUnit = units.nestingUnit(anchorTypeName, f.returnType().returnTypeName());
+                acc.addNode(nestedUnit);
+                acc.addEdge(hostClass, nestedUnit);
+                acc.addEdge(nestedUnit, graphitronClientExceptionFqcn());
+                acc.addEdge(nestedUnit, units.singleton(GeneratedUnits.SUB_UTIL, "SelectionOccurrences"));
                 for (var child : f.nestedFields()) {
-                    addProjectionChildEdges(hostClass, child);
+                    addProjectionChildEdges(anchorTypeName, nestedUnit, child);
                 }
             }
-            // Scalar column subquery (InlineColumnReferenceFieldEmitter, no $fields) and the computed
-            // arm (external user class via ClassName.bestGuess) reference no generated unit.
+            // Scalar column subquery and the computed arm (external user class via
+            // ClassName.bestGuess) reference no generated unit.
             case ChildField.ColumnBackedField ignored -> { }
             case ChildField.ColumnBackedReferenceField ignored -> { }
             case ChildField.ParticipantColumnReferenceField ignored -> { }
             case ChildField.ComputedField ignored -> { }
             // DataLoader-backed / record-parent / polymorphic / service leaves are not emitted inline
-            // into this $fields method (TypeClassGenerator collects only TableField/LookupTableField);
-            // their projection edges are sourced from their own <parent>Fetchers unit in addFieldEdges.
+            // into this $project method; their projection edges are sourced from their own
+            // <parent>Fetchers unit in addFieldEdges.
             case ChildField.BatchedTableField ignored -> { }
             case ChildField.BatchedLookupTableField ignored -> { }
             case ChildField.TableInterfaceField ignored -> { }
@@ -398,10 +411,15 @@ public final class CompileDependencyGraphBuilder {
             case ChildField.SingleRecordIdField ignored -> { }
             case ChildField.SingleRecordIdFieldFromReturning ignored -> { }
             case ChildField.ErrorsField ignored -> { }
-            // The inline pivot's $fields arm composes DSL aggregates over the attribute table's
-            // typed Tables constants only; no generated projection class is referenced. The
-            // batched leaf is not emitted inline, and slots never appear in a $fields walk.
-            case ChildField.PivotField ignored -> { }
+            // The inline pivot arm wraps its coordinate's pivot unit in a multiset; the unit's own
+            // body references only the attribute table's typed constants and DSL. The batched
+            // leaf's edge is fetcher-side (addFieldEdges), and slots never appear in a
+            // table-context projection walk.
+            case ChildField.PivotField f -> {
+                String pivotUnit = units.pivotUnit(f.parentTypeName(), f.name());
+                acc.addNode(pivotUnit);
+                acc.addEdge(hostClass, pivotUnit);
+            }
             case ChildField.BatchedPivotField ignored -> { }
             case ChildField.PivotSlotField ignored -> { }
         }
@@ -409,7 +427,7 @@ public final class CompileDependencyGraphBuilder {
 
     /**
      * The edges an inline {@link ChildField.TableField} / {@link ChildField.LookupTableField}'s
-     * filters contribute, mirroring the converged emission: the {@code $fields} switch arm emits
+     * filters contribute, mirroring the converged emission: the {@code $project} switch arm emits
      * one glue call, so the hosting type class references the coordinate's
      * {@code <Parent>Conditions} unit (the field's own parent, which for a nesting-hosted field
      * is the nesting type, not the outer host), and the glue unit itself carries the extraction
@@ -689,7 +707,7 @@ public final class CompileDependencyGraphBuilder {
      * The node-lookup / federation dispatch wiring. {@code QueryNodeFetcher} branches per typeId
      * through {@code EntityFetcherDispatch}'s select methods after peeking the id via
      * {@code NodeIdEncoder}; {@code EntityFetcherDispatch} decodes reps via {@code NodeIdEncoder} and
-     * projects each node type's {@code $fields} (the per-node-type edge is added from the
+     * projects each node type's {@code $project} (the per-node-type edge is added from the
      * {@link GraphitronType.NodeType} arm) plus each federation entity type's (added here from
      * {@code entitiesByType}); the schema class registers the node fetcher. Superset-safe when the
      * schema has no node or entity types: the units are then never emitted and the recompile render

@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators;
 
+import no.sikt.graphitron.rewrite.ProjectionRenderTestSupport;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
@@ -15,7 +16,7 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
  * Integration tests for the full table class pipeline: SDL schema → {@link GraphitronSchema} →
  * generated class list.
  *
- * <p>Verifies that {@link TypeClassGenerator} produces exactly one class per distinct SQL table
+ * <p>Verifies that the projection renderer produces exactly one class per distinct SQL table
  * referenced by a {@link no.sikt.graphitron.rewrite.model.GraphitronType.TableType}, named after
  * the table (not the GraphQL type name), and skips all other types.
  */
@@ -80,7 +81,7 @@ class TablePipelineTest {
         assertThat(classes).doesNotContain("Query");
     }
 
-    // ===== $fields() method =====
+    // ===== $project() method =====
 
     @Test
     void fieldsMethod_containsScalarColumnsFromSchema() {
@@ -88,7 +89,7 @@ class TablePipelineTest {
             type Film @table(name: "film") { title: String, filmId: Int @field(name: "film_id") }
             type Query { film: Film }
             """);
-        // Which SQL columns back which GraphQL fields is a $fields body-content question;
+        // Which SQL columns back which GraphQL fields is a $project body-content question;
         // compile tier (graphitron-sakila-example) catches a wrong Tables.FILM.TITLE reference,
         // execution tier catches wrong values. Here we only verify the arms are present for each
         // declared GraphQL field.
@@ -99,14 +100,14 @@ class TablePipelineTest {
     // ===== Helpers =====
 
     private no.sikt.graphitron.javapoet.TypeSpec findSpec(String className, String sdl) {
-        return TypeClassGenerator.generate(buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE).stream()
+        return ProjectionRenderTestSupport.renderProjections(buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals(className))
             .findFirst()
             .orElseThrow(() -> new AssertionError("Class not found: " + className));
     }
 
     private List<String> generate(String sdl) {
-        return TypeClassGenerator.generate(buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE).stream()
+        return ProjectionRenderTestSupport.renderProjections(buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE).stream()
             .map(t -> t.name())
             .toList();
     }

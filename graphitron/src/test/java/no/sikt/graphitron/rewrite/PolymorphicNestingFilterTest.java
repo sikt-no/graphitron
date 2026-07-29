@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Depth-recursion pin: the Stage-2 per-typename SELECT wraps the parent selection set
  * <em>once</em>, at the outer call site. Nested-projection recursion in
- * {@code TypeClassGenerator.emitSelectionSwitch} reads from {@code sf.getSelectionSet()}
+ * {@code the projection renderer.emitSelectionSwitch} reads from {@code sf.getSelectionSet()}
  * on a {@code SelectedField} already filtered at the outer level, so depth&gt;0 levels do not
  * need (and do not get) a per-depth filter.
  *
@@ -40,7 +40,7 @@ class PolymorphicNestingFilterTest {
         // Fixture: union of two table-bound participants. Each participant resolves through
         // the Stage-2 buildPerTypenameSelect path; the emitted method body should contain
         // exactly one PolymorphicSelectionSet.restrictTo reference (the outer wrap). The
-        // recursion inside the emitted <Type>.$fields walks sf.getSelectionSet() at depth>0,
+        // recursion inside the emitted <Type>.$project walks sf.getSelectionSet() at depth>0,
         // which is independent of the wrapper and adds no second restrictTo to the body.
         var schema = TestSchemaHelper.buildSchema("""
             type Inventory @table(name: "inventory") {

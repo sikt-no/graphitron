@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
@@ -19,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code @field} that overlaps one of the key columns classifies into two emit arms whose
  * projections collide on the same column.
  *
- * <p>Pre-fix the generated {@code $fields} method appended the column twice and jOOQ's
+ * <p>Pre-fix the generated {@code $project} method appended the column twice and jOOQ's
  * {@code FieldsImpl.indexOf} logged an INFO "Ambiguous match" on every fetched row. The fix is
  * a {@link java.util.LinkedHashSet} accumulator that dedupes by jOOQ {@code Field} identity at
  * runtime. This test pins the structural contract: the classifier surfaces both overlapping
@@ -71,17 +70,17 @@ class DedupeReferenceProjectionPipelineTest {
     }
 
     @Test
-    void generated$fieldsEmitsCaseArmForBothOverlappingFields() {
+    void generated$projectEmitsCaseArmForBothOverlappingFields() {
         var schema = TestSchemaHelper.buildSchema(OVERLAP_SDL, FIXTURE_CTX);
-        var fooClass = TypeClassGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+        var fooClass = ProjectionRenderTestSupport.renderProjections(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("Foo"))
             .findFirst().orElseThrow();
 
         assertThat(TypeSpecAssertions.hasFieldsArm(fooClass, "id"))
-            .as("Foo.$fields must contain a case arm for the composite @nodeId field")
+            .as("Foo.$project must contain a case arm for the composite @nodeId field")
             .isTrue();
         assertThat(TypeSpecAssertions.hasFieldsArm(fooClass, "overlappingKey"))
-            .as("Foo.$fields must contain a case arm for the sibling overlapping @field")
+            .as("Foo.$project must contain a case arm for the sibling overlapping @field")
             .isTrue();
     }
 }

@@ -67,7 +67,7 @@ public final class CompositeDecodeHelperRegistry {
      * error, not a generator failure.
      *
      * <p>Used by {@link ConditionGlueRenderer} and the legacy fetcher-side hosts
-     * ({@code TypeClassGenerator}, {@code TypeFetcherGenerator}); each owns the
+     * (the projection renderer, {@code TypeFetcherGenerator}); each owns the
      * {@link TypeSpec.Builder} the helpers land on.
      */
     public static void collectInto(TypeSpec.Builder classBuilder, String outputPackage,

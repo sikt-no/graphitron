@@ -571,7 +571,7 @@ class FetcherPipelineTest {
     // ===== single-table discriminated interface as a DML return =====
     // Body-content assertions (justified as in TypeFetcherGeneratorTest's discriminator tests): the
     // return-half re-projection has no structural equivalent, and the load-bearing facts are the
-    // synthetic __discriminator__ projection, the participant $fields sets, the discriminator-gated
+    // synthetic __discriminator__ projection, the participant $project sets, the discriminator-gated
     // cross-table LEFT JOIN, and that the follow-up SELECT keys off the RETURNING PK rather than
     // rescanning. Model shape is pinned separately in GraphitronSchemaBuilderTest; runtime routing
     // in DmlTableInterfaceReturnExecutionTest.
@@ -618,9 +618,9 @@ class FetcherPipelineTest {
         assertThat(rowsBody)
             .as("re-projection projects the synthetic __discriminator__ alias for the TypeResolver")
             .contains("__discriminator__")
-            .as("each implementer's participant field set projected via its $fields")
-            .contains("FilmContent.$fields(")
-            .contains("ShortContent.$fields(")
+            .as("each implementer's participant field set projected via its $project")
+            .contains("FilmContent.$project(")
+            .contains("ShortContent.$project(")
             .as("discriminator-gated cross-table LEFT JOIN for FilmContent.rating")
             .contains(".leftJoin(")
             .as("follow-up SELECT keyed by the RETURNING PK (single-column .eq(keys.value1())), not a rescan")
@@ -646,8 +646,8 @@ class FetcherPipelineTest {
             .contains("rowsUpdateContent(keys, env)");
         assertThat(method(mutationFetchers, "rowsUpdateContent").code().toString())
             .contains("__discriminator__")
-            .contains("FilmContent.$fields(")
-            .contains("ShortContent.$fields(")
+            .contains("FilmContent.$project(")
+            .contains("ShortContent.$project(")
             .contains(".leftJoin(")
             .contains("keys.value1()");
     }
@@ -799,7 +799,7 @@ class FetcherPipelineTest {
 
     @Test
     void serviceField_dataFetcherReturnsCompletableFutureListProjectedRecord() {
-        // ServiceTableField lifts the service result back through a $fields re-projection,
+        // ServiceTableField lifts the service result back through a $project re-projection,
         // so the loader value is the projected org.jooq.Record, not the developer-returned XRecord.
         var languageFetchers = findSpec("LanguageFetchers", """
             type Language @table(name: "language") { languageId: Int @field(name: "language_id") }

@@ -6,7 +6,7 @@ bucket: architecture
 theme: classification-model
 depends-on: []
 created: 2026-07-27
-last-updated: 2026-07-28
+last-updated: 2026-07-29
 ---
 
 # Facts and commands: grain-first hierarchies and the three command relations
@@ -938,6 +938,72 @@ R541's single-operation launchers never need it, and a general launcher cannot d
     code-string ban: SQL is the contract with the database.
   - Deliberately not built, per the consult: no validator mirror (slice 2 adds no classifier
     branch) and no concentration ratchet (invariant 7 is optional and not in this slice's row).
+
+- **Slice 3.1 landed 2026-07-29.** The keystone's reshape half: one `$project` method per
+  projection unit (grouped selection in, select list out; the two `$fields` overloads and the
+  private `$fieldsGrouped` retired, adapters composing at call sites through the shared
+  `render/ProjectionCall` emitter every host reads), nesting types promoted to
+  `(anchor, typeName)` units with anchor-prefixed names, the seven positional buckets one
+  ordered `List<Contribution>`, exhaustive dispatch with no default on both sides
+  (`ProjectionCommands` producer, `ProjectionUnitRenderer` interpreter), and the frozen
+  `ProjectionSqlBaselineTest` green unchanged through the whole move, shared-nesting pin
+  included. Findings to report, per the budget rule and the consult:
+  - **Vocabulary budget.** Landed as budgeted: `ProjectionCommand`, `Contribution`, `CallWrap`,
+    the `SelectTerm` arms, `Arity`. Over budget, each a consult-directed correction rather than
+    absorbed width: `GlueCall(UnitMethodRef, takesEnv)` (shared with R541's WHERE slot; the env
+    fork single-sourced off the condition row, never recomputed from filters, so
+    `ProjectionCommands.produce` takes the `ConditionRelation` as a parameter), `TermAlias` (the
+    item's alias slot, two-case: the standalone reference's aliased plain column was otherwise
+    unrepresentable and would have moved SQL), `SelectTerm.Aggregate` (the pivot slot's SQL
+    shape), and two extra `CallWrap` arms (`LookupMultiset`, `PivotMultiset`) because the VALUES
+    keyset and the attribute-table envelope are different SQL shapes, not different reasons.
+    `ProjectionCommand` landed sealed with three arms (`AnchorUnit`/`NestedUnit`/`PivotUnit`),
+    not the sketched record: key minting, the interim required-projection slot, the containment
+    check's invocation set and the renderer's body shape all fork on unit kind.
+  - **No `JoinShape` was minted.** The multiset arms borrow the model's join vocabulary verbatim
+    (`List<JoinStep>`, `ParentCorrelation`, `OrderBySpec`, `LookupMapping` joined the dial;
+    `TableExpr`/`JoinConditionRef`/`RoutineRef`/`ParamSource` were closure-implied promotions),
+    so the launcher-of-a-correlated-subquery shape stays R541's decision and no
+    accepted-and-emitting hop shape became a producer throw.
+  - **Pivot became its own unit, keyed by coordinate, not by attribute table.** The residual's
+    stated keying was refined at implementation: `PivotSpec` is coordinate-grain (two
+    coordinates can pivot into one projection type over different attribute tables), so the unit
+    is `types.<Parent><Field>` per pivot-bearing coordinate, minted by inline and batched
+    delivery alike and consumed by both hosts, which turns the two-host alias-drift javadoc
+    promise into structure. The double-reach shape (confirmed author-reachable by
+    `PivotClassificationTest`) resolves by construction: a pivot unit and a nesting unit are
+    different keys. `PivotSlotField` mints slot contributions, ending its ridden-exemption
+    status in the census.
+  - **The naming collision verdict:** `<Anchor><Nested>` with a typed validate-time rejection
+    (`validateProjectionUnitAddresses`, mirroring the producer's case-folded address census),
+    not the `$`-separator: `$` is the JVM's binary-name separator and two live readers
+    (`IncrementalCompileEngine.topLevelFqcn`, `ClasspathScanner`) already decode it as nesting,
+    so the "free" unrepresentability would have cost a never-swept stale class file.
+  - **The dispatch partition re-sourced.** `TypeFetcherGenerator.PROJECTED_LEAVES` deleted; the
+    projected bucket derives from `ProjectionCommands.CONTRIBUTION_MINTING_LEAVES` minus the
+    dual-arm kinds, the dual-arm intersection pinned explicitly (`ColumnBackedField`,
+    `ComputedField`, `BatchedPivotField`), and `ProjectionMembershipTest` binds the declaration
+    to observed minting in both directions plus the relation's key-set to an independently
+    derived covered set (the membership enforcer, landing with the family per the R552
+    precedent).
+  - **R472 closed.** The nested-coordinate walk exists now, so the deferred rejection on nested
+    generated filters deleted and the pinned fixture flipped from rejected to producing the
+    nested row; the tombstone file was deleted per its own instruction.
+  - **Ratchets:** entry points 22 to 21, generator leaf `instanceof` 97 to 83, `case` 87 to 78,
+    plan leaf references 6 to 42 (the four-layer window the tertiary count exists to make
+    visible; it ratchets back down at slice 4).
+  - **Two grains for one concept, recorded for slices 3b/5/7:** after this slice a nesting type
+    has `(anchor, type)` grain on the projection side and bare `type` grain on the fetcher side
+    (`<Type>Fetchers`, first-occurrence-wins representative), with
+    `validateNestingParentCompat` the only thing making the coarser grain safe. The latent
+    fetcher-side representative bug between pivot and nesting edges under `@field(name:)` remap
+    is out of this slice's scope and needs its own Backlog item.
+  - **Deleted:** `TypeClassGenerator`, `InlineTableFieldEmitter`, `InlineLookupTableFieldEmitter`,
+    `InlineColumnReferenceFieldEmitter`, `PivotProjectionEmitter`, the depth-suffixed local
+    scheme, and the nested-lookup helper hoisting. Moved to `render/` with legacy hosts
+    delegating (the R552 fragment precedent): `ValuesJoinRowBuilder`, `RoutineCallEmitter`,
+    `PreviousNodeRef`, `ArgumentValueSource`, the path fragments (`PathFragments`), and the
+    lookup rows core (`LookupRows`).
 
 ## The exemption lists are the grain worklist
 

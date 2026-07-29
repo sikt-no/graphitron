@@ -2,7 +2,6 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.FetcherRegistrationsEmitter;
 import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
 import no.sikt.graphitron.rewrite.model.ChildField.NestingField;
@@ -20,7 +19,7 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
  * <ul>
  *   <li>Outer type's {@code registerFetchers(codeRegistry)} body — {@code Film.details} wired as a
  *       passthrough lambda (lambda kind).</li>
- *   <li>{@code Film.$fields(...)} — switch arm for {@code details} recurses into nested column
+ *   <li>{@code Film.$project(...)} — switch arm for {@code details} recurses into nested column
  *       names.</li>
  *   <li>Nested type's {@code registerFetchers(codeRegistry)} body — one entry per nested type in
  *       the {@link FetcherRegistrationsEmitter} output, keyed by the nested type's name.</li>
@@ -52,9 +51,12 @@ class NestingFieldPipelineTest {
     }
 
     @Test
-    void outerTypeClass_fieldsSwitchProjectsNestedScalar() {
-        var filmType = findType("Film", SCALAR_NESTING_SDL);
-        assertThat(TypeSpecAssertions.hasFieldsArm(filmType, "title")).isTrue();
+    void nestedUnit_projectsTheNestedScalar() {
+        // Nesting types are projection units of their own, keyed (anchor, typeName) and
+        // anchor-prefixed; the anchor's arm splices the nested unit's $project rather than
+        // inlining the nested switch.
+        var nestedUnit = findType("FilmFilmDetails", SCALAR_NESTING_SDL);
+        assertThat(TypeSpecAssertions.hasFieldsArm(nestedUnit, "title")).isTrue();
     }
 
     @Test
@@ -136,7 +138,7 @@ class NestingFieldPipelineTest {
     @Test
     void typeClass_nestedSplitField_projectsOuterParentSourceKeyColumn() {
         // The recursive collectSourceKeyColumns walk must surface Film.info.cast's SourceKey
-        // column (FILM.FILM_ID) into Film.$fields so key extraction can read the FK off
+        // column (FILM.FILM_ID) into Film.$project so key extraction can read the FK off
         // env.getSource() at request time. Without the recursion, the fixture still compiles;
         // the emitted DSL.row(((Record) env.getSource()).get(Tables.FILM.FILM_ID)) then reads a
         // field the SELECT omitted, which jOOQ rejects at request time.
@@ -147,7 +149,7 @@ class NestingFieldPipelineTest {
     // ===== Helpers =====
 
     private static TypeSpec findType(String className, String sdl) {
-        return TypeClassGenerator.generate(TestSchemaHelper.buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE).stream()
+        return ProjectionRenderTestSupport.renderProjections(TestSchemaHelper.buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals(className))
             .findFirst()
             .orElseThrow(() -> new AssertionError("Type class not found: " + className));

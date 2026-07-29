@@ -63,7 +63,7 @@ public class TestFilmService {
     /**
      * Fixture: typed-{@code TableRecord} source-shape sibling of {@link #getRankMapped}.
      * {@code Set<LanguageRecord>} keys classify the wrap as {@code SourceKey.Wrap.TableRecord},
-     * which obliges the parent {@code $fields} SELECT to project the wrap's key columns, the
+     * which obliges the parent {@code $project} SELECT to project the wrap's key columns, the
      * parent's primary key. The generated extraction copies exactly those onto a fresh typed
      * record by jOOQ field identity; a body needing any other column fetches it itself.
      */

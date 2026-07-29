@@ -14,7 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Guarantee marker: the Stage-2 per-typename SELECT in
  * {@code MultiTablePolymorphicEmitter.buildPerTypenameSelect} threads
  * {@code PolymorphicSelectionSet.restrictTo(env.getSelectionSet(), "<Type>")}
- * into the emitted {@code <Type>.$fields(...)} call. Passing the unfiltered parent
+ * into the emitted {@code <Type>.$project(...)} call. Passing the unfiltered parent
  * selection set instead re-introduces the over-selection the wrapper closes.
  *
  * <p>The classifier does not reject this shape (no classifier guarantee applies),
@@ -28,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * appears in many non-polymorphic emit sites across {@code FetcherEmitter},
  * {@code SplitRowsMethodEmitter}, and several {@code TypeFetcherGenerator}
  * sites that are correct as-is per the "Filter at the call site, not inside
- * {@code $fields}" reasoning, plus the same-table interface emit site at
+ * {@code $project}" reasoning, plus the same-table interface emit site at
  * {@code TypeFetcherGenerator.buildInterfaceFieldsList} that this pin intentionally
  * leaves alone. A folder-wide count would couple the pin to those unrelated
  * correct sites; a single-file scope pins exactly the Stage-2 invariant.
@@ -64,16 +64,15 @@ class PolymorphicProjectionFilterPinTest {
 
     @Test
     void stage2EmitterPassesNoUnfilteredSelectionSetToFields() throws IOException {
-        // Matches the JavaPoet emit-string shape `$$fields(env.getSelectionSet()`; the double
-        // dollar distinguishes addStatement bodies from javadoc text (which uses single $fields).
-        // Expected count 0: every call in MultiTablePolymorphicEmitter.java passes through
-        // PolymorphicSelectionSet.restrictTo.
+        // The unfiltered projection call is composed through the shared call emitter
+        // (ProjectionCall.fromEnvSelection); expected count 0 in the Stage-2 emitter: every
+        // Stage-2 SELECT threads the selection set through PolymorphicSelectionSet.restrictTo.
         String content = Files.readString(STAGE_2_EMITTER);
-        long directArgs = Pattern.compile("\\$\\$fields\\(env\\.getSelectionSet\\(\\)")
+        long directArgs = Pattern.compile("ProjectionCall\\.fromEnvSelection\\(")
             .matcher(content).results().count();
         assertThat(directArgs)
-            .as("No emit-site in MultiTablePolymorphicEmitter.java passes env.getSelectionSet() "
-                + "directly to $$fields( — every Stage-2 SELECT must thread the selection set "
+            .as("No emit-site in MultiTablePolymorphicEmitter.java composes the unfiltered "
+                + "projection call — every Stage-2 SELECT must thread the selection set "
                 + "through PolymorphicSelectionSet.restrictTo so the per-typename projection sees "
                 + "only SelectedFields matching that participant. A regression that reverts the "
                 + "Stage-2 site to the unfiltered shape re-introduces a match.")

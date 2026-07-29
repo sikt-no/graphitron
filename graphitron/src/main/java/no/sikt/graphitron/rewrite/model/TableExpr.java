@@ -33,7 +33,7 @@ public sealed interface TableExpr permits TableExpr.Catalog, TableExpr.RoutineCa
      * {@code @routine} / {@code @reference} chain. jOOQ generates the function as a first-class
      * catalog {@code Table<R>}, so the node has a real {@link TableRef} identity
      * ({@code resultTable}) that answers {@link JoinStep.Hop#targetTable()} — alias generation,
-     * terminus checks, and {@code $fields} projection all read the result table uniformly with
+     * terminus checks, and {@code $project} projection all read the result table uniformly with
      * {@link Catalog} nodes.
      *
      * <p>{@code routine} carries the call surface ({@code Routines} class, table-form

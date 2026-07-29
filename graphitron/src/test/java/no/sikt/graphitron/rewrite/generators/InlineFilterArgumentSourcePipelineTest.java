@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators;
 
+import no.sikt.graphitron.rewrite.ProjectionRenderTestSupport;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.RewriteContext;
@@ -25,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * the structural consequence that keeps the {@code -Werror} consumer compile green: the argument
  * extraction (and any unchecked cast it needs) lives in the coordinate's condition glue method,
  * which carries {@code @SuppressWarnings("unchecked")} exactly when a binding local's declaration
- * casts to a non-reifiable target, while the {@code $fields} host passes the map through and
+ * casts to a non-reifiable target, while the {@code $project} host passes the map through and
  * stays unstamped. Asserts on the generated {@link MethodSpec}'s annotations, never on body
  * strings (banned at every tier).
  *
@@ -74,7 +75,7 @@ class InlineFilterArgumentSourcePipelineTest {
 
     private static MethodSpec fieldsMethod(TypeSpec type) {
         return type.methodSpecs().stream()
-            .filter(m -> m.name().equals("$fieldsGrouped")).findFirst().orElseThrow();
+            .filter(m -> m.name().equals("$project")).findFirst().orElseThrow();
     }
 
     private static boolean stampsUncheckedSuppression(MethodSpec method) {
@@ -99,12 +100,12 @@ class InlineFilterArgumentSourcePipelineTest {
     @Test
     void inlineReferenceFilter_listArg_stampsUncheckedSuppressionOnGlueMethod() {
         // The (List<String>) binding-local cast is glue's, so the suppression is glue's; the
-        // $fields host only passes sf.getArguments() and must stay unstamped.
+        // $project host only passes sf.getArguments() and must stay unstamped.
         assertThat(stampsUncheckedSuppression(
             glueMethod(LIST_FILTER_SDL, "BazConditions", "barsCondition"))).isTrue();
 
         var schema = TestSchemaHelper.buildSchema(LIST_FILTER_SDL, FIXTURE_CTX);
-        var baz = TypeClassGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+        var baz = ProjectionRenderTestSupport.renderProjections(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("Baz")).findFirst().orElseThrow();
         assertThat(stampsUncheckedSuppression(fieldsMethod(baz))).isFalse();
     }
@@ -168,7 +169,7 @@ class InlineFilterArgumentSourcePipelineTest {
         // inline JooqConvert+list shape.
         assertThatCode(() -> {
             var schema = TestSchemaHelper.buildSchema(JOOQ_CONVERT_LIST_SDL);
-            TypeClassGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE);
+            ProjectionRenderTestSupport.renderProjections(schema, DEFAULT_OUTPUT_PACKAGE);
             TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE);
         }).doesNotThrowAnyException();
     }
@@ -178,7 +179,7 @@ class InlineFilterArgumentSourcePipelineTest {
         // The full classify + generate path succeeds for the inline list-filter shape.
         assertThatCode(() -> {
             var schema = TestSchemaHelper.buildSchema(LIST_FILTER_SDL, FIXTURE_CTX);
-            TypeClassGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE);
+            ProjectionRenderTestSupport.renderProjections(schema, DEFAULT_OUTPUT_PACKAGE);
             TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE);
         }).doesNotThrowAnyException();
     }

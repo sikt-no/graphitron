@@ -27,7 +27,7 @@ import java.util.List;
  * <p>The {@code Discriminated*} pair handles a return that is a single-table discriminated
  * interface ({@code @table @discriminate}, implementers pinned by {@code @discriminator(value:)},
  * all sharing one jOOQ table). The write half is identical to {@code Projected*}; only the
- * follow-up re-projection differs: instead of the concrete-type {@code <TypeName>Type.$fields(...)}
+ * follow-up re-projection differs: instead of the concrete-type {@code <TypeName>Type.$project(...)}
  * SELECT, it projects the synthetic {@code __discriminator__} alias plus the unified participant
  * field set, so the interface's {@code TypeResolver} can route each row to its implementer. A
  * return-shape arm (rather than a per-verb {@code MutationField} leaf) keeps the fork off the
@@ -44,7 +44,7 @@ public sealed interface DmlReturnExpression {
 
     /**
      * {@code T} return where {@code T} is a {@code @table} type. The GraphQL return-type name
-     * resolves the {@code <TypeName>Type.$fields(...)} projection class.
+     * resolves the {@code <TypeName>Type.$project(...)} projection class.
      *
      * <p>{@code reentryCorrelation} is the correlation the {@code rows<Name>} reentry companion
      * keys its follow-up SELECT on: the {@link ParentCorrelation.OnLiftedSlots} PK-self-identity

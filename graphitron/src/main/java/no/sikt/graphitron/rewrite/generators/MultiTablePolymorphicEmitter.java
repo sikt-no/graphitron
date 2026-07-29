@@ -9,7 +9,8 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.generators.util.PolymorphicSelectionSetClassGenerator;
-import no.sikt.graphitron.rewrite.generators.util.ValuesJoinRowBuilder;
+import no.sikt.graphitron.render.ProjectionCall;
+import no.sikt.graphitron.render.ValuesJoinRowBuilder;
 import no.sikt.graphitron.rewrite.model.Arity;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -42,13 +43,13 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.*;
  * {@code (__typename, __pk0__, ..., __sortN__)} per branch. The database does ORDER BY in one
  * shot. Stage 2 dispatches per {@code __typename} using {@link ValuesJoinRowBuilder} (the same
  * shape the federation {@code _entities} dispatcher uses): one
- * {@code SELECT <Type>.$fields(...) FROM t JOIN VALUES(...) ON t.PK = input.PK ORDER BY idx} per
+ * {@code SELECT <Type>.$project(...) FROM t JOIN VALUES(...) ON t.PK = input.PK ORDER BY idx} per
  * non-empty group. Result records carry the synthetic {@code __typename} column projected as a
  * literal so the schema-class TypeResolver routes each row to the correct concrete GraphQL type.
  *
  * <p><b>Join syntax: {@code .on(...)}, not {@code .using(...)}.</b> Stage 2's projection includes
- * {@code <TypeName>.$fields(env.getSelectionSet(), t, env)}, which references {@code t.<col>}
- * directly; USING would collapse the joined PK columns and risk colliding with $fields-emitted
+ * {@code <TypeName>.$project(env.getSelectionSet().getFieldsGroupedByResultKey(), t, env)}, which references {@code t.<col>}
+ * directly; USING would collapse the joined PK columns and risk colliding with $project-emitted
  * projections. See {@link no.sikt.graphitron.rewrite.generators.util.SelectMethodBody}'s
  * Javadoc for the same rationale on the federation dispatch path.
  *
@@ -72,7 +73,7 @@ public final class MultiTablePolymorphicEmitter {
      * Synthetic projection alias carrying the discriminator value for a single-table discriminated
      * interface ({@code @table @discriminate}). The discriminated {@code TypeResolver} routes off this
      * alias rather than the raw discriminator column name: when the interface also exposes the
-     * discriminator as a queryable field, the real column is projected by the participant {@code $fields}
+     * discriminator as a queryable field, the real column is projected by the participant {@code $project}
      * too, and a bare read of the unaliased name matches both projections ambiguously (jOOQ logs
      * {@code Ambiguous match found} and resolves to the first by luck). Same {@code __}-wrapping
      * collision-avoidance rationale as {@link #TYPENAME_COLUMN}; reaches generated code only as a string
@@ -1918,7 +1919,7 @@ public final class MultiTablePolymorphicEmitter {
         b.addStatement("$T<?> input = $T.values(rows).as($L)",
             TABLE, DSL, ValuesJoinRowBuilder.aliasArgs(columns, columnFn, inputAlias));
 
-        // Field projection: <TypeName>.$fields(...) plus the synthetic __typename literal so
+        // Field projection: <TypeName>.$project(...) plus the synthetic __typename literal so
         // the schema-class TypeResolver routes each row back to its concrete GraphQL type.
         // The parent's flattened DataFetchingFieldSelectionSet is restricted to this
         // participant's SelectedFields via PolymorphicSelectionSet.restrictTo, so the per-typename
@@ -1928,9 +1929,12 @@ public final class MultiTablePolymorphicEmitter {
         var arrayListOfField = ParameterizedTypeName.get(ARRAY_LIST, fieldWildcard);
         var polymorphicSelectionSet = ClassName.get(
             outputPackage + ".util", PolymorphicSelectionSetClassGenerator.CLASS_NAME);
-        b.addStatement("$T fields = new $T($T.$$fields($T.restrictTo(env.getSelectionSet(), $S), $L, env))",
-            arrayListOfField, arrayListOfField, typeClass,
-            polymorphicSelectionSet, participant.typeName(), tableLocal);
+        b.addStatement("$T fields = new $T($L)",
+            arrayListOfField, arrayListOfField,
+            ProjectionCall.fromSelectionSet(typeClass,
+                CodeBlock.of("$T.restrictTo(env.getSelectionSet(), $S)",
+                    polymorphicSelectionSet, participant.typeName()),
+                CodeBlock.of("$L", tableLocal)));
         b.addStatement("fields.add($T.inline($S).as($S))", DSL, participant.typeName(), TYPENAME_COLUMN);
 
         // Connection mode: project the synthetic {@code __sort__} alias

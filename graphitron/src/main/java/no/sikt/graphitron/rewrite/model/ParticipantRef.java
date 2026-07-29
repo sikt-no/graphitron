@@ -123,7 +123,7 @@ public sealed interface ParticipantRef permits ParticipantRef.TableBacked, Parti
      *
      * <p>There is no residence list on this record: the interface fetcher emits a <em>detail-only</em>
      * projection (the participant's detail-resident {@link ChildField.ColumnBackedField}s against the detail
-     * alias, parent-references not re-traversed), while the participant's own {@code $fields} stays
+     * alias, parent-references not re-traversed), while the participant's own {@code $project} stays
      * whole and serves standalone queries (parent-references traversed to the base). The two are
      * distinct projections, never one globally-restricted method.
      */

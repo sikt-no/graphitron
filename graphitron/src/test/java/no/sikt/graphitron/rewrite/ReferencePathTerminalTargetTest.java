@@ -11,7 +11,7 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
  * Reference-path validation, check 1: an {@code @reference} path whose terminal hop lands on a table
  * other than the carrier field's return-type {@code @table} is rejected at classify time, rather than compiling
  * to generated Java that javac rejects with an incompatible-types error in a downstream consumer's
- * build (the {@code terminalAlias} is fed to a {@code $fields} overload typed for the return table).
+ * build (the {@code terminalAlias} is fed to a {@code $project} overload typed for the return table).
  *
  * <p>The check is added in {@code BuildContext.parsePath}, reusing the already-resolved terminal
  * {@code JoinStep.HasTargetTable.targetTable()}; it never re-derives the hop kind from the directive

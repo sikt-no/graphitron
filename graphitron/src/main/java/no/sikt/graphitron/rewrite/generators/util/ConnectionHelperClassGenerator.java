@@ -172,7 +172,7 @@ public class ConnectionHelperClassGenerator {
             .addStatement("$T seekFields = decodeCursor(cursor, extraFields)", fieldArray)
             .addStatement("$T effectiveOrderBy = backward ? reverseOrderBy(orderBy) : orderBy", listOfSortField)
             // Matching on name (not Field.equals) avoids identity mismatches when the same
-            // column arrives through different jOOQ Field instances (e.g. $fields vs. the
+            // column arrives through different jOOQ Field instances (e.g. $project vs. the
             // ordering path).
             .addStatement("$T<$T> selectFields = new $T<>(selection)", ARRAY_LIST, fieldWildcard, ARRAY_LIST)
             .addStatement("$T<String> selectedNames = new $T<>()",

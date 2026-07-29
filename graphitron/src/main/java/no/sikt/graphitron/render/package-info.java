@@ -5,8 +5,9 @@
  *
  * <p>Bottom-right corner of the command/plan/render triangle. Import rules, build-enforced by
  * {@code PackageImportDirectionTest}: renderers may import {@code no.sikt.graphitron.command} and
- * the emit library ({@code no.sikt.graphitron.javapoet}); nothing here may import the model or
- * legacy core ({@code no.sikt.graphitron.rewrite}) or {@code no.sikt.graphitron.plan}. The first
- * renderer arrives with the projection command; until then the package carries only this contract.
+ * the emit library ({@code no.sikt.graphitron.javapoet}); from the legacy core only the borrowed
+ * ref dial the commands themselves ride, and never {@code no.sikt.graphitron.plan}. Beside the
+ * renderers sit the shared emission fragments (joins, routine calls, lookup rows) that migrated
+ * and unmigrated hosts read through one derivation.
  */
 package no.sikt.graphitron.render;

@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.generators;
+package no.sikt.graphitron.render;
 
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.TableRef;

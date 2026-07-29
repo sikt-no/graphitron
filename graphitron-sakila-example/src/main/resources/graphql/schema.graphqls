@@ -1471,13 +1471,13 @@ type Film implements Node & Searchable @table(name: "film") @node {
     languageId:  Int          @field(name: "LANGUAGE_ID")
     # R42 ColumnReferenceField fixture: Direct + FK-only single-hop scalar @reference.
     # Projects Language.NAME via the film_language_id_fkey FK; classifier produces a
-    # ChildField.ColumnReferenceField with CallSiteCompaction.Direct, $fields emits a
+    # ChildField.ColumnReferenceField with CallSiteCompaction.Direct, $project emits a
     # correlated subquery aliased "languageName", and FetcherEmitter wires a
     # ColumnFetcher(DSL.field("languageName")) value at the registration site.
     languageName: String @field(name: "NAME") @reference(path: [{key: "film_language_id_fkey"}])
     # R48 ComputedField fixture: @externalField with a resolved reference.
     # FilmExtensions.isEnglish returns Field<Boolean>(LANGUAGE_ID = 1); the
-    # generator inlines the call into Film.$fields() aliased "isEnglish" and
+    # generator inlines the call into Film.$project() aliased "isEnglish" and
     # registers a ColumnFetcher that reads the alias at request time.
     isEnglish:   Boolean       @externalField(reference: {
         className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions",
@@ -1544,7 +1544,7 @@ type Film implements Node & Searchable @table(name: "film") @node {
     # R285 lift-back fixture: a list-cardinality child @service whose @table-bound element type
     # (FilmActor) carries a non-column @reference sub-field (actor). The service returns
     # Map<Record1<Integer>, List<FilmActorRecord>> (mapped, list); the lift re-projects each
-    # returned film_actor PK through FilmActor.$fields so `actor { ... }` resolves to the joined
+    # returned film_actor PK through FilmActor.$project so `actor { ... }` resolves to the joined
     # row rather than throwing "Field actor is not contained in row type". In-tree analogue of
     # opptak's Sak.saksdokumenter -> Saksdokument.dokument.
     castMembers: [FilmActor!]! @service(service: {
@@ -1552,14 +1552,14 @@ type Film implements Node & Searchable @table(name: "film") @node {
         method: "castMembersByFilm"
     })
     # NestingField fixture: plain-object summary type nested inside Film. Fields resolve
-    # against the outer Film table via $fields recursion (Film.summary.title → FILM.TITLE).
+    # against the outer Film table via $project recursion (Film.summary.title → FILM.TITLE).
     summary:     FilmSummary
     # NestingField multi-level fixture: FilmInfo carries a further NestingField (meta)
     # whose own scalars resolve against the same outer Film table.
     info:        FilmInfo
     # NestingField + inline TableField/LookupTableField fixture: exercises the sfName
     # parameter threaded into the inline emitters. Nested field arms resolve against the
-    # outer Film table alias via $fields recursion at depth 1, so they reference sf1
+    # outer Film table alias via $project recursion at depth 1, so they reference sf1
     # rather than a literal sf. Without the parameterisation, the generated code for
     # either nested arm would reference an undefined sf variable at depth ≥ 1.
     inlineBundle: FilmInlineBundle
@@ -1862,7 +1862,7 @@ type FilmActor implements Node @table(name: "film_actor") @node {
     # R285 lift-back fixture: a @reference sub-field (correlated multiset, not a stored column)
     # on the element type of the Film.castMembers child @service field. Pre-R285 the verbatim
     # service return carried no multiset column here and the actor fetcher threw "Field actor is
-    # not contained in row type"; the lift re-projects through FilmActor.$fields so it resolves.
+    # not contained in row type"; the lift re-projects through FilmActor.$project so it resolves.
     actor:   Actor @reference(path: [{key: "film_actor_actor_id_fkey"}])
     # @pivot over a composite-key attribute table (film_actor_note's two-column FK): the pivot
     # correlation is an AND-chain over both key columns, so single- and composite-key pivots
@@ -2955,10 +2955,10 @@ type Mutation {
         @reference(path: [{table: "rental"}])
 
     # R22 Phase 2: INSERT emitter with TableBoundReturnType return. The fetcher emits
-    # `dsl.insertInto(film, title, language_id).values(...).returningResult(<$fields>).fetchOne(r -> r)`.
+    # `dsl.insertInto(film, title, language_id).values(...).returningResult(<$project>).fetchOne(r -> r)`.
     createFilm(in: FilmCreateInput!): Film @mutation(typeName: INSERT)
     # R22 Phase 4: UPDATE emitter with TableBoundReturnType return. The fetcher emits
-    # `dsl.update(film).set(title, val).where(film_id.eq(val)).returningResult(<$fields>).fetchOne(r -> r)`.
+    # `dsl.update(film).set(title, val).where(film_id.eq(val)).returningResult(<$project>).fetchOne(r -> r)`.
     updateFilm(in: FilmUpdateInput!): Film @mutation(typeName: UPDATE)
     # Field-relative UPDATE write target: the input carries no `@table`, so the write target
     # is derived from the `Film` return type. Same emitted UPDATE as `updateFilm`, exercised at

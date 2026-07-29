@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.generators.util;
+package no.sikt.graphitron.render;
 
 import no.sikt.graphitron.javapoet.ArrayTypeName;
 import no.sikt.graphitron.javapoet.ClassName;
@@ -14,8 +14,8 @@ import java.util.function.Function;
 /**
  * Shared row-construction core for the emitters that produce
  * {@code VALUES (idx, c1, …) JOIN <table> … ORDER BY idx} SELECTs:
- * {@link no.sikt.graphitron.rewrite.generators.LookupValuesJoinEmitter} (root and inline-child
- * lookup paths), {@link SelectMethodBody} (federated {@code _entities} and
+ * {@link LookupRows} (root and inline-child
+ * lookup paths), {@code SelectMethodBody} (federated {@code _entities} and
  * {@code Query.node} / {@code Query.nodes} dispatch), and the parent-input
  * {@code VALUES} cells of the DataLoader rows methods
  * ({@link no.sikt.graphitron.rewrite.generators.SplitRowsMethodEmitter} and

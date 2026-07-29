@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators;
 
+import no.sikt.graphitron.plan.ProjectionCommands;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.InputField;
@@ -52,12 +53,16 @@ public class GeneratorCoverageTest {
     }
 
     /**
-     * Every sealed leaf of {@link GraphitronField} must land in exactly one of four sets:
+     * Every sealed leaf of {@link GraphitronField} must land in exactly one of four buckets:
      * {@link TypeFetcherGenerator#IMPLEMENTED_LEAVES}, {@link TypeFetcherGenerator#STUBBED_VARIANTS}'s
-     * key set, {@link TypeFetcherGenerator#NOT_DISPATCHED_LEAVES}, or
-     * {@link TypeFetcherGenerator#PROJECTED_LEAVES}. Guarantees that adding a new leaf without
-     * updating any of the four sets fails the build, and that a leaf can't silently live in two
-     * sets (which would let a stub entry linger after the real arm is added).
+     * key set, {@link TypeFetcherGenerator#NOT_DISPATCHED_LEAVES}, or the projected bucket
+     * <em>derived</em> from the projection producer's own membership declaration
+     * ({@link ProjectionCommands#CONTRIBUTION_MINTING_LEAVES} minus the dual-arm kinds that also
+     * carry a fetcher arm). Deriving the bucket rather than restating it keeps the partition
+     * sourced where the dispatch lives; the pipeline-tier census test binds the declaration to
+     * the producer's observed minting in both directions, and the dual-arm intersection is pinned
+     * here explicitly so a new leaf landing in both dispatches is a review signal, never a silent
+     * subtraction.
      */
     @Test
     void everyGraphitronFieldLeafHasAKnownDispatchStatus() {
@@ -65,7 +70,16 @@ public class GeneratorCoverageTest {
         Set<Class<?>> implemented = new HashSet<>(TypeFetcherGenerator.IMPLEMENTED_LEAVES);
         Set<Class<?>> stubbed = new HashSet<>(TypeFetcherGenerator.STUBBED_VARIANTS.keySet());
         Set<Class<?>> notDispatched = new HashSet<>(TypeFetcherGenerator.NOT_DISPATCHED_LEAVES);
-        Set<Class<?>> projected = new HashSet<>(TypeFetcherGenerator.PROJECTED_LEAVES);
+        Set<Class<?>> minting = new HashSet<>(ProjectionCommands.CONTRIBUTION_MINTING_LEAVES);
+
+        assertThat(simpleNames(intersection(minting, implemented)))
+            .as("the dual-arm kinds: leaves that project (a contribution, a unit row of their own,"
+                + " or ridden slot contributions) AND get a fetcher arm. Pinned exactly so a new"
+                + " dual-arm leaf is a deliberate edit here, not a silent derivation change")
+            .containsExactlyInAnyOrder("ColumnBackedField", "ComputedField", "BatchedPivotField");
+
+        Set<Class<?>> projected = new HashSet<>(minting);
+        projected.removeAll(implemented);
 
         assertThat(simpleNames(intersection(implemented, stubbed)))
             .as("IMPLEMENTED_LEAVES ∩ STUBBED_VARIANTS — a leaf cannot be both real and stubbed")
@@ -73,17 +87,14 @@ public class GeneratorCoverageTest {
         assertThat(simpleNames(intersection(implemented, notDispatched)))
             .as("IMPLEMENTED_LEAVES ∩ NOT_DISPATCHED_LEAVES — a dispatched leaf cannot also be filtered before dispatch")
             .isEmpty();
-        assertThat(simpleNames(intersection(implemented, projected)))
-            .as("IMPLEMENTED_LEAVES ∩ PROJECTED_LEAVES — a leaf cannot be both fetcher-implemented and projection-only")
-            .isEmpty();
         assertThat(simpleNames(intersection(stubbed, notDispatched)))
             .as("STUBBED_VARIANTS ∩ NOT_DISPATCHED_LEAVES — a stubbed leaf must be reachable to be stubbed")
             .isEmpty();
         assertThat(simpleNames(intersection(stubbed, projected)))
-            .as("STUBBED_VARIANTS ∩ PROJECTED_LEAVES — projection-only means no stub is needed")
+            .as("STUBBED_VARIANTS ∩ projected — projection-only means no stub is needed")
             .isEmpty();
         assertThat(simpleNames(intersection(notDispatched, projected)))
-            .as("NOT_DISPATCHED_LEAVES ∩ PROJECTED_LEAVES — a projected leaf must be dispatched to the projection path")
+            .as("NOT_DISPATCHED_LEAVES ∩ projected — a projected leaf must be dispatched to the projection path")
             .isEmpty();
 
         Set<Class<?>> union = new HashSet<>();
@@ -96,14 +107,14 @@ public class GeneratorCoverageTest {
         missing.removeAll(union);
         assertThat(simpleNames(missing))
             .as("every GraphitronField leaf must be declared in exactly one of IMPLEMENTED_LEAVES, "
-                + "STUBBED_VARIANTS.keySet(), NOT_DISPATCHED_LEAVES, or PROJECTED_LEAVES")
+                + "STUBBED_VARIANTS.keySet(), NOT_DISPATCHED_LEAVES, or the producer-derived "
+                + "projected bucket")
             .isEmpty();
 
         Set<Class<?>> stale = new HashSet<>(union);
         stale.removeAll(leaves);
         assertThat(simpleNames(stale))
-            .as("none of IMPLEMENTED_LEAVES / STUBBED_VARIANTS / NOT_DISPATCHED_LEAVES / "
-                + "PROJECTED_LEAVES may name a class outside the GraphitronField sealed hierarchy")
+            .as("none of the dispatch sets may name a class outside the GraphitronField sealed hierarchy")
             .isEmpty();
     }
 

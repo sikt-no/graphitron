@@ -54,10 +54,9 @@ class GeneratorUtils {
      * key</em> rather than the schema field name lets {@code a: ref { x } b: ref { y }} mint two
      * distinct SELECT terms instead of two colliding {@code .as(fieldName)} aliases. The prefix
      * reaches generated code only inside string literals: the write side emits
-     * {@code .as("__rk_" + <entry>.getKey())} in {@code $fields}
-     * ({@link InlineTableFieldEmitter}, {@link InlineLookupTableFieldEmitter},
-     * {@link InlineColumnReferenceFieldEmitter}, and the {@code ComputedField} arm of
-     * {@link TypeClassGenerator}), the read side
+     * {@code .as("__rk_" + <entry>.getKey())} in {@code $project}
+     * (the projection renderer's multiset, scalar-subselect, and helper-call arms), the
+     * read side
      * {@code DSL.field("__rk_" + env.getField().getResultKey())} ({@link FetcherEmitter}); the
      * concatenation happens at runtime and this constant is the single home both sides drive off.
      *
@@ -509,7 +508,7 @@ class GeneratorUtils {
                 // One unconditional read, because only the key columns are ever copied and they are
                 // present under their base names on both arrival paths that graphql-java fuses onto
                 // this fetcher: a service (or DML) handing back the typed record carries its own PK
-                // as a real column, and the SQL-projected generic row a parent <Type>.$fields query
+                // as a real column, and the SQL-projected generic row a parent <Type>.$project query
                 // builds has the same columns force-included by the required-projection walk. Reads
                 // are by jOOQ field identity, never a by-name into(...) map, so a sibling multiset
                 // alias shadowing a column name cannot poison the extraction.

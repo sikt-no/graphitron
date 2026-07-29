@@ -136,19 +136,19 @@ class MethodClosureOracleTest {
         String pkg = OUTPUT_PACKAGE;
 
         // Fetcher -> Projection: a fetcher launches a SELECT over the target type's
-        // projection (QueryFetchers -> types.Film#$fields).
+        // projection (QueryFetchers -> types.Film#$project).
         assertThat(walk.edges().stream()
             .filter(e -> e.fromUnit().startsWith(pkg + ".fetchers."))
-            .filter(e -> e.methodName().equals("$fields")))
-            .as("Fetcher -> Projection ($fields) edges").isNotEmpty();
+            .filter(e -> e.methodName().equals("$project")))
+            .as("Fetcher -> Projection ($project) edges").isNotEmpty();
 
-        // Projection -> Projection: an inline reference composes the nested type's $fields
+        // Projection -> Projection: an inline reference composes the nested type's $project
         // from inside another type class (types.Film <-> types.Language).
         assertThat(walk.edges().stream()
             .filter(e -> e.fromUnit().startsWith(pkg + ".types."))
             .filter(e -> e.targetUnit().startsWith(pkg + ".types."))
-            .filter(e -> e.methodName().equals("$fields")))
-            .as("Projection -> Projection (recursive $fields) edges").isNotEmpty();
+            .filter(e -> e.methodName().equals("$project")))
+            .as("Projection -> Projection (recursive $project) edges").isNotEmpty();
 
         // Condition: a generated condition method is called by name, from the root
         // fetcher (QueryConditions) and from an inline reference arm (FilmConditions).
@@ -170,11 +170,11 @@ class MethodClosureOracleTest {
             .as("schema shape -> Fetchers wiring edges").isNotEmpty();
 
         // Reentry: a table-bound @service child and a DML insert both re-project their
-        // @table return through the target type's $fields.
-        assertThat(walk.hasEdge(pkg + ".fetchers.LanguageFetchers", pkg + ".types.Film", "$fields"))
-            .as("service reentry: LanguageFetchers -> types.Film#$fields").isTrue();
-        assertThat(walk.hasEdge(pkg + ".fetchers.MutationFetchers", pkg + ".types.Film", "$fields"))
-            .as("DML reentry: MutationFetchers -> types.Film#$fields").isTrue();
+        // @table return through the target type's $project.
+        assertThat(walk.hasEdge(pkg + ".fetchers.LanguageFetchers", pkg + ".types.Film", "$project"))
+            .as("service reentry: LanguageFetchers -> types.Film#$project").isTrue();
+        assertThat(walk.hasEdge(pkg + ".fetchers.MutationFetchers", pkg + ".types.Film", "$project"))
+            .as("DML reentry: MutationFetchers -> types.Film#$project").isTrue();
     }
 
     /**
@@ -189,7 +189,7 @@ class MethodClosureOracleTest {
         String pkg = OUTPUT_PACKAGE;
 
         // Type-granular fold and field-granular fetchers (1:1, total).
-        assertThat(declaredIn(pkg + ".types.Film")).contains("$fields");
+        assertThat(declaredIn(pkg + ".types.Film")).contains("$project");
         assertThat(declaredIn(pkg + ".fetchers.QueryFetchers")).contains("film", "films", "node");
 
         // Anchor-granular rows-methods, dedup-by-class scatter, per-field order-by

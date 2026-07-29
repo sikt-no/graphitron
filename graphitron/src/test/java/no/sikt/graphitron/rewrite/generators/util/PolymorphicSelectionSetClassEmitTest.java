@@ -57,7 +57,7 @@ class PolymorphicSelectionSetClassEmitTest {
         assertThat(m.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
         assertThat(m.returnType().toString())
             .as("returns the wire-format interface so the wrapped view drops into the existing "
-                + "$fields contract without widening any caller signature")
+                + "$project contract without widening any caller signature")
             .isEqualTo("graphql.schema.DataFetchingFieldSelectionSet");
         assertThat(m.parameters()).hasSize(2);
         assertThat(m.parameters().get(0).type().toString())

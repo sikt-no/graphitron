@@ -61,7 +61,7 @@ class IncrementalCompileHarnessTest {
      * QueryNodeField arms and the precise NodeIdEncoder edges.
      *
      * <p>Corpus extension: {@code Language.films} is an inline list reference filtered by a
-     * {@code @nodeId}-decoding input. Its inline emit composes {@code Film.$fields(...)} (a same-package
+     * {@code @nodeId}-decoding input. Its inline emit composes {@code Film.$project(...)} (a same-package
      * nested-{@code $L} projection the oracle was blind to before), lifts a decode helper onto
      * the Language type class (exercising the {@code typeClass -> NodeIdEncoder} edge and the
      * decode-helper lift), and calls a generated {@code FilmConditions} method (exercising the inline

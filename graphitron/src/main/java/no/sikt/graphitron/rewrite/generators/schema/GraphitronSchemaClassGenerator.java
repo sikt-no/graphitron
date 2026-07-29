@@ -142,7 +142,7 @@ public final class GraphitronSchemaClassGenerator {
                 // Route off the synthetic discriminator alias the interface fetcher projects
                 // (TypeFetcherGenerator.buildInterfaceFieldsList), not the raw discriminator column name:
                 // when the interface exposes the discriminator as a queryable field, the real column is
-                // also projected by the participant $fields, and a bare read of the column name matches
+                // also projected by the participant $project, and a bare read of the column name matches
                 // both ambiguously. The alias is distinct from any real column, so the read is unambiguous.
                 cb.addStatement("String discriminatorValue = record.get($T.field($T.name($S)), String.class)",
                     JOOQ_DSL, JOOQ_DSL, MultiTablePolymorphicEmitter.DISCRIMINATOR_COLUMN);

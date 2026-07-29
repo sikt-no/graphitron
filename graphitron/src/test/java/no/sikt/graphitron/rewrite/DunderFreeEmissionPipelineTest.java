@@ -2,7 +2,6 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.javapoet.JavaFile;
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.InputRecordGenerator;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
@@ -101,7 +100,7 @@ class DunderFreeEmissionPipelineTest {
 
         GraphitronSchema referenceSchema = TestSchemaHelper.buildSchema(REFERENCE_SDL);
         emitted.addAll(TypeFetcherGenerator.generate(referenceSchema, DEFAULT_OUTPUT_PACKAGE));
-        emitted.addAll(TypeClassGenerator.generate(referenceSchema, DEFAULT_OUTPUT_PACKAGE));
+        emitted.addAll(ProjectionRenderTestSupport.renderProjections(referenceSchema, DEFAULT_OUTPUT_PACKAGE));
 
         var validatorBundle = TestSchemaHelper.buildBundle(VALIDATOR_INPUT_SDL);
         emitted.addAll(TypeFetcherGenerator.generate(

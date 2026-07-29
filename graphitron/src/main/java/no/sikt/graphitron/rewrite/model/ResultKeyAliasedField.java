@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 /**
- * A {@link ChildField} whose {@code $fields} projection is aliased by the runtime <em>result
+ * A {@link ChildField} whose {@code $project} projection is aliased by the runtime <em>result
  * key</em> rather than the schema field name, and whose fetcher reads that value back by the same
  * key. Implemented by the four families that mint an aliased SELECT term per result-key bucket:
  * {@link ChildField.TableField}, {@link ChildField.LookupTableField},
@@ -12,7 +12,7 @@ package no.sikt.graphitron.rewrite.model;
  * ({@code a: ref { x } b: ref { y }}) mint two distinct SQL aliases instead of colliding on one
  * field-named alias; the read side re-derives the alias via
  * {@code env.getField().getResultKey()}. The write arms (in
- * {@code no.sikt.graphitron.rewrite.generators.TypeClassGenerator} and the inline emitters) and the
+ * the projection producer and renderer) and the
  * read bindings (in {@code no.sikt.graphitron.rewrite.generators.FetcherEmitter}) are two
  * hand-enumerated sets that must agree: a variant that projects under a result-key alias without
  * the matching env-dependent read (or vice versa) collides aliased duplicates.

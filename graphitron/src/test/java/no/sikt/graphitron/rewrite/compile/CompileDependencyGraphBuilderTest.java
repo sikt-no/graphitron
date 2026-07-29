@@ -176,7 +176,7 @@ class CompileDependencyGraphBuilderTest {
     void typeClassReferencesInlineProjectionTargetProjection() {
         var g = CompileDependencyGraphBuilder.fromModel(filmProjectsLanguageSchema(List.of()), PKG);
 
-        // The Film type class's $fields composes Language.$fields(...) inline for the @reference
+        // The Film type class's $project composes Language.$project(...) inline for the @reference
         // field, so types.Film references types.Language (a same-package, nested-$L reference the
         // completeness oracle now sees).
         assertThat(g.directReferences(PKG + ".types.Film")).contains(PKG + ".types.Language");
@@ -196,7 +196,7 @@ class CompileDependencyGraphBuilderTest {
     void typeClassBlanketsSelectionOccurrences() {
         var g = CompileDependencyGraphBuilder.fromModel(filmProjectsLanguageSchema(List.of()), PKG);
 
-        // Every emitted type class's $fields loop leans on the SelectionOccurrences merge/guard
+        // Every emitted type class's $project loop leans on the SelectionOccurrences merge/guard
         // statics (occurrence-union descent for shared result keys); the target is frozen, so the
         // blanket edge is safe.
         assertThat(g.directReferences(PKG + ".types.Film")).contains(PKG + ".util.SelectionOccurrences");
@@ -235,10 +235,10 @@ class CompileDependencyGraphBuilderTest {
     }
 
     @Test
-    void nestingHostedInlineFieldAttributesEdgeToOuterTypeClass() {
+    void nestingHostedInlineFieldAttributesEdgeToItsNestedUnit() {
         // Film { details: FilmDetails { language: Language @reference } } — the nested plain object
-        // shares Film's table context and emits into Film's $fields, so the Language projection edge
-        // must attach to types.Film, not types.FilmDetails (which has no type class at all).
+        // is its own anchor-prefixed projection unit: Film's $project splices types.FilmFilmDetails,
+        // and the Language projection edge attaches to that nested unit.
         var types = new LinkedHashMap<String, GraphitronType>();
         types.put("Film", new GraphitronType.TableType("Film", null, filmTable()));
         types.put("Language", new GraphitronType.TableType("Language", null, languageTable()));
@@ -258,9 +258,10 @@ class CompileDependencyGraphBuilderTest {
 
         var g = CompileDependencyGraphBuilder.fromModel(new GraphitronSchema(types, fields), PKG);
 
-        // The projection edge attaches to the outer host (types.Film), NOT the nested field's own
-        // parentTypeName (types.FilmDetails, which never hosts a $fields projection).
-        assertThat(g.directReferences(PKG + ".types.Film")).contains(PKG + ".types.Language");
+        // The anchor splices its nested unit, which in turn references the inline target's unit;
+        // nothing attaches to the nested field's own parentTypeName (types.FilmDetails never exists).
+        assertThat(g.directReferences(PKG + ".types.Film")).contains(PKG + ".types.FilmFilmDetails");
+        assertThat(g.directReferences(PKG + ".types.FilmFilmDetails")).contains(PKG + ".types.Language");
         assertThat(g.directReferences(PKG + ".types.FilmDetails")).doesNotContain(PKG + ".types.Language");
     }
 

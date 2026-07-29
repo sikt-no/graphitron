@@ -335,7 +335,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * <p><b>Reentry realization.</b> Value-level re-fetch without a site-level re-query,
      * exactly as {@link QueryField.QueryServiceTableField}: {@code requiresReFetch()} is true,
      * {@code emitsKeyedReQuery()} is false, and the re-projection is realized by the downstream
-     * child fetchers' {@code $fields}. See that leaf's javadoc for the fact linkage.
+     * child fetchers' {@code $project}. See that leaf's javadoc for the fact linkage.
      */
     record MutationServiceTableField(
         String parentTypeName,

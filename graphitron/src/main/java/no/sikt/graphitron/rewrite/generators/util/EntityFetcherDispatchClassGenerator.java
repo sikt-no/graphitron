@@ -32,7 +32,7 @@ import java.util.List;
  *       by alternative-index for batching.</li>
  *   <li>{@code select<TypeName>Alt<N>(bindings, env, dsl, result)}: issues one SELECT per
  *       group via a {@code VALUES (idx, col1, col2, ...)} derived table joined to the type's
- *       jOOQ table, projecting {@code <TypeName>.$fields(...)} plus the literal
+ *       jOOQ table, projecting {@code <TypeName>.$project(...)} plus the literal
  *       {@code __typename} column. Result rows scatter back to original positions via the
  *       {@code idx} column.</li>
  * </ol>

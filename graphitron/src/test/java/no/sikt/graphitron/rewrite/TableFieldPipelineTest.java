@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
 import org.junit.jupiter.api.Test;
@@ -14,9 +13,9 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
  * SDL → classified schema → generated {@code TypeSpec} pipeline tests for inline
  * {@link no.sikt.graphitron.rewrite.model.ChildField.TableField} emission.
  *
- * <p>Verifies the structural contract of G5 C3: the {@code TypeClassGenerator.$fields} method
+ * <p>Verifies the structural contract of G5 C3: the {@code the type's $project unit} method
  * contains a switch arm for each nested table field; {@code TypeFetcherGenerator} emits
- * <em>no</em> fetcher method for the field (the inline projection lives in {@code $fields});
+ * <em>no</em> fetcher method for the field (the inline projection lives in {@code $project});
  * and the condition-join branch emits a runtime-throwing stub pending classification-vocabulary
  * item 5.
  */
@@ -33,7 +32,7 @@ class TableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var filmClass = TypeClassGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+        var filmClass = ProjectionRenderTestSupport.renderProjections(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("Film"))
             .findFirst()
             .orElseThrow();
@@ -61,13 +60,13 @@ class TableFieldPipelineTest {
             .toList();
 
         assertThat(methodNames)
-            .as("R303: TableField projects inline via TypeClassGenerator.$fields; the read of that "
+            .as("R303: TableField projects inline via the type's $project unit; the read of that "
                 + "result-key-aliased projection is reified as a named env-dependent method")
             .contains("language");
     }
 
     @Test
-    void dollarFieldsSignature_unchangedWhenTableFieldPresent() {
+    void dollarProjectSignature_unchangedWhenTableFieldPresent() {
         var schema = TestSchemaHelper.buildSchema("""
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
@@ -76,17 +75,17 @@ class TableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var filmClass = TypeClassGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+        var filmClass = ProjectionRenderTestSupport.renderProjections(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("Film"))
             .findFirst()
             .orElseThrow();
 
         var dollarFields = filmClass.methodSpecs().stream()
-            .filter(m -> m.name().equals("$fields")).findFirst().orElseThrow();
+            .filter(m -> m.name().equals("$project")).findFirst().orElseThrow();
 
         assertThat(dollarFields.parameters()).extracting(p -> p.type().toString())
             .containsExactly(
-                "graphql.schema.DataFetchingFieldSelectionSet",
+                "java.util.Map<java.lang.String, java.util.List<graphql.schema.SelectedField>>",
                 DEFAULT_JOOQ_PACKAGE + ".tables.Film",
                 "graphql.schema.DataFetchingEnvironment");
     }

@@ -16,8 +16,8 @@ import java.util.List;
  * {@code hops}.
  *
  * <p>The start-binding guard (every routine parameter bound from a {@link ParamSource.Arg}) is
- * what lets the shared {@link no.sikt.graphitron.rewrite.generators.RoutineCallEmitter} path
- * assume {@link no.sikt.graphitron.rewrite.generators.PreviousNodeRef.None} carries no
+ * what lets the shared {@link no.sikt.graphitron.render.RoutineCallEmitter} path
+ * assume {@link no.sikt.graphitron.render.PreviousNodeRef.None} carries no
  * {@link ParamSource.SourceColumn} read.
  */
 public record RoutineChain(TableExpr.RoutineCall start, List<JoinStep> hops) {

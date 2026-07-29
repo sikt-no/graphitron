@@ -886,7 +886,7 @@ class FieldBuilder {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(referencePath.errorMessage()));
             }
             // Terminal-target check: this inline / split projection feeds the terminal alias to a
-            // $fields overload typed for the return table (InlineTableFieldEmitter.buildArm), so a
+            // $project method typed for the return table (the renderer's multiset arm), so a
             // terminal hop landing elsewhere would compile to javac-rejected generated code. Reject
             // at build time, formatting the diagnostic from the typed verdict.
             if (referencePath.terminalTargetVerdict() instanceof BuildContext.TerminalTargetVerdict.Mismatch mismatch) {
@@ -965,7 +965,7 @@ class FieldBuilder {
             if (referencePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(referencePath.errorMessage()));
             }
-            // Terminal-target check: same $fields(terminalAlias) invariant as the TableBoundReturnType arm.
+            // Terminal-target check: same $project(terminalAlias) invariant as the TableBoundReturnType arm.
             if (referencePath.terminalTargetVerdict() instanceof BuildContext.TerminalTargetVerdict.Mismatch mismatch) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(mismatch.diagnostic()));
             }
@@ -4359,7 +4359,7 @@ class FieldBuilder {
             var reentryCorrelation = new ParentCorrelation.OnLiftedSlots(
                 tb.table(), tb.table().primaryKeyColumns());
             // A single-table discriminated interface return re-projects through the
-            // discriminator path rather than the concrete-type $fields projection; carry the
+            // discriminator path rather than the concrete-type $project projection; carry the
             // read-side discrimination data (same as the *ServiceTableInterfaceField shapes).
             if (interfaceVerdict.isPresent()) {
                 var tit = interfaceVerdict.get();

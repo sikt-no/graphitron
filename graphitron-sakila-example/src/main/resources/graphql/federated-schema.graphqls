@@ -64,7 +64,7 @@ type Film implements Node @table(name: "film") @node
     # Fixture: a typed-TableRecord-sourced @service child whose body needs a NON-KEY column
     # (title) that the framework does not supply, so the service batch-fetches it itself. A
     # representations-driven _entities fetch that selects only this child supplies the key via
-    # the representation and projects nothing else, so Film.$fields must still force-include
+    # the representation and projects nothing else, so Film.$project must still force-include
     # FILM_ID or the key extraction has no key column to read and the child cannot resolve.
     titleTitlecase: String @service(service: {
         className: "no.sikt.graphitron.rewrite.test.services.FilmService",

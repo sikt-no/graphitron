@@ -205,7 +205,7 @@ public sealed interface QueryField extends RootField
      * A root query field returning a multi-table {@link GraphitronType.InterfaceType}.
      * Carries the resolved participants list so the multi-table polymorphic fetcher emitter can
      * drive its two-stage SQL: a narrow UNION ALL projecting {@code (__typename, __pk0__, ...)}
-     * per branch and a per-typename batched lookup using {@code <Type>.$fields}.
+     * per branch and a per-typename batched lookup using {@code <Type>.$project}.
      */
     record QueryInterfaceField(
         String parentTypeName,
@@ -262,7 +262,7 @@ public sealed interface QueryField extends RootField
      * re-projected against the catalog) but <em>not</em> site-level reentry
      * ({@link OutputField#emitsKeyedReQuery()} is false): the emitted fetcher hands the record
      * straight through, and the re-projection is realized by the downstream child fetchers'
-     * {@code $fields}. The site-level fact is the single carrier of this distinction — the emit
+     * {@code $project}. The site-level fact is the single carrier of this distinction — the emit
      * dispatch, the method-command registry's covered-family boundary, and the reentry validate
      * guard all read it rather than recomputing the root-service exclusion per site.
      */

@@ -46,6 +46,7 @@ public class GraphitronSchemaValidator {
         validateContextArgumentTypeAgreement(schema, errors);
         validateTenantBindings(schema, errors);
         validateConditionEmitImplemented(schema, errors);
+        validateProjectionUnitAddresses(schema, errors);
         drainBuildDiagnostics(schema, errors);
         return List.copyOf(errors);
     }
@@ -62,12 +63,6 @@ public class GraphitronSchemaValidator {
      *       {@link no.sikt.graphitron.rewrite.model.LookupField} coordinate; authored
      *       {@code @condition} entries on lookup coordinates stay accepted (ordinary condition
      *       rows, composed beside the VALUES join).</li>
-     *   <li><b>Generated column filters on nested fields.</b> A field nested inside a
-     *       {@code ChildField.NestingField} has no walkable coordinate (no {@code fields()}
-     *       entry); rejected until nesting types become walkable projection units and give
-     *       nested coordinates a home in the walk. Authored nested conditions resolve to
-     *       developer methods that exist and stay accepted: the condition producer reaches them
-     *       by recursing the nesting tree.</li>
      *   <li><b>Any filter on a single-table interface child coordinate.</b>
      *       {@code ChildField.TableInterfaceField} carries the shared filter components, but its
      *       fetcher composes only the FK correlation and the discriminator restriction and folds
@@ -96,28 +91,33 @@ public class GraphitronSchemaValidator {
                     + "filterable argument to a concrete coordinate, or drop it"),
                     errors);
             }
-            if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.NestingField nesting) {
-                rejectNestedGeneratedFilters(nesting, errors);
-            }
         }
     }
 
-    /** See {@link #validateConditionEmitImplemented}: the nested-field walk, recursive through nesting types. */
-    private void rejectNestedGeneratedFilters(no.sikt.graphitron.rewrite.model.ChildField.NestingField nesting,
-            List<ValidationError> errors) {
-        for (var nested : nesting.nestedFields()) {
-            if (nested instanceof no.sikt.graphitron.rewrite.model.SqlGeneratingField sgf
-                    && sgf.filters().stream().anyMatch(f -> f instanceof no.sikt.graphitron.rewrite.model.GeneratedConditionFilter)) {
-                emitDeferredError(nested, (Rejection.Deferred) Rejection.deferred(
-                    "generated column filters on a field nested inside a plain-object nesting type are "
-                    + "not emitted: the nested coordinate has no conditions method of its own, so the "
-                    + "emitted call would fail the consumer's compile; use an authored @condition method "
-                    + "on the nested field, or hoist the filterable argument to a top-level field"),
-                    errors);
-            }
-            if (nested instanceof no.sikt.graphitron.rewrite.model.ChildField.NestingField inner) {
-                rejectNestedGeneratedFilters(inner, errors);
-            }
+    /**
+     * Validator mirror of the projection producer's case-folded address census
+     * ({@code ProjectionCommands.addressCollisions}): the anchor-prefixed nesting units and
+     * per-coordinate pivot units mint concatenated names that can collide with an authored
+     * type's unit or with each other, and two units cannot land at one address. The producer's
+     * hard failure is the backstop; this rejection is what an author sees, located at the
+     * colliding declarations.
+     */
+    private void validateProjectionUnitAddresses(GraphitronSchema schema, List<ValidationError> errors) {
+        for (var collision : no.sikt.graphitron.plan.ProjectionCommands.addressCollisions(schema)) {
+            var origins = collision.origins();
+            var others = origins.stream().skip(1)
+                .map(no.sikt.graphitron.plan.ProjectionCommands.AddressOrigin::description)
+                .collect(java.util.stream.Collectors.joining(", "));
+            errors.add(new ValidationError(
+                origins.get(0).description(),
+                Rejection.invalidSchema(
+                    origins.get(0).description() + " mints the generated projection unit name '"
+                        + collision.foldedSimpleName() + "' (case-folded), which " + others
+                        + " also mints; rename the nesting type, the pivot field, or the colliding "
+                        + "type so every projection unit has a distinct class name"),
+                origins.get(0).location() == null
+                    ? SourceLocation.EMPTY
+                    : origins.get(0).location()));
         }
     }
 
@@ -1121,7 +1121,7 @@ public class GraphitronSchemaValidator {
                     ));
                 }
             } else if (rf instanceof ChildField.TableField rtf && of instanceof ChildField.TableField otf) {
-                // TableField's join topology is safe to share across parents: each parent's $fields
+                // TableField's join topology is safe to share across parents: each parent's $project
                 // emits its own DSL.multiset arm (per-parent joinPath / orderBy / pagination are
                 // intentionally not compared), and the reified projected read (PROJECTED_LEAVES) reads
                 // by field name from the source Record without consulting the outer parent table;

@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Downstream the compilation tier (the {@code graphitron-sakila-example} module) compiles the
  * emitted source against the real graphql-java {@code SelectedField} interface, and the execution
  * tier drives the merge/guard semantics through real connection queries; this pipeline-tier pin
- * covers the public-API contract the generated {@code <Type>.$fields} loop leans on: the
+ * covers the public-API contract the generated {@code <Type>.$project} loop leans on: the
  * occurrence-merge static and the two consistency guards, with stable names and signatures.
  */
 @PipelineTier
@@ -50,7 +50,7 @@ class SelectionOccurrencesClassEmitTest {
         assertThat(m.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
         assertThat(m.returnType().toString())
             .as("returns the same grouped-map shape getFieldsGroupedByResultKey() produces, so the "
-                + "merged map drops into the $fields switch loop unchanged")
+                + "merged map drops into the $project switch loop unchanged")
             .isEqualTo(GROUPED_MAP);
         assertThat(m.parameters()).hasSize(1);
         assertThat(m.parameters().get(0).type().toString()).isEqualTo(SELECTED_FIELD_LIST);

@@ -400,7 +400,7 @@ class SingleRecordPayloadPipelineTest {
         // Direct-@table-return DML mutations emit the two-step shape uniformly with the
         // carrier path: PK-only RETURNING inside dsl.transactionResult(...), follow-up SELECT
         // outside the transaction lambda. Without this pin, a regression to single-statement
-        // RETURNING $fields(...) would compile clean and pass the round-trip tests but defeat
+        // RETURNING $project(...) would compile clean and pass the round-trip tests but defeat
         // the durability invariant the shape exists to establish.
         //
         // JavaPoet's CodeBlock does not expose formatParts() publicly, so a true AST walk isn't

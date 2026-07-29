@@ -232,9 +232,12 @@ Every classifier decision that implies a generator branch must fail at validate 
 branch is unimplemented: the validator reads the same dispatch sets the generator does, so an
 unsupported classification is a build-time error, not a runtime
 `UnsupportedOperationException`. The dispatch state is a four-way disjoint partition over every
-`GraphitronField` sealed leaf in `TypeFetcherGenerator` (`IMPLEMENTED_LEAVES`, `PROJECTED_LEAVES`,
-`NOT_DISPATCHED_LEAVES`, `STUBBED_VARIANTS.keySet()`; safe to enumerate because the test below
-pins it), and `ValidateMojo` fails the build on stubbed variants. The rule extends to every new
+`GraphitronField` sealed leaf: `TypeFetcherGenerator`'s `IMPLEMENTED_LEAVES`,
+`NOT_DISPATCHED_LEAVES` and `STUBBED_VARIANTS.keySet()`, plus the projected bucket derived from
+the projection producer's own membership declaration (`ProjectionCommands.CONTRIBUTION_MINTING_LEAVES`
+minus the dual-arm kinds; safe to derive because the test below pins the partition and the
+projection census test binds the declaration to observed minting), and `ValidateMojo` fails the
+build on stubbed variants. The rule extends to every new
 classifier invariant: no generator-side invariant goes unchecked at validate time.
 
 *Enforced by:* `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` (partition

@@ -178,7 +178,7 @@ public final class FilmService {
      * {@code actor: Actor @reference} sub-field, which is a correlated multiset, not a stored
      * column. Without the lift the rows-method returned these {@code FilmActorRecord}s verbatim and the
      * {@code actor} fetcher threw {@code "Field \"actor\" is not contained in row type"}; the lift
-     * re-projects each returned record's PK through {@code FilmActor.$fields(...)} so the multiset
+     * re-projects each returned record's PK through {@code FilmActor.$project(...)} so the multiset
      * column is present. This is the in-tree analogue of opptak's
      * {@code Sak.saksdokumenter -> Saksdokument.dokument}.
      *

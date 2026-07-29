@@ -2,7 +2,7 @@
 :description: Back a field with a jOOQ database routine (a stored function or procedure).
 :!toc:
 
-Backs a field with a database *routine* rather than a catalog table. Supported today is the table-valued function (PostgreSQL `RETURNS TABLE` / `SETOF`): jOOQ generates such a function as a first-class catalog `Table<R>`, so the field's `@table`-bound element type resolves the routine-result columns exactly as a plain table type does, and the rewrite projects `Type.$fields(...)` against it with the same selection narrowing. The difference from a plain catalog read is the row source: instead of the bare `Tables.X` singleton, the rewrite calls the schema's generated `Routines` convenience method with the routine's IN parameters bound from GraphQL field arguments (`argMapping`) or from columns of the previous table in the chain (`columnMapping`).
+Backs a field with a database *routine* rather than a catalog table. Supported today is the table-valued function (PostgreSQL `RETURNS TABLE` / `SETOF`): jOOQ generates such a function as a first-class catalog `Table<R>`, so the field's `@table`-bound element type resolves the routine-result columns exactly as a plain table type does, and the rewrite projects `Type.$project(...)` against it with the same selection narrowing. The difference from a plain catalog read is the row source: instead of the bare `Tables.X` singleton, the rewrite calls the schema's generated `Routines` convenience method with the routine's IN parameters bound from GraphQL field arguments (`argMapping`) or from columns of the previous table in the chain (`columnMapping`).
 
 `@routine` is the seam for reading from a stored function whose result set parameterises on its inputs, such as an access-control function that returns the rows a caller may see, and, on `Mutation`, for writing through a stored function that performs the mutation itself (see <<write,Writes on Mutation>>). The routine's shape (table-valued) is read off its jOOQ kind, not declared.
 
@@ -49,7 +49,7 @@ type Query {
 }
 ----
 
-The rewrite emits `select(Tilgang.$fields(...)).from(Routines.tilgangerForFeidebrukerMedFsFiktivtFnr(env, serviceId, feideId)).fetch()`. A query selecting only `organisasjonskode` projects only that routine-result column.
+The rewrite emits `select(Tilgang.$project(...)).from(Routines.tilgangerForFeidebrukerMedFsFiktivtFnr(env, serviceId, feideId)).fetch()`. A query selecting only `organisasjonskode` projects only that routine-result column.
 
 == Child positions: correlated calls
 

@@ -17,7 +17,7 @@ import javax.lang.model.element.Modifier;
  * {@link CompositeDecodeHelperRegistry}'s does: the emitted call and the helper it names must be
  * decided at one seam. The bug class this prevents is real and was shipped twice, by the retired
  * root conditions shim (a {@code graphitronContext(env)} call on a class that never carried the
- * helper) and by the {@code $fields}-hosted inline sites (a throwaway emission context whose
+ * helper) and by the {@code $project}-hosted inline sites (a throwaway emission context whose
  * recorded need nothing drained), both surfacing as the consumer's javac failure.
  */
 public final class RequestContextHelper {

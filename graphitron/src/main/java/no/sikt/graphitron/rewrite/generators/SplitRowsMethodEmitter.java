@@ -19,7 +19,10 @@ import no.sikt.graphitron.rewrite.model.RowsMethodBody;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
-import no.sikt.graphitron.rewrite.generators.util.ValuesJoinRowBuilder;
+import no.sikt.graphitron.render.ArgumentValueSource;
+import no.sikt.graphitron.render.PreviousNodeRef;
+import no.sikt.graphitron.render.ProjectionCall;
+import no.sikt.graphitron.render.ValuesJoinRowBuilder;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
@@ -49,10 +52,10 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.RECORD;
  *       (the inline {@code Field} created when {@link GeneratorUtils#buildKeyExtraction} built
  *       the key via {@code DSL.row(record.get(col))}).</li>
  *   <li>FK chain aliases identical to the inline-projection path.</li>
- *   <li>{@code .select($fields + parentInput.fieldsRow().field1().as("__idx__"))}; the
+ *   <li>{@code .select($project + parentInput.fieldsRow().field1().as("__idx__"))}; the
  *       {@code __idx__} column drives the Java-side scatter, see {@link #IDX_COLUMN}.</li>
  *   <li>Explicit {@code ON} predicate (not USING: junction tables re-expose the FK column and
- *       would collide under USING, as in {@link InlineLookupTableFieldEmitter}) joining the
+ *       would collide under USING, exactly as in the renderer's inline lookup arm) joining the
  *       first FK hop to {@code parentInput} via typed {@code Field<T>} lookups.</li>
  *   <li>{@code scatterByIdx(flat, keys.size())}, emitted once per fetcher class; see
  *       {@link #buildScatterByIdxHelper()}.</li>
@@ -576,8 +579,9 @@ public final class SplitRowsMethodEmitter {
      * the null-extended row), which {@link no.sikt.graphitron.rewrite.model.PivotSpec} pins
      * structurally.
      *
-     * <p>The select list is the selection-gated filtered-aggregate projection shared with the
-     * inline arm through {@link PivotProjectionEmitter#slotSelectionLoop}, plus {@code __idx__};
+     * <p>The select list is the coordinate's pivot projection unit ({@code <Parent><Field>} in
+     * {@code types}), the same {@code $project} the inline delivery's multiset arm selects, so
+     * the projected aliases cannot drift between the two hosts; plus {@code __idx__}, and
      * {@code GROUP BY __idx__} collapses the batch to one row per key.
      */
     static MethodSpec buildForBatchedPivot(TypeFetcherEmissionContext ctx,
@@ -597,9 +601,10 @@ public final class SplitRowsMethodEmitter {
         String pivotAlias = p.terminalAlias();
         TypeName keysListType = ParameterizedTypeName.get(LIST, p.keyElement());
 
-        body.add(PivotProjectionEmitter.slotSelectionLoop(spec, field.name() + "Pivot",
-            pivotAlias, "selectFields",
-            CodeBlock.of("env.getSelectionSet().getFieldsGroupedByResultKey().values()")));
+        TypeName pivotWildField = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
+        body.addStatement("$T selectFields = new $T<>($L)",
+            ParameterizedTypeName.get(LIST, pivotWildField), ARRAY_LIST,
+            ProjectionCall.fromEnvSelection(pivotUnitClass(field, outputPackage), pivotAlias));
         body.addStatement("selectFields.add(parentInput.field(0, $T.class).as($S))",
             Integer.class, IDX_COLUMN);
 
@@ -633,6 +638,16 @@ public final class SplitRowsMethodEmitter {
             keysListType,
             TenantDslEmitter.resolve(ctx, field, outputPackage).declaration(),
             new RowsMethodBody.SqlBatchedPivot(body.build()));
+    }
+
+    /**
+     * The batched pivot coordinate's projection unit class, derived through the plan's naming
+     * scheme so this host and the renderer spell one name.
+     */
+    private static ClassName pivotUnitClass(ChildField.BatchedPivotField field, String outputPackage) {
+        var unit = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage)
+            .pivotUnit(field.parentTypeName(), field.name());
+        return ClassName.get(unit.packageName(), unit.simpleName());
     }
 
     // -----------------------------------------------------------------------
@@ -695,7 +710,7 @@ public final class SplitRowsMethodEmitter {
         TypeName keyElement = p.keyElement();
         TypeName keysListType = ParameterizedTypeName.get(LIST, keyElement);
 
-        // Projection: $fields(env.getSelectionSet(), terminalAlias, env) + idx.as("__idx__").
+        // Projection: $project(env.getSelectionSet(), terminalAlias, env) + idx.as("__idx__").
         // env.getSelectionSet() is the child-selection for the Split field itself, exactly what
         // a SelectedField.getSelectionSet() would return, so the rows method signature needs no
         // separate SelectedField parameter.
@@ -706,8 +721,8 @@ public final class SplitRowsMethodEmitter {
         // is the idiomatic jOOQ alternative and preserves type safety.
         TypeName wildField = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         TypeName listOfField = ParameterizedTypeName.get(LIST, wildField);
-        body.addStatement("$T selectFields = new $T<>($T.$$fields(env.getSelectionSet(), $L, env))",
-            listOfField, ARRAY_LIST, typeClass, terminalAlias);
+        body.addStatement("$T selectFields = new $T<>($L)",
+            listOfField, ARRAY_LIST, ProjectionCall.fromEnvSelection(typeClass, terminalAlias));
         body.addStatement("selectFields.add(parentInput.field(0, $T.class).as($S))",
             Integer.class, IDX_COLUMN);
 
@@ -868,8 +883,8 @@ public final class SplitRowsMethodEmitter {
         // bridging loop to a no-op so terminalAlias == firstAlias there.
         TypeName wildField = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         TypeName listOfField = ParameterizedTypeName.get(LIST, wildField);
-        body.addStatement("$T selectFields = new $T<>($T.$$fields(env.getSelectionSet(), $L, env))",
-            listOfField, ARRAY_LIST, typeClass, terminalAlias);
+        body.addStatement("$T selectFields = new $T<>($L)",
+            listOfField, ARRAY_LIST, ProjectionCall.fromEnvSelection(typeClass, terminalAlias));
         body.addStatement("selectFields.add(parentInput.field(0, $T.class).as($S))",
             Integer.class, IDX_COLUMN);
 
@@ -1004,9 +1019,9 @@ public final class SplitRowsMethodEmitter {
         }
 
         body.addStatement(
-            "$T page = $T.pageRequest(first, last, after, before, $L, orderBy, extraFields, "
-                + "$T.$$fields(env.getSelectionSet(), $L, env))",
-            pageRequestClass, connectionHelperClass, conn.defaultPageSize(), typeClass, terminalAlias);
+            "$T page = $T.pageRequest(first, last, after, before, $L, orderBy, extraFields, $L)",
+            pageRequestClass, connectionHelperClass, conn.defaultPageSize(),
+            ProjectionCall.fromEnvSelection(typeClass, terminalAlias));
 
         // selectFields = page.selectFields() + idx.as("__idx__") + rowNumber.as("__rn__").
         // rowNumber partitions on the idx column (so each parent sees its own 1..N ordinal) and
@@ -1252,7 +1267,7 @@ public final class SplitRowsMethodEmitter {
      * method produces real {@code XRecord}s (the {@code serviceCall} expression, returning the
      * loader's {@code Map}/{@code List} container of {@code XRecord}); this method lifts those
      * back by extracting each returned record's primary key, re-projecting the bound table on
-     * that key by identity through {@code Type.$fields(...)}, and re-wrapping the projected
+     * that key by identity through {@code Type.$project(...)}, and re-wrapping the projected
      * {@code Record}s into the same container shape. Scalar sub-fields and {@code @reference}
      * multiset sub-fields both resolve off the projected record, where the verbatim service
      * return carried only stored columns.
@@ -1385,8 +1400,8 @@ public final class SplitRowsMethodEmitter {
             projInputTableType, DSL, valuesAlias.build());
         body.addStatement("$T boundTable = $T.$L.as($S)",
             table.tableClass(), table.constantsClass(), table.javaFieldName(), stf.name());
-        body.addStatement("$T selectFields = new $T<>($T.$$fields(env.getSelectionSet(), boundTable, env))",
-            listOfField, ARRAY_LIST, typeClass);
+        body.addStatement("$T selectFields = new $T<>($L)",
+            listOfField, ARRAY_LIST, ProjectionCall.fromEnvSelection(typeClass, "boundTable"));
         body.addStatement("selectFields.add(projectionInput.field(0, $T.class).as($S))",
             Integer.class, IDX_COLUMN);
         var onCond = CodeBlock.builder();

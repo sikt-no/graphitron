@@ -7,7 +7,6 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
-import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
@@ -210,10 +209,10 @@ class MultiSchemaPipelineTest {
     // ---- helpers ----
 
     private static TypeSpec typeClass(GraphitronSchema schema, String typeName) {
-        return TypeClassGenerator.generate(schema, MULTI_OUTPUT_PACKAGE).stream()
+        return ProjectionRenderTestSupport.renderProjections(schema, MULTI_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals(typeName))
             .findFirst()
-            .orElseThrow(() -> new AssertionError("TypeClassGenerator did not emit " + typeName));
+            .orElseThrow(() -> new AssertionError("no projection unit named " + typeName + " was rendered"));
     }
 
     /**
@@ -222,7 +221,7 @@ class MultiSchemaPipelineTest {
      */
     private static List<TypeSpec> allEmittedTypeSpecs(GraphitronSchema schema) {
         var out = new java.util.ArrayList<TypeSpec>();
-        out.addAll(TypeClassGenerator.generate(schema, MULTI_OUTPUT_PACKAGE));
+        out.addAll(ProjectionRenderTestSupport.renderProjections(schema, MULTI_OUTPUT_PACKAGE));
         out.addAll(ConditionRenderTestSupport.renderCommittedConditions(schema, MULTI_OUTPUT_PACKAGE));
         return out;
     }

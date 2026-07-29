@@ -317,7 +317,7 @@ class GraphitronSchemaClassGeneratorTest {
         // The TypeResolver routes off the synthetic discriminator alias the interface fetcher
         // projects (MultiTablePolymorphicEmitter.DISCRIMINATOR_COLUMN), never the raw column name:
         // when the interface exposes the discriminator as a queryable field, the real column is
-        // also projected by the participant $fields, and a bare read of the column name matches
+        // also projected by the participant $project, and a bare read of the column name matches
         // both projections ambiguously. The alias is distinct from any real column, so the
         // routing read is unambiguous.
         var body = buildBody(INTERFACE_SDL);

@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators;
 
+import no.sikt.graphitron.rewrite.ProjectionRenderTestSupport;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
@@ -68,7 +69,7 @@ class NodeIdReferenceFilterPipelineTest {
         // The @nodeId decode is lifted to a per-class private static helper on the coordinate's
         // glue class; the Baz type class emits only the glue call and carries no helper.
         assertDecodeHelperOnGlueClassOnly(schema,
-            TypeClassGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+            ProjectionRenderTestSupport.renderProjections(schema, DEFAULT_OUTPUT_PACKAGE).stream()
                 .filter(t -> t.name().equals("Baz")).findFirst().orElseThrow());
     }
 
@@ -117,7 +118,7 @@ class NodeIdReferenceFilterPipelineTest {
             """, FIXTURE_CTX);
 
         assertThatCode(() -> {
-            TypeClassGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE);
+            ProjectionRenderTestSupport.renderProjections(schema, DEFAULT_OUTPUT_PACKAGE);
             TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE);
         }).doesNotThrowAnyException();
     }
@@ -136,7 +137,7 @@ class NodeIdReferenceFilterPipelineTest {
             type Query { bar: Bar }
             """, FIXTURE_CTX);
 
-        assertThatCode(() -> TypeClassGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE))
+        assertThatCode(() -> ProjectionRenderTestSupport.renderProjections(schema, DEFAULT_OUTPUT_PACKAGE))
             .doesNotThrowAnyException();
     }
 }

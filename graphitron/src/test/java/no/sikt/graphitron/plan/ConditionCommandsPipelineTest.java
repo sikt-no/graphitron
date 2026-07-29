@@ -217,11 +217,11 @@ class ConditionCommandsPipelineTest {
     }
 
     @Test
-    void nestedGeneratedFilter_rejectsAtValidateTime() {
+    void nestedGeneratedFilter_validatesCleanAndProducesTheNestedRow() {
         // A filterable arg on a field nested inside a plain-object nesting type classifies to a
-        // GeneratedConditionFilter whose conditions method no walk can emit (the nested
-        // coordinate has no fields() entry). Rejected until nesting types become walkable
-        // projection units; the same fixture flips to producing a row when they do.
+        // GeneratedConditionFilter. This fixture pinned the deferred rejection while nested
+        // coordinates had no walkable home; nesting types are projection units now, the nested
+        // arm calls the glue this row renders, and the same fixture pins the emitted state.
         var schema = TestSchemaHelper.buildSchema("""
             type Language @table(name: "language") { name: String }
             type FilmMeta {
@@ -235,8 +235,16 @@ class ConditionCommandsPipelineTest {
 
         assertThat(new GraphitronSchemaValidator().validate(schema))
             .extracting(ValidationError::message)
-            .anyMatch(m -> m.contains("languages")
-                && m.contains("generated column filters on a field nested inside a plain-object nesting type"));
+            .noneMatch(m -> m.contains("nested inside a plain-object nesting type"));
+
+        var relation = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
+        assertThat(relation.rows()).hasSize(1);
+        var row = relation.rows().get(0);
+        assertThat(row.coordinate()).isEqualTo(FieldCoordinates.coordinates("FilmMeta", "languages"));
+        assertThat(row.glue().owner().fqcn())
+            .isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".conditions.FilmMetaConditions");
+        assertThat(row.predicates()).hasSize(1);
+        assertThat(row.predicates().get(0)).isInstanceOf(Predicate.Generated.class);
     }
 
     private static List<String> generatedTermLocals(List<Predicate> predicates) {

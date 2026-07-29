@@ -58,7 +58,7 @@ Structural invariants on individual classifiers, builders, emitters, and runtime
 
 Three sub-families:
 
-*Generator unit tests* (`TypeFetcherGeneratorTest`, `TypeClassGeneratorTest`, `GeneratorCoverageTest`; and the `generators/schema/` subdirectory: `EnumTypeGeneratorTest`, `GraphitronFacadeGeneratorTest`, `InputTypeGeneratorTest`, `ObjectTypeGeneratorTest`, etc.).
+*Generator unit tests* (`TypeFetcherGeneratorTest`, `GeneratorCoverageTest`; and the `generators/schema/` subdirectory: `EnumTypeGeneratorTest`, `GraphitronFacadeGeneratorTest`, `InputTypeGeneratorTest`, `ObjectTypeGeneratorTest`, etc.).
 Take pre-built model fixtures via `TestFixtures`; assert `TypeSpec` shape (method names, return types, parameter signatures).
 Banned: code-string body matching on the generated `MethodSpec` body; that is what compilation and execution cover.
 
@@ -67,6 +67,17 @@ Build a `GraphitronSchema` with one parent type and one field at a known coordin
 
 *Builder / catalog / writer unit tests* (`JooqCatalogFindColumnTest`, `IdempotentWriterTest`, `ArgBindingMapTest`, `ServiceCatalogTest`, etc.).
 Targeted constructor or single-method assertions; no full-pipeline plumbing.
+
+*Renderer arm tests* (`ProjectionUnitRendererTest`; the command-driven families).
+A renderer is a total function over a command's sealed arms, so its inputs are record literals
+constructed at the point of assertion; no `TestSchemaHelper`, no fixture, no catalog. Every arm
+of the sealed set is reachable directly, which per-arm coverage of the emit never had while
+reaching an emitter branch meant driving the whole pipeline into one leaf configuration. The
+"pipeline beats unit" doctrine above was written against fixture-plumbed generator tests; renderer
+arm tests are a different species (no plumbing) and are the preferred home for per-arm structural
+assertions on command-driven emission. The producer's decisions are asserted separately at the
+pipeline tier, as data (SDL to command rows, e.g. `ProjectionMembershipTest`,
+`ConditionCommandsPipelineTest`), without javapoet.
 
 == Pipeline tier
 

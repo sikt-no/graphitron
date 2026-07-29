@@ -625,7 +625,7 @@ class ServiceCatalog {
      * <p>Contract: the method must be {@code public static}, take exactly one parameter
      * assignable from the parent's jOOQ {@code Table<?>} class, and return parameterised
      * {@code org.jooq.Field<X>}. The captured return TypeName preserves the parameterised
-     * shape so the generated {@code $fields()} body compiles cleanly when projecting against
+     * shape so the generated {@code $project()} body compiles cleanly when projecting against
      * a {@code List<Field<?>>}.
      *
      * <p>Both {@code className} and {@code methodName} are required: the {@code @externalField}

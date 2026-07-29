@@ -49,24 +49,27 @@ class CommandSeamRatchetTest {
      * Entry points in {@code generators/} still taking the model. Ratchets down to zero.
      * Lowered 24 to 23 when the root conditions shim generator retired into the condition
      * command's producer and glue renderer, then 23 to 22 when call-site convergence deleted the
-     * entity conditions generator (the WHERE family's second and last model-taking emitter).
+     * entity conditions generator (the WHERE family's second and last model-taking emitter),
+     * then 22 to 21 when the projection command retired the type-class generator.
      */
-    private static final int MODEL_TAKING_ENTRY_POINTS = 22;
+    private static final int MODEL_TAKING_ENTRY_POINTS = 21;
 
     /**
      * {@code instanceof} sites in {@code generators/} naming a leaf of the seven hierarchies.
      * Lowered 104 to 100 with the conditions shim generator's retirement, then 100 to 97 with
      * call-site convergence (the entity generator's participant dispatch and the inline hosts'
-     * filter plumbing).
+     * filter plumbing), then 97 to 83 when the projection command relocated the type-class
+     * generator's and the four inline arm emitters' dispatch into the projection producer.
      */
-    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 97;
+    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 83;
 
     /**
      * {@code case} patterns in {@code generators/} naming a leaf of the seven hierarchies.
      * Lowered 89 to 87 with call-site convergence (the retired entity conditions generator's
-     * participant dispatch).
+     * participant dispatch), then 87 to 78 when the projection command relocated the retired
+     * type-class generator's selection switch.
      */
-    private static final int GENERATOR_LEAF_CASE_PATTERNS = 87;
+    private static final int GENERATOR_LEAF_CASE_PATTERNS = 78;
 
     /**
      * Leaf references ({@code instanceof} plus {@code case}) inside {@code plan/}: the relocation
@@ -79,9 +82,13 @@ class CommandSeamRatchetTest {
      * that producer's membership collapsed onto the
      * {@link no.sikt.graphitron.rewrite.model.SqlGeneratingField} capability read (identity arms
      * remain only for the participant-bearing roots, the nesting recursion, and the two
-     * emit-gap backstops).
+     * emit-gap backstops); raised to 42 when the projection command's producer
+     * ({@link no.sikt.graphitron.plan.ProjectionCommands}) relocated the projection family's
+     * exhaustive leaf dispatch, the required-projection walk and its containment check out of
+     * {@code generators/} — the four-layer window the tertiary count exists to make visible,
+     * ratcheting back down when the fact walk replaces the relocated dispatch.
      */
-    private static final int PLAN_LEAF_REFERENCES = 6;
+    private static final int PLAN_LEAF_REFERENCES = 42;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide

@@ -49,9 +49,15 @@ class PackageImportDirectionTest {
      * The one borrow dial both {@code command} and {@code render} read: the model refs they may
      * import, exactly as the shared-vocabulary decision enumerates them. An import of a nested
      * member (e.g. {@code JoinStep.Hop}) or a static member counts as its enclosing entry.
-     * {@code HelperRef} is not new surface: it rides {@code CallSiteExtraction.NodeIdDecodeKeys}
-     * as a component, so the enumeration was already implicitly admitting it (see the closure
-     * census below).
+     * {@code HelperRef}, {@code TableExpr}, {@code JoinConditionRef}, {@code RoutineRef} and
+     * {@code ParamSource} are not new surface: each rides a borrowed ref as a component
+     * ({@code CallSiteExtraction.NodeIdDecodeKeys}; {@code JoinStep.Hop}'s target, {@code On}
+     * and routine payloads), so the enumeration was already implicitly admitting them (see the
+     * closure census below). The projection command added three genuinely new entries, borrowed
+     * verbatim rather than narrowed so the launcher family inherits the shape decision:
+     * {@code ParentCorrelation} (the step-0 dispatch its multiset arms render),
+     * {@code OrderBySpec} (the inline subselect's fixed ordering), and {@code LookupMapping}
+     * (the {@code @lookupKey} VALUES keyset and its rows helper).
      */
     private static final Set<String> BORROWED_MODEL_REFS = Set.of(
         "no.sikt.graphitron.rewrite.model.TableRef",
@@ -61,7 +67,14 @@ class PackageImportDirectionTest {
         "no.sikt.graphitron.rewrite.model.On",
         "no.sikt.graphitron.rewrite.model.CallParam",
         "no.sikt.graphitron.rewrite.model.CallSiteExtraction",
-        "no.sikt.graphitron.rewrite.model.HelperRef"
+        "no.sikt.graphitron.rewrite.model.HelperRef",
+        "no.sikt.graphitron.rewrite.model.TableExpr",
+        "no.sikt.graphitron.rewrite.model.JoinConditionRef",
+        "no.sikt.graphitron.rewrite.model.RoutineRef",
+        "no.sikt.graphitron.rewrite.model.ParamSource",
+        "no.sikt.graphitron.rewrite.model.ParentCorrelation",
+        "no.sikt.graphitron.rewrite.model.OrderBySpec",
+        "no.sikt.graphitron.rewrite.model.LookupMapping"
     );
 
     /**
@@ -81,13 +94,17 @@ class PackageImportDirectionTest {
         "no.sikt.graphitron.rewrite.model.ConditionFilter",
         "no.sikt.graphitron.rewrite.model.ForeignKeyRef",
         "no.sikt.graphitron.rewrite.model.HelperRef",
+        "no.sikt.graphitron.rewrite.model.InputColumnBinding",
         "no.sikt.graphitron.rewrite.model.JoinConditionRef",
         "no.sikt.graphitron.rewrite.model.JoinSlot",
         "no.sikt.graphitron.rewrite.model.JoinStep",
         "no.sikt.graphitron.rewrite.model.LoaderRegistration",
+        "no.sikt.graphitron.rewrite.model.LookupMapping",
         "no.sikt.graphitron.rewrite.model.MethodRef",
         "no.sikt.graphitron.rewrite.model.On",
+        "no.sikt.graphitron.rewrite.model.OrderBySpec",
         "no.sikt.graphitron.rewrite.model.ParamSource",
+        "no.sikt.graphitron.rewrite.model.ParentCorrelation",
         "no.sikt.graphitron.rewrite.model.RoutineRef",
         "no.sikt.graphitron.rewrite.model.SourceKey",
         "no.sikt.graphitron.rewrite.model.TableExpr",

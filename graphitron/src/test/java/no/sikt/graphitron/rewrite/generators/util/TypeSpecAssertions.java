@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
  * Structural assertions over generated {@link TypeSpec}s and
  * {@link no.sikt.graphitron.rewrite.generators.schema.FetcherRegistrationsEmitter} output.
  * Exists to replace the {@code assertThat(method.code().toString()).contains(...)} pattern
- * banned by CLAUDE.md — callers ask typed questions ("does {@code $fields} project this field?",
+ * banned by CLAUDE.md — callers ask typed questions ("does {@code $project} project this field?",
  * "what kind of data fetcher is wired for this field?") instead of grepping raw rendered bodies.
  *
  * <p>Body-scan fragility is confined to this file. If the emitter's output shape changes, one
@@ -36,13 +36,13 @@ public final class TypeSpecAssertions {
     }
 
     /**
-     * True when {@code type}'s {@code $fieldsGrouped} switch loop (the private method both public
-     * {@code $fields} entries delegate to) contains a switch arm for {@code fieldName}. The switch
+     * True when {@code type}'s {@code $project} switch loop (the private method both public
+     * {@code $project} entries delegate to) contains a switch arm for {@code fieldName}. The switch
      * arm is emitted as {@code case "fieldName" -> …} (JavaPoet renders with the quoted field
      * name); this helper searches for that literal.
      */
     public static boolean hasFieldsArm(TypeSpec type, String fieldName) {
-        return methodBody(type, "$fieldsGrouped")
+        return methodBody(type, "$project")
             .map(body -> body.contains("case \"" + fieldName + "\""))
             .orElse(false);
     }
@@ -96,13 +96,13 @@ public final class TypeSpecAssertions {
     }
 
     /**
-     * True when {@code type}'s {@code $fields} method unconditionally appends a jOOQ column to
+     * True when {@code type}'s {@code $project} method unconditionally appends a jOOQ column to
      * the projection via the {@code if (!fields.contains(table.COL)) fields.add(table.COL)}
      * idiom used for SourceKey-column projection. Caller supplies the jOOQ field's
      * Java name (e.g. {@code "FILM_ID"}).
      */
     public static boolean appendsRequiredColumn(TypeSpec type, String columnJavaName) {
-        String body = methodBody(type, "$fieldsGrouped").orElse("");
+        String body = methodBody(type, "$project").orElse("");
         return body.contains("fields.add(table." + columnJavaName + ")");
     }
 
@@ -120,14 +120,14 @@ public final class TypeSpecAssertions {
     }
 
     /**
-     * True when the {@code $fieldsGrouped} switch arm for {@code fieldName} opens with the
+     * True when the {@code $project} switch arm for {@code fieldName} opens with the
      * occurrence argument-consistency guard
      * ({@code SelectionOccurrences.requireConsistentArguments(...)}). The arm span is taken from
      * the arm's {@code case "fieldName"} label to the next {@code case} label (or the body end),
      * which is exact for the flat depth-0 arms the callers assert on.
      */
     public static boolean armGuardsArgumentConsistency(TypeSpec type, String fieldName) {
-        String body = methodBody(type, "$fieldsGrouped").orElse("");
+        String body = methodBody(type, "$project").orElse("");
         int start = body.indexOf("case \"" + fieldName + "\"");
         if (start < 0) return false;
         int end = body.indexOf("case \"", start + 1);

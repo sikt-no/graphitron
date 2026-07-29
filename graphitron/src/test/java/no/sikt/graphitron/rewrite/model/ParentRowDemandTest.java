@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Unit coverage for {@link ParentRowDemand#polymorphicParentRowColumns}: the parent-row
  * demand a multi-table polymorphic child field ({@link ChildField.InterfaceField} /
- * {@link ChildField.UnionField}) surfaces onto its parent's {@code $fields} projection.
+ * {@link ChildField.UnionField}) surfaces onto its parent's {@code $project} projection.
  *
  * <p>The accessor forks on the field's cardinality and, at single cardinality, enumerates the
  * union across participants of what {@code MultiTablePolymorphicEmitter.singleBranchCorrelationWhere}

@@ -22,7 +22,7 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 class ColumnReferenceFieldValidationTest {
 
     // ColumnBackedReferenceField + condition-join now classifies and emits a real scalar
-    // subquery via InlineColumnReferenceFieldEmitter; the validator no longer surfaces a
+    // subquery via the renderer's scalar-subselect arm; the validator no longer surfaces a
     // deferred-rejection.
 
     private static final String DEFERRED_NODEID_ENCODE =

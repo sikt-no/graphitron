@@ -13,7 +13,6 @@ import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.lint.LintConfig;
 import no.sikt.graphitron.rewrite.lint.LintEngine;
@@ -337,12 +336,17 @@ public class GraphQLRewriteGenerator {
             plan.conditions().units(),
             no.sikt.graphitron.render.ConditionGlueRenderer.render(plan.conditions().rows(), outputPackage),
             emittedThisRun);
+        // The projection command relation: one $project unit per row (anchor types, anchor-prefixed
+        // nesting units, per-coordinate pivot units), each landing at the address its row committed.
+        writeUnits("projection units",
+            plan.projections().units(),
+            no.sikt.graphitron.render.ProjectionUnitRenderer.render(plan.projections().rows(), outputPackage),
+            emittedThisRun);
 
         write(EnumTypeGenerator.generate(schema),                                                 "schema",     emittedThisRun);
         write(InputTypeGenerator.generate(schema),                                                "schema",     emittedThisRun);
         write(InputRecordGenerator.generate(schema, assembled, outputPackage),                    "inputs",     emittedThisRun);
         write(ObjectTypeGenerator.generate(schema, assembled, fetcherBodies),                     "schema",     emittedThisRun);
-        write(TypeClassGenerator.generate(schema, outputPackage),                                 "types",      emittedThisRun);
         write(fetcherClasses,                                                                      "fetchers",   emittedThisRun);
         write(ConnectionFetcherClassGenerator.generate(schema, outputPackage),                     "fetchers",   emittedThisRun);
         write(ErrorTypeFetcherClassGenerator.generate(schema, outputPackage),                      "fetchers",   emittedThisRun);

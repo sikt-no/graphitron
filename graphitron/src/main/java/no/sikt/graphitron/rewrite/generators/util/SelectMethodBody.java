@@ -4,6 +4,8 @@ import no.sikt.graphitron.javapoet.ArrayTypeName;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.render.ProjectionCall;
+import no.sikt.graphitron.render.ValuesJoinRowBuilder;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
@@ -28,9 +30,9 @@ import java.util.function.Function;
  * {@link EntityFetcherDispatchClassGenerator}'s class Javadoc for the surrounding dispatch shape.
  *
  * <p><b>Join syntax: {@code .on(...)}, not {@code .using(...)}.</b> The SELECT projection here is
- * built from {@code <TypeName>.$fields(env.getSelectionSet(), t, env)}, which references
+ * built from {@code <TypeName>.$project(env.getSelectionSet().getFieldsGroupedByResultKey(), t, env)}, which references
  * {@code t.<col>} directly. {@code USING} collapses joined columns into a single output column at
- * render time, which can interact poorly with {@code $fields}-emitted projections that may include
+ * render time, which can interact poorly with {@code $project}-emitted projections that may include
  * the joined key columns themselves; the explicit {@code ON} predicate keeps both sides of the
  * join addressable through their original {@code t.<col>} / {@code input.field("<col>", T.class)}
  * references. The SQL-shape regression test
@@ -106,8 +108,8 @@ final class SelectMethodBody {
         // Field projection
         var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         var arrayListOfField = ParameterizedTypeName.get(ARRAY_LIST, fieldWildcard);
-        b.addStatement("$T fields = new $T($T.$$fields(env.getSelectionSet(), $L, env))",
-            arrayListOfField, arrayListOfField, typeClass, tableLocal);
+        b.addStatement("$T fields = new $T($L)",
+            arrayListOfField, arrayListOfField, ProjectionCall.fromEnvSelection(typeClass, tableLocal));
         b.addStatement("fields.add($T.inline($S).as($S))",
             DSL, entity.typeName(), EntityFetcherDispatchClassGenerator.TYPENAME_COLUMN);
 

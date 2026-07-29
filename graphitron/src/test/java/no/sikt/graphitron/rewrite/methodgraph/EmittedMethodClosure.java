@@ -34,7 +34,7 @@ import java.util.regex.Pattern;
  * the emitted names were derived. Two blind spots, both closed by javac in the compilation tier:
  * unqualified same-class calls (rendered with no class qualifier, so no generated-name token to
  * resolve), and instance calls through variables (the qualifier is a value, not a class name).
- * The load-bearing cross-unit seams ({@code $fields}, the rows-methods, scatter, conditions,
+ * The load-bearing cross-unit seams ({@code $project}, the rows-methods, scatter, conditions,
  * order-by, bean/record instantiation) are all class-qualified static calls and are all visible
  * to this walk; {@link MethodClosureOracleTest} pins that visibility so a scan regression cannot
  * go silently green.

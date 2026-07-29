@@ -146,7 +146,7 @@ class TypeFetcherGeneratorTest {
 
     // No per-variant isNotStub tests here:
     // GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus's four-way partition
-    // guarantees any leaf in IMPLEMENTED_LEAVES or PROJECTED_LEAVES does not route through stub(f).
+    // guarantees any leaf in IMPLEMENTED_LEAVES or the producer-derived projected bucket does not route through stub(f).
 
     // ===== QueryLookupTableField =====
 
@@ -322,7 +322,7 @@ class TypeFetcherGeneratorTest {
     }
 
     // ===== @service field with TableBoundReturnType =====
-    // ChildField.ServiceTableField lifts the service result back through a $fields-projecting
+    // ChildField.ServiceTableField lifts the service result back through a $project-projecting
     // identity re-projection, so the DataLoader value (and rows-method per-key value) is the
     // projected org.jooq.Record carrying the multiset columns, not the developer-returned XRecord.
 
@@ -1105,8 +1105,8 @@ class TypeFetcherGeneratorTest {
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
             DEFAULT_OUTPUT_PACKAGE);
         var code = method(spec, "allContent").code().toString();
-        assertThat(code).contains("FilmContent.$fields(");
-        assertThat(code).contains("ShortContent.$fields(");
+        assertThat(code).contains("FilmContent.$project(");
+        assertThat(code).contains("ShortContent.$project(");
     }
 
     // ===== TableInterfaceField =====
@@ -1199,8 +1199,8 @@ class TypeFetcherGeneratorTest {
         var spec = TypeFetcherGenerator.generateTypeSpec("Language", LANGUAGE_TABLE, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE);
         var code = method(spec, "content").code().toString();
-        assertThat(code).contains("FilmContent.$fields(");
-        assertThat(code).contains("ShortContent.$fields(");
+        assertThat(code).contains("FilmContent.$project(");
+        assertThat(code).contains("ShortContent.$project(");
     }
 
     // ===== Cross-table participant fields =====
@@ -1650,28 +1650,28 @@ class TypeFetcherGeneratorTest {
 
     @Test
     void queryInterfaceField_perTypenameHelpersExist_andCallParticipantFields() {
-        // Stage 2 invokes <Type>.$fields(PolymorphicSelectionSet.restrictTo(env.getSelectionSet(),
-        // "<Type>"), t, env) for the typed projection; PolymorphicSelectionSet.restrictTo wraps the
+        // Stage 2 invokes <Type>.$project(PolymorphicSelectionSet.restrictTo(env.getSelectionSet(),
+        // "<Type>").getFieldsGroupedByResultKey(), t, env); PolymorphicSelectionSet.restrictTo wraps the
         // parent selection set so each per-typename SELECT projects only columns actually selected for that variant.
-        // Selection-set narrowing works at full strength only with $fields, not asterisk().
+        // Selection-set narrowing works at full strength only with $project, not asterisk().
         var field = queryInterfaceField("search", true, filmAndActorParticipants());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
             DEFAULT_OUTPUT_PACKAGE);
         var film = method(spec, "selectFilmForSearch");
         var actor = method(spec, "selectActorForSearch");
         assertThat(film.code().toString())
-            .contains(".Film.$fields(")
-            .contains(".PolymorphicSelectionSet.restrictTo(env.getSelectionSet(), \"Film\"), t, env)");
+            .contains(".Film.$project(")
+            .contains(".PolymorphicSelectionSet.restrictTo(env.getSelectionSet(), \"Film\").getFieldsGroupedByResultKey(), t, env)");
         assertThat(actor.code().toString())
-            .contains(".Actor.$fields(")
-            .contains(".PolymorphicSelectionSet.restrictTo(env.getSelectionSet(), \"Actor\"), t, env)");
+            .contains(".Actor.$project(")
+            .contains(".PolymorphicSelectionSet.restrictTo(env.getSelectionSet(), \"Actor\").getFieldsGroupedByResultKey(), t, env)");
     }
 
     @Test
     void queryInterfaceField_perTypenameHelpers_useDispatcherShapeOnNotUsing() {
         // Dispatcher uses .on(...) not .using(...) because the SELECT
-        // projection includes <Type>.$fields(...) which references t.<col> directly.
-        // USING would collapse joined columns and risk colliding with $fields-emitted projections.
+        // projection includes <Type>.$project(...) which references t.<col> directly.
+        // USING would collapse joined columns and risk colliding with $project-emitted projections.
         var field = queryInterfaceField("search", true, filmAndActorParticipants());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
             DEFAULT_OUTPUT_PACKAGE);
@@ -1680,7 +1680,7 @@ class TypeFetcherGeneratorTest {
             .as("dispatcher shape uses .on(...) for the values-derived join")
             .contains(".join(input).on(");
         assertThat(body)
-            .as("does not use .using(...) — would collapse t.<col> with $fields projections")
+            .as("does not use .using(...) — would collapse t.<col> with $project projections")
             .doesNotContain(".join(input).using(");
     }
 

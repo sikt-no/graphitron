@@ -2,7 +2,6 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.FetcherRegistrationsEmitter;
 import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
@@ -19,7 +18,7 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
  * {@code CallSiteCompaction.Direct}.
  *
  * <p>Asserts the structural contract: the reified read method on {@code *Fetchers}, the
- * {@code $fields} switch routes the field, and the {@code DataFetcher} value wires through a bare
+ * {@code $project} switch routes the field, and the {@code DataFetcher} value wires through a bare
  * env-dependent method reference (the projection is aliased by the runtime result key, so the read
  * needs {@code env.getField().getResultKey()}). Body-level SQL correctness is the compile and
  * execution tiers' job.
@@ -44,7 +43,7 @@ class ColumnReferenceFieldPipelineTest {
             .findFirst()
             .orElseThrow();
         assertThat(filmFetchers.methodSpecs()).extracting(MethodSpec::name)
-            .as("R303: Direct ColumnReferenceField projects inline via TypeClassGenerator.$fields; "
+            .as("R303: Direct ColumnReferenceField projects inline via the type's $project unit; "
                 + "the read of the result-key-aliased projection is reified as a named env-dependent method")
             .contains("languageName");
     }
@@ -63,7 +62,7 @@ class ColumnReferenceFieldPipelineTest {
     void directColumnReference_singleHop_typeClassFieldsMethodRoutesField() {
         var filmClass = findTypeClass(SINGLE_HOP_SDL, "Film");
         assertThat(TypeSpecAssertions.hasFieldsArm(filmClass, "languageName"))
-            .as("Film.$fields must contain a case arm for languageName")
+            .as("Film.$project must contain a case arm for languageName")
             .isTrue();
     }
 
@@ -84,12 +83,12 @@ class ColumnReferenceFieldPipelineTest {
             """;
         var filmClass = findTypeClass(sdl, "Film");
         assertThat(TypeSpecAssertions.hasFieldsArm(filmClass, "actorFirstName"))
-            .as("Film.$fields must contain a case arm for the multi-hop reference")
+            .as("Film.$project must contain a case arm for the multi-hop reference")
             .isTrue();
     }
 
     private static TypeSpec findTypeClass(String sdl, String typeName) {
-        return TypeClassGenerator.generate(TestSchemaHelper.buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE).stream()
+        return ProjectionRenderTestSupport.renderProjections(TestSchemaHelper.buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals(typeName))
             .findFirst()
             .orElseThrow(() -> new AssertionError("Type class not found: " + typeName));

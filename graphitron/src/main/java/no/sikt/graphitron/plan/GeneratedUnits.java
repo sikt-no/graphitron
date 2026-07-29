@@ -51,6 +51,34 @@ public final class GeneratedUnits {
         return unit(SUB_TYPES, typeName);
     }
 
+    /**
+     * {@code <pkg>.types.<Anchor><Nested>} — a nesting type's projection unit under one
+     * table-backed anchor. The anchor prefix is what disambiguates one nesting type shared
+     * across anchors with different tables, and the anchor (not the immediate parent) because
+     * nesting is a pass-through: every nesting descendant reads the anchor's row, and at depth
+     * two and beyond only the anchor disambiguates. The concatenated name can collide with an
+     * authored type's unit or another prefixed pair's; the plan rejects any duplicate
+     * projection-unit address at produce time (see the projection producer's address census).
+     */
+    public UnitRef nestingUnit(String anchorTypeName, String nestedTypeName) {
+        return unit(SUB_TYPES, anchorTypeName + nestedTypeName);
+    }
+
+    /**
+     * {@code <pkg>.types.<Parent><FieldName>} — a {@code @pivot} coordinate's projection unit,
+     * field name upper-camelled. Keyed by coordinate rather than by projection type because the
+     * pivot spec is coordinate-grain (two coordinates can pivot into the same projection type
+     * over different attribute tables); subject to the same duplicate-address rejection as
+     * {@link #nestingUnit}.
+     */
+    public UnitRef pivotUnit(String parentTypeName, String fieldName) {
+        return unit(SUB_TYPES, parentTypeName + upperCamel(fieldName));
+    }
+
+    private static String upperCamel(String fieldName) {
+        return Character.toUpperCase(fieldName.charAt(0)) + fieldName.substring(1);
+    }
+
     /** {@code <pkg>.conditions.<Type>Conditions} — the per-parent generated-condition class. */
     public UnitRef conditions(String parentTypeName) {
         return unit(SUB_CONDITIONS, parentTypeName + CONDITIONS_SUFFIX);
@@ -83,6 +111,16 @@ public final class GeneratedUnits {
      */
     public UnitMethodRef participantConditionMethod(String parentTypeName, String fieldName, String participantTypeName) {
         return new UnitMethodRef(conditions(parentTypeName), fieldName + "Participant_" + participantTypeName + "Condition");
+    }
+
+    /**
+     * {@code <owner>#<field>InputRows}: a lookup coordinate's generated VALUES-rows helper,
+     * hosted on the projection unit whose {@code $project} arm consumes it. One formula for both
+     * ends: the projection producer mints the ref onto the lookup wrap, and the legacy hosts'
+     * emitter ({@code LookupValuesJoinEmitter.inputRowsMethodName}) spells the same name.
+     */
+    public UnitMethodRef inputRowsMethod(UnitRef owner, String fieldName) {
+        return new UnitMethodRef(owner, fieldName + "InputRows");
     }
 
     /** {@code <pkg>.inputs.<Input>} — the per-input-type record class. */

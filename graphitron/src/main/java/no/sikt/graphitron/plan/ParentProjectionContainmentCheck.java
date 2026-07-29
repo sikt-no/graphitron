@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.generators;
+package no.sikt.graphitron.plan;
 
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.BatchKeyField;
@@ -24,13 +24,14 @@ import java.util.Set;
  * level-1 closure oracle (method-name resolution) cannot see it, because the projection is a value
  * set, not a name binding.
  *
- * <p>Two walks are cross-checked at the {@code $fields} emit site
- * ({@link TypeClassGenerator#generateForType}):
+ * <p>Two walks are cross-checked at produce time ({@link ProjectionCommands#produce}), before
+ * the anchor unit's row is committed:
  *
  * <ul>
- *   <li><b>Guarantee</b>: the base-named column list that
- *       {@code TypeClassGenerator.collectRequiredProjection} computed for the anchor type (the
- *       walk under audit).</li>
+ *   <li><b>Guarantee</b>: the base-named column list the projection producer computed for the
+ *       anchor type's required-projection slot (the walk under audit). This check is that
+ *       slot's enforcer for the interim window; the slot and this check retire together when
+ *       the correlation columns become a gated contribution arm.</li>
  *   <li><b>Requirement</b>: this class's own enumeration of every table-sourced
  *       {@link BatchKeyField} and {@link ParentRowDemand} coordinate rooted at the anchor,
  *       read off the classifier's flat field index ({@link GraphitronSchema#fields()}) and
@@ -40,7 +41,7 @@ import java.util.Set;
  * </ul>
  *
  * <p><b>Independence is the hard requirement, not a preference.</b> The requirement side must not
- * call {@code collectRequiredProjection} or borrow its {@code NestingField} recursion or
+ * call the producer's required-projection walk or borrow its {@code NestingField} recursion or
  * {@code fieldsOf} locality: that bug's omission was <em>inside</em> that walk, and a requirement
  * side sharing its traversal would reproduce the omission on both sides and pass green over the
  * exact bug family this check exists to catch. It is keyed on the {@link BatchKeyField} /
@@ -95,9 +96,8 @@ final class ParentProjectionContainmentCheck {
                             "Graphitron generator bug (parent-projection containment): field '"
                                 + f.parentTypeName() + "." + f.name() + "' is DataLoader-backed off a table"
                                 + " parent and its key extraction reads column '" + col.sqlName() + "' off"
-                                + " the parent row, but the projection walk"
-                                + " (TypeClassGenerator.collectRequiredProjection) for type '"
-                                + anchorTypeName + "' did not include it in the $fields SELECT. The"
+                                + " the parent row, but the producer's required-projection walk for type '"
+                                + anchorTypeName + "' did not include it in the $project SELECT. The"
                                 + " requirement walk (this check, over the classified field index) found a"
                                 + " demand the guarantee walk missed — a projection-walk omission, not a"
                                 + " schema authoring error.");
@@ -115,8 +115,8 @@ final class ParentProjectionContainmentCheck {
                             "Graphitron generator bug (parent-projection containment): field '"
                                 + f.parentTypeName() + "." + f.name() + "' reads parent-row column '"
                                 + col.sqlName() + "' off the parent record (ParentRowDemand), but the"
-                                + " projection walk (TypeClassGenerator.collectRequiredProjection) for type '"
-                                + anchorTypeName + "' did not include it in the $fields SELECT. The"
+                                + " producer's required-projection walk for type '"
+                                + anchorTypeName + "' did not include it in the $project SELECT. The"
                                 + " requirement walk (this check, over the classified field index) found a"
                                 + " demand the guarantee walk missed — a projection-walk omission, not a"
                                 + " schema authoring error.");

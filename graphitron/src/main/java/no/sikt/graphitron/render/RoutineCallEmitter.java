@@ -1,11 +1,10 @@
-package no.sikt.graphitron.rewrite.generators;
+package no.sikt.graphitron.render;
 
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.RoutineRef;
 import no.sikt.graphitron.rewrite.model.TableExpr;
-
-import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
+import no.sikt.graphitron.javapoet.ClassName;
 
 /**
  * Emits the table expression for a {@link TableExpr.RoutineCall} node: the schema's
@@ -30,6 +29,8 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
  * </ul>
  */
 public final class RoutineCallEmitter {
+
+    private static final ClassName DSL = ClassName.get("org.jooq.impl", "DSL");
 
     private RoutineCallEmitter() {}
 

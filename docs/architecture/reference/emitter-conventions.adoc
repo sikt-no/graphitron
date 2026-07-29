@@ -15,7 +15,7 @@ generated carrier wrapping `Result<Record>` + pagination context.
 `DataFetchingFieldSelectionSet` and `SelectedField` are threaded through all table method
 signatures, structurally committing to selection-aware queries:
 
-- *Top-level queries*: call `Type.$fields(sel, table, env)` for the column list, then
+- *Top-level queries*: call `Type.$project(sel.getFieldsGroupedByResultKey(), table, env)` for the column list, then
   `dsl.select(fields).from(table)...`
 - *Inline nesting*: use jOOQ `multiset(select(columns).from(CHILD).where(...)).as("alias")`
   returning `Field<?>` (type-erased). Use type erasure at every helper method boundary ; jOOQ

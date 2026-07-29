@@ -35,7 +35,7 @@ class LookupTableFieldValidationTest {
     }
 
     // The inline LookupTableField + condition-join shape now classifies and emits a real
-    // correlated subquery via InlineLookupTableFieldEmitter; the validator no longer
+    // correlated subquery via the renderer's lookup multiset arm; the validator no longer
     // surfaces a deferred-rejection for it.
 
     private static final List<JoinStep> CONDITION_PATH = List.of(TestFixtures.conditionJoin(
