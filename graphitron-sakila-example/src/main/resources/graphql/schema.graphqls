@@ -699,11 +699,9 @@ input CityCountryFilter {
 type City @table(name: "city") {
     cityId:   Int!    @field(name: "CITY_ID")
     cityName: String! @field(name: "CITY")
-    # R425 unmasked @service-child fixtures. City deliberately carries no @splitQuery
-    # sibling, so the @service children themselves are the only reason CITY_ID is force-projected
-    # into the parent SELECT (via the BatchKeyField arm in
-    # TypeClassGenerator.collectRequiredProjection). Film's service children cannot pin
-    # this: its cast/castByKey split siblings already project FILM_ID into every parent SELECT.
+    # Unmasked @service-child fixtures. City deliberately carries no @splitQuery sibling, so
+    # each @service child's own gated correlation-key arm is the only reason CITY_ID lands in
+    # the parent SELECT when that child is selected.
     # cityUppercase: typed-CityRecord source (Wrap.TableRecord), the shape that surfaced the bug.
     cityUppercase: String @service(service: {
         className: "no.sikt.graphitron.rewrite.test.services.CityService",

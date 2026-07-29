@@ -26,22 +26,25 @@ import static org.assertj.core.api.Assertions.assertThat;
  * database; generated Java text is not a contract with anyone, which is the line between this
  * baseline and the byte-identical-output acceptance test the programme refuses.
  *
- * <p>The rule these pins carry: the projection-command reshape must keep every string here green
- * unchanged (that is what makes "the reshape moved no SQL" a result rather than a claim), and
- * the slice that ends over-projection re-baselines this class exactly once, with the diff (the
- * correlation-key columns that disappear from these select lists) as its reviewable deliverable.
- * The strings otherwise move only when their own fixture types or seed data change in the shared
- * {@code schema.graphqls} / {@code init.sql}, and such a re-pin must preserve what the shape
- * demonstrates. Any other edit is a defect being papered over, not test maintenance.
+ * <p>The rule these pins carry: the projection-command reshape kept every string here green
+ * unchanged (that is what made "the reshape moved no SQL" a result rather than a claim), and
+ * the slice that ended over-projection spent this class's one sanctioned re-baseline: every
+ * projection is selection-gated now, so the correlation-key columns of unselected children are
+ * gone from these select lists, outer and multiset-inner alike. The strings henceforth move
+ * only when their own fixture types or seed data change in the shared {@code schema.graphqls} /
+ * {@code init.sql}, and such a re-pin must preserve what the shape demonstrates. Any other edit
+ * is a defect being papered over, not test maintenance.
  *
  * <p>The shapes are chosen to cover projection mechanics rather than one emit family: a split
  * child ({@code SplitParent.tags}), a nesting type ({@code Film.summary}), one nesting type
  * shared by two hosts with different tables ({@code OccupantLocation} under {@code Customer}
  * and {@code Store}, whose {@code address} join is inferred per parent, so the pin proves the
  * two anchors' joins differ and not merely their aliases), a multiset child
- * ({@code Customer.address}), a polymorphic root ({@code Query.search}), and the over-projection
- * probe itself (one scalar selected on {@code Customer}, a type with six child fields; today's
- * select list carries {@code address_id} and {@code store_id} for the unselected children).
+ * ({@code Customer.address}), a polymorphic root ({@code Query.search}), the over-projection
+ * probe (one scalar selected on {@code Customer}, a type with six child fields; the select list
+ * carries that scalar and nothing else), and the all-unselected probe (a selection projecting
+ * no column at all, answered by the one-field row-present sentinel rather than jOOQ's implicit
+ * project-everything).
  *
  * <p>Mechanics: statements are captured at {@code executeStart} with bind placeholders and
  * lowercased (the module convention). Multi-statement pins are order-insensitive, since
@@ -111,8 +114,8 @@ class ProjectionSqlBaselineTest {
             .as("nesting type: FilmSummary's fields resolve against the outer film table in the "
                 + "host's own statement")
             .containsExactly(
-                "select \"public\".\"film\".\"title\", \"public\".\"film\".\"release_year\", "
-                    + "\"public\".\"film\".\"film_id\" from \"public\".\"film\" "
+                "select \"public\".\"film\".\"title\", \"public\".\"film\".\"release_year\" "
+                    + "from \"public\".\"film\" "
                     + "order by \"public\".\"film\".\"film_id\" asc");
     }
 
@@ -129,25 +132,25 @@ class ProjectionSqlBaselineTest {
             .as("OccupantLocation under Customer: the shared nesting type's address multiset "
                 + "correlates against customer.address_id")
             .containsExactly(
-                "select (select coalesce(jsonb_agg(jsonb_build_array(t.\"v0\", t.\"v1\")), jsonb_build_array()) "
-                    + "from (select \"customer_a0\".\"district\" as \"v0\", \"customer_a0\".\"address_id\" as \"v1\" "
+                "select (select coalesce(jsonb_agg(jsonb_build_array(t.\"v0\")), jsonb_build_array()) "
+                    + "from (select \"customer_a0\".\"district\" as \"v0\" "
                     + "from \"public\".\"address\" as \"customer_a0\" "
                     + "where \"customer_a0\".\"address_id\" = \"public\".\"customer\".\"address_id\" "
-                    + "fetch next ? rows only) as t) as \"__rk_address\", "
-                    + "\"public\".\"customer\".\"address_id\", \"public\".\"customer\".\"store_id\" "
+                    + "fetch next ? rows only) as t) as \"__rk_address\" "
                     + "from \"public\".\"customer\" where \"public\".\"customer\".\"activebool\" = ? "
                     + "order by \"public\".\"customer\".\"customer_id\" asc");
         assertThat(storeStatements)
             .as("the same OccupantLocation under Store: the identical nesting type correlates "
-                + "against store.address_id, so the shared unit projects per host table")
+                + "against store.address_id, so the shared unit projects per host table; the "
+                + "trailing store_id is the connection launcher's cursor key (its extraFields "
+                + "slot), selection-independent by design and not a projection-unit column")
             .containsExactly(
-                "select (select coalesce(jsonb_agg(jsonb_build_array(t.\"v0\", t.\"v1\")), jsonb_build_array()) "
-                    + "from (select \"store_a0\".\"district\" as \"v0\", \"store_a0\".\"address_id\" as \"v1\" "
+                "select (select coalesce(jsonb_agg(jsonb_build_array(t.\"v0\")), jsonb_build_array()) "
+                    + "from (select \"store_a0\".\"district\" as \"v0\" "
                     + "from \"public\".\"address\" as \"store_a0\" "
                     + "where \"store_a0\".\"address_id\" = \"public\".\"store\".\"address_id\" "
                     + "fetch next ? rows only) as t) as \"__rk_address\", "
-                    + "\"public\".\"store\".\"store_id\", \"public\".\"store\".\"manager_staff_id\", "
-                    + "\"public\".\"store\".\"address_id\" "
+                    + "\"public\".\"store\".\"store_id\" "
                     + "from \"public\".\"store\" order by \"public\".\"store\".\"store_id\" asc "
                     + "fetch next ? rows only");
     }
@@ -160,12 +163,11 @@ class ProjectionSqlBaselineTest {
                 + "correlated jsonb aggregate, one statement total")
             .containsExactly(
                 "select \"public\".\"customer\".\"first_name\", "
-                    + "(select coalesce(jsonb_agg(jsonb_build_array(t.\"v0\", t.\"v1\")), jsonb_build_array()) "
-                    + "from (select \"customer_a0\".\"address\" as \"v0\", \"customer_a0\".\"address_id\" as \"v1\" "
+                    + "(select coalesce(jsonb_agg(jsonb_build_array(t.\"v0\")), jsonb_build_array()) "
+                    + "from (select \"customer_a0\".\"address\" as \"v0\" "
                     + "from \"public\".\"address\" as \"customer_a0\" "
                     + "where \"customer_a0\".\"address_id\" = \"public\".\"customer\".\"address_id\" "
-                    + "fetch next ? rows only) as t) as \"__rk_address\", "
-                    + "\"public\".\"customer\".\"address_id\", \"public\".\"customer\".\"store_id\" "
+                    + "fetch next ? rows only) as t) as \"__rk_address\" "
                     + "from \"public\".\"customer\" where \"public\".\"customer\".\"activebool\" = ? "
                     + "order by \"public\".\"customer\".\"customer_id\" asc");
     }
@@ -183,12 +185,12 @@ class ProjectionSqlBaselineTest {
                     + "select 'film' as \"__typename\", \"public\".\"film\".\"film_id\" as \"__pk0__\", "
                     + "\"public\".\"film\".\"film_id\" as \"__sort__\" from \"public\".\"film\" "
                     + "order by \"__sort__\"",
-                "select \"public\".\"actor\".\"first_name\", \"public\".\"actor\".\"actor_id\", "
+                "select \"public\".\"actor\".\"first_name\", "
                     + "'actor' as \"__typename\", \"actorinput\".\"idx\" from \"public\".\"actor\" "
                     + "join (values (?, ?), (?, ?), (?, ?)) as \"actorinput\" (\"idx\", \"actor_id\") "
                     + "on \"public\".\"actor\".\"actor_id\" = \"actorinput\".\"actor_id\" "
                     + "order by \"actorinput\".\"idx\"",
-                "select \"public\".\"film\".\"title\", \"public\".\"film\".\"film_id\", "
+                "select \"public\".\"film\".\"title\", "
                     + "'film' as \"__typename\", \"filminput\".\"idx\" from \"public\".\"film\" "
                     + "join (values (?, ?), (?, ?), (?, ?), (?, ?), (?, ?)) as \"filminput\" (\"idx\", \"film_id\") "
                     + "on \"public\".\"film\".\"film_id\" = \"filminput\".\"film_id\" "
@@ -196,16 +198,28 @@ class ProjectionSqlBaselineTest {
     }
 
     @Test
-    void overProjectionProbe_oneScalarStillProjectsTheChildrensKeys() {
+    void overProjectionProbe_oneScalarProjectsOnlyThatScalar() {
         execute("{ customers(active: true) { firstName } }");
         assertThat(SQL_LOG)
-            .as("the over-projection case itself: only firstName is selected, yet the select list "
-                + "carries address_id and store_id for the unselected children; the columns after "
-                + "first_name are exactly what the end of over-projection removes, and this pin is "
-                + "where that removal becomes a reviewable diff")
+            .as("the end of over-projection: only firstName is selected on a type with six child "
+                + "fields, and the select list carries exactly that column; the unselected "
+                + "children's correlation keys (address_id, store_id) project only when their "
+                + "fields are selected, through their own gated arms")
             .containsExactly(
-                "select \"public\".\"customer\".\"first_name\", "
-                    + "\"public\".\"customer\".\"address_id\", \"public\".\"customer\".\"store_id\" "
+                "select \"public\".\"customer\".\"first_name\" "
+                    + "from \"public\".\"customer\" where \"public\".\"customer\".\"activebool\" = ? "
+                    + "order by \"public\".\"customer\".\"customer_id\" asc");
+    }
+
+    @Test
+    void allUnselectedProbe_projectsTheRowPresentSentinel() {
+        execute("{ customers(active: true) { __typename } }");
+        assertThat(SQL_LOG)
+            .as("a selection projecting no column at all: the projection answers with the "
+                + "one-field row-present sentinel, deterministic and one-column, instead of an "
+                + "empty select list that jOOQ would render as project-everything")
+            .containsExactly(
+                "select 1 as \"__row_present__\" "
                     + "from \"public\".\"customer\" where \"public\".\"customer\".\"activebool\" = ? "
                     + "order by \"public\".\"customer\".\"customer_id\" asc");
     }

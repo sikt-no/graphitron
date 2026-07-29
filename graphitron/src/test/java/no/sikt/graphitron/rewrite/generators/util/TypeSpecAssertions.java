@@ -96,14 +96,19 @@ public final class TypeSpecAssertions {
     }
 
     /**
-     * True when {@code type}'s {@code $project} method unconditionally appends a jOOQ column to
-     * the projection via the {@code if (!fields.contains(table.COL)) fields.add(table.COL)}
-     * idiom used for SourceKey-column projection. Caller supplies the jOOQ field's
-     * Java name (e.g. {@code "FILM_ID"}).
+     * True when {@code type}'s {@code $project} switch arm for {@code fieldName} projects the
+     * jOOQ column named by its Java name (e.g. {@code "FILM_ID"}): the gated correlation-key
+     * shape, {@code case "fieldName" -> ... fields.add(table.COL)}. The arm span is taken from
+     * the arm's {@code case} label to the next {@code case} label (or the body end), which is
+     * exact for the flat depth-0 arms the callers assert on.
      */
-    public static boolean appendsRequiredColumn(TypeSpec type, String columnJavaName) {
+    public static boolean armProjectsColumn(TypeSpec type, String fieldName, String columnJavaName) {
         String body = methodBody(type, "$project").orElse("");
-        return body.contains("fields.add(table." + columnJavaName + ")");
+        int start = body.indexOf("case \"" + fieldName + "\"");
+        if (start < 0) return false;
+        int end = body.indexOf("case \"", start + 1);
+        String arm = end < 0 ? body.substring(start) : body.substring(start, end);
+        return arm.contains("fields.add(table." + columnJavaName + ")");
     }
 
     /**

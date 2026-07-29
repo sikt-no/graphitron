@@ -52,6 +52,7 @@ public final class ProjectionUnitRenderer {
     private static final ClassName ENV = ClassName.get("graphql.schema", "DataFetchingEnvironment");
     private static final ClassName SELECTED_FIELD = ClassName.get("graphql.schema", "SelectedField");
     private static final String RESERVED_RK_ALIAS_PREFIX = "__rk_";
+    private static final String ROW_PRESENT_SENTINEL = "__row_present__";
 
     private ProjectionUnitRenderer() {}
 
@@ -64,11 +65,9 @@ public final class ProjectionUnitRenderer {
             .addModifiers(Modifier.PUBLIC);
         switch (row) {
             case ProjectionCommand.AnchorUnit a ->
-                builder.addMethod(buildTableContextMethod(a.table(), a.contributions(),
-                    a.requiredProjection(), outputPackage));
+                builder.addMethod(buildTableContextMethod(a.table(), a.contributions(), outputPackage));
             case ProjectionCommand.NestedUnit n ->
-                builder.addMethod(buildTableContextMethod(n.table(), n.contributions(),
-                    List.of(), outputPackage));
+                builder.addMethod(buildTableContextMethod(n.table(), n.contributions(), outputPackage));
             case ProjectionCommand.PivotUnit p ->
                 builder.addMethod(buildPivotMethod(p));
         }
@@ -92,7 +91,6 @@ public final class ProjectionUnitRenderer {
 
     private static MethodSpec buildTableContextMethod(TableRef tableRef,
             List<Contribution> contributions,
-            List<no.sikt.graphitron.rewrite.model.ColumnRef> requiredProjection,
             String outputPackage) {
         var fieldWildcard = fieldWildcard();
         var builder = MethodSpec.methodBuilder(ProjectionCall.METHOD_NAME)
@@ -115,13 +113,14 @@ public final class ProjectionUnitRenderer {
         builder.addCode("    }\n");
         builder.addCode("}\n");
 
-        // Required-projection append: the columns the anchor SELECT must include regardless of
-        // the SDL selection, under base names. A column an arm already projected collapses into
-        // the same entry (jOOQ caches TableField references per aliased Table instance).
-        for (var col : requiredProjection) {
-            builder.addStatement("fields.add(table.$L)", col.javaName());
-        }
-
+        // Every contribution is selection-gated, so a selection projecting nothing (only
+        // __typename, or only fields with no arm) yields an empty set; an empty select list
+        // would have jOOQ project every known column, silently reinstating over-projection.
+        // Answer it the way the pivot body answers a slot-less selection: one inline sentinel,
+        // so the statement stays deterministic and one-column.
+        builder.addCode("if (fields.isEmpty()) {\n");
+        builder.addCode("    fields.add($T.inline(1).as($S));\n", DSL, ROW_PRESENT_SENTINEL);
+        builder.addCode("}\n");
         builder.addStatement("return new $T<>(fields)", ARRAY_LIST);
         return builder.build();
     }

@@ -509,7 +509,9 @@ class GeneratorUtils {
                 // present under their base names on both arrival paths that graphql-java fuses onto
                 // this fetcher: a service (or DML) handing back the typed record carries its own PK
                 // as a real column, and the SQL-projected generic row a parent <Type>.$project query
-                // builds has the same columns force-included by the required-projection walk. Reads
+                // builds carries them through the field's own gated correlation-key arm (this
+                // fetcher only runs when its field is selected, and the selected field's arm
+                // projects exactly these columns — same accessor on both sides). Reads
                 // are by jOOQ field identity, never a by-name into(...) map, so a sibling multiset
                 // alias shadowing a column name cannot poison the extraction.
                 for (ColumnRef col : pkCols) {

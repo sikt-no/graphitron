@@ -25,9 +25,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@link TypeSpec}s with {@link EmittedMethodClosure}, and asserts closure.
  *
  * <p>Level 1 proves only that names, however derived, resolve. Two invariants this oracle
- * deliberately does <b>not</b> cover: the parent-projection key-containment check (facts, not
- * method names; {@code ParentProjectionContainmentCheck} owns it) and how the names themselves
- * are derived.
+ * deliberately does <b>not</b> cover: the correlation-key projection contract (facts, not
+ * method names; the gated arms in {@code ProjectionCommands} and the capability-to-membership
+ * census own it) and how the names themselves are derived.
  *
  * <p>The schema spans the seam families: root select and child reference (Fetcher, Projection),
  * {@code @splitQuery} (rows-method, scatter), a Relay connection with {@code @orderBy}

@@ -86,9 +86,11 @@ class CommandSeamRatchetTest {
      * ({@link no.sikt.graphitron.plan.ProjectionCommands}) relocated the projection family's
      * exhaustive leaf dispatch, the required-projection walk and its containment check out of
      * {@code generators/} — the four-layer window the tertiary count exists to make visible,
-     * ratcheting back down when the fact walk replaces the relocated dispatch.
+     * ratcheting back down when the fact walk replaces the relocated dispatch; lowered to 38
+     * when the correlation keys became gated contribution arms and the walk and check they
+     * replaced (with their capability {@code instanceof} probes) were deleted.
      */
-    private static final int PLAN_LEAF_REFERENCES = 42;
+    private static final int PLAN_LEAF_REFERENCES = 38;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide

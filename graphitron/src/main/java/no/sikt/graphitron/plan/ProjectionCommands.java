@@ -63,9 +63,16 @@ public final class ProjectionCommands {
      * The leaf kinds the producer mints projection output for: a contribution on the walked
      * unit's own row, a unit row of its own ({@code PivotField} / {@code BatchedPivotField}
      * mint their coordinate's pivot unit), or slot contributions ridden into a pivot unit's row
-     * ({@code PivotSlotField}). Everything else lands no projection output; a leaf in both this
-     * set and the fetcher dispatch's implemented set projects <em>and</em> gets a fetcher method
-     * (the dual-arm kinds the census test pins explicitly).
+     * ({@code PivotSlotField}). The leaves whose fetchers read parent-row columns off
+     * {@code env.getSource()} (every {@link no.sikt.graphitron.rewrite.model.BatchKeyField} /
+     * {@link no.sikt.graphitron.rewrite.model.ParentRowDemand} implementer in the
+     * {@link ChildField} seal) belong here because their correlation keys are gated
+     * {@link Contribution.Project} arms: project the key columns when the child is selected,
+     * nothing when it is not (the fetcher only runs for a selected field, so supply meets
+     * demand). The projection membership census enforces that capability-to-membership edge
+     * mechanically. Everything else lands no projection output; a leaf in both this set and the
+     * fetcher dispatch's implemented set projects <em>and</em> gets a fetcher method (the
+     * dual-arm kinds the census test pins explicitly).
      */
     public static final Set<Class<? extends GraphitronField>> CONTRIBUTION_MINTING_LEAVES = Set.of(
         ChildField.ColumnBackedField.class,
@@ -76,7 +83,14 @@ public final class ProjectionCommands {
         ChildField.ComputedField.class,
         ChildField.PivotField.class,
         ChildField.BatchedPivotField.class,
-        ChildField.PivotSlotField.class
+        ChildField.PivotSlotField.class,
+        ChildField.BatchedTableField.class,
+        ChildField.BatchedLookupTableField.class,
+        ChildField.ServiceTableField.class,
+        ChildField.ServiceRecordField.class,
+        ChildField.TableInterfaceField.class,
+        ChildField.InterfaceField.class,
+        ChildField.UnionField.class
     );
 
     public static ProjectionRelation produce(GraphitronSchema schema, ConditionRelation conditions,
@@ -93,9 +107,7 @@ public final class ProjectionCommands {
             var anchor = units.typeClass(typeName);
             var contributions = collectContributions(
                 schema.fieldsOf(typeName), anchor, typeName, units, glueEnvByMethod, census);
-            var requiredProjection = collectRequiredProjection(schema.fieldsOf(typeName));
-            ParentProjectionContainmentCheck.check(schema, typeName, requiredProjection);
-            census.add(new ProjectionCommand.AnchorUnit(anchor, type.table(), contributions, requiredProjection),
+            census.add(new ProjectionCommand.AnchorUnit(anchor, type.table(), contributions),
                 "table-backed type '" + typeName + "'");
         }
         return new ProjectionRelation(census.rows());
@@ -191,28 +203,39 @@ public final class ProjectionCommands {
                 yield Optional.of(new Contribution.Call(pf.name(), pivotUnit,
                     new CallWrap.PivotMultiset(pf.spec().pivotTable(), pf.spec().pairs())));
             }
-            // The batched pivot delivers through the DataLoader seam, so the anchor's $project
-            // carries no contribution for it; the projection itself is still this coordinate's
-            // pivot unit, which the batched rows method consumes.
+            // The batched pivot delivers through the DataLoader seam (the projection itself is
+            // still this coordinate's pivot unit, which the batched rows method consumes), so
+            // the anchor's contribution is the correlation-key arm alone.
             case ChildField.BatchedPivotField bpf -> {
                 mintPivotUnit(bpf.parentTypeName(), bpf.name(), bpf.spec(), units, census);
-                yield Optional.empty();
+                yield correlationKeyArm(bpf, bpf.sourceKey() == null
+                    ? List.of() : bpf.sourceKey().columns());
             }
             // Slots mint their contributions inside their pivot unit's row, from
             // PivotSpec.slots(); a slot on a table-context walk is a classifier bug.
             case ChildField.PivotSlotField slot -> throw new IllegalStateException(
                 "PivotSlotField '" + slot.qualifiedName() + "' reached a table-context projection "
                 + "walk; slots live on the pivot projection type and mint inside their pivot unit");
-            // No projection output: these leaves deliver through their own fetcher methods
-            // (batched re-queries, service delegations, record reads, polymorphic dispatch);
-            // their parent-row demands ride the anchor's required-projection slot.
-            case ChildField.BatchedTableField ignored -> Optional.empty();
-            case ChildField.BatchedLookupTableField ignored -> Optional.empty();
-            case ChildField.ServiceTableField ignored -> Optional.empty();
-            case ChildField.ServiceRecordField ignored -> Optional.empty();
-            case ChildField.TableInterfaceField ignored -> Optional.empty();
-            case ChildField.InterfaceField ignored -> Optional.empty();
-            case ChildField.UnionField ignored -> Optional.empty();
+            // Correlation-key arms: these leaves deliver their data through their own fetcher
+            // methods (batched re-queries, service delegations, polymorphic dispatch), but the
+            // fetchers extract their key / correlation columns off the parent row, so the parent
+            // SELECT must carry those columns exactly when the field is selected. The column
+            // list is read from the same accessors the extraction emitters consume
+            // (BatchKeyField.sourceKey(), ParentRowDemand.parentRowColumns()), so supply and
+            // demand are one read, not two derivations to cross-check. A null sourceKey is a
+            // no-Sources service method: plain per-parent delegation, nothing to project.
+            case ChildField.BatchedTableField bt -> correlationKeyArm(bt, bt.sourceKey() == null
+                ? List.of() : bt.sourceKey().columns());
+            case ChildField.BatchedLookupTableField bl -> correlationKeyArm(bl, bl.sourceKey() == null
+                ? List.of() : bl.sourceKey().columns());
+            case ChildField.ServiceTableField st -> correlationKeyArm(st, st.sourceKey() == null
+                ? List.of() : st.sourceKey().columns());
+            case ChildField.ServiceRecordField sr -> correlationKeyArm(sr, sr.sourceKey() == null
+                ? List.of() : sr.sourceKey().columns());
+            case ChildField.TableInterfaceField tif -> correlationKeyArm(tif, tif.parentRowColumns());
+            case ChildField.InterfaceField pif -> correlationKeyArm(pif, pif.parentRowColumns());
+            case ChildField.UnionField uf -> correlationKeyArm(uf, uf.parentRowColumns());
+            // No projection output: leaves with no parent-row read of any kind.
             case ChildField.ParticipantColumnReferenceField ignored -> Optional.empty();
             case ChildField.RecordReadField ignored -> Optional.empty();
             case ChildField.RecordCompositeField ignored -> Optional.empty();
@@ -329,45 +352,31 @@ public final class ProjectionCommands {
     // ------------------------------------------------------------------------------------------
 
     /**
-     * Walks the children of a type and surfaces the columns the anchor SELECT must project
-     * under their <em>base</em> names regardless of the SDL selection: table-parent batch-key
-     * columns (their DataLoader fetchers extract the parent-row key off {@code env.getSource()}
-     * after the anchor's SELECT runs) and parent-row demands, both keyed on the field
-     * capability rather than leaf identity. Recurses into nesting fields so a nested demand
-     * correctly projects the <em>anchor</em> table's columns (nesting shares the anchor's table
-     * context). The independent enforcer of this walk's completeness is
-     * {@link ParentProjectionContainmentCheck}.
+     * The correlation-key arm for a child whose fetcher reads {@code columns} off the parent
+     * row by <em>base</em> name: an ordinary {@link Contribution.Project} of unaliased column
+     * terms, gated on the field like every other contribution. Empty demand (a no-Sources
+     * service delegation, a single-cardinality polymorphic field with only unbound
+     * participants) mints nothing.
+     *
+     * <p>Tripwire first, unconditionally: a Record-sourced parent-row reader keys off the held
+     * object, not a parent SELECT, so reaching a projection-unit walk at all is a generator
+     * bug. Fail at production rather than at runtime with a null DataLoader key.
      */
-    private static List<no.sikt.graphitron.rewrite.model.ColumnRef> collectRequiredProjection(
-            List<? extends GraphitronField> fields) {
-        var columns = new ArrayList<no.sikt.graphitron.rewrite.model.ColumnRef>();
-        for (var f : fields) {
-            // Tripwire on the fact predicate, not a leaf list: a parent-row-reading capability
-            // with Record source shape keys off the held object, not the anchor SELECT, so
-            // reaching this table-parent walk is a generator bug. Fail at production rather
-            // than at runtime with a null DataLoader key.
-            if ((f instanceof no.sikt.graphitron.rewrite.model.BatchKeyField
-                    || f instanceof no.sikt.graphitron.rewrite.model.ParentRowDemand)
-                    && f instanceof ChildField cf
-                    && cf.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Record) {
-                throw new IllegalStateException(
-                    "Record-sourced field '" + f.name() + "' (" + f.getClass().getSimpleName()
-                        + ") reached a table-parent projection walk; its key / correlation"
-                        + " columns are not parent-row columns and must not be force-projected");
-            }
-            // A null sourceKey means the service method takes no Sources param: plain per-parent
-            // delegation, not DataLoader-backed — nothing to force-project.
-            switch (f) {
-                case no.sikt.graphitron.rewrite.model.BatchKeyField bk when bk.sourceKey() != null ->
-                    columns.addAll(bk.sourceKey().columns());
-                case no.sikt.graphitron.rewrite.model.ParentRowDemand prd ->
-                    columns.addAll(prd.parentRowColumns());
-                case ChildField.NestingField nf ->
-                    columns.addAll(collectRequiredProjection(nf.nestedFields()));
-                default -> { }
-            }
+    private static Optional<Contribution> correlationKeyArm(ChildField field,
+            List<no.sikt.graphitron.rewrite.model.ColumnRef> columns) {
+        if (field.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Record) {
+            throw new IllegalStateException(
+                "Record-sourced field '" + field.name() + "' (" + field.getClass().getSimpleName()
+                    + ") reached a table-context projection walk; its key / correlation"
+                    + " columns are not parent-row columns and must not be projected");
         }
-        return columns.stream().distinct().toList();
+        if (columns.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(new Contribution.Project(field.name(),
+            columns.stream().distinct()
+                .map(col -> (SelectTerm) new SelectTerm.Column(col, TermAlias.BY_COLUMN_IDENTITY))
+                .toList()));
     }
 
     // ------------------------------------------------------------------------------------------

@@ -218,19 +218,38 @@ class DmlBulkMutationsExecutionTest {
     // rejects duplicate lookup tuples before SQL, INSERT never repeats a PK, and PostgreSQL
     // reports each target row at most once through RETURNING). The synthetic environment
     // carries the two GraphQLContext entries the companion reads (DSLContext + the
-    // GraphitronContext singleton) and an empty selection set (jOOQ renders an empty
-    // projection list as SELECT *).
+    // GraphitronContext singleton) and a one-field selection ({@code filmId}), because the
+    // projection is fully selection-gated: an empty selection projects only the row-present
+    // sentinel, and the assertion below needs a real column to identify rows by.
 
-    private static final graphql.schema.DataFetchingFieldSelectionSet EMPTY_SELECTION =
+    private static final graphql.schema.SelectedField FILM_ID_FIELD =
+        new graphql.schema.SelectedField() {
+            @Override public String getName() { return "filmId"; }
+            @Override public String getQualifiedName() { return "filmId"; }
+            @Override public String getFullyQualifiedName() { return "Film.filmId"; }
+            @Override public List<graphql.schema.GraphQLObjectType> getObjectTypes() { return List.of(); }
+            @Override public List<String> getObjectTypeNames() { return List.of("Film"); }
+            @Override public List<graphql.schema.GraphQLFieldDefinition> getFieldDefinitions() { return List.of(); }
+            @Override public graphql.schema.GraphQLOutputType getType() { throw new UnsupportedOperationException(); }
+            @Override public Map<String, Object> getArguments() { return Map.of(); }
+            @Override public int getLevel() { return 1; }
+            @Override public boolean isConditional() { return false; }
+            @Override public String getAlias() { return null; }
+            @Override public String getResultKey() { return "filmId"; }
+            @Override public graphql.schema.SelectedField getParentField() { return null; }
+            @Override public graphql.schema.DataFetchingFieldSelectionSet getSelectionSet() { return null; }
+        };
+
+    private static final graphql.schema.DataFetchingFieldSelectionSet FILM_ID_SELECTION =
         new graphql.schema.DataFetchingFieldSelectionSet() {
-            @Override public boolean contains(String fieldGlobPattern) { return false; }
-            @Override public boolean containsAnyOf(String first, String... rest) { return false; }
-            @Override public boolean containsAllOf(String first, String... rest) { return false; }
-            @Override public List<graphql.schema.SelectedField> getFields() { return List.of(); }
-            @Override public List<graphql.schema.SelectedField> getImmediateFields() { return List.of(); }
-            @Override public List<graphql.schema.SelectedField> getFields(String glob, String... rest) { return List.of(); }
-            @Override public Map<String, List<graphql.schema.SelectedField>> getFieldsGroupedByResultKey() { return Map.of(); }
-            @Override public Map<String, List<graphql.schema.SelectedField>> getFieldsGroupedByResultKey(String glob, String... rest) { return Map.of(); }
+            @Override public boolean contains(String fieldGlobPattern) { return "filmId".equals(fieldGlobPattern); }
+            @Override public boolean containsAnyOf(String first, String... rest) { return contains(first); }
+            @Override public boolean containsAllOf(String first, String... rest) { return contains(first) && rest.length == 0; }
+            @Override public List<graphql.schema.SelectedField> getFields() { return List.of(FILM_ID_FIELD); }
+            @Override public List<graphql.schema.SelectedField> getImmediateFields() { return List.of(FILM_ID_FIELD); }
+            @Override public List<graphql.schema.SelectedField> getFields(String glob, String... rest) { return getFields(); }
+            @Override public Map<String, List<graphql.schema.SelectedField>> getFieldsGroupedByResultKey() { return Map.of("filmId", List.of(FILM_ID_FIELD)); }
+            @Override public Map<String, List<graphql.schema.SelectedField>> getFieldsGroupedByResultKey(String glob, String... rest) { return getFieldsGroupedByResultKey(); }
         };
 
     @Test
@@ -254,13 +273,13 @@ class DmlBulkMutationsExecutionTest {
                     .of(DSLContext.class, dsl,
                         GraphitronContext.class, GraphitronContext.GraphitronContextImpl.INSTANCE)
                     .build())
-                .selectionSet(EMPTY_SELECTION)
+                .selectionSet(FILM_ID_SELECTION)
                 .build();
             List<org.jooq.Record> payload =
                 no.sikt.graphitron.generated.fetchers.MutationFetchers.rowsUpdateFilms(keys, env);
-            // The empty selection set adds nothing, so the only column the projection carries is
-            // the force-included key the service children batch on. That is enough to pin what
-            // this test is about: one payload row per keys row, in keys order.
+            // The one-field selection projects film_id through its ordinary column arm, giving
+            // each payload row the identity the assertion needs to pin what this test is about:
+            // one payload row per keys row, in keys order.
             assertThat(payload).extracting(r -> r.get(film.FILM_ID))
                 .as("one payload row per keys row, aligned with keys order")
                 .containsExactly(idB, idA, idA);

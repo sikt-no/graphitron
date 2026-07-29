@@ -1005,6 +1005,67 @@ R541's single-operation launchers never need it, and a general launcher cannot d
     `PreviousNodeRef`, `ArgumentValueSource`, the path fragments (`PathFragments`), and the
     lookup rows core (`LookupRows`).
 
+- **Slice 3.2 landed 2026-07-29.** The keystone's SQL half: correlation keys became gated
+  `Project` arms in `ProjectionCommands.contributionFor` (unaliased `Column` terms, pure
+  renderer reuse), reading the same accessors the extraction emitters consume
+  (`BatchKeyField.sourceKey()`, `ParentRowDemand.parentRowColumns()`); the required-projection
+  walk, `ParentProjectionContainmentCheck`, its test, and `AnchorUnit`'s interim slot are
+  deleted; an unselected child projects nothing. The Record-source tripwire relocated into the
+  arm helper unchanged. Findings, per the consult and the re-baseline:
+  - **A free-rider surfaced exactly as predicted, and the capability model absorbed it.**
+    `ChildField.TableInterfaceField`'s fetcher reads the FK hop's source-side column off the
+    parent row by base name but implemented neither capability, riding on a sibling's forced
+    append (the shipped-bug class the containment check existed for). It now implements
+    `ParentRowDemand` (demand = the hop's `sourceSideColumns()`, the same slot its correlation
+    emitter reads), so its arm falls out of the same helper. The service single-table-interface
+    variants are root-level and read no parent row; nothing to treat there.
+  - **The deletion argument, stated precisely: single-sourcing kills value divergence, not
+    membership divergence.** Supply and demand reading one accessor makes wrong-columns
+    impossible, but a demanding leaf whose arm mints nothing compiles green and fails at
+    request time. The retired check's honest residual is therefore a membership pin, derived
+    from the seal rather than a hand list:
+    `ProjectionMembershipTest.everyParentRowReadingLeafIsDeclaredMinting` requires every
+    `ChildField` leaf implementing `BatchKeyField` or `ParentRowDemand` (eight today) to be in
+    `CONTRIBUTION_MINTING_LEAVES`. Re-pinning columns against the extraction was rejected: it
+    would recreate the dual derivation the slice removes.
+  - **The empty select list got a deliberate answer.** With every entry gated, a selection
+    projecting nothing (only `__typename`) yields an empty accumulation, and jOOQ renders an
+    empty select list as project-everything, which would silently reinstate maximal
+    over-projection. Each table-context `$project` now falls back to one inline sentinel
+    (`__row_present__`), the pivot body's own precedent; pinned at the execution tier by the
+    baseline's new all-unselected probe.
+  - **The re-baseline was wider than the probe, and each disappearing column was traced.** All
+    six projection pins and six of seven condition pins moved: outer select lists lost
+    unselected children's keys (`customer.address_id`/`store_id`, `film.film_id`,
+    `store.manager_staff_id`/`address_id`, `language.language_id`, the polymorphic stage-2
+    `actor_id`/`film_id`), and multiset *inner* lists shrank the same way (the positional
+    `jsonb_build_array` arity stays aligned because reader and writer derive from one list).
+    Every WHERE clause is byte-identical, and the filtered-child pin shows the gate live: the
+    selected split child's `store_id` survives while unselected siblings' keys drop. One
+    trailing column stayed by design: a connection launcher's cursor key rides its
+    `extraFields` slot, selection-independent and launcher-owned. Two readers needed work:
+    the `TableInterfaceField` free-rider above, and a DML execution test whose assertion read
+    the PK off a deliberately empty selection (its synthetic selection set now selects
+    `filmId`, projecting identity through the ordinary column arm).
+  - **`CONTRIBUTION_MINTING_LEAVES` grew 9 to 16** (the four `BatchKeyField` DataLoader shapes,
+    the three polymorphic child shapes); the dual-arm intersection pin grew 3 to 10 (every
+    correlation-key leaf both projects and fetches, by construction). The membership fixture
+    gained the no-new-type shapes (split lookup, both service shapes, a batched pivot, so
+    `FilmTitleTextsSplit` joined the pinned key set); the polymorphic arms are pinned per-shape
+    by the new `CorrelationKeyArmPipelineTest`.
+  - **The arm-kind audit at this boundary kept three arms.** Of the sealed interface's stated
+    consumers, the slot is gone and naming forks before a row exists; what remains is
+    structural, not provenance: an anchor unit is the unit other commands may name as a callee,
+    a nested unit is reachable only through its anchor's splice (whether `@splitQuery` on a
+    nesting field additionally launches one is slice 3.3's question), a pivot unit has its own
+    body shape. The javadoc now says that instead of the retired three-consumer list.
+  - **Ratchets:** plan leaf references 42 to 38 (the walk and check deleted; the arms reuse the
+    existing dispatch). Entry points and generator leaf counts unchanged. Retired-token
+    registry gained `collectRequiredProjection`, `ParentProjectionContainmentCheck`,
+    `requiredProjection`, `appendsRequiredColumn` (successor: the gated arms /
+    `TypeSpecAssertions.armProjectsColumn`), and the stale successor strings on the four
+    reserved-alias entries were repointed.
+
 ## The exemption lists are the grain worklist
 
 `VariantCoverageTest.NO_CASE_REQUIRED` (13 entries) and `ClassifiedDslTest.OPERATION_KNOWN_GAPS` (6) each
@@ -1070,7 +1131,7 @@ the collapse validates at slice 3.1 by consumer count, and the census stands as 
 | R544 (Backlog) | independent, and this reframing strengthens it: the error-channel hierarchies are a first-class fourth kind at 55 leaf records across ten seals, so pinning them declaratively is model work, not only test hygiene |
 | R541 (reopened to Spec 2026-07-27) | **the second proof of concept**, slice 3c. Rewritten in command terms, which dissolves rather than defers most of its previous design: its `QueryUnitField` naming capability, its `declareRootQueryUnit` registry seam and its bidirectional oracle were all machinery for facts an emitter reads directly, and under a coordinate-keyed relation the name is a producer-computed field and "exactly one command per coordinate" is the key. Building them first would have been a migration payment slice 5 then retires. Its five root emit shapes stay the real content, and its exact-SQL equivalence pin gets simpler rather than narrower: authored after slice 3, the select list is already final, so the pin covers whole statements with no carve-out. Its conditions fork was re-posed at Spec review 2026-07-27: the root builders already call named `<field>Condition` methods, so what the fork actually does is finish R333 row 5's naming lift (the `QueryConditionsGenerator` end, R2 today) for the covered family's coordinates; the slot resolves as a `UnitRef` into R552's condition relation and the scope question moved there (its fork 4). Its live open fork is now the connection root's `ConnectionResult` carrier plan (`totalCount`'s `(table, condition)` binding and the facet condition fragments), which the launcher sketch has no slot for. Two notes from the rollout review: it is the one proof of the three with no capability payload, which the "no slice that is purely a migration payment" rule makes a thing to name in its own body rather than discover at review; and it runs after R552, per the ordering decision in the Slices section |
 | R552 (Spec) | **the third proof of concept**, slice 3d, and the first family to land. The WHERE family as one coordinate-keyed condition relation with a total glue unit per row: the first value-shaped unit, the second cross-kind edge including the first external callees, argument marshalling as data, and the type-keyed GROUP BY that hands slice 3b its exemplar rows. Dissolves R541's conditions fork by owning condition production; the ordering question its fork 4 leaves open is decided in the Slices section (R552 first). Absorbs R472, R475, R387 and R334 for its family, which is why it is also the right family to run first: the programme's earliest visible commits fix output that does not compile today |
-| R516 (Ready again after a fourth gate pass, priority 2) | **dependency of slice 3.2**, and of nothing earlier: the keystone's reshape half does not need it, which is part of why the split is worth having. It has already deleted the full-row parent projection for typed-record `@service` keys and the reserved alias namespace that carried it, which was the one demand no parent-owned fact could serve, and it ships independently as correctness work. Its force-include of the parent PK is an interim expression that slice 3 converts to a gated `Project` arm; it was scoped as PK plus node key until 2026-07-27, when the node-key half was dropped for the reason stated here, that node-id-ness does not affect projection. Whatever it leaves in `ParentProjectionContainmentCheck` should be the minimum that keeps the check honest, since slice 3.2 deletes it. Re-read its body at slice 3.2 pickup rather than trusting this row: it has bounced the Done gate repeatedly, so its scope and its status both move faster than this table |
+| R516 (Done 2026-07-29, after a fifth gate pass) | **was the dependency of slice 3.2**, and of nothing earlier. It deleted the full-row parent projection for typed-record `@service` keys and the reserved alias namespace that carried it (the one demand no parent-owned fact could serve) and narrowed the contract to PK-only, shipping independently as correctness work. Slice 3.2 then converted its PK force-include, as planned, into the gated `Project` arm (landed 2026-07-29; see the slice log), on the PK-only contract R516 left behind: the key columns are the whole demand, every wrap alike |
 | R462 (Spec) | fix by hand now, do not generalise; slice 7 dissolves its class. Advisory already noted on the item. Its Spec body cites `GraphitronSchemaValidator.NESTED_WIREABLE_LEAVES`, which no longer exists under that name anywhere in main or test, so the implementer must re-derive the current nested-leaf bound rather than trusting the citation |
 | R10 (Backlog) | dependency of slice 7. Its own body says it wants "a concrete signal"; the fact engine making connection synthesis a relation is that signal |
 | R7 (Backlog) | subsumed in effect. `TypeFetcherGenerator` splits along command kinds under slice 3 and slice 5 rather than by a decomposition pass that regrows |
@@ -1134,8 +1195,9 @@ than re-deriving at the gate.
 | `$fields`, `$fieldsGrouped` | 3.1 | `$project`, one method per projection unit |
 | `TypeClassGenerator.buildTypeSpec` | 3.1 | `render(ProjectionCommand, RenderContext)` |
 | `TypeFetcherGenerator.PROJECTED_LEAVES` | 3.1 | projected-ness derived from the plan |
-| `TypeClassGenerator.collectRequiredProjection` | 3.2 | gated `Project` contribution carrying the correlation columns |
-| `ParentProjectionContainmentCheck`, `ParentProjectionContainmentCheckTest` | 3.2 | single-sourced correlation columns, so there is no second derivation to compare |
+| `TypeClassGenerator.collectRequiredProjection` | 3.2 (landed) | gated `Project` contribution carrying the correlation columns |
+| `ParentProjectionContainmentCheck`, `ParentProjectionContainmentCheckTest` | 3.2 (landed) | single-sourced correlation columns plus the seal-derived membership pin |
+| `AnchorUnit.requiredProjection` (the interim slot), `appendsRequiredColumn` | 3.2 (landed) | every entry gated; `TypeSpecAssertions.armProjectsColumn` |
 | `MethodCommandRegistry`, `MethodCommand` | 5 | the coordinate-keyed command relation |
 | `CompileDependencyGraphBuilder` | 7 | the recompile graph as a projection over the command relation |
 | the `no.sikt.graphitron.rewrite` package | end state | `command` / `plan` / `render` and the shared pure-data floor |

@@ -35,8 +35,7 @@ class ProjectionUnitRendererTest {
         return new ProjectionCommand.AnchorUnit(
             UNITS.typeClass("Film"),
             filmTable(List.of(col("id", "ID", "java.lang.Integer"))),
-            contributions,
-            List.of());
+            contributions);
     }
 
     private static TypeSpec render(ProjectionCommand row) {
@@ -75,6 +74,17 @@ class ProjectionUnitRendererTest {
                 "java.util.Map<java.lang.String, java.util.List<graphql.schema.SelectedField>>",
                 DEFAULT_JOOQ_PACKAGE + ".tables.Film",
                 "graphql.schema.DataFetchingEnvironment");
+    }
+
+    @Test
+    void tableContextBody_emptyAccumulationFallsBackToTheRowPresentSentinel() {
+        // Every contribution is selection-gated, so a selection projecting nothing yields an
+        // empty set; handing jOOQ an empty select list would project every known column. The
+        // body answers it like the pivot body answers a slot-less selection: one inline
+        // sentinel, deterministic and one-column.
+        var body = projectMethod(render(filmRow(List.of()))).code().toString();
+        assertThat(body).contains("if (fields.isEmpty())");
+        assertThat(body).contains(".as(\"__row_present__\")");
     }
 
     @Test

@@ -439,12 +439,11 @@ class GraphQLQueryTest {
         assertThat(data).extractingByKey("films", as(LIST)).hasSize(5);
     }
 
-    // Note: the Film service-child tests below do NOT pin the SourceKey force-projection
-    // (parent SELECT must include FILM_ID even when unselected) — Film's cast/castByKey
-    // @splitQuery siblings already force-project FILM_ID into every parent SELECT, so these
-    // stay green if the @service arm of TypeClassGenerator.collectRequiredProjection
-    // regresses. They cover the with-projecting-sibling scenario; the unmasked fixture is the
-    // City service children (cities_cityUppercase_* / cities_cityLowercase_* below).
+    // Note: under gated correlation-key arms every service-child query is self-pinning — the
+    // parent SELECT carries FILM_ID exactly because the selected @service field's own arm
+    // projects it; the cast/castByKey @splitQuery siblings' arms fire only when those siblings
+    // are themselves selected. The City fixtures (cities_cityUppercase_* /
+    // cities_cityLowercase_* below) remain the deliberate no-sibling parent.
     @Test
     void films_titleLowercase_resolvesViaServiceRecordFieldDataLoader_row1Source() {
         // Identical wiring to titleUppercase but the developer-side method takes
@@ -2498,14 +2497,14 @@ class GraphQLQueryTest {
     }
 
     // ===== Unmasked @service-child SourceKey projection =====
-    // City carries no @splitQuery sibling, so its @service children are the only
-    // reason CITY_ID lands in the parent SELECT. Both queries deliberately select NO field that
-    // maps to CITY_ID; if the BatchKeyField arm in
-    // TypeClassGenerator.collectRequiredProjection regresses, neither child can key its batch and
-    // both turn red. The pair covers two key wraps over one guarantee: cityUppercase sources a
-    // typed CityRecord (Wrap.TableRecord), cityLowercase a Row1 (Wrap.Row). Under the PK-only
-    // contract both read CITY_ID off the parent row by jOOQ field identity, so the wraps differ in
-    // the shape of the key they build and not in what the projection owes them.
+    // City carries no @splitQuery sibling, so the selected @service child's own gated
+    // correlation-key arm is the only reason CITY_ID lands in the parent SELECT. Both queries
+    // deliberately select NO other field that maps to CITY_ID; if the arm regresses, neither
+    // child can key its batch and both turn red. The pair covers two key wraps over one
+    // guarantee: cityUppercase sources a typed CityRecord (Wrap.TableRecord), cityLowercase a
+    // Row1 (Wrap.Row). Under the PK-only contract both read CITY_ID off the parent row by jOOQ
+    // field identity, so the wraps differ in the shape of the key they build and not in what
+    // the projection owes them.
 
     @SuppressWarnings("unchecked")
     @Test

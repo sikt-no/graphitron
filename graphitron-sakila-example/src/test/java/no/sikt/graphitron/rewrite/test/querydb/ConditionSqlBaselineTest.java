@@ -34,9 +34,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Conjunct order is data the producer preserves verbatim (generated predicate first, authored
  * conditions after, per the classification's filter order), and the lifted-outer pin makes it
- * visible: {@code first_name}, {@code activebool}, then the authored EXISTS. The strings
- * otherwise move only when their fixture types or seed data change, and such a re-pin must
- * preserve what the shape demonstrates.
+ * visible: {@code first_name}, {@code activebool}, then the authored EXISTS.
+ *
+ * <p>One later re-pin these strings absorbed: when projection became fully selection-gated (the
+ * end of over-projection), the <em>select lists</em> lost the correlation-key columns of
+ * unselected children, while every WHERE clause stayed byte-identical, which is exactly the
+ * split these pins exist to make reviewable. The strings otherwise move only when their fixture
+ * types or seed data change, and such a re-pin must preserve what the shape demonstrates.
  */
 @ExecutionTier
 class ConditionSqlBaselineTest {
@@ -111,8 +115,7 @@ class ConditionSqlBaselineTest {
                 + "filter map and render first, in filter order, then the authored FK-target "
                 + "EXISTS; the EXISTS alias is runtime-prefixed on the base table")
             .containsExactly(
-                "select \"public\".\"customer\".\"last_name\", \"public\".\"customer\".\"address_id\", "
-                    + "\"public\".\"customer\".\"store_id\" from \"public\".\"customer\" "
+                "select \"public\".\"customer\".\"last_name\" from \"public\".\"customer\" "
                     + "where (\"public\".\"customer\".\"first_name\" = ? "
                     + "and \"public\".\"customer\".\"activebool\" = ? "
                     + "and exists (select 1 as \"one\" from \"public\".\"address\" as \"customer_fkt0_0\" "
@@ -128,8 +131,7 @@ class ConditionSqlBaselineTest {
             .as("FK-target coordinate: the developer method receives the aliased FK-target table "
                 + "inside a correlated EXISTS, correlation on the FK columns")
             .containsExactly(
-                "select \"public\".\"customer\".\"last_name\", \"public\".\"customer\".\"address_id\", "
-                    + "\"public\".\"customer\".\"store_id\" from \"public\".\"customer\" "
+                "select \"public\".\"customer\".\"last_name\" from \"public\".\"customer\" "
                     + "where exists (select 1 as \"one\" from \"public\".\"address\" as \"customer_fkt0_0\" "
                     + "where (\"customer_fkt0_0\".\"address_id\" = \"public\".\"customer\".\"address_id\" "
                     + "and \"customer_fkt0_0\".\"district\" = ?)) "
@@ -144,13 +146,10 @@ class ConditionSqlBaselineTest {
                 + "carries the condition content composed inline today; this is the string the "
                 + "call-site convergence slice must keep green unchanged")
             .containsExactlyInAnyOrder(
-                "select \"public\".\"store\".\"store_id\", \"public\".\"store\".\"manager_staff_id\", "
-                    + "\"public\".\"store\".\"address_id\" from \"public\".\"store\" "
+                "select \"public\".\"store\".\"store_id\" from \"public\".\"store\" "
                     + "join (values (0, ?), (1, ?)) as \"storebyidinput\" (\"idx\", \"store_id\") using (\"store_id\") "
                     + "order by \"storebyidinput\".\"idx\"",
                 "select \"customersbyaddressdistrictsplit_c0\".\"last_name\", "
-                    + "\"customersbyaddressdistrictsplit_c0\".\"address_id\", "
-                    + "\"customersbyaddressdistrictsplit_c0\".\"store_id\", "
                     + "\"parentinput\".\"idx\" as \"__idx__\" "
                     + "from (values (0, ?), (1, ?)) as \"parentinput\" (\"idx\", \"store_id\") "
                     + "join \"public\".\"customer\" as \"customersbyaddressdistrictsplit_c0\" "
@@ -168,7 +167,7 @@ class ConditionSqlBaselineTest {
                 + "VALUES join, the authored prefix-match composes in the WHERE beside it; "
                 + "authored on lookup is an ordinary condition row, never a rejection")
             .containsExactly(
-                "select \"public\".\"language\".\"name\", \"public\".\"language\".\"language_id\" "
+                "select \"public\".\"language\".\"name\" "
                     + "from \"public\".\"language\" "
                     + "join (values (0, ?), (1, ?)) as \"languagesbykeyfilteredinput\" (\"idx\", \"language_id\") using (\"language_id\") "
                     + "where \"public\".\"language\".\"name\" like (replace(replace(replace(?, '!', '!!'), '%', '!%'), '_', '!_') || '%') escape '!' "
@@ -183,13 +182,10 @@ class ConditionSqlBaselineTest {
                 + "from the request context (the env, not the argument map) and binds into the "
                 + "batched statement's WHERE")
             .containsExactlyInAnyOrder(
-                "select \"public\".\"store\".\"store_id\", \"public\".\"store\".\"manager_staff_id\", "
-                    + "\"public\".\"store\".\"address_id\" from \"public\".\"store\" "
+                "select \"public\".\"store\".\"store_id\" from \"public\".\"store\" "
                     + "join (values (0, ?)) as \"storebyidinput\" (\"idx\", \"store_id\") using (\"store_id\") "
                     + "order by \"storebyidinput\".\"idx\"",
                 "select \"customersseenbyuser_c0\".\"first_name\", "
-                    + "\"customersseenbyuser_c0\".\"address_id\", "
-                    + "\"customersseenbyuser_c0\".\"store_id\", "
                     + "\"parentinput\".\"idx\" as \"__idx__\" "
                     + "from (values (0, ?)) as \"parentinput\" (\"idx\", \"store_id\") "
                     + "join \"public\".\"customer\" as \"customersseenbyuser_c0\" "
@@ -205,13 +201,13 @@ class ConditionSqlBaselineTest {
                 + "correlated multiset carries the prefix-match against the nested field's own "
                 + "aliased table, composed with the FK correlation")
             .containsExactly(
-                "select (select coalesce(jsonb_agg(jsonb_build_array(t.\"v0\", t.\"v1\")), jsonb_build_array()) "
-                    + "from (select \"film_l0\".\"name\" as \"v0\", \"film_l0\".\"language_id\" as \"v1\" "
+                "select (select coalesce(jsonb_agg(jsonb_build_array(t.\"v0\")), jsonb_build_array()) "
+                    + "from (select \"film_l0\".\"name\" as \"v0\" "
                     + "from \"public\".\"language\" as \"film_l0\" "
                     + "where (\"film_l0\".\"language_id\" = \"public\".\"film\".\"language_id\" "
                     + "and \"film_l0\".\"name\" like (replace(replace(replace(?, '!', '!!'), '%', '!%'), '_', '!_') || '%') escape '!') "
                     + "fetch next ? rows only) as t) as \"__rk_languagefiltered\", "
-                    + "\"public\".\"film\".\"title\", \"public\".\"film\".\"film_id\" "
+                    + "\"public\".\"film\".\"title\" "
                     + "from \"public\".\"film\" "
                     + "join (values (0, ?)) as \"filmbyidinput\" (\"idx\", \"film_id\") using (\"film_id\") "
                     + "order by \"filmbyidinput\".\"idx\"");

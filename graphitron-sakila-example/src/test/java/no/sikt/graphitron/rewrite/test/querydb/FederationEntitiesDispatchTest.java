@@ -544,14 +544,14 @@ class FederationEntitiesDispatchTest {
      * read {@code film.getTitle()} straight off the parent record instead of fetching it. Pinning
      * its corrected form here, with {@code title} deliberately unselected, is the direct check that
      * the revert holds under federation. No federation fixture pins the {@code Wrap.Row} arm and
-     * none needs to: {@code collectRequiredProjection} has one blanket {@code BatchKeyField} arm
-     * taking {@code sourceKey().columns()} for every wrap alike, so the walk this test guards cannot
-     * vary by wrap, and the Row arm's own resolution is pinned at the execution tier by
+     * none needs to: the gated correlation-key arms take {@code sourceKey().columns()} for every
+     * wrap alike, so the projection this test guards cannot vary by wrap, and the Row arm's own
+     * resolution is pinned at the execution tier by
      * {@link GraphQLQueryTest#cities_cityLowercase_withoutKeyFieldSelected_resolvesViaRow1Source}.
      *
      * <p>The federation scenario is what makes it worth pinning separately: the key arrives in the
-     * representation rather than in the client's selection, so nothing in the selection projects
-     * {@code FILM_ID}. If the required-projection walk stopped force-including it, the entity
+     * representation rather than in the client's selection, so the selected service field's own
+     * arm is the only thing projecting {@code FILM_ID}. If it stopped doing so, the entity
      * dispatch SELECT would omit it and the extraction's
      * {@code source.get(Tables.FILM.FILM_ID)} would read a field absent from the row type, which
      * jOOQ rejects. No key record is built and the service is never entered; the request fails

@@ -17,7 +17,9 @@ import java.util.Map;
  * {@code instanceof ParentRowDemand}.
  *
  * <p>Implementers: the multi-table polymorphic {@link ChildField.InterfaceField} /
- * {@link ChildField.UnionField}, whose demand {@link #polymorphicParentRowColumns} derives.
+ * {@link ChildField.UnionField}, whose demand {@link #polymorphicParentRowColumns} derives, and
+ * the single-table {@link ChildField.TableInterfaceField}, whose demand is its FK hop's
+ * source-side columns.
  *
  * <p>Record-backed parents never carry a parent-row demand: their single-fetch accessor reads a
  * held {@code TableRecord} whose row type is complete, and their batched key lift rides the held

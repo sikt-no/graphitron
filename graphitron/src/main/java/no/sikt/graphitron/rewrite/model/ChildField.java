@@ -676,9 +676,18 @@ public sealed interface ChildField extends OutputField
         List<WhereFilter> filters,
         OrderBySpec orderBy,
         PaginationSpec pagination
-    ) implements TableTargetField {
+    ) implements TableTargetField, ParentRowDemand {
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(returnType.table());
+        }
+        /**
+         * The fetcher correlates the shared child table against the parent row
+         * ({@code child.<targetSide> = parentRecord.<sourceSide>}, read by base name off
+         * {@code env.getSource()}), so the demand is the single FK-derived hop's source-side
+         * columns — the same {@link On.ColumnPairs} slot the correlation emitter reads.
+         */
+        @Override public List<ColumnRef> parentRowColumns() {
+            return ((On.ColumnPairs) ((JoinStep.Hop) joinPath.get(0)).on()).sourceSideColumns();
         }
     }
 

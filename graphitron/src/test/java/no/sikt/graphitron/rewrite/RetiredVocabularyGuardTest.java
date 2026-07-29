@@ -72,15 +72,21 @@ class RetiredVocabularyGuardTest {
         new Retired("planSlug", "Rejection.Deferred carries only its summary"),
         // The full-row parent projection for typed-record @service keys. Two consecutive sweeps
         // found prose still naming it live, which is the recurrence bar.
-        new Retired("reservedFullRow", "the base-named required-projection column list"),
-        new Retired("reservedSourceAlias", "the base-named required-projection column list"),
-        new Retired("RESERVED_SRC_ALIAS_PREFIX", "the base-named required-projection column list"),
-        new Retired("RESERVED_SRC_ALIAS_SUFFIX", "the base-named required-projection column list"),
+        new Retired("reservedFullRow", "the gated correlation-key Project arm"),
+        new Retired("reservedSourceAlias", "the gated correlation-key Project arm"),
+        new Retired("RESERVED_SRC_ALIAS_PREFIX", "the gated correlation-key Project arm"),
+        new Retired("RESERVED_SRC_ALIAS_SUFFIX", "the gated correlation-key Project arm"),
         // These two name test helpers, so only their prose habitat is guarded: the identifier scan
         // skips test code regions and the reverse-enforcer reads main sources only. A stale mention
         // fails the build; a helper revived under the old name would not.
-        new Retired("appendsFullParentRow", "appendsRequiredColumn"),
-        new Retired("serviceChildKeyExtractionForksOnTypedRecord", "serviceChildKeyExtractionIsUnconditional")
+        new Retired("appendsFullParentRow", "TypeSpecAssertions.armProjectsColumn"),
+        new Retired("serviceChildKeyExtractionForksOnTypedRecord", "serviceChildKeyExtractionIsUnconditional"),
+        // The interim required-projection machinery the gated correlation-key arms replaced: the
+        // unconditional walk, its containment cross-check, and the command slot that carried it.
+        new Retired("collectRequiredProjection", "the gated correlation-key arms in ProjectionCommands"),
+        new Retired("ParentProjectionContainmentCheck", "the capability-to-membership census in the projection membership test"),
+        new Retired("requiredProjection", "the gated correlation-key Project arm"),
+        new Retired("appendsRequiredColumn", "TypeSpecAssertions.armProjectsColumn")
     );
 
     /** One reviewed lineage mention: repository-root-relative path (with {@code /} separators) plus the term. */

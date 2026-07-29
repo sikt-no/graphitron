@@ -230,7 +230,7 @@ One statement for the whole batch, which is what the DataLoader dispatch exists 
 
 The contract holds identically under both parent kinds, so the same typed-record `@service` child works under either without a change to its Java signature:
 
-* *SQL-projected parent* (the parent came from a framework SELECT, e.g. a `@table` query or a split-query parent). The framework force-includes the parent's key columns in that SELECT even when the client's selection contains no field mapping to them, and builds the key record from them.
+* *SQL-projected parent* (the parent came from a framework SELECT, e.g. a `@table` query or a split-query parent). The framework includes the parent's key columns in that SELECT whenever the `@service` field is selected (the field's own projection entry carries them, and the field's fetcher only runs when it is selected), and builds the key record from them.
 * *Service-returned parent* (the parent is itself a `@service` handing back a hand-rolled record, e.g. `selectFrom(FILM)` returning `Result<FilmRecord>`). A jOOQ-generated record always carries its own primary key, so the same read works with no framework SELECT involved.
 
 === One DataLoader per request, per field

@@ -137,13 +137,14 @@ class NestingFieldPipelineTest {
 
     @Test
     void typeClass_nestedSplitField_projectsOuterParentSourceKeyColumn() {
-        // The recursive collectSourceKeyColumns walk must surface Film.info.cast's SourceKey
-        // column (FILM.FILM_ID) into Film.$project so key extraction can read the FK off
-        // env.getSource() at request time. Without the recursion, the fixture still compiles;
-        // the emitted DSL.row(((Record) env.getSource()).get(Tables.FILM.FILM_ID)) then reads a
-        // field the SELECT omitted, which jOOQ rejects at request time.
-        var filmType = findType("Film", SPLIT_NESTING_SDL);
-        assertThat(TypeSpecAssertions.appendsRequiredColumn(filmType, "FILM_ID")).isTrue();
+        // Film.info.cast's SourceKey column (FILM.FILM_ID) is projected by the "cast" arm on
+        // the nested unit FilmFilmInfo, whose $project shares the anchor's table context; the
+        // anchor's splice lands it in Film's select list whenever cast is selected. Without the
+        // arm, the fixture still compiles; the emitted
+        // DSL.row(((Record) env.getSource()).get(Tables.FILM.FILM_ID)) then reads a field the
+        // SELECT omitted, which jOOQ rejects at request time.
+        var nestedUnit = findType("FilmFilmInfo", SPLIT_NESTING_SDL);
+        assertThat(TypeSpecAssertions.armProjectsColumn(nestedUnit, "cast", "FILM_ID")).isTrue();
     }
 
     // ===== Helpers =====

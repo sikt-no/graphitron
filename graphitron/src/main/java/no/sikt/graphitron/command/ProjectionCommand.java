@@ -1,6 +1,5 @@
 package no.sikt.graphitron.command;
 
-import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
 import java.util.List;
@@ -13,11 +12,14 @@ import java.util.Objects;
  * table instance always arrives from the caller, so there is no owns-its-alias case and no
  * alias axis on the command.
  *
- * <p>Sealed on unit kind because three consumers fork on it: the naming scheme (anchor units
- * are keyed by type name, nested units by {@code (anchor, typeName)}, pivot units by
- * coordinate), the interim required-projection slot (anchor-only; nested demands hoist to the
- * anchor), and the renderer's body shape (pivot units dedupe slots by name and carry the
- * one-record sentinel).
+ * <p>Sealed on unit kind because the kinds differ structurally, not by provenance: an anchor
+ * unit projects a row of its own table and is the unit other commands may name as a callee (a
+ * root launcher's select list, a multiset subselect's inner list); a nested unit projects the
+ * <em>anchor's</em> row and is reachable only by splicing into its anchor's list (whether a
+ * {@code @splitQuery} nesting field additionally launches one is that feature's open question);
+ * a pivot unit projects slot aggregates over an attribute table and renders through its own
+ * body shape (slot dedupe by name, the one-record sentinel). The keying follows the structure:
+ * type name, {@code (anchor, typeName)}, coordinate.
  */
 public sealed interface ProjectionCommand {
 
@@ -32,35 +34,27 @@ public sealed interface ProjectionCommand {
 
     /**
      * A table-backed type's unit ({@code TableType} / {@code NodeType}), keyed by type name.
-     *
-     * @param requiredProjection the columns the unit's SELECT must include regardless of the
-     *     SDL selection, under base names: batch-key and parent-row demands of this type's
-     *     children, including demands hoisted off nesting descendants (a nested requirement
-     *     projects the <em>anchor</em> table's columns, because nesting shares the anchor's
-     *     table context). This slot is the one deliberate exception to the gated-contribution
-     *     rule, carried as a named slot precisely so no {@link Contribution} arm can be
-     *     ungated; its enforcer is the parent-projection containment check (the slot's
-     *     contents must contain every independently derived demand), and slot and check retire
-     *     together when the correlation columns become a gated arm.
+     * Every entry is selection-gated, correlation keys included: a child whose fetcher reads
+     * parent-row columns carries an ordinary {@link Contribution.Project} of those columns,
+     * gated on the child's field, so an unselected child projects nothing.
      */
     record AnchorUnit(
         UnitRef unit,
         TableRef table,
-        List<Contribution> contributions,
-        List<ColumnRef> requiredProjection
+        List<Contribution> contributions
     ) implements ProjectionCommand {
         public AnchorUnit {
             requireCore(unit, table);
             contributions = List.copyOf(contributions);
-            requiredProjection = List.copyOf(requiredProjection);
         }
     }
 
     /**
      * A nesting type's unit under one anchor, keyed {@code (anchor, typeName)} and named with
      * the anchor prefix. Shares the anchor's table context by definition ({@code table} is the
-     * anchor's table, and the emitted parameter type is the anchor's jOOQ class); carries no
-     * required-projection slot because nesting demands hoist to the anchor.
+     * anchor's table, and the emitted parameter type is the anchor's jOOQ class), so a nested
+     * child's correlation-key arm projects <em>anchor</em>-table columns and lands in the
+     * anchor's list through the splice.
      */
     record NestedUnit(
         UnitRef unit,

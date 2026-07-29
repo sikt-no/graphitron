@@ -11,24 +11,22 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
 /**
  * SDL → classified schema → generated {@code TypeSpec} pipeline tests pinning that a
- * DataLoader-backed {@code @service} child's {@code SourceKey} columns are force-included in the
- * parent type's {@code $project} projection.
+ * DataLoader-backed {@code @service} child's {@code SourceKey} columns are projected by the
+ * child's own gated {@code $project} switch arm.
  *
  * <p>The {@code @service} DataLoader shapes ({@link no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField},
  * {@link no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField}) build their DataLoader
- * key off the parent source record, so the parent SELECT must project the key columns even when
- * the client's selection contains no field mapping to them; otherwise the key extraction has no
- * key column to read and the child cannot resolve (the federation {@code _entities}-fetch shape,
- * which is how this first surfaced). Split-{@code @reference} children get the same treatment via
- * the shared {@link no.sikt.graphitron.rewrite.model.BatchKeyField} arm in
- * {@code the projection producer's required-projection walk}; their coverage lives in
- * {@link NestingFieldPipelineTest}.
+ * key off the parent source record, so the parent SELECT must carry the key columns whenever the
+ * child field is selected; otherwise the key extraction has no key column to read and the child
+ * cannot resolve (the federation {@code _entities}-fetch shape, which is how this first
+ * surfaced). The gate suffices because the fetcher only runs for a selected field, and the
+ * selected field's arm is what projects the columns. Split-{@code @reference} children get the
+ * same treatment via the shared correlation-key arm in {@code ProjectionCommands}; their
+ * coverage lives in {@link NestingFieldPipelineTest}.
  *
  * <p>Every fixture's service method carries a Sources param ({@code Set<Row1<Integer>>}), so the
  * field classifies with a non-null {@code SourceKey} (a no-Sources method is a plain per-parent
- * delegation with no key read and no projection need). Every fixture's parent type deliberately
- * carries <em>no</em> other force-projecting child ({@code @splitQuery} sibling), so a regression of the {@code BatchKeyField} arm turns these red rather than being
- * masked by an unrelated sibling's projection.
+ * delegation with no key read, no projection need and no arm).
  *
  * <p>A {@code SourceKey.Wrap.TableRecord} child (typed-record Sources parameter) demands the same
  * thing as every other wrap: its key columns, nothing wider. The typed-record group below pins
@@ -51,8 +49,8 @@ class ServiceProjectionPipelineTest {
             }
             """);
 
-        assertThat(TypeSpecAssertions.appendsRequiredColumn(languageType, "LANGUAGE_ID"))
-            .as("parent $project force-projects the @service child's SourceKey column (parent PK)")
+        assertThat(TypeSpecAssertions.armProjectsColumn(languageType, "films", "LANGUAGE_ID"))
+            .as("the @service child's arm projects its SourceKey column (parent PK)")
             .isTrue();
     }
 
@@ -69,19 +67,20 @@ class ServiceProjectionPipelineTest {
             type Query { language: Language }
             """);
 
-        assertThat(TypeSpecAssertions.appendsRequiredColumn(languageType, "LANGUAGE_ID"))
-            .as("parent $project force-projects the @service child's SourceKey column (parent PK)")
+        assertThat(TypeSpecAssertions.armProjectsColumn(languageType, "rank", "LANGUAGE_ID"))
+            .as("the @service child's arm projects its SourceKey column (parent PK)")
             .isTrue();
     }
 
     /**
-     * A {@code @service} child nested under a plain-object {@code NestingField} shares the outer
-     * table type's {@code $project}; the recursion in {@code collectRequiredProjection}
-     * must surface its SourceKey column into the outer parent's projection.
+     * A {@code @service} child nested under a plain-object {@code NestingField} lives on the
+     * nested unit, whose {@code $project} shares the anchor's table context; its gated arm
+     * projects the <em>anchor</em> table's key column, landing in the anchor's list through the
+     * splice.
      */
     @Test
     void nestedServiceChild_projectsOuterParentSourceKeyColumn() {
-        var languageType = findType("Language", """
+        var nestedUnit = findType("LanguageLanguageInfo", """
             type Language @table(name: "language") { info: LanguageInfo }
             type LanguageInfo {
                 rank: Int @service(
@@ -91,8 +90,8 @@ class ServiceProjectionPipelineTest {
             type Query { language: Language }
             """);
 
-        assertThat(TypeSpecAssertions.appendsRequiredColumn(languageType, "LANGUAGE_ID"))
-            .as("outer parent $project force-projects the nested @service child's SourceKey column")
+        assertThat(TypeSpecAssertions.armProjectsColumn(nestedUnit, "rank", "LANGUAGE_ID"))
+            .as("the nested @service child's arm projects the anchor table's SourceKey column")
             .isTrue();
     }
 
@@ -118,10 +117,10 @@ class ServiceProjectionPipelineTest {
             }
             """);
 
-        assertThat(TypeSpecAssertions.appendsRequiredColumn(languageType, "LANGUAGE_ID"))
-            .as("parent $project force-projects the TableRecord-sourced child's key column")
+        assertThat(TypeSpecAssertions.armProjectsColumn(languageType, "films", "LANGUAGE_ID"))
+            .as("the TableRecord-sourced child's arm projects its key column")
             .isTrue();
-        assertThat(TypeSpecAssertions.appendsRequiredColumn(languageType, "NAME"))
+        assertThat(TypeSpecAssertions.armProjectsColumn(languageType, "films", "NAME"))
             .as("and projects no non-key column on the child's behalf")
             .isFalse();
     }
@@ -139,8 +138,8 @@ class ServiceProjectionPipelineTest {
             type Query { language: Language }
             """);
 
-        assertThat(TypeSpecAssertions.appendsRequiredColumn(languageType, "LANGUAGE_ID"))
-            .as("parent $project force-projects the TableRecord-sourced child's key column")
+        assertThat(TypeSpecAssertions.armProjectsColumn(languageType, "rank", "LANGUAGE_ID"))
+            .as("the TableRecord-sourced child's arm projects its key column")
             .isTrue();
     }
 
@@ -161,22 +160,21 @@ class ServiceProjectionPipelineTest {
             type Query { language: Language }
             """);
 
-        assertThat(TypeSpecAssertions.appendsRequiredColumn(languageType, "LANGUAGE_ID"))
-            .as("Record1-sourced @service child force-projects its SourceKey column")
+        assertThat(TypeSpecAssertions.armProjectsColumn(languageType, "rank", "LANGUAGE_ID"))
+            .as("Record1-sourced @service child's arm projects its SourceKey column")
             .isTrue();
     }
 
     /**
      * A TableRecord-sourced {@code @service} child nested under a plain-object
-     * {@code NestingField} shares the outer table type's {@code $project}; the recursion in
-     * {@code collectRequiredProjection} must surface the key requirement onto the outer parent.
-     * The projected fields are the outer parent table's by construction:
-     * {@code emitSelectionSwitch} threads {@code tableArg} unchanged into nested depths, so the
-     * nested child's key read resolves against the outer table's row.
+     * {@code NestingField} lives on the nested unit, whose gated arm carries the key
+     * requirement. The projected fields are the outer parent table's by construction: the
+     * anchor's splice threads its own {@code table} argument into the nested {@code $project},
+     * so the nested child's key read resolves against the outer table's row.
      */
     @Test
     void nestedTableRecordServiceChild_projectsKeyColumnOnOuterParent() {
-        var languageType = findType("Language", """
+        var nestedUnit = findType("LanguageLanguageInfo", """
             type Language @table(name: "language") { info: LanguageInfo }
             type LanguageInfo {
                 rank: Int @service(
@@ -186,15 +184,15 @@ class ServiceProjectionPipelineTest {
             type Query { language: Language }
             """);
 
-        assertThat(TypeSpecAssertions.appendsRequiredColumn(languageType, "LANGUAGE_ID"))
-            .as("outer parent $project force-projects the nested TableRecord-sourced child's key column")
+        assertThat(TypeSpecAssertions.armProjectsColumn(nestedUnit, "rank", "LANGUAGE_ID"))
+            .as("the nested TableRecord-sourced child's arm projects the anchor table's key column")
             .isTrue();
     }
 
     /**
      * A parent with both a {@code TableRecord}-wrap {@code @service} child and a {@code Wrap.Row}
-     * {@code @splitQuery} sibling. Both demand the same base-named key column and the deduping
-     * accumulator collapses them to one projection term; nothing widens.
+     * {@code @splitQuery} sibling. Both arms project the same base-named key column (the runtime
+     * accumulator dedupes when both are selected); neither widens beyond the key.
      */
     @Test
     void tableRecordServiceChild_withSplitRowSibling_projectsTheSharedKeyColumn() {
@@ -210,10 +208,16 @@ class ServiceProjectionPipelineTest {
             }
             """);
 
-        assertThat(TypeSpecAssertions.appendsRequiredColumn(languageType, "LANGUAGE_ID"))
-            .as("both children force-project the same base-named key column")
+        assertThat(TypeSpecAssertions.armProjectsColumn(languageType, "filmsService", "LANGUAGE_ID"))
+            .as("the service child's arm projects the base-named key column")
             .isTrue();
-        assertThat(TypeSpecAssertions.appendsRequiredColumn(languageType, "NAME"))
+        assertThat(TypeSpecAssertions.armProjectsColumn(languageType, "filmsSplit", "LANGUAGE_ID"))
+            .as("the split sibling's arm projects the same base-named key column")
+            .isTrue();
+        assertThat(TypeSpecAssertions.armProjectsColumn(languageType, "filmsService", "NAME"))
+            .as("neither child widens the projection beyond the key")
+            .isFalse();
+        assertThat(TypeSpecAssertions.armProjectsColumn(languageType, "filmsSplit", "NAME"))
             .as("neither child widens the projection beyond the key")
             .isFalse();
     }
@@ -222,9 +226,11 @@ class ServiceProjectionPipelineTest {
      * The consumer side of the typed-record shape: the generated {@code @service}-child fetcher's
      * key extraction is one unconditional per-key-column read, with no runtime branch on the
      * parent source's type. It can be unconditional because the key columns are present under
-     * their base names on both parent arrival shapes: force-projected when the parent came from
-     * {@code $project} (pinned by the producer-side tests above), and carried as real columns when
-     * a service hands back its own typed record. A shape assertion, not a full code-string pin.
+     * their base names on both parent arrival shapes: projected by the field's own gated arm
+     * when the parent came from {@code $project} (pinned by the producer-side tests above, and
+     * guaranteed at runtime because this fetcher only runs for a selected field), and carried as
+     * real columns when a service hands back its own typed record. A shape assertion, not a full
+     * code-string pin.
      */
     @Test
     void tableRecordServiceChild_fetcherKeyExtractionIsUnconditional() {

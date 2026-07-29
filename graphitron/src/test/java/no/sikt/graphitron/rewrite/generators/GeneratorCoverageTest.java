@@ -74,9 +74,14 @@ public class GeneratorCoverageTest {
 
         assertThat(simpleNames(intersection(minting, implemented)))
             .as("the dual-arm kinds: leaves that project (a contribution, a unit row of their own,"
-                + " or ridden slot contributions) AND get a fetcher arm. Pinned exactly so a new"
-                + " dual-arm leaf is a deliberate edit here, not a silent derivation change")
-            .containsExactlyInAnyOrder("ColumnBackedField", "ComputedField", "BatchedPivotField");
+                + " or ridden slot contributions) AND get a fetcher arm. The correlation-key"
+                + " leaves all live here: their fetchers deliver the data, their gated arms"
+                + " project the key columns the fetchers read off the parent row. Pinned exactly"
+                + " so a new dual-arm leaf is a deliberate edit here, not a silent derivation"
+                + " change")
+            .containsExactlyInAnyOrder("ColumnBackedField", "ComputedField", "BatchedPivotField",
+                "BatchedTableField", "BatchedLookupTableField", "ServiceTableField",
+                "ServiceRecordField", "TableInterfaceField", "InterfaceField", "UnionField");
 
         Set<Class<?>> projected = new HashSet<>(minting);
         projected.removeAll(implemented);
