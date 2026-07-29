@@ -547,7 +547,8 @@ public class TypeFetcherGenerator {
                     var launcherRow = launchers.rowFor(qtf.parentTypeName(), qtf.name());
                     if (launcherRow.isPresent()) {
                         builder.addMethod(buildQueryTableFetcher(ctx, qtf, launcherRow.get(), outputPackage));
-                        builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer.render(launcherRow.get()));
+                        builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
+                            .render(launcherRow.get(), launchers.carrierDsl()));
                     } else if (TenantDslEmitter.isFanOut(ctx, qtf.name())) {
                         // The fanned-fetcher emission owns FanOut coordinates; the generic
                         // builders' FanOut arms throw by design. Classification guarantees the
@@ -973,9 +974,7 @@ public class TypeFetcherGenerator {
      */
     private static MethodSpec buildQueryTableFetcher(TypeFetcherEmissionContext ctx, QueryField.QueryTableField qtf,
             no.sikt.graphitron.command.LauncherCommand row, String outputPackage) {
-        var valueType = row.result() == no.sikt.graphitron.command.ResultShape.RECORD_LIST
-            ? (TypeName) ParameterizedTypeName.get(RESULT, RECORD)
-            : RECORD;
+        var valueType = no.sikt.graphitron.render.RootLauncherRenderer.valueTypeOf(row.result());
 
         var builder = MethodSpec.methodBuilder(qtf.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -5267,7 +5266,7 @@ public class TypeFetcherGenerator {
         builder.addCode(buildConditionCall(qtf, tableLocal, outputPackage));
         // Single dispatch produces both orderBy (for SQL) and extraFields (for cursor columns),
         // keeping them in sync when the client picks a dynamic named order.
-        builder.addCode(buildConnectionOrderingBlock(qtf.orderBy(), qtf.name(), names, tableLocal, outputPackage));
+        builder.addCode(buildConnectionOrderingBlock(qtf.orderBy(), qtf.parentTypeName(), qtf.name(), tableLocal, outputPackage));
 
         // Pagination arg names are fixed by the slot (classifier rejects custom names).
         builder.addStatement("Integer first = env.getArgument($S)", "first");
@@ -5399,36 +5398,31 @@ public class TypeFetcherGenerator {
      * </ul>
      */
     private static CodeBlock buildConnectionOrderingBlock(
-            OrderBySpec orderBy, String fieldName, GeneratorUtils.ResolvedTableNames names, String srcAlias, String outputPackage) {
+            OrderBySpec orderBy, String parentTypeName, String fieldName, String srcAlias, String outputPackage) {
         var code = CodeBlock.builder();
         var JOOQ_FIELD = ClassName.get("org.jooq", "Field");
         var WILDCARD_FIELD = ParameterizedTypeName.get(JOOQ_FIELD,
             no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class));
         var listOfField = ParameterizedTypeName.get(LIST, WILDCARD_FIELD);
+        var units = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage);
 
+        // The live arms delegate to the shared two-view block (one home for the ordering/cursor
+        // sync through the migration window); the empty arms are this legacy builder's own.
         switch (orderBy) {
             case OrderBySpec.Fixed fixed -> {
                 if (fixed.columns().isEmpty()) {
                     code.addStatement("$T orderBy = $T.of()", SORT_FIELD_LIST, LIST);
                     code.addStatement("$T extraFields = $T.of()", listOfField, LIST);
                 } else {
-                    code.addStatement("$T orderBy = $T.of($L)", SORT_FIELD_LIST, LIST,
-                        no.sikt.graphitron.render.OrderByFragments.fixedSortParts(fixed, srcAlias));
-                    code.addStatement("$T extraFields = $T.of($L)", listOfField, LIST,
-                        no.sikt.graphitron.render.OrderByFragments.fixedColumnParts(fixed, srcAlias));
+                    code.add(no.sikt.graphitron.render.OrderingBlock.declareBothViews(
+                        new no.sikt.graphitron.command.Ordering.Columns(fixed), srcAlias));
                 }
             }
-            case OrderBySpec.Argument arg -> {
-                // Single dispatch: OrderByResult carries both sort fields and cursor columns.
-                // Pass the caller's aliased Table so the helper's column refs resolve to the
-                // right jOOQ instance (canonical tableLocal for root, FK-chain terminal alias
-                // for Split+Connection).
-                var orderByResultClass = ClassName.get(
-                    outputPackage + ".util", OrderByResultClassGenerator.CLASS_NAME);
-                code.addStatement("$T ordering = $LOrderBy(env, $L)", orderByResultClass, fieldName, srcAlias);
-                code.addStatement("$T orderBy = ordering.sortFields()", SORT_FIELD_LIST);
-                code.addStatement("$T extraFields = ordering.columns()", listOfField);
-            }
+            case OrderBySpec.Argument ignored ->
+                code.add(no.sikt.graphitron.render.OrderingBlock.declareBothViews(
+                    new no.sikt.graphitron.command.Ordering.Helper(
+                        units.orderByHelperMethod(parentTypeName, fieldName), units.orderByResult()),
+                    srcAlias));
             case OrderBySpec.None ignored -> {
                 code.addStatement("$T orderBy = $T.of()", SORT_FIELD_LIST, LIST);
                 code.addStatement("$T extraFields = $T.of()", listOfField, LIST);

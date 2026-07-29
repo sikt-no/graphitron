@@ -1,11 +1,13 @@
 package no.sikt.graphitron.plan;
 
 import graphql.schema.FieldCoordinates;
+import no.sikt.graphitron.command.CarrierDsl;
 import no.sikt.graphitron.command.LauncherCommand;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -20,11 +22,16 @@ import java.util.Optional;
  * <p>The covered family widens slice by slice as {@code LauncherCommands}' migration dial
  * shrinks; the derived-fact-equals-key-set membership enforcer lands with the closing slice,
  * when the dial empties.
+ *
+ * <p>{@link #carrierDsl} is the run-grain carrier-routing fact (see {@link CarrierDsl}),
+ * carried on the family view that renders carriers rather than copied onto every row; it moves
+ * up to the plan if a second family ever reads it.
  */
-public record LauncherRelation(List<LauncherCommand> rows) {
+public record LauncherRelation(List<LauncherCommand> rows, CarrierDsl carrierDsl) {
 
     public LauncherRelation {
         rows = List.copyOf(rows);
+        Objects.requireNonNull(carrierDsl, "carrierDsl");
         long distinctKeys = rows.stream().map(LauncherCommand::coordinate).distinct().count();
         if (distinctKeys != rows.size()) {
             throw new IllegalArgumentException(

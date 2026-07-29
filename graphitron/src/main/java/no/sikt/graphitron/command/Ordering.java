@@ -40,15 +40,18 @@ public sealed interface Ordering {
     /**
      * A runtime-argument-driven order dispatched through the emitted
      * {@code <field>OrderBy(env, table)} helper, whose ref the producer mints from the naming
-     * vocabulary; a plain launcher reads {@code .sortFields()} of its result. The callee is a
-     * third edge category, distinct from committed-command callees and external callees: a
-     * method the run emits (the fetcher generator's helper emission derives its name from the
-     * same scheme) but no command commits, so a closure check over launcher rows must carve it
-     * out as emitted-but-uncommitted rather than fail on it.
+     * vocabulary; a plain launcher reads {@code .sortFields()} of its result, a connection
+     * launcher binds the whole {@link #resultType} value (the generated {@code OrderByResult})
+     * to read both the sort and cursor-column views of one dispatch. The callee is a third edge
+     * category, distinct from committed-command callees and external callees: a method the run
+     * emits (the fetcher generator's helper emission derives its name from the same scheme) but
+     * no command commits, so a closure check over launcher rows must carve it out as
+     * emitted-but-uncommitted rather than fail on it.
      */
-    record Helper(UnitMethodRef method) implements Ordering {
+    record Helper(UnitMethodRef method, UnitRef resultType) implements Ordering {
         public Helper {
             Objects.requireNonNull(method, "method");
+            Objects.requireNonNull(resultType, "resultType");
         }
     }
 }

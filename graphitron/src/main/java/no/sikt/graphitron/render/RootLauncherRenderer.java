@@ -1,5 +1,6 @@
 package no.sikt.graphitron.render;
 
+import no.sikt.graphitron.command.CarrierDsl;
 import no.sikt.graphitron.command.LauncherCommand;
 import no.sikt.graphitron.command.Ordering;
 import no.sikt.graphitron.command.ResultShape;
@@ -8,23 +9,26 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.javapoet.WildcardTypeName;
 
 import javax.lang.model.element.Modifier;
 
 /**
  * The root launcher renderer: interprets one {@link LauncherCommand} into the
  * {@code public static <Ret> rows<Field>(DSLContext dsl, DataFetchingEnvironment env)} method
- * owning the coordinate's whole query composition. Total over the command's arms, takes no
- * schema; the launcher cannot say anything its command does not, which is what makes the thin
- * fetcher entry point a consequence of this seam rather than a discipline.
+ * owning the coordinate's whole query composition. Total over the command's arms plus the run's
+ * {@link CarrierDsl} fact, takes no schema; the launcher cannot say anything its command does
+ * not, which is what makes the thin fetcher entry point a consequence of this seam rather than a
+ * discipline.
  *
  * <p>{@code dsl} is a parameter, not a local: the entry point owns connection acquisition and
  * invocation strategy, the launcher owns composition. The body composes exactly what the inline
  * fetcher chains composed: the table local, the condition (the row's glue call, or the neutral
- * condition from an absent WHERE slot), the ordering per {@link Ordering} arm (inline columns,
- * or the {@code <field>OrderBy} helper's sort fields; an absent slot renders no ORDER BY), the
- * projection unit's {@code $project} select list, and the {@link ResultShape}'s terminal fetch.
+ * condition from an absent WHERE slot), the ordering per {@link Ordering} arm, the projection
+ * unit's {@code $project} select list, and the {@link ResultShape}'s terminal: {@code fetch()},
+ * {@code fetchOne()}, or the connection arm's seek/limit page query wrapped in the generated
+ * carrier (whose lazy resolvers read the same {@code (table, condition, page)} the query ran
+ * under; on a {@link CarrierDsl#ROUTED} run the routed {@code dsl} rides the carrier too). Every
+ * generated class name comes off a ref the producer minted; this renderer derives none.
  *
  * <p>Renders into the coordinate's fetchers class next to its entry point (the launcher hosts on
  * the class its {@code UnitMethodRef} owner names), so this renderer yields a {@code MethodSpec}
@@ -42,47 +46,94 @@ public final class RootLauncherRenderer {
     private static final ClassName LIST = ClassName.get("java.util", "List");
     private static final ClassName SORT_FIELD = ClassName.get("org.jooq", "SortField");
     private static final ClassName ENV = ClassName.get("graphql.schema", "DataFetchingEnvironment");
+    private static final TypeName RESULT_OF_RECORD = ParameterizedTypeName.get(RESULT, RECORD);
     private static final TypeName SORT_FIELD_LIST = ParameterizedTypeName.get(
-        LIST, ParameterizedTypeName.get(SORT_FIELD, WildcardTypeName.subtypeOf(Object.class)));
+        LIST, ParameterizedTypeName.get(SORT_FIELD,
+            no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class)));
 
-    /** Renders one launcher method from its row. */
-    public static MethodSpec render(LauncherCommand row) {
-        var valueType = valueTypeOf(row.result());
-        String tableLocal = TableLocal.name(row.table());
-
+    /** Renders one launcher method from its row and the run's carrier-routing fact. */
+    public static MethodSpec render(LauncherCommand row, CarrierDsl carrierDsl) {
         var builder = MethodSpec.methodBuilder(row.unit().methodName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(valueType)
+            .returns(valueTypeOf(row.result()))
             .addParameter(DSL_CONTEXT, "dsl")
             .addParameter(ENV, "env");
 
+        String tableLocal = TableLocal.name(row.table());
         builder.addCode(TableLocal.declare(row.table()));
         builder.addCode(conditionStatement(row, tableLocal));
-        if (row.orderBy() != null) {
-            builder.addCode(orderByStatement(row.orderBy(), tableLocal));
+        switch (row.result()) {
+            case ResultShape.SingleRecord ignored -> builder.addCode(plainChain(row, tableLocal, false, false));
+            case ResultShape.RecordList list -> {
+                boolean ordered = list.ordering() != null;
+                if (ordered) {
+                    builder.addCode(orderByStatement(list.ordering(), tableLocal));
+                }
+                builder.addCode(plainChain(row, tableLocal, true, ordered));
+            }
+            case ResultShape.Connection connection ->
+                builder.addCode(connectionBody(row, connection, tableLocal, carrierDsl));
         }
-
-        var chain = CodeBlock.builder()
-            .add("return dsl\n")
-            .indent()
-            .add(".select($L)\n", ProjectionCall.fromEnvSelection(
-                ClassName.get(row.projection().packageName(), row.projection().simpleName()), tableLocal))
-            .add(".from($L)\n", tableLocal)
-            .add(".where(condition)\n");
-        if (row.orderBy() != null) {
-            chain.add(".orderBy(orderBy)\n");
-        }
-        chain.add(row.result() == ResultShape.RECORD_LIST ? ".fetch();\n" : ".fetchOne();\n")
-            .unindent();
-        builder.addCode(chain.build());
         return builder.build();
     }
 
-    private static TypeName valueTypeOf(ResultShape result) {
+    /** The launcher's return type, read off the shape (the connection arm's is its carrier ref). */
+    public static TypeName valueTypeOf(ResultShape result) {
         return switch (result) {
-            case RECORD_LIST -> ParameterizedTypeName.get(RESULT, RECORD);
-            case SINGLE_RECORD -> RECORD;
+            case ResultShape.RecordList ignored -> RESULT_OF_RECORD;
+            case ResultShape.SingleRecord ignored -> RECORD;
+            case ResultShape.Connection connection -> className(connection.carrier());
         };
+    }
+
+    /** The terminal select chain of the single and list shapes. */
+    private static CodeBlock plainChain(LauncherCommand row, String tableLocal, boolean isList, boolean ordered) {
+        var chain = CodeBlock.builder()
+            .add("return dsl\n")
+            .indent()
+            .add(".select($L)\n", ProjectionCall.fromEnvSelection(className(row.projection()), tableLocal))
+            .add(".from($L)\n", tableLocal)
+            .add(".where(condition)\n");
+        if (ordered) {
+            chain.add(".orderBy(orderBy)\n");
+        }
+        chain.add(isList ? ".fetch();\n" : ".fetchOne();\n").unindent();
+        return chain.build();
+    }
+
+    /**
+     * The connection arm: the two-view ordering block, the four fixed pagination argument reads
+     * (names fixed by the slot; the classifier rejects custom names), the page request, the
+     * seek/limit page query, and the carrier construction over the same
+     * {@code (result, page, table, condition)} the query ran under.
+     */
+    private static CodeBlock connectionBody(LauncherCommand row, ResultShape.Connection connection,
+            String tableLocal, CarrierDsl carrierDsl) {
+        var code = CodeBlock.builder();
+        code.add(OrderingBlock.declareBothViews(connection.ordering(), tableLocal));
+        code.addStatement("Integer first = env.getArgument($S)", "first");
+        code.addStatement("Integer last = env.getArgument($S)", "last");
+        code.addStatement("String after = env.getArgument($S)", "after");
+        code.addStatement("String before = env.getArgument($S)", "before");
+        var helperClass = className(connection.helper());
+        code.addStatement(
+            "$T page = $T.pageRequest(first, last, after, before, $L, orderBy, extraFields, $L)",
+            helperClass.nestedClass("PageRequest"), helperClass, connection.defaultPageSize(),
+            ProjectionCall.fromEnvSelection(className(row.projection()), tableLocal));
+        code.add("$T result = dsl\n", RESULT_OF_RECORD)
+            .indent()
+            .add(".select(page.selectFields())\n")
+            .add(".from($L)\n", tableLocal)
+            .add(".where(condition)\n")
+            .add(".orderBy(page.effectiveOrderBy())\n")
+            .add(".seek(page.seekFields())\n")
+            .add(".limit(page.limit())\n")
+            .add(".fetch();\n")
+            .unindent();
+        code.addStatement("return new $T(result, page, $L, condition$L)",
+            className(connection.carrier()), tableLocal,
+            carrierDsl == CarrierDsl.ROUTED ? ", dsl" : "");
+        return code.build();
     }
 
     /**
@@ -96,8 +147,7 @@ public final class RootLauncherRenderer {
         }
         var glue = row.where().method();
         var call = CodeBlock.builder().add("$T.$L($L, env.getArguments()",
-            ClassName.get(glue.owner().packageName(), glue.owner().simpleName()),
-            glue.methodName(), tableLocal);
+            className(glue.owner()), glue.methodName(), tableLocal);
         if (row.where().takesEnv()) {
             call.add(", env");
         }
@@ -105,6 +155,7 @@ public final class RootLauncherRenderer {
         return CodeBlock.builder().addStatement("$T condition = $L", CONDITION, call.build()).build();
     }
 
+    /** The single/list shapes' sort-view-only ordering statement. */
     private static CodeBlock orderByStatement(Ordering ordering, String tableLocal) {
         return switch (ordering) {
             case Ordering.Columns columns -> CodeBlock.builder()
@@ -119,5 +170,9 @@ public final class RootLauncherRenderer {
                     SORT_FIELD_LIST, helper.method().methodName(), tableLocal)
                 .build();
         };
+    }
+
+    private static ClassName className(no.sikt.graphitron.command.UnitRef unit) {
+        return ClassName.get(unit.packageName(), unit.simpleName());
     }
 }

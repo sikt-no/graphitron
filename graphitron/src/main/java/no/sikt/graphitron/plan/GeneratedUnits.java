@@ -154,6 +154,21 @@ public final class GeneratedUnits {
         return unit(SUB_SCHEMA, typeName + SCHEMA_SHAPE_SUFFIX);
     }
 
+    /** {@code <pkg>.util.ConnectionHelper} — the generated pagination runtime. */
+    public UnitRef connectionHelper() {
+        return unit(SUB_UTIL, "ConnectionHelper");
+    }
+
+    /** {@code <pkg>.util.ConnectionResult} — the generated connection carrier. */
+    public UnitRef connectionResult() {
+        return unit(SUB_UTIL, "ConnectionResult");
+    }
+
+    /** {@code <pkg>.util.OrderByResult} — the ordering helpers' two-view result carrier. */
+    public UnitRef orderByResult() {
+        return unit(SUB_UTIL, "OrderByResult");
+    }
+
     /** A fixed-name singleton in the given sub-package (e.g. {@code util.NodeIdEncoder}). */
     public UnitRef singleton(String subPackage, String className) {
         return unit(subPackage, className);

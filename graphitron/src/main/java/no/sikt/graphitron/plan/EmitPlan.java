@@ -69,8 +69,8 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
             globals.add(one(GlobalUnitKind.ENTITY_FETCHER_DISPATCH,
                 units.singleton(GeneratedUnits.SUB_UTIL, "EntityFetcherDispatch")));
         }
-        globals.add(one(GlobalUnitKind.CONNECTION_RESULT, units.singleton(GeneratedUnits.SUB_UTIL, "ConnectionResult")));
-        globals.add(one(GlobalUnitKind.CONNECTION_HELPER, units.singleton(GeneratedUnits.SUB_UTIL, "ConnectionHelper")));
+        globals.add(one(GlobalUnitKind.CONNECTION_RESULT, units.connectionResult()));
+        globals.add(one(GlobalUnitKind.CONNECTION_HELPER, units.connectionHelper()));
         // The runtime _Service.sdl helper serves only the federation build arm (the wrapped
         // `return` in GraphitronSchemaClassGenerator's two-arg build, itself inside `if
         // (federationLink)`). A non-federation schema that uses @oneOf has no _Service.sdl to
@@ -84,7 +84,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
             units.singleton(GeneratedUnits.SUB_UTIL, "PolymorphicSelectionSet")));
         globals.add(one(GlobalUnitKind.SELECTION_OCCURRENCES,
             units.singleton(GeneratedUnits.SUB_UTIL, "SelectionOccurrences")));
-        globals.add(one(GlobalUnitKind.ORDER_BY_RESULT, units.singleton(GeneratedUnits.SUB_UTIL, "OrderByResult")));
+        globals.add(one(GlobalUnitKind.ORDER_BY_RESULT, units.orderByResult()));
         globals.add(one(GlobalUnitKind.GRAPHITRON_CONTEXT, units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronContext")));
         globals.add(connectionRuntime(units, sessionStateConfig));
         globals.add(one(GlobalUnitKind.TRANSACTION_PROVIDER,

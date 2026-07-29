@@ -20,12 +20,11 @@ import java.util.Objects;
  * <p>{@link #where} is the coordinate's condition glue reference, copied off the condition
  * relation's row by the producer (the cross-family handshake: the condition family owns WHERE
  * production wholesale, the launcher consumes a ref). Absent exactly when the coordinate has no
- * condition row; the renderer composes the neutral condition from that absence. {@link #orderBy}
- * is absent when the composition is unordered, and a single-record launcher is unordered by
- * construction (the model's ordering contract gives single-value fields no spec); the compact
- * constructor keeps the illegal pair unrepresentable rather than trusting the derivation.
- * {@link #projection} is the first cross-command edge: the projection unit whose
- * {@code $project} supplies the select list.
+ * condition row; the renderer composes the neutral condition from that absence. The ordering
+ * rides {@link #result}'s arms, because the two co-vary (a single-record launcher is unordered
+ * by construction; a connection is ordered by construction), so the illegal pairs are
+ * unrepresentable rather than checked. {@link #projection} is the first cross-command edge: the
+ * projection unit whose {@code $project} supplies the select list.
  *
  * <p>No invocation-strategy slot yet, deliberately: every row this relation holds today is
  * invoked directly, a fact entailed by the producer's membership (fan-out coordinates are on the
@@ -39,7 +38,6 @@ public record LauncherCommand(
     TableRef table,
     UnitRef projection,
     GlueCall where,
-    Ordering orderBy,
     ResultShape result
 ) {
 
@@ -49,9 +47,5 @@ public record LauncherCommand(
         Objects.requireNonNull(table, "table");
         Objects.requireNonNull(projection, "every launcher names the projection unit it selects from");
         Objects.requireNonNull(result, "result");
-        if (result == ResultShape.SINGLE_RECORD && orderBy != null) {
-            throw new IllegalArgumentException(
-                "a single-record launcher is unordered by construction; the illegal pair must stay unrepresentable");
-        }
     }
 }

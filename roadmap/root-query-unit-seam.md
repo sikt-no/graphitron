@@ -397,6 +397,12 @@ composition does not care who invokes it.
    reference, since that item produces the facet fragments as masked glue variants; this slice consumes
    them and mints nothing of its own.
 
+   Partially resolved by slice 2's landing (see the slice log): the `(table, condition, page)`
+   binding the lazy `totalCount` resolver reads turned out to be launcher-derived views of
+   existing command slots, so the non-faceted carrier construction landed with the page query and
+   what remains for slice 3 is exactly the facet plan (the fragment refs and decode specs) plus
+   the faceted coordinate's migration.
+
 ## Slices
 
 Slice 0 is two R549 slices, not one: **slice 1**, the vocabulary skeleton, and **slices 3.1 and
@@ -416,19 +422,23 @@ sentence for an item whose cutover is after the keystone.
    and the renderer, with the fetcher reduced to a strategy-plus-call entry point. The relation's
    non-vacuity pin and boundary pins land with it: a first slice whose pins assert over an empty set is
    not an enforcer, which is why the command and its first rows ship in one slice rather than two.
-2. **Connection root, page query only.** `buildQueryConnectionFetcher`'s seek/limit chain, which is
-   where seek pagination and the `extras` slot first carry weight. If the connection helper's
-   `selectFields` union does not decompose into "projection command output plus launcher extras", that
-   is the R549 boundary failing, and it fails here first. That finding is the whole reason this item
-   is the second proof, so it gets a slice that cannot be held up by anything else.
-3. **The `ConnectionResult` carrier plan** (fork 5). The `(table, condition)` binding the lazy
-   `totalCount` resolver reads, and the facet base plus per-facet condition fragments and specs a
-   faceted carrier binds, all moved onto the `ConnectionResult` arm. Split out from slice 2 because it
-   is the larger half of that builder and answers a different question: slice 2 tests R549's
-   projection/launcher boundary, this one tests whether a launcher can own a query it does not itself
-   issue. Keeping them together would let a wobble in the carrier design withhold the `extras`
-   finding, which is the more valuable of the two. The equivalence pin's faceted and `totalCount`
-   cases (see Acceptance) belong here, since before this slice the carrier is still renderer knowledge.
+2. **Connection root, the non-faceted half.** As landed (see the slice log): the seek/limit page
+   query, the two-view ordering, and the non-faceted carrier construction, all launcher-rendered,
+   with the faceted coordinate narrowing the migration dial's connection entry rather than holding
+   this slice. The slice's original boundary finding (`extras`) resolved at design time: the
+   cursor columns are a correlated view of the ordering slot, not an independent list, so the
+   `extras` slot dissolves here and the boundary question the slice was protecting is answered
+   before rendering rather than by it. The original wording scoped this slice to the page query
+   alone; the launcher's one-return-value signature makes the non-faceted carrier construction
+   part of the same seam (every value it binds is already a launcher-derived view of existing
+   slots), so the carrier's *facet plan* is what remains for slice 3.
+3. **The facet plan** (fork 5, narrowed by slice 2's landing). The facet base plus per-facet
+   condition fragment refs and decode specs a faceted carrier binds, moved onto the
+   `ResultShape.Connection` arm as data; the faceted coordinate (the corpus's `filmsFaceted`)
+   migrates and the dial's `FACETED_CONNECTION` entry deletes. The equivalence pin's faceted and
+   `totalCount` cases (see Acceptance) belong here. The per-facet refs resolve into R552's
+   relation like any other condition reference; this slice consumes them and mints nothing of its
+   own.
 4. **Fanned root.** The `FannedOverTenants` arm and its call-site wrapper. This is the slice that
    demonstrates strategy-as-data, since the fanned and plain rows differ in one field.
 5. **Routine + single-table-interface roots.** The two shapes with extra moving parts (routine table
@@ -564,6 +574,79 @@ boundary zeroes), `RootLauncherRendererTest` (per-arm structural pins), `Orderin
 a command-kind hierarchy. The R552 slice-4 handshake's `where` half is live from this slice
 (`GlueCall` refs copied off the condition relation, absence composing the neutral condition); the
 facet-fragment/carrier half arrives with slice 3 as planned.
+
+### Slice 2 (2026-07-29): connection root, the non-faceted half
+
+Landed as one commit: every non-faceted root connection coordinate launches through a rendered
+`rows<Field>(dsl, env)` unit returning the connection carrier, with the thin entry point exactly
+slice 1's shape (the payload type reads off the shape, so `ResultShape` is "the payload the
+launcher returns and the entry point wraps", one fact with two consumers). The faceted
+coordinate (`filmsFaceted`) narrows the migration dial's connection entry to
+`FACETED_CONNECTION` (the dial's true-set shrinks; the entry-level contract holds) and keeps the
+legacy `buildQueryConnectionFetcher` alive as its fallback until slice 3 deletes both. The
+slice-1-frozen page-query pin and the connection behaviour suite (cursors, `totalCount`, the
+DESC and argument-ordered and per-field-direction variants) held green through the cutover.
+
+**The extras finding, stated at its true strength.** The spec expected the `extras` slot to
+first carry weight here; the code says the connection's cursor columns are not an independent
+list. `buildConnectionOrderingBlock` derived both views (sort fields for SQL, cursor columns for
+the page request) from one dispatch, and for argument-driven ordering both views exist only at
+runtime, inside the one `OrderByResult` the emitted helper returns, so a static
+`List<SelectTerm>` extras slot is unfillable for that arm and a second copy of the ordering slot
+for the rest. The slot therefore dissolved: the launcher's connection rendering reads both views
+off the existing `Ordering` slot through one shared `render/OrderingBlock` (the legacy builder's
+live arms delegate to it, so the ordering/cursor sync has one home through the window). What
+this establishes for R549's boundary: the *direction* holds (cursor columns are entailed by the
+mechanism, never gated on selection), and the launcher-owned additions are a correlated view of
+an existing slot rather than a new one. What it does NOT establish, stated so slice 5 cannot
+read the direction claim as cover: the `selectFields` union is a *runtime* merge
+(`ConnectionHelper.pageRequest` dedupes by name), not a build-time decomposition, and the
+`SelectTerm`-as-extras algebra is left untested by this family, because the one append site it
+reaches never materialises a static term. `__idx__` / `__rn__` remain the first real test of
+that algebra, with the child path in R549 slice 5.
+
+**The slice boundary moved, and the spec text moved with it.** The launcher's one-return-value
+signature makes the non-faceted carrier construction part of the page-query seam: everything the
+carrier binds (`result`, `page`, table, condition, and the routed `dsl` on multi-tenant runs) is
+a launcher-derived view of existing command slots, so "page query only" would have meant a
+launcher that computes the page request twice or returns two values. Slice 3 narrows to exactly
+the facet plan (fragment refs plus decode specs on the `Connection` arm) and the faceted
+coordinate's migration; the Slices and fork-5 sections were updated in this commit per the
+stale-spec rule.
+
+**Shape and vocabulary.** `ResultShape` promoted to the sealed interface its javadoc promised,
+with the ordering renamed *into the arms* (`RecordList(Ordering)` nullable only for the
+schema-free unit tier, which builds unvalidated list fields; `Connection(Ordering, ...)` total,
+producer-backstopped) so the illegal ordered-single and unordered-connection pairs are
+unrepresentable and `LauncherCommand`'s top-level ordering slot and its runtime guard both
+deleted. The `Connection` arm carries `defaultPageSize` (the one build-time pagination fact; the
+four argument names are slot-fixed and the model never holds them) plus the connection runtime's
+unit refs (`ConnectionHelper`, `ConnectionResult`) copied off the naming vocabulary, and
+`Ordering.Helper` gained the helper's result-type ref (`OrderByResult`), so every generated
+class name the renderer emits comes off a producer-minted ref: the renderer's `outputPackage`
+string arithmetic never happened, and the launcher gained a second cross-command edge kind
+(launcher to global unit) as data. The three global refs moved from string literals in
+`EmitPlan.produce` to named `GeneratedUnits` schemes read by both ends. Facetedness is read off
+the condition relation's row (`facets()` nonempty), never re-derived from the schema, so
+`ConditionNaming.defaultConnectionName` keeps two callers instead of three and
+`TypeFetcherGenerator.connectionFacetsFor` retires with slice 3.
+
+**The carrier-routing fact.** The multi-tenant carrier tail (`, dsl`) became `CarrierDsl`, a
+typed per-run fact the launcher producer derives once from the configured tenant scopes and
+carries on the relation (the family view that renders carriers; it moves up to the plan if a
+second family reads it). The renderer is total over its command *plus* that run fact, stated
+here because the totality claim would otherwise overstate. One honest gap: no schema in the
+corpus has a multi-tenant connection root, so the `ROUTED` carrier tail lands corpus-untested
+(the renderer arm exists and compiles; a multitenant connection fixture belongs with slice 3's
+carrier work).
+
+**Tests and pins.** New pipeline pins on the connection row (ordering arm, page size, runtime
+refs, the run fact) and the reshaped boundary pins (the non-faceted connection flipped from
+dial-excluded to present; the faceted fixture pins the narrowed entry). The connection launcher
+is deliberately pinned by signature alone at the unit tier (its body is the largest this
+renderer emits, and body strings there would break on every later slice without asserting
+behaviour); the frozen SQL pin and the execution-tier connection suite carry the body.
+`ResultShape` registered as a command-kind hierarchy.
 
 ## Retired vocabulary
 

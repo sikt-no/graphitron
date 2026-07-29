@@ -1,6 +1,8 @@
 package no.sikt.graphitron.plan;
 
 import graphql.schema.FieldCoordinates;
+import no.sikt.graphitron.command.CarrierDsl;
+import no.sikt.graphitron.command.ConditionCommand;
 import no.sikt.graphitron.command.GlueCall;
 import no.sikt.graphitron.command.LauncherCommand;
 import no.sikt.graphitron.command.Ordering;
@@ -11,6 +13,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.TenantBinding;
+import no.sikt.graphitron.rewrite.model.TenantScopes;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -26,9 +29,11 @@ import java.util.List;
  *       single-table-interface roots are in; polymorphic, node, service and DML roots are out by
  *       the fact, with no exemption list anywhere).</li>
  *   <li>{@link NotYetMigrated}: the covered shapes whose launcher slices have not landed, each a
- *       named dial entry a later slice deletes. The closing slice empties the dial and lands the
- *       derived-fact-equals-key-set membership enforcer in the same commit, so the dial being
- *       empty <em>is</em> the migration being complete.</li>
+ *       named dial entry a later slice deletes; the dial's true-set shrinks monotonically (the
+ *       connection entry narrowed to its faceted half when the page-query slice landed). The
+ *       closing slice empties the dial and lands the derived-fact-equals-key-set membership
+ *       enforcer in the same commit, so the dial being empty <em>is</em> the migration being
+ *       complete.</li>
  * </ul>
  *
  * <p>The generator's dispatch does not restate this membership: it routes on row presence
@@ -39,17 +44,24 @@ import java.util.List;
  * reference into it: the producer copies the coordinate's glue ref and its env-appending answer
  * off the condition row (the cross-family handshake; the condition family owns WHERE production
  * wholesale), and a coordinate with no condition row gets an absent slot, from which the
- * renderer composes the neutral condition.
+ * renderer composes the neutral condition. Facetedness is read off the same row
+ * ({@code facets()} nonempty exactly when the coordinate is a faceted {@code @asConnection}),
+ * never re-derived from the schema.
  */
 public final class LauncherCommands {
 
     /**
      * The migration dial: covered shapes whose launcher emission has not yet moved onto the
-     * seam. Shrink-only; each entry names the slice that deletes it.
+     * seam. Shrink-only on its true-set; each entry names the slice that deletes it.
      */
     enum NotYetMigrated {
-        /** The connection root's seek/limit page query and carrier plan (connection slices). */
-        CONNECTION,
+        /**
+         * The faceted connection root, whose carrier binds the facet plan (the base and
+         * per-facet fragment refs plus decode specs) the {@code ResultShape.Connection} arm does
+         * not model yet; lands with the carrier-plan slice. The non-faceted connection half
+         * migrated with the page-query slice.
+         */
+        FACETED_CONNECTION,
         /** The tenant fan-out root, whose row lands together with the invocation-strategy slot. */
         FANNED_OVER_TENANTS,
         /** The {@code @routine} root's table-expression composition (tail slice). */
@@ -68,22 +80,29 @@ public final class LauncherCommands {
         var rows = new ArrayList<LauncherCommand>();
         for (var type : schema.types().values()) {
             for (var field : schema.fieldsOf(type.name())) {
-                if (coveredFamily(field) && dialEntryOf(schema, (QueryField) field) == null) {
-                    rows.add(row((QueryField.QueryTableField) field, conditions, units));
+                if (coveredFamily(field)
+                        && dialEntryOf(schema, conditions, (QueryField) field) == null) {
+                    var qtf = (QueryField.QueryTableField) field;
+                    rows.add(row(qtf, whereOf(qtf, conditions), units));
                 }
             }
         }
-        return new LauncherRelation(rows);
+        var carrierDsl = schema.tenantScopes() instanceof TenantScopes.Configured
+            ? CarrierDsl.ROUTED
+            : CarrierDsl.ENV_ACQUIRED;
+        return new LauncherRelation(rows, carrierDsl);
     }
 
     /**
      * Row production for a schema-free emission context (the unit-tier fetcher assemblies that
      * build model records by hand and never construct a {@link GraphitronSchema}). Mirrors what
      * {@link #produce} would mint given the fields' schema: no schema means no tenancy (the same
-     * fallback the DSL-declaration emitter takes), so no fan-out exclusion arises, and the WHERE
-     * ref derives from the field's own filters through the same naming formula the condition
-     * producer mints (the schema-free sibling of the relation copy; both ends read
-     * {@code GeneratedUnits}, so they cannot disagree).
+     * fallback the DSL-declaration emitter takes), so no fan-out exclusion arises and the
+     * carrier fact is {@link CarrierDsl#ENV_ACQUIRED}; the WHERE ref derives from the field's
+     * own filters through the same naming formula the condition producer mints (the schema-free
+     * sibling of the relation copy; both ends read {@code GeneratedUnits}, so they cannot
+     * disagree). Connection coordinates are excluded here: facetedness is a schema fact, so the
+     * schema-free tier keeps the legacy connection builder while it exists.
      */
     public static LauncherRelation produceWithoutSchema(List<? extends GraphitronField> fields,
             String outputPackage) {
@@ -95,7 +114,7 @@ public final class LauncherCommands {
                 rows.add(row(qtf, glueFromFilters(qtf, units), units));
             }
         }
-        return new LauncherRelation(rows);
+        return new LauncherRelation(rows, CarrierDsl.ENV_ACQUIRED);
     }
 
     private static GlueCall glueFromFilters(QueryField.QueryTableField qtf, GeneratedUnits units) {
@@ -139,11 +158,13 @@ public final class LauncherCommands {
      * the boundary pins assert the dial-excluded shapes appear zero times while their entries
      * exist.
      */
-    static NotYetMigrated dialEntryOf(GraphitronSchema schema, QueryField field) {
+    static NotYetMigrated dialEntryOf(GraphitronSchema schema, ConditionRelation conditions,
+            QueryField field) {
         return switch (field) {
             case QueryField.QueryTableField qtf -> {
-                if (qtf.returnType().wrapper() instanceof FieldWrapper.Connection) {
-                    yield NotYetMigrated.CONNECTION;
+                if (qtf.returnType().wrapper() instanceof FieldWrapper.Connection
+                        && conditionRowOf(qtf, conditions).map(r -> !r.facets().isEmpty()).orElse(false)) {
+                    yield NotYetMigrated.FACETED_CONNECTION;
                 }
                 if (schema.tenantBindingOf(qtf.parentTypeName(), qtf.name()) instanceof TenantBinding.FanOut) {
                     yield NotYetMigrated.FANNED_OVER_TENANTS;
@@ -158,21 +179,36 @@ public final class LauncherCommands {
         };
     }
 
-    private static LauncherCommand row(QueryField.QueryTableField qtf, ConditionRelation conditions,
-            GeneratedUnits units) {
-        return row(qtf, whereOf(qtf, conditions), units);
-    }
-
     private static LauncherCommand row(QueryField.QueryTableField qtf, GlueCall where, GeneratedUnits units) {
-        boolean isList = qtf.returnType().wrapper().isList();
         return new LauncherCommand(
             units.launcherMethod(qtf.parentTypeName(), qtf.name()),
             FieldCoordinates.coordinates(qtf.parentTypeName(), qtf.name()),
             qtf.returnType().table(),
             units.typeClass(qtf.returnType().returnTypeName()),
             where,
-            isList ? orderingOf(qtf, units) : null,
-            isList ? ResultShape.RECORD_LIST : ResultShape.SINGLE_RECORD);
+            resultShapeOf(qtf, units));
+    }
+
+    /**
+     * The payload shape, derived from the coordinate's wrapper: the connection arm carries the
+     * ordering (total there: pagination requires ordering, validator-enforced, and production
+     * backstops it), the default page size, and the connection runtime's unit refs copied off
+     * the naming vocabulary so the launcher's edges to them are data.
+     */
+    private static ResultShape resultShapeOf(QueryField.QueryTableField qtf, GeneratedUnits units) {
+        if (qtf.returnType().wrapper() instanceof FieldWrapper.Connection conn) {
+            var ordering = orderingOf(qtf, units);
+            if (ordering == null) {
+                throw new IllegalStateException(
+                    "connection coordinate '" + qtf.qualifiedName() + "' has no resolvable ordering;"
+                    + " the validator rejects pagination without ordering before production");
+            }
+            return new ResultShape.Connection(ordering, conn.defaultPageSize(),
+                units.connectionHelper(), units.connectionResult());
+        }
+        return qtf.returnType().wrapper().isList()
+            ? new ResultShape.RecordList(orderingOf(qtf, units))
+            : new ResultShape.SingleRecord();
     }
 
     /**
@@ -182,25 +218,30 @@ public final class LauncherCommands {
      * the coordinate has no row.
      */
     private static GlueCall whereOf(QueryField.QueryTableField qtf, ConditionRelation conditions) {
-        var coordinate = FieldCoordinates.coordinates(qtf.parentTypeName(), qtf.name());
-        return conditions.rows().stream()
-            .filter(r -> r.coordinate().equals(coordinate))
-            .findFirst()
+        return conditionRowOf(qtf, conditions)
             .map(r -> new GlueCall(r.glue(), r.readsRequestContext()))
             .orElse(null);
     }
 
+    private static java.util.Optional<ConditionCommand> conditionRowOf(
+            QueryField.QueryTableField qtf, ConditionRelation conditions) {
+        var coordinate = FieldCoordinates.coordinates(qtf.parentTypeName(), qtf.name());
+        return conditions.rows().stream()
+            .filter(r -> r.coordinate().equals(coordinate))
+            .findFirst();
+    }
+
     /**
-     * The ordering slot, from the model's resolved spec: a nonempty fixed order renders inline
+     * The ordering, from the model's resolved spec: a nonempty fixed order renders inline
      * ({@link Ordering.Columns}), an argument-driven order dispatches through the emitted helper
-     * whose ref is minted here ({@link Ordering.Helper}), and everything else (no spec, or a
-     * fixed spec with no columns) is unordered, an absent slot.
+     * whose refs are minted here ({@link Ordering.Helper}), and everything else (no spec, or a
+     * fixed spec with no columns) is unordered, an absent slot on the {@code RecordList} arm.
      */
     private static Ordering orderingOf(QueryField.QueryTableField qtf, GeneratedUnits units) {
         return switch (qtf.orderBy()) {
             case OrderBySpec.Fixed fixed when !fixed.columns().isEmpty() -> new Ordering.Columns(fixed);
-            case OrderBySpec.Argument ignored ->
-                new Ordering.Helper(units.orderByHelperMethod(qtf.parentTypeName(), qtf.name()));
+            case OrderBySpec.Argument ignored -> new Ordering.Helper(
+                units.orderByHelperMethod(qtf.parentTypeName(), qtf.name()), units.orderByResult());
             default -> null;
         };
     }
