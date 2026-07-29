@@ -312,7 +312,7 @@ public class GraphQLRewriteGenerator {
 
         var methodCommands = new MethodCommandRegistry();
         var fetcherClasses = TypeFetcherGenerator.generate(schema, assembled, outputPackage, methodCommands,
-            plan.launchers());
+            plan.launchers(), plan.typeUnits().fetchers());
         var fetcherBodies  = FetcherRegistrationsEmitter.emit(schema, outputPackage);
 
         EmissionLog emittedThisRun = new EmissionLog();
@@ -358,12 +358,20 @@ public class GraphQLRewriteGenerator {
                 .toList(),
             emittedThisRun);
 
+        // The type-unit relation's fetchers rows: one fold for the whole family (the hosting
+        // classifications and nested classes rendered above through the fetcher generator's
+        // per-row build, the connection pairs rendered per row here), landed at the committed
+        // refs under writeUnits' two-directional unit-set check.
+        var fetcherSpecs = new java.util.ArrayList<>(fetcherClasses);
+        plan.typeUnits().connectionFetchers().forEach(row ->
+            fetcherSpecs.addAll(ConnectionFetcherClassGenerator.generateFor(
+                (no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType) schema.type(row.typeName()),
+                outputPackage)));
+        writeUnits("fetchers", plan.typeUnits().fetchersUnits(), fetcherSpecs, emittedThisRun);
+
         write(EnumTypeGenerator.generate(schema),                                                 "schema",     emittedThisRun);
         write(InputTypeGenerator.generate(schema),                                                "schema",     emittedThisRun);
         write(ObjectTypeGenerator.generate(schema, assembled, fetcherBodies),                     "schema",     emittedThisRun);
-        write(fetcherClasses,                                                                      "fetchers",   emittedThisRun);
-        write(ConnectionFetcherClassGenerator.generate(schema, outputPackage),                     "fetchers",   emittedThisRun);
-        write(ErrorTypeFetcherClassGenerator.generate(schema, outputPackage),                      "fetchers",   emittedThisRun);
         emittedThisRun.add(SchemaSdlEmitter.emit(assembled, schema, federationLink, ctx.outputResourcesDirectory(), outputPackage));
         sweepOrphans(emittedThisRun.emitted);
         var result = new GenerationResult(

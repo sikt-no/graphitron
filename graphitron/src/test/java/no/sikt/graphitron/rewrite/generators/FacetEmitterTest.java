@@ -79,7 +79,10 @@ class FacetEmitterTest {
     }
 
     private static TypeSpec connectionFetchers(GraphitronSchema schema) {
-        return ConnectionFetcherClassGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+        return schema.types().values().stream()
+            .filter(t -> t instanceof no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType)
+            .map(t -> (no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType) t)
+            .flatMap(ct -> ConnectionFetcherClassGenerator.generateFor(ct, DEFAULT_OUTPUT_PACKAGE).stream())
             .filter(t -> t.name().equals("QueryFilmsConnectionFetchers"))
             .findFirst().orElseThrow();
     }

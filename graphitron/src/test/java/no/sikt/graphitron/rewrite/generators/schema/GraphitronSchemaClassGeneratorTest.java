@@ -699,11 +699,14 @@ class GraphitronSchemaClassGeneratorTest {
     /** Renders the reified {@code <typeName>Fetchers} class for an @error type.*/
     private static String errorFetcherSource(String sdl, String typeName) {
         var bundle = TestSchemaHelper.buildBundle(sdl);
-        return no.sikt.graphitron.rewrite.generators.util.ErrorTypeFetcherClassGenerator
-            .generate(bundle.model(), OUTPUT_PKG).stream()
-            .filter(t -> t.name().equals(typeName + "Fetchers"))
+        var errorType = bundle.model().types().values().stream()
+            .filter(t -> t instanceof no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType)
+            .map(t -> (no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType) t)
+            .filter(et -> et.name().equals(typeName))
             .findFirst()
-            .orElseThrow(() -> new AssertionError("no " + typeName + "Fetchers generated"))
+            .orElseThrow(() -> new AssertionError("no @error type '" + typeName + "' classified"));
+        return no.sikt.graphitron.rewrite.generators.util.ErrorTypeFetcherClassGenerator
+            .generateFor(errorType)
             .toString();
     }
 

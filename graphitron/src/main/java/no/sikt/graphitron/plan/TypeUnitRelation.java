@@ -40,4 +40,34 @@ public record TypeUnitRelation(List<TypeUnitCommand> rows) {
     public List<UnitRef> inputRecordUnits() {
         return inputRecords().stream().map(TypeUnitCommand.InputRecordUnit::unit).toList();
     }
+
+    /** The plain fetchers rows, in producer order. */
+    public List<TypeUnitCommand.FetchersUnit> fetchers() {
+        return rows.stream()
+            .filter(r -> r instanceof TypeUnitCommand.FetchersUnit)
+            .map(r -> (TypeUnitCommand.FetchersUnit) r)
+            .toList();
+    }
+
+    /** The connection fetchers-pair rows, in producer order. */
+    public List<TypeUnitCommand.ConnectionFetchersUnit> connectionFetchers() {
+        return rows.stream()
+            .filter(r -> r instanceof TypeUnitCommand.ConnectionFetchersUnit)
+            .map(r -> (TypeUnitCommand.ConnectionFetchersUnit) r)
+            .toList();
+    }
+
+    /**
+     * The fetchers family's committed refs (plain rows plus both refs of every connection
+     * pair), the write step's expected unit set for the one fetchers fold.
+     */
+    public List<UnitRef> fetchersUnits() {
+        var refs = new java.util.ArrayList<UnitRef>();
+        fetchers().forEach(r -> refs.add(r.unit()));
+        connectionFetchers().forEach(r -> {
+            refs.add(r.connection());
+            refs.add(r.edge());
+        });
+        return List.copyOf(refs);
+    }
 }

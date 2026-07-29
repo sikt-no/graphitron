@@ -37,18 +37,17 @@ public final class ErrorTypeFetcherClassGenerator {
 
     private ErrorTypeFetcherClassGenerator() {}
 
-    public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage) {
-        var out = new ArrayList<TypeSpec>();
-        schema.types().values().stream()
-            .filter(t -> t instanceof GraphitronType.ErrorType)
-            .map(t -> (GraphitronType.ErrorType) t)
-            .sorted(Comparator.comparing(GraphitronType.ErrorType::name))
-            .forEach(et -> out.add(TypeSpec.classBuilder(et.name() + "Fetchers")
-                .addModifiers(Modifier.PUBLIC)
-                .addMethod(pathMethod())
-                .addMethod(messageMethod())
-                .build()));
-        return out;
+    /**
+     * Renders one {@code @error} type's fetchers class; membership is the type-unit relation's
+     * fetchers row (the producer's {@code ErrorType} arm), this method builds the fixed method
+     * pair for the type the row names.
+     */
+    public static TypeSpec generateFor(GraphitronType.ErrorType et) {
+        return TypeSpec.classBuilder(et.name() + "Fetchers")
+            .addModifiers(Modifier.PUBLIC)
+            .addMethod(pathMethod())
+            .addMethod(messageMethod())
+            .build();
     }
 
     private static MethodSpec pathMethod() {

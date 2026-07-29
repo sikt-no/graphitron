@@ -279,6 +279,18 @@ public record GraphitronSchema(
     }
 
     /**
+     * The nesting/pivot reach fold ({@link NestingReach}): every type reached as a nesting or
+     * pivot projection from a table-backed root, with its one representative wiring. A pure
+     * whole-schema fold over this schema's own components (no stored index, the
+     * {@link #joinedTableReprojectionOf} precedent); its three consumers (the type-unit
+     * producer's fetchers membership, the fetcher generator's per-row nested build, the
+     * registrations emitter's nested bodies) read one representative order by construction.
+     */
+    public NestingReach nestingReach() {
+        return NestingReach.compute(this);
+    }
+
+    /**
      * The joined-table participants' field-residence split for a single-table discriminated
      * interface: the read surface of the {@link JoinedTableReprojection} fold, one formula for
      * the launcher producer and the legacy interface-reprojection call sites alike.

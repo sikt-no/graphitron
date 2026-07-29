@@ -33,4 +33,36 @@ public sealed interface TypeUnitCommand {
             Objects.requireNonNull(unit, "unit");
         }
     }
+
+    /**
+     * A {@code <Type>Fetchers} class: emitted for the fetcher-hosting classifications (table,
+     * node, root and producer-result types, unconditionally, including the coordinate-less
+     * empty class the retired loop emitted; {@code @error} types with their fixed method pair)
+     * and for every nesting/pivot-reached type that owns at least one classified coordinate
+     * (the schema's nesting-reach fold, whose one representative wiring also decides the
+     * emitted content). The key is the bare type name; the coarse grain for shared nested
+     * types is made safe by the nesting-parent compatibility validation, and its widening is
+     * recorded on the roadmap.
+     */
+    record FetchersUnit(String typeName, UnitRef unit) implements TypeUnitCommand {
+        public FetchersUnit {
+            Objects.requireNonNull(typeName, "typeName");
+            Objects.requireNonNull(unit, "unit");
+        }
+    }
+
+    /**
+     * A connection carrier's fetchers pair: the {@code <Conn>Fetchers} lazy-resolver class and
+     * the {@code <Edge>Fetchers} class, one row per {@code ConnectionType} with the two refs in
+     * named roles (the one row-to-unit fan-out in the relation that is not 1:1; a list would
+     * erase which ref is which).
+     */
+    record ConnectionFetchersUnit(String typeName, UnitRef connection, UnitRef edge)
+            implements TypeUnitCommand {
+        public ConnectionFetchersUnit {
+            Objects.requireNonNull(typeName, "typeName");
+            Objects.requireNonNull(connection, "connection");
+            Objects.requireNonNull(edge, "edge");
+        }
+    }
 }

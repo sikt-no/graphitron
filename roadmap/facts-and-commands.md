@@ -1152,6 +1152,41 @@ R541's single-operation launchers never need it, and a general launcher cannot d
     three families mint into one address space), so it lands whole; the fetchers key stays
     bare `typeName` with `validateNestingParentCompat` making the coarse grain safe, and
     R556's fix is a key widening on this relation.
+  - **Second kind landed: `fetchers`, whole** (the two-pass fetcher loop, the connection pair
+    generator, the error-type generator, all onto rows in one commit, per the
+    cannot-slice-by-family rule). The producer's fetchers arms: variant membership for the four
+    hosting classifications (unconditional, the empty class included, the retired asymmetry
+    now a stated decision on the arm's javadoc) and for `@error` types; the reach fold's
+    population minus the hosting names, gated on `NestingReach.ownsFetchers`; connection
+    carriers as the two-ref `ConnectionFetchersUnit` pair with named roles. The renderer
+    forks per row on the type's classification, with the nested build reading the reach
+    fold's one representative wiring. Two drift-repairs rode the fold: the registrations
+    emitter's nested bodies now read the same reach (its own walk was wider in two
+    corpus-unreachable ways: all parents rather than table-backed roots, and nested pivot
+    leaves; a divergent representative could have referenced methods the emitted class did
+    not carry), and a nested-reached name classifying as a non-hosting variant now key-collides
+    loudly in the relation where the retired loop silently emitted a same-named second class.
+    The dual-shape pairing index deliberately keeps its global-field-order walk (a
+    per-coordinate question, not membership), named in `NestingReach`'s javadoc. Ratchets:
+    entry points 20 to 18, generator instanceof 81 to 72, generator cases 77 to 75, plan leaf
+    references 55 to 61.
+  - **The fetchers kind's design, decided before its commit so it starts from here:** the
+    nesting/pivot-reach walk currently runs twice with two different first-occurrence orders
+    (`indexNestingByType` over global field order for the dual-shape pairing; pass 2's
+    sorted-anchor recursion for membership AND the content wiring, with the registrations
+    emitter's nested arm a third copy of the same reach). Relocating membership to the
+    producer while the generator re-derives content wiring would let the two walks pick
+    different representatives for a shared nested type and silently change generated bodies.
+    So the representative selection folds ONCE, as a nesting-reach index on the schema
+    (the `ArgumentReachableInputs` / joined-table-reprojection habitat): membership rows read
+    its key set (gated on `FetcherEmitter.nestedTypeOwnsFetchers`, whose gate moves with the
+    fold or is read by the producer), the generator reads its representative wiring per row,
+    and the registrations emitter's nested arm reads the same index. The index's
+    representative order is pass 2's today (sorted anchors, declaration-order fields,
+    depth-first), preserved exactly; the dual-shape pairing keeps its own global-field-order
+    index deliberately (a different question: which nesting arm pairs a mixed-source
+    coordinate, not which type owns a class), with the divergence named in the index javadoc
+    and on R556.
 
 ## The exemption lists are the grain worklist
 

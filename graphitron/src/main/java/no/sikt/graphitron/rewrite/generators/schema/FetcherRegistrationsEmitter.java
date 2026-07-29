@@ -78,17 +78,23 @@ public final class FetcherRegistrationsEmitter {
             .forEach(e -> typeBody(schema, e.getKey(), fetchersPackage, outputPackage, nestedTypeMap.get(e.getKey()))
                 .ifPresent(body -> result.put(e.getKey(), body)));
 
-        nestedTypeMap.values().forEach(ntw -> {
+        // Nested bodies follow the reach fold's representative selection, the same wiring the
+        // emitted <Type>Fetchers class was built from, so a registration cannot reference a
+        // method the class (built under a different anchor's representative) does not carry.
+        var reach = schema.nestingReach();
+        for (var nestedTypeName : reach.reachedTypeNames()) {
             // A nesting target that also classifies as a producer-backed result is a mixed-source type:
             // its ResultType body above already emitted every coordinate, dual-shape ones as a run-time
             // source-shape dispatch. Skip the nested-type body so the name-keyed put does not overwrite
             // the merged one.
-            if (schema.type(ntw.nestedTypeName()) instanceof GraphitronType.ResultType) {
-                return;
+            if (schema.type(nestedTypeName) instanceof GraphitronType.ResultType) {
+                continue;
             }
-            nestedBody(ntw, fetchersPackage, outputPackage)
-                .ifPresent(body -> result.put(ntw.nestedTypeName(), body));
-        });
+            var wiring = reach.wiringFor(nestedTypeName);
+            nestedBody(new NestedTypeWiring(nestedTypeName, wiring.nestedFields(),
+                    wiring.returnType().table()), fetchersPackage, outputPackage)
+                .ifPresent(body -> result.put(nestedTypeName, body));
+        }
 
         // Connection / Edge wiring is driven by the classifier's first-class type entries
         // (populated for both directive-driven and structural carriers). Iterate the type map

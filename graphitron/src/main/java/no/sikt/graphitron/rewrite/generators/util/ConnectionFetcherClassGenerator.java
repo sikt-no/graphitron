@@ -28,37 +28,33 @@ public final class ConnectionFetcherClassGenerator {
 
     private ConnectionFetcherClassGenerator() {}
 
-    public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage) {
+    /**
+     * Renders one connection carrier's fetchers pair (the connection class, then the edge
+     * class); membership is the type-unit relation's connection row, this method builds the
+     * two bodies for the type the row names.
+     */
+    public static List<TypeSpec> generateFor(GraphitronType.ConnectionType ct, String outputPackage) {
         var helper = ClassName.get(outputPackage + ".util", ConnectionHelperClassGenerator.CLASS_NAME);
-        var out = new ArrayList<TypeSpec>();
-        schema.types().values().stream()
-            .filter(t -> t instanceof GraphitronType.ConnectionType)
-            .map(t -> (GraphitronType.ConnectionType) t)
-            .sorted(Comparator.comparing(GraphitronType.ConnectionType::name))
-            .forEach(ct -> {
-                var conn = TypeSpec.classBuilder(ct.name() + "Fetchers")
-                    .addModifiers(Modifier.PUBLIC)
-                    .addMethod(delegate("edges", helper, "edges"))
-                    .addMethod(delegate("nodes", helper, "nodes"))
-                    .addMethod(delegate("pageInfo", helper, "pageInfo"));
-                // totalCount keeps its SDL-presence gate, matching FetcherRegistrationsEmitter.
-                if (ct.schemaType().getFieldDefinition("totalCount") != null) {
-                    conn.addMethod(delegate("totalCount", helper, "totalCount"));
-                }
-                // Facets delegate under the same has-facets gate as the registration emitter,
-                // so the code-registry reference and the method can never drift.
-                if (!ct.facets().isEmpty()) {
-                    conn.addMethod(facetsDelegate(helper, outputPackage));
-                }
-                out.add(conn.build());
-
-                out.add(TypeSpec.classBuilder(ct.edgeTypeName() + "Fetchers")
-                    .addModifiers(Modifier.PUBLIC)
-                    .addMethod(delegate("node", helper, "edgeNode"))
-                    .addMethod(delegate("cursor", helper, "edgeCursor"))
-                    .build());
-            });
-        return out;
+        var conn = TypeSpec.classBuilder(ct.name() + "Fetchers")
+            .addModifiers(Modifier.PUBLIC)
+            .addMethod(delegate("edges", helper, "edges"))
+            .addMethod(delegate("nodes", helper, "nodes"))
+            .addMethod(delegate("pageInfo", helper, "pageInfo"));
+        // totalCount keeps its SDL-presence gate, matching FetcherRegistrationsEmitter.
+        if (ct.schemaType().getFieldDefinition("totalCount") != null) {
+            conn.addMethod(delegate("totalCount", helper, "totalCount"));
+        }
+        // Facets delegate under the same has-facets gate as the registration emitter,
+        // so the code-registry reference and the method can never drift.
+        if (!ct.facets().isEmpty()) {
+            conn.addMethod(facetsDelegate(helper, outputPackage));
+        }
+        var edge = TypeSpec.classBuilder(ct.edgeTypeName() + "Fetchers")
+            .addModifiers(Modifier.PUBLIC)
+            .addMethod(delegate("node", helper, "edgeNode"))
+            .addMethod(delegate("cursor", helper, "edgeCursor"))
+            .build();
+        return List.of(conn.build(), edge);
     }
 
     private static MethodSpec delegate(String name, ClassName helper, String helperMethod) {

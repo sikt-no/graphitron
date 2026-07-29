@@ -50,4 +50,38 @@ class TypeUnitMembershipTest {
             .contains("FilmFilter", "NestedFilter")
             .doesNotContain("OrphanInput");
     }
+
+    @Test
+    void fetchers_hostingVariantsPlusReachFoldMinusHostingNames_andTheConnectionPair() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type FilmDetails { note: String @field(name: "title") }
+            type Film @table(name: "film") { title: String details: FilmDetails }
+            type Query { films: [Film!]! @asConnection @defaultOrder(primaryKey: true) }
+            """);
+
+        var relation = TypeUnitCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
+
+        // Forward: the hosting classifications (Query the root, Film the table) and the
+        // nesting-reached FilmDetails each have exactly one plain row at the fetchers address.
+        assertThat(relation.fetchers())
+            .extracting(TypeUnitCommand.FetchersUnit::typeName)
+            .contains("Query", "Film", "FilmDetails");
+        for (var row : relation.fetchers()) {
+            assertThat(row.unit().fqcn())
+                .isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".fetchers." + row.typeName() + "Fetchers");
+        }
+        // The nested membership reads the schema's reach fold, gated on owning a fetcher.
+        assertThat(schema.nestingReach().reachedTypeNames()).contains("FilmDetails");
+
+        // The connection pair: one row per synthesised carrier, its two refs in named roles.
+        assertThat(relation.connectionFetchers()).singleElement().satisfies(pair -> {
+            var ct = (no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType)
+                schema.type(pair.typeName());
+            assertThat(pair.connection().simpleName()).isEqualTo(ct.name() + "Fetchers");
+            assertThat(pair.edge().simpleName()).isEqualTo(ct.edgeTypeName() + "Fetchers");
+        });
+        // The family's write set is the plain refs plus both refs of every pair.
+        assertThat(relation.fetchersUnits())
+            .hasSize(relation.fetchers().size() + 2 * relation.connectionFetchers().size());
+    }
 }

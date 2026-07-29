@@ -121,7 +121,8 @@ public class TypeFetcherGenerator {
         return generate(schema, assembled, outputPackage,
             new no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry(),
             no.sikt.graphitron.plan.LauncherCommands.produce(schema,
-                no.sikt.graphitron.plan.ConditionCommands.produce(schema, outputPackage), outputPackage));
+                no.sikt.graphitron.plan.ConditionCommands.produce(schema, outputPackage), outputPackage),
+            no.sikt.graphitron.plan.TypeUnitCommands.produce(schema, outputPackage).fetchers());
     }
 
     /**
@@ -137,53 +138,49 @@ public class TypeFetcherGenerator {
      */
     public static List<TypeSpec> generate(GraphitronSchema schema, graphql.schema.GraphQLSchema assembled,
             String outputPackage, no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry commands,
-            no.sikt.graphitron.plan.LauncherRelation launchers) {
+            no.sikt.graphitron.plan.LauncherRelation launchers,
+            List<no.sikt.graphitron.command.TypeUnitCommand.FetchersUnit> rows) {
         // First-occurrence-wins index of the NestingField embedding each nesting-reached type, so a
-        // mixed-source type's ResultType TypeSpec (pass 1) can pair each dual-shape coordinate with its
+        // mixed-source type's ResultType TypeSpec can pair each dual-shape coordinate with its
         // nesting-arm column read. Built over the same schema.fields() iteration order
         // FetcherRegistrationsEmitter uses, so the reference site and the method site agree on the
-        // representative parent.
+        // representative parent. Deliberately a different order than the reach fold's (see
+        // NestingReach's javadoc): this index answers per-coordinate pairing, not membership.
         var nestingByType = new LinkedHashMap<String, ChildField.NestingField>();
         schema.fields().values().forEach(f -> indexNestingByType(f, nestingByType));
 
-        var result = new ArrayList<TypeSpec>(schema.types().entrySet().stream()
-            .filter(e -> e.getValue() instanceof GraphitronType.TableType
-                      || e.getValue() instanceof GraphitronType.NodeType
-                      || e.getValue() instanceof GraphitronType.RootType
-                      || e.getValue() instanceof GraphitronType.ResultType)
-            .map(Map.Entry::getKey)
-            .sorted()
-            .map(typeName -> generateForType(schema, typeName, assembled, outputPackage, commands,
-                nestingByType.get(typeName), launchers))
-            .toList());
-
-        // Walk NestingField descendants of TableBackedType roots; emit a narrow Fetchers class
-        // for each nested plain-object type that contains at least one BatchKeyField leaf.
-        // These types are absent from schema.types(), so they cannot reach the stream above.
-        //
-        // Seed the seen-set with every type name pass 1 already emitted a class for (the Table / Node
-        // / Root / Result types). A mixed-source type is a nesting target that also classifies as a
-        // ResultType, so pass 1 emitted its (dispatch-carrying) class; seeding here is the "merged view"
-        // that stops pass 2 emitting a second, same-named class that would overwrite it.
-        var seenNestedTypes = new java.util.LinkedHashSet<String>();
-        schema.types().forEach((name, t) -> {
-            if (t instanceof GraphitronType.TableType || t instanceof GraphitronType.NodeType
-                    || t instanceof GraphitronType.RootType || t instanceof GraphitronType.ResultType) {
-                seenNestedTypes.add(name);
+        // Membership is the row set (the type-unit relation's fetchers kind); this method
+        // renders one class per row, forking on the row's type classification: the
+        // fetcher-hosting variants keep the full dispatch build, @error types the fixed method
+        // pair, and an unclassified name is a nesting/pivot-reached type whose content comes
+        // from the reach fold's one representative wiring.
+        var reach = schema.nestingReach();
+        var result = new ArrayList<TypeSpec>(rows.size());
+        for (var row : rows) {
+            var type = schema.type(row.typeName());
+            if (type instanceof GraphitronType.TableType || type instanceof GraphitronType.NodeType
+                    || type instanceof GraphitronType.RootType || type instanceof GraphitronType.ResultType) {
+                result.add(generateForType(schema, row.typeName(), assembled, outputPackage, commands,
+                    nestingByType.get(row.typeName()), launchers));
+            } else if (type instanceof GraphitronType.ErrorType et) {
+                result.add(no.sikt.graphitron.rewrite.generators.util.ErrorTypeFetcherClassGenerator.generateFor(et));
+            } else {
+                var wiring = reach.wiringFor(row.typeName());
+                if (wiring == null) {
+                    throw new IllegalStateException(
+                        "Graphitron generator bug (fetchers fold): row for type '" + row.typeName()
+                        + "' names neither a fetcher-hosting classification nor a nesting-reached"
+                        + " type; the producer's membership and this renderer have drifted");
+                }
+                var nestedFields = wiring.nestedFields().stream()
+                    .map(f -> (GraphitronField) f)
+                    .sorted(Comparator.comparing(GraphitronField::name))
+                    .toList();
+                result.add(generateTypeSpec(row.typeName(), wiring.returnType().table(), null, nestedFields,
+                    assembled, outputPackage, null, commands, null,
+                    no.sikt.graphitron.plan.LauncherCommands.produceWithoutSchema(nestedFields, outputPackage)));
             }
-        });
-        schema.types().entrySet().stream()
-            .filter(e -> e.getValue() instanceof GraphitronType.TableBackedType)
-            .sorted(Map.Entry.comparingByKey())
-            .forEach(e -> schema.fieldsOf(e.getKey()).forEach(f -> {
-                if (f instanceof ChildField.NestingField nf) {
-                    collectNestedFetcherClasses(nf, seenNestedTypes, result, assembled, outputPackage, commands);
-                }
-                var pivotSpec = pivotSpecOf(f);
-                if (pivotSpec != null) {
-                    collectNestedFetcherClasses(pivotWiring(pivotSpec), seenNestedTypes, result, assembled, outputPackage, commands);
-                }
-            }));
+        }
         return result;
     }
 
@@ -206,49 +203,12 @@ public class TypeFetcherGenerator {
 
     /** The {@link no.sikt.graphitron.rewrite.model.PivotSpec} of a pivot leaf, else {@code null}. */
     private static no.sikt.graphitron.rewrite.model.PivotSpec pivotSpecOf(GraphitronField field) {
-        return switch (field) {
-            case ChildField.PivotField pf -> pf.spec();
-            case ChildField.BatchedPivotField bpf -> bpf.spec();
-            default -> null;
-        };
+        return no.sikt.graphitron.rewrite.NestingReach.pivotSpecOf(field);
     }
 
-    /**
-     * An emit-time wiring carrier for a pivot edge, in the shape the nested-type seams already
-     * consume ({@code returnTypeName} / {@code table} / {@code nestedFields}). Never registered in
-     * the model: it exists only so the pivot edge rides {@link #indexNestingByType} and
-     * {@link #collectNestedFetcherClasses} without forking those seams on a second wiring type.
-     */
+    /** See {@link no.sikt.graphitron.rewrite.NestingReach#pivotWiring}. */
     private static ChildField.NestingField pivotWiring(no.sikt.graphitron.rewrite.model.PivotSpec spec) {
-        return new ChildField.NestingField(spec.projectionTypeName(), spec.projectionTypeName(), null,
-            new ReturnTypeRef.TableBoundReturnType(spec.projectionTypeName(), spec.pivotTable(),
-                new FieldWrapper.Single(true)),
-            java.util.List.copyOf(spec.slots()));
-    }
-
-    private static void collectNestedFetcherClasses(ChildField.NestingField nf,
-            Set<String> seen, List<TypeSpec> out, graphql.schema.GraphQLSchema assembled, String outputPackage,
-            no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry commands) {
-        var nestedTypeName = nf.returnType().returnTypeName();
-        if (seen.add(nestedTypeName)) {
-            // A nested type that owns any fetcher gets a <Type>Fetchers class carrying every
-            // field's method (the method-backed ones the switch emits, plus the reads bind()
-            // reifies). The gate is shared with FetcherRegistrationsEmitter.nestedBody via
-            // FetcherEmitter.nestedTypeOwnsFetchers so the reference site and the emit site agree.
-            var nestedFields = nf.nestedFields().stream()
-                .map(f -> (GraphitronField) f)
-                .sorted(Comparator.comparing(GraphitronField::name))
-                .toList();
-            if (FetcherEmitter.nestedTypeOwnsFetchers(nestedFields)) {
-                out.add(generateTypeSpec(nestedTypeName, nf.returnType().table(), null, nestedFields, assembled, outputPackage, null, commands, null,
-                    no.sikt.graphitron.plan.LauncherCommands.produceWithoutSchema(nestedFields, outputPackage)));
-            }
-        }
-        for (var nested : nf.nestedFields()) {
-            if (nested instanceof ChildField.NestingField innerNf) {
-                collectNestedFetcherClasses(innerNf, seen, out, assembled, outputPackage, commands);
-            }
-        }
+        return no.sikt.graphitron.rewrite.NestingReach.pivotWiring(spec);
     }
 
     private static TypeSpec generateForType(GraphitronSchema schema, String typeName, graphql.schema.GraphQLSchema assembled, String outputPackage,

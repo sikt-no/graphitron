@@ -52,9 +52,11 @@ class CommandSeamRatchetTest {
      * entity conditions generator (the WHERE family's second and last model-taking emitter),
      * then 22 to 21 when the projection command retired the type-class generator, then 21 to
      * 20 when the type-unit relation's input-record rows retired the input-record generator's
-     * whole-population entry point (the per-row build method takes a type, not the model).
+     * whole-population entry point (the per-row build method takes a type, not the model), then
+     * 20 to 18 when the fetchers kind folded (the error-type and connection fetcher generators'
+     * loops became per-row builds).
      */
-    private static final int MODEL_TAKING_ENTRY_POINTS = 20;
+    private static final int MODEL_TAKING_ENTRY_POINTS = 18;
 
     /**
      * {@code instanceof} sites in {@code generators/} naming a leaf of the seven hierarchies.
@@ -63,9 +65,11 @@ class CommandSeamRatchetTest {
      * filter plumbing), then 97 to 83 when the projection command relocated the type-class
      * generator's and the four inline arm emitters' dispatch into the projection producer, then
      * 83 to 81 when the discriminated-interface assembly's residence-split reads moved into the
-     * schema's joined-table reprojection fold.
+     * schema's joined-table reprojection fold, then 81 to 72 when the fetchers kind folded (the
+     * two-pass membership loops' variant filters and the seen-seed moved into the type-unit
+     * producer, and the nesting-reach recursion into the schema's reach fold).
      */
-    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 81;
+    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 72;
 
     /**
      * {@code case} patterns in {@code generators/} naming a leaf of the seven hierarchies.
@@ -73,9 +77,11 @@ class CommandSeamRatchetTest {
      * participant dispatch), then 87 to 78 when the projection command relocated the retired
      * type-class generator's selection switch, then 78 to 77 when the input-record fold's
      * reach walk moved into the schema's argument-reachability fold (its InputType case went
-     * with it, to `rewrite/`, outside both scans).
+     * with it, to `rewrite/`, outside both scans), then 77 to 75 when the fetchers kind folded
+     * (the retired pivot-wiring helpers' PivotField/BatchedPivotField cases moved into the
+     * reach fold with the same relocation).
      */
-    private static final int GENERATOR_LEAF_CASE_PATTERNS = 77;
+    private static final int GENERATOR_LEAF_CASE_PATTERNS = 75;
 
     /**
      * Leaf references ({@code instanceof} plus {@code case}) inside {@code plan/}: the relocation
@@ -109,9 +115,12 @@ class CommandSeamRatchetTest {
      * fold closed the migration: the covered-family census and the dial classification (two
      * dozen restated permits) collapsed into the one membership-and-production switch
      * ({@link no.sikt.graphitron.plan.LauncherCommands}), whose totality with no default is the
-     * membership enforcer.
+     * membership enforcer. Raised to 61 when the type-unit producer
+     * ({@link no.sikt.graphitron.plan.TypeUnitCommands}) relocated the fetchers kind's variant
+     * membership (the four hosting classifications, the error and connection arms) out of the
+     * retired two-pass loops.
      */
-    private static final int PLAN_LEAF_REFERENCES = 55;
+    private static final int PLAN_LEAF_REFERENCES = 61;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide
