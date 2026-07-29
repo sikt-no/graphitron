@@ -26,6 +26,17 @@ public final class PathFragments {
     private PathFragments() {}
 
     /**
+     * The single synthesized alias for the pre-keyed lifted shape's target table: hop-less, so
+     * {@link #generateAliases} has no path to walk, and the alias is that scheme specialized to
+     * a one-node chain (first character lowercased plus index 0).
+     */
+    public static String liftedAlias(no.sikt.graphitron.rewrite.model.TableRef targetTable) {
+        String javaName = targetTable.tableClass().simpleName();
+        String basePrefix = javaName.isEmpty() ? "t" : javaName.substring(0, 1).toLowerCase();
+        return basePrefix + 0;
+    }
+
+    /**
      * Generates deterministic per-hop aliases from each step's target-table simple class name,
      * one alias per hop: first character lowercased + hop index ({@code "l0"} for
      * {@code Language}, {@code "c1"} for {@code Country} at index 1). When two hops in the same

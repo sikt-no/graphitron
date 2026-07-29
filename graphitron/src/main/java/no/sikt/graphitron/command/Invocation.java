@@ -18,4 +18,22 @@ public sealed interface Invocation {
 
     /** The entry point calls the launcher once; the composition runs against one delivery. */
     record Direct() implements Invocation {}
+
+    /**
+     * The DataLoader-batched delivery: the entry point registers a loader keyed by the
+     * coordinate's {@link no.sikt.graphitron.rewrite.model.SourceKey} and the launcher takes
+     * the batch's keys, joining them in as the parent-input VALUES derived table and scattering
+     * results back per key by the {@code __idx__} column (arm-entailed, constant for this
+     * delivery, so no extras slot carries it). {@code sourceKey} decides the keys parameter's
+     * element type and the VALUES cell extraction; {@code loader} decides the keys container
+     * ({@code List} positional vs {@code Set} mapped) and the entry point's dispatch, borrowed
+     * whole so the row and the loader wiring read one fact.
+     */
+    record Batched(no.sikt.graphitron.rewrite.model.SourceKey sourceKey,
+                   no.sikt.graphitron.rewrite.model.LoaderRegistration loader) implements Invocation {
+        public Batched {
+            java.util.Objects.requireNonNull(sourceKey, "sourceKey");
+            java.util.Objects.requireNonNull(loader, "loader");
+        }
+    }
 }

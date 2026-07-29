@@ -125,6 +125,17 @@ public final class GeneratedUnits {
     }
 
     /**
+     * {@code <Parent>Fetchers#rows<Field>}: a batched child coordinate's launcher unit, the
+     * DataLoader-backed rows method taking the batch keys. Same formula as the root launcher's
+     * scheme and deliberately a separate method: the two populations join the relation from
+     * different families, and the day one of them needs a different formula the fork happens
+     * here, in the one minting locus.
+     */
+    public UnitMethodRef rowsMethod(String parentTypeName, String fieldName) {
+        return new UnitMethodRef(fetchers(parentTypeName), "rows" + upperCamel(fieldName));
+    }
+
+    /**
      * {@code <Parent>Fetchers#lookup<Field>}: a keyed-lookup coordinate's launcher unit. The
      * emitted name predates the seam (the lookup root was the one root path that already
      * delegated to a named unit) and is kept as signed off on the launcher item, so the

@@ -543,7 +543,36 @@ public class TypeFetcherGenerator {
                     // source-shape fact gates the key lift and the record-arm prelude inside
                     // buildBatchedDataFetcher; the framing is shared.
                     builder.addMethod(buildBatchedDataFetcher(ctx, btf, btf.returnType(), btf.sourceKey(), btf.lift(), parentTable, resultType, sourceIsOutcome, outputPackage));
-                    builder.addMethod(SplitRowsMethodEmitter.buildForBatchedTable(ctx, btf, outputPackage));
+                    if (btf.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
+                        // The connection-wrapped batched child is the interim boundary (its
+                        // window envelope and ordering views fold next); it routes legacy
+                        // until its row exists, and the producer's membership states the same
+                        // boundary, so the two ends cannot drift silently.
+                        builder.addMethod(SplitRowsMethodEmitter.buildForBatchedTable(ctx, btf, outputPackage));
+                    } else {
+                        var batchedRow = launchers.rowFor(btf.parentTypeName(), btf.name())
+                            .orElseThrow(() -> new IllegalStateException(
+                                "Graphitron generator bug (batched child dispatch): coordinate '"
+                                + btf.qualifiedName() + "' has no launcher row;"
+                                + " the producer's membership and this dispatch have drifted"));
+                        // The command-mint seam still commits the reentry MethodCommand (the
+                        // closure oracle's input, retiring with the registry); the committed
+                        // name and the row's ref are one formula, drift-checked here.
+                        String minted = ctx.rowsDeclarationName(btf);
+                        if (!minted.equals(batchedRow.unit().methodName())) {
+                            throw new IllegalStateException(
+                                "Graphitron generator bug (batched child dispatch): the minted"
+                                + " reentry name '" + minted + "' and the row's ref '"
+                                + batchedRow.unit().methodName() + "' disagree for '"
+                                + btf.qualifiedName() + "'");
+                        }
+                        var dslDeclaration = batchedRow.tenancy()
+                                instanceof no.sikt.graphitron.command.TenantStrategy.Single
+                            ? TenantDslEmitter.resolve(ctx, btf, outputPackage).declaration()
+                            : no.sikt.graphitron.javapoet.CodeBlock.of("");
+                        builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
+                            .render(batchedRow, launchers.carrierDsl(), dslDeclaration));
+                    }
                 }
                 case ChildField.BatchedLookupTableField blf -> {
                     builder.addMethod(buildBatchedDataFetcher(ctx, blf, blf.returnType(), blf.sourceKey(), blf.lift(), parentTable, resultType, sourceIsOutcome, outputPackage));

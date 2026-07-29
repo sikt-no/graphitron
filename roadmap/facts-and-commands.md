@@ -1352,6 +1352,28 @@ R541's single-operation launchers never need it, and a general launcher cannot d
     child family is a deliberate edit to exactly one pair. Behaviour-neutral by construction
     and by pins: all sixteen SQL baselines (twelve root, the lookup, the three batched-child
     pins frozen in the 5a prep commit) held byte-identical.
+  - **5a second commit landed (2026-07-29): the `Batched` arm with its first rows.** The plain
+    batched child's list and single shapes fold into the relation: `Invocation.Batched` carries
+    the delivery facts borrowed whole (`SourceKey` deciding the keys element type and VALUES
+    cells, `LoaderRegistration` deciding container and dispatch; both dial entries), and
+    `LaunchSource.CorrelatedChain` carries the terminal table, the projection ref, the hop
+    chain and the `ParentCorrelation` (the same facts the inline child's projection wrap
+    reads). The renderer twin (`render/BatchedRowsFragments`, the
+    `DiscriminatedTableFragments` shape) reproduces the retired assembly over the
+    already-render-side fragments (`PathFragments` / `JoinFragments` / `ValuesJoinRowBuilder`;
+    the census found the join-path machinery had already relocated and the old emitter was
+    calling a shim; `liftedAlias`, the one shim-only method, moved home). The single-tenant
+    `dsl` declaration stays shell-side per-family argument assembly (the tenancy
+    binding's five-arm declaration form is classification-side emission), handed to the
+    renderer as a fragment; fanned tenancy binds `dsl` in the scatter lambda off the
+    `Fanned` arm's carrier ref, exercising the axis split's populated cell. The reentry
+    `MethodCommand` mint still commits (the closure oracle's input until 5e retires the
+    registry), with the minted name drift-checked against the row's ref. The interim boundary
+    is the connection-wrapped batched child (its window envelope and `Ordering` views fold in
+    the next commit); the producer's membership states it and the dispatch routes on row
+    presence, so the boundary is one readable fact. The `__idx__` scatter column is
+    arm-entailed as predicted; the two non-connection pins and the untouched connection pin
+    held byte-identical, and the batched pipeline and fetcher-source pins passed unchanged.
 
 ## The exemption lists are the grain worklist
 

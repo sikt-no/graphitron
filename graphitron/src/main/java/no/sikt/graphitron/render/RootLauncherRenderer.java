@@ -56,14 +56,28 @@ public final class RootLauncherRenderer {
 
     /** Renders one launcher method from its row and the run's carrier-routing fact. */
     public static MethodSpec render(LauncherCommand row, CarrierDsl carrierDsl) {
+        return render(row, carrierDsl, CodeBlock.of(""));
+    }
+
+    /**
+     * The batched overload: {@code batchedDslDeclaration} is the coordinate's single-tenant
+     * {@code dsl} declaration fragment, per-family argument assembly handed in by the shell
+     * (the tenancy binding's declaration form is classification-side emission the command must
+     * not hold). Ignored by every non-batched row.
+     */
+    public static MethodSpec render(LauncherCommand row, CarrierDsl carrierDsl,
+            CodeBlock batchedDslDeclaration) {
         var builder = MethodSpec.methodBuilder(row.unit().methodName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(valueTypeOf(row));
         // The parameter list is a derived view over (invocation, tenancy): a direct
         // single-tenant launcher takes the one resolved DSLContext its entry point acquired; a
         // fanned launcher takes none, its acquisition being plural and internal to the scatter
-        // carrier.
-        if (row.invocation() instanceof Invocation.Direct
+        // carrier; a batched launcher takes its keys, the dsl declared in the body (single) or
+        // bound by the scatter lambda (fanned).
+        if (row.invocation() instanceof Invocation.Batched batched) {
+            builder.addParameter(BatchedRowsFragments.keysType(batched), "keys");
+        } else if (row.invocation() instanceof Invocation.Direct
                 && row.tenancy() instanceof TenantStrategy.Single) {
             builder.addParameter(DSL_CONTEXT, "dsl");
         }
@@ -95,6 +109,8 @@ public final class RootLauncherRenderer {
                 }
             }
             case LaunchSource.RoutineChain chain -> builder.addCode(routineBody(row, chain));
+            case LaunchSource.CorrelatedChain chain ->
+                builder.addCode(BatchedRowsFragments.body(row, chain, batchedDslDeclaration));
             case LaunchSource.KeyedLookup lookup -> {
                 String tableLocal = TableLocal.name(lookup.table());
                 builder.addCode(TableLocal.declare(lookup.table()));
@@ -137,6 +153,9 @@ public final class RootLauncherRenderer {
      * emitter, so the two ends cannot disagree.
      */
     public static TypeName valueTypeOf(LauncherCommand row) {
+        if (row.invocation() instanceof Invocation.Batched) {
+            return BatchedRowsFragments.valueTypeOf(row);
+        }
         if (row.tenancy() instanceof TenantStrategy.Fanned) {
             return ParameterizedTypeName.get(LIST, ClassName.get(Object.class));
         }
@@ -396,7 +415,7 @@ public final class RootLauncherRenderer {
     }
 
     /** {@code <Owner>.<method>(<table>, env.getArguments()[, env])} for any glue reference. */
-    private static CodeBlock glueExpression(no.sikt.graphitron.command.GlueCall glue, String tableLocal) {
+    static CodeBlock glueExpression(no.sikt.graphitron.command.GlueCall glue, String tableLocal) {
         var call = CodeBlock.builder().add("$T.$L($L, env.getArguments()",
             className(glue.method().owner()), glue.method().methodName(), tableLocal);
         if (glue.takesEnv()) {

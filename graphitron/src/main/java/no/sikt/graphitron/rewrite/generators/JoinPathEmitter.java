@@ -45,9 +45,7 @@ public final class JoinPathEmitter {
      * (e.g. {@code "f0"} for {@code Film}).
      */
     public static String liftedAlias(TableRef targetTable) {
-        String javaName = targetTable.tableClass().simpleName();
-        String basePrefix = javaName.isEmpty() ? "t" : javaName.substring(0, 1).toLowerCase();
-        return basePrefix + 0;
+        return PathFragments.liftedAlias(targetTable);
     }
 
     /** See {@link PathFragments#emitTableExpression}. */

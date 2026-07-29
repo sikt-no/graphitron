@@ -86,7 +86,13 @@ class PackageImportDirectionTest {
         "no.sikt.graphitron.rewrite.model.OrderBySpec",
         "no.sikt.graphitron.rewrite.model.LookupMapping",
         "no.sikt.graphitron.rewrite.model.FacetSpec",
-        "no.sikt.graphitron.rewrite.model.ParticipantRef"
+        "no.sikt.graphitron.rewrite.model.ParticipantRef",
+        // The batched child's delivery facts, borrowed whole so the row and the loader wiring
+        // read one fact: SourceKey (key columns, wrap, element type) and LoaderRegistration
+        // (container and dispatch). Both were already in the component closure via
+        // ParentCorrelation; naming them here admits the direct import the Batched arm carries.
+        "no.sikt.graphitron.rewrite.model.SourceKey",
+        "no.sikt.graphitron.rewrite.model.LoaderRegistration"
     );
 
     /**

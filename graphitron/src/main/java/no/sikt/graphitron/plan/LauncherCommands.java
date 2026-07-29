@@ -61,6 +61,15 @@ public final class LauncherCommands {
                         rows.add(row);
                     }
                 }
+                // The child family's first population: the plain batched child. The
+                // connection-wrapped batched child is the interim boundary (its window
+                // envelope and ordering views fold next); the fetcher dispatch routes on row
+                // presence, so the boundary is readable there, not restated.
+                if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField btf
+                        && !(btf.returnType().wrapper()
+                            instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection)) {
+                    rows.add(batchedRow(btf, schema, conditions, units));
+                }
             }
         }
         var carrierDsl = schema.tenantScopes() instanceof TenantScopes.Configured
@@ -130,6 +139,12 @@ public final class LauncherCommands {
             } else if (field instanceof QueryField.QueryLookupTableField qlf) {
                 rows.add(lookupRow(qlf,
                     glueFromFilters(qlf.parentTypeName(), qlf.name(), qlf.filters(), units), units));
+            } else if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField btf
+                    && !(btf.returnType().wrapper()
+                        instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection)) {
+                rows.add(batchedRow(btf,
+                    glueFromFilters(btf.parentTypeName(), btf.name(), btf.filters(), units),
+                    new TenantStrategy.Single(), units));
             }
         }
         return new LauncherRelation(rows, CarrierDsl.ENV_ACQUIRED);
@@ -278,9 +293,46 @@ public final class LauncherCommands {
      */
     private static TenantStrategy tenancyOf(GraphitronSchema schema, QueryField.QueryTableField qtf,
             GeneratedUnits units) {
-        return schema.tenantBindingOf(qtf.parentTypeName(), qtf.name()) instanceof TenantBinding.FanOut
+        return tenancyOf(schema, qtf.parentTypeName(), qtf.name(), units);
+    }
+
+    private static TenantStrategy tenancyOf(GraphitronSchema schema, String parentTypeName,
+            String fieldName, GeneratedUnits units) {
+        return schema.tenantBindingOf(parentTypeName, fieldName) instanceof TenantBinding.FanOut
             ? new TenantStrategy.Fanned(units.tenantConnections())
             : new TenantStrategy.Single();
+    }
+
+    /**
+     * A plain batched child's row: the source arm borrows the coordinate's correlation and hop
+     * chain whole (the same facts the inline child's projection wrap reads), the delivery arm
+     * carries the key and loader facts the entry point's registration reads, and the result
+     * shape follows the per-key cardinality fact. The WHERE handshake is the root family's:
+     * glue copied off the condition relation by coordinate; the per-hop filters ride the source
+     * arm's hops and stay join-path content.
+     */
+    private static LauncherCommand batchedRow(
+            no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField btf,
+            GraphitronSchema schema, ConditionRelation conditions, GeneratedUnits units) {
+        return batchedRow(btf, whereOf(btf.parentTypeName(), btf.name(), conditions),
+            tenancyOf(schema, btf.parentTypeName(), btf.name(), units), units);
+    }
+
+    private static LauncherCommand batchedRow(
+            no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField btf,
+            GlueCall where, TenantStrategy tenancy, GeneratedUnits units) {
+        return new LauncherCommand(
+            units.rowsMethod(btf.parentTypeName(), btf.name()),
+            FieldCoordinates.coordinates(btf.parentTypeName(), btf.name()),
+            new LaunchSource.CorrelatedChain(btf.returnType().table(),
+                units.typeClass(btf.returnType().returnTypeName()),
+                btf.joinPath(), btf.parentCorrelation()),
+            where,
+            new Invocation.Batched(btf.sourceKey(), btf.loaderRegistration()),
+            tenancy,
+            btf.emitsSingleRecordPerKey()
+                ? new ResultShape.SingleRecord()
+                : new ResultShape.RecordList(null));
     }
 
     /**

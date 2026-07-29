@@ -49,6 +49,26 @@ public sealed interface LaunchSource {
     }
 
     /**
+     * A batched child's sourcing: the composition anchors on the parent-input VALUES derived
+     * table (the batch keys, built by the delivery arm's key facts), attaches the chain's first
+     * hop per {@link #correlation}'s arm, joins the remaining {@link #joinPath} hops forward,
+     * and projects the <em>terminal</em> table through {@link #projection}'s {@code $project}.
+     * The correlation and the hop list are borrowed whole (the correlation's four arms decide
+     * the step-0 attach and the parent-side columns; each hop's {@code On} decides its own
+     * join form), so the renderer reads the same facts the inline child's projection wrap
+     * reads, one derivation per fact.
+     */
+    record CorrelatedChain(TableRef table, UnitRef projection, List<JoinStep> joinPath,
+            no.sikt.graphitron.rewrite.model.ParentCorrelation correlation) implements LaunchSource {
+        public CorrelatedChain {
+            Objects.requireNonNull(table, "table");
+            Objects.requireNonNull(projection, "projection");
+            joinPath = List.copyOf(joinPath);
+            Objects.requireNonNull(correlation, "correlation");
+        }
+    }
+
+    /**
      * A {@code @lookupKey} root: the anchor {@link #table} joined to the input VALUES derived
      * table over the mapping's key columns, projected through the one {@link #projection} unit's
      * {@code $project}. The key arguments ride {@link #mapping}'s VALUES rows (built by the
