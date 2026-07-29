@@ -2,6 +2,7 @@ package no.sikt.graphitron.render;
 
 import no.sikt.graphitron.command.CarrierDsl;
 import no.sikt.graphitron.command.Invocation;
+import no.sikt.graphitron.command.TenantStrategy;
 import no.sikt.graphitron.command.LaunchSource;
 import no.sikt.graphitron.command.LauncherCommand;
 import no.sikt.graphitron.command.Ordering;
@@ -58,10 +59,12 @@ public final class RootLauncherRenderer {
         var builder = MethodSpec.methodBuilder(row.unit().methodName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(valueTypeOf(row));
-        // The parameter list is a projection of the invocation arm: a direct launcher takes the
-        // one resolved DSLContext its entry point acquired; a fanned launcher takes none, its
-        // acquisition being plural and internal to the scatter carrier.
-        if (row.invocation() instanceof Invocation.Direct) {
+        // The parameter list is a derived view over (invocation, tenancy): a direct
+        // single-tenant launcher takes the one resolved DSLContext its entry point acquired; a
+        // fanned launcher takes none, its acquisition being plural and internal to the scatter
+        // carrier.
+        if (row.invocation() instanceof Invocation.Direct
+                && row.tenancy() instanceof TenantStrategy.Single) {
             builder.addParameter(DSL_CONTEXT, "dsl");
         }
         builder.addParameter(ENV, "env");
@@ -71,8 +74,8 @@ public final class RootLauncherRenderer {
                 String tableLocal = TableLocal.name(anchor.table());
                 builder.addCode(TableLocal.declare(anchor.table()));
                 builder.addCode(conditionStatement(row, tableLocal));
-                switch (row.invocation()) {
-                    case Invocation.Direct ignored -> {
+                switch (row.tenancy()) {
+                    case TenantStrategy.Single ignored -> {
                         switch (row.result()) {
                             case ResultShape.SingleRecord ignored2 -> builder.addCode(
                                 directReturn(selectChain(anchor, tableLocal, false, false)));
@@ -87,7 +90,7 @@ public final class RootLauncherRenderer {
                                 builder.addCode(connectionBody(anchor, connection, tableLocal, carrierDsl));
                         }
                     }
-                    case Invocation.FannedOverTenants fanned ->
+                    case TenantStrategy.Fanned fanned ->
                         builder.addCode(fannedBody(anchor, row, fanned, tableLocal));
                 }
             }
@@ -127,14 +130,14 @@ public final class RootLauncherRenderer {
     }
 
     /**
-     * The launcher's rendered payload, a derived view over {@code (invocation, result)}: the
-     * fanned strategy returns the scatter's marker-bearing transport ({@code List<Object>},
+     * The launcher's rendered payload, a derived view over {@code (invocation, tenancy,
+     * result)}: the fanned strategy returns the scatter's marker-bearing transport ({@code List<Object>},
      * entailed by the strategy, collapsed by the entry point), everything else the shape's own
      * type (the connection arm's is its carrier ref). Read by this renderer and the entry-point
      * emitter, so the two ends cannot disagree.
      */
     public static TypeName valueTypeOf(LauncherCommand row) {
-        if (row.invocation() instanceof Invocation.FannedOverTenants) {
+        if (row.tenancy() instanceof TenantStrategy.Fanned) {
             return ParameterizedTypeName.get(LIST, ClassName.get(Object.class));
         }
         return switch (row.result()) {
@@ -209,7 +212,7 @@ public final class RootLauncherRenderer {
      * state by construction; the entry point collapses the returned outcome list.
      */
     private static CodeBlock fannedBody(LaunchSource.AnchorTable anchor, LauncherCommand row,
-            Invocation.FannedOverTenants fanned, String tableLocal) {
+            TenantStrategy.Fanned fanned, String tableLocal) {
         var list = (ResultShape.RecordList) row.result();
         var code = CodeBlock.builder();
         boolean ordered = list.ordering() != null;

@@ -197,6 +197,7 @@ class HierarchyKindRegistryTest {
         Map.entry(no.sikt.graphitron.command.Ordering.class, HierarchyKind.COMMAND),
         Map.entry(no.sikt.graphitron.command.ResultShape.class, HierarchyKind.COMMAND),
         Map.entry(no.sikt.graphitron.command.Invocation.class, HierarchyKind.COMMAND),
+        Map.entry(no.sikt.graphitron.command.TenantStrategy.class, HierarchyKind.COMMAND),
         Map.entry(no.sikt.graphitron.command.LaunchSource.class, HierarchyKind.COMMAND),
         Map.entry(no.sikt.graphitron.command.TypeUnitCommand.class, HierarchyKind.COMMAND),
         Map.entry(Operation.class, HierarchyKind.COMMAND),

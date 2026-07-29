@@ -971,13 +971,13 @@ public class TypeFetcherGenerator {
             .addParameter(ENV, "env");
 
         builder.beginControlFlow("try");
-        // The one invocation fork in the entry point, reading the row's strategy arm: the fanned
+        // The one tenancy fork in the entry point, reading the row's strategy arm: the fanned
         // strategy owns its plural acquisition (no dsl declaration, no localContext tail; the
         // scatter carrier hands each element its tenant) and collapses the outcome list, where
-        // the direct strategy acquires one DSLContext and wraps the payload. TenantDslEmitter's
-        // FanOut invariant throw is this fork's build-time enforcer: routing a fanned coordinate
-        // through the direct arm fails generation loudly.
-        if (row.invocation() instanceof no.sikt.graphitron.command.Invocation.FannedOverTenants fanned) {
+        // the single-tenant strategy acquires one DSLContext and wraps the payload.
+        // TenantDslEmitter's FanOut invariant throw is this fork's build-time enforcer: routing
+        // a fanned coordinate through the single-tenant arm fails generation loudly.
+        if (row.tenancy() instanceof no.sikt.graphitron.command.TenantStrategy.Fanned fanned) {
             var tenantConnections = ClassName.get(fanned.carrier().packageName(), fanned.carrier().simpleName());
             builder.addStatement("return $T.collapseFanOut(env, $T.$L(env))",
                 tenantConnections, launcherClass, row.unit().methodName());

@@ -162,7 +162,7 @@ class LauncherCommandsPipelineTest {
         // The fanned coordinate mints a row (no dial entry left for it); its strategy arm
         // carries the scatter carrier's ref, and the run's carrier fact is ROUTED.
         var fanned = relation.rowFor("Query", "films").orElseThrow();
-        var carrier = (no.sikt.graphitron.command.Invocation.FannedOverTenants) fanned.invocation();
+        var carrier = (no.sikt.graphitron.command.TenantStrategy.Fanned) fanned.tenancy();
         assertThat(carrier.carrier().fqcn())
             .isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".schema.TenantConnections");
         assertThat(fanned.result()).isInstanceOf(ResultShape.RecordList.class);

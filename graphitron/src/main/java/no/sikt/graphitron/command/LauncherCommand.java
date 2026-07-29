@@ -26,10 +26,11 @@ import java.util.Objects;
  * {@link LaunchSource}); its projection refs are the first cross-command edges, the units whose
  * {@code $project} supplies the select list.
  *
- * <p>{@link #invocation} is the strategy axis (see {@link Invocation}); the rendered payload is
- * a derived view over {@code (invocation, result)}, not a slot of its own, since the fanned
- * strategy's marker-bearing transport ({@code List<Object>} between the scatter and its
- * collapse) is entailed by the strategy and has no business as a command fact.
+ * <p>{@link #invocation} is the delivery axis (see {@link Invocation}) and {@link #tenancy}
+ * the tenancy axis (see {@link TenantStrategy}), independent by measurement; the rendered
+ * payload is a derived view over {@code (invocation, tenancy, result)}, not a slot of its own,
+ * since the fanned strategy's marker-bearing transport ({@code List<Object>} between the
+ * scatter and its collapse) is entailed by the strategy and has no business as a command fact.
  */
 public record LauncherCommand(
     UnitMethodRef unit,
@@ -37,6 +38,7 @@ public record LauncherCommand(
     LaunchSource source,
     GlueCall where,
     Invocation invocation,
+    TenantStrategy tenancy,
     ResultShape result
 ) {
 
@@ -45,40 +47,44 @@ public record LauncherCommand(
         Objects.requireNonNull(coordinate, "a launcher row is keyed by its field coordinate");
         Objects.requireNonNull(source, "every launcher states how its rows are sourced and projected");
         Objects.requireNonNull(invocation, "invocation");
+        Objects.requireNonNull(tenancy, "tenancy");
         Objects.requireNonNull(result, "result");
         // Cross-axis backstops, not the enforcers; each mirrors a parse-boundary rejection and
         // keeps the pair unrepresentable if that check is ever relaxed without an audit here.
+        // Each backstop is stated per axis pair (source-by-tenancy, source-by-result), never
+        // per position in the tree, so relaxing one axis for a family is a deliberate edit to
+        // exactly one pair.
         // Fanned implies record list: the @tenantFanOut rejection ladder
         // (no.sikt.graphitron.rewrite.TenantBindingIndex) rejects non-list and @asConnection
         // shapes on a fan-out coordinate.
-        if (invocation instanceof Invocation.FannedOverTenants && !(result instanceof ResultShape.RecordList)) {
+        if (tenancy instanceof TenantStrategy.Fanned && !(result instanceof ResultShape.RecordList)) {
             throw new IllegalArgumentException(
                 "a fanned launcher's composition is a record list by classification; got "
                 + result.getClass().getSimpleName());
         }
-        // A routine chain is invoked directly and never paginates: the classifier's routine
+        // A routine chain runs single-tenant and never paginates: the classifier's routine
         // verdict (FieldBuilder's routine chain rules) rejects @asConnection on the chain, and
         // no fanned routine emission exists (the legacy path failed generation on the pair).
         if (source instanceof LaunchSource.RoutineChain) {
-            if (!(invocation instanceof Invocation.Direct)) {
+            if (!(tenancy instanceof TenantStrategy.Single)) {
                 throw new IllegalArgumentException(
-                    "a routine-chain launcher is invoked directly; got "
-                    + invocation.getClass().getSimpleName());
+                    "a routine-chain launcher runs single-tenant; got "
+                    + tenancy.getClass().getSimpleName());
             }
             if (result instanceof ResultShape.Connection) {
                 throw new IllegalArgumentException(
                     "a routine-chain launcher never paginates; the classifier rejects @asConnection on the chain");
             }
         }
-        // A discriminated interface is invoked directly and never paginates: the fan-out ladder
+        // A discriminated interface runs single-tenant and never paginates: the fan-out ladder
         // rejects @tenantFanOut on interface-typed fields, and the classifier defers
         // @asConnection on the single-table-interface root (no paginating emission exists for
         // the participant-driven select list).
         if (source instanceof LaunchSource.DiscriminatedTable) {
-            if (!(invocation instanceof Invocation.Direct)) {
+            if (!(tenancy instanceof TenantStrategy.Single)) {
                 throw new IllegalArgumentException(
-                    "a discriminated-interface launcher is invoked directly; got "
-                    + invocation.getClass().getSimpleName());
+                    "a discriminated-interface launcher runs single-tenant; got "
+                    + tenancy.getClass().getSimpleName());
             }
             if (result instanceof ResultShape.Connection) {
                 throw new IllegalArgumentException(
@@ -86,14 +92,14 @@ public record LauncherCommand(
                     + " @asConnection on the single-table-interface root");
             }
         }
-        // A keyed lookup is invoked directly and never paginates: the fan-out ladder rejects
+        // A keyed lookup runs single-tenant and never paginates: the fan-out ladder rejects
         // @tenantFanOut with @lookupKey (fanning breaks one-row-per-key), and the classifier
         // rejects the connection return ("lookup fields must not return a connection").
         if (source instanceof LaunchSource.KeyedLookup) {
-            if (!(invocation instanceof Invocation.Direct)) {
+            if (!(tenancy instanceof TenantStrategy.Single)) {
                 throw new IllegalArgumentException(
-                    "a keyed-lookup launcher is invoked directly; got "
-                    + invocation.getClass().getSimpleName());
+                    "a keyed-lookup launcher runs single-tenant; got "
+                    + tenancy.getClass().getSimpleName());
             }
             if (result instanceof ResultShape.Connection) {
                 throw new IllegalArgumentException(

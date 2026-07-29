@@ -6,6 +6,7 @@ import no.sikt.graphitron.command.ConditionCommand;
 import no.sikt.graphitron.command.FacetPlan;
 import no.sikt.graphitron.command.GlueCall;
 import no.sikt.graphitron.command.Invocation;
+import no.sikt.graphitron.command.TenantStrategy;
 import no.sikt.graphitron.command.LaunchSource;
 import no.sikt.graphitron.command.LauncherCommand;
 import no.sikt.graphitron.command.Ordering;
@@ -80,7 +81,7 @@ public final class LauncherCommands {
         return switch (field) {
             case QueryField.QueryTableField qtf -> row(qtf, whereOf(qtf, conditions), units,
                 facetPlanOf(schema, qtf, conditions, units),
-                invocationOf(schema, qtf, units));
+                tenancyOf(schema, qtf, units));
             case QueryField.QueryRoutineTableField qrtf -> routineRow(qrtf, units);
             case QueryField.QueryTableInterfaceField qtif -> interfaceRow(qtif,
                 schema.joinedTableReprojectionOf(qtif.returnType().returnTypeName()),
@@ -117,7 +118,7 @@ public final class LauncherCommands {
         var rows = new ArrayList<LauncherCommand>();
         for (var field : fields) {
             if (field instanceof QueryField.QueryTableField qtf) {
-                rows.add(row(qtf, glueFromFilters(qtf, units), units, null, new Invocation.Direct()));
+                rows.add(row(qtf, glueFromFilters(qtf, units), units, null, new TenantStrategy.Single()));
             } else if (field instanceof QueryField.QueryRoutineTableField qrtf) {
                 rows.add(routineRow(qrtf, units));
             } else if (field instanceof QueryField.QueryTableInterfaceField qtif) {
@@ -172,18 +173,20 @@ public final class LauncherCommands {
                 units.inputRowsMethod(owner, qlf.name())),
             where,
             new Invocation.Direct(),
+            new TenantStrategy.Single(),
             new ResultShape.RecordList(null));
     }
 
     private static LauncherCommand row(QueryField.QueryTableField qtf, GlueCall where, GeneratedUnits units,
-            FacetPlan facets, Invocation invocation) {
+            FacetPlan facets, TenantStrategy tenancy) {
         return new LauncherCommand(
             units.launcherMethod(qtf.parentTypeName(), qtf.name()),
             FieldCoordinates.coordinates(qtf.parentTypeName(), qtf.name()),
             new LaunchSource.AnchorTable(qtf.returnType().table(),
                 units.typeClass(qtf.returnType().returnTypeName())),
             where,
-            invocation,
+            new Invocation.Direct(),
+            tenancy,
             resultShapeOf(qtf, units, facets));
     }
 
@@ -205,6 +208,7 @@ public final class LauncherCommands {
                 units.typeClass(qrtf.returnType().returnTypeName())),
             null,
             new Invocation.Direct(),
+            new TenantStrategy.Single(),
             qrtf.returnType().wrapper().isList()
                 ? new ResultShape.RecordList(null)
                 : new ResultShape.SingleRecord());
@@ -214,7 +218,7 @@ public final class LauncherCommands {
      * A single-table discriminated interface row: the source arm carries the base table, the
      * source-entailed discriminator restriction, the whole-query base slice (copied off the
      * schema's joined-table reprojection fold) and the per-participant branches. Always
-     * {@link Invocation.Direct}: the fan-out ladder rejects {@code @tenantFanOut} on
+     * single-tenant: the fan-out ladder rejects {@code @tenantFanOut} on
      * interface-typed fields. Never {@link ResultShape.Connection}: the classifier defers
      * {@code @asConnection} on this root, and the command backstop mirrors both.
      */
@@ -230,6 +234,7 @@ public final class LauncherCommands {
                 discriminatedBranches(qtif.participants(), reprojection, units)),
             where,
             new Invocation.Direct(),
+            new TenantStrategy.Single(),
             qtif.returnType().wrapper().isList()
                 ? new ResultShape.RecordList(orderingOf(qtif.orderBy(), qtif.parentTypeName(),
                     qtif.name(), units))
@@ -266,16 +271,16 @@ public final class LauncherCommands {
     }
 
     /**
-     * The invocation strategy, from the coordinate's tenancy binding: a fan-out coordinate runs
+     * The tenancy strategy, from the coordinate's tenancy binding: a fan-out coordinate runs
      * the composition once per domain tenant through the scatter carrier (whose ref rides the
-     * arm), everything else is one direct call. This is the one home of the fan-out fact for the
+     * arm), everything else is single-tenant. This is the one home of the fan-out fact for the
      * root family; the generator's dispatch and entry point read the arm, never the binding.
      */
-    private static Invocation invocationOf(GraphitronSchema schema, QueryField.QueryTableField qtf,
+    private static TenantStrategy tenancyOf(GraphitronSchema schema, QueryField.QueryTableField qtf,
             GeneratedUnits units) {
         return schema.tenantBindingOf(qtf.parentTypeName(), qtf.name()) instanceof TenantBinding.FanOut
-            ? new Invocation.FannedOverTenants(units.tenantConnections())
-            : new Invocation.Direct();
+            ? new TenantStrategy.Fanned(units.tenantConnections())
+            : new TenantStrategy.Single();
     }
 
     /**

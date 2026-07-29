@@ -1342,6 +1342,16 @@ R541's single-operation launchers never need it, and a general launcher cannot d
     `DmlReturnExpression`'s kind-by-cardinality product; `MethodCommandRegistry` empties here
     and `ReentryCommandClosureTest` repoints at the relation); 5f the entry points, or the
     recorded decision that they stay formula-derived.
+  - **5a first commit landed (2026-07-29): the axis split.** Tenancy left `Invocation`:
+    `TenantStrategy` (`Single` / `Fanned(carrier)`) is its own command axis beside the delivery
+    axis (`Invocation`, currently `Direct` alone; `Batched` arrives with its first row per the
+    non-vacuity rule). The fanned root re-expressed as `Direct` delivery with `Fanned` tenancy;
+    the parameter list and rendered payload became derived views over (invocation, tenancy,
+    result); the cross-axis backstops restated per axis pair (source-by-tenancy,
+    source-by-result) with the mirrored rejections unchanged, so relaxing one axis for the
+    child family is a deliberate edit to exactly one pair. Behaviour-neutral by construction
+    and by pins: all sixteen SQL baselines (twelve root, the lookup, the three batched-child
+    pins frozen in the 5a prep commit) held byte-identical.
 
 ## The exemption lists are the grain worklist
 

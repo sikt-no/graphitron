@@ -4,6 +4,7 @@ import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.command.CarrierDsl;
 import no.sikt.graphitron.command.GlueCall;
 import no.sikt.graphitron.command.Invocation;
+import no.sikt.graphitron.command.TenantStrategy;
 import no.sikt.graphitron.command.LaunchSource;
 import no.sikt.graphitron.command.LauncherCommand;
 import no.sikt.graphitron.command.Ordering;
@@ -37,17 +38,17 @@ class RootLauncherRendererTest {
     private static final GeneratedUnits UNITS = new GeneratedUnits(DEFAULT_OUTPUT_PACKAGE);
 
     private static LauncherCommand filmsRow(GlueCall where, ResultShape result) {
-        return filmsRow(where, new Invocation.Direct(), result);
+        return filmsRow(where, new TenantStrategy.Single(), result);
     }
 
-    private static LauncherCommand filmsRow(GlueCall where, Invocation invocation, ResultShape result) {
+    private static LauncherCommand filmsRow(GlueCall where, TenantStrategy tenancy, ResultShape result) {
         return new LauncherCommand(
             UNITS.launcherMethod("Query", "films"),
             FieldCoordinates.coordinates("Query", "films"),
             new LaunchSource.AnchorTable(
                 filmTable(List.of(col("film_id", "FILM_ID", "java.lang.Integer"))),
                 UNITS.typeClass("Film")),
-            where, invocation, result);
+            where, new Invocation.Direct(), tenancy, result);
     }
 
     private static ResultShape.RecordList list(Ordering ordering) {
@@ -148,7 +149,7 @@ class RootLauncherRendererTest {
     @Test
     void fannedInvocation_envOnlySignatureHoistsAndScattersThroughTheCarrierRef() {
         var row = filmsRow(null,
-            new Invocation.FannedOverTenants(UNITS.tenantConnections()), list(pkDesc()));
+            new TenantStrategy.Fanned(UNITS.tenantConnections()), list(pkDesc()));
         var m = render(row);
         assertThat(m.name()).isEqualTo("rowsFilms");
         assertThat(m.returnType().toString()).isEqualTo("java.util.List<java.lang.Object>");
@@ -173,7 +174,7 @@ class RootLauncherRendererTest {
             new LaunchSource.DiscriminatedTable(
                 filmTable(List.of(col("film_id", "FILM_ID", "java.lang.Integer"))),
                 "film_type", List.of("FILM", "SHORT"), baseSlice, branches),
-            where, new Invocation.Direct(), result);
+            where, new Invocation.Direct(), new TenantStrategy.Single(), result);
     }
 
     private static LaunchSource.DiscriminatedTable.Branch.SingleTable filmContentBranch() {
@@ -246,9 +247,9 @@ class RootLauncherRendererTest {
                     FieldCoordinates.coordinates("Query", "allContent"),
                     new LaunchSource.DiscriminatedTable(
                         filmTable(List.of()), "film_type", List.of(), List.of(), List.of()),
-                    null, new Invocation.FannedOverTenants(UNITS.tenantConnections()), list(null)))
+                    null, new Invocation.Direct(), new TenantStrategy.Fanned(UNITS.tenantConnections()), list(null)))
             .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("invoked directly");
+            .hasMessageContaining("runs single-tenant");
     }
 
     // ===== the keyed-lookup source arm =====
@@ -266,7 +267,7 @@ class RootLauncherRendererTest {
             new LaunchSource.KeyedLookup(filmTable(List.of(filmIdCol)),
                 UNITS.typeClass("Film"), mapping,
                 UNITS.inputRowsMethod(UNITS.fetchers("Query"), "filmById")),
-            where, new Invocation.Direct(), list(null));
+            where, new Invocation.Direct(), new TenantStrategy.Single(), list(null));
     }
 
     @Test
@@ -303,7 +304,7 @@ class RootLauncherRendererTest {
                     UNITS.lookupMethod("Query", "filmById"),
                     FieldCoordinates.coordinates("Query", "filmById"),
                     lookupRow(null).source(),
-                    null, new Invocation.Direct(),
+                    null, new Invocation.Direct(), new TenantStrategy.Single(),
                     new ResultShape.Connection(pkDesc(), 100,
                         UNITS.connectionHelper(), UNITS.connectionResult(), null)))
             .isInstanceOf(IllegalArgumentException.class)
