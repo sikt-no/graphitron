@@ -93,10 +93,6 @@ public sealed interface QueryField extends RootField
         PaginationSpec pagination,
         LookupMapping lookupMapping
     ) implements QueryField, SqlGeneratingField, LookupField {
-        /** The name of the generated synchronous lookup helper method. */
-        public String lookupMethodName() {
-            return "lookup" + Character.toUpperCase(name().charAt(0)) + name().substring(1);
-        }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(returnType.table());
         }

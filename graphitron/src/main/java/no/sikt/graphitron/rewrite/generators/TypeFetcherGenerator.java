@@ -532,12 +532,20 @@ public class TypeFetcherGenerator {
                     // LightFetcher); this arm emits no method itself.
                 }
                 case QueryField.QueryLookupTableField qlf -> {
+                    var lookupRow = launchers.rowFor(qlf.parentTypeName(), qlf.name())
+                        .orElseThrow(() -> new IllegalStateException(
+                            "Graphitron generator bug (root launcher dispatch): lookup root coordinate '"
+                            + qlf.qualifiedName() + "' has no launcher row;"
+                            + " the producer's membership and this dispatch have drifted"));
                     var lookupTableRef = qlf.returnType().table();
                     var lookupTableClass = GeneratorUtils.ResolvedTableNames
                         .of(lookupTableRef, qlf.returnType().returnTypeName(), outputPackage).jooqTableClass();
-                    builder.addMethod(buildQueryLookupFetcher(ctx, qlf, outputPackage));
-                    builder.addMethod(buildQueryLookupRowsMethod(ctx, qlf, outputPackage));
-                    builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(qlf, lookupTableClass));
+                    var keyedLookup = (no.sikt.graphitron.command.LaunchSource.KeyedLookup) lookupRow.source();
+                    builder.addMethod(buildQueryTableFetcher(ctx, qlf, lookupRow, outputPackage));
+                    builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
+                        .render(lookupRow, launchers.carrierDsl()));
+                    builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(qlf, lookupTableClass,
+                        keyedLookup.inputRows().methodName()));
                 }
                 case QueryField.QueryTableField qtf -> {
                     // Row-presence dispatch: the launcher producer's membership is the one
@@ -4884,88 +4892,6 @@ public class TypeFetcherGenerator {
         code.add("}\n");
         code.addStatement("return new $T(sortParts, colParts)", orderByResultClass);
         return code.build();
-    }
-
-    /**
-     * Generates a thin data fetcher for a lookup query field that delegates to the rows method.
-     *
-     * <p>Generated code:
-     * <pre>{@code
-     * public static Result<Record> filmById(DataFetchingEnvironment env) {
-     *     return lookupFilmById(env);
-     * }
-     * }</pre>
-     *
-     * <p>The split between this thin entry point and {@link #buildQueryLookupRowsMethod} allows the
-     * rows method to be called independently (e.g. by an Apollo Federation {@code _entities}
-     * resolver) without going through the GraphQL data fetcher path.
-     */
-    private static MethodSpec buildQueryLookupFetcher(TypeFetcherEmissionContext ctx, QueryField.QueryLookupTableField field, String outputPackage) {
-        TypeName valueType = ParameterizedTypeName.get(RESULT, RECORD);
-        var builder = MethodSpec.methodBuilder(field.name())
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(syncResultType(valueType))
-            .addParameter(ENV, "env");
-        builder.beginControlFlow("try");
-        // The rows method resolves its own routed dsl; a divined-tenant lookup additionally
-        // declares the key here so the success return hands it down the subtree.
-        var handDown = TenantDslEmitter.handDownOnly(ctx, field, outputPackage);
-        builder.addCode(handDown.declaration());
-        builder.addStatement("$T payload = $L(env)", valueType, field.lookupMethodName());
-        builder.addCode(returnSyncSuccess(valueType, "payload", handDown.localContextTail()));
-        builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(noChannelCatchArm(outputPackage));
-        builder.endControlFlow();
-        return builder.build();
-    }
-
-    /**
-     * Generates the lookup rows method for a {@link QueryField.QueryLookupTableField}.
-     *
-     * <p>The body is emitted via {@link LookupValuesJoinEmitter}: a typed {@code Row[]} is
-     * constructed by a companion helper, then the VALUES derived table is joined to the target
-     * via {@code USING (…)} and ordered by the derived table's {@code idx} column to preserve
-     * input ordering. See {@code docs/architecture/reference/argument-resolution.adoc} for design
-     * rationale.
-     *
-     * <p>Generated code (single list key):
-     * <pre>{@code
-     * public static Result<Record> lookupFilmById(DataFetchingEnvironment env) {
-     *     Film table = Tables.FILM;
-     *     Row[] rows = filmByIdInputRows(env, table);
-     *     var dsl = graphitronContext(env).getDslContext(env);
-     *     if (rows.length == 0) return dsl.newResult();
-     *     Table<?> input = DSL.values(rows).as("filmByIdInput", "idx", "FILM_ID");
-     *     return dsl.select(Film.$project(env.getSelectionSet().getFieldsGroupedByResultKey(), table, env))
-     *               .from(table)
-     *               .join(input).using(table.FILM_ID)
-     *               .orderBy(input.field("idx"))
-     *               .fetch();
-     * }
-     * }</pre>
-     */
-    private static MethodSpec buildQueryLookupRowsMethod(TypeFetcherEmissionContext ctx, QueryField.QueryLookupTableField field, String outputPackage) {
-        var tableRef = field.returnType().table();
-        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, field.returnType().returnTypeName(), outputPackage);
-
-        var builder = MethodSpec.methodBuilder(field.lookupMethodName())
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(ParameterizedTypeName.get(RESULT, RECORD))
-            .addParameter(ENV, "env");
-
-        builder.addCode(GeneratorUtils.declareTableLocal(names, tableRef));
-        String tableLocal = names.tableLocalName();
-
-        // Declare the WHERE condition for non-key filters (field-level @condition or per-arg
-        // @condition), one glue call composed beside the VALUES join. Lookup-key args flow
-        // through LookupValuesJoinEmitter and never appear here. For pure-@lookupKey fields (the
-        // common case) filters() is empty and the neutral condition is composed from that
-        // absence.
-        builder.addCode(buildConditionCall(field.parentTypeName(), field.name(), field.filters(), tableLocal, outputPackage));
-
-        var typeFieldsCall = ProjectionCall.fromEnvSelection(names.typeClass(), tableLocal);
-        builder.addCode(LookupValuesJoinEmitter.buildFetcherBody(ctx, field, typeFieldsCall, tableLocal, outputPackage));
-        return builder.build();
     }
 
     private static MethodSpec buildQueryNodeFetcher(TypeFetcherEmissionContext ctx, QueryField.QueryNodeField field, String outputPackage) {

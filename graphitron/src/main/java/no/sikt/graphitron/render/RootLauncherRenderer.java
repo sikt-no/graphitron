@@ -92,6 +92,12 @@ public final class RootLauncherRenderer {
                 }
             }
             case LaunchSource.RoutineChain chain -> builder.addCode(routineBody(row, chain));
+            case LaunchSource.KeyedLookup lookup -> {
+                String tableLocal = TableLocal.name(lookup.table());
+                builder.addCode(TableLocal.declare(lookup.table()));
+                builder.addCode(conditionStatement(row, tableLocal));
+                builder.addCode(lookupBody(row, lookup, tableLocal));
+            }
             case LaunchSource.DiscriminatedTable disc -> {
                 String tableLocal = TableLocal.name(disc.table());
                 builder.addCode(TableLocal.declare(disc.table()));
@@ -288,6 +294,40 @@ public final class RootLauncherRenderer {
         }
         code.addStatement("$T<$T> facetSpecs = $T.of($L)",
             LIST, facetSpecRuntime, LIST, specsArgs.build());
+        return code.build();
+    }
+
+    /**
+     * The keyed-lookup arm: the input-rows helper builds the typed {@code Row[]} off the field's
+     * arguments (a same-class private the launcher calls unqualified, its ref minted beside the
+     * launcher's own), the empty-input short-circuit returns the empty result with no statement
+     * issued, and the VALUES derived table joins the anchor with {@code USING} over the mapping's
+     * key columns, input-ordered by the derived table's {@code idx} column (the arm's own
+     * entailed ordering; the result shape's ordering slot is absent by construction). The WHERE
+     * stays the condition local, the same glue-or-neutral fold every condition-bearing arm
+     * chains.
+     */
+    private static CodeBlock lookupBody(LauncherCommand row, LaunchSource.KeyedLookup lookup,
+            String tableLocal) {
+        String fieldName = row.coordinate().getFieldName();
+        String alias = LookupRows.inputTableAlias(fieldName);
+        var mapping = lookup.mapping();
+        var code = CodeBlock.builder();
+        code.addStatement("$T rows = $L(env, $L)",
+            LookupRows.rowArrayType(mapping, fieldName), lookup.inputRows().methodName(), tableLocal);
+        code.add("if (rows.length == 0) return dsl.newResult();\n");
+        code.addStatement("$T input = $T.values(rows).as($L)",
+            LookupRows.inputTableType(mapping, fieldName), DSL,
+            LookupRows.aliasArgs(mapping, alias, fieldName));
+        code.add("return dsl\n")
+            .indent()
+            .add(".select($L)\n", ProjectionCall.fromEnvSelection(className(lookup.projection()), tableLocal))
+            .add(".from($L)\n", tableLocal)
+            .add(".join(input).using($L)\n", LookupRows.usingArgs(mapping, tableLocal, fieldName))
+            .add(".where(condition)\n")
+            .add(".orderBy(input.field($S))\n", "idx")
+            .add(".fetch();\n")
+            .unindent();
         return code.build();
     }
 

@@ -2,6 +2,7 @@ package no.sikt.graphitron.command;
 
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.TableExpr;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -44,6 +45,27 @@ public sealed interface LaunchSource {
             Objects.requireNonNull(start, "start");
             hops = List.copyOf(hops);
             Objects.requireNonNull(projection, "projection");
+        }
+    }
+
+    /**
+     * A {@code @lookupKey} root: the anchor {@link #table} joined to the input VALUES derived
+     * table over the mapping's key columns, projected through the one {@link #projection} unit's
+     * {@code $project}. The key arguments ride {@link #mapping}'s VALUES rows (built by the
+     * emitted {@link #inputRows} helper, whose ref is minted beside the launcher's own), never
+     * the WHERE slot, which stays purely condition glue for the coordinate's non-key filters.
+     * The composition is input-ordered by the derived table's {@code idx} column, a
+     * source-entailed ordering (the lookup's one-row-per-input-key contract), so the result
+     * shape's ordering slot stays absent, the same division that keeps the discriminated arm's
+     * {@code IN} restriction off the WHERE slot.
+     */
+    record KeyedLookup(TableRef table, UnitRef projection, LookupMapping.ColumnMapping mapping,
+            UnitMethodRef inputRows) implements LaunchSource {
+        public KeyedLookup {
+            Objects.requireNonNull(table, "table");
+            Objects.requireNonNull(projection, "projection");
+            Objects.requireNonNull(mapping, "mapping");
+            Objects.requireNonNull(inputRows, "inputRows");
         }
     }
 

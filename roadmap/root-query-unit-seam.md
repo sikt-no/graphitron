@@ -126,8 +126,9 @@ exactly `QueryTableField` and `QueryTableInterfaceField`, as the env-aware shim 
 `TypeConditionsGenerator`'s pure entity-scoped condition functions. The emitted output confirms it
 (`QueryFetchers.films` reads `Condition condition = QueryConditions.filmsCondition(filmTable, env);`).
 The two shapes that do not call one: the routine root, which carries no field-level filter surface at
-all and emits no condition, and the lookup root, whose `buildQueryLookupRowsMethod` genuinely does
-compose `DSL.noCondition()` and fold `field.filters()` into it inline. The stale
+all and emits no condition, and the lookup root. (Corrected again at slice 6: R552's convergence had
+meanwhile moved the lookup rows method onto the same shared glue call as the other four, so by the
+time the lookup folded in, its `where` slot mapped 1:1 with no special handling.) The stale
 `var condition = DSL.noCondition();` in `buildQueryTableFetcher`'s javadoc example does not match what
 that method emits three statements later, and is the likely source of the earlier draft's error.
 
@@ -347,7 +348,8 @@ composition does not care who invokes it.
 
    One consumption detail survives, for the implementer rather than the reviewer: **the slot is not
    total over the family.** The routine root carries no field-level filter surface at all, the lookup
-   root's fold is inline today, and a covered coordinate whose live filter set is empty has no row in
+   root's fold was inline when this was written (R552's convergence later moved it onto the shared
+   glue call), and a covered coordinate whose live filter set is empty has no row in
    R552's relation either. Model all three as absence (an empty or optional ref) and let the renderer
    compose the neutral condition; never an opaque inline arm. And see fork 5: the faceted connection
    root needs more than one condition reference, so a single `where` slot is under-modelled regardless.
@@ -869,6 +871,70 @@ implementor is the nearest shape). `QueryTableInterfaceField.participants()` (an
 twin's and the type's slots) stay `List<ParticipantRef>` though the discriminated population is
 now all-`TableBacked` by the parse rejection; narrowing the static type is available follow-up.
 
+### Slice 6 (2026-07-29): the lookup fold closes the migration
+
+Landed as one commit; the item's covered family is complete and the migration dial is gone.
+
+**The lookup migrated wholly, not just nominally, because both premises for the minimal fold
+were stale.** The recorded plan was membership-and-naming only ("the one root path that already
+delegates to a named unit"), with the composition staying behind the leaf-derived name. The
+consult killed that: (1) the "launcher contract needs a dsl parameter" objection was retracted
+by slice 4 itself (the parameter list is a projection of the invocation arm; env-only launchers
+exist), and (2) the "`_entities` calls the unit independently" sentence in the retired builder's
+javadoc named no live edge, the unit's only caller was its own entry point (the federation
+dispatch emits its own per-entity queries). The half-fold alternatives both failed the item's
+own standard: reusing `AnchorTable` would assert a composition the row does not have, and a
+throwing renderer arm would re-create the deleted dial inside `LaunchSource` with every named,
+enumerated, shrink-only property stripped. So `LaunchSource.KeyedLookup(table, projection,
+mapping, inputRows)` borrows `LookupMapping.ColumnMapping` (already on the dial) and mints the
+input-rows helper ref beside the launcher's own (`GeneratedUnits.inputRowsMethod`, closing the
+two-formulas-agreeing-by-comment window for the migrated root; the child shapes keep the leaf
+formula while their family's window is open). The renderer's lookup arm composes through
+`render/LookupRows` (which already owned row construction); the VALUES-alias formula moved
+there too (`inputTableAlias`), a render-side name like the table locals. The input ordering
+(`ORDER BY input.field("idx")`) is source-entailed, riding the arm exactly as the discriminated
+arm's `IN` restriction does, so the result shape's ordering slot stays absent and
+`RecordList`'s javadoc now names its third absent population.
+
+One deliberate emitted-surface change rides the fold: `lookup<Field>` keeps its pre-seam NAME
+(as signed off; the fork's original "it is the one named root unit" reasoning has inverted now
+that every sibling emits `rows<Field>`, restated here rather than inherited, and renaming a
+public generated method is a consumer-visible break the frozen-SQL pins do not cover) but
+joins the seam's INTERFACE: `lookup<Field>(dsl, env)`, the entry point owning acquisition. That
+deletes a live double-derivation the old split carried: the entry declared the divined tenant
+key (`handDownOnly`) while the unit re-divined the same key internally, two reads agreeing only
+by "both read the same env". The entry point is now `buildQueryTableFetcher` verbatim, the
+launcher family's one entry emitter. The lookup pin (frozen pre-cutover in the prep commit)
+held byte-identical; the empty-input short-circuit issues no statement on either side of the
+cutover.
+
+**The membership enforcer is the compiler, not a census.** The recorded
+derived-fact-equals-key-set check turned out to be the weak form: `coveredFamily` (total,
+twelve permits) and `dialEntryOf` (total, twelve permits) and `produce`'s dial-guarded switch
+(with a default throw) were three lists that had to agree, and the case the enforcer clause
+worried about, a covered kind the producer cannot mint, lived in a runtime default. All three
+collapsed into one membership-and-production switch (`LauncherCommands.rowOf`): each permit
+either mints the row or is `null` by the fact, total with no default, so a new root kind is a
+compile error and flipping an existing kind's verdict is a visible arm edit. A post-production
+equality check would have re-derived the same predicate and read as the enforcer while
+deflecting from the compiler; it was not added. The `ValidateMojo` deferred-rejection clause is
+vacuously discharged: with the switch total and the dial gone, "a covered coordinate the
+producer cannot mint a row for" is unrepresentable, which is recorded here as the clause's
+honest landing. The two live validator-mirror gaps this item surfaced but does not own (the
+routine-list determinism escape from 5a, the discriminator-less participant from 5b) are filed
+as their own Backlog item (`roadmap/root-family-validator-mirror-gaps.md`) rather than left in
+hand-off prose. The `validateConditionEmitImplemented` lookup deferral was audited under the
+relaxation rule: its premise (generated column filters on lookup coordinates have no emission)
+is a condition-family fact the fold does not touch, so the deferral stands. The stale spec
+sentences claiming the lookup root folds its filters inline (falsified by R552's convergence
+before this slice ran) were corrected in place.
+
+The boundary pins flipped from exclusion to membership (`lookupShaped` present, relation size
+4, no "while their entries exist" caveat anywhere); `QueryLookupTableField.lookupMethodName()`
+deleted with the launcher-name formula forking per-kind inside `GeneratedUnits`, the one
+minting locus. Ratchets: plan leaf references 69 to 55 (the two restated twelve-permit
+censuses deleted into the one switch).
+
 ## Retired vocabulary
 
 - `TypeFetcherGenerator.buildQueryConnectionFetcher`, `buildConnectionOrderingBlock` and
@@ -888,8 +954,17 @@ now all-`TableBacked` by the parse rejection; narrowing the static type is avail
   has one home in `rewrite/JoinedTableReprojection`, and `buildTableInterfaceReprojection`
   survives only as the legacy consumers' thin delegate.
 
-- `QueryLookupTableField.lookupMethodName()` (slice 6): the producer computes this coordinate's
-  `UnitRef` like every other row; the emitted `lookup<Field>` method name is unchanged.
+- `QueryLookupTableField.lookupMethodName()` (slice 6, as planned): the producer mints this
+  coordinate's ref through `GeneratedUnits.lookupMethod`; the emitted `lookup<Field>` method
+  name is unchanged, its interface joined the seam (`(dsl, env)`, entry-owned acquisition).
+- `TypeFetcherGenerator.buildQueryLookupFetcher`, `buildQueryLookupRowsMethod` and
+  `LookupValuesJoinEmitter.buildFetcherBody` (slice 6): the entry point is the launcher
+  family's shared emitter and the composition renders through the `KeyedLookup` arm over
+  `render/LookupRows`.
+- `LauncherCommands.NotYetMigrated`, `dialEntryOf` and `coveredFamily` (slice 6): the
+  migration dial emptied and the membership census collapsed into the one total
+  membership-and-production switch (`LauncherCommands.rowOf`), whose no-default totality is
+  the membership enforcer.
 - `QueryUnitField` and `MethodCommandRegistry.declareRootQueryUnit` (never built): vocabulary from the
   signed-off version of this spec, listed here so a reader who saw it knows the names were retired at
   the design stage rather than shipped and removed.

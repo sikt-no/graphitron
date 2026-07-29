@@ -220,12 +220,14 @@ class TypeFetcherGeneratorTest {
     }
 
     @Test
-    void queryLookupField_rowsMethod_hasEnvParameter() {
+    void queryLookupField_rowsMethod_takesTheEntryAcquiredDslAndEnv() {
+        // The lookup launcher joined the seam's contract: the entry point owns connection
+        // acquisition (one divination, at the entry) and the unit takes the resolved dsl.
         var field = lookupQueryField("filmById", List.of(listKeyParam("film_id", "FILM_ID", "java.lang.Integer")));
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
         assertThat(method(spec, "lookupFilmById").parameters())
             .extracting(p -> p.type().toString())
-            .containsExactly("graphql.schema.DataFetchingEnvironment");
+            .containsExactly("org.jooq.DSLContext", "graphql.schema.DataFetchingEnvironment");
     }
 
     @Test

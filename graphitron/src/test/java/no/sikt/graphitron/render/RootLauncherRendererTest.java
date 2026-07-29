@@ -251,6 +251,65 @@ class RootLauncherRendererTest {
             .hasMessageContaining("invoked directly");
     }
 
+    // ===== the keyed-lookup source arm =====
+
+    private static LauncherCommand lookupRow(GlueCall where) {
+        var filmIdCol = col("film_id", "FILM_ID", "java.lang.Integer");
+        var mapping = new no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping(
+            List.of(new no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.ScalarLookupArg(
+                "film_id", filmIdCol,
+                new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct(), true)),
+            filmTable(List.of(filmIdCol)));
+        return new LauncherCommand(
+            UNITS.lookupMethod("Query", "filmById"),
+            FieldCoordinates.coordinates("Query", "filmById"),
+            new LaunchSource.KeyedLookup(filmTable(List.of(filmIdCol)),
+                UNITS.typeClass("Film"), mapping,
+                UNITS.inputRowsMethod(UNITS.fetchers("Query"), "filmById")),
+            where, new Invocation.Direct(), list(null));
+    }
+
+    @Test
+    void keyedLookupSource_preSeamUnitNameAndTheLauncherSignature() {
+        var m = render(lookupRow(null));
+        assertThat(m.name()).isEqualTo("lookupFilmById");
+        assertThat(m.returnType().toString()).isEqualTo("org.jooq.Result<org.jooq.Record>");
+        assertThat(m.parameters()).extracting(p -> p.type().toString())
+            .containsExactly("org.jooq.DSLContext", "graphql.schema.DataFetchingEnvironment");
+    }
+
+    @Test
+    void keyedLookupSource_valuesJoinInputOrderedAndTheEmptyInputShortCircuit() {
+        var body = body(lookupRow(null));
+        assertThat(body)
+            .as("the input-rows helper is a same-class call through the minted ref")
+            .contains("rows = filmByIdInputRows(env, filmTable)");
+        assertThat(body).contains("if (rows.length == 0) return dsl.newResult();");
+        assertThat(body)
+            .as("the VALUES derived table joins the anchor over the mapping's key columns")
+            .contains(".values(rows).as(\"filmByIdInput\", \"idx\", \"film_id\")")
+            .contains(".join(input).using(filmTable.FILM_ID)");
+        assertThat(body)
+            .as("the WHERE stays the condition local; the ordering is the arm's entailed input order")
+            .contains(".where(condition)")
+            .contains(".orderBy(input.field(\"idx\"))")
+            .contains(".fetch();");
+    }
+
+    @Test
+    void keyedLookupSource_connectionPairIsUnrepresentable() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                new LauncherCommand(
+                    UNITS.lookupMethod("Query", "filmById"),
+                    FieldCoordinates.coordinates("Query", "filmById"),
+                    lookupRow(null).source(),
+                    null, new Invocation.Direct(),
+                    new ResultShape.Connection(pkDesc(), 100,
+                        UNITS.connectionHelper(), UNITS.connectionResult(), null)))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("never paginates");
+    }
+
     private static MethodSpec render(LauncherCommand row) {
         return RootLauncherRenderer.render(row, CarrierDsl.ENV_ACQUIRED);
     }

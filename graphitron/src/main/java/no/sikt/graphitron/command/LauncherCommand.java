@@ -86,5 +86,20 @@ public record LauncherCommand(
                     + " @asConnection on the single-table-interface root");
             }
         }
+        // A keyed lookup is invoked directly and never paginates: the fan-out ladder rejects
+        // @tenantFanOut with @lookupKey (fanning breaks one-row-per-key), and the classifier
+        // rejects the connection return ("lookup fields must not return a connection").
+        if (source instanceof LaunchSource.KeyedLookup) {
+            if (!(invocation instanceof Invocation.Direct)) {
+                throw new IllegalArgumentException(
+                    "a keyed-lookup launcher is invoked directly; got "
+                    + invocation.getClass().getSimpleName());
+            }
+            if (result instanceof ResultShape.Connection) {
+                throw new IllegalArgumentException(
+                    "a keyed-lookup launcher never paginates; the classifier rejects the"
+                    + " connection return on @lookupKey fields");
+            }
+        }
     }
 }

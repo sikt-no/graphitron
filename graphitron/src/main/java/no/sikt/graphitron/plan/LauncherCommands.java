@@ -23,25 +23,18 @@ import java.util.List;
 
 /**
  * Produces the launcher command relation: one {@link LauncherCommand} row per covered root
- * SELECT coordinate that has migrated onto the seam. Membership is the covered-family fact
- * minus a named, shrink-only migration dial:
- *
- * <ul>
- *   <li>{@link #coveredFamily}: the root coordinates whose fetch is a SELECT launcher against a
- *       table target, derived from the leaf's kind (table, lookup-table, routine-table and
- *       single-table-interface roots are in; polymorphic, node, service and DML roots are out by
- *       the fact, with no exemption list anywhere).</li>
- *   <li>{@link NotYetMigrated}: the covered shapes whose launcher slices have not landed, each a
- *       named dial entry a later slice deletes; the dial's true-set shrinks monotonically (the
- *       connection entry narrowed to its faceted half when the page-query slice landed). The
- *       closing slice empties the dial and lands the derived-fact-equals-key-set membership
- *       enforcer in the same commit, so the dial being empty <em>is</em> the migration being
- *       complete.</li>
- * </ul>
+ * SELECT coordinate. Membership has one home, {@link #rowOf}: a single switch, total over
+ * {@link QueryField}'s permits, whose arms either mint the coordinate's row or state why the
+ * kind is outside the family (polymorphic, node, service roots, all out by the fact, with no
+ * exemption list anywhere). The migration dial that excluded not-yet-landed shapes while the
+ * seam was being built emptied with the lookup root's fold and is deleted; that the switch has
+ * no default and no dial <em>is</em> the membership enforcer: a new root kind is a compile
+ * error here, and flipping an existing kind's verdict is a visible arm edit, never a silent
+ * exclusion.
  *
  * <p>The generator's dispatch does not restate this membership: it routes on row presence
- * (a coordinate with a row gets the launcher emission, one without falls through to its legacy
- * builder), so the predicate has one home and the non-vacuity pins are its enforcer.
+ * (a coordinate with a row gets the launcher emission), so the predicate has one home and the
+ * pipeline boundary pins are its observable form.
  *
  * <p>Production runs after the condition relation, because a launcher row's WHERE slot is a
  * reference into it: the producer copies the coordinate's glue ref and its env-appending answer
@@ -53,15 +46,6 @@ import java.util.List;
  */
 public final class LauncherCommands {
 
-    /**
-     * The migration dial: covered shapes whose launcher emission has not yet moved onto the
-     * seam. Shrink-only on its true-set; each entry names the slice that deletes it.
-     */
-    enum NotYetMigrated {
-        /** The lookup root, whose named unit already exists and folds in last (closing slice). */
-        LOOKUP
-    }
-
     private LauncherCommands() {}
 
     public static LauncherRelation produce(GraphitronSchema schema, ConditionRelation conditions,
@@ -70,19 +54,11 @@ public final class LauncherCommands {
         var rows = new ArrayList<LauncherCommand>();
         for (var type : schema.types().values()) {
             for (var field : schema.fieldsOf(type.name())) {
-                if (coveredFamily(field)
-                        && dialEntryOf(schema, (QueryField) field) == null) {
-                    rows.add(switch ((QueryField) field) {
-                        case QueryField.QueryTableField qtf -> row(qtf, whereOf(qtf, conditions), units,
-                            facetPlanOf(schema, qtf, conditions, units),
-                            invocationOf(schema, qtf, units));
-                        case QueryField.QueryRoutineTableField qrtf -> routineRow(qrtf, units);
-                        case QueryField.QueryTableInterfaceField qtif -> interfaceRow(qtif,
-                            schema.joinedTableReprojectionOf(qtif.returnType().returnTypeName()),
-                            whereOf(qtif.parentTypeName(), qtif.name(), conditions), units);
-                        default -> throw new IllegalStateException(
-                            "unmigrated covered kind reached row production: " + field.getClass().getSimpleName());
-                    });
+                if (field instanceof QueryField qf) {
+                    var row = rowOf(schema, qf, conditions, units);
+                    if (row != null) {
+                        rows.add(row);
+                    }
                 }
             }
         }
@@ -90,6 +66,38 @@ public final class LauncherCommands {
             ? CarrierDsl.ROUTED
             : CarrierDsl.ENV_ACQUIRED;
         return new LauncherRelation(rows, carrierDsl);
+    }
+
+    /**
+     * The one membership-and-production switch: each permit either mints the coordinate's row
+     * or is outside the family by the fact ({@code null}). Total with no default, so a new
+     * root kind is a compile-time decision here rather than a runtime throw or a silent
+     * exclusion; this totality is the membership enforcer the migration dial's deletion
+     * promised.
+     */
+    private static LauncherCommand rowOf(GraphitronSchema schema, QueryField field,
+            ConditionRelation conditions, GeneratedUnits units) {
+        return switch (field) {
+            case QueryField.QueryTableField qtf -> row(qtf, whereOf(qtf, conditions), units,
+                facetPlanOf(schema, qtf, conditions, units),
+                invocationOf(schema, qtf, units));
+            case QueryField.QueryRoutineTableField qrtf -> routineRow(qrtf, units);
+            case QueryField.QueryTableInterfaceField qtif -> interfaceRow(qtif,
+                schema.joinedTableReprojectionOf(qtif.returnType().returnTypeName()),
+                whereOf(qtif.parentTypeName(), qtif.name(), conditions), units);
+            case QueryField.QueryLookupTableField qlf -> lookupRow(qlf,
+                whereOf(qlf.parentTypeName(), qlf.name(), conditions), units);
+            // Polymorphic targets (their UNION-ALL stage is a dedicated polymorphic-emit
+            // family), node dispatch, and the service-backed roots are outside by the fact.
+            case QueryField.QueryInterfaceField ignored -> null;
+            case QueryField.QueryUnionField ignored -> null;
+            case QueryField.QueryNodeField ignored -> null;
+            case QueryField.QueryNodesField ignored -> null;
+            case QueryField.QueryServiceTableField ignored -> null;
+            case QueryField.QueryServiceRecordField ignored -> null;
+            case QueryField.QueryServicePolymorphicField ignored -> null;
+            case QueryField.QueryServiceTableInterfaceField ignored -> null;
+        };
     }
 
     /**
@@ -118,6 +126,9 @@ public final class LauncherCommands {
                 // fallback the retired inline assembly took on a null schema.
                 rows.add(interfaceRow(qtif, no.sikt.graphitron.rewrite.JoinedTableReprojection.EMPTY,
                     glueFromInterfaceFilters(qtif, units), units));
+            } else if (field instanceof QueryField.QueryLookupTableField qlf) {
+                rows.add(lookupRow(qlf,
+                    glueFromFilters(qlf.parentTypeName(), qlf.name(), qlf.filters(), units), units));
             }
         }
         return new LauncherRelation(rows, CarrierDsl.ENV_ACQUIRED);
@@ -142,60 +153,26 @@ public final class LauncherCommands {
     }
 
     /**
-     * The covered-family fact, written in its final form from the first slice: a root SELECT
-     * launcher against a table target. The switch is total over {@link QueryField}'s permits so
-     * a new root kind is a compile-time decision here, not a silent exclusion.
+     * A {@code @lookupKey} row: the source arm carries the anchor, the terminus projection, the
+     * borrowed key mapping (whose VALUES rows the emitted input-rows helper builds; its ref is
+     * minted here through the same formula the helper emission reads) and entails the input
+     * ordering, so the list shape's ordering slot is absent. The launcher unit keeps the
+     * pre-seam {@code lookup<Field>} name through its own minting scheme. Always direct; never
+     * a connection (both classifier-rejected pairs, backstopped on the command).
      */
-    static boolean coveredFamily(GraphitronField field) {
-        if (!(field instanceof QueryField qf)) {
-            return false;
-        }
-        return switch (qf) {
-            case QueryField.QueryTableField ignored -> true;
-            case QueryField.QueryLookupTableField ignored -> true;
-            case QueryField.QueryRoutineTableField ignored -> true;
-            case QueryField.QueryTableInterfaceField ignored -> true;
-            // Polymorphic targets (their UNION-ALL stage is a dedicated polymorphic-emit
-            // family), node dispatch, and the service-backed roots are outside by the fact.
-            case QueryField.QueryInterfaceField ignored -> false;
-            case QueryField.QueryUnionField ignored -> false;
-            case QueryField.QueryNodeField ignored -> false;
-            case QueryField.QueryNodesField ignored -> false;
-            case QueryField.QueryServiceTableField ignored -> false;
-            case QueryField.QueryServiceRecordField ignored -> false;
-            case QueryField.QueryServicePolymorphicField ignored -> false;
-            case QueryField.QueryServiceTableInterfaceField ignored -> false;
-        };
-    }
-
-    /**
-     * The dial entry excluding a covered coordinate from this run's relation, or {@code null}
-     * when the coordinate's shape has migrated. One classification, read by the producer alone;
-     * the boundary pins assert the dial-excluded shapes appear zero times while their entries
-     * exist.
-     */
-    static NotYetMigrated dialEntryOf(GraphitronSchema schema, QueryField field) {
-        // Total over the permits (a new root kind is a compile error here, matching
-        // coveredFamily); the non-covered kinds are unreachable behind the coveredFamily guard.
-        return switch (field) {
-            case QueryField.QueryTableField ignored -> null;
-            case QueryField.QueryRoutineTableField ignored -> null;
-            case QueryField.QueryTableInterfaceField ignored -> null;
-            case QueryField.QueryLookupTableField ignored -> NotYetMigrated.LOOKUP;
-            case QueryField.QueryInterfaceField ignored -> notCovered(field);
-            case QueryField.QueryUnionField ignored -> notCovered(field);
-            case QueryField.QueryNodeField ignored -> notCovered(field);
-            case QueryField.QueryNodesField ignored -> notCovered(field);
-            case QueryField.QueryServiceTableField ignored -> notCovered(field);
-            case QueryField.QueryServiceRecordField ignored -> notCovered(field);
-            case QueryField.QueryServicePolymorphicField ignored -> notCovered(field);
-            case QueryField.QueryServiceTableInterfaceField ignored -> notCovered(field);
-        };
-    }
-
-    private static NotYetMigrated notCovered(QueryField field) {
-        throw new IllegalArgumentException(
-            "dialEntryOf is defined over the covered family; got " + field.getClass().getSimpleName());
+    private static LauncherCommand lookupRow(QueryField.QueryLookupTableField qlf, GlueCall where,
+            GeneratedUnits units) {
+        var owner = units.fetchers(qlf.parentTypeName());
+        return new LauncherCommand(
+            units.lookupMethod(qlf.parentTypeName(), qlf.name()),
+            FieldCoordinates.coordinates(qlf.parentTypeName(), qlf.name()),
+            new LaunchSource.KeyedLookup(qlf.returnType().table(),
+                units.typeClass(qlf.returnType().returnTypeName()),
+                (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) qlf.lookupMapping(),
+                units.inputRowsMethod(owner, qlf.name())),
+            where,
+            new Invocation.Direct(),
+            new ResultShape.RecordList(null));
     }
 
     private static LauncherCommand row(QueryField.QueryTableField qtf, GlueCall where, GeneratedUnits units,

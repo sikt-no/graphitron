@@ -101,9 +101,13 @@ class CommandSeamRatchetTest {
      * production fork plus the schema-free assembly's membership read). The residence-split
      * dispatch itself did not land here: it reads <em>classified fields</em>, an ancestor-free
      * post-walk fact, so it folded into the schema's joined-table reprojection index beside the
-     * other post-walk folds rather than into a producer.
+     * other post-walk folds rather than into a producer. Lowered to 55 when the lookup root's
+     * fold closed the migration: the covered-family census and the dial classification (two
+     * dozen restated permits) collapsed into the one membership-and-production switch
+     * ({@link no.sikt.graphitron.plan.LauncherCommands}), whose totality with no default is the
+     * membership enforcer.
      */
-    private static final int PLAN_LEAF_REFERENCES = 69;
+    private static final int PLAN_LEAF_REFERENCES = 55;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide

@@ -123,6 +123,15 @@ public final class LookupRows {
         return ValuesJoinRowBuilder.usingArgs(requireSlots(cm, diagnosticName), Slot::targetColumn, tableLocal);
     }
 
+    /**
+     * The VALUES derived table's SQL alias for a lookup coordinate's body, a render-side
+     * formula like the table-local names ({@link TableLocal}); the rendered alias appears in
+     * the executed SQL, so the launcher and any remaining legacy host must spell it identically.
+     */
+    public static String inputTableAlias(String fieldName) {
+        return fieldName + "Input";
+    }
+
     // ------------------------------------------------------------------------------------------
     // Internals (the flat slot view and the shared row-building tail)
     // ------------------------------------------------------------------------------------------

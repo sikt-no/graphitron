@@ -125,6 +125,17 @@ public final class GeneratedUnits {
     }
 
     /**
+     * {@code <Parent>Fetchers#lookup<Field>}: a keyed-lookup coordinate's launcher unit. The
+     * emitted name predates the seam (the lookup root was the one root path that already
+     * delegated to a named unit) and is kept as signed off on the launcher item, so the
+     * launcher-name formula forks on the row's kind here, in the one minting locus; every
+     * consumer reads the ref off the row, never a formula.
+     */
+    public UnitMethodRef lookupMethod(String parentTypeName, String fieldName) {
+        return new UnitMethodRef(fetchers(parentTypeName), "lookup" + upperCamel(fieldName));
+    }
+
+    /**
      * {@code <Parent>Fetchers#<field>OrderBy}: a coordinate's emitted ordering helper, present
      * exactly when the ordering rides a runtime {@code @orderBy} argument. Minted onto the
      * launcher row's {@code Ordering.Helper} arm; the helper itself is emitted by the fetcher

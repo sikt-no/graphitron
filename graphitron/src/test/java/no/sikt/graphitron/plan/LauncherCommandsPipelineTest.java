@@ -19,11 +19,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code RootLauncherRendererTest} and the execution-tier SQL baseline; this class pins what the
  * producer mints, so it asserts on rows, never on emitted code.
  *
- * <p>The boundary pins are two-tiered per the migration-dial design: shapes outside the covered
- * family by the fact (polymorphic, node, service roots) appear zero times forever, and shapes
- * excluded by a named {@code NotYetMigrated} dial entry (only the lookup root remains) appear
- * zero times while their entries exist; a dial entry's deletion flips its pin from boundary to
- * membership in the slice that lands the shape.
+ * <p>The boundary pins assert the completed membership: every covered coordinate mints a row
+ * (the migration dial emptied with the lookup fold and is deleted; the one
+ * membership-and-production switch is total with no default, which is the compile-time
+ * enforcer), and shapes outside the covered family by the fact (polymorphic, node, service
+ * roots) appear zero times forever.
  */
 @PipelineTier
 class LauncherCommandsPipelineTest {
@@ -322,14 +322,26 @@ class LauncherCommandsPipelineTest {
         var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
         var relation = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE);
 
-        // The migrated coordinates: the plain root and both connection halves. The dial-excluded
-        // lookup shape and the fact-excluded polymorphic root mint nothing.
-        assertThat(relation.rows()).hasSize(3);
+        // Every covered coordinate mints a row (the migration dial is gone; the one
+        // membership-and-production switch is total); the fact-excluded polymorphic root
+        // mints nothing, forever.
+        assertThat(relation.rows()).hasSize(4);
         assertThat(relation.rowFor("Query", "plain")).isPresent();
         assertThat(relation.rowFor("Query", "connectionShaped")).isPresent();
         assertThat(relation.rowFor("Query", "facetedConnection")).isPresent();
-        assertThat(relation.rowFor("Query", "lookupShaped")).isEmpty();
+        assertThat(relation.rowFor("Query", "lookupShaped")).isPresent();
         assertThat(relation.rowFor("Query", "search")).isEmpty();
+
+        // The lookup row: the pre-seam unit name through its own minting scheme, the borrowed
+        // key mapping and the input-rows ref on the source arm, and an absent ordering slot
+        // (the input order is source-entailed, never classifier-derived).
+        var lookup = relation.rowFor("Query", "lookupShaped").orElseThrow();
+        assertThat(lookup.unit().methodName()).isEqualTo("lookupLookupShaped");
+        var keyed = (no.sikt.graphitron.command.LaunchSource.KeyedLookup) lookup.source();
+        assertThat(keyed.table().sameTable("film")).isTrue();
+        assertThat(keyed.projection().fqcn()).isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".types.Film");
+        assertThat(keyed.inputRows().methodName()).isEqualTo("lookupShapedInputRows");
+        assertThat(((ResultShape.RecordList) lookup.result()).ordering()).isNull();
 
         // The faceted row's plan: the base fragment plus one entry per facet, glue refs into the
         // condition relation's masked variants, decode data borrowed off the model spec; the

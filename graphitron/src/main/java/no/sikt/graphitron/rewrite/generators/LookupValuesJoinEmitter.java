@@ -54,69 +54,22 @@ final class LookupValuesJoinEmitter {
         return fieldName(field) + "InputRows";
     }
 
-    /** The VALUES-table alias used in the fetcher body. */
-    static String inputTableAlias(LookupField field) {
-        return fieldName(field) + "Input";
-    }
-
     /**
      * Generates the {@code <fieldName>InputRows(DataFetchingEnvironment env, <TargetTable> table)}
-     * helper for the root / batched paths; see {@link LookupRows#buildInputRowsMethod}.
+     * helper for the batched child paths; see {@link LookupRows#buildInputRowsMethod}. The helper
+     * name derives from the leaf while the child family's migration window is open.
      */
     static MethodSpec buildInputRowsMethod(LookupField field, ClassName targetTableClass) {
-        return LookupRows.buildInputRowsMethod((ColumnMapping) field.lookupMapping(),
-            inputRowsMethodName(field), targetTableClass, LookupRows.ArgSource.ENV, fieldName(field));
+        return buildInputRowsMethod(field, targetTableClass, inputRowsMethodName(field));
     }
 
     /**
-     * Generates the VALUES + JOIN derived-table select body for a lookup field's rows method:
-     * input-rows helper call, {@code dsl} declaration (via {@link TenantDslEmitter}), empty-input
-     * short-circuit, {@code DSL.values(rows)} derived table joined with {@code USING}, and
-     * {@code .orderBy(input.field("idx"))} to preserve input ordering.
-     *
-     * <p>Expects two locals already declared in the surrounding method: the target-table alias
-     * named by {@code srcAlias} (from {@link GeneratorUtils#declareTableLocal}) and a
-     * {@code Condition condition}. Callers typically initialise {@code condition} with
-     * {@code DSL.noCondition()} and AND in any non-key filters; with no such filters the
-     * {@code .where(noCondition())} is a no-op that jOOQ optimises away.
-     *
-     * @param field          the lookup field
-     * @param typeFieldsCall the JavaPoet expression for the projection call feeding the SELECT list
+     * The migrated root's variant: the helper name arrives from the launcher row's minted ref
+     * ({@code GeneratedUnits.inputRowsMethod}) rather than the leaf formula, so the emitted
+     * helper and the launcher body that calls it read one name.
      */
-    static CodeBlock buildFetcherBody(TypeFetcherEmissionContext ctx, LookupField field, CodeBlock typeFieldsCall,
-            String srcAlias, String outputPackage) {
-        ColumnMapping cm = (ColumnMapping) field.lookupMapping();
-        String alias = inputTableAlias(field);
-        String name = fieldName(field);
-
-        // VALUES column labels: "idx", then one per lookup slot. Labels must match the target
-        // column's SQL name (e.g. "film_id"), not the jOOQ Java field name (e.g. "FILM_ID"), because
-        // Postgres treats quoted identifiers case-sensitively and USING compares the rendered names.
-        CodeBlock aliasArgs = LookupRows.aliasArgs(cm, alias, name);
-        CodeBlock usingArgs = LookupRows.usingArgs(cm, srcAlias, name);
-
-        // Every LookupField permit is an OutputField; the instanceof keeps the seam total if a
-        // non-field permit ever appears (it would fall back to the escape-hatch read).
-        CodeBlock dslDeclaration = field instanceof no.sikt.graphitron.rewrite.model.OutputField of
-            ? TenantDslEmitter.resolve(ctx, of, outputPackage).declaration()
-            : TenantDslEmitter.singleTenantDeclaration(ctx);
-
-        return CodeBlock.builder()
-            .addStatement("$T rows = $L(env, $L)",
-                LookupRows.rowArrayType(cm, name), inputRowsMethodName(field), srcAlias)
-            .add(dslDeclaration)
-            .add("if (rows.length == 0) return dsl.newResult();\n")
-            .addStatement("$T input = $T.values(rows).as($L)",
-                LookupRows.inputTableType(cm, name), DSL, aliasArgs)
-            .add("return dsl\n")
-            .indent()
-            .add(".select($L)\n", typeFieldsCall)
-            .add(".from($L)\n", srcAlias)
-            .add(".join(input).using($L)\n", usingArgs)
-            .add(".where(condition)\n")
-            .add(".orderBy(input.field($S))\n", "idx")
-            .add(".fetch();\n")
-            .unindent()
-            .build();
+    static MethodSpec buildInputRowsMethod(LookupField field, ClassName targetTableClass, String methodName) {
+        return LookupRows.buildInputRowsMethod((ColumnMapping) field.lookupMapping(),
+            methodName, targetTableClass, LookupRows.ArgSource.ENV, fieldName(field));
     }
 }
