@@ -257,6 +257,20 @@ class RootLauncherSqlBaselineTest {
                     + "order by \"public\".\"jti_subject\".\"jti_subject_id\" asc");
     }
 
+    @Test
+    void lookupRoot_valuesJoinKeyedAndInputOrdered() {
+        execute("{ languageByKey(language_id: [1, 2]) { name } }");
+        assertThat(SQL_LOG)
+            .as("lookup root: the anchor joined to the input VALUES table over the key columns, "
+                + "input-ordered by the derived table's idx column")
+            .containsExactly(
+                "select \"public\".\"language\".\"name\" "
+                    + "from \"public\".\"language\" "
+                    + "join (values (0, ?), (1, ?)) as \"languagebykeyinput\" (\"idx\", \"language_id\") "
+                    + "using (\"language_id\") "
+                    + "order by \"languagebykeyinput\".\"idx\"");
+    }
+
     private Map<String, Object> execute(String query) {
         var input = Graphitron.newExecutionInput(dsl, "test-user").query(query).build();
         var result = graphql.execute(input);
