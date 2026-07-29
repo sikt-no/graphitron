@@ -1,13 +1,13 @@
 ---
 id: R541
 title: "Root query launcher: the root SELECT family as launcher commands"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 4
 theme: classification-model
 depends-on: [facts-and-commands, condition-command]
 created: 2026-07-26
-last-updated: 2026-07-28
+last-updated: 2026-07-29
 ---
 
 # Root query launcher: the root SELECT family as launcher commands
