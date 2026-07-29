@@ -602,10 +602,11 @@ class TypeFetcherGeneratorTest {
         // and extraFields (for cursor) must derive from the same OrderByResult dispatch, the
         // same "ordering" local. If they diverge, SQL ORDER BY and cursor columns get out of
         // sync, which execution tier only catches on a specific multi-column ordering query
-        // with cursor pagination.
+        // with cursor pagination. The composition lives in the rows<Field> launcher unit; the
+        // entry point is thin.
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null,
             List.of(connectionFieldWithArgOrderBy("films")));
-        var code = method(spec, "films").code().toString();
+        var code = method(spec, "rowsFilms").code().toString();
         assertThat(code).contains("ordering.sortFields()");
         assertThat(code).contains("ordering.columns()");
     }

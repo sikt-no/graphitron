@@ -648,7 +648,44 @@ renderer emits, and body strings there would break on every later slice without 
 behaviour); the frozen SQL pin and the execution-tier connection suite carry the body.
 `ResultShape` registered as a command-kind hierarchy.
 
+### Slice 3 (2026-07-29): the facet plan, and the legacy connection builder retires
+
+Landed as one commit: the faceted carrier's plan became data on the `ResultShape.Connection` arm
+(`FacetPlan`: the base fragment's `GlueCall` plus one entry per facet pairing the model's
+`FacetSpec`, borrowed whole onto the borrow dial rather than copied field by field, with its
+own-predicate fragment's `GlueCall`), the faceted coordinate (`filmsFaceted`) migrated, the
+dial's `FACETED_CONNECTION` entry deleted, and the legacy connection machinery retired outright:
+`buildQueryConnectionFetcher`, `buildConnectionOrderingBlock` and `connectionFacetsFor` are gone
+from the fetcher generator, whose `QueryTableField` arm now has exactly two outcomes (a row, or
+the fanned builder) plus the drift backstop. The fragment refs are minted through the naming
+vocabulary and cross-checked against the condition row's own fragment set at production, so the
+two families cannot drift on which methods exist; the env-appending fork is the row-grained fact
+copied off the same row. This is the handshake's second half, completing R552 slice 4: the
+per-facet fragment `UnitMethodRef`s now cross the family seam as data, exactly as that item's
+slice plan promised.
+
+**Pins.** The `totalCount` pin was authored against the pre-cutover output and held
+byte-identical (two statements: the page query and one `SELECT count(*)` under the same source
+and predicate); the frozen faceted pin (the page query plus the filter-minus-self UNION ALL, in
+the condition family's baseline) held through the faceted coordinate's migration, which is "the
+launcher owns a query it does not itself issue" as a result rather than a claim. The slice-2 log's
+honest gap closed: the multitenant fixture gained an ArgumentBound connection root
+(`filmsConnectionScoped`), and its execution case proves the `ROUTED` carrier end to end (the
+lazy `totalCount` aggregates on the routed tenant source; the other tenant's counter stays
+zero).
+
+**Schema-free tier.** `produceWithoutSchema` now mints connection rows (facetless by
+construction, since facetedness is a schema fact), so the unit-tier connection assemblies
+exercise the launcher path; the one intentional body-content assertion there (both ordering
+views from one `OrderByResult` dispatch) repointed from the entry point to the launcher method
+it moved into.
+
 ## Retired vocabulary
+
+- `TypeFetcherGenerator.buildQueryConnectionFetcher`, `buildConnectionOrderingBlock` and
+  `connectionFacetsFor` (slice 3): the connection launcher and the shared `render/OrderingBlock`
+  replaced them; the facet plan rides the command and the facet-spec lookup has one home in
+  `plan` (`ConditionCommands.facetsFor`).
 
 - `QueryLookupTableField.lookupMethodName()` (slice 6): the producer computes this coordinate's
   `UnitRef` like every other row; the emitted `lookup<Field>` method name is unchanged.

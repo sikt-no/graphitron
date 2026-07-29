@@ -105,7 +105,9 @@ public final class RootLauncherRenderer {
      * The connection arm: the two-view ordering block, the four fixed pagination argument reads
      * (names fixed by the slot; the classifier rejects custom names), the page request, the
      * seek/limit page query, and the carrier construction over the same
-     * {@code (result, page, table, condition)} the query ran under.
+     * {@code (result, page, table, condition)} the query ran under. A faceted plan additionally
+     * binds the base fragment, the per-facet condition map, and the decode specs through the
+     * carrier's facet-carrying constructor.
      */
     private static CodeBlock connectionBody(LauncherCommand row, ResultShape.Connection connection,
             String tableLocal, CarrierDsl carrierDsl) {
@@ -130,9 +132,43 @@ public final class RootLauncherRenderer {
             .add(".limit(page.limit())\n")
             .add(".fetch();\n")
             .unindent();
-        code.addStatement("return new $T(result, page, $L, condition$L)",
-            className(connection.carrier()), tableLocal,
-            carrierDsl == CarrierDsl.ROUTED ? ", dsl" : "");
+        String dslTail = carrierDsl == CarrierDsl.ROUTED ? ", dsl" : "";
+        if (connection.facets() == null) {
+            code.addStatement("return new $T(result, page, $L, condition$L)",
+                className(connection.carrier()), tableLocal, dslTail);
+        } else {
+            code.add(facetBindings(connection, tableLocal));
+            code.addStatement(
+                "return new $T(result, page, $L, condition, facetBase, facetConditions, facetSpecs$L)",
+                className(connection.carrier()), tableLocal, dslTail);
+        }
+        return code.build();
+    }
+
+    /** The faceted carrier's bindings: the base fragment, the per-facet map, the decode specs. */
+    private static CodeBlock facetBindings(ResultShape.Connection connection, String tableLocal) {
+        var plan = connection.facets();
+        var code = CodeBlock.builder();
+        code.addStatement("$T facetBase = $L", CONDITION, glueExpression(plan.base(), tableLocal));
+        code.addStatement("$T<String, $T> facetConditions = new $T<>()",
+            ClassName.get("java.util", "Map"), CONDITION, ClassName.get("java.util", "LinkedHashMap"));
+        for (var facet : plan.facets()) {
+            code.addStatement("facetConditions.put($S, $L)",
+                facet.spec().inputFieldName(), glueExpression(facet.condition(), tableLocal));
+        }
+        var facetSpecRuntime = className(connection.carrier()).nestedClass("FacetSpec");
+        var specsArgs = CodeBlock.builder();
+        boolean firstSpec = true;
+        for (var facet : plan.facets()) {
+            if (!firstSpec) {
+                specsArgs.add(",\n    ");
+            }
+            firstSpec = false;
+            specsArgs.add("new $T($S, $S, $L)", facetSpecRuntime,
+                facet.spec().inputFieldName(), facet.spec().columnName(), facet.spec().valueNullable());
+        }
+        code.addStatement("$T<$T> facetSpecs = $T.of($L)",
+            LIST, facetSpecRuntime, LIST, specsArgs.build());
         return code.build();
     }
 
@@ -145,14 +181,20 @@ public final class RootLauncherRenderer {
         if (row.where() == null) {
             return CodeBlock.builder().addStatement("$T condition = $T.noCondition()", CONDITION, DSL).build();
         }
-        var glue = row.where().method();
+        return CodeBlock.builder()
+            .addStatement("$T condition = $L", CONDITION, glueExpression(row.where(), tableLocal))
+            .build();
+    }
+
+    /** {@code <Owner>.<method>(<table>, env.getArguments()[, env])} for any glue reference. */
+    private static CodeBlock glueExpression(no.sikt.graphitron.command.GlueCall glue, String tableLocal) {
         var call = CodeBlock.builder().add("$T.$L($L, env.getArguments()",
-            className(glue.owner()), glue.methodName(), tableLocal);
-        if (row.where().takesEnv()) {
+            className(glue.method().owner()), glue.method().methodName(), tableLocal);
+        if (glue.takesEnv()) {
             call.add(", env");
         }
         call.add(")");
-        return CodeBlock.builder().addStatement("$T condition = $L", CONDITION, call.build()).build();
+        return call.build();
     }
 
     /** The single/list shapes' sort-view-only ordering statement. */

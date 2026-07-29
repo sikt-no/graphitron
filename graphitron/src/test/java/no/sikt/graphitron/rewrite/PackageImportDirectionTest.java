@@ -57,7 +57,9 @@ class PackageImportDirectionTest {
      * verbatim rather than narrowed so the launcher family inherits the shape decision:
      * {@code ParentCorrelation} (the step-0 dispatch its multiset arms render),
      * {@code OrderBySpec} (the inline subselect's fixed ordering), and {@code LookupMapping}
-     * (the {@code @lookupKey} VALUES keyset and its rows helper).
+     * (the {@code @lookupKey} VALUES keyset and its rows helper). The launcher family added
+     * {@code FacetSpec} (the faceted carrier's decode data, borrowed whole on the facet plan
+     * rather than copied field by field).
      */
     private static final Set<String> BORROWED_MODEL_REFS = Set.of(
         "no.sikt.graphitron.rewrite.model.TableRef",
@@ -74,7 +76,8 @@ class PackageImportDirectionTest {
         "no.sikt.graphitron.rewrite.model.ParamSource",
         "no.sikt.graphitron.rewrite.model.ParentCorrelation",
         "no.sikt.graphitron.rewrite.model.OrderBySpec",
-        "no.sikt.graphitron.rewrite.model.LookupMapping"
+        "no.sikt.graphitron.rewrite.model.LookupMapping",
+        "no.sikt.graphitron.rewrite.model.FacetSpec"
     );
 
     /**
@@ -92,6 +95,7 @@ class PackageImportDirectionTest {
         "no.sikt.graphitron.rewrite.model.CallSiteExtraction",
         "no.sikt.graphitron.rewrite.model.ColumnRef",
         "no.sikt.graphitron.rewrite.model.ConditionFilter",
+        "no.sikt.graphitron.rewrite.model.FacetSpec",
         "no.sikt.graphitron.rewrite.model.ForeignKeyRef",
         "no.sikt.graphitron.rewrite.model.HelperRef",
         "no.sikt.graphitron.rewrite.model.InputColumnBinding",

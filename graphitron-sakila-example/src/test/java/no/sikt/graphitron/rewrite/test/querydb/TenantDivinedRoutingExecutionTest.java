@@ -155,6 +155,27 @@ class TenantDivinedRoutingExecutionTest {
             .isZero();
     }
 
+    // ===== ROUTED carrier: the connection launcher's carrier rides the routed dsl =====
+
+    @Test
+    void argumentBoundConnection_totalCountAggregatesOnTheDivinedTenantSource() {
+        var result = execute(
+            "{ filmsConnectionScoped(filmId: 2, first: 10) { totalCount edges { node { title } } } }");
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        var connection = (Map<String, Object>)
+            ((Map<String, Object>) result.getData()).get("filmsConnectionScoped");
+        assertThat((List<Map<String, Object>>) connection.get("edges"))
+            .extracting(e -> ((Map<String, Object>) e.get("node")).get("title"))
+            .containsExactly("Tenant Two Film");
+        assertThat(connection.get("totalCount"))
+            .as("the lazy aggregate runs on the routed dsl the carrier carries, against the "
+                + "divined tenant's rows under the page predicate")
+            .isEqualTo(1);
+        assertThat(TENANT_1_OPENED.get())
+            .as("nothing in the operation touches the other tenant's database")
+            .isZero();
+    }
+
     // ===== Untenanted: global reference data stays on the default source =====
 
     @Test

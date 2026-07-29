@@ -258,7 +258,7 @@ public final class ConditionCommands {
      * connection name; faceted carriers using the deprecated {@code connectionName:} override are
      * rejected at classify time, so the derived name always hits where facets exist.
      */
-    private static List<FacetSpec> facetsFor(GraphitronSchema schema, String parentTypeName, String fieldName) {
+    static List<FacetSpec> facetsFor(GraphitronSchema schema, String parentTypeName, String fieldName) {
         var entry = schema.types().get(
             ConnectionNaming.defaultConnectionName(parentTypeName, fieldName));
         return entry instanceof GraphitronType.ConnectionType ct ? ct.facets() : List.of();

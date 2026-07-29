@@ -56,6 +56,11 @@ type Query {
     filmsEverywhere: [Film] @tenantFanOut
     # The strict-elements variant: any tenant failure nulls the whole field via null-bubbling.
     filmsEverywhereStrict: [Film!] @tenantFanOut
+    # ROUTED carrier: an ArgumentBound connection root. The routed DSLContext rides the
+    # generated connection carrier, so the lazy totalCount aggregate runs against the same
+    # divined tenant source as the page query instead of re-acquiring by environment.
+    filmsConnectionScoped(filmId: Int! @field(name: "film_id"), first: Int, after: String):
+        [Film!]! @asConnection @defaultOrder(primaryKey: true)
     # Untenanted root: acquires dslDefault(), never consults the divined context.
     languages: [Language!]!
     node(id: ID!): Node

@@ -3,6 +3,7 @@ package no.sikt.graphitron.plan;
 import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.command.CarrierDsl;
 import no.sikt.graphitron.command.ConditionCommand;
+import no.sikt.graphitron.command.FacetPlan;
 import no.sikt.graphitron.command.GlueCall;
 import no.sikt.graphitron.command.LauncherCommand;
 import no.sikt.graphitron.command.Ordering;
@@ -55,13 +56,6 @@ public final class LauncherCommands {
      * seam. Shrink-only on its true-set; each entry names the slice that deletes it.
      */
     enum NotYetMigrated {
-        /**
-         * The faceted connection root, whose carrier binds the facet plan (the base and
-         * per-facet fragment refs plus decode specs) the {@code ResultShape.Connection} arm does
-         * not model yet; lands with the carrier-plan slice. The non-faceted connection half
-         * migrated with the page-query slice.
-         */
-        FACETED_CONNECTION,
         /** The tenant fan-out root, whose row lands together with the invocation-strategy slot. */
         FANNED_OVER_TENANTS,
         /** The {@code @routine} root's table-expression composition (tail slice). */
@@ -81,9 +75,10 @@ public final class LauncherCommands {
         for (var type : schema.types().values()) {
             for (var field : schema.fieldsOf(type.name())) {
                 if (coveredFamily(field)
-                        && dialEntryOf(schema, conditions, (QueryField) field) == null) {
+                        && dialEntryOf(schema, (QueryField) field) == null) {
                     var qtf = (QueryField.QueryTableField) field;
-                    rows.add(row(qtf, whereOf(qtf, conditions), units));
+                    rows.add(row(qtf, whereOf(qtf, conditions), units,
+                        facetPlanOf(schema, qtf, conditions, units)));
                 }
             }
         }
@@ -101,17 +96,16 @@ public final class LauncherCommands {
      * carrier fact is {@link CarrierDsl#ENV_ACQUIRED}; the WHERE ref derives from the field's
      * own filters through the same naming formula the condition producer mints (the schema-free
      * sibling of the relation copy; both ends read {@code GeneratedUnits}, so they cannot
-     * disagree). Connection coordinates are excluded here: facetedness is a schema fact, so the
-     * schema-free tier keeps the legacy connection builder while it exists.
+     * disagree). Facetedness is a schema fact, so schema-free connection rows are facetless by
+     * construction, matching what a schema-free assembly can classify.
      */
     public static LauncherRelation produceWithoutSchema(List<? extends GraphitronField> fields,
             String outputPackage) {
         var units = new GeneratedUnits(outputPackage);
         var rows = new ArrayList<LauncherCommand>();
         for (var field : fields) {
-            if (field instanceof QueryField.QueryTableField qtf
-                    && !(qtf.returnType().wrapper() instanceof FieldWrapper.Connection)) {
-                rows.add(row(qtf, glueFromFilters(qtf, units), units));
+            if (field instanceof QueryField.QueryTableField qtf) {
+                rows.add(row(qtf, glueFromFilters(qtf, units), units, null));
             }
         }
         return new LauncherRelation(rows, CarrierDsl.ENV_ACQUIRED);
@@ -158,14 +152,9 @@ public final class LauncherCommands {
      * the boundary pins assert the dial-excluded shapes appear zero times while their entries
      * exist.
      */
-    static NotYetMigrated dialEntryOf(GraphitronSchema schema, ConditionRelation conditions,
-            QueryField field) {
+    static NotYetMigrated dialEntryOf(GraphitronSchema schema, QueryField field) {
         return switch (field) {
             case QueryField.QueryTableField qtf -> {
-                if (qtf.returnType().wrapper() instanceof FieldWrapper.Connection
-                        && conditionRowOf(qtf, conditions).map(r -> !r.facets().isEmpty()).orElse(false)) {
-                    yield NotYetMigrated.FACETED_CONNECTION;
-                }
                 if (schema.tenantBindingOf(qtf.parentTypeName(), qtf.name()) instanceof TenantBinding.FanOut) {
                     yield NotYetMigrated.FANNED_OVER_TENANTS;
                 }
@@ -179,23 +168,26 @@ public final class LauncherCommands {
         };
     }
 
-    private static LauncherCommand row(QueryField.QueryTableField qtf, GlueCall where, GeneratedUnits units) {
+    private static LauncherCommand row(QueryField.QueryTableField qtf, GlueCall where, GeneratedUnits units,
+            FacetPlan facets) {
         return new LauncherCommand(
             units.launcherMethod(qtf.parentTypeName(), qtf.name()),
             FieldCoordinates.coordinates(qtf.parentTypeName(), qtf.name()),
             qtf.returnType().table(),
             units.typeClass(qtf.returnType().returnTypeName()),
             where,
-            resultShapeOf(qtf, units));
+            resultShapeOf(qtf, units, facets));
     }
 
     /**
      * The payload shape, derived from the coordinate's wrapper: the connection arm carries the
      * ordering (total there: pagination requires ordering, validator-enforced, and production
-     * backstops it), the default page size, and the connection runtime's unit refs copied off
-     * the naming vocabulary so the launcher's edges to them are data.
+     * backstops it), the default page size, the connection runtime's unit refs copied off the
+     * naming vocabulary so the launcher's edges to them are data, and the facet plan when the
+     * coordinate carries facets.
      */
-    private static ResultShape resultShapeOf(QueryField.QueryTableField qtf, GeneratedUnits units) {
+    private static ResultShape resultShapeOf(QueryField.QueryTableField qtf, GeneratedUnits units,
+            FacetPlan facets) {
         if (qtf.returnType().wrapper() instanceof FieldWrapper.Connection conn) {
             var ordering = orderingOf(qtf, units);
             if (ordering == null) {
@@ -204,11 +196,56 @@ public final class LauncherCommands {
                     + " the validator rejects pagination without ordering before production");
             }
             return new ResultShape.Connection(ordering, conn.defaultPageSize(),
-                units.connectionHelper(), units.connectionResult());
+                units.connectionHelper(), units.connectionResult(), facets);
+        }
+        if (facets != null) {
+            throw new IllegalStateException(
+                "coordinate '" + qtf.qualifiedName() + "' carries facets but is not a connection;"
+                + " the classifier synthesises facet carriers only for @asConnection coordinates");
         }
         return qtf.returnType().wrapper().isList()
             ? new ResultShape.RecordList(orderingOf(qtf, units))
             : new ResultShape.SingleRecord();
+    }
+
+    /**
+     * The faceted carrier's plan, or {@code null} for the non-faceted (or facet-free) carrier:
+     * the decode specs come from the coordinate's synthesised connection carrier (the same
+     * derivation the condition producer's fragment builder reads), the fragment refs are minted
+     * through the naming vocabulary and cross-checked against the condition row's own fragment
+     * set, so the two families cannot drift on which methods exist, and the env-appending fork
+     * is the row-grained fact copied off the same row.
+     */
+    private static FacetPlan facetPlanOf(GraphitronSchema schema, QueryField.QueryTableField qtf,
+            ConditionRelation conditions, GeneratedUnits units) {
+        var specs = ConditionCommands.facetsFor(schema, qtf.parentTypeName(), qtf.name());
+        if (specs.isEmpty()) {
+            return null;
+        }
+        var row = conditionRowOf(qtf, conditions).orElseThrow(() -> new IllegalStateException(
+            "faceted coordinate '" + qtf.qualifiedName() + "' has no condition row; facet inputs"
+            + " are filters, so a faceted coordinate always has one"));
+        var fragmentRefs = row.facets().stream().map(f -> f.method()).toList();
+        boolean takesEnv = row.readsRequestContext();
+        var base = units.facetBaseConditionMethod(qtf.parentTypeName(), qtf.name());
+        requireFragment(fragmentRefs, base, qtf);
+        var entries = new ArrayList<FacetPlan.Entry>(specs.size());
+        for (var spec : specs) {
+            var fragment = units.facetConditionMethod(qtf.parentTypeName(), qtf.name(), spec.inputFieldName());
+            requireFragment(fragmentRefs, fragment, qtf);
+            entries.add(new FacetPlan.Entry(spec, new GlueCall(fragment, takesEnv)));
+        }
+        return new FacetPlan(new GlueCall(base, takesEnv), entries);
+    }
+
+    private static void requireFragment(List<no.sikt.graphitron.command.UnitMethodRef> fragmentRefs,
+            no.sikt.graphitron.command.UnitMethodRef ref, QueryField.QueryTableField qtf) {
+        if (!fragmentRefs.contains(ref)) {
+            throw new IllegalStateException(
+                "faceted coordinate '" + qtf.qualifiedName() + "': the launcher's facet plan names"
+                + " fragment '" + ref.methodName() + "' but the condition row's fragment set does"
+                + " not carry it; the two producers read one naming formula and have drifted");
+        }
     }
 
     /**

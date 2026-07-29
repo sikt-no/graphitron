@@ -165,14 +165,30 @@ class LauncherCommandsPipelineTest {
         var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
         var relation = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE);
 
-        // The migrated coordinates: the plain root and the non-faceted connection. The
-        // dial-excluded shapes (the faceted connection, lookup) and the fact-excluded
-        // polymorphic root mint nothing.
-        assertThat(relation.rows()).hasSize(2);
+        // The migrated coordinates: the plain root and both connection halves. The dial-excluded
+        // lookup shape and the fact-excluded polymorphic root mint nothing.
+        assertThat(relation.rows()).hasSize(3);
         assertThat(relation.rowFor("Query", "plain")).isPresent();
         assertThat(relation.rowFor("Query", "connectionShaped")).isPresent();
-        assertThat(relation.rowFor("Query", "facetedConnection")).isEmpty();
+        assertThat(relation.rowFor("Query", "facetedConnection")).isPresent();
         assertThat(relation.rowFor("Query", "lookupShaped")).isEmpty();
         assertThat(relation.rowFor("Query", "search")).isEmpty();
+
+        // The faceted row's plan: the base fragment plus one entry per facet, glue refs into the
+        // condition relation's masked variants, decode data borrowed off the model spec; the
+        // non-faceted row's plan is absent, forking the carrier construction.
+        var faceted = (ResultShape.Connection) relation.rowFor("Query", "facetedConnection")
+            .orElseThrow().result();
+        assertThat(faceted.facets()).isNotNull();
+        assertThat(faceted.facets().base().method().methodName())
+            .isEqualTo("facetedConnectionFacetBaseCondition");
+        assertThat(faceted.facets().facets()).singleElement().satisfies(entry -> {
+            assertThat(entry.spec().inputFieldName()).isEqualTo("rating");
+            assertThat(entry.condition().method().methodName())
+                .isEqualTo("facetedConnectionFacet_ratingCondition");
+        });
+        var nonFaceted = (ResultShape.Connection) relation.rowFor("Query", "connectionShaped")
+            .orElseThrow().result();
+        assertThat(nonFaceted.facets()).isNull();
     }
 }

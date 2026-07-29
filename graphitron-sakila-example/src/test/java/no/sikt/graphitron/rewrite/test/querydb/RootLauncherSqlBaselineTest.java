@@ -143,6 +143,21 @@ class RootLauncherSqlBaselineTest {
                     + "fetch next ? rows only");
     }
 
+    @Test
+    void connectionRootWithTotalCount_pageQueryPlusOneSelectCount() {
+        execute("{ filmsConnection(first: 2) { totalCount edges { node { title } } } }");
+        assertThat(SQL_LOG)
+            .as("connection root with totalCount selected: the lazy resolver issues one "
+                + "SELECT count(*) against the same source and predicate the page query ran "
+                + "under, two statements total")
+            .containsExactlyInAnyOrder(
+                "select \"public\".\"film\".\"title\", \"public\".\"film\".\"film_id\" "
+                    + "from \"public\".\"film\" "
+                    + "order by \"public\".\"film\".\"film_id\" asc "
+                    + "fetch next ? rows only",
+                "select count(*) from \"public\".\"film\"");
+    }
+
     private Map<String, Object> execute(String query) {
         var input = Graphitron.newExecutionInput(dsl, "test-user").query(query).build();
         var result = graphql.execute(input);

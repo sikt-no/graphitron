@@ -130,7 +130,7 @@ class RootLauncherRendererTest {
     @Test
     void connectionShape_returnsTheCarrierRefAndKeepsTheLauncherSignature() {
         var m = render(filmsRow(null, new ResultShape.Connection(
-            pkDesc(), 100, UNITS.connectionHelper(), UNITS.connectionResult())));
+            pkDesc(), 100, UNITS.connectionHelper(), UNITS.connectionResult(), null)));
         assertThat(m.name()).isEqualTo("rowsFilms");
         assertThat(m.returnType().toString())
             .isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".util.ConnectionResult");

@@ -808,6 +808,14 @@ absence in the relation is the absence, and the launcher renderer composes the n
 from it. The handshake's second half, the facet-fragment refs crossing into R541's connection
 carrier plan, arrives with R541 slice 3 as planned.
 
+### Slice 4, second half (2026-07-29): the facet fragments cross the seam
+
+Landed with R541 slice 3 (see that item's slice log): the faceted carrier's plan on the launcher
+command's connection arm consumes this relation's fragment refs as `GlueCall`s (base plus one per
+facet), minted through the shared `GeneratedUnits` formulas and cross-checked against the row's
+own fragment set at production, with the env-appending fork copied off the row. Slice 4 is
+complete; what remains of this item is the Done gate.
+
 ## Retired vocabulary
 
 - `QueryConditionsGenerator` (slice 1): replaced by the glue renderer; with it

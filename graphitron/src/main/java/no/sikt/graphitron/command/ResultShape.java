@@ -42,11 +42,12 @@ public sealed interface ResultShape {
      * copied off the naming vocabulary by the producer so the launcher's edges to them are data,
      * the same handshake shape the WHERE slot uses against the condition relation.
      *
-     * <p>The facet plan (the base and per-facet fragment refs plus decode specs a faceted
-     * carrier binds) is not modelled yet; faceted coordinates sit on the producer's migration
-     * dial until the carrier-plan slice lands it here.
+     * <p>{@link #facets} is the faceted carrier's plan (the base and per-facet fragment refs
+     * plus decode specs), absent exactly when the coordinate carries no facets; the carrier
+     * construction forks on that absence, matching the runtime's two constructor shapes.
      */
-    record Connection(Ordering ordering, int defaultPageSize, UnitRef helper, UnitRef carrier)
+    record Connection(Ordering ordering, int defaultPageSize, UnitRef helper, UnitRef carrier,
+            FacetPlan facets)
             implements ResultShape {
         public Connection {
             Objects.requireNonNull(ordering, "a connection composition is ordered by construction");
