@@ -57,6 +57,19 @@ public record TypeUnitRelation(List<TypeUnitCommand> rows) {
             .toList();
     }
 
+    /** The schema-shape rows, in producer order (sorted by type name for deterministic output). */
+    public List<TypeUnitCommand.SchemaShapeUnit> schemaShapes() {
+        return rows.stream()
+            .filter(r -> r instanceof TypeUnitCommand.SchemaShapeUnit)
+            .map(r -> (TypeUnitCommand.SchemaShapeUnit) r)
+            .toList();
+    }
+
+    /** The schema-shape rows' committed refs, the write step's expected unit set. */
+    public List<UnitRef> schemaShapeUnits() {
+        return schemaShapes().stream().map(TypeUnitCommand.SchemaShapeUnit::unit).toList();
+    }
+
     /**
      * The fetchers family's committed refs (plain rows plus both refs of every connection
      * pair), the write step's expected unit set for the one fetchers fold.

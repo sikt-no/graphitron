@@ -1116,7 +1116,7 @@ R541's single-operation launchers never need it, and a general launcher cannot d
     `Deferred` factory with null stub class), no ratchet movement; the sakila-example schema's
     56 `@splitQuery` occurrences all sit on supported positions, so nothing re-baselined.
 
-- **Slice 3b in progress (2026-07-29); first kind landed: `inputRecord`.** The scope walk
+- **Slice 3b landed (2026-07-29); all three kinds cut over, in order.** The scope walk
   re-measured the population: the recorded 10 loops are 8 live (the projection and condition
   proofs already retired `TypeClassGenerator` and `TypeConditionsGenerator`), and by *unit
   kind* the whole population is three (`schemaShape`, `fetchers`, `inputRecord`), so "one kind
@@ -1187,6 +1187,34 @@ R541's single-operation launchers never need it, and a general launcher cannot d
     index deliberately (a different question: which nesting arm pairs a mixed-source
     coordinate, not which type owns a class), with the divergence named in the index javadoc
     and on R556.
+  - **Third kind landed: `schemaShape`, closing the slice (2026-07-29).** The producer's arm is
+    near-total variant membership as a switch over the classification's eighteen leaf permits
+    with no default, so a new permit is a compile-time decision (which `SchemaShapeForm`, or
+    deliberately no row) rather than a silent skip in a renderer's `instanceof` chain; the
+    no-row verdicts are scalars (registered off resolved constants, generator-side by
+    decision), unclassified verdicts (the validator fails the run before emission) and the
+    underscore internals, whose skip now has one home. `registersFetchers` rides the row as the
+    coordinate-grain flag with three homes collapsed onto it: the registrations emitter renders
+    bodies over the flagged rows (its own membership loops deleted, its construction-gate bails
+    now drift throws), the per-type emitter attaches the method from the body keyed off the
+    same rows, and the schema-class assembler's registration loop reads the flag, so the class,
+    the body and the call cannot drift. The assembler's `planFor` (the fifth and last
+    membership copy) deleted; its root routing and `.additionalType` list are row-driven. The
+    three per-form renderers became per-row builds (`generateFor`), the object-family one
+    throwing loudly when the row's committed form disagrees with the render-side graphql-java
+    resolution; the whole-population entry points survive only as test conveniences that derive
+    rows through the producer. The shell's three raw `write()` calls collapsed into one
+    `writeUnits` fold (the raw writer deleted), so every per-type family now lands under the
+    two-directional unit-set check. One hole surfaced by exactly that check: a structural
+    connection derives its edge type by naming convention (`<X>Connection` pairs with
+    `<X>Edge`), and an SDL edge under any other name left an `EdgeType` with no schema form
+    that the retired path silently *registered but never emitted* (a missing-symbol error at
+    the consumer's javac; the closure-oracle fixture carried exactly this shape and never
+    compiled its output). Now a deferred rejection in `GraphitronSchemaValidator` with a
+    directed message; the fixture renamed to conform. Ratchets: generator instanceof 72 to 71,
+    generator cases 75 to 74, plan leaf references 61 to 85 (the eighteen-arm form switch plus
+    the flag rule's six identity reads), entry points held at 18 by exchange (the assembler's
+    rows-taking canonical arrived, an unused set-taking convenience left).
 
 ## The exemption lists are the grain worklist
 

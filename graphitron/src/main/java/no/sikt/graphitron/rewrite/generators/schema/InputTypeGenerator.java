@@ -13,8 +13,6 @@ import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 
 import javax.lang.model.element.Modifier;
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -48,20 +46,24 @@ public final class InputTypeGenerator {
 
     private InputTypeGenerator() {}
 
+    /**
+     * Renders the {@code <Name>Type} class for one input row of the type-keyed command
+     * relation. Membership (which input types get a class) lives on the relation's schema-shape
+     * rows; this method only renders content.
+     */
+    public static TypeSpec generateFor(GraphitronType.InputType it) {
+        return buildInputTypeSpec(it.schemaType());
+    }
+
+    /**
+     * Convenience overload for tests: derives the input-form schema-shape rows through the
+     * producer, so test membership equals the relation production folds over.
+     */
     public static List<TypeSpec> generate(GraphitronSchema schema) {
-        var result = new ArrayList<TypeSpec>();
-        for (var entry : schema.types().entrySet()) {
-            if (entry.getKey().startsWith("_")) continue;
-            GraphQLInputObjectType inputType = switch (entry.getValue()) {
-                case GraphitronType.InputType it -> it.schemaType();
-                default -> null;
-            };
-            if (inputType != null) {
-                result.add(buildInputTypeSpec(inputType));
-            }
-        }
-        result.sort(Comparator.comparing(TypeSpec::name));
-        return result;
+        return no.sikt.graphitron.plan.TypeUnitCommands.produce(schema, "").schemaShapes().stream()
+            .filter(r -> r.form() == no.sikt.graphitron.command.TypeUnitCommand.SchemaShapeForm.INPUT)
+            .map(r -> generateFor((GraphitronType.InputType) schema.type(r.typeName())))
+            .toList();
     }
 
     private static TypeSpec buildInputTypeSpec(GraphQLInputObjectType inputType) {

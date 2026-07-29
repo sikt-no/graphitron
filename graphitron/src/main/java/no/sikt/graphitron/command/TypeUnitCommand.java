@@ -65,4 +65,30 @@ public sealed interface TypeUnitCommand {
             Objects.requireNonNull(edge, "edge");
         }
     }
+
+    /**
+     * The graphql-java form a schema-shape class builds, decided once by the producer's total
+     * switch over the classification permits (a new permit is a compile-time decision there,
+     * never a silent skip at a renderer's {@code instanceof} chain); the renderer dispatches on
+     * this value and resolves the concrete graphql-java type for the body render-side.
+     */
+    enum SchemaShapeForm { OBJECT, INTERFACE, UNION, INPUT, ENUM }
+
+    /**
+     * A {@code <TypeName>Type} schema-shape class ({@code <pkg>.schema}): emitted for every
+     * user-surface classified type (the federation-internal {@code _}-prefixed names, scalars
+     * and unclassified verdicts have no row; the underscore skip's one home is the producer).
+     * {@link #form} routes the renderer; {@link #registersFetchers} is the coordinate-grain
+     * fact "this class carries a {@code registerFetchers} body", the one home the registrations
+     * emitter renders from and the schema-class assembler's registration loop reads, so the
+     * class, the body and the call cannot drift.
+     */
+    record SchemaShapeUnit(String typeName, UnitRef unit, SchemaShapeForm form,
+            boolean registersFetchers) implements TypeUnitCommand {
+        public SchemaShapeUnit {
+            Objects.requireNonNull(typeName, "typeName");
+            Objects.requireNonNull(unit, "unit");
+            Objects.requireNonNull(form, "form");
+        }
+    }
 }

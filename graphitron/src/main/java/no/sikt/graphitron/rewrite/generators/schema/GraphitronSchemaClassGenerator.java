@@ -20,7 +20,6 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.InterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableInterfaceType;
-import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnionType;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 
@@ -64,9 +63,10 @@ import java.util.function.Consumer;
  * count; this guards against the chained-call attribution stack overflow that a single deep
  * fluent chain triggers in incremental {@code javac} on large schemas.
  *
- * <p>The generator collects type names from {@link GraphitronSchema#types()}. Introspection and
- * federation-injected types (names starting with {@code _}) are skipped to match the per-type
- * emitters.
+ * <p>Type membership comes from the type-keyed command relation's schema-shape rows (one row
+ * per emitted {@code <Name>Type} class, produced once for the whole run), so the registration
+ * loop here and the per-type emitters read the same decision. Scalars have no row and register
+ * generator-side through their resolved constants.
  */
 public final class GraphitronSchemaClassGenerator {
 
@@ -91,11 +91,40 @@ public final class GraphitronSchemaClassGenerator {
 
     private GraphitronSchemaClassGenerator() {}
 
+    /**
+     * Renders {@code GraphitronSchema} from the type-keyed command relation's schema-shape
+     * rows: the registration loop routes each row's {@code <Name>Type} class through the root
+     * entry points ({@code RootType} rows, by name) or {@code .additionalType(...)} (every
+     * other row), and the {@code registerFetchers} call sites come from the rows'
+     * {@code registersFetchers} flag, the same fact the per-type emitter renders the method
+     * from, so the class, the body and the call cannot drift. Scalar registrations stay
+     * generator-side (they route through resolved constants or synthesised factory helpers,
+     * not per-type classes, so no row exists for them).
+     */
     public static List<TypeSpec> generate(GraphitronSchema schema, GraphQLSchema assembled,
-                                          Set<String> typesWithFetchers, String outputPackage,
-                                          boolean federationLink) {
-        var plan = planFor(schema, assembled);
+                                          List<no.sikt.graphitron.command.TypeUnitCommand.SchemaShapeUnit> rows,
+                                          String outputPackage, boolean federationLink) {
         String schemaPackage = outputPackage + ".schema";
+
+        boolean hasQuery = false, hasMutation = false, hasSubscription = false;
+        var additionalTypeNames = new ArrayList<String>();
+        var typesWithFetchers = new ArrayList<String>();
+        for (var row : rows) {
+            if (row.registersFetchers()) {
+                typesWithFetchers.add(row.typeName());
+            }
+            if (schema.type(row.typeName()) instanceof RootType) {
+                switch (row.typeName()) {
+                    case "Query"        -> hasQuery = true;
+                    case "Mutation"     -> hasMutation = true;
+                    case "Subscription" -> hasSubscription = true;
+                    default -> { }
+                }
+            } else {
+                additionalTypeNames.add(row.typeName());
+            }
+        }
+        additionalTypeNames.sort(Comparator.naturalOrder());
 
         var builderType = ClassName.get("graphql.schema", "GraphQLSchema", "Builder");
         var customizerType = ParameterizedTypeName.get(
@@ -109,6 +138,7 @@ public final class GraphitronSchemaClassGenerator {
         var sortedFetcherTypes = new ArrayList<>(typesWithFetchers);
         sortedFetcherTypes.sort(Comparator.naturalOrder());
         for (String name : sortedFetcherTypes) {
+            // one call per row flagged registersFetchers; the flagged row also carries the method
             body.addStatement("$T.registerFetchers(codeRegistry)", ClassName.get(schemaPackage, name + "Type"));
         }
 
@@ -209,22 +239,30 @@ public final class GraphitronSchemaClassGenerator {
 
         body.addStatement("$T schemaBuilder = $T.newSchema()", SCHEMA_BUILDER, GRAPHQL_SCHEMA);
 
-        if (plan.hasQuery)        body.addStatement("schemaBuilder.query($T.type())",        ClassName.get(schemaPackage, "QueryType"));
-        if (plan.hasMutation)     body.addStatement("schemaBuilder.mutation($T.type())",     ClassName.get(schemaPackage, "MutationType"));
-        if (plan.hasSubscription) body.addStatement("schemaBuilder.subscription($T.type())", ClassName.get(schemaPackage, "SubscriptionType"));
-        for (String name : plan.additionalTypeNames) {
+        if (hasQuery)        body.addStatement("schemaBuilder.query($T.type())",        ClassName.get(schemaPackage, "QueryType"));
+        if (hasMutation)     body.addStatement("schemaBuilder.mutation($T.type())",     ClassName.get(schemaPackage, "MutationType"));
+        if (hasSubscription) body.addStatement("schemaBuilder.subscription($T.type())", ClassName.get(schemaPackage, "SubscriptionType"));
+        for (String name : additionalTypeNames) {
             body.addStatement("schemaBuilder.additionalType($T.type())", ClassName.get(schemaPackage, name + "Type"));
         }
         // Built-in GraphQL scalars aren't auto-registered on a programmatic schema. The
         // classifier resolves every SDL scalar through ScalarTypeResolver, and the resulting
-        // ScalarType variants drive the registration here.
+        // ScalarType variants drive the registration here (no schema-shape row: scalars have no
+        // per-type class to route through, so this enumeration is registration plumbing, not
+        // unit membership).
         // Resolved scalars (spec built-ins and @scalarType-declared) surface
         // as (owner, fieldName) pointing at a public-static-final GraphQLScalarType constant;
         // Synthesised scalars (federation-namespace names whose renamed forms have no constant
         // exposed on the federation-jvm public API) reach the builder through a per-scalar
         // factory method that constructs the GraphQLScalarType inline.
-        for (var reg : plan.scalarRegistrations) {
-            switch (reg.resolution()) {
+        var scalarTypes = schema.types().values().stream()
+            .filter(t -> t instanceof no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType)
+            .map(t -> (no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType) t)
+            .filter(s -> !s.name().startsWith("_"))
+            .sorted(Comparator.comparing(no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType::name))
+            .toList();
+        for (var scalar : scalarTypes) {
+            switch (scalar.resolution()) {
                 case no.sikt.graphitron.rewrite.model.ScalarResolution.Resolved r ->
                     body.addStatement("schemaBuilder.additionalType($T.$L)", r.scalarConstantOwner(), r.scalarConstantField());
                 case no.sikt.graphitron.rewrite.model.ScalarResolution.Synthesised s -> {
@@ -339,15 +377,26 @@ public final class GraphitronSchemaClassGenerator {
         return List.of(classBuilder.build());
     }
 
+    /**
+     * Convenience overload for tests: derives the schema-shape rows through the producer with
+     * the {@code registersFetchers} flag overridden to {@code typesWithFetchers} containment,
+     * so a test can pin the registration call sites for a chosen name set without building the
+     * registration bodies. Production passes the plan's rows to the canonical method instead.
+     */
+    public static List<TypeSpec> generate(GraphitronSchema schema, GraphQLSchema assembled,
+                                          Set<String> typesWithFetchers, String outputPackage,
+                                          boolean federationLink) {
+        var rows = no.sikt.graphitron.plan.TypeUnitCommands.produce(schema, outputPackage)
+            .schemaShapes().stream()
+            .map(r -> new no.sikt.graphitron.command.TypeUnitCommand.SchemaShapeUnit(
+                r.typeName(), r.unit(), r.form(), typesWithFetchers.contains(r.typeName())))
+            .toList();
+        return generate(schema, assembled, rows, outputPackage, federationLink);
+    }
+
     /** Convenience overload for tests — empty fetcher set, no output-package prefix. */
     public static List<TypeSpec> generate(GraphitronSchema schema, GraphQLSchema assembled) {
         return generate(schema, assembled, Set.of(), "", false);
-    }
-
-    /** Convenience overload for tests that pass a fetcher set but not an output-package. */
-    public static List<TypeSpec> generate(GraphitronSchema schema, GraphQLSchema assembled,
-                                          Set<String> typesWithFetchers) {
-        return generate(schema, assembled, typesWithFetchers, "", false);
     }
 
     /** Convenience overload for tests that pass a fetcher set and an output-package but no federation. */
@@ -499,64 +548,4 @@ public final class GraphitronSchemaClassGenerator {
         return cb.build();
     }
 
-    record Plan(
-        boolean hasQuery,
-        boolean hasMutation,
-        boolean hasSubscription,
-        List<String> additionalTypeNames,
-        List<ScalarRegistration> scalarRegistrations
-    ) {}
-
-    /**
-     * One scalar registration call in the emitted {@code GraphitronSchema.build()} body. Carries
-     * the SDL name (for stable sort order) and the resolved variant: {@link ScalarResolution.Resolved}
-     * emits {@code .additionalType(<owner>.<field>)}; {@link ScalarResolution.Synthesised} emits
-     * a call to a generated factory method that constructs the {@code GraphQLScalarType} inline
-     * for scalars (notably federation-namespace ones) that have no referenceable
-     * public-static-final form.
-     */
-    record ScalarRegistration(String sdlName,
-                              no.sikt.graphitron.rewrite.model.ScalarResolution.Successful resolution) {}
-
-    /**
-     * Enumerates the types that need registration in the emitted {@code GraphitronSchema.build()}.
-     *
-     * <p>Source of truth is {@link GraphitronSchema#types()}, which contains every
-     * emittable type: objects, interfaces, unions, inputs, enums, SDL-declared and synthesised
-     * alike.
-     *
-     * <p>Scalars classified as {@link no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType}
-     * are split out of {@code additionalTypeNames} into {@code scalarRegistrations}: the regular
-     * loop emits {@code <Name>Type.type()} for object / enum / input types, while the scalar
-     * loop emits {@code <Owner>.<FieldName>} pointing at the resolved {@code GraphQLScalarType}
-     * constant.
-     */
-    static Plan planFor(GraphitronSchema schema, GraphQLSchema assembled) {
-        var additional = new java.util.LinkedHashSet<String>();
-        var scalars = new ArrayList<ScalarRegistration>();
-        boolean hasQuery = false, hasMutation = false, hasSubscription = false;
-
-        for (var entry : schema.types().entrySet()) {
-            String name = entry.getKey();
-            if (name.startsWith("_")) continue;
-            var variant = entry.getValue();
-            if (variant instanceof RootType) {
-                if ("Query".equals(name))             hasQuery = true;
-                else if ("Mutation".equals(name))     hasMutation = true;
-                else if ("Subscription".equals(name)) hasSubscription = true;
-                continue;
-            }
-            if (variant instanceof UnclassifiedType) continue;
-            if (variant instanceof no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType scalar) {
-                scalars.add(new ScalarRegistration(scalar.name(), scalar.resolution()));
-                continue;
-            }
-            additional.add(name);
-        }
-
-        var sorted = new ArrayList<>(additional);
-        sorted.sort(Comparator.naturalOrder());
-        scalars.sort(Comparator.comparing(ScalarRegistration::sdlName));
-        return new Plan(hasQuery, hasMutation, hasSubscription, List.copyOf(sorted), List.copyOf(scalars));
-    }
 }

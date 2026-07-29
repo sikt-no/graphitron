@@ -176,10 +176,13 @@ class GraphitronSchemaClassGeneratorTest {
 
     @Test
     void build_callsRegisterFetchersForEachTypeWithFetchers_inAlphabeticalOrder() {
+        // The named types must be classified (the registration call sites are derived from the
+        // schema-shape rows, and only classified types have rows); @table plus a Query reference
+        // makes Film and Person real TableTypes.
         var bundle = TestSchemaHelper.buildBundle("""
-            type Query { x: String }
-            type Film { id: ID! }
-            type Person { id: ID! }
+            type Query { film: Film person: Person }
+            type Film @table(name: "film") { title: String }
+            type Person @table(name: "actor") { firstName: String }
             """);
         var body = GraphitronSchemaClassGenerator.generate(bundle.model(), bundle.assembled(), Set.of("Film", "Person", "Query"), OUTPUT_PKG)
             .get(0).toString();
@@ -263,18 +266,21 @@ class GraphitronSchemaClassGeneratorTest {
     }
 
     @Test
-    void planFor_preservesRootAndAlphabeticalOrder() {
-        var bundle = TestSchemaHelper.buildBundle("""
+    void build_preservesRootRoutingAndAlphabeticalAdditionalTypeOrder() {
+        // Row-driven registration: RootType rows route through the query/mutation entry points,
+        // every other row lands in .additionalType(...) in alphabetical order.
+        var body = buildBody("""
             type Query { zebra: Zebra alpha: Alpha }
             type Mutation { y: String }
             type Zebra @table(name: "film") { id: ID! }
             type Alpha @table(name: "actor") { id: ID! }
             """);
-        var plan = GraphitronSchemaClassGenerator.planFor(bundle.model(), bundle.assembled());
-        assertThat(plan.hasQuery()).isTrue();
-        assertThat(plan.hasMutation()).isTrue();
-        assertThat(plan.hasSubscription()).isFalse();
-        assertThat(plan.additionalTypeNames()).containsSubsequence("Alpha", "Zebra");
+        assertThat(body).contains(".query(com.example.schema.QueryType.type())");
+        assertThat(body).contains(".mutation(com.example.schema.MutationType.type())");
+        assertThat(body).doesNotContain(".subscription(");
+        int alphaIdx = body.indexOf(".additionalType(com.example.schema.AlphaType.type())");
+        int zebraIdx = body.indexOf(".additionalType(com.example.schema.ZebraType.type())");
+        assertThat(alphaIdx).isGreaterThan(0).isLessThan(zebraIdx);
     }
 
     // ===== TableInterfaceType TypeResolver emission =====

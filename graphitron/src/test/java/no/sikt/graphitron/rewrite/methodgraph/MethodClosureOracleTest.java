@@ -71,8 +71,8 @@ class MethodClosureOracleTest {
         enum ActorSort { ACTOR_ID @order(primaryKey: true) }
         input ActorOrderBy { field: ActorSort! direction: SortDirection }
         type Actor @table(name: "actor") { firstName: String @field(name: "first_name") }
-        type ActorEdge { node: Actor! cursor: String! }
-        type ActorsConnection { edges: [ActorEdge!]! nodes: [Actor!]! }
+        type ActorsEdge { node: Actor! cursor: String! }
+        type ActorsConnection { edges: [ActorsEdge!]! nodes: [Actor!]! }
 
         type FilmDetails {
           actorsByLookup(actor_id: [Int!] @lookupKey): [Actor!]! @reference(path: [

@@ -9,8 +9,6 @@ import no.sikt.graphitron.rewrite.model.EnumValueSpec;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 
 import javax.lang.model.element.Modifier;
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -32,16 +30,24 @@ public final class EnumTypeGenerator {
 
     private EnumTypeGenerator() {}
 
+    /**
+     * Renders the {@code <Name>Type} class for one enum row of the type-keyed command relation.
+     * Membership (which enums get a class) lives on the relation's schema-shape rows; this
+     * method only renders content.
+     */
+    public static TypeSpec generateFor(GraphitronType.EnumType et) {
+        return buildEnumTypeSpec(et);
+    }
+
+    /**
+     * Convenience overload for tests: derives the enum-form schema-shape rows through the
+     * producer, so test membership equals the relation production folds over.
+     */
     public static List<TypeSpec> generate(GraphitronSchema schema) {
-        var result = new ArrayList<TypeSpec>();
-        for (var entry : schema.types().entrySet()) {
-            if (entry.getKey().startsWith("_")) continue;
-            if (entry.getValue() instanceof GraphitronType.EnumType et) {
-                result.add(buildEnumTypeSpec(et));
-            }
-        }
-        result.sort(Comparator.comparing(TypeSpec::name));
-        return result;
+        return no.sikt.graphitron.plan.TypeUnitCommands.produce(schema, "").schemaShapes().stream()
+            .filter(r -> r.form() == no.sikt.graphitron.command.TypeUnitCommand.SchemaShapeForm.ENUM)
+            .map(r -> generateFor((GraphitronType.EnumType) schema.type(r.typeName())))
+            .toList();
     }
 
     private static TypeSpec buildEnumTypeSpec(GraphitronType.EnumType et) {

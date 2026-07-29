@@ -1,7 +1,9 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
+import no.sikt.graphitron.command.TypeUnitCommand;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.plan.TypeUnitCommands;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.generators.FetcherEmitter;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator;
@@ -58,56 +60,78 @@ public final class FetcherRegistrationsEmitter {
 
     private FetcherRegistrationsEmitter() {}
 
-    public static Map<String, CodeBlock> emit(GraphitronSchema schema, String outputPackage) {
+    /**
+     * Renders the {@code registerFetchers} bodies for the schema-shape rows flagged
+     * {@code registersFetchers}: membership lives on the row (decided once by the type-unit
+     * producer), this emitter only dispatches each flagged row to its body renderer by
+     * classification. A flagged row whose renderer produces nothing is a drift bug between the
+     * producer's flag rules and the body construction gates, and fails loudly.
+     */
+    public static Map<String, CodeBlock> emit(GraphitronSchema schema, String outputPackage,
+            List<TypeUnitCommand.SchemaShapeUnit> rows) {
         String fetchersPackage = outputPackage + ".fetchers";
 
         var nestedTypeMap = new LinkedHashMap<String, NestedTypeWiring>();
         schema.fields().values().forEach(field -> collectNestedTypes(field, nestedTypeMap));
+        var reach = schema.nestingReach();
 
         var result = new TreeMap<String, CodeBlock>();
-
-        schema.types().entrySet().stream()
-            .filter(e -> e.getValue() instanceof GraphitronType.TableType
-                      || e.getValue() instanceof GraphitronType.NodeType
-                      || e.getValue() instanceof GraphitronType.RootType
-                      // Single-record DML carriers bind to a JooqTableRecordType and hold one
-                      // record-sourced BatchedTableField data field that needs a wired fetcher entry. They
-                      // fall through this filter via the ResultType arm — no NestingType
-                      // widening required.
-                      || e.getValue() instanceof GraphitronType.ResultType)
-            .forEach(e -> typeBody(schema, e.getKey(), fetchersPackage, outputPackage, nestedTypeMap.get(e.getKey()))
-                .ifPresent(body -> result.put(e.getKey(), body)));
-
-        // Nested bodies follow the reach fold's representative selection, the same wiring the
-        // emitted <Type>Fetchers class was built from, so a registration cannot reference a
-        // method the class (built under a different anchor's representative) does not carry.
-        var reach = schema.nestingReach();
-        for (var nestedTypeName : reach.reachedTypeNames()) {
-            // A nesting target that also classifies as a producer-backed result is a mixed-source type:
-            // its ResultType body above already emitted every coordinate, dual-shape ones as a run-time
-            // source-shape dispatch. Skip the nested-type body so the name-keyed put does not overwrite
-            // the merged one.
-            if (schema.type(nestedTypeName) instanceof GraphitronType.ResultType) {
+        for (var row : rows) {
+            if (!row.registersFetchers()) {
                 continue;
             }
-            var wiring = reach.wiringFor(nestedTypeName);
-            nestedBody(new NestedTypeWiring(nestedTypeName, wiring.nestedFields(),
-                    wiring.returnType().table()), fetchersPackage, outputPackage)
-                .ifPresent(body -> result.put(nestedTypeName, body));
-        }
-
-        // Connection / Edge wiring is driven by the classifier's first-class type entries
-        // (populated for both directive-driven and structural carriers). Iterate the type map
-        // directly — no need for an intermediate (name, edgeName) projection because connectionBody
-        // reads the full ConnectionType to inspect schemaType().getFieldDefinition("totalCount").
-        schema.types().values().forEach(type -> {
+            String name = row.typeName();
+            var type = schema.type(name);
+            CodeBlock body;
             if (type instanceof GraphitronType.ConnectionType ct) {
-                result.put(ct.name(),         connectionBody(ct, fetchersPackage));
-                result.put(ct.edgeTypeName(), edgeBody(ct.edgeTypeName(), fetchersPackage));
+                body = connectionBody(ct, fetchersPackage);
+            } else if (type instanceof GraphitronType.EdgeType) {
+                body = edgeBody(name, fetchersPackage);
+            } else if (type instanceof GraphitronType.TableType
+                    || type instanceof GraphitronType.NodeType
+                    || type instanceof GraphitronType.RootType
+                    // Single-record DML carriers bind to a JooqTableRecordType and hold one
+                    // record-sourced BatchedTableField data field that needs a wired fetcher
+                    // entry; a nesting target that also classifies as a producer-backed result
+                    // is a mixed-source type whose merged body (dual-shape coordinates as a
+                    // run-time source-shape dispatch) is rendered here, never as a nested body.
+                    || type instanceof GraphitronType.ResultType) {
+                body = typeBody(schema, name, fetchersPackage, outputPackage, nestedTypeMap.get(name))
+                    .orElseThrow(() -> new IllegalStateException(
+                        "schema-shape row for '" + name + "' is flagged registersFetchers but its"
+                        + " hosting-classification body is empty; the producer's flag rule and the"
+                        + " body construction gate disagree"));
+            } else {
+                // Nested bodies follow the reach fold's representative selection, the same
+                // wiring the emitted <Type>Fetchers class was built from, so a registration
+                // cannot reference a method the class (built under a different anchor's
+                // representative) does not carry.
+                var wiring = reach.wiringFor(name);
+                if (wiring == null) {
+                    throw new IllegalStateException(
+                        "schema-shape row for '" + name + "' is flagged registersFetchers but the"
+                        + " nesting-reach fold has no wiring for it; the producer's flag rule and"
+                        + " the reach fold disagree");
+                }
+                body = nestedBody(new NestedTypeWiring(name, wiring.nestedFields(),
+                        wiring.returnType().table()), fetchersPackage, outputPackage)
+                    .orElseThrow(() -> new IllegalStateException(
+                        "schema-shape row for '" + name + "' is flagged registersFetchers but its"
+                        + " nested body is empty; the producer's flag rule and the ownsFetchers"
+                        + " gate disagree"));
             }
-        });
-
+            result.put(name, body);
+        }
         return result;
+    }
+
+    /**
+     * Convenience overload for tests: derives the schema-shape rows through the producer so the
+     * rendered body set is the flagged-row set production uses.
+     */
+    public static Map<String, CodeBlock> emit(GraphitronSchema schema, String outputPackage) {
+        return emit(schema, outputPackage,
+            TypeUnitCommands.produce(schema, outputPackage).schemaShapes());
     }
 
     private static Optional<CodeBlock> typeBody(GraphitronSchema schema, String typeName,

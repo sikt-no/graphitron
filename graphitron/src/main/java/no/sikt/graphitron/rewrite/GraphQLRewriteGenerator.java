@@ -313,7 +313,9 @@ public class GraphQLRewriteGenerator {
         var methodCommands = new MethodCommandRegistry();
         var fetcherClasses = TypeFetcherGenerator.generate(schema, assembled, outputPackage, methodCommands,
             plan.launchers(), plan.typeUnits().fetchers());
-        var fetcherBodies  = FetcherRegistrationsEmitter.emit(schema, outputPackage);
+        // registerFetchers bodies render from the schema-shape rows' registersFetchers flag,
+        // the same fact the per-type emitter and the schema-class assembler read.
+        var fetcherBodies  = FetcherRegistrationsEmitter.emit(schema, outputPackage, plan.typeUnits().schemaShapes());
 
         EmissionLog emittedThisRun = new EmissionLog();
         // The tenant key type read off the catalog's tenant column types every tenant-keyed
@@ -328,11 +330,10 @@ public class GraphQLRewriteGenerator {
         // and landing every unit at the address its row committed. What the fold does not absorb
         // stays deliberately shell-side: per-family argument assembly (including tenantKeyType,
         // a javapoet TypeName the plan must not hold), and the generators' own model reads. The
-        // per-type-emitting families below are not yet command-driven: anything still passing
-        // `schema` to a generator is unmigrated.
+        // per-type-emitting families below fold over the type-unit relation's rows the same way.
         for (GlobalCommand command : plan.globals()) {
             writeCommand(command,
-                renderGlobal(command, schema, assembled, fetcherBodies.keySet(), tenantKeyType, federationLink),
+                renderGlobal(command, schema, assembled, plan.typeUnits().schemaShapes(), tenantKeyType, federationLink),
                 emittedThisRun);
         }
         // The condition command relation: every row renders glue at the address its ref commits,
@@ -369,9 +370,23 @@ public class GraphQLRewriteGenerator {
                 outputPackage)));
         writeUnits("fetchers", plan.typeUnits().fetchersUnits(), fetcherSpecs, emittedThisRun);
 
-        write(EnumTypeGenerator.generate(schema),                                                 "schema",     emittedThisRun);
-        write(InputTypeGenerator.generate(schema),                                                "schema",     emittedThisRun);
-        write(ObjectTypeGenerator.generate(schema, assembled, fetcherBodies),                     "schema",     emittedThisRun);
+        // The type-unit relation's schema-shape rows: one <Name>Type class per row, membership
+        // and form decided by the producer's total switch over the classification permits; the
+        // shell dispatches each row to its form's renderer and lands the class at the committed
+        // ref. The registerFetchers body rides the row's flag (null for unflagged rows).
+        writeUnits("schema shapes",
+            plan.typeUnits().schemaShapeUnits(),
+            plan.typeUnits().schemaShapes().stream()
+                .map(row -> switch (row.form()) {
+                    case ENUM -> EnumTypeGenerator.generateFor(
+                        (no.sikt.graphitron.rewrite.model.GraphitronType.EnumType) schema.type(row.typeName()));
+                    case INPUT -> InputTypeGenerator.generateFor(
+                        (no.sikt.graphitron.rewrite.model.GraphitronType.InputType) schema.type(row.typeName()));
+                    case OBJECT, INTERFACE, UNION -> ObjectTypeGenerator.generateFor(
+                        schema, assembled, row, fetcherBodies.get(row.typeName()));
+                })
+                .toList(),
+            emittedThisRun);
         emittedThisRun.add(SchemaSdlEmitter.emit(assembled, schema, federationLink, ctx.outputResourcesDirectory(), outputPackage));
         sweepOrphans(emittedThisRun.emitted);
         var result = new GenerationResult(
@@ -396,7 +411,8 @@ public class GraphQLRewriteGenerator {
      * it dispatches to still take the model; they migrate family by family.
      */
     private List<TypeSpec> renderGlobal(GlobalCommand command, GraphitronSchema schema, GraphQLSchema assembled,
-                                        Set<String> fetcherBodyKeys, TypeName tenantKeyType, boolean federationLink) {
+                                        List<no.sikt.graphitron.command.TypeUnitCommand.SchemaShapeUnit> schemaShapeRows,
+                                        TypeName tenantKeyType, boolean federationLink) {
         String outputPackage = ctx.outputPackage();
         return switch (command.kind()) {
             case GRAPHITRON_VALUES -> GraphitronValuesClassGenerator.generate();
@@ -418,7 +434,7 @@ public class GraphQLRewriteGenerator {
             case ERROR_ROUTER -> ErrorRouterClassGenerator.generate(outputPackage);
             case OUTCOME -> OutcomeClassGenerator.generate(outputPackage);
             case ERROR_MAPPINGS -> ErrorMappingsClassGenerator.generate(schema, outputPackage);
-            case SCHEMA_CLASS -> GraphitronSchemaClassGenerator.generate(schema, assembled, fetcherBodyKeys, outputPackage, federationLink);
+            case SCHEMA_CLASS -> GraphitronSchemaClassGenerator.generate(schema, assembled, schemaShapeRows, outputPackage, federationLink);
             case QUERY_NODE_FETCHER -> QueryNodeFetcherClassGenerator.generate(schema, outputPackage);
             case FACADE -> GraphitronFacadeGenerator.generate(schema, outputPackage, federationLink);
             case DEV_EXECUTOR -> GraphitronDevExecutorGenerator.generate(schema, outputPackage, ctx.sessionStateConfig(), federationLink);
@@ -462,22 +478,6 @@ public class GraphQLRewriteGenerator {
                 family + " committed units " + refsByName.keySet()
                     + " that its renderer never emitted; the producer and the generator disagree"
                     + " about this family's unit set");
-        }
-    }
-
-    private void write(List<TypeSpec> specs, String subPackage, EmissionLog emittedThisRun) {
-        String outputPackage = ctx.outputPackage();
-        var packageName = subPackage.isEmpty()
-            ? outputPackage
-            : outputPackage + "." + subPackage;
-        for (TypeSpec spec : specs) {
-            try {
-                var result = JavaFile.builder(packageName, spec).indent("    ").build()
-                    .writeToPathReporting(ctx.outputDirectory(), StandardCharsets.UTF_8);
-                emittedThisRun.record(packageName + "." + spec.name(), spec, result);
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
         }
     }
 

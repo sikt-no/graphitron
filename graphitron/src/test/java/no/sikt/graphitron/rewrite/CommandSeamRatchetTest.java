@@ -54,7 +54,11 @@ class CommandSeamRatchetTest {
      * 20 when the type-unit relation's input-record rows retired the input-record generator's
      * whole-population entry point (the per-row build method takes a type, not the model), then
      * 20 to 18 when the fetchers kind folded (the error-type and connection fetcher generators'
-     * loops became per-row builds).
+     * loops became per-row builds). The schema-shape fold held this at 18 by exchange: the
+     * schema-class assembler's rows-taking canonical entry arrived (it legitimately keeps the
+     * model for the TypeResolver, error-fetcher and scalar registration reads) and an unused
+     * set-taking convenience overload left; the per-type emitters' whole-population entry
+     * points became test conveniences that derive their rows through the producer.
      */
     private static final int MODEL_TAKING_ENTRY_POINTS = 18;
 
@@ -67,9 +71,12 @@ class CommandSeamRatchetTest {
      * 83 to 81 when the discriminated-interface assembly's residence-split reads moved into the
      * schema's joined-table reprojection fold, then 81 to 72 when the fetchers kind folded (the
      * two-pass membership loops' variant filters and the seen-seed moved into the type-unit
-     * producer, and the nesting-reach recursion into the schema's reach fold).
+     * producer, and the nesting-reach recursion into the schema's reach fold), then 72 to 71
+     * when the schema-shape kind folded (the enum generator's membership probe moved into the
+     * type-unit producer's total form switch; the registrations emitter's dispatch count is
+     * unchanged, its hosting filter having become per-row routing).
      */
-    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 72;
+    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 71;
 
     /**
      * {@code case} patterns in {@code generators/} naming a leaf of the seven hierarchies.
@@ -79,9 +86,11 @@ class CommandSeamRatchetTest {
      * reach walk moved into the schema's argument-reachability fold (its InputType case went
      * with it, to `rewrite/`, outside both scans), then 77 to 75 when the fetchers kind folded
      * (the retired pivot-wiring helpers' PivotField/BatchedPivotField cases moved into the
-     * reach fold with the same relocation).
+     * reach fold with the same relocation), then 75 to 74 when the schema-shape kind folded
+     * (the input generator's InputType membership case moved into the type-unit producer's
+     * total form switch).
      */
-    private static final int GENERATOR_LEAF_CASE_PATTERNS = 75;
+    private static final int GENERATOR_LEAF_CASE_PATTERNS = 74;
 
     /**
      * Leaf references ({@code instanceof} plus {@code case}) inside {@code plan/}: the relocation
@@ -118,9 +127,12 @@ class CommandSeamRatchetTest {
      * membership enforcer. Raised to 61 when the type-unit producer
      * ({@link no.sikt.graphitron.plan.TypeUnitCommands}) relocated the fetchers kind's variant
      * membership (the four hosting classifications, the error and connection arms) out of the
-     * retired two-pass loops.
+     * retired two-pass loops. Raised to 85 when the schema-shape kind joined it: the total form
+     * switch over the classification's eighteen leaf permits (including the two deliberate
+     * no-row verdicts) plus the registersFetchers rule's six identity reads, replacing the
+     * fifth and last membership copy (the schema-class assembler's own enumeration).
      */
-    private static final int PLAN_LEAF_REFERENCES = 61;
+    private static final int PLAN_LEAF_REFERENCES = 85;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide

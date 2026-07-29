@@ -9,6 +9,7 @@ import graphql.schema.GraphQLOutputType;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLUnionType;
+import no.sikt.graphitron.command.TypeUnitCommand;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
@@ -21,8 +22,6 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType;
 
 import javax.lang.model.element.Modifier;
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
@@ -74,29 +73,64 @@ public final class ObjectTypeGenerator {
     private ObjectTypeGenerator() {}
 
     /**
-     * Emits {@code <TypeName>Type} classes. {@code fetcherBodies} maps each type name to the
-     * body of its {@code registerFetchers(GraphQLCodeRegistry.Builder)} method; types not present
-     * in the map do not get the method. {@link FetcherRegistrationsEmitter} produces the map from
-     * the classifier model.
+     * Renders the {@code <Name>Type} class for one object-family row (OBJECT, INTERFACE or
+     * UNION form) of the type-keyed command relation. Membership lives on the row; this method
+     * resolves the concrete graphql-java type render-side and dispatches on the row's committed
+     * form, throwing loudly when the resolved type disagrees with it (a producer/classifier
+     * drift, never a silent skip). {@code fetcherBody} is the row's {@code registerFetchers}
+     * body when the row is flagged, {@code null} otherwise; {@link FetcherRegistrationsEmitter}
+     * renders the bodies from the same flagged rows so the two cannot drift.
+     */
+    public static TypeSpec generateFor(GraphitronSchema schema, GraphQLSchema assembled,
+                                       TypeUnitCommand.SchemaShapeUnit row, CodeBlock fetcherBody) {
+        String name = row.typeName();
+        var graphqlType = graphqlTypeFor(schema.type(name), name, assembled);
+        return switch (row.form()) {
+            case OBJECT -> {
+                if (!(graphqlType instanceof GraphQLObjectType obj)) {
+                    throw formMismatch(name, row, graphqlType);
+                }
+                yield buildObjectTypeSpec(obj, fetcherBody, schema);
+            }
+            case INTERFACE -> {
+                if (!(graphqlType instanceof GraphQLInterfaceType it)) {
+                    throw formMismatch(name, row, graphqlType);
+                }
+                yield buildInterfaceTypeSpec(it, schema);
+            }
+            case UNION -> {
+                if (!(graphqlType instanceof GraphQLUnionType un)) {
+                    throw formMismatch(name, row, graphqlType);
+                }
+                yield buildUnionTypeSpec(un);
+            }
+            case INPUT, ENUM -> throw new IllegalStateException(
+                "schema-shape row for '" + name + "' has form " + row.form()
+                + ", which belongs to another renderer family");
+        };
+    }
+
+    private static IllegalStateException formMismatch(String name, TypeUnitCommand.SchemaShapeUnit row,
+                                                      Object resolved) {
+        return new IllegalStateException(
+            "schema-shape row for '" + name + "' committed form " + row.form()
+            + " but the type resolved to " + (resolved == null ? "null" : resolved.getClass().getSimpleName())
+            + "; the producer's form switch and the render-side resolution disagree");
+    }
+
+    /**
+     * Convenience overload for tests: derives the object-family schema-shape rows through the
+     * producer, so test membership equals the relation production folds over. {@code fetcherBodies}
+     * maps each type name to its {@code registerFetchers} body; names not present get no method.
      */
     public static List<TypeSpec> generate(GraphitronSchema schema, GraphQLSchema assembled,
                                           Map<String, CodeBlock> fetcherBodies) {
-        var result = new ArrayList<TypeSpec>();
-        for (var entry : schema.types().entrySet()) {
-            String name = entry.getKey();
-            if (name.startsWith("_")) continue;
-            var graphqlType = graphqlTypeFor(entry.getValue(), name, assembled);
-            if (graphqlType instanceof GraphQLObjectType obj) {
-                result.add(buildObjectTypeSpec(obj, fetcherBodies.get(name), schema));
-            } else if (graphqlType instanceof GraphQLInterfaceType it) {
-                result.add(buildInterfaceTypeSpec(it, schema));
-            } else if (graphqlType instanceof GraphQLUnionType un) {
-                result.add(buildUnionTypeSpec(un));
-            }
-            // Input / enum / scalar / unclassified entries are handled elsewhere or skipped.
-        }
-        result.sort(Comparator.comparing(TypeSpec::name));
-        return result;
+        return no.sikt.graphitron.plan.TypeUnitCommands.produce(schema, "").schemaShapes().stream()
+            .filter(r -> r.form() == TypeUnitCommand.SchemaShapeForm.OBJECT
+                      || r.form() == TypeUnitCommand.SchemaShapeForm.INTERFACE
+                      || r.form() == TypeUnitCommand.SchemaShapeForm.UNION)
+            .map(r -> generateFor(schema, assembled, r, fetcherBodies.get(r.typeName())))
+            .toList();
     }
 
     /**
