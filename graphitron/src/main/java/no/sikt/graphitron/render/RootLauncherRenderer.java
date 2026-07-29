@@ -2,6 +2,7 @@ package no.sikt.graphitron.render;
 
 import no.sikt.graphitron.command.CarrierDsl;
 import no.sikt.graphitron.command.Invocation;
+import no.sikt.graphitron.command.LaunchSource;
 import no.sikt.graphitron.command.LauncherCommand;
 import no.sikt.graphitron.command.Ordering;
 import no.sikt.graphitron.command.ResultShape;
@@ -65,27 +66,32 @@ public final class RootLauncherRenderer {
         }
         builder.addParameter(ENV, "env");
 
-        String tableLocal = TableLocal.name(row.table());
-        builder.addCode(TableLocal.declare(row.table()));
-        builder.addCode(conditionStatement(row, tableLocal));
-        switch (row.invocation()) {
-            case Invocation.Direct ignored -> {
-                switch (row.result()) {
-                    case ResultShape.SingleRecord ignored2 ->
-                        builder.addCode(directReturn(selectChain(row, tableLocal, false, false)));
-                    case ResultShape.RecordList list -> {
-                        boolean ordered = list.ordering() != null;
-                        if (ordered) {
-                            builder.addCode(orderByStatement(list.ordering(), tableLocal));
+        switch (row.source()) {
+            case LaunchSource.AnchorTable anchor -> {
+                String tableLocal = TableLocal.name(anchor.table());
+                builder.addCode(TableLocal.declare(anchor.table()));
+                builder.addCode(conditionStatement(row, tableLocal));
+                switch (row.invocation()) {
+                    case Invocation.Direct ignored -> {
+                        switch (row.result()) {
+                            case ResultShape.SingleRecord ignored2 -> builder.addCode(
+                                directReturn(selectChain(anchor, tableLocal, false, false)));
+                            case ResultShape.RecordList list -> {
+                                boolean ordered = list.ordering() != null;
+                                if (ordered) {
+                                    builder.addCode(orderByStatement(list.ordering(), tableLocal));
+                                }
+                                builder.addCode(directReturn(selectChain(anchor, tableLocal, true, ordered)));
+                            }
+                            case ResultShape.Connection connection ->
+                                builder.addCode(connectionBody(anchor, connection, tableLocal, carrierDsl));
                         }
-                        builder.addCode(directReturn(selectChain(row, tableLocal, true, ordered)));
                     }
-                    case ResultShape.Connection connection ->
-                        builder.addCode(connectionBody(row, connection, tableLocal, carrierDsl));
+                    case Invocation.FannedOverTenants fanned ->
+                        builder.addCode(fannedBody(anchor, row, fanned, tableLocal));
                 }
             }
-            case Invocation.FannedOverTenants fanned ->
-                builder.addCode(fannedBody(row, fanned, tableLocal));
+            case LaunchSource.RoutineChain chain -> builder.addCode(routineBody(row, chain));
         }
         return builder.build();
     }
@@ -129,8 +135,9 @@ public final class RootLauncherRenderer {
         return chain.build();
     }
 
-    private static CodeBlock selectChain(LauncherCommand row, String tableLocal, boolean isList, boolean ordered) {
-        return selectChain(ProjectionCall.fromEnvSelection(className(row.projection()), tableLocal),
+    private static CodeBlock selectChain(LaunchSource.AnchorTable anchor, String tableLocal,
+            boolean isList, boolean ordered) {
+        return selectChain(ProjectionCall.fromEnvSelection(className(anchor.projection()), tableLocal),
             tableLocal, isList, ordered);
     }
 
@@ -144,8 +151,8 @@ public final class RootLauncherRenderer {
      * those locals plus its own {@code dsl}, so scatter workers read no shared graphql-java
      * state by construction; the entry point collapses the returned outcome list.
      */
-    private static CodeBlock fannedBody(LauncherCommand row, Invocation.FannedOverTenants fanned,
-            String tableLocal) {
+    private static CodeBlock fannedBody(LaunchSource.AnchorTable anchor, LauncherCommand row,
+            Invocation.FannedOverTenants fanned, String tableLocal) {
         var list = (ResultShape.RecordList) row.result();
         var code = CodeBlock.builder();
         boolean ordered = list.ordering() != null;
@@ -156,7 +163,7 @@ public final class RootLauncherRenderer {
             ParameterizedTypeName.get(ClassName.get("org.jooq", "Field"),
                 no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class)));
         code.addStatement("$T selectFields = $L", listOfField,
-            ProjectionCall.fromEnvSelection(className(row.projection()), tableLocal));
+            ProjectionCall.fromEnvSelection(className(anchor.projection()), tableLocal));
         code.add("return $T.fanOutRows(env, dsl -> $L);\n", className(fanned.carrier()),
             selectChain(CodeBlock.of("selectFields"), tableLocal, true, ordered));
         return code.build();
@@ -170,7 +177,7 @@ public final class RootLauncherRenderer {
      * binds the base fragment, the per-facet condition map, and the decode specs through the
      * carrier's facet-carrying constructor.
      */
-    private static CodeBlock connectionBody(LauncherCommand row, ResultShape.Connection connection,
+    private static CodeBlock connectionBody(LaunchSource.AnchorTable anchor, ResultShape.Connection connection,
             String tableLocal, CarrierDsl carrierDsl) {
         var code = CodeBlock.builder();
         code.add(OrderingBlock.declareBothViews(connection.ordering(), tableLocal));
@@ -182,7 +189,7 @@ public final class RootLauncherRenderer {
         code.addStatement(
             "$T page = $T.pageRequest(first, last, after, before, $L, orderBy, extraFields, $L)",
             helperClass.nestedClass("PageRequest"), helperClass, connection.defaultPageSize(),
-            ProjectionCall.fromEnvSelection(className(row.projection()), tableLocal));
+            ProjectionCall.fromEnvSelection(className(anchor.projection()), tableLocal));
         code.add("$T result = dsl\n", RESULT_OF_RECORD)
             .indent()
             .add(".select(page.selectFields())\n")
@@ -230,6 +237,53 @@ public final class RootLauncherRenderer {
         }
         code.addStatement("$T<$T> facetSpecs = $T.of($L)",
             LIST, facetSpecRuntime, LIST, specsArgs.build());
+        return code.build();
+    }
+
+    /**
+     * The routine-chain arm: the FROM source is the bound table-valued function (IN parameters
+     * read off the field's arguments through the shared routine-call emitter), hops join forward
+     * out of the routine result through the shared bridging fragment, hop filters AND into one
+     * WHERE, and the projection targets the terminus alias. No condition local: the leaf carries
+     * no filter surface (the coordinate can have no condition row), and the chain's WHERE is the
+     * hop filters alone, exactly as the inline builder composed it.
+     */
+    private static CodeBlock routineBody(LauncherCommand row, LaunchSource.RoutineChain chain) {
+        var code = CodeBlock.builder();
+        var startTable = chain.start().resultTable();
+        String startLocal = chain.hops().isEmpty() ? TableLocal.name(startTable) : "source";
+        code.addStatement("$T $L = $L", startTable.tableClass(), startLocal,
+            RoutineCallEmitter.emitCall(chain.start(), new PreviousNodeRef.None(), new ArgumentValueSource.Env()));
+        for (var hop : chain.hops()) {
+            // The chain constructor pins every hop target to the catalog, so the alias wraps the
+            // bare Tables.<X> singleton, matching every other alias-declaration site.
+            code.addStatement("$T $L = $T.$L.as($S)",
+                hop.targetTable().tableClass(), hop.alias(),
+                hop.targetTable().constantsClass(), hop.targetTable().javaFieldName(), hop.alias());
+        }
+        String terminal = chain.hops().isEmpty() ? startLocal : chain.hops().getLast().alias();
+        boolean isList = row.result() instanceof ResultShape.RecordList;
+
+        var sel = CodeBlock.builder()
+            .add("return dsl\n")
+            .indent()
+            .add(".select($L)\n", ProjectionCall.fromEnvSelection(className(chain.projection()), terminal))
+            .add(".from($L)\n", startLocal);
+        var filters = new java.util.ArrayList<CodeBlock>();
+        for (int i = 0; i < chain.hops().size(); i++) {
+            var hop = chain.hops().get(i);
+            String prev = i == 0 ? startLocal : chain.hops().get(i - 1).alias();
+            sel.add("$L\n", PathFragments.emitForwardBridging(hop, prev, hop.alias()));
+            if (hop.filter() != null) {
+                filters.add(PathFragments.emitTwoArgMethodCall(hop.filter(), prev, hop.alias()));
+            }
+        }
+        if (!filters.isEmpty()) {
+            sel.add(".where($L)\n", filters.stream()
+                .reduce((a, b) -> CodeBlock.of("$L.and($L)", a, b)).orElseThrow());
+        }
+        sel.add(isList ? ".fetch();\n" : ".fetchOne();\n").unindent();
+        code.add(sel.build());
         return code.build();
     }
 

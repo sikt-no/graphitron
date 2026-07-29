@@ -158,6 +158,105 @@ class RootLauncherSqlBaselineTest {
                 "select count(*) from \"public\".\"film\"");
     }
 
+    @Test
+    void routineRoot_singleNode_selectsFromTheBoundRoutineTable() {
+        execute("{ tilganger(env: \"e\", serviceId: \"s\", feideId: \"f\") { rollekode } }");
+        assertThat(SQL_LOG)
+            .as("routine root, single node: the FROM source is the bound table-valued function, "
+                + "IN parameters as binds, projection against the routine table")
+            .containsExactly(
+                "select \"tilganger_for_feidebruker_med_fs_fiktivt_fnr\".\"rollekode\" "
+                    + "from \"public\".\"tilganger_for_feidebruker_med_fs_fiktivt_fnr\"(?, ?, ?)");
+    }
+
+    @Test
+    void routineRoot_withHops_joinsForwardAndProjectsTheTerminus() {
+        execute("{ recentFilmsForActor(actorId: 1, minLength: 1) { title } }");
+        assertThat(SQL_LOG)
+            .as("routine root with a hop: the routine supplies FROM, the hop joins forward onto "
+                + "the catalog table, and the projection targets the terminus alias")
+            .containsExactly(
+                "select \"recentfilmsforactor_0\".\"title\" "
+                    + "from \"public\".\"films_for_actor\"(?, ?) "
+                    + "join \"public\".\"film\" as \"recentfilmsforactor_0\" "
+                    + "on \"films_for_actor\".\"film_id\" = \"recentfilmsforactor_0\".\"film_id\"");
+    }
+
+    @Test
+    void interfaceRoot_singleTable_projectsTheDiscriminatorRoutingAlias() {
+        execute("{ allContent { title } }");
+        assertThat(SQL_LOG)
+            .as("single-table interface root: the discriminator projects under the synthetic "
+                + "routing alias beside the participant field set, restricted to known values")
+            .containsExactly(
+                "select \"content\".\"content_type\" as \"__discriminator__\", "
+                    + "\"public\".\"content\".\"title\" "
+                    + "from \"public\".\"content\" "
+                    + "where \"content\".\"content_type\" in (?, ?) "
+                    + "order by \"public\".\"content\".\"content_id\" asc");
+    }
+
+    @Test
+    void interfaceRoot_joinedTable_detailJoinFiresOnDetailSelection() {
+        execute("{ allParties { displayName ... on Individual { birthDate } } }");
+        assertThat(SQL_LOG)
+            .as("joined-table interface root: the detail-exclusive selection declares the "
+                + "detail alias and fires the discriminator-gated LEFT JOIN; the inherited "
+                + "reference projects off the base under its reserved result-key alias")
+            .containsExactly(
+                "select \"party\".\"party_kind\" as \"__discriminator__\", "
+                    + "\"public\".\"party\".\"party_id\" as \"party_id\", "
+                    + "\"public\".\"party\".\"display_name\" as \"__rk_displayname\", "
+                    + "\"individual_detail\".\"birth_date\" "
+                    + "from \"public\".\"party\" "
+                    + "left outer join \"public\".\"party_individual\" as \"individual_detail\" "
+                    + "on (\"individual_detail\".\"party_id\" = \"public\".\"party\".\"party_id\" "
+                    + "and \"party\".\"party_kind\" = ?) "
+                    + "where \"party\".\"party_kind\" in (?, ?) "
+                    + "order by \"public\".\"party\".\"party_id\" asc");
+    }
+
+    @Test
+    void interfaceRoot_crossTableParticipantField_gatedLeftJoinArm() {
+        execute("{ allContent { title ... on FilmContent { rating } } }");
+        assertThat(SQL_LOG)
+            .as("single-table interface root with a cross-table participant field: the "
+                + "selection declares the aliased FK-target and fires its discriminator-gated "
+                + "LEFT JOIN arm")
+            .containsExactly(
+                "select \"content\".\"content_type\" as \"__discriminator__\", "
+                    + "\"public\".\"content\".\"title\", "
+                    + "\"filmcontent_rating\".\"rating\" as \"filmcontent_rating\" "
+                    + "from \"public\".\"content\" "
+                    + "left outer join \"public\".\"film\" as \"filmcontent_rating\" "
+                    + "on (\"filmcontent_rating\".\"film_id\" = \"public\".\"content\".\"film_id\" "
+                    + "and \"content\".\"content_type\" = ?) "
+                    + "where \"content\".\"content_type\" in (?, ?) "
+                    + "order by \"public\".\"content\".\"content_id\" asc");
+    }
+
+    @Test
+    void interfaceRoot_compositeSharedKey_discriminatorStaysBaseQualified() {
+        execute("{ allSubjects { displayName ... on AppAccount { clientId } } }");
+        assertThat(SQL_LOG)
+            .as("composite-shared-key joined-table interface: the detail re-declares the "
+                + "discriminator column, so the projection, LEFT JOIN ON and WHERE all qualify "
+                + "it to the base table (PostgreSQL rejects the query otherwise)")
+            .containsExactly(
+                "select \"jti_subject\".\"subject_kind\" as \"__discriminator__\", "
+                    + "\"public\".\"jti_subject\".\"jti_subject_id\" as \"jti_subject_id\", "
+                    + "\"public\".\"jti_subject\".\"subject_kind\" as \"subject_kind\", "
+                    + "\"public\".\"jti_subject\".\"display_name\" as \"__rk_displayname\", "
+                    + "\"appaccount_detail\".\"client_id\" "
+                    + "from \"public\".\"jti_subject\" "
+                    + "left outer join \"public\".\"jti_app_account\" as \"appaccount_detail\" "
+                    + "on (\"appaccount_detail\".\"jti_subject_id\" = \"public\".\"jti_subject\".\"jti_subject_id\" "
+                    + "and \"appaccount_detail\".\"subject_kind\" = \"public\".\"jti_subject\".\"subject_kind\" "
+                    + "and \"jti_subject\".\"subject_kind\" = ?) "
+                    + "where \"jti_subject\".\"subject_kind\" in (?, ?) "
+                    + "order by \"public\".\"jti_subject\".\"jti_subject_id\" asc");
+    }
+
     private Map<String, Object> execute(String query) {
         var input = Graphitron.newExecutionInput(dsl, "test-user").query(query).build();
         var result = graphql.execute(input);

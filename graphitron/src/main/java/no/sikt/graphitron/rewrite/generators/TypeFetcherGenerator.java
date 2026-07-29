@@ -594,7 +594,16 @@ public class TypeFetcherGenerator {
                 }
                 case QueryField.QueryNodeField f              -> builder.addMethod(buildQueryNodeFetcher(ctx, f, outputPackage));
                 case QueryField.QueryNodesField f             -> builder.addMethod(buildQueryNodesFetcher(ctx, f, outputPackage));
-                case QueryField.QueryRoutineTableField f      -> builder.addMethod(buildQueryRoutineFetcher(ctx, f, outputPackage));
+                case QueryField.QueryRoutineTableField f      -> {
+                    var routineRow = launchers.rowFor(f.parentTypeName(), f.name())
+                        .orElseThrow(() -> new IllegalStateException(
+                            "Graphitron generator bug (root launcher dispatch): routine root coordinate '"
+                            + f.qualifiedName() + "' has no launcher row;"
+                            + " the producer's membership and this dispatch have drifted"));
+                    builder.addMethod(buildQueryTableFetcher(ctx, f, routineRow, outputPackage));
+                    builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
+                        .render(routineRow, launchers.carrierDsl()));
+                }
                 case QueryField.QueryServiceTableField f      -> builder.addMethod(buildQueryServiceTableFetcher(ctx, f, outputPackage));
                 case QueryField.QueryServiceRecordField f     -> builder.addMethod(buildQueryServiceRecordFetcher(ctx, f, outputPackage));
                 case QueryField.QueryServicePolymorphicField f ->
@@ -962,12 +971,13 @@ public class TypeFetcherGenerator {
      * }
      * }</pre>
      */
-    private static MethodSpec buildQueryTableFetcher(TypeFetcherEmissionContext ctx, QueryField.QueryTableField qtf,
+    private static MethodSpec buildQueryTableFetcher(TypeFetcherEmissionContext ctx,
+            no.sikt.graphitron.rewrite.model.OutputField field,
             no.sikt.graphitron.command.LauncherCommand row, String outputPackage) {
         var valueType = no.sikt.graphitron.render.RootLauncherRenderer.valueTypeOf(row);
         var launcherClass = ClassName.get(row.unit().owner().packageName(), row.unit().owner().simpleName());
 
-        var builder = MethodSpec.methodBuilder(qtf.name())
+        var builder = MethodSpec.methodBuilder(field.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(syncResultType(valueType))
             .addParameter(ENV, "env");
@@ -984,7 +994,7 @@ public class TypeFetcherGenerator {
             builder.addStatement("return $T.collapseFanOut(env, $T.$L(env))",
                 tenantConnections, launcherClass, row.unit().methodName());
         } else {
-            var tenantDsl = TenantDslEmitter.resolve(ctx, qtf, outputPackage);
+            var tenantDsl = TenantDslEmitter.resolve(ctx, field, outputPackage);
             builder.addCode(tenantDsl.declaration());
             builder.addStatement("$T payload = $T.$L(dsl, env)", valueType, launcherClass, row.unit().methodName());
             builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.localContextTail()));
@@ -1578,119 +1588,6 @@ public class TypeFetcherGenerator {
             .build();
     }
 
-    /**
-     * Generates a fetcher for a root-query {@code @routine} table chain (single-node and
-     * routine-then-hops). Mirrors {@link #buildQueryTableFetcher}, with one difference: the
-     * {@code FROM} source is the schema's global {@code Routines} convenience method (which
-     * returns the configured table-valued-function table) rather than the bare {@code Tables.X}
-     * singleton, with the routine's IN parameters bound from GraphQL field arguments. Chain hops
-     * join forward out of the routine result — the first keyed by the name-matched target key
-     * (no {@code Keys} constant exists), later hops by {@code .onKey} / condition — and the
-     * {@code Type.$project(...)} selection narrowing projects the <em>terminus</em> alias.
-     *
-     * <p>Generated code (list variant, single-node):
-     * <pre>{@code
-     * public static Result<Record> tilganger(DataFetchingEnvironment env) {
-     *     TilgangerForFeidebrukerMedFsFiktivtFnr table =
-     *         Routines.tilgangerForFeidebrukerMedFsFiktivtFnr(
-     *             env.<String>getArgument("env"), env.<String>getArgument("serviceId"), env.<String>getArgument("feideId"));
-     *     DSLContext dsl = graphitronContext(env).getDslContext(env);
-     *     Result<Record> payload = dsl
-     *         .select(Tilgang.$project(env.getSelectionSet().getFieldsGroupedByResultKey(), table, env))
-     *         .from(table)
-     *         .fetch();
-     *     ...
-     * }
-     * }</pre>
-     *
- * <p>Routine-then-hops variant:
-     * <pre>{@code
-     *     FilmsForActor source = Routines.filmsForActor(env.<Integer>getArgument("actorId"), ...);
-     *     Film films_0 = Tables.FILM.as("films_0");
-     *     Result<Record> payload = dsl
-     *         .select(Film.$project(env.getSelectionSet().getFieldsGroupedByResultKey(), films_0, env))
-     *         .from(source)
-     *         .join(films_0).on(source.FILM_ID.eq(films_0.FILM_ID))
-     *         .fetch();
-     * }</pre>
-     */
-    private static MethodSpec buildQueryRoutineFetcher(TypeFetcherEmissionContext ctx,
-            QueryField.QueryRoutineTableField qrtf, String outputPackage) {
-        var tableRef = qrtf.returnType().table();
-        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qrtf.returnType().returnTypeName(), outputPackage);
-        boolean isList = qrtf.returnType().wrapper().isList();
-        var valueType = isList ? (TypeName) ParameterizedTypeName.get(RESULT, RECORD) : RECORD;
-
-        var builder = MethodSpec.methodBuilder(qrtf.name())
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(syncResultType(valueType))
-            .addParameter(ENV, "env");
-
-        // Routines.<method>(<bound IN params>) returns the configured table-valued-function table,
-        // emitted through the shared RoutineCallEmitter. The root chain head has no previous node
-        // (PreviousNodeRef.None) and reads argument values off env (ArgumentValueSource.Env);
-        // QueryRoutineTableField pins every start binding to ParamSource.Arg, so emitCall's
-        // correlated fork is false here and no argument is wrapped in DSL.val.
-        CodeBlock startExpr = RoutineCallEmitter.emitCall(qrtf.start(),
-            new PreviousNodeRef.None(), new ArgumentValueSource.Env());
-        var hops = qrtf.hops();
-        // Single-node keeps the terminus-derived local name; a chained start is not the
-        // projected table, so it gets its own name (hop aliases end in "_<i>" — no collision).
-        String startLocal = hops.isEmpty() ? names.tableLocalName() : "source";
-
-        builder.beginControlFlow("try");
-        builder.addStatement("$T $L = $L",
-            qrtf.start().resultTable().tableClass(), startLocal, startExpr);
-        for (JoinStep step : hops) {
-            var hop = (JoinStep.Hop) step;
-            // The hop's catalog table expression comes from the shared emitter (the
-            // compact constructor pins every hop target to TableExpr.Catalog, so this is always
-            // Tables.<X>); the alias wrap stays here, matching every other alias-declaration site.
-            CodeBlock hopTableExpr = JoinPathEmitter.emitTableExpression(
-                step, new PreviousNodeRef.None(), new ArgumentValueSource.Env());
-            builder.addStatement("$T $L = $L.as($S)",
-                hop.targetTable().tableClass(), hop.alias(), hopTableExpr, hop.alias());
-        }
-        String terminalLocal = hops.isEmpty() ? startLocal : ((JoinStep.Hop) hops.getLast()).alias();
-
-        var tenantDsl = TenantDslEmitter.resolve(ctx, qrtf, outputPackage);
-        builder.addCode(tenantDsl.declaration());
-        var sel = CodeBlock.builder()
-            .add("$T payload = dsl\n", valueType)
-            .indent()
-            .add(".select($L)\n", ProjectionCall.fromEnvSelection(names.typeClass(), terminalLocal))
-            .add(".from($L)\n", startLocal);
-        var filters = new java.util.ArrayList<CodeBlock>();
-        for (int i = 0; i < hops.size(); i++) {
-            var hop = (JoinStep.Hop) hops.get(i);
-            String prev = i == 0 ? startLocal : ((JoinStep.Hop) hops.get(i - 1)).alias();
-            switch (hop.on()) {
-                case On.ColumnPairs cp -> sel.add("$L\n",
-                    JoinPathEmitter.emitForwardJoin(cp, prev, hop.alias()));
-                case On.Predicate pred -> sel.add(".join($L).on($L)\n",
-                    hop.alias(), JoinPathEmitter.emitTwoArgMethodCall(pred.condition(), prev, hop.alias()));
-                // Unrepresentable: QueryRoutineTableField's compact constructor rejects a
-                // lateral hop (the chain's one routine node is the start, never a hop).
-                case On.Lateral ignored -> throw new IllegalStateException(
-                    "a lateral routine hop cannot appear in a root routine chain's hops");
-            }
-            if (hop.filter() != null) {
-                filters.add(JoinPathEmitter.emitTwoArgMethodCall(hop.filter(), prev, hop.alias()));
-            }
-        }
-        if (!filters.isEmpty()) {
-            sel.add(".where($L)\n", filters.stream()
-                .reduce((a, b) -> CodeBlock.of("$L.and($L)", a, b)).orElseThrow());
-        }
-        sel.add(isList ? ".fetch();\n" : ".fetchOne();\n").unindent();
-        builder.addCode(sel.build());
-        builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.localContextTail()));
-        builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(noChannelCatchArm(outputPackage));
-        builder.endControlFlow();
-
-        return builder.build();
-    }
 
     /**
  * The fetcher for a {@link MutationField.MutationRoutineWriteField} — the routine call

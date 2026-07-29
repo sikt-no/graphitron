@@ -6,6 +6,7 @@ import no.sikt.graphitron.command.ConditionCommand;
 import no.sikt.graphitron.command.FacetPlan;
 import no.sikt.graphitron.command.GlueCall;
 import no.sikt.graphitron.command.Invocation;
+import no.sikt.graphitron.command.LaunchSource;
 import no.sikt.graphitron.command.LauncherCommand;
 import no.sikt.graphitron.command.Ordering;
 import no.sikt.graphitron.command.ResultShape;
@@ -57,8 +58,6 @@ public final class LauncherCommands {
      * seam. Shrink-only on its true-set; each entry names the slice that deletes it.
      */
     enum NotYetMigrated {
-        /** The {@code @routine} root's table-expression composition (tail slice). */
-        ROUTINE,
         /** The single-table-interface root's discriminator reprojection (tail slice). */
         TABLE_INTERFACE,
         /** The lookup root, whose named unit already exists and folds in last (closing slice). */
@@ -75,10 +74,14 @@ public final class LauncherCommands {
             for (var field : schema.fieldsOf(type.name())) {
                 if (coveredFamily(field)
                         && dialEntryOf(schema, (QueryField) field) == null) {
-                    var qtf = (QueryField.QueryTableField) field;
-                    rows.add(row(qtf, whereOf(qtf, conditions), units,
-                        facetPlanOf(schema, qtf, conditions, units),
-                        invocationOf(schema, qtf, units)));
+                    rows.add(switch ((QueryField) field) {
+                        case QueryField.QueryTableField qtf -> row(qtf, whereOf(qtf, conditions), units,
+                            facetPlanOf(schema, qtf, conditions, units),
+                            invocationOf(schema, qtf, units));
+                        case QueryField.QueryRoutineTableField qrtf -> routineRow(qrtf, units);
+                        default -> throw new IllegalStateException(
+                            "unmigrated covered kind reached row production: " + field.getClass().getSimpleName());
+                    });
                 }
             }
         }
@@ -106,6 +109,8 @@ public final class LauncherCommands {
         for (var field : fields) {
             if (field instanceof QueryField.QueryTableField qtf) {
                 rows.add(row(qtf, glueFromFilters(qtf, units), units, null, new Invocation.Direct()));
+            } else if (field instanceof QueryField.QueryRoutineTableField qrtf) {
+                rows.add(routineRow(qrtf, units));
             }
         }
         return new LauncherRelation(rows, CarrierDsl.ENV_ACQUIRED);
@@ -153,14 +158,27 @@ public final class LauncherCommands {
      * exist.
      */
     static NotYetMigrated dialEntryOf(GraphitronSchema schema, QueryField field) {
+        // Total over the permits (a new root kind is a compile error here, matching
+        // coveredFamily); the non-covered kinds are unreachable behind the coveredFamily guard.
         return switch (field) {
             case QueryField.QueryTableField ignored -> null;
-            case QueryField.QueryRoutineTableField ignored -> NotYetMigrated.ROUTINE;
+            case QueryField.QueryRoutineTableField ignored -> null;
             case QueryField.QueryTableInterfaceField ignored -> NotYetMigrated.TABLE_INTERFACE;
             case QueryField.QueryLookupTableField ignored -> NotYetMigrated.LOOKUP;
-            default -> throw new IllegalArgumentException(
-                "dialEntryOf is defined over the covered family; got " + field.getClass().getSimpleName());
+            case QueryField.QueryInterfaceField ignored -> notCovered(field);
+            case QueryField.QueryUnionField ignored -> notCovered(field);
+            case QueryField.QueryNodeField ignored -> notCovered(field);
+            case QueryField.QueryNodesField ignored -> notCovered(field);
+            case QueryField.QueryServiceTableField ignored -> notCovered(field);
+            case QueryField.QueryServiceRecordField ignored -> notCovered(field);
+            case QueryField.QueryServicePolymorphicField ignored -> notCovered(field);
+            case QueryField.QueryServiceTableInterfaceField ignored -> notCovered(field);
         };
+    }
+
+    private static NotYetMigrated notCovered(QueryField field) {
+        throw new IllegalArgumentException(
+            "dialEntryOf is defined over the covered family; got " + field.getClass().getSimpleName());
     }
 
     private static LauncherCommand row(QueryField.QueryTableField qtf, GlueCall where, GeneratedUnits units,
@@ -168,11 +186,34 @@ public final class LauncherCommands {
         return new LauncherCommand(
             units.launcherMethod(qtf.parentTypeName(), qtf.name()),
             FieldCoordinates.coordinates(qtf.parentTypeName(), qtf.name()),
-            qtf.returnType().table(),
-            units.typeClass(qtf.returnType().returnTypeName()),
+            new LaunchSource.AnchorTable(qtf.returnType().table(),
+                units.typeClass(qtf.returnType().returnTypeName())),
             where,
             invocation,
             resultShapeOf(qtf, units, facets));
+    }
+
+    /**
+     * A {@code @routine} chain row: the source arm carries the borrowed start expression and the
+     * narrowed hop list (the chain constructor's own guarantee), the projection targets the
+     * terminus type. No WHERE slot (the leaf carries no filter surface, so no condition row
+     * exists) and no ordering (root routine lists are unordered by classification; the
+     * {@code @orderBy} surface is deferred on the chain).
+     */
+    private static LauncherCommand routineRow(QueryField.QueryRoutineTableField qrtf, GeneratedUnits units) {
+        var hops = qrtf.chain().hops().stream()
+            .map(step -> (no.sikt.graphitron.rewrite.model.JoinStep.Hop) step)
+            .toList();
+        return new LauncherCommand(
+            units.launcherMethod(qrtf.parentTypeName(), qrtf.name()),
+            FieldCoordinates.coordinates(qrtf.parentTypeName(), qrtf.name()),
+            new LaunchSource.RoutineChain(qrtf.chain().start(), hops,
+                units.typeClass(qrtf.returnType().returnTypeName())),
+            null,
+            new Invocation.Direct(),
+            qrtf.returnType().wrapper().isList()
+                ? new ResultShape.RecordList(null)
+                : new ResultShape.SingleRecord());
     }
 
     /**

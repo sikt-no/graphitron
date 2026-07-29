@@ -736,6 +736,51 @@ fan-out domain are not launcher facts (they ride SDL and the collapse). The fann
 is pinned structurally (env-only signature, `List<Object>` payload, the hoist-then-scatter
 shape); the fan-out execution suite carries behaviour.
 
+### Slice 5a (2026-07-29): the source axis, and the routine root migrates
+
+Landed as one commit: the launcher command gained its fourth axis, `LaunchSource`, how rows are
+sourced and projected, absorbing the top-level `table` and `projection` slots rather than
+sitting beside them (two independent slots would have made illegal cells representable and both
+retained slots change meaning per arm: the routine root's FROM is the start expression, not a
+declared table local, and its projection targets the terminus alias). Arms:
+`AnchorTable(table, projection)` and `RoutineChain(start, hops, projection)`; the discriminated
+arm arrives with 5b's first row, per the item's own non-vacuity discipline. The routine arm
+borrows outright, zero new dial entries (`TableExpr.RoutineCall`, and the hop list narrowed to
+`JoinStep.Hop`, the model chain constructor's own guarantee, so the renderer never casts, the
+`Ordering.Columns`/`OrderBySpec.Fixed` precedent). The routine renderer arm composes through the
+render-side emitters that already existed (`RoutineCallEmitter.emitCall`,
+`PathFragments.emitForwardBridging`, which deletes a copy of the `On` dispatch instead of
+relocating it); hop targets are catalog-pinned, so the alias declarations render the bare
+`Tables.<X>` singleton with no generator import. `buildQueryRoutineFetcher` retired; the dial's
+`ROUTINE` entry deleted; `dialEntryOf` became a second total switch over the permits
+(exhaustiveness in exchange for its default throw). The routine root's four pre-cutover pins
+(single-node, routine-then-hops) held byte-identical, and 5b's two riskiest reprojection
+sub-shapes (the cross-table LEFT JOIN arm, the composite-shared-key base qualification) were
+pinned in the same pass, the only cheap moment under the frozen-strings rule.
+
+**Two contract corrections and one recorded gap.** `ResultShape.RecordList`'s
+"a classified schema cannot reach an absent ordering" claim went false with the first classified
+routine list: root routine chains are unordered by classification (the `@orderBy` surface is
+deferred on the chain), so the javadoc now names both absent populations, and the launcher does
+not normalise an ordering it cannot produce. The underlying fact is a determinism-rule gap
+recorded here for the hand-off: the deterministic-order validation keys on
+`SqlGeneratingField`, which the routine leaf does not implement, so a classified list root
+escapes the rule by capability non-membership, a membership silent skip nobody recorded as a
+decision. Cross-axis backstops landed with the arm (routine implies direct invocation and never
+paginates, mirroring the classifier's routine verdict), and the payload view (`valueTypeOf`)
+now folds invocation over result, correcting `ResultShape`'s "one fact with two consumers"
+sentence: the payload is a view over two slots.
+
+**For 5b, decided here so the slice starts from it:** the interface root joins the axis as the
+`DiscriminatedTable` arm (base table, discriminator, known values, participants, the
+source-entailed discriminator restriction riding the arm so `where` stays purely condition
+glue); the two schema derivations the legacy assembly recomputes (inherited base-resident refs,
+shared-key/detail-exclusive splits) belong on `ParticipantRef.JoinedTableBound` at the parse
+boundary, whose javadoc already claims no site recomputes residence; interface times connection
+is currently accepted and silently mis-emitted, so 5b lands a deferred rejection for it; and the
+`__rk_` reserved-alias literal, already written by two packages with nothing binding them, gets
+single-sourced when the assembly relocates.
+
 ## Retired vocabulary
 
 - `TypeFetcherGenerator.buildQueryConnectionFetcher`, `buildConnectionOrderingBlock` and
@@ -745,6 +790,8 @@ shape); the fan-out execution suite carries behaviour.
 - `TypeFetcherGenerator.buildFannedQueryTableFetcher` (slice 4): the fanned launcher and the
   entry point's strategy fork replaced it; the root dispatch's `TenantDslEmitter.isFanOut` read
   retired with it (the producer's `invocationOf` is the fact's home for the root family).
+- `TypeFetcherGenerator.buildQueryRoutineFetcher` (slice 5a): the routine launcher arm replaced
+  it, composing through the render-side emitters it already shared.
 
 - `QueryLookupTableField.lookupMethodName()` (slice 6): the producer computes this coordinate's
   `UnitRef` like every other row; the emitted `lookup<Field>` method name is unchanged.

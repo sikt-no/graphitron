@@ -24,10 +24,12 @@ public sealed interface ResultShape {
     record SingleRecord() implements ResultShape {}
 
     /**
-     * A record list: the {@code fetch()} shape under {@link #ordering}. The slot is absent only
-     * for the schema-free unit-tier assemblies; a classified schema cannot reach it (the
-     * validator rejects a list coordinate with no resolvable ordering), and the renderer keeps
-     * the absent arm renderable (no ORDER BY clause) for exactly that tier.
+     * A record list: the {@code fetch()} shape under {@link #ordering}. The slot is absent for
+     * two populations: the schema-free unit-tier assemblies, and classified root {@code @routine}
+     * chains, whose lists are unordered by classification (the chain defers the {@code @orderBy}
+     * surface, and the deterministic-order validation keys on a capability the routine leaf does
+     * not implement, a gap recorded on the launcher item's hand-off). The renderer renders the
+     * absent arm with no ORDER BY clause, the same SQL an empty sort list produces.
      */
     record RecordList(Ordering ordering) implements ResultShape {}
 

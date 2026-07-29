@@ -92,9 +92,12 @@ class CommandSeamRatchetTest {
      * the launcher command's producer ({@link no.sikt.graphitron.plan.LauncherCommands})
      * relocated the root family's covered-family fact (a total switch over
      * {@link no.sikt.graphitron.rewrite.model.QueryField}'s twelve permits) and its migration
-     * dial out of the fetcher generator's dispatch, which now routes on row presence.
+     * dial out of the fetcher generator's dispatch, which now routes on row presence; raised to
+     * 67 when the routine root migrated and the dial classification became a second total
+     * switch over the permits (exhaustiveness in exchange for the default throw), with the row
+     * production fork joining it.
      */
-    private static final int PLAN_LEAF_REFERENCES = 56;
+    private static final int PLAN_LEAF_REFERENCES = 67;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide

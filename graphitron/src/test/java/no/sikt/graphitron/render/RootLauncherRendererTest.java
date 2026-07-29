@@ -4,6 +4,7 @@ import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.command.CarrierDsl;
 import no.sikt.graphitron.command.GlueCall;
 import no.sikt.graphitron.command.Invocation;
+import no.sikt.graphitron.command.LaunchSource;
 import no.sikt.graphitron.command.LauncherCommand;
 import no.sikt.graphitron.command.Ordering;
 import no.sikt.graphitron.command.ResultShape;
@@ -43,8 +44,9 @@ class RootLauncherRendererTest {
         return new LauncherCommand(
             UNITS.launcherMethod("Query", "films"),
             FieldCoordinates.coordinates("Query", "films"),
-            filmTable(List.of(col("film_id", "FILM_ID", "java.lang.Integer"))),
-            UNITS.typeClass("Film"),
+            new LaunchSource.AnchorTable(
+                filmTable(List.of(col("film_id", "FILM_ID", "java.lang.Integer"))),
+                UNITS.typeClass("Film")),
             where, invocation, result);
     }
 

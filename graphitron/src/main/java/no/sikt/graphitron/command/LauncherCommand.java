@@ -1,7 +1,6 @@
 package no.sikt.graphitron.command;
 
 import graphql.schema.FieldCoordinates;
-import no.sikt.graphitron.rewrite.model.TableRef;
 
 import java.util.Objects;
 
@@ -23,8 +22,9 @@ import java.util.Objects;
  * condition row; the renderer composes the neutral condition from that absence. The ordering
  * rides {@link #result}'s arms, because the two co-vary (a single-record launcher is unordered
  * by construction; a connection is ordered by construction), so the illegal pairs are
- * unrepresentable rather than checked. {@link #projection} is the first cross-command edge: the
- * projection unit whose {@code $project} supplies the select list.
+ * unrepresentable rather than checked. {@link #source} is the sourcing-and-projection axis (see
+ * {@link LaunchSource}); its projection refs are the first cross-command edges, the units whose
+ * {@code $project} supplies the select list.
  *
  * <p>{@link #invocation} is the strategy axis (see {@link Invocation}); the rendered payload is
  * a derived view over {@code (invocation, result)}, not a slot of its own, since the fanned
@@ -34,8 +34,7 @@ import java.util.Objects;
 public record LauncherCommand(
     UnitMethodRef unit,
     FieldCoordinates coordinate,
-    TableRef table,
-    UnitRef projection,
+    LaunchSource source,
     GlueCall where,
     Invocation invocation,
     ResultShape result
@@ -44,19 +43,32 @@ public record LauncherCommand(
     public LauncherCommand {
         Objects.requireNonNull(unit, "unit");
         Objects.requireNonNull(coordinate, "a launcher row is keyed by its field coordinate");
-        Objects.requireNonNull(table, "table");
-        Objects.requireNonNull(projection, "every launcher names the projection unit it selects from");
+        Objects.requireNonNull(source, "every launcher states how its rows are sourced and projected");
         Objects.requireNonNull(invocation, "invocation");
         Objects.requireNonNull(result, "result");
-        // Backstop, not the enforcer: the parse boundary already rejects non-list and
-        // @asConnection shapes on a fan-out coordinate (the @tenantFanOut rejection ladder in
-        // {@link no.sikt.graphitron.rewrite.TenantBindingIndex}), so a fanned row is a record
-        // list by classification; this guard keeps the pair unrepresentable if that check is
-        // ever relaxed without an audit here.
+        // Cross-axis backstops, not the enforcers; each mirrors a parse-boundary rejection and
+        // keeps the pair unrepresentable if that check is ever relaxed without an audit here.
+        // Fanned implies record list: the @tenantFanOut rejection ladder
+        // (no.sikt.graphitron.rewrite.TenantBindingIndex) rejects non-list and @asConnection
+        // shapes on a fan-out coordinate.
         if (invocation instanceof Invocation.FannedOverTenants && !(result instanceof ResultShape.RecordList)) {
             throw new IllegalArgumentException(
                 "a fanned launcher's composition is a record list by classification; got "
                 + result.getClass().getSimpleName());
+        }
+        // A routine chain is invoked directly and never paginates: the classifier's routine
+        // verdict (FieldBuilder's routine chain rules) rejects @asConnection on the chain, and
+        // no fanned routine emission exists (the legacy path failed generation on the pair).
+        if (source instanceof LaunchSource.RoutineChain) {
+            if (!(invocation instanceof Invocation.Direct)) {
+                throw new IllegalArgumentException(
+                    "a routine-chain launcher is invoked directly; got "
+                    + invocation.getClass().getSimpleName());
+            }
+            if (result instanceof ResultShape.Connection) {
+                throw new IllegalArgumentException(
+                    "a routine-chain launcher never paginates; the classifier rejects @asConnection on the chain");
+            }
         }
     }
 }

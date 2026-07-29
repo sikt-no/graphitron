@@ -51,8 +51,9 @@ class LauncherCommandsPipelineTest {
             .isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".fetchers.QueryFetchers");
         assertThat(filtered.unit().methodName()).isEqualTo("rowsLanguages");
         assertThat(filtered.coordinate()).isEqualTo(FieldCoordinates.coordinates("Query", "languages"));
-        assertThat(filtered.table().tableName()).isEqualTo("language");
-        assertThat(filtered.projection().fqcn()).isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".types.Language");
+        var anchor = (no.sikt.graphitron.command.LaunchSource.AnchorTable) filtered.source();
+        assertThat(anchor.table().tableName()).isEqualTo("language");
+        assertThat(anchor.projection().fqcn()).isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".types.Language");
         assertThat(filtered.result()).isInstanceOf(ResultShape.RecordList.class);
         // The handshake: the WHERE slot is the condition row's glue ref and its env-appending
         // answer, copied, never recomputed from filters.
@@ -171,10 +172,33 @@ class LauncherCommandsPipelineTest {
         // and unit, which pins that element-nullability strictness and the fan-out domain are
         // not launcher facts (they ride SDL and the collapse, not the composition).
         var sibling = relation.rowFor("Query", "filmsAgain").orElseThrow();
-        assertThat(sibling.table()).isEqualTo(fanned.table());
-        assertThat(sibling.projection()).isEqualTo(fanned.projection());
+        assertThat(sibling.source()).isEqualTo(fanned.source());
         assertThat(sibling.invocation()).isEqualTo(fanned.invocation());
         assertThat(sibling.result()).isEqualTo(fanned.result());
+    }
+
+    @Test
+    void routineRoot_sourceArmCarriesTheChainAndTheTerminusProjection() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            type Query {
+                recent(actorId: Int!, minLength: Int!): [Film!]!
+                    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+                    @reference(path: [{table: "film"}])
+            }
+            """);
+
+        var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
+        var row = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE)
+            .rowFor("Query", "recent").orElseThrow();
+        var chain = (no.sikt.graphitron.command.LaunchSource.RoutineChain) row.source();
+        assertThat(chain.hops()).hasSize(1);
+        assertThat(chain.projection().fqcn()).isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".types.Film");
+        // No filter surface on the leaf, so no WHERE slot; unordered by classification (the
+        // @orderBy surface is deferred on the chain), so the list shape carries no ordering.
+        assertThat(row.where()).isNull();
+        assertThat(((ResultShape.RecordList) row.result()).ordering()).isNull();
+        assertThat(row.invocation()).isInstanceOf(no.sikt.graphitron.command.Invocation.Direct.class);
     }
 
     @Test
