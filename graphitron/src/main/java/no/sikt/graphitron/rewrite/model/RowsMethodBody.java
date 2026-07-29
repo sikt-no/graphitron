@@ -29,18 +29,9 @@ public sealed interface RowsMethodBody {
     CodeBlock content();
 
     /**
-     * SQL body for {@link ChildField.BatchedTableField} (both source shapes): flat
-     * correlated-batch SELECT plus scatter, keyed off the parent-lifted key tuple.
-     */
-    record SqlBatchedTable(CodeBlock content) implements RowsMethodBody {
-        public SqlBatchedTable {
-            Objects.requireNonNull(content, "content");
-        }
-    }
-
-    /**
-     * SQL body for {@link ChildField.BatchedLookupTableField} (both source shapes):
-     * {@link SqlBatchedTable} plus a {@code @lookupKey} VALUES join.
+     * SQL body for {@link ChildField.BatchedLookupTableField} (both source shapes): flat
+     * correlated-batch SELECT plus scatter, keyed off the parent-lifted key tuple, plus a
+     * {@code @lookupKey} VALUES join.
      */
     record SqlBatchedLookupTable(CodeBlock content) implements RowsMethodBody {
         public SqlBatchedLookupTable {

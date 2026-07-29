@@ -43,6 +43,9 @@ final class BatchedRowsFragments {
     /** SELECT-projection alias for the parent-input index; the scatter key. */
     static final String IDX_COLUMN = "__idx__";
 
+    /** SELECT-projection alias for the windowed row number; the page filter's read. */
+    static final String RN_COLUMN = "__rn__";
+
     /**
      * The whole rows-method body for one batched child row: skeleton framing (empty-keys gate,
      * the caller-supplied single-tenant {@code dsl} declaration), the prelude, the topology,
@@ -52,7 +55,7 @@ final class BatchedRowsFragments {
      * the scatter lambda's parameter.
      */
     static CodeBlock body(LauncherCommand row, LaunchSource.CorrelatedChain chain,
-            CodeBlock dslDeclaration) {
+            CodeBlock dslDeclaration, no.sikt.graphitron.command.CarrierDsl carrierDsl) {
         var batched = (no.sikt.graphitron.command.Invocation.Batched) row.invocation();
         String fieldName = row.coordinate().getFieldName();
         var body = CodeBlock.builder();
@@ -67,6 +70,11 @@ final class BatchedRowsFragments {
         }
 
         var prelude = prelude(body, fieldName, batched.sourceKey(), chain);
+
+        if (row.result() instanceof no.sikt.graphitron.command.ResultShape.Connection conn) {
+            connectionTail(body, row, chain, prelude, conn, carrierDsl);
+            return body.build();
+        }
 
         // Projection: $project(env.getSelectionSet(), terminalAlias, env) + idx.as("__idx__").
         // Typed idx access via parentInput.field(0, Integer.class); see the retired emitter's
@@ -121,10 +129,92 @@ final class BatchedRowsFragments {
             return ParameterizedTypeName.get(LIST_CN,
                 ParameterizedTypeName.get(LIST_CN, ClassName.get(Object.class)));
         }
+        if (row.result() instanceof no.sikt.graphitron.command.ResultShape.Connection conn) {
+            return ParameterizedTypeName.get(LIST_CN, className(conn.carrier()));
+        }
         TypeName listOfRecord = ParameterizedTypeName.get(LIST_CN, RECORD);
         return row.result() instanceof no.sikt.graphitron.command.ResultShape.SingleRecord
             ? listOfRecord
             : ParameterizedTypeName.get(LIST_CN, listOfRecord);
+    }
+
+    /**
+     * The windowed per-parent page tail: the pagination argument locals, the two ordering views
+     * from one {@link OrderingBlock} dispatch (the helper arm reading the row's minted ref, so
+     * the call site and the emitted helper share one name derivation), the page request, the
+     * ROW_NUMBER projection partitioned by the idx scatter key, the WHERE hoisted into a local
+     * so the page query and the count source share one glue evaluation, the ranked inner table
+     * with the cursor seek, the outer page filter, and the cursor-independent count source. The
+     * scatter call's trailing {@code dsl} rides the run's carrier-routing fact.
+     */
+    private static void connectionTail(CodeBlock.Builder body, LauncherCommand row,
+            LaunchSource.CorrelatedChain chain, PreludeBindings prelude,
+            no.sikt.graphitron.command.ResultShape.Connection conn,
+            no.sikt.graphitron.command.CarrierDsl carrierDsl) {
+        var helperClass = className(conn.helper());
+        var pageRequestClass = helperClass.nestedClass("PageRequest");
+
+        body.addStatement("$T first = env.getArgument($S)", Integer.class, "first");
+        body.addStatement("$T last = env.getArgument($S)", Integer.class, "last");
+        body.addStatement("$T after = env.getArgument($S)", String.class, "after");
+        body.addStatement("$T before = env.getArgument($S)", String.class, "before");
+
+        body.add(OrderingBlock.declareBothViews(conn.ordering(), prelude.terminalAlias()));
+
+        body.addStatement(
+            "$T page = $T.pageRequest(first, last, after, before, $L, orderBy, extraFields, $L)",
+            pageRequestClass, helperClass, conn.defaultPageSize(),
+            ProjectionCall.fromEnvSelection(className(chain.projection()), prelude.terminalAlias()));
+
+        TypeName wildField = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
+        body.addStatement("$T<$T> selectFields = new $T<>(page.selectFields())",
+            ARRAY_LIST, wildField, ARRAY_LIST);
+        body.addStatement("$T<Integer> idxField = parentInput.field(0, $T.class)",
+            FIELD, Integer.class);
+        body.addStatement("selectFields.add(idxField.as($S))", IDX_COLUMN);
+        body.addStatement("selectFields.add($T.rowNumber().over($T.partitionBy(idxField).orderBy(page.effectiveOrderBy())).as($S))",
+            DSL, DSL, RN_COLUMN);
+
+        body.addStatement("$T where = $L", ClassName.get("org.jooq", "Condition"),
+            whereCondition(row, chain, prelude));
+
+        var inner = CodeBlock.builder();
+        inner.add("$T<?> ranked = dsl\n", TABLE);
+        inner.indent();
+        inner.add(".select(selectFields)\n");
+        fromBridgeAndParentJoin(inner, chain.joinPath(), prelude.aliases(), prelude.firstAlias(),
+            chain.correlation(), prelude.joinOnAlias(), prelude.joinOnCols(), prelude.joinOnParentCols());
+        inner.add(".where(where)\n");
+        inner.add(".orderBy(page.effectiveOrderBy())\n");
+        inner.add(".seek(page.seekFields())\n");
+        inner.add(".asTable($S);\n", "ranked");
+        inner.unindent();
+        body.add(inner.build());
+
+        var outer = CodeBlock.builder();
+        outer.add("$T<$T> flat = dsl\n", RESULT, RECORD);
+        outer.indent();
+        outer.add(".select()\n");
+        outer.add(".from(ranked)\n");
+        outer.add(".where(ranked.field($S, $T.class).le($T.val(page.limit())))\n",
+            RN_COLUMN, Integer.class, DSL);
+        outer.add(".fetch();\n");
+        outer.unindent();
+        body.add(outer.build());
+
+        var count = CodeBlock.builder();
+        count.add("$T<?> countSource = dsl\n", TABLE);
+        count.indent();
+        count.add(".select(idxField.as($S))\n", IDX_COLUMN);
+        fromBridgeAndParentJoin(count, chain.joinPath(), prelude.aliases(), prelude.firstAlias(),
+            chain.correlation(), prelude.joinOnAlias(), prelude.joinOnCols(), prelude.joinOnParentCols());
+        count.add(".where(where)\n");
+        count.add(".asTable($S);\n", "countSource");
+        count.unindent();
+        body.add(count.build());
+
+        body.addStatement("return scatterConnectionByIdx(flat, keys.size(), page, countSource"
+            + (carrierDsl == no.sikt.graphitron.command.CarrierDsl.ROUTED ? ", dsl" : "") + ")");
     }
 
     /** The keys parameter's type: {@code List<K>} over the source key's element type. */

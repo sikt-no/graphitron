@@ -54,7 +54,6 @@ public final class RowsMethodSkeleton {
             .addParameter(ENV, "env");
 
         switch (body) {
-            case RowsMethodBody.SqlBatchedTable s      -> emitSqlBody(b, s.content(), dslDeclaration);
             case RowsMethodBody.SqlBatchedLookupTable s -> emitSqlBody(b, s.content(), dslDeclaration);
             case RowsMethodBody.SqlBatchedPivot s      -> emitSqlBody(b, s.content(), dslDeclaration);
             case RowsMethodBody.Service s              -> emitServiceBody(b, s, dslDeclaration);

@@ -64,10 +64,10 @@ public interface BatchKeyField {
      * {@code List<Record>} per key).
      *
      * <p>The two consumer sites are
-     * {@code TypeFetcherGenerator}'s {@code scatterSingleByIdx} helper-emission gate and
-     * {@code SplitRowsMethodEmitter.buildForBatchedTable}'s {@code buildSingleMethod} routing
-     * decision; both ask the same uniform question of multiple variants and so collapse onto
-     * this capability rather than each repeating the disjunction.
+     * {@code TypeFetcherGenerator}'s {@code scatterSingleByIdx} helper-emission gate and the
+     * launcher producer's batched result-shape fold (single-record vs record-list); both ask
+     * the same uniform question of multiple variants and so collapse onto this capability
+     * rather than each repeating the disjunction.
      */
     default boolean emitsSingleRecordPerKey() {
         return false;

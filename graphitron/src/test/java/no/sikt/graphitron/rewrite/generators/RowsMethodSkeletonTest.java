@@ -39,13 +39,13 @@ class RowsMethodSkeletonTest {
         .build();
 
     @Test
-    void sqlSplitTable_emitsGateAndDslLineBeforeContent() {
+    void sqlBatchedLookupTable_emitsGateAndDslLineBeforeContent() {
         MethodSpec spec = RowsMethodSkeleton.build(
             "rowsFilms",
             LIST_OF_LIST_OF_RECORD,
             LIST_OF_KEY,
             DSL_DECLARATION,
-            new RowsMethodBody.SqlBatchedTable(SQL_BODY));
+            new RowsMethodBody.SqlBatchedLookupTable(SQL_BODY));
 
         String src = spec.toString();
         assertThat(src).contains("public static java.util.List<java.util.List<org.jooq.Record>> rowsFilms(");
@@ -57,13 +57,13 @@ class RowsMethodSkeletonTest {
     }
 
     @Test
-    void sqlBatchedLookupTable_emitsSqlFraming() {
+    void sqlBatchedPivot_emitsSqlFraming() {
         MethodSpec spec = RowsMethodSkeleton.build(
             "rowsFilms",
             LIST_OF_LIST_OF_RECORD,
             LIST_OF_KEY,
             DSL_DECLARATION,
-            new RowsMethodBody.SqlBatchedLookupTable(SQL_BODY));
+            new RowsMethodBody.SqlBatchedPivot(SQL_BODY));
 
         String src = spec.toString();
         assertThat(src).contains("if (keys.isEmpty())");
@@ -112,12 +112,9 @@ class RowsMethodSkeletonTest {
     void rowsMethodBody_sealedSwitchIsExhaustive() {
         Class<?>[] permitted = RowsMethodBody.class.getPermittedSubclasses();
         assertThat(permitted)
-            .as("RowsMethodBody permits exactly the four body shapes (R432 merged the split/record "
-                + "pairs onto SqlBatchedTable / SqlBatchedLookupTable; R314 slice 2b dissolved the "
-                + "record-table-method shape onto SqlBatchedTable; the @pivot batched delivery "
-                + "added SqlBatchedPivot)")
+            .as("RowsMethodBody permits exactly the three body shapes (plain batched-table "
+                + "bodies no longer route here; they render through the launcher-command path)")
             .containsExactlyInAnyOrder(
-                RowsMethodBody.SqlBatchedTable.class,
                 RowsMethodBody.SqlBatchedLookupTable.class,
                 RowsMethodBody.SqlBatchedPivot.class,
                 RowsMethodBody.Service.class);

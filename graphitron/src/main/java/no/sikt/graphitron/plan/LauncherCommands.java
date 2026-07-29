@@ -61,13 +61,9 @@ public final class LauncherCommands {
                         rows.add(row);
                     }
                 }
-                // The child family's first population: the plain batched child. The
-                // connection-wrapped batched child is the interim boundary (its window
-                // envelope and ordering views fold next); the fetcher dispatch routes on row
-                // presence, so the boundary is readable there, not restated.
-                if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField btf
-                        && !(btf.returnType().wrapper()
-                            instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection)) {
+                // The child family's first population: the plain batched child, every
+                // cardinality (list, single, and the windowed connection page).
+                if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField btf) {
                     rows.add(batchedRow(btf, schema, conditions, units));
                 }
             }
@@ -139,9 +135,7 @@ public final class LauncherCommands {
             } else if (field instanceof QueryField.QueryLookupTableField qlf) {
                 rows.add(lookupRow(qlf,
                     glueFromFilters(qlf.parentTypeName(), qlf.name(), qlf.filters(), units), units));
-            } else if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField btf
-                    && !(btf.returnType().wrapper()
-                        instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection)) {
+            } else if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField btf) {
                 rows.add(batchedRow(btf,
                     glueFromFilters(btf.parentTypeName(), btf.name(), btf.filters(), units),
                     new TenantStrategy.Single(), units));
@@ -330,9 +324,28 @@ public final class LauncherCommands {
             where,
             new Invocation.Batched(btf.sourceKey(), btf.loaderRegistration()),
             tenancy,
-            btf.emitsSingleRecordPerKey()
-                ? new ResultShape.SingleRecord()
-                : new ResultShape.RecordList(null));
+            batchedResultOf(btf, units));
+    }
+
+    /**
+     * The batched child's payload shape: the connection wrapper carries the ordering (total
+     * there, validator-enforced), the wrapper's default page size and the connection runtime's
+     * refs, exactly the root connection's derivation minus facets (facet synthesis is a
+     * directive-driven root-carrier concern); otherwise the per-key cardinality fact decides
+     * between the single and list shapes, both unordered (the batched non-connection emission
+     * renders no ordering, a pinned current behaviour).
+     */
+    private static ResultShape batchedResultOf(
+            no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField btf, GeneratedUnits units) {
+        if (btf.returnType().wrapper()
+                instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
+            return new ResultShape.Connection(
+                orderingOf(btf.orderBy(), btf.parentTypeName(), btf.name(), units),
+                conn.defaultPageSize(), units.connectionHelper(), units.connectionResult(), null);
+        }
+        return btf.emitsSingleRecordPerKey()
+            ? new ResultShape.SingleRecord()
+            : new ResultShape.RecordList(null);
     }
 
     /**

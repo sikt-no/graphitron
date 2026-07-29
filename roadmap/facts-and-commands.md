@@ -1374,6 +1374,25 @@ R541's single-operation launchers never need it, and a general launcher cannot d
     presence, so the boundary is one readable fact. The `__idx__` scatter column is
     arm-entailed as predicted; the two non-connection pins and the untouched connection pin
     held byte-identical, and the batched pipeline and fetcher-source pins passed unchanged.
+  - **5a closed (2026-07-29): the connection shape folds and the legacy arm retires.** The
+    connection-wrapped batched child joins the relation as `ResultShape.Connection` on the
+    batched row, the same result arm the root connection uses: the producer derives the
+    `Ordering` once (`orderingOf`: fixed columns or the coordinate's orderBy-helper ref) and
+    the renderer's `OrderingBlock.declareBothViews` emits both locals from it, which retires
+    the old emitter's second, string-concatenated derivation of the same orderBy expression
+    (one fact, one derivation; the drift between the two spellings goes with it). The window
+    envelope (`PageRequest`, `ROW_NUMBER() OVER (PARTITION BY __idx__)`, the outer
+    `__rn__ <= limit` select, the idx-keyed count source, `scatterConnectionByIdx` with the
+    routed-DSL trailing arg under multi-tenancy) is renderer-internal tail assembly off the
+    command's facts; `__rn__` is arm-entailed exactly as `__idx__` is. With the boundary gone
+    the producer's field walk is unfiltered (every `BatchedTableField` produces a row in both
+    walks) and the fetcher dispatch drops its fork (`rowFor(...).orElseThrow`, minted name
+    drift-checked). Retired: `buildForBatchedTable`, `buildConnectionMethod`, and
+    `buildSingleMethod` (caller-less once the entry point left), the `SqlBatchedTable` permit
+    and its skeleton arm; the rows-method emit-site pin ratchets 7 to 5 and the permit
+    coverage test walks three shapes. All 16 SQL pins held byte-identical (the three
+    batched-child pins re-verified explicitly), 3051 module tests and the full reactor green.
+    Next: 5b, the batched lookup and pivot children.
 
 ## The exemption lists are the grain worklist
 

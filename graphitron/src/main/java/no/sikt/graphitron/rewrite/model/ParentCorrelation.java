@@ -8,7 +8,7 @@ import java.util.Objects;
  * The fork between slot-pair, condition-method, lateral-argument, and pre-keyed lifted
  * correlation lives in the model, not the emitters: the emitter sites (inline {@code TableField} /
  * {@code LookupTableField} / {@code ColumnBackedReferenceField} step-0; split-rows
- * {@code buildListMethod} / {@code buildSingleMethod} / {@code buildConnectionMethod}) read
+ * {@code buildListMethod}; the batched launcher renderer's correlation switch) read
  * variant identity from a sealed switch on this carrier rather than inspecting
  * {@code joinPath.get(0)} themselves.
  *
