@@ -258,6 +258,18 @@ public record GraphitronSchema(
     }
 
     /**
+     * The joined-table participants' field-residence split for a single-table discriminated
+     * interface: the read surface of the {@link JoinedTableReprojection} fold, one formula for
+     * the launcher producer and the legacy interface-reprojection call sites alike.
+     * {@link JoinedTableReprojection#EMPTY} when {@code typeName} does not name a
+     * {@link GraphitronType.TableInterfaceType} here. A pure per-type fold over this schema's
+     * own components, so it needs no stored index; the validator drains its deferrals.
+     */
+    public JoinedTableReprojection joinedTableReprojectionOf(String typeName) {
+        return JoinedTableReprojection.of(this, typeName);
+    }
+
+    /**
      * Returns the federation entity-resolution metadata for {@code typeName}, or {@code null}
      * if the type carries no {@code @key} (and is not a {@code @node}). The classifier records
      * one entry here per type whose SDL declaration carries at least one resolvable

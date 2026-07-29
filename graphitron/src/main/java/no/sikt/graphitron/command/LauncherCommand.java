@@ -70,5 +70,21 @@ public record LauncherCommand(
                     "a routine-chain launcher never paginates; the classifier rejects @asConnection on the chain");
             }
         }
+        // A discriminated interface is invoked directly and never paginates: the fan-out ladder
+        // rejects @tenantFanOut on interface-typed fields, and the classifier defers
+        // @asConnection on the single-table-interface root (no paginating emission exists for
+        // the participant-driven select list).
+        if (source instanceof LaunchSource.DiscriminatedTable) {
+            if (!(invocation instanceof Invocation.Direct)) {
+                throw new IllegalArgumentException(
+                    "a discriminated-interface launcher is invoked directly; got "
+                    + invocation.getClass().getSimpleName());
+            }
+            if (result instanceof ResultShape.Connection) {
+                throw new IllegalArgumentException(
+                    "a discriminated-interface launcher never paginates; the classifier defers"
+                    + " @asConnection on the single-table-interface root");
+            }
+        }
     }
 }

@@ -617,7 +617,16 @@ public class TypeFetcherGenerator {
                             f.discriminatorColumn(), f.knownDiscriminatorValues(), f.participants(),
                             f.returnType().wrapper().isList(), outputPackage)
                         .forEach(builder::addMethod);
-                case QueryField.QueryTableInterfaceField f    -> builder.addMethod(buildQueryTableInterfaceFieldFetcher(ctx, f, outputPackage));
+                case QueryField.QueryTableInterfaceField f    -> {
+                    var interfaceRow = launchers.rowFor(f.parentTypeName(), f.name())
+                        .orElseThrow(() -> new IllegalStateException(
+                            "Graphitron generator bug (root launcher dispatch): interface root coordinate '"
+                            + f.qualifiedName() + "' has no launcher row;"
+                            + " the producer's membership and this dispatch have drifted"));
+                    builder.addMethod(buildQueryTableFetcher(ctx, f, interfaceRow, outputPackage));
+                    builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
+                        .render(interfaceRow, launchers.carrierDsl()));
+                }
                 case QueryField.QueryInterfaceField f -> {
                     var participantFilters = participantFiltersByTypename(f.participantFilters());
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
@@ -825,6 +834,17 @@ public class TypeFetcherGenerator {
                 builder.addMethod(buildOrderByHelperMethod(
                     namingVocabulary.orderByHelperMethod(typeName, qtf.name()).methodName(),
                     arg, names, tableRef, outputPackage));
+            } else if (field instanceof QueryField.QueryTableInterfaceField qtif
+                    && qtif.orderBy() instanceof OrderBySpec.Argument arg) {
+                // The interface root's launcher references the same minted helper ref as the
+                // table root's; before the launcher migration the legacy body spelled the call
+                // inline while nothing emitted the helper, so an @orderBy argument on this
+                // coordinate produced uncompilable output. Emitting it here closes that gap.
+                var tableRef = qtif.returnType().table();
+                var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtif.returnType().returnTypeName(), outputPackage);
+                builder.addMethod(buildOrderByHelperMethod(
+                    namingVocabulary.orderByHelperMethod(typeName, qtif.name()).methodName(),
+                    arg, names, tableRef, outputPackage));
             } else if (field instanceof ChildField.BatchedTableField btf
                     && btf.returnType().wrapper() instanceof FieldWrapper.Connection
                     && btf.orderBy() instanceof OrderBySpec.Argument arg) {
@@ -1008,69 +1028,6 @@ public class TypeFetcherGenerator {
 
 
     /**
-     * Generates the fetcher for a {@link QueryField.QueryTableInterfaceField}.
-     *
-     * <p>Mirrors {@link #buildQueryTableFetcher} exactly, with one addition: the discriminator
-     * column is projected unconditionally alongside the selection-set columns so the
-     * {@code TypeResolver} registered by {@code GraphitronSchemaClassGenerator} can route each
-     * returned row to the correct concrete GraphQL type at runtime.
-     *
-     * <p>Generated code (list variant):
-     * <pre>{@code
-     * public static Result<Record> allContent(DataFetchingEnvironment env) {
-     *     ContentTable table = Tables.CONTENT;
-     *     Condition condition = QueryConditions.allContentCondition(table, env);
-     *     List<SortField<?>> orderBy = List.of();
-     *     DSLContext dsl = graphitronContext(env).getDslContext(env);
-     *     return dsl
-     *         .select(table.asterisk(), DSL.field(table.getQualifiedName().append(DSL.name("CONTENT_TYPE")), Object.class))
-     *         .from(table)
-     *         .where(condition)
-     *         .orderBy(orderBy)
-     *         .fetch();
-     * }
-     * }</pre>
-     */
-    private static MethodSpec buildQueryTableInterfaceFieldFetcher(
-            TypeFetcherEmissionContext ctx, QueryField.QueryTableInterfaceField qtif, String outputPackage) {
-        var tableRef = qtif.returnType().table();
-        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtif.returnType().returnTypeName(), outputPackage);
-        boolean isList = qtif.returnType().wrapper().isList();
-        var valueType = isList ? (TypeName) ParameterizedTypeName.get(RESULT, RECORD) : RECORD;
-
-        var builder = MethodSpec.methodBuilder(qtif.name())
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(syncResultType(valueType))
-            .addParameter(ENV, "env");
-
-        builder.beginControlFlow("try");
-        builder.addCode(GeneratorUtils.declareTableLocal(names, tableRef));
-        String tableLocal = names.tableLocalName();
-        builder.addCode(buildConditionCall(qtif.parentTypeName(), qtif.name(), qtif.filters(), tableLocal, outputPackage));
-
-        var tenantDsl = TenantDslEmitter.resolve(ctx, qtif, outputPackage);
-        builder.addCode(tenantDsl.declaration());
-        // Shared discriminator-filter + projection + join assembly, ending with the
-        // `step` local. The service single-table-interface fetcher reuses the same helper with a
-        // by-PK condition (see MultiTablePolymorphicEmitter).
-        builder.addCode(buildTableInterfaceReprojection(ctx, qtif.participants(), qtif.discriminatorColumn(),
-            qtif.knownDiscriminatorValues(), List.of(), tableLocal, outputPackage));
-
-        if (isList) {
-            builder.addCode(buildOrderByCode(qtif.orderBy(), qtif.name(), tableLocal));
-            builder.addStatement("$T payload = step.where(condition).orderBy(orderBy).fetch()", valueType);
-        } else {
-            builder.addStatement("$T payload = step.where(condition).fetchOne()", valueType);
-        }
-        builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.localContextTail()));
-        builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(noChannelCatchArm(outputPackage));
-        builder.endControlFlow();
-
-        return builder.build();
-    }
-
-    /**
      * Generates the fetcher for a {@link ChildField.TableInterfaceField}.
      *
      * <p>Executes a per-parent SQL query: conditions on the single-hop FK join path extracted
@@ -1116,8 +1073,10 @@ public class TypeFetcherGenerator {
         // Build join-path condition. Only the single-hop FK-derived shape is supported;
         // multi-hop and condition-join paths are caught at classification time.
         builder.addCode(buildJoinPathCondition(tif.joinPath(), tableRef.tableName()));
-        // Shared discriminator-filter + projection + join assembly (see the query twin).
-        builder.addCode(buildTableInterfaceReprojection(ctx, tif.participants(), tif.discriminatorColumn(),
+        // Shared discriminator-filter + projection + join assembly (see the launcher's
+        // discriminated arm).
+        builder.addCode(buildTableInterfaceReprojection(ctx, tif.returnType().returnTypeName(), tableRef,
+            tif.participants(), tif.discriminatorColumn(),
             tif.knownDiscriminatorValues(), List.of(), tableLocal, outputPackage));
 
         if (isList) {
@@ -1160,389 +1119,36 @@ public class TypeFetcherGenerator {
     }
 
     /**
- * The shared read/projection body of {@link #buildQueryTableInterfaceFieldFetcher} and
-     * {@link #buildTableInterfaceFieldFetcher}, extracted so the service single-table-interface fetcher
-     * ({@link MultiTablePolymorphicEmitter}) can reuse the exact projection + join assembly with a
-     * caller-supplied {@code Condition}.
+     * The shared read/projection body of the discriminated-interface consumers that have not
+     * migrated onto the launcher seam ({@link #buildTableInterfaceFieldFetcher}, the service
+     * single-table-interface fetcher in {@link MultiTablePolymorphicEmitter}, and the two DML
+     * discriminated follow-ups): a thin delegate that derives the
+     * {@link no.sikt.graphitron.command.LaunchSource.DiscriminatedTable} arm's data (the
+     * residence split off the schema's joined-table reprojection fold, the branches through the
+     * launcher producer's one assembly) and renders it through the relocated fragment
+     * ({@link no.sikt.graphitron.render.DiscriminatedTableFragments}), so the launcher and the
+     * legacy call sites cannot drift on the assembly.
      *
-     * <p>Precondition: the caller has declared {@code condition} ({@code Condition}) and {@code dsl}
-     * ({@code DSLContext}) locals and a {@code tableLocal} holding the shared {@code @table}'s jOOQ
-     * instance. This helper emits, in order:
-     * <ol>
-     *   <li>the discriminator {@code IN (knownValues)} restriction, ANDed into {@code condition};</li>
-     *   <li>the {@code LinkedHashSet<Field<?>> fields} projection ({@code __discriminator__} first,
-     *       each table-bound participant's {@code $project}, the joined-table base slice), plus
-     *       {@code alwaysProject} — extra base-table columns projected unconditionally (the shared
-     *       table's PK columns for the service by-PK re-map; {@code List.of()} for the read paths, so
-     *       their generated output is unchanged);</li>
-     *   <li>the cross-table and joined-detail alias declarations;</li>
-     *   <li>the {@code SelectJoinStep<Record> step = dsl.select(new ArrayList<>(fields)).from(tableLocal)}
-     *       declaration, then the discriminator-gated cross-table / joined-detail {@code LEFT JOIN}
-     *       chains.</li>
-     * </ol>
-     * The caller finishes the chain ({@code step.where(condition)…fetch()}); this helper knows nothing
-     * about services or the fetch cardinality.
+     * <p>Precondition: the caller has declared {@code condition} ({@code Condition}) and
+     * {@code dsl} ({@code DSLContext}) locals and a {@code tableLocal} holding the shared
+     * {@code @table}'s jOOQ instance; the caller finishes the chain
+     * ({@code step.where(condition)…fetch()}).
      */
     static CodeBlock buildTableInterfaceReprojection(
-            TypeFetcherEmissionContext ctx,
+            TypeFetcherEmissionContext ctx, String interfaceTypeName, TableRef tableRef,
             List<ParticipantRef> participants, String discriminatorColumn,
             List<String> knownDiscriminatorValues, List<ColumnRef> alwaysProject,
             String tableLocal, String outputPackage) {
-        var b = CodeBlock.builder();
-        b.add(buildDiscriminatorFilter(discriminatorColumn, knownDiscriminatorValues, tableLocal));
-        b.add(buildInterfaceFieldsList(ctx, participants, discriminatorColumn, tableLocal, outputPackage));
-        // Extra always-projected base columns (deduped by the LinkedHashSet declared above). Used by
-        // the service path to guarantee the shared table's PK reaches the fetched Record for the
-        // by-PK re-map; empty for the read paths.
-        for (var col : alwaysProject) {
-            b.addStatement("fields.add($L.$L)", tableLocal, col.javaName());
-        }
-        b.add(buildCrossTableAliasDeclarations(participants, tableLocal));
-        b.add(buildJoinedDetailAliasDeclarations(ctx, participants, tableLocal));
-        var selectJoinStepClass = ClassName.get("org.jooq", "SelectJoinStep");
-        var selectJoinStepOfRecord = ParameterizedTypeName.get(selectJoinStepClass, RECORD);
-        b.addStatement("$T step = dsl.select(new $T<>(fields)).from($L)",
-            selectJoinStepOfRecord, ArrayList.class, tableLocal);
-        b.add(buildCrossTableJoinChain(participants, discriminatorColumn, tableLocal));
-        b.add(buildJoinedDetailJoinChain(ctx, participants, discriminatorColumn, tableLocal));
-        return b.build();
-    }
-
-    /**
-     * Emits a {@code LinkedHashSet<Field<?>> fields} declaration populated with the discriminator
-     * column and each table-bound participant's {@code $project} contribution.
-     *
-     * <p>The {@code LinkedHashSet} preserves insertion order and deduplicates field references so
-     * shared columns (e.g. {@code title} declared on both {@code FilmContent} and
-     * {@code ShortContent}) appear only once in the SELECT list.
-     *
-     * <p>The discriminator column is always included first, unconditionally, so the TypeResolver
-     * can route each returned row to the correct concrete type even when the GraphQL selection set
-     * does not explicitly request it.
-     *
-     * <p>The per-participant {@code $project} call here passes {@code env.getSelectionSet()}
-     * unfiltered; the {@code LinkedHashSet} deduplicates the resulting shared-name over-selection
-     * as long as a shared GraphQL field name is backed by the same column. Two participants
-     * declaring a shared field name backed by <em>different</em> columns on the same table would
-     * break the dedup and need {@code PolymorphicSelectionSet.restrictTo} here (no fixture
-     * exercises that shape).
-     */
-    private static CodeBlock buildInterfaceFieldsList(
-            TypeFetcherEmissionContext ctx,
-            List<ParticipantRef> participants, String discriminatorColumn,
-            String tableLocal, String outputPackage) {
-        var b = CodeBlock.builder();
-        var fieldType = ParameterizedTypeName.get(
-            ClassName.get("org.jooq", "Field"),
-            WildcardTypeName.subtypeOf(Object.class));
-        var setType = ParameterizedTypeName.get(
-            ClassName.get(LinkedHashSet.class), fieldType);
-        b.addStatement("$T fields = new $T<>()", setType, LinkedHashSet.class);
-        // Project the discriminator under a synthetic alias for the TypeResolver to route off. Two
-        // reasons. (1) Qualification: the discriminator lives on the base table, and a participant's
-        // FK-target detail table can re-declare it (composite FK), so a bare DSL.name(col) is ambiguous
-        // once a participant join is present. We qualify off the FROM table's own jOOQ instance via
-        // <tableLocal>.getQualifiedName(): jOOQ's table renderer produces the exact qualifier that
-        // appears in the FROM clause (no schema part for a default-schema table, "schema"."table" for a
-        // named-schema table), so the reference matches FROM by construction. Building the qualifier
-        // from the verbatim @table(name:) string instead would diverge from the rendered FROM token
-        // whenever the directive name differs in case or schema.
-        // (2) De-duplication: when the interface also exposes the discriminator
-        // as a queryable field, the participant $project below projects the real catalog column too
-        // (rendered three-part, "schema"."base"."col"); a TypeResolver reading the bare column name would
-        // match both projections ambiguously. Aliasing the routing copy to a synthetic name distinct from
-        // any real column (see MultiTablePolymorphicEmitter.DISCRIMINATOR_COLUMN, mirroring the
-        // multi-table __typename convention) makes the routing read unambiguous and leaves the
-        // user-facing field projected once under its own name. The WHERE filter and LEFT JOIN ON-clause
-        // keep referencing the real qualified column (they cannot read a SELECT alias); only this routing
-        // projection is aliased. The explicit Object.class yields the Field<Object> the .as(...) carries.
-        b.addStatement("fields.add($T.field($L.getQualifiedName().append($T.name($S)), $T.class).as($S))",
-            DSL, tableLocal, DSL, discriminatorColumn, Object.class, MultiTablePolymorphicEmitter.DISCRIMINATOR_COLUMN);
-        for (var participant : participants) {
-            if (!(participant instanceof ParticipantRef.TableBound tb)) continue;
-            var typeClass = ClassName.get(outputPackage + ".types", tb.typeName());
-            b.addStatement("fields.addAll($L)",
-                ProjectionCall.fromEnvSelection(typeClass, tableLocal));
-        }
-        // Joined-table participants: their data splits across the base and their own detail
-        // table, so we cannot call their $project against the base (its parameter is typed as the
-        // detail table). Instead project the base-resident slice off the base here, reading each
-        // participant's classified fields (the emitter reads the field variant, never the catalog):
-        //   - an inherited field is a ColumnBackedReferenceField whose column resolves on the base; project
-        //     that base column under the runtime result-key reserved alias (__rk_<resultKey>),
-        //     matching the alias the standalone correlated-subquery projection uses, so the one
-        //     registered fetcher reads it in both queries (FetcherEmitter reads a Direct
-        //     ColumnBackedReferenceField by env.getField().getResultKey());
-        //   - a shared-key field is a ColumnBackedField whose column is one of the child->parent hop's
-        //     columns (the join key, present on both base and detail); project the paired base column
-        //     so NULL-through rows (base present, detail absent) still resolve it, aliased to the
-        //     detail column's name (a no-op when the FK and PK columns share a name) so the
-        //     participant's ColumnBackedField fetcher reads it back by that name even when the two differ.
-        // Detail-exclusive ColumnBackedFields (column not in the hop) are projected against the detail alias
-        // by buildJoinedDetailAliasDeclarations. A field projected by more than one participant (every
-        // shared/inherited field is) is emitted once: the .as(...) aliases produce fresh Field objects
-        // the LinkedHashSet would not dedupe, so we dedupe by output alias explicitly.
         var schema = ctx.graphitronSchema();
-        if (schema != null) {
-            var seenAliases = new java.util.HashSet<String>();
-            for (var participant : participants) {
-                if (!(participant instanceof ParticipantRef.JoinedTableBound jtb)) continue;
-                for (var f : schema.fieldsOf(jtb.typeName())) {
-                    if (f instanceof ChildField.ColumnBackedReferenceField crf) {
-                        if (seenAliases.add(crf.name())) {
-                            // Inherited base-resident @reference. The standalone inline projection
-                            // aliases this by the runtime result key (RESERVED_RK_ALIAS_PREFIX +
-                            // entry.getKey()) and the one registered Direct ColumnBackedReferenceField
-                            // fetcher reads it back by env.getField().getResultKey(); this base-slice
-                            // path must produce the same reserved-key aliases so both queries agree.
-                            // Project the base column once per selected result-key bucket of this
-                            // field (handles aliased duplicates: a: displayName b: displayName each
-                            // get their own __rk_<key> term), off the base so NULL-through rows
-                            // (base present, detail absent) still resolve it.
-                            // Explicit entry type: emitted sources may not use `var`
-                            // (GeneratedSourcesLintTest).
-                            var rkEntryType = ParameterizedTypeName.get(
-                                ClassName.get("java.util", "Map", "Entry"),
-                                ClassName.get(String.class),
-                                ParameterizedTypeName.get(LIST, SELECTED_FIELD));
-                            b.beginControlFlow(
-                                "for ($T rkEntry : env.getSelectionSet().getFieldsGroupedByResultKey().entrySet())",
-                                rkEntryType);
-                            b.beginControlFlow(
-                                "if (!rkEntry.getValue().isEmpty() && rkEntry.getValue().get(0).getName().equals($S))",
-                                crf.name());
-                            b.addStatement("fields.add($L.$L.as($S + rkEntry.getKey()))",
-                                tableLocal, crf.columns().get(0).javaName(), RESERVED_RK_ALIAS_PREFIX);
-                            b.endControlFlow();
-                            b.endControlFlow();
-                        }
-                    } else if (f instanceof ChildField.ColumnBackedField cf) {
-                        var cfColumn = cf.columns().get(0);
-                        var baseCol = sharedKeyBaseColumn(jtb, cfColumn);
-                        if (baseCol != null && seenAliases.add(cfColumn.sqlName())) {
-                            b.addStatement("fields.add($L.$L.as($S))", tableLocal, baseCol.javaName(), cfColumn.sqlName());
-                        }
-                    }
-                }
-            }
-        }
-        return b.build();
-    }
-
-    /**
-     * For a participant {@link ChildField.ColumnBackedField} whose column is a child-&gt;parent hop column
-     * (a shared-key column present on both base and detail), returns the paired base-side column (the
-     * hop slot's target side); {@code null} when the field's column is detail-exclusive. The base side
-     * may differ in name from the detail side, so the caller projects {@code base.<returned>} aliased
-     * to the detail column's name.
-     */
-    private static ColumnRef sharedKeyBaseColumn(ParticipantRef.JoinedTableBound jtb, ColumnRef detailColumn) {
-        for (var slot : jtb.childToParentPairs().slots()) {
-            if (slot.sourceSide().sqlName().equalsIgnoreCase(detailColumn.sqlName())) {
-                return slot.targetSide();
-            }
-        }
-        return null;
-    }
-
-    /**
-     * The participant's detail-exclusive fields: classified {@link ChildField.ColumnBackedField}s whose
-     * column is not part of the child->parent hop (i.e. not a shared-key column, which lives on the
-     * base). These are projected against the participant's detail alias behind a discriminator-gated
-     * LEFT JOIN. Empty when no schema is threaded (unit-tier model-only callers).
-     */
-    private static List<ChildField.ColumnBackedField> detailExclusiveFields(
-            TypeFetcherEmissionContext ctx, ParticipantRef.JoinedTableBound jtb) {
-        var schema = ctx.graphitronSchema();
-        if (schema == null) return List.of();
-        var out = new ArrayList<ChildField.ColumnBackedField>();
-        for (var f : schema.fieldsOf(jtb.typeName())) {
-            if (f instanceof ChildField.ColumnBackedField cf && sharedKeyBaseColumn(jtb, cf.columns().get(0)) == null) {
-                out.add(cf);
-            }
-        }
-        return out;
-    }
-
-    /**
-     * Emits per-joined-table-participant detail-alias declarations plus the selection-set-gated
-     * {@code fields.add(detailAlias.<col>)} for each detail-exclusive field, mirroring
-     * {@link #buildCrossTableAliasDeclarations} but joining the whole detail table once per
-     * participant rather than one aliased table per cross-table field. The column is projected under
-     * its natural name (no {@code .as(...)}) so the participant's plain {@code ColumnBackedField} fetcher
-     * reads it back by column name.
-     */
-    private static CodeBlock buildJoinedDetailAliasDeclarations(
-            TypeFetcherEmissionContext ctx, List<ParticipantRef> participants, String tableLocal) {
-        var b = CodeBlock.builder();
-        for (var participant : participants) {
-            if (!(participant instanceof ParticipantRef.JoinedTableBound jtb)) continue;
-            if (jtb.discriminatorValue() == null) continue;
-            var detailExclusive = detailExclusiveFields(ctx, jtb);
-            if (detailExclusive.isEmpty()) continue;
-            var names = GeneratorUtils.ResolvedTableNames.ofTable(jtb.detailTable());
-            String aliasVar = jtb.detailAliasVarName();
-            b.addStatement("$T $L = null", names.jooqTableClass(), aliasVar);
-            for (var cf : detailExclusive) {
-                b.beginControlFlow("if (env.getSelectionSet().contains($S))",
-                    jtb.typeName() + "." + cf.name());
-                b.addStatement("$L = $T.$L.as($S)", aliasVar, names.tablesClass(),
-                    jtb.detailTable().javaFieldName(), jtb.detailAliasName());
-                b.addStatement("fields.add($L.$L)", aliasVar, cf.columns().get(0).javaName());
-                b.endControlFlow();
-            }
-        }
-        return b.build();
-    }
-
-    /**
-     * Emits the conditional {@code step = step.leftJoin(detailAlias).on(...)} block for each
-     * joined-table participant whose detail alias was declared by
-     * {@link #buildJoinedDetailAliasDeclarations}. The ON clause equates the child->parent hop
-     * (direction-blind: {@code detailAlias.<sourceSide>} on the detail/FK side equals
-     * {@code base.<targetSide>} on the base/PK side, AND-chained across composite slots) plus the
-     * participant's discriminator value, so non-matching rows carry NULL through the join.
-     */
-    private static CodeBlock buildJoinedDetailJoinChain(
-            TypeFetcherEmissionContext ctx, List<ParticipantRef> participants,
-            String discriminatorColumn, String tableLocal) {
-        var b = CodeBlock.builder();
-        for (var participant : participants) {
-            if (!(participant instanceof ParticipantRef.JoinedTableBound jtb)) continue;
-            if (jtb.discriminatorValue() == null) continue;
-            if (detailExclusiveFields(ctx, jtb).isEmpty()) continue;
-            String aliasVar = jtb.detailAliasVarName();
-            CodeBlock keyOn = null;
-            for (var slot : jtb.childToParentPairs().slots()) {
-                var eq = CodeBlock.of("$L.$L.eq($L.$L)",
-                    aliasVar, slot.sourceSide().javaName(), tableLocal, slot.targetSide().javaName());
-                keyOn = keyOn == null ? eq : CodeBlock.of("$L.and($L)", keyOn, eq);
-            }
-            var onCondition = CodeBlock.builder()
-                .add("$L.and($T.field($L.getQualifiedName().append($T.name($S)), $T.class).eq($S))",
-                    keyOn, DSL, tableLocal, DSL, discriminatorColumn, Object.class, jtb.discriminatorValue())
-                .build();
-            b.beginControlFlow("if ($L != null)", aliasVar);
-            b.addStatement("step = step.leftJoin($L).on($L)", aliasVar, onCondition);
-            b.endControlFlow();
-        }
-        return b.build();
-    }
-
-    /**
-     * Emits per-participant cross-table alias variable declarations together with the
-     * selection-set-gated {@code fields.add(...)} call for each cross-table field. Each cross-table
-     * field expands to:
-     * <pre>{@code
-     * Film FilmContent_rating_alias = null;
-     * if (env.getSelectionSet().contains("FilmContent.rating")) {
-     *     FilmContent_rating_alias = Tables.FILM.as("FilmContent_rating");
-     *     fields.add(FilmContent_rating_alias.RATING.as("FilmContent_rating"));
-     * }
-     * }</pre>
-     *
-     * <p>The variable's null-default outside the {@code if} lets {@link #buildCrossTableJoinChain}
-     * test for the field's presence later in the same method body to gate the LEFT JOIN.
-     *
-     * <p>The selection-set pattern uses {@code <Type>.<field>} (dot, not slash): graphql-java's
-     * {@code DataFetchingFieldSelectionSet} flattens type-conditioned fields under inline fragments
-     * as {@code "<Type>.<fieldName>"}, sitting in the same flattened set as the bare {@code <fieldName>}.
-     * The slash separator is reserved for parent/child path nesting in the glob pattern.
-     *
-     * <p>Participants without a discriminator value (which would leave the JOIN unconstrained
-     * across all rows) are skipped — a TableInterfaceType participant without {@code @discriminator}
-     * is rejected upstream, but defensive filtering here keeps the emitter robust if that
-     * invariant ever changes.
-     */
-    private static CodeBlock buildCrossTableAliasDeclarations(
-            List<ParticipantRef> participants, String tableLocal) {
-        var b = CodeBlock.builder();
-        for (var participant : participants) {
-            if (!(participant instanceof ParticipantRef.TableBound tb)) continue;
-            if (tb.discriminatorValue() == null) continue;
-            for (var ctf : tb.crossTableFields()) {
-                var names = GeneratorUtils.ResolvedTableNames.ofTable(ctf.targetTable());
-                String aliasVar = ctf.aliasVarName();
-                b.addStatement("$T $L = null", names.jooqTableClass(), aliasVar);
-                b.beginControlFlow("if (env.getSelectionSet().contains($S))",
-                    tb.typeName() + "." + ctf.fieldName());
-                b.addStatement("$L = $T.$L.as($S)", aliasVar, names.tablesClass(),
-                    ctf.targetTable().javaFieldName(), ctf.aliasName());
-                b.addStatement("fields.add($L.$L.as($S))", aliasVar,
-                    ctf.column().javaName(), ctf.aliasName());
-                b.endControlFlow();
-            }
-        }
-        return b.build();
-    }
-
-    /**
-     * Emits the conditional {@code step = step.leftJoin(...).on(...)} blocks for each participant
-     * cross-table field, matched to the alias variables declared by
-     * {@link #buildCrossTableAliasDeclarations}. The ON clause includes the FK equality plus
-     * a discriminator equality so non-matching rows carry NULL through the join, which the
-     * TypeResolver then routes back to the correct concrete type by reading the discriminator
-     * off the interface table.
-     *
-     * <p>Caller declares {@code step} as {@code SelectJoinStep<Record>} initialised to
-     * {@code dsl.select(...).from(<tableLocal>)}; this method appends LEFT JOINs and reassigns
-     * {@code step} to the same variable so the trailing {@code .where().orderBy().fetch()} chain
-     * continues to typecheck.
-     *
-     * <p>Multi-column FK paths are supported via per-column equalities chained with {@code .and(...)}
-     * (positional pairing of {@code sourceColumns} / {@code targetColumns} per
-     * {@link no.sikt.graphitron.rewrite.model.On.ColumnPairs}' arity invariant).
-     */
-    private static CodeBlock buildCrossTableJoinChain(
-            List<ParticipantRef> participants, String discriminatorColumn,
-            String tableLocal) {
-        var b = CodeBlock.builder();
-        for (var participant : participants) {
-            if (!(participant instanceof ParticipantRef.TableBound tb)) continue;
-            if (tb.discriminatorValue() == null) continue;
-            for (var ctf : tb.crossTableFields()) {
-                String aliasVar = ctf.aliasVarName();
-                // The @reference is parsed starting from the interface table, so the slot's
-                // source side is on the parent (interface table = tableLocal) and target side on
-                // the joined alias. Slot orientation is direction-blind; emitCorrelationWhere
-                // reads target.<targetSide>.eq(parent.<sourceSide>) uniformly.
-                var fkOn = JoinPathEmitter.emitCorrelationWhere(ctf.pairs(), aliasVar, tableLocal);
-                // Qualify the discriminator predicate to the base table; see buildInterfaceFieldsList
-                // for why a bare reference is ambiguous and why we qualify off the FROM table's own
-                // jOOQ instance (<tableLocal>.getQualifiedName()) rather than the @table-directive string.
-                var onCondition = CodeBlock.builder()
-                    .add("$L.and($T.field($L.getQualifiedName().append($T.name($S)), $T.class).eq($S))",
-                        fkOn, DSL, tableLocal, DSL, discriminatorColumn, Object.class, tb.discriminatorValue())
-                    .build();
-                b.beginControlFlow("if ($L != null)", aliasVar);
-                b.addStatement("step = step.leftJoin($L).on($L)", aliasVar, onCondition);
-                b.endControlFlow();
-            }
-        }
-        return b.build();
-    }
-
-    /**
-     * Emits {@code condition = condition.and(<base>.field(<col>).in(val1, val2, ...))}
-     * to restrict results to rows with a known discriminator value. Mirrors the legacy generator
-     * which always emits {@code WHERE col IN (...known values...)}. When {@code knownValues} is
-     * empty, emits nothing (no restriction added).
-     *
-     * <p>The discriminator column is qualified to the FROM table via its own jOOQ instance
-     * ({@code <tableLocal>.getQualifiedName()}): once any participant cross-table join is present,
-     * the joined detail table can re-declare the discriminator column, making a bare reference
-     * ambiguous. Qualifying off the table instance produces the exact qualifier jOOQ renders in the
-     * FROM clause, matching it by construction. See {@link #buildInterfaceFieldsList}.
-     */
-    private static CodeBlock buildDiscriminatorFilter(String discriminatorColumn, List<String> knownValues, String tableLocal) {
-        if (knownValues.isEmpty()) return CodeBlock.of("");
-        var inArgs = knownValues.stream()
-            .map(v -> CodeBlock.of("$S", v))
-            .collect(CodeBlock.joining(", "));
-        return CodeBlock.builder()
-            .addStatement("condition = condition.and($T.field($L.getQualifiedName().append($T.name($S)), $T.class).in($L))",
-                DSL, tableLocal, DSL, discriminatorColumn, Object.class, inArgs)
-            .build();
+        var reprojection = schema == null
+            ? no.sikt.graphitron.rewrite.JoinedTableReprojection.EMPTY
+            : schema.joinedTableReprojectionOf(interfaceTypeName);
+        var units = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage);
+        var source = new no.sikt.graphitron.command.LaunchSource.DiscriminatedTable(
+            tableRef, discriminatorColumn, knownDiscriminatorValues, reprojection.baseSlice(),
+            no.sikt.graphitron.plan.LauncherCommands.discriminatedBranches(participants, reprojection, units));
+        return no.sikt.graphitron.render.DiscriminatedTableFragments.assembly(
+            source, alwaysProject, tableLocal);
     }
 
     /**
@@ -4660,11 +4266,11 @@ public class TypeFetcherGenerator {
                 emitProjected(ctx, field, pl.returnTypeName(), pl.reentryCorrelation(), valueType, tableRef,
                     tablesOnly, outputPackage, tableLocal, dmlChain, /*isList=*/ true);
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedSingle ds ->
-                emitDiscriminated(ctx, field, ds.discriminatorColumn(), ds.knownDiscriminatorValues(), ds.participants(),
+                emitDiscriminated(ctx, field, ds.interfaceName(), ds.discriminatorColumn(), ds.knownDiscriminatorValues(), ds.participants(),
                     ds.reentryCorrelation(), valueType, tableRef, tablesOnly, outputPackage, tableLocal, dmlChain,
                     /*isList=*/ false);
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedList dl ->
-                emitDiscriminated(ctx, field, dl.discriminatorColumn(), dl.knownDiscriminatorValues(), dl.participants(),
+                emitDiscriminated(ctx, field, dl.interfaceName(), dl.discriminatorColumn(), dl.knownDiscriminatorValues(), dl.participants(),
                     dl.reentryCorrelation(), valueType, tableRef, tablesOnly, outputPackage, tableLocal, dmlChain,
                     /*isList=*/ true);
         };
@@ -5019,6 +4625,7 @@ public class TypeFetcherGenerator {
     private static CodeBlock emitDiscriminated(
             TypeFetcherEmissionContext ctx,
             no.sikt.graphitron.rewrite.model.MutationField.DmlTableField field,
+            String interfaceTypeName,
             String discriminatorColumn, List<String> knownDiscriminatorValues,
             List<ParticipantRef> participants,
             ParentCorrelation.OnLiftedSlots correlation,
@@ -5039,14 +4646,14 @@ public class TypeFetcherGenerator {
             // only the reprojection's discriminator filter.
             followUp.add(emitReentryValuesJoinDecls(correlation))
                 .addStatement("$T condition = $T.noCondition()", CONDITION, DSL)
-                .add(buildTableInterfaceReprojection(ctx, participants, discriminatorColumn,
-                    knownDiscriminatorValues, List.of(), tableLocal, outputPackage))
+                .add(buildTableInterfaceReprojection(ctx, interfaceTypeName, tableRef, participants,
+                    discriminatorColumn, knownDiscriminatorValues, List.of(), tableLocal, outputPackage))
                 .addStatement("return step.join($L).on($L).where(condition).orderBy($L).fetch()",
                     REENTRY_KEYS_INPUT, buildReentryValuesJoinOn(correlation), reentryIdxField());
         } else {
             followUp.addStatement("$T condition = $L", CONDITION, buildReentryKeyEquality(correlation))
-                .add(buildTableInterfaceReprojection(ctx, participants, discriminatorColumn,
-                    knownDiscriminatorValues, List.of(), tableLocal, outputPackage))
+                .add(buildTableInterfaceReprojection(ctx, interfaceTypeName, tableRef, participants,
+                    discriminatorColumn, knownDiscriminatorValues, List.of(), tableLocal, outputPackage))
                 .addStatement("return step.where(condition).fetchOne()");
         }
         ctx.addCompanionMethod(buildDmlReentryRowsMethod(

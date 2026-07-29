@@ -78,8 +78,12 @@ public final class MultiTablePolymorphicEmitter {
      * {@code Ambiguous match found} and resolves to the first by luck). Same {@code __}-wrapping
      * collision-avoidance rationale as {@link #TYPENAME_COLUMN}; reaches generated code only as a string
      * literal (a {@code .as("__discriminator__")} projection and a {@code record.get(DSL.name(...))} read).
+     * The literal's one home is {@link no.sikt.graphitron.command.ReservedAliases} (the
+     * discriminated assembly now renders in {@code render}, which may not import this package);
+     * this constant is the legacy tree's read of it.
      */
-    public static final String DISCRIMINATOR_COLUMN = "__discriminator__";
+    public static final String DISCRIMINATOR_COLUMN =
+        no.sikt.graphitron.command.ReservedAliases.DISCRIMINATOR;
     /** Stage-1 sort key column alias. Single PK projects the column directly; composite PKs use {@code DSL.jsonbArray(...)}. */
     public static final String SORT_COLUMN = "__sort__";
     /** Stage-1 parent-index column alias; drives the Java-side scatter back to the originating parent row. */
@@ -393,7 +397,8 @@ public final class MultiTablePolymorphicEmitter {
 
         // Reuse the read-side discriminator-filter + projection + join assembly, additionally
         // projecting the shared table's PK columns so the fetched Record carries them for the re-map.
-        builder.addCode(TypeFetcherGenerator.buildTableInterfaceReprojection(ctx, participants,
+        builder.addCode(TypeFetcherGenerator.buildTableInterfaceReprojection(ctx,
+            returnType.returnTypeName(), tableRef, participants,
             discriminatorColumn, knownDiscriminatorValues, tableRef.primaryKeyColumns(), tableLocal, outputPackage));
 
         builder.addStatement("$T fetched = step.where(condition).fetch()", resultOfRecord);

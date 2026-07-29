@@ -1063,7 +1063,7 @@ class TypeFetcherGeneratorTest {
         // silently return rows of unknown type that the TypeResolver cannot route.
         var field = queryTableInterfaceField("allContent", true);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
-        var code = method(spec, "allContent").code().toString();
+        var code = method(spec, "rowsAllContent").code().toString();
         assertThat(code).contains("\"FILM\"");
         assertThat(code).contains("\"SHORT\"");
         assertThat(code).contains(".in(");
@@ -1076,7 +1076,7 @@ class TypeFetcherGeneratorTest {
         var field = new QueryField.QueryTableInterfaceField("Query", "allContent", null, returnType,
             "FILM_TYPE", List.of(), List.of(), List.of(), new OrderBySpec.None(), null);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
-        var code = method(spec, "allContent").code().toString();
+        var code = method(spec, "rowsAllContent").code().toString();
         assertThat(code).doesNotContain(".in(");
     }
 
@@ -1084,14 +1084,14 @@ class TypeFetcherGeneratorTest {
     void queryTableInterfaceField_noAsterisk_inSelectClause() {
         var field = queryTableInterfaceField("allContent", true);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
-        assertThat(method(spec, "allContent").code().toString()).doesNotContain("asterisk()");
+        assertThat(method(spec, "rowsAllContent").code().toString()).doesNotContain("asterisk()");
     }
 
     @Test
     void queryTableInterfaceField_discriminatorAlwaysSelected() {
         var field = queryTableInterfaceField("allContent", true);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
-        assertThat(method(spec, "allContent").code().toString()).contains("\"FILM_TYPE\"");
+        assertThat(method(spec, "rowsAllContent").code().toString()).contains("\"FILM_TYPE\"");
     }
 
     @Test
@@ -1105,7 +1105,7 @@ class TypeFetcherGeneratorTest {
             List.of(), new OrderBySpec.None(), null);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
             DEFAULT_OUTPUT_PACKAGE);
-        var code = method(spec, "allContent").code().toString();
+        var code = method(spec, "rowsAllContent").code().toString();
         assertThat(code).contains("FilmContent.$project(");
         assertThat(code).contains("ShortContent.$project(");
     }
@@ -1234,7 +1234,7 @@ class TypeFetcherGeneratorTest {
             List.of(), new OrderBySpec.None(), null);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
             DEFAULT_OUTPUT_PACKAGE);
-        var code = method(spec, "allContent").code().toString();
+        var code = method(spec, "rowsAllContent").code().toString();
         assertThat(code)
             .as("type-scoped selection-set check gates per-participant cross-table column fetch")
             .contains("env.getSelectionSet().contains(\"FilmContent.rating\")");
@@ -1251,7 +1251,7 @@ class TypeFetcherGeneratorTest {
             List.of(), new OrderBySpec.None(), null);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
             DEFAULT_OUTPUT_PACKAGE);
-        var code = method(spec, "allContent").code().toString();
+        var code = method(spec, "rowsAllContent").code().toString();
         assertThat(code)
             .as("LEFT JOIN to the cross table is gated by the alias-presence check")
             .contains("step = step.leftJoin(FilmContent_rating_alias).on(");
@@ -1274,7 +1274,7 @@ class TypeFetcherGeneratorTest {
             List.of(), new OrderBySpec.None(), null);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
             DEFAULT_OUTPUT_PACKAGE);
-        var code = method(spec, "allContent").code().toString();
+        var code = method(spec, "rowsAllContent").code().toString();
         assertThat(code)
             .as("cross-table column is projected with the alias so the per-field DataFetcher reads it back by name")
             .contains("fields.add(FilmContent_rating_alias.RATING.as(\"FilmContent_rating\"))");
@@ -1291,7 +1291,7 @@ class TypeFetcherGeneratorTest {
             List.of(), new OrderBySpec.None(), null);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
             DEFAULT_OUTPUT_PACKAGE);
-        var code = method(spec, "allContent").code().toString();
+        var code = method(spec, "rowsAllContent").code().toString();
         assertThat(code)
             .as("no LEFT JOIN when no participant declares cross-table fields")
             .doesNotContain(".leftJoin(");
@@ -1299,8 +1299,8 @@ class TypeFetcherGeneratorTest {
 
     @Test
     void tableInterfaceField_crossTableField_emitsLeftJoinAtChildSite() {
-        // Both interface fetcher entry points (Query- and ChildField-rooted) share
-        // buildCrossTableAliasDeclarations + buildCrossTableJoinChain; this asserts the
+        // Both interface consumers (the Query launcher and the ChildField-rooted legacy
+        // fetcher) share the relocated DiscriminatedTableFragments assembly; this asserts the
         // emission applies at the child site too.
         var returnType = tableBoundFilm(nonNullList());
         List<JoinStep> joinPath = List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_language_id_fkey"), LANGUAGE_TABLE,
@@ -1353,7 +1353,7 @@ class TypeFetcherGeneratorTest {
     void queryTableInterfaceField_discriminatorProjection_qualifiesOffTableInstance() {
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
             List.of(discriminatedAllContent()), DEFAULT_OUTPUT_PACKAGE);
-        var code = method(spec, "allContent").code().toString();
+        var code = method(spec, "rowsAllContent").code().toString();
         assertThat(code)
             .as("the __discriminator__ routing projection qualifies off the FROM table instance")
             .contains("filmTable.getQualifiedName().append(org.jooq.impl.DSL.name(\"FILM_TYPE\")), java.lang.Object.class).as(\"__discriminator__\")");
@@ -1363,7 +1363,7 @@ class TypeFetcherGeneratorTest {
     void queryTableInterfaceField_discriminatorFilter_qualifiesOffTableInstance() {
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
             List.of(discriminatedAllContent()), DEFAULT_OUTPUT_PACKAGE);
-        var code = method(spec, "allContent").code().toString();
+        var code = method(spec, "rowsAllContent").code().toString();
         assertThat(code)
             .as("the IN-filter discriminator restriction qualifies off the FROM table instance")
             .contains("filmTable.getQualifiedName().append(org.jooq.impl.DSL.name(\"FILM_TYPE\")), java.lang.Object.class).in(");
@@ -1373,7 +1373,7 @@ class TypeFetcherGeneratorTest {
     void queryTableInterfaceField_discriminatorJoinGate_qualifiesOffTableInstance() {
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
             List.of(discriminatedAllContent()), DEFAULT_OUTPUT_PACKAGE);
-        var code = method(spec, "allContent").code().toString();
+        var code = method(spec, "rowsAllContent").code().toString();
         assertThat(code)
             .as("the LEFT JOIN ON-clause discriminator gate qualifies off the FROM table instance")
             .contains("filmTable.getQualifiedName().append(org.jooq.impl.DSL.name(\"FILM_TYPE\")), java.lang.Object.class).eq(\"FILM\")");
@@ -1387,7 +1387,7 @@ class TypeFetcherGeneratorTest {
         // Postgres rejects the query with "missing FROM-clause entry".
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
             List.of(discriminatedAllContent()), DEFAULT_OUTPUT_PACKAGE);
-        var code = method(spec, "allContent").code().toString();
+        var code = method(spec, "rowsAllContent").code().toString();
         assertThat(code)
             .as("the @table directive name must not qualify any discriminator reference")
             .doesNotContain(DISCRIMINATOR_DIRECTIVE_NAME);

@@ -781,6 +781,94 @@ is currently accepted and silently mis-emitted, so 5b lands a deferred rejection
 `__rk_` reserved-alias literal, already written by two packages with nothing binding them, gets
 single-sourced when the assembly relocates.
 
+### Slice 5b (2026-07-29): the discriminated arm, and the interface root migrates
+
+Landed as one commit. `LaunchSource.DiscriminatedTable(table, discriminatorColumn, knownValues,
+baseSlice, branches)`: the source-entailed discriminator `IN` restriction rides the arm (the
+renderer ANDs it after the glue, so `where` stays purely condition glue, proven by the frozen
+pins), and the select list is participant-driven, no single projection unit. `ParticipantRef`
+joined the borrow dial whole (one new dial entry, one closure census entry; its components fold
+into refs already admitted), so each branch embeds the borrowed variant plus what the ref cannot
+carry: `SingleTable(participant, projection)` mints the participant's type-class ref,
+`JoinedDetail(participant, detailFields)` carries the detail-exclusive columns.
+
+**The parse-boundary lift went to the recorded fallback, but a better habitat than `plan/`.**
+The 5a paragraph's primary plan (lift the derivations onto `JoinedTableBound` in `TypeBuilder`)
+is blocked by build-pass ordering, as anticipated: the single classify-and-emit walk resolves an
+interface's participants at the interface object's visit from raw field definitions, and the
+participant's classified `ChildField` variants (which the derivations read) may not exist yet;
+deriving from raw definitions there would be a second classifier, the exact recomputation the
+residence javadoc forbids. The consult pointed past the recorded `plan/` fallback to the
+post-walk-fold habitat the builder already names (`MixedSourceReachIndex`,
+`TenantBindingIndex`): the derivation landed as `rewrite/JoinedTableReprojection`, a pure
+per-interface-type fold over the schema's own components, read through
+`GraphitronSchema.joinedTableReprojectionOf` (no stored index: `GraphitronSchema` is a record
+and the fact's grain is one type, so an accessor-side fold follows the `fieldsOf` pre-grouping
+precedent without rippling the schema's constructors through 26 hand-construction sites). One
+formula, five consumers: the launcher producer copies it onto the arm; the child twin, the
+service single-table-interface fetcher and the two DML discriminated follow-ups read it through
+the retained `buildTableInterfaceReprojection`, now a thin delegate that derives the arm's data
+and renders it through the relocated `render/DiscriminatedTableFragments` (the legacy
+`ResolvedTableNames` reads became `TableRef` method reads, byte-identical by construction).
+
+**The base slice is a whole-query fact, hoisted to the arm.** The legacy assembly interleaved
+inherited (`__rk_`-aliased) and shared-key (detail-name-aliased) base-resident terms in schema
+field order with ONE first-wins dedup set shared across both kinds and all participants, and
+SELECT-list position is pinned by the frozen baselines; a per-branch list would have made each
+branch's content depend on its position. So `baseSlice` sits on the arm as one ordered,
+pre-deduplicated list of a two-arm `BaseSliceTerm` (`InheritedRef` renders the runtime
+result-key loop, `SharedKey` one aliased projection: the arms fork on reader addressing, which
+entails the emission shape; the alias sub-fact overlaps `TermAlias`'s axis, and `SharedKey`'s
+static alias is the third value that would promote that enum to a sealed hierarchy when a later
+slice touches it). Producer-side dedup means the data IS what renders.
+
+**Rejections landed with the arm.** Interface-times-connection was accepted and silently
+mis-emitted (the fetcher read `isList()`, false for `Connection`, and emitted `fetchOne()` where
+graphql-java expects the carrier); the deferred rejection landed on BOTH classifier arms, the
+root and the child twin (whose plain-table sibling arm already rejected the pair), with the
+`LauncherCommand` compact-constructor backstop mirroring it (discriminated implies direct and
+never paginates; the fan-out ladder already rejects `@tenantFanOut` on interface-typed fields,
+so `Direct` is classifier-entailed, not producer whim). Two more holes the consult surfaced:
+`buildParticipantList` admitted a classified non-table member of a discriminated interface as a
+silently-skipped `Unbound` (contradicting its own javadoc); it now rejects in that context, with
+`discriminatedBranches`' total switch throwing on `Unbound` as the generation backstop (no SDL
+fixture reaches the rejection; noted for the hand-off). And the legacy assembly silently
+truncated a `@nodeId`-compacted column carrier on a joined participant to its first column; the
+fold defers those shapes instead (excluded from every emission slice), and the validator drains
+the fold's deferrals, so the truncation is unreachable.
+
+**Alias literals single-sourced as data.** `__rk_` was written independently by
+`generators/GeneratorUtils` and `render/ProjectionUnitRenderer` (the live drift instance), and
+`__discriminator__` by `generators/MultiTablePolymorphicEmitter`, which the relocated render
+fragment may not import. Both literals now live in `command/ReservedAliases` (pure data, legal
+for render, plan and the legacy tree alike) with the namespace-disjointness argument in one
+javadoc; the legacy constants delegate. This is the generator-source half only; R521 owns making
+the *generated* output reference emitted constants.
+
+Emission mechanics: the renderer's discriminated case declares the table local and the condition
+statement, folds the fragment's assembly (routing alias first, single-table `$project`s, base
+slice, alias declarations, `step`, gated LEFT JOIN chains), then chains the same conditioned
+fetch tail the anchor arm uses off the `step` local (`selectChain`/`stepChain` share
+`conditionedFetchTail`; the routine arm stays outside the pair deliberately, its WHERE operand
+being the hop-filter fold, not the `condition` local). The dial's `TABLE_INTERFACE` entry
+deleted (only `LOOKUP` remains); the dispatch arm routes on row presence like its siblings; the
+orderBy-helper emission loop gained the interface arm, closing a latent gap (the legacy body
+spelled the helper call inline while nothing emitted the helper, so an `@orderBy` argument on an
+interface root produced uncompilable output). Ratchets: generators instanceof 83 to 81, plan
+leaf references 67 to 69 (the residence-split reads fold in `rewrite/`, outside both scans, as
+befits a post-walk model fact). The four frozen interface pins (single-table with PK order,
+joined-detail with `__rk_` base slice, cross-table gated LEFT JOIN, composite-shared-key base
+qualification) held byte-identical through the cutover; `TypeFetcherGeneratorTest`'s thirteen
+interface body assertions repointed to the launcher method.
+
+Hand-off findings recorded here: a `TableInterfaceType` participant without `@discriminator`
+still classifies and renders the legacy silent shape (projected but unroutable rows, gated JOINs
+skipped); the one deliberate renderer gate mirrors it and a parse-time rejection is the honest
+fix. The `Unbound`-in-discriminated-interface rejection has no reaching SDL fixture (an `@error`
+implementor is the nearest shape). `QueryTableInterfaceField.participants()` (and the child
+twin's and the type's slots) stay `List<ParticipantRef>` though the discriminated population is
+now all-`TableBacked` by the parse rejection; narrowing the static type is available follow-up.
+
 ## Retired vocabulary
 
 - `TypeFetcherGenerator.buildQueryConnectionFetcher`, `buildConnectionOrderingBlock` and
@@ -792,6 +880,13 @@ single-sourced when the assembly relocates.
   retired with it (the producer's `invocationOf` is the fact's home for the root family).
 - `TypeFetcherGenerator.buildQueryRoutineFetcher` (slice 5a): the routine launcher arm replaced
   it, composing through the render-side emitters it already shared.
+- `TypeFetcherGenerator.buildQueryTableInterfaceFieldFetcher`, `buildInterfaceFieldsList`,
+  `buildDiscriminatorFilter`, `buildCrossTableAliasDeclarations`, `buildCrossTableJoinChain`,
+  `buildJoinedDetailAliasDeclarations`, `buildJoinedDetailJoinChain`, `sharedKeyBaseColumn` and
+  `detailExclusiveFields` (slice 5b): the discriminated launcher arm and the relocated
+  `render/DiscriminatedTableFragments` replaced the assembly; the residence-split derivation
+  has one home in `rewrite/JoinedTableReprojection`, and `buildTableInterfaceReprojection`
+  survives only as the legacy consumers' thin delegate.
 
 - `QueryLookupTableField.lookupMethodName()` (slice 6): the producer computes this coordinate's
   `UnitRef` like every other row; the emitted `lookup<Field>` method name is unchanged.

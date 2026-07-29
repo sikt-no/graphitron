@@ -2153,7 +2153,24 @@ class GraphitronSchemaBuilderTest {
                 assertThat(t.participants()).hasSize(2);
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(UnionType.class); }
-        };
+        },
+
+        TABLE_INTERFACE_ROOT_CONNECTION_DEFERRED(
+            "@asConnection on a single-table-interface root → UnclassifiedField with a deferred "
+                + "rejection (previously accepted and silently mis-emitted as an unpaginated fetch)",
+            """
+            interface MediaItem @table(name: "film") @discriminate(on: "kind") { title: String }
+            type Film implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
+            type Query { allMedia: [MediaItem] @asConnection }
+            """,
+            schema -> assertThat(schema.field("Query", "allMedia"))
+                .isInstanceOfSatisfying(UnclassifiedField.class, uf -> {
+                    assertThat(uf.rejection()).isInstanceOf(Rejection.Deferred.class);
+                    assertThat(uf.reason())
+                        .contains("@asConnection on a root field")
+                        .contains("single-table discriminated interface")
+                        .contains("not yet supported");
+                }));
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;

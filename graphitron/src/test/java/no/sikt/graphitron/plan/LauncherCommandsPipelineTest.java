@@ -21,9 +21,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>The boundary pins are two-tiered per the migration-dial design: shapes outside the covered
  * family by the fact (polymorphic, node, service roots) appear zero times forever, and shapes
- * excluded by a named {@code NotYetMigrated} dial entry (the faceted connection, fanned, routine,
- * single-table-interface, lookup) appear zero times while their entries exist; a dial entry's
- * deletion flips its pin from boundary to membership in the slice that lands the shape.
+ * excluded by a named {@code NotYetMigrated} dial entry (only the lookup root remains) appear
+ * zero times while their entries exist; a dial entry's deletion flips its pin from boundary to
+ * membership in the slice that lands the shape.
  */
 @PipelineTier
 class LauncherCommandsPipelineTest {
@@ -199,6 +199,106 @@ class LauncherCommandsPipelineTest {
         assertThat(row.where()).isNull();
         assertThat(((ResultShape.RecordList) row.result()).ordering()).isNull();
         assertThat(row.invocation()).isInstanceOf(no.sikt.graphitron.command.Invocation.Direct.class);
+    }
+
+    @Test
+    void interfaceRoot_sourceArmCarriesTheDiscriminatedFactsAndTheWhereHandshake() {
+        var schema = TestSchemaHelper.buildSchema("""
+            interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
+              title: String! @field(name: "TITLE")
+            }
+            type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
+              title: String! @field(name: "TITLE")
+              rating: String @reference(path: [{key: "content_film_id_fkey"}]) @field(name: "RATING")
+            }
+            type ShortContent implements Content @table(name: "content") @discriminator(value: "SHORT") {
+              title: String! @field(name: "TITLE")
+            }
+            type Query {
+                allContent(title: String @field(name: "TITLE")): [Content!]! @defaultOrder(primaryKey: true)
+            }
+            """);
+
+        var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
+        var relation = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE);
+        var row = relation.rowFor("Query", "allContent").orElseThrow();
+
+        var source = (no.sikt.graphitron.command.LaunchSource.DiscriminatedTable) row.source();
+        assertThat(source.table().sameTable("content")).isTrue();
+        assertThat(source.discriminatorColumn()).isEqualToIgnoringCase("content_type");
+        assertThat(source.knownValues()).containsExactlyInAnyOrder("FILM", "SHORT");
+        // Single-table participants only: no joined detail, so the whole-query base slice is
+        // empty; each branch embeds the borrowed ref and the minted projection unit.
+        assertThat(source.baseSlice()).isEmpty();
+        assertThat(source.branches()).hasSize(2);
+        var filmBranch = source.branches().stream()
+            .map(b -> (no.sikt.graphitron.command.LaunchSource.DiscriminatedTable.Branch.SingleTable) b)
+            .filter(b -> b.participant().typeName().equals("FilmContent"))
+            .findFirst().orElseThrow();
+        assertThat(filmBranch.participant().crossTableFields()).hasSize(1);
+        assertThat(filmBranch.projection().fqcn()).isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".types.FilmContent");
+        // The WHERE handshake and the invocation/result axes work exactly as the plain root's:
+        // glue copied off the condition relation, direct invocation, ordered list shape.
+        var conditionRow = conditions.rows().get(0);
+        assertThat(row.where().method()).isEqualTo(conditionRow.glue());
+        assertThat(row.invocation()).isInstanceOf(no.sikt.graphitron.command.Invocation.Direct.class);
+        assertThat(((ResultShape.RecordList) row.result()).ordering())
+            .isInstanceOf(Ordering.Columns.class);
+    }
+
+    @Test
+    void interfaceRoot_joinedParticipants_baseSliceAndDetailFieldsRideTheArm() {
+        var schema = TestSchemaHelper.buildSchema("""
+            interface Party @table(name: "party") @discriminate(on: "party_kind") {
+                partyId:     Int!    @field(name: "party_id")
+                displayName: String! @field(name: "display_name")
+            }
+            type Individual implements Party @table(name: "party_individual") @discriminator(value: "INDIVIDUAL") {
+                partyId:     Int!    @field(name: "party_id")
+                displayName: String! @reference(path: [{key: "party_individual_party_id_fkey"}]) @field(name: "display_name")
+                birthDate:   String  @field(name: "birth_date")
+            }
+            type Company implements Party @table(name: "party_company") @discriminator(value: "COMPANY") {
+                partyId:     Int!    @field(name: "party_id")
+                displayName: String! @reference(path: [{key: "party_company_party_id_fkey"}]) @field(name: "display_name")
+                orgNumber:   String  @field(name: "org_number")
+            }
+            type Query { allParties: [Party!]! }
+            """);
+
+        var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
+        var row = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE)
+            .rowFor("Query", "allParties").orElseThrow();
+        var source = (no.sikt.graphitron.command.LaunchSource.DiscriminatedTable) row.source();
+
+        // The base slice is one whole-query fact: schema field order within each participant
+        // (the shared key partyId, then the inherited displayName), deduplicated first-wins
+        // across participants (Company's identical terms claim nothing new).
+        assertThat(source.baseSlice()).hasSize(2);
+        var sharedKey = (no.sikt.graphitron.command.LaunchSource.DiscriminatedTable.BaseSliceTerm.SharedKey)
+            source.baseSlice().get(0);
+        assertThat(sharedKey.alias()).isEqualTo("party_id");
+        assertThat(sharedKey.baseColumn().sqlName()).isEqualTo("party_id");
+        var inherited = (no.sikt.graphitron.command.LaunchSource.DiscriminatedTable.BaseSliceTerm.InheritedRef)
+            source.baseSlice().get(1);
+        assertThat(inherited.fieldName()).isEqualTo("displayName");
+        assertThat(inherited.baseColumn().sqlName()).isEqualTo("display_name");
+        // Detail-exclusive columns stay per-branch, never deduplicated across participants.
+        // Branch order follows the participant registry, not SDL order, so look up by name.
+        var individual = source.branches().stream()
+            .map(b -> (no.sikt.graphitron.command.LaunchSource.DiscriminatedTable.Branch.JoinedDetail) b)
+            .filter(b -> b.participant().typeName().equals("Individual"))
+            .findFirst().orElseThrow();
+        assertThat(individual.detailFields()).singleElement().satisfies(df -> {
+            assertThat(df.fieldName()).isEqualTo("birthDate");
+            assertThat(df.column().sqlName()).isEqualTo("birth_date");
+        });
+        var company = source.branches().stream()
+            .map(b -> (no.sikt.graphitron.command.LaunchSource.DiscriminatedTable.Branch.JoinedDetail) b)
+            .filter(b -> b.participant().typeName().equals("Company"))
+            .findFirst().orElseThrow();
+        assertThat(company.detailFields()).singleElement().satisfies(df ->
+            assertThat(df.fieldName()).isEqualTo("orgNumber"));
     }
 
     @Test

@@ -47,8 +47,32 @@ public class GraphitronSchemaValidator {
         validateTenantBindings(schema, errors);
         validateConditionEmitImplemented(schema, errors);
         validateProjectionUnitAddresses(schema, errors);
+        validateJoinedTableReprojection(schema, errors);
         drainBuildDiagnostics(schema, errors);
         return List.copyOf(errors);
+    }
+
+    /**
+     * Drains the joined-table reprojection fold's deferrals ({@link JoinedTableReprojection}):
+     * participant field shapes that classify but have no discriminated-re-projection emission (a
+     * non-directly-projected column carrier, which the retired inline assembly silently
+     * truncated to its first column). One formula, read here and by every reprojection consumer
+     * through {@link GraphitronSchema#joinedTableReprojectionOf}, so the emission and the
+     * rejection cannot drift.
+     */
+    private void validateJoinedTableReprojection(GraphitronSchema schema, List<ValidationError> errors) {
+        for (var type : schema.types().values()) {
+            if (!(type instanceof no.sikt.graphitron.rewrite.model.GraphitronType.TableInterfaceType)) {
+                continue;
+            }
+            for (var deferral : schema.joinedTableReprojectionOf(type.name()).deferrals()) {
+                var field = schema.field(deferral.typeName(), deferral.fieldName());
+                errors.add(new ValidationError(
+                    deferral.typeName() + "." + deferral.fieldName(),
+                    Rejection.deferred(deferral.message()),
+                    field == null ? SourceLocation.EMPTY : field.location()));
+            }
+        }
     }
 
     /**

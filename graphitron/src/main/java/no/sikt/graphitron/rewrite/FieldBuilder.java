@@ -956,6 +956,15 @@ class FieldBuilder {
 
         if (tableBacked instanceof TableInterfaceType tableInterfaceType) {
             var wrapper = buildWrapper(fieldDef);
+            // The same deferral as the root arm: no paginating emission exists over the
+            // discriminated re-projection, and the legacy fetcher read isList() (true for
+            // Connection) and emitted a plain fetch where graphql-java expects the carrier.
+            if (wrapper instanceof FieldWrapper.Connection) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.deferred(
+                    "Field '" + parentTypeName + "." + name + "': @asConnection on a field"
+                    + " returning a single-table discriminated interface ('" + elementTypeName
+                    + "') is not yet supported; return the list shape instead"));
+            }
             var referencePath = ctx.parsePath(fieldDef, name, parentTableType.table().tableName(), tableInterfaceType.table().tableName(), tableInterfaceType.table());
             if (referencePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(referencePath.errorMessage()));
@@ -4566,6 +4575,16 @@ class FieldBuilder {
         }
         if (tableBacked instanceof TableInterfaceType tableInterfaceType) {
             var wrapper = buildWrapper(fieldDef);
+            // Pagination over the discriminated re-projection (the participant-driven select
+            // list plus the gated LEFT JOIN arms) has no emission: before this rejection the
+            // pair was accepted and silently mis-emitted as an unpaginated fetch, so reject it
+            // loudly until a paginating emission exists.
+            if (wrapper instanceof FieldWrapper.Connection) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.deferred(
+                    "Field '" + parentTypeName + "." + name + "': @asConnection on a root field"
+                    + " returning a single-table discriminated interface ('" + elementTypeName
+                    + "') is not yet supported; return the list shape instead"));
+            }
             var components = resolveTableFieldComponents(fieldDef, tableInterfaceType.table(), elementTypeName,
                 buildNodeIdArgPlan(fieldDef, tableInterfaceType.table()));
             if (components instanceof TableFieldComponents.Rejected rj) return new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());

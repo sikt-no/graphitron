@@ -59,9 +59,11 @@ class CommandSeamRatchetTest {
      * Lowered 104 to 100 with the conditions shim generator's retirement, then 100 to 97 with
      * call-site convergence (the entity generator's participant dispatch and the inline hosts'
      * filter plumbing), then 97 to 83 when the projection command relocated the type-class
-     * generator's and the four inline arm emitters' dispatch into the projection producer.
+     * generator's and the four inline arm emitters' dispatch into the projection producer, then
+     * 83 to 81 when the discriminated-interface assembly's residence-split reads moved into the
+     * schema's joined-table reprojection fold.
      */
-    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 83;
+    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 81;
 
     /**
      * {@code case} patterns in {@code generators/} naming a leaf of the seven hierarchies.
@@ -95,9 +97,13 @@ class CommandSeamRatchetTest {
      * dial out of the fetcher generator's dispatch, which now routes on row presence; raised to
      * 67 when the routine root migrated and the dial classification became a second total
      * switch over the permits (exhaustiveness in exchange for the default throw), with the row
-     * production fork joining it.
+     * production fork joining it; raised to 69 when the interface root migrated (its arm in the
+     * production fork plus the schema-free assembly's membership read). The residence-split
+     * dispatch itself did not land here: it reads <em>classified fields</em>, an ancestor-free
+     * post-walk fact, so it folded into the schema's joined-table reprojection index beside the
+     * other post-walk folds rather than into a producer.
      */
-    private static final int PLAN_LEAF_REFERENCES = 67;
+    private static final int PLAN_LEAF_REFERENCES = 69;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide

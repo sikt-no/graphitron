@@ -92,6 +92,30 @@ public final class RootLauncherRenderer {
                 }
             }
             case LaunchSource.RoutineChain chain -> builder.addCode(routineBody(row, chain));
+            case LaunchSource.DiscriminatedTable disc -> {
+                String tableLocal = TableLocal.name(disc.table());
+                builder.addCode(TableLocal.declare(disc.table()));
+                builder.addCode(conditionStatement(row, tableLocal));
+                // The whole discriminated assembly (routing projection, participant select
+                // list, gated LEFT JOIN arms) is the shared fragment; only the terminal is
+                // shape-forked here, over the same fetch tail the anchor arm chains.
+                builder.addCode(DiscriminatedTableFragments.assembly(disc,
+                    java.util.List.of(), tableLocal));
+                switch (row.result()) {
+                    case ResultShape.SingleRecord ignored ->
+                        builder.addCode(directReturn(stepChain(false, false)));
+                    case ResultShape.RecordList list -> {
+                        boolean ordered = list.ordering() != null;
+                        if (ordered) {
+                            builder.addCode(orderByStatement(list.ordering(), tableLocal));
+                        }
+                        builder.addCode(directReturn(stepChain(true, ordered)));
+                    }
+                    case ResultShape.Connection ignored -> throw new IllegalStateException(
+                        "a discriminated-interface launcher never paginates; the command"
+                        + " constructor rejects the pair before rendering");
+                }
+            }
         }
         return builder.build();
     }
@@ -127,12 +151,39 @@ public final class RootLauncherRenderer {
             .indent()
             .add(".select($L)\n", selectExpr)
             .add(".from($L)\n", tableLocal)
-            .add(".where(condition)\n");
-        if (ordered) {
-            chain.add(".orderBy(orderBy)\n");
-        }
-        chain.add(isList ? ".fetch()" : ".fetchOne()").unindent();
+            .add(conditionedFetchTail(isList, ordered))
+            .unindent();
         return chain.build();
+    }
+
+    /**
+     * The discriminated arm's chain: the source assembly already yielded the joined {@code step}
+     * local, so the FROM prefix is that local and the tail is the same conditioned fetch the
+     * anchor arm chains. The routine arm stays outside this pair deliberately: its WHERE operand
+     * is the hop-filter fold, not the {@code condition} local, so folding it in would trade the
+     * shared invariant for a template.
+     */
+    private static CodeBlock stepChain(boolean isList, boolean ordered) {
+        return CodeBlock.builder()
+            .add("step\n")
+            .indent()
+            .add(conditionedFetchTail(isList, ordered))
+            .unindent()
+            .build();
+    }
+
+    /**
+     * The condition-bearing sources' one terminal fragment: {@code .where(condition)}, the
+     * optional sort-view ordering, and the cardinality's fetch. The FROM prefix is the source
+     * arm's to supply ({@link #selectChain} or {@link #stepChain}).
+     */
+    private static CodeBlock conditionedFetchTail(boolean isList, boolean ordered) {
+        var tail = CodeBlock.builder().add(".where(condition)\n");
+        if (ordered) {
+            tail.add(".orderBy(orderBy)\n");
+        }
+        tail.add(isList ? ".fetch()" : ".fetchOne()");
+        return tail.build();
     }
 
     private static CodeBlock selectChain(LaunchSource.AnchorTable anchor, String tableLocal,

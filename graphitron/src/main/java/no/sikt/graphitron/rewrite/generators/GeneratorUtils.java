@@ -69,8 +69,13 @@ class GeneratorUtils {
      * selection map by construction; an adversarial {@code __rk_foo} alias mints
      * {@code __rk___rk_foo}, still distinct). It is a string literal in generated output, never a
      * Java identifier, so the dunder-identifier lints do not see it.
+     *
+     * <p>The literal's one home is {@link no.sikt.graphitron.command.ReservedAliases} (this
+     * package may not be imported from {@code render}, whose projection renderer writes the
+     * same prefix); this constant is the legacy tree's read of it.
      */
-    static final String RESERVED_RK_ALIAS_PREFIX = "__rk_";
+    static final String RESERVED_RK_ALIAS_PREFIX =
+        no.sikt.graphitron.command.ReservedAliases.RESULT_KEY_PREFIX;
 
     /**
      * The default source binding for a record-parent key extraction: the fetcher reads its backing

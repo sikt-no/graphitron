@@ -59,7 +59,9 @@ class PackageImportDirectionTest {
      * {@code OrderBySpec} (the inline subselect's fixed ordering), and {@code LookupMapping}
      * (the {@code @lookupKey} VALUES keyset and its rows helper). The launcher family added
      * {@code FacetSpec} (the faceted carrier's decode data, borrowed whole on the facet plan
-     * rather than copied field by field).
+     * rather than copied field by field) and {@code ParticipantRef} (the discriminated arm's
+     * per-participant facts, borrowed whole so type name, discriminator value, cross-table
+     * fields, the child-to-parent hop and the alias formulas ride one ref).
      */
     private static final Set<String> BORROWED_MODEL_REFS = Set.of(
         "no.sikt.graphitron.rewrite.model.TableRef",
@@ -77,7 +79,8 @@ class PackageImportDirectionTest {
         "no.sikt.graphitron.rewrite.model.ParentCorrelation",
         "no.sikt.graphitron.rewrite.model.OrderBySpec",
         "no.sikt.graphitron.rewrite.model.LookupMapping",
-        "no.sikt.graphitron.rewrite.model.FacetSpec"
+        "no.sikt.graphitron.rewrite.model.FacetSpec",
+        "no.sikt.graphitron.rewrite.model.ParticipantRef"
     );
 
     /**
@@ -109,6 +112,7 @@ class PackageImportDirectionTest {
         "no.sikt.graphitron.rewrite.model.OrderBySpec",
         "no.sikt.graphitron.rewrite.model.ParamSource",
         "no.sikt.graphitron.rewrite.model.ParentCorrelation",
+        "no.sikt.graphitron.rewrite.model.ParticipantRef",
         "no.sikt.graphitron.rewrite.model.RoutineRef",
         "no.sikt.graphitron.rewrite.model.SourceKey",
         "no.sikt.graphitron.rewrite.model.TableExpr",

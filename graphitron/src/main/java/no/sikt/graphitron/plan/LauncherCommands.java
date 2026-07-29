@@ -58,8 +58,6 @@ public final class LauncherCommands {
      * seam. Shrink-only on its true-set; each entry names the slice that deletes it.
      */
     enum NotYetMigrated {
-        /** The single-table-interface root's discriminator reprojection (tail slice). */
-        TABLE_INTERFACE,
         /** The lookup root, whose named unit already exists and folds in last (closing slice). */
         LOOKUP
     }
@@ -79,6 +77,9 @@ public final class LauncherCommands {
                             facetPlanOf(schema, qtf, conditions, units),
                             invocationOf(schema, qtf, units));
                         case QueryField.QueryRoutineTableField qrtf -> routineRow(qrtf, units);
+                        case QueryField.QueryTableInterfaceField qtif -> interfaceRow(qtif,
+                            schema.joinedTableReprojectionOf(qtif.returnType().returnTypeName()),
+                            whereOf(qtif.parentTypeName(), qtif.name(), conditions), units);
                         default -> throw new IllegalStateException(
                             "unmigrated covered kind reached row production: " + field.getClass().getSimpleName());
                     });
@@ -111,17 +112,33 @@ public final class LauncherCommands {
                 rows.add(row(qtf, glueFromFilters(qtf, units), units, null, new Invocation.Direct()));
             } else if (field instanceof QueryField.QueryRoutineTableField qrtf) {
                 rows.add(routineRow(qrtf, units));
+            } else if (field instanceof QueryField.QueryTableInterfaceField qtif) {
+                // The residence split is a classified-schema fact; a schema-free assembly's
+                // joined participants carry no base slice and no detail fields, the same
+                // fallback the retired inline assembly took on a null schema.
+                rows.add(interfaceRow(qtif, no.sikt.graphitron.rewrite.JoinedTableReprojection.EMPTY,
+                    glueFromInterfaceFilters(qtif, units), units));
             }
         }
         return new LauncherRelation(rows, CarrierDsl.ENV_ACQUIRED);
     }
 
     private static GlueCall glueFromFilters(QueryField.QueryTableField qtf, GeneratedUnits units) {
-        if (qtf.filters().isEmpty()) {
+        return glueFromFilters(qtf.parentTypeName(), qtf.name(), qtf.filters(), units);
+    }
+
+    private static GlueCall glueFromInterfaceFilters(QueryField.QueryTableInterfaceField qtif,
+            GeneratedUnits units) {
+        return glueFromFilters(qtif.parentTypeName(), qtif.name(), qtif.filters(), units);
+    }
+
+    private static GlueCall glueFromFilters(String parentTypeName, String fieldName,
+            List<no.sikt.graphitron.rewrite.model.WhereFilter> filters, GeneratedUnits units) {
+        if (filters.isEmpty()) {
             return null;
         }
-        return new GlueCall(units.conditionMethod(qtf.parentTypeName(), qtf.name()),
-            no.sikt.graphitron.rewrite.model.WhereFilter.anyReadRequestContext(qtf.filters()));
+        return new GlueCall(units.conditionMethod(parentTypeName, fieldName),
+            no.sikt.graphitron.rewrite.model.WhereFilter.anyReadRequestContext(filters));
     }
 
     /**
@@ -163,7 +180,7 @@ public final class LauncherCommands {
         return switch (field) {
             case QueryField.QueryTableField ignored -> null;
             case QueryField.QueryRoutineTableField ignored -> null;
-            case QueryField.QueryTableInterfaceField ignored -> NotYetMigrated.TABLE_INTERFACE;
+            case QueryField.QueryTableInterfaceField ignored -> null;
             case QueryField.QueryLookupTableField ignored -> NotYetMigrated.LOOKUP;
             case QueryField.QueryInterfaceField ignored -> notCovered(field);
             case QueryField.QueryUnionField ignored -> notCovered(field);
@@ -214,6 +231,61 @@ public final class LauncherCommands {
             qrtf.returnType().wrapper().isList()
                 ? new ResultShape.RecordList(null)
                 : new ResultShape.SingleRecord());
+    }
+
+    /**
+     * A single-table discriminated interface row: the source arm carries the base table, the
+     * source-entailed discriminator restriction, the whole-query base slice (copied off the
+     * schema's joined-table reprojection fold) and the per-participant branches. Always
+     * {@link Invocation.Direct}: the fan-out ladder rejects {@code @tenantFanOut} on
+     * interface-typed fields. Never {@link ResultShape.Connection}: the classifier defers
+     * {@code @asConnection} on this root, and the command backstop mirrors both.
+     */
+    private static LauncherCommand interfaceRow(QueryField.QueryTableInterfaceField qtif,
+            no.sikt.graphitron.rewrite.JoinedTableReprojection reprojection,
+            GlueCall where, GeneratedUnits units) {
+        return new LauncherCommand(
+            units.launcherMethod(qtif.parentTypeName(), qtif.name()),
+            FieldCoordinates.coordinates(qtif.parentTypeName(), qtif.name()),
+            new LaunchSource.DiscriminatedTable(qtif.returnType().table(),
+                qtif.discriminatorColumn(), qtif.knownDiscriminatorValues(),
+                reprojection.baseSlice(),
+                discriminatedBranches(qtif.participants(), reprojection, units)),
+            where,
+            new Invocation.Direct(),
+            qtif.returnType().wrapper().isList()
+                ? new ResultShape.RecordList(orderingOf(qtif.orderBy(), qtif.parentTypeName(),
+                    qtif.name(), units))
+                : new ResultShape.SingleRecord());
+    }
+
+    /**
+     * The per-participant branch assembly, shared with the legacy interface-reprojection call
+     * sites (child twin, service fetcher, DML follow-ups) so the branch derivation and the
+     * projection-ref minting have one home. Total over the table-backed variants; a non-table
+     * participant cannot reach here (the parse boundary rejects non-table members of a
+     * discriminated interface).
+     */
+    public static List<LaunchSource.DiscriminatedTable.Branch> discriminatedBranches(
+            List<no.sikt.graphitron.rewrite.model.ParticipantRef> participants,
+            no.sikt.graphitron.rewrite.JoinedTableReprojection reprojection, GeneratedUnits units) {
+        var branches = new ArrayList<LaunchSource.DiscriminatedTable.Branch>(participants.size());
+        for (var participant : participants) {
+            branches.add(switch (participant) {
+                case no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound tb ->
+                    new LaunchSource.DiscriminatedTable.Branch.SingleTable(tb,
+                        units.typeClass(tb.typeName()));
+                case no.sikt.graphitron.rewrite.model.ParticipantRef.JoinedTableBound jtb ->
+                    new LaunchSource.DiscriminatedTable.Branch.JoinedDetail(jtb,
+                        reprojection.detailFieldsOf(jtb.typeName()));
+                case no.sikt.graphitron.rewrite.model.ParticipantRef.Unbound unbound ->
+                    throw new IllegalStateException(
+                        "Graphitron generator bug (discriminated branch assembly): non-table"
+                        + " participant '" + unbound.typeName() + "' reached branch assembly;"
+                        + " the classifier rejects non-table members of a discriminated interface");
+            });
+        }
+        return branches;
     }
 
     /**
@@ -305,14 +377,23 @@ public final class LauncherCommands {
      * the coordinate has no row.
      */
     private static GlueCall whereOf(QueryField.QueryTableField qtf, ConditionRelation conditions) {
-        return conditionRowOf(qtf, conditions)
+        return whereOf(qtf.parentTypeName(), qtf.name(), conditions);
+    }
+
+    private static GlueCall whereOf(String parentTypeName, String fieldName, ConditionRelation conditions) {
+        return conditionRowOf(parentTypeName, fieldName, conditions)
             .map(r -> new GlueCall(r.glue(), r.readsRequestContext()))
             .orElse(null);
     }
 
     private static java.util.Optional<ConditionCommand> conditionRowOf(
             QueryField.QueryTableField qtf, ConditionRelation conditions) {
-        var coordinate = FieldCoordinates.coordinates(qtf.parentTypeName(), qtf.name());
+        return conditionRowOf(qtf.parentTypeName(), qtf.name(), conditions);
+    }
+
+    private static java.util.Optional<ConditionCommand> conditionRowOf(
+            String parentTypeName, String fieldName, ConditionRelation conditions) {
+        var coordinate = FieldCoordinates.coordinates(parentTypeName, fieldName);
         return conditions.rows().stream()
             .filter(r -> r.coordinate().equals(coordinate))
             .findFirst();
@@ -325,10 +406,15 @@ public final class LauncherCommands {
      * fixed spec with no columns) is unordered, an absent slot on the {@code RecordList} arm.
      */
     private static Ordering orderingOf(QueryField.QueryTableField qtf, GeneratedUnits units) {
-        return switch (qtf.orderBy()) {
+        return orderingOf(qtf.orderBy(), qtf.parentTypeName(), qtf.name(), units);
+    }
+
+    private static Ordering orderingOf(OrderBySpec orderBy, String parentTypeName, String fieldName,
+            GeneratedUnits units) {
+        return switch (orderBy) {
             case OrderBySpec.Fixed fixed when !fixed.columns().isEmpty() -> new Ordering.Columns(fixed);
             case OrderBySpec.Argument ignored -> new Ordering.Helper(
-                units.orderByHelperMethod(qtf.parentTypeName(), qtf.name()), units.orderByResult());
+                units.orderByHelperMethod(parentTypeName, fieldName), units.orderByResult());
             default -> null;
         };
     }

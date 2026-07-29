@@ -797,8 +797,17 @@ class TypeBuilder {
                 result.add(new ParticipantRef.Unbound(typeName));
             } else if (gt != null && !(gt instanceof UnclassifiedType)) {
                 // A classified non-table member, e.g. an @error type in an @error-only union
-                // (see the Interim note).
-                result.add(new ParticipantRef.Unbound(typeName));
+                // (see the Interim note). A discriminated interface has no such population:
+                // every participant shares (or joins to) the discriminated base, so a classified
+                // non-table implementor is an authoring error there, not an Unbound participant
+                // the emitters would silently skip.
+                if (interfaceTable != null) {
+                    errors.add("implementing type '" + typeName + "' of a single-table"
+                        + " discriminated interface is not table-bound; every participant must"
+                        + " carry @table (the shared base, or a joined detail table)");
+                } else {
+                    result.add(new ParticipantRef.Unbound(typeName));
+                }
             } else {
                 errors.add("implementing type '" + typeName + "' is not table-bound (missing @table directive)");
             }

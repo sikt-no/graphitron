@@ -162,6 +162,95 @@ class RootLauncherRendererTest {
             .contains("selectFields = ");
     }
 
+    // ===== the discriminated source arm =====
+
+    private static LauncherCommand discriminatedRow(GlueCall where, ResultShape result,
+            List<LaunchSource.DiscriminatedTable.BaseSliceTerm> baseSlice,
+            List<LaunchSource.DiscriminatedTable.Branch> branches) {
+        return new LauncherCommand(
+            UNITS.launcherMethod("Query", "allContent"),
+            FieldCoordinates.coordinates("Query", "allContent"),
+            new LaunchSource.DiscriminatedTable(
+                filmTable(List.of(col("film_id", "FILM_ID", "java.lang.Integer"))),
+                "film_type", List.of("FILM", "SHORT"), baseSlice, branches),
+            where, new Invocation.Direct(), result);
+    }
+
+    private static LaunchSource.DiscriminatedTable.Branch.SingleTable filmContentBranch() {
+        return new LaunchSource.DiscriminatedTable.Branch.SingleTable(
+            new no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound("FilmContent",
+                filmTable(List.of()), "FILM"),
+            UNITS.typeClass("FilmContent"));
+    }
+
+    @Test
+    void discriminatedSource_routingAliasStepLocalAndTheSharedFetchTail() {
+        var body = body(discriminatedRow(null, list(null), List.of(), List.of(filmContentBranch())));
+        assertThat(body)
+            .as("the routing projection qualifies off the FROM table instance under the reserved alias")
+            .contains("filmTable.getQualifiedName().append(org.jooq.impl.DSL.name(\"film_type\"))")
+            .contains(".as(\"__discriminator__\")");
+        assertThat(body)
+            .as("the single-table branch projects through its minted unit")
+            .contains(DEFAULT_OUTPUT_PACKAGE + ".types.FilmContent.$project(");
+        assertThat(body)
+            .contains("org.jooq.SelectJoinStep<org.jooq.Record> step = dsl.select(new java.util.ArrayList<>(fields)).from(filmTable)");
+        assertThat(body)
+            .as("the terminal is the same conditioned fetch tail the anchor arm chains, off the step local")
+            .contains("return step")
+            .contains(".where(condition)")
+            .contains(".fetch();");
+    }
+
+    @Test
+    void discriminatedSource_inRestrictionRidesTheArm_whereSlotStaysConditionGlue() {
+        var where = new GlueCall(UNITS.conditionMethod("Query", "allContent"), false);
+        var body = body(discriminatedRow(where, list(null), List.of(), List.of(filmContentBranch())));
+        assertThat(body)
+            .contains("condition = " + DEFAULT_OUTPUT_PACKAGE
+                + ".conditions.QueryConditions.allContentCondition(filmTable, env.getArguments())");
+        assertThat(body)
+            .as("the source-entailed discriminator restriction ANDs in after the glue, not inside it")
+            .contains("condition = condition.and(")
+            .contains(".in(\"FILM\", \"SHORT\")");
+    }
+
+    @Test
+    void discriminatedSource_baseSliceTermsForkOnReaderAddressing() {
+        var baseSlice = List.<LaunchSource.DiscriminatedTable.BaseSliceTerm>of(
+            new LaunchSource.DiscriminatedTable.BaseSliceTerm.SharedKey(
+                col("party_id", "PARTY_ID", "java.lang.Integer"), "party_id"),
+            new LaunchSource.DiscriminatedTable.BaseSliceTerm.InheritedRef("displayName",
+                col("display_name", "DISPLAY_NAME", "java.lang.String")));
+        var body = body(discriminatedRow(null, list(null), baseSlice, List.of()));
+        assertThat(body)
+            .as("a shared key projects once, statically aliased to the detail column's SQL name")
+            .contains("fields.add(filmTable.PARTY_ID.as(\"party_id\"))");
+        assertThat(body)
+            .as("an inherited reference projects per selected result-key bucket under the reserved prefix")
+            .contains("rkEntry.getValue().get(0).getName().equals(\"displayName\")")
+            .contains("fields.add(filmTable.DISPLAY_NAME.as(\"__rk_\" + rkEntry.getKey()))");
+    }
+
+    @Test
+    void discriminatedSource_connectionAndFannedPairsAreUnrepresentable() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                discriminatedRow(null, new ResultShape.Connection(pkDesc(), 100,
+                    UNITS.connectionHelper(), UNITS.connectionResult(), null),
+                    List.of(), List.of()))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("never paginates");
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                new LauncherCommand(
+                    UNITS.launcherMethod("Query", "allContent"),
+                    FieldCoordinates.coordinates("Query", "allContent"),
+                    new LaunchSource.DiscriminatedTable(
+                        filmTable(List.of()), "film_type", List.of(), List.of(), List.of()),
+                    null, new Invocation.FannedOverTenants(UNITS.tenantConnections()), list(null)))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("invoked directly");
+    }
+
     private static MethodSpec render(LauncherCommand row) {
         return RootLauncherRenderer.render(row, CarrierDsl.ENV_ACQUIRED);
     }

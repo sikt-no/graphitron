@@ -51,7 +51,8 @@ public final class ProjectionUnitRenderer {
     private static final ClassName LINKED_HASH_SET = ClassName.get(LinkedHashSet.class);
     private static final ClassName ENV = ClassName.get("graphql.schema", "DataFetchingEnvironment");
     private static final ClassName SELECTED_FIELD = ClassName.get("graphql.schema", "SelectedField");
-    private static final String RESERVED_RK_ALIAS_PREFIX = "__rk_";
+    private static final String RESERVED_RK_ALIAS_PREFIX =
+        no.sikt.graphitron.command.ReservedAliases.RESULT_KEY_PREFIX;
     private static final String ROW_PRESENT_SENTINEL = "__row_present__";
 
     private ProjectionUnitRenderer() {}
