@@ -26,11 +26,10 @@ import java.util.Objects;
  * unrepresentable rather than checked. {@link #projection} is the first cross-command edge: the
  * projection unit whose {@code $project} supplies the select list.
  *
- * <p>No invocation-strategy slot yet, deliberately: every row this relation holds today is
- * invoked directly, a fact entailed by the producer's membership (fan-out coordinates are on the
- * not-yet-migrated dial), so a one-value slot would restate the membership predicate with
- * nothing binding the two. The slot lands with the fanned-root slice, where it becomes the fact
- * distinguishing two otherwise-identical rows.
+ * <p>{@link #invocation} is the strategy axis (see {@link Invocation}); the rendered payload is
+ * a derived view over {@code (invocation, result)}, not a slot of its own, since the fanned
+ * strategy's marker-bearing transport ({@code List<Object>} between the scatter and its
+ * collapse) is entailed by the strategy and has no business as a command fact.
  */
 public record LauncherCommand(
     UnitMethodRef unit,
@@ -38,6 +37,7 @@ public record LauncherCommand(
     TableRef table,
     UnitRef projection,
     GlueCall where,
+    Invocation invocation,
     ResultShape result
 ) {
 
@@ -46,6 +46,17 @@ public record LauncherCommand(
         Objects.requireNonNull(coordinate, "a launcher row is keyed by its field coordinate");
         Objects.requireNonNull(table, "table");
         Objects.requireNonNull(projection, "every launcher names the projection unit it selects from");
+        Objects.requireNonNull(invocation, "invocation");
         Objects.requireNonNull(result, "result");
+        // Backstop, not the enforcer: the parse boundary already rejects non-list and
+        // @asConnection shapes on a fan-out coordinate (the @tenantFanOut rejection ladder in
+        // {@link no.sikt.graphitron.rewrite.TenantBindingIndex}), so a fanned row is a record
+        // list by classification; this guard keeps the pair unrepresentable if that check is
+        // ever relaxed without an audit here.
+        if (invocation instanceof Invocation.FannedOverTenants && !(result instanceof ResultShape.RecordList)) {
+            throw new IllegalArgumentException(
+                "a fanned launcher's composition is a record list by classification; got "
+                + result.getClass().getSimpleName());
+        }
     }
 }

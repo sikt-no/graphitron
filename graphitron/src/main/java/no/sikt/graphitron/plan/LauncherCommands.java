@@ -5,6 +5,7 @@ import no.sikt.graphitron.command.CarrierDsl;
 import no.sikt.graphitron.command.ConditionCommand;
 import no.sikt.graphitron.command.FacetPlan;
 import no.sikt.graphitron.command.GlueCall;
+import no.sikt.graphitron.command.Invocation;
 import no.sikt.graphitron.command.LauncherCommand;
 import no.sikt.graphitron.command.Ordering;
 import no.sikt.graphitron.command.ResultShape;
@@ -56,8 +57,6 @@ public final class LauncherCommands {
      * seam. Shrink-only on its true-set; each entry names the slice that deletes it.
      */
     enum NotYetMigrated {
-        /** The tenant fan-out root, whose row lands together with the invocation-strategy slot. */
-        FANNED_OVER_TENANTS,
         /** The {@code @routine} root's table-expression composition (tail slice). */
         ROUTINE,
         /** The single-table-interface root's discriminator reprojection (tail slice). */
@@ -78,7 +77,8 @@ public final class LauncherCommands {
                         && dialEntryOf(schema, (QueryField) field) == null) {
                     var qtf = (QueryField.QueryTableField) field;
                     rows.add(row(qtf, whereOf(qtf, conditions), units,
-                        facetPlanOf(schema, qtf, conditions, units)));
+                        facetPlanOf(schema, qtf, conditions, units),
+                        invocationOf(schema, qtf, units)));
                 }
             }
         }
@@ -105,7 +105,7 @@ public final class LauncherCommands {
         var rows = new ArrayList<LauncherCommand>();
         for (var field : fields) {
             if (field instanceof QueryField.QueryTableField qtf) {
-                rows.add(row(qtf, glueFromFilters(qtf, units), units, null));
+                rows.add(row(qtf, glueFromFilters(qtf, units), units, null, new Invocation.Direct()));
             }
         }
         return new LauncherRelation(rows, CarrierDsl.ENV_ACQUIRED);
@@ -154,12 +154,7 @@ public final class LauncherCommands {
      */
     static NotYetMigrated dialEntryOf(GraphitronSchema schema, QueryField field) {
         return switch (field) {
-            case QueryField.QueryTableField qtf -> {
-                if (schema.tenantBindingOf(qtf.parentTypeName(), qtf.name()) instanceof TenantBinding.FanOut) {
-                    yield NotYetMigrated.FANNED_OVER_TENANTS;
-                }
-                yield null;
-            }
+            case QueryField.QueryTableField ignored -> null;
             case QueryField.QueryRoutineTableField ignored -> NotYetMigrated.ROUTINE;
             case QueryField.QueryTableInterfaceField ignored -> NotYetMigrated.TABLE_INTERFACE;
             case QueryField.QueryLookupTableField ignored -> NotYetMigrated.LOOKUP;
@@ -169,14 +164,28 @@ public final class LauncherCommands {
     }
 
     private static LauncherCommand row(QueryField.QueryTableField qtf, GlueCall where, GeneratedUnits units,
-            FacetPlan facets) {
+            FacetPlan facets, Invocation invocation) {
         return new LauncherCommand(
             units.launcherMethod(qtf.parentTypeName(), qtf.name()),
             FieldCoordinates.coordinates(qtf.parentTypeName(), qtf.name()),
             qtf.returnType().table(),
             units.typeClass(qtf.returnType().returnTypeName()),
             where,
+            invocation,
             resultShapeOf(qtf, units, facets));
+    }
+
+    /**
+     * The invocation strategy, from the coordinate's tenancy binding: a fan-out coordinate runs
+     * the composition once per domain tenant through the scatter carrier (whose ref rides the
+     * arm), everything else is one direct call. This is the one home of the fan-out fact for the
+     * root family; the generator's dispatch and entry point read the arm, never the binding.
+     */
+    private static Invocation invocationOf(GraphitronSchema schema, QueryField.QueryTableField qtf,
+            GeneratedUnits units) {
+        return schema.tenantBindingOf(qtf.parentTypeName(), qtf.name()) instanceof TenantBinding.FanOut
+            ? new Invocation.FannedOverTenants(units.tenantConnections())
+            : new Invocation.Direct();
     }
 
     /**

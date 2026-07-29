@@ -169,6 +169,11 @@ public final class GeneratedUnits {
         return unit(SUB_UTIL, "OrderByResult");
     }
 
+    /** {@code <pkg>.schema.TenantConnections} — the multi-tenant scatter/acquisition carrier. */
+    public UnitRef tenantConnections() {
+        return unit(SUB_SCHEMA, "TenantConnections");
+    }
+
     /** A fixed-name singleton in the given sub-package (e.g. {@code util.NodeIdEncoder}). */
     public UnitRef singleton(String subPackage, String className) {
         return unit(subPackage, className);

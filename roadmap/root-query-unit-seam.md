@@ -680,12 +680,71 @@ exercise the launcher path; the one intentional body-content assertion there (bo
 views from one `OrderByResult` dispatch) repointed from the entry point to the launcher method
 it moved into.
 
+### Slice 4 (2026-07-29): the fanned root, and the invocation slot arrives
+
+Landed as one commit: the fan-out coordinate mints a row, the strategy axis becomes data
+(`Invocation`, sealed: `Direct`, `FannedOverTenants(carrier)`), the dial's
+`FANNED_OVER_TENANTS` entry deleted, and `buildFannedQueryTableFetcher` retired. The fan-out
+fact's derivation has one home for the root family (the producer's `invocationOf`); the
+generator's dispatch and entry point read the arm, never the binding, so the
+`TenantDslEmitter.isFanOut` read left the root dispatch (its remaining reader is the child
+batched form, which folds with slice 5).
+
+**The spec's second false premise, corrected the same way as the first.** "The wrapper is
+rendered at the call site, which passes each tenant's dsl into the same launcher" cannot hold:
+the scatter contract runs the per-tenant lambdas concurrently on a bounded executor, and the
+codebase's stated invariant is that workers read no shared graphql-java state, while the
+launcher's body reads `env`. So the strategy decides the unit's *interface*, not only its body:
+the parameter list is a projection of the invocation arm (`Direct` takes the one resolved
+`DSLContext`; `FannedOverTenants` takes none, its acquisition being plural and internal;
+`Batched`, when the child family folds in, takes its keys, which is `RowsMethodSkeleton`'s
+existing framing, handed to slice 5 as a finding rather than a rediscovery). What survives of
+"the dsl parameter means one thing everywhere" is stronger than the retraction implies: the
+composition fragment is one derivation (`selectChain`, shared by both arms), and only the
+*binder* of `dsl` changes, the signature or the strategy's per-tenant lambda, so "one
+composition, two invocations" is structural rather than asserted. The fanned launcher
+(`rows<Field>(env)`) hoists every env-derived value onto the dispatch thread and the lambda
+closes over locals, preserving the worker invariant by construction.
+
+**`Invocation` is sealed, not the spec's enum, from its first second value.** The fanned arm
+carries the scatter carrier's `UnitRef` (the launcher's and entry's emitted references to
+`TenantConnections` are data, the third launcher-to-global edge kind), so the payload-free-enum
+premise was false for the arm that landed, the same verdict `ResultShape` got. The rendered
+payload is a derived view over `(invocation, result)` rather than a slot (`valueTypeOf(row)`,
+read by the renderer and the entry emitter): the fanned transport (`List<Object>` between the
+scatter and its collapse) is entailed by the strategy and has no business as a command fact. The
+`FANNED implies RecordList` compact-constructor rule is a backstop, not the enforcer; the
+enforcer is the classifier's `@tenantFanOut` rejection ladder, named in the constructor comment,
+and `TenantDslEmitter.resolve`'s FanOut invariant throw now guards the entry point's strategy
+fork at build time (forgetting the arm fails generation loudly) rather than being an unchanged
+bystander.
+
+**The entry-point fork count, replacing slice 1's "thinness is discipline" note.** The entry
+point now forks once, on `row.invocation()`: the fanned arm collapses the launcher's outcome
+list (no dsl declaration, no localContext tail), the direct arm acquires and wraps. One fork
+site, single-sourced from the row, in a generator that still holds the schema; it becomes
+structural when the entry point is itself a command row.
+
+**Pins.** The fan-out family got its exact-SQL instrument: the runtime owns its `DSLContext`s,
+so the `SQL_LOG` listener cannot attach, and a recording `Connection` proxy on each tenant
+`DataSource` captures the same statements one level down. The pin (one identical statement per
+domain tenant, framed by the session hook's claims propagation) was authored against the
+pre-launcher emission and held byte-identical through the cutover. Pipeline pins: the fanned
+row's carrier ref and `ROUTED` run fact, and the two-fanned-coordinates pair whose rows are
+identical but for coordinate and unit, pinning that element-nullability strictness and the
+fan-out domain are not launcher facts (they ride SDL and the collapse). The fanned renderer arm
+is pinned structurally (env-only signature, `List<Object>` payload, the hoist-then-scatter
+shape); the fan-out execution suite carries behaviour.
+
 ## Retired vocabulary
 
 - `TypeFetcherGenerator.buildQueryConnectionFetcher`, `buildConnectionOrderingBlock` and
   `connectionFacetsFor` (slice 3): the connection launcher and the shared `render/OrderingBlock`
   replaced them; the facet plan rides the command and the facet-spec lookup has one home in
   `plan` (`ConditionCommands.facetsFor`).
+- `TypeFetcherGenerator.buildFannedQueryTableFetcher` (slice 4): the fanned launcher and the
+  entry point's strategy fork replaced it; the root dispatch's `TenantDslEmitter.isFanOut` read
+  retired with it (the producer's `invocationOf` is the fact's home for the root family).
 
 - `QueryLookupTableField.lookupMethodName()` (slice 6): the producer computes this coordinate's
   `UnitRef` like every other row; the emitted `lookup<Field>` method name is unchanged.

@@ -3,6 +3,7 @@ package no.sikt.graphitron.render;
 import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.command.CarrierDsl;
 import no.sikt.graphitron.command.GlueCall;
+import no.sikt.graphitron.command.Invocation;
 import no.sikt.graphitron.command.LauncherCommand;
 import no.sikt.graphitron.command.Ordering;
 import no.sikt.graphitron.command.ResultShape;
@@ -35,12 +36,16 @@ class RootLauncherRendererTest {
     private static final GeneratedUnits UNITS = new GeneratedUnits(DEFAULT_OUTPUT_PACKAGE);
 
     private static LauncherCommand filmsRow(GlueCall where, ResultShape result) {
+        return filmsRow(where, new Invocation.Direct(), result);
+    }
+
+    private static LauncherCommand filmsRow(GlueCall where, Invocation invocation, ResultShape result) {
         return new LauncherCommand(
             UNITS.launcherMethod("Query", "films"),
             FieldCoordinates.coordinates("Query", "films"),
             filmTable(List.of(col("film_id", "FILM_ID", "java.lang.Integer"))),
             UNITS.typeClass("Film"),
-            where, result);
+            where, invocation, result);
     }
 
     private static ResultShape.RecordList list(Ordering ordering) {
@@ -136,6 +141,23 @@ class RootLauncherRendererTest {
             .isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".util.ConnectionResult");
         assertThat(m.parameters()).extracting(p -> p.type().toString())
             .containsExactly("org.jooq.DSLContext", "graphql.schema.DataFetchingEnvironment");
+    }
+
+    @Test
+    void fannedInvocation_envOnlySignatureHoistsAndScattersThroughTheCarrierRef() {
+        var row = filmsRow(null,
+            new Invocation.FannedOverTenants(UNITS.tenantConnections()), list(pkDesc()));
+        var m = render(row);
+        assertThat(m.name()).isEqualTo("rowsFilms");
+        assertThat(m.returnType().toString()).isEqualTo("java.util.List<java.lang.Object>");
+        assertThat(m.parameters()).extracting(p -> p.type().toString())
+            .as("the fanned strategy's acquisition is plural and internal, so no dsl parameter")
+            .containsExactly("graphql.schema.DataFetchingEnvironment");
+        var body = m.code().toString();
+        assertThat(body).contains(".fanOutRows(env, dsl -> dsl");
+        assertThat(body)
+            .as("env-derived values are hoisted; the lambda closes over locals only")
+            .contains("selectFields = ");
     }
 
     private static MethodSpec render(LauncherCommand row) {

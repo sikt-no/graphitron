@@ -145,6 +145,39 @@ class LauncherCommandsPipelineTest {
     }
 
     @Test
+    void fannedRoot_invocationArmCarriesTheScatterCarrier_pairDiffersInExactlyOneSlot() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            type Query {
+                films: [Film] @tenantFanOut
+                filmsAgain: [Film] @tenantFanOut
+            }
+            """, no.sikt.graphitron.common.configuration.TestConfiguration.testContext()
+                .withTenantColumn("film_id"));
+
+        var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
+        var relation = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE);
+
+        // The fanned coordinate mints a row (no dial entry left for it); its strategy arm
+        // carries the scatter carrier's ref, and the run's carrier fact is ROUTED.
+        var fanned = relation.rowFor("Query", "films").orElseThrow();
+        var carrier = (no.sikt.graphitron.command.Invocation.FannedOverTenants) fanned.invocation();
+        assertThat(carrier.carrier().fqcn())
+            .isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".schema.TenantConnections");
+        assertThat(fanned.result()).isInstanceOf(ResultShape.RecordList.class);
+        assertThat(relation.carrierDsl()).isEqualTo(CarrierDsl.ROUTED);
+
+        // Two fanned coordinates over one table: their rows are identical but for coordinate
+        // and unit, which pins that element-nullability strictness and the fan-out domain are
+        // not launcher facts (they ride SDL and the collapse, not the composition).
+        var sibling = relation.rowFor("Query", "filmsAgain").orElseThrow();
+        assertThat(sibling.table()).isEqualTo(fanned.table());
+        assertThat(sibling.projection()).isEqualTo(fanned.projection());
+        assertThat(sibling.invocation()).isEqualTo(fanned.invocation());
+        assertThat(sibling.result()).isEqualTo(fanned.result());
+    }
+
+    @Test
     void boundaries_factExcludedAndDialExcludedShapesProduceNoRows() {
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }

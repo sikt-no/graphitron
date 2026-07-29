@@ -541,25 +541,17 @@ public class TypeFetcherGenerator {
                 }
                 case QueryField.QueryTableField qtf -> {
                     // Row-presence dispatch: the launcher producer's membership is the one
-                    // predicate deciding which coordinates launch through the seam; a present
-                    // row gets the rendered launcher unit plus a thin entry point, an absent
-                    // one falls through to its legacy builder (the not-yet-migrated shapes).
-                    var launcherRow = launchers.rowFor(qtf.parentTypeName(), qtf.name());
-                    if (launcherRow.isPresent()) {
-                        builder.addMethod(buildQueryTableFetcher(ctx, qtf, launcherRow.get(), outputPackage));
-                        builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
-                            .render(launcherRow.get(), launchers.carrierDsl()));
-                    } else if (TenantDslEmitter.isFanOut(ctx, qtf.name())) {
-                        // The fanned-fetcher emission owns FanOut coordinates; the generic
-                        // builders' FanOut arms throw by design. Classification guarantees the
-                        // list shape (non-list and @asConnection markers are rejected).
-                        builder.addMethod(buildFannedQueryTableFetcher(ctx, qtf, outputPackage));
-                    } else {
-                        throw new IllegalStateException(
+                    // predicate deciding which coordinates launch through the seam; every
+                    // QueryTableField coordinate mints a row now (the invocation strategy,
+                    // fan-out included, is a field on it), so absence is a drift bug.
+                    var launcherRow = launchers.rowFor(qtf.parentTypeName(), qtf.name())
+                        .orElseThrow(() -> new IllegalStateException(
                             "Graphitron generator bug (root launcher dispatch): root coordinate '"
-                            + qtf.qualifiedName() + "' has no launcher row and no legacy builder;"
-                            + " the producer's membership and this dispatch have drifted");
-                    }
+                            + qtf.qualifiedName() + "' has no launcher row;"
+                            + " the producer's membership and this dispatch have drifted"));
+                    builder.addMethod(buildQueryTableFetcher(ctx, qtf, launcherRow, outputPackage));
+                    builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
+                        .render(launcherRow, launchers.carrierDsl()));
                 }
                 case ChildField.ServiceTableField stf -> {
                     // Lift-back projection. The loader value is the projected Record (carrying
@@ -972,7 +964,8 @@ public class TypeFetcherGenerator {
      */
     private static MethodSpec buildQueryTableFetcher(TypeFetcherEmissionContext ctx, QueryField.QueryTableField qtf,
             no.sikt.graphitron.command.LauncherCommand row, String outputPackage) {
-        var valueType = no.sikt.graphitron.render.RootLauncherRenderer.valueTypeOf(row.result());
+        var valueType = no.sikt.graphitron.render.RootLauncherRenderer.valueTypeOf(row);
+        var launcherClass = ClassName.get(row.unit().owner().packageName(), row.unit().owner().simpleName());
 
         var builder = MethodSpec.methodBuilder(qtf.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -980,11 +973,22 @@ public class TypeFetcherGenerator {
             .addParameter(ENV, "env");
 
         builder.beginControlFlow("try");
-        var tenantDsl = TenantDslEmitter.resolve(ctx, qtf, outputPackage);
-        builder.addCode(tenantDsl.declaration());
-        var launcherClass = ClassName.get(row.unit().owner().packageName(), row.unit().owner().simpleName());
-        builder.addStatement("$T payload = $T.$L(dsl, env)", valueType, launcherClass, row.unit().methodName());
-        builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.localContextTail()));
+        // The one invocation fork in the entry point, reading the row's strategy arm: the fanned
+        // strategy owns its plural acquisition (no dsl declaration, no localContext tail; the
+        // scatter carrier hands each element its tenant) and collapses the outcome list, where
+        // the direct strategy acquires one DSLContext and wraps the payload. TenantDslEmitter's
+        // FanOut invariant throw is this fork's build-time enforcer: routing a fanned coordinate
+        // through the direct arm fails generation loudly.
+        if (row.invocation() instanceof no.sikt.graphitron.command.Invocation.FannedOverTenants fanned) {
+            var tenantConnections = ClassName.get(fanned.carrier().packageName(), fanned.carrier().simpleName());
+            builder.addStatement("return $T.collapseFanOut(env, $T.$L(env))",
+                tenantConnections, launcherClass, row.unit().methodName());
+        } else {
+            var tenantDsl = TenantDslEmitter.resolve(ctx, qtf, outputPackage);
+            builder.addCode(tenantDsl.declaration());
+            builder.addStatement("$T payload = $T.$L(dsl, env)", valueType, launcherClass, row.unit().methodName());
+            builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.localContextTail()));
+        }
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(noChannelCatchArm(outputPackage));
         builder.endControlFlow();
@@ -992,75 +996,6 @@ public class TypeFetcherGenerator {
         return builder.build();
     }
 
-    /**
-     * The fanned sibling of {@link #buildQueryTableFetcher} for a root field classified
-     * {@code TenantBinding.FanOut}: the field's ordinary statement (condition, order, nested
-     * multisets via {@code $project}) runs once per tenant in the request's fan-out domain through
-     * the carrier's bounded scatter helper, and the outcomes union in domain order. Each row comes
-     * back wrapped as a per-element {@code DataFetcherResult} carrying its tenant as
-     * {@code localContext} (children below the fanned field then classify Inherited and route with
-     * no further machinery), and each failed or timed-out tenant contributes one appended null
-     * element plus a path-bearing redacted error, so SDL element nullability composes the author's
-     * partial-failure strictness. Within a tenant the field's ORDER BY applies as usual; the union
-     * is not re-sorted across tenants.
-     *
-     * <p>Generated code:
-     * <pre>{@code
-     * public static DataFetcherResult<List<Object>> films(DataFetchingEnvironment env) {
-     *     try {
-     *         FilmTable table = Tables.FILM;
-     *         Condition condition = ...;
-     *         List<SortField<?>> orderBy = ...;
-     *         List<Field<?>> selectFields = Film.$project(env.getSelectionSet().getFieldsGroupedByResultKey(), table, env);
-     *         return TenantConnections.collapseFanOut(env, TenantConnections.fanOutRows(env, dsl -> dsl
-     *             .select(selectFields)
-     *             .from(table).where(condition).orderBy(orderBy).fetch()));
-     *     } catch (Exception e) { ... }
-     * }
-     * }</pre>
-     */
-    private static MethodSpec buildFannedQueryTableFetcher(TypeFetcherEmissionContext ctx,
-            QueryField.QueryTableField qtf, String outputPackage) {
-        var tableRef = qtf.returnType().table();
-        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtf.returnType().returnTypeName(), outputPackage);
-        var tenantConnections = TenantDslEmitter.tenantConnectionsClass(outputPackage);
-        var listOfObject = ParameterizedTypeName.get(LIST, ClassName.get(Object.class));
-
-        var builder = MethodSpec.methodBuilder(qtf.name())
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(syncResultType(listOfObject))
-            .addParameter(ENV, "env");
-
-        builder.beginControlFlow("try");
-        builder.addCode(GeneratorUtils.declareTableLocal(names, tableRef));
-        String tableLocal = names.tableLocalName();
-        builder.addCode(buildConditionCall(qtf, tableLocal, outputPackage));
-        builder.addCode(buildOrderByCode(qtf.orderBy(), qtf.name(), tableLocal));
-        // Hoist the selection-set projection onto the dispatch thread (the batched form's rows
-        // method does the same): the per-tenant lambda then touches only its own DSLContext and
-        // pre-computed locals, never env, so scatter workers read no shared graphql-java state.
-        var listOfField = ParameterizedTypeName.get(LIST,
-            ParameterizedTypeName.get(ClassName.get("org.jooq", "Field"),
-                no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class)));
-        builder.addStatement("$T selectFields = $L",
-            listOfField, ProjectionCall.fromEnvSelection(names.typeClass(), tableLocal));
-        builder.addCode(CodeBlock.builder()
-            .add("return $T.collapseFanOut(env, $T.fanOutRows(env, dsl -> dsl\n",
-                tenantConnections, tenantConnections)
-            .indent()
-            .add(".select(selectFields)\n")
-            .add(".from($L)\n", tableLocal)
-            .add(".where(condition)\n")
-            .add(".orderBy(orderBy)\n")
-            .add(".fetch()));\n")
-            .unindent()
-            .build());
-        builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(noChannelCatchArm(outputPackage));
-        builder.endControlFlow();
-
-        return builder.build();
-    }
 
     /**
      * Generates the fetcher for a {@link QueryField.QueryTableInterfaceField}.

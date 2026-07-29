@@ -128,7 +128,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "SessionHook"));
         refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "PinnedConnection"));
         refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronRuntime"));
-        refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "TenantConnections"));
+        refs.add(units.tenantConnections());
         if (sessionStateConfig.emitsHookImplementation()) {
             refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronSessionHook"));
         }

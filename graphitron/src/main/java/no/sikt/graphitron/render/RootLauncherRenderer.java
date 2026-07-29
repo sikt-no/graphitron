@@ -1,6 +1,7 @@
 package no.sikt.graphitron.render;
 
 import no.sikt.graphitron.command.CarrierDsl;
+import no.sikt.graphitron.command.Invocation;
 import no.sikt.graphitron.command.LauncherCommand;
 import no.sikt.graphitron.command.Ordering;
 import no.sikt.graphitron.command.ResultShape;
@@ -55,50 +56,110 @@ public final class RootLauncherRenderer {
     public static MethodSpec render(LauncherCommand row, CarrierDsl carrierDsl) {
         var builder = MethodSpec.methodBuilder(row.unit().methodName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(valueTypeOf(row.result()))
-            .addParameter(DSL_CONTEXT, "dsl")
-            .addParameter(ENV, "env");
+            .returns(valueTypeOf(row));
+        // The parameter list is a projection of the invocation arm: a direct launcher takes the
+        // one resolved DSLContext its entry point acquired; a fanned launcher takes none, its
+        // acquisition being plural and internal to the scatter carrier.
+        if (row.invocation() instanceof Invocation.Direct) {
+            builder.addParameter(DSL_CONTEXT, "dsl");
+        }
+        builder.addParameter(ENV, "env");
 
         String tableLocal = TableLocal.name(row.table());
         builder.addCode(TableLocal.declare(row.table()));
         builder.addCode(conditionStatement(row, tableLocal));
-        switch (row.result()) {
-            case ResultShape.SingleRecord ignored -> builder.addCode(plainChain(row, tableLocal, false, false));
-            case ResultShape.RecordList list -> {
-                boolean ordered = list.ordering() != null;
-                if (ordered) {
-                    builder.addCode(orderByStatement(list.ordering(), tableLocal));
+        switch (row.invocation()) {
+            case Invocation.Direct ignored -> {
+                switch (row.result()) {
+                    case ResultShape.SingleRecord ignored2 ->
+                        builder.addCode(directReturn(selectChain(row, tableLocal, false, false)));
+                    case ResultShape.RecordList list -> {
+                        boolean ordered = list.ordering() != null;
+                        if (ordered) {
+                            builder.addCode(orderByStatement(list.ordering(), tableLocal));
+                        }
+                        builder.addCode(directReturn(selectChain(row, tableLocal, true, ordered)));
+                    }
+                    case ResultShape.Connection connection ->
+                        builder.addCode(connectionBody(row, connection, tableLocal, carrierDsl));
                 }
-                builder.addCode(plainChain(row, tableLocal, true, ordered));
             }
-            case ResultShape.Connection connection ->
-                builder.addCode(connectionBody(row, connection, tableLocal, carrierDsl));
+            case Invocation.FannedOverTenants fanned ->
+                builder.addCode(fannedBody(row, fanned, tableLocal));
         }
         return builder.build();
     }
 
-    /** The launcher's return type, read off the shape (the connection arm's is its carrier ref). */
-    public static TypeName valueTypeOf(ResultShape result) {
-        return switch (result) {
+    /**
+     * The launcher's rendered payload, a derived view over {@code (invocation, result)}: the
+     * fanned strategy returns the scatter's marker-bearing transport ({@code List<Object>},
+     * entailed by the strategy, collapsed by the entry point), everything else the shape's own
+     * type (the connection arm's is its carrier ref). Read by this renderer and the entry-point
+     * emitter, so the two ends cannot disagree.
+     */
+    public static TypeName valueTypeOf(LauncherCommand row) {
+        if (row.invocation() instanceof Invocation.FannedOverTenants) {
+            return ParameterizedTypeName.get(LIST, ClassName.get(Object.class));
+        }
+        return switch (row.result()) {
             case ResultShape.RecordList ignored -> RESULT_OF_RECORD;
             case ResultShape.SingleRecord ignored -> RECORD;
             case ResultShape.Connection connection -> className(connection.carrier());
         };
     }
 
-    /** The terminal select chain of the single and list shapes. */
-    private static CodeBlock plainChain(LauncherCommand row, String tableLocal, boolean isList, boolean ordered) {
+    /**
+     * The one composition fragment both invocation arms share: the select chain over a
+     * caller-supplied select expression (the inline {@code $project} call for the direct arm,
+     * the hoisted {@code selectFields} local for the fanned lambda), with {@code dsl} bound by
+     * the signature (direct) or by the strategy's per-tenant lambda (fanned). One derivation,
+     * two binders, which is "one composition, two invocations" as structure.
+     */
+    private static CodeBlock selectChain(CodeBlock selectExpr, String tableLocal, boolean isList, boolean ordered) {
         var chain = CodeBlock.builder()
-            .add("return dsl\n")
+            .add("dsl\n")
             .indent()
-            .add(".select($L)\n", ProjectionCall.fromEnvSelection(className(row.projection()), tableLocal))
+            .add(".select($L)\n", selectExpr)
             .add(".from($L)\n", tableLocal)
             .add(".where(condition)\n");
         if (ordered) {
             chain.add(".orderBy(orderBy)\n");
         }
-        chain.add(isList ? ".fetch();\n" : ".fetchOne();\n").unindent();
+        chain.add(isList ? ".fetch()" : ".fetchOne()").unindent();
         return chain.build();
+    }
+
+    private static CodeBlock selectChain(LauncherCommand row, String tableLocal, boolean isList, boolean ordered) {
+        return selectChain(ProjectionCall.fromEnvSelection(className(row.projection()), tableLocal),
+            tableLocal, isList, ordered);
+    }
+
+    private static CodeBlock directReturn(CodeBlock chain) {
+        return CodeBlock.builder().add("return $L;\n", chain).build();
+    }
+
+    /**
+     * The fanned arm: every env-derived value is hoisted onto the dispatch thread (the ordering
+     * views and the projected select list become locals), and the per-tenant lambda closes over
+     * those locals plus its own {@code dsl}, so scatter workers read no shared graphql-java
+     * state by construction; the entry point collapses the returned outcome list.
+     */
+    private static CodeBlock fannedBody(LauncherCommand row, Invocation.FannedOverTenants fanned,
+            String tableLocal) {
+        var list = (ResultShape.RecordList) row.result();
+        var code = CodeBlock.builder();
+        boolean ordered = list.ordering() != null;
+        if (ordered) {
+            code.add(orderByStatement(list.ordering(), tableLocal));
+        }
+        var listOfField = ParameterizedTypeName.get(LIST,
+            ParameterizedTypeName.get(ClassName.get("org.jooq", "Field"),
+                no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class)));
+        code.addStatement("$T selectFields = $L", listOfField,
+            ProjectionCall.fromEnvSelection(className(row.projection()), tableLocal));
+        code.add("return $T.fanOutRows(env, dsl -> $L);\n", className(fanned.carrier()),
+            selectChain(CodeBlock.of("selectFields"), tableLocal, true, ordered));
+        return code.build();
     }
 
     /**

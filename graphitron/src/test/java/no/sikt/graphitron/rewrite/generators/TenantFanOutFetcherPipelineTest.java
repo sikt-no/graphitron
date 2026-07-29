@@ -57,19 +57,24 @@ class TenantFanOutFetcherPipelineTest {
             type Query { films: [Film] @tenantFanOut }
             """);
 
-        var films = render(schema, "QueryFetchers", "films");
-        assertThat(films)
-            // Domain computation and the scatter call live in the carrier's helpers; the fetcher
-            // hands over the field's ordinary statement as the per-tenant unit of work. The
-            // selection-set projection is hoisted onto the dispatch thread, so the lambda touches
-            // only its own DSLContext and pre-computed locals, never env.
+        // The composition lives in the fanned launcher unit; the thin entry point collapses the
+        // scatter's outcome list. The selection-set projection is hoisted onto the dispatch
+        // thread inside the launcher, so the per-tenant lambda touches only its own DSLContext
+        // and pre-computed locals, never env.
+        var entry = render(schema, "QueryFetchers", "films");
+        assertThat(entry)
             .contains("fake.code.generated.schema.TenantConnections.collapseFanOut(env,")
+            .contains("QueryFetchers.rowsFilms(env)")
+            // No single-DSL acquisition and no single hand-down local: tenants ride per element.
+            .doesNotContain("getDslContext(env)")
+            .doesNotContain("_divinedTenant");
+        var launcher = render(schema, "QueryFetchers", "rowsFilms");
+        assertThat(launcher)
             .contains("fake.code.generated.schema.TenantConnections.fanOutRows(env, dsl -> dsl")
             .contains("selectFields = fake.code.generated.types.Film.$project(env.getSelectionSet().getFieldsGroupedByResultKey(), filmTable, env)")
             .contains(".select(selectFields)")
             .contains(".where(condition)")
             .contains(".orderBy(orderBy)")
-            // No single-DSL acquisition and no single hand-down local: tenants ride per element.
             .doesNotContain("getDslContext(env)")
             .doesNotContain("_divinedTenant");
     }

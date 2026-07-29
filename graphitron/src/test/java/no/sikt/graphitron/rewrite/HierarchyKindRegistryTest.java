@@ -194,6 +194,7 @@ class HierarchyKindRegistryTest {
         Map.entry(no.sikt.graphitron.command.SelectTerm.class, HierarchyKind.COMMAND),
         Map.entry(no.sikt.graphitron.command.Ordering.class, HierarchyKind.COMMAND),
         Map.entry(no.sikt.graphitron.command.ResultShape.class, HierarchyKind.COMMAND),
+        Map.entry(no.sikt.graphitron.command.Invocation.class, HierarchyKind.COMMAND),
         Map.entry(Operation.class, HierarchyKind.COMMAND),
         Map.entry(BodyParam.class, HierarchyKind.COMMAND),
         Map.entry(DmlReturnExpression.class, HierarchyKind.COMMAND),
