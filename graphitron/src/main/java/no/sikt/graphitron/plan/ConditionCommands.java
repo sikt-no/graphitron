@@ -25,6 +25,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.LookupField;
 import no.sikt.graphitron.rewrite.model.QueryField;
+import no.sikt.graphitron.rewrite.model.SqlGeneratingField;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
 
@@ -42,101 +43,113 @@ import java.util.Set;
  * suppression stays upstream in {@code FieldBuilder.projectFilters}, which already expresses a
  * suppressed generated filter as absence.
  *
- * <p>The relation is total: root, participant-expanded, lookup (non-key filters only; lookup
- * keys ride the VALUES join and are not predicates) and child coordinates all get rows. The
- * committed half ({@link ConditionRelation#committedRows()}) is restricted to the coordinates
- * whose consumers already call glue, the {@link #rendersIntoConditionsClass} predicate; the
- * validator reads the same predicate for the env-bound rejection, so the rejection's scope and
- * the renderer's scope cannot drift apart.
+ * <p>Membership is one capability read, not a leaf enumeration: any
+ * {@link SqlGeneratingField} whose filter list is nonempty gets a row (adding a new
+ * SQL-generating variant needs no producer edit), with identity arms only where the filter surface
+ * genuinely lives elsewhere: the polymorphic roots (filters ride {@code participantFilters()},
+ * one row per participant table) and {@link ChildField.NestingField} (its children have no
+ * {@code fieldsOf} entry, so the producer recurses into the carried {@code nestedFields()}).
+ * A nesting type reused from several {@code @table} parents yields the same nested coordinate
+ * once per reuse site; the rows are equal by construction (filters resolve against the nested
+ * field's own return table) and the producer deduplicates by key, failing hard if two reuse
+ * sites ever disagree (the validator's nested-shape comparison enforces the same fact).
  *
- * <p>Fields nested inside a {@code ChildField.NestingField} have no walkable coordinate yet, so
- * they produce no row; a nested <em>generated</em> filter is rejected at validate time (the
- * {@code GraphitronSchemaValidator} nested-filter rule) rather than silently skipped.
+ * <p>Every row renders glue and every consumer calls it; the migration dial that once restricted
+ * rendering to root rows closed with call-site convergence. Two producer-side backstops mirror
+ * validator rejections (an accepted classification whose emit does not exist must fail loudly
+ * before production, never mint a row nobody can render or call): generated column filters on a
+ * lookup coordinate, and any filter on a single-table interface child coordinate (its fetcher
+ * folds no filters at all).
  */
 public final class ConditionCommands {
 
     private ConditionCommands() {}
 
     /** Locals every glue body binds before the producer names anything; see {@link ConditionCommand}. */
-    private static final Set<String> RESERVED_LOCALS = Set.of("table", "args", "condition");
-
-    /**
-     * True for the coordinates this run renders glue for: the root rows whose fetchers already
-     * call a {@code <Root>Conditions} method. This is the migration dial's predicate, read by
-     * both {@link #produce} (to commit rows) and the validator (to scope the env-bound
-     * rejection); the call-site convergence slice widens it as consumers converge.
-     */
-    public static boolean rendersIntoConditionsClass(GraphitronField field) {
-        return field instanceof QueryField.QueryTableField
-            || field instanceof QueryField.QueryTableInterfaceField;
-    }
+    private static final Set<String> RESERVED_LOCALS = Set.of("table", "args", "condition", "env");
 
     public static ConditionRelation produce(GraphitronSchema schema, String outputPackage) {
         var units = new GeneratedUnits(outputPackage);
-        var rows = new ArrayList<ConditionCommand>();
-        var committedRows = new ArrayList<ConditionCommand>();
+        var rows = new LinkedHashMap<String, ConditionCommand>();
         for (var type : schema.types().values()) {
             for (var field : schema.fieldsOf(type.name())) {
-                switch (field) {
-                    case QueryField.QueryTableField qtf when !qtf.filters().isEmpty() -> {
-                        var row = row(qtf.parentTypeName(), qtf.name(), qtf.returnType().table(), qtf.filters(),
-                            units.conditionMethod(qtf.parentTypeName(), qtf.name()),
-                            facetsFor(schema, qtf), units);
-                        rows.add(row);
-                        if (rendersIntoConditionsClass(qtf)) {
-                            committedRows.add(row);
-                        }
-                    }
-                    case QueryField.QueryTableInterfaceField qtif when !qtif.filters().isEmpty() -> {
-                        var row = row(qtif.parentTypeName(), qtif.name(), qtif.returnType().table(), qtif.filters(),
-                            units.conditionMethod(qtif.parentTypeName(), qtif.name()), List.of(), units);
-                        rows.add(row);
-                        if (rendersIntoConditionsClass(qtif)) {
-                            committedRows.add(row);
-                        }
-                    }
-                    case QueryField.QueryLookupTableField qlf when !qlf.filters().isEmpty() -> {
-                        requireNoGeneratedFilterOnLookup(qlf, qlf.filters());
-                        rows.add(row(qlf.parentTypeName(), qlf.name(), qlf.returnType().table(), qlf.filters(),
-                            units.conditionMethod(qlf.parentTypeName(), qlf.name()), List.of(), units));
-                    }
-                    case QueryField.QueryInterfaceField qif ->
-                        addParticipantRows(rows, units, qif.parentTypeName(), qif.name(), qif.participantFilters());
-                    case QueryField.QueryUnionField quf ->
-                        addParticipantRows(rows, units, quf.parentTypeName(), quf.name(), quf.participantFilters());
-                    case ChildField.TableTargetField ttf when !ttf.filters().isEmpty() -> {
-                        if (ttf instanceof LookupField) {
-                            requireNoGeneratedFilterOnLookup(ttf, ttf.filters());
-                        }
-                        rows.add(row(ttf.parentTypeName(), ttf.name(), ttf.returnType().table(), ttf.filters(),
-                            units.conditionMethod(ttf.parentTypeName(), ttf.name()), List.of(), units));
-                    }
-                    default -> { }
-                }
+                collect(schema, units, field, rows);
             }
         }
-        return new ConditionRelation(rows, committedRows);
+        return new ConditionRelation(List.copyOf(rows.values()));
     }
 
-    private static void addParticipantRows(List<ConditionCommand> rows, GeneratedUnits units,
+    private static void collect(GraphitronSchema schema, GeneratedUnits units,
+            GraphitronField field, LinkedHashMap<String, ConditionCommand> rows) {
+        switch (field) {
+            // The polymorphic roots carry their filter surface per participant, a genuinely
+            // different accessor; the expansion is the fact, one row per participant table.
+            case QueryField.QueryInterfaceField qif ->
+                addParticipantRows(rows, units, qif.parentTypeName(), qif.name(), qif.participantFilters());
+            case QueryField.QueryUnionField quf ->
+                addParticipantRows(rows, units, quf.parentTypeName(), quf.name(), quf.participantFilters());
+            // Nested coordinates have no fieldsOf entry; the walk reaches them through the
+            // nesting field's own children.
+            case ChildField.NestingField nf -> {
+                for (var nested : nf.nestedFields()) {
+                    collect(schema, units, nested, rows);
+                }
+            }
+            default -> { }
+        }
+        if (!(field instanceof SqlGeneratingField sgf) || sgf.filters().isEmpty()) {
+            return;
+        }
+        if (field instanceof ChildField.TableInterfaceField) {
+            throw new IllegalStateException(
+                "single-table interface child coordinate '" + field.qualifiedName() + "' carries "
+                + "filters, which its fetcher does not fold; the validator must reject this shape "
+                + "before production");
+        }
+        if (field instanceof LookupField) {
+            requireNoGeneratedFilterOnLookup(field, sgf.filters());
+        }
+        addRow(rows, row(field.parentTypeName(), field.name(), sgf.returnType().table(), sgf.filters(),
+            units.conditionMethod(field.parentTypeName(), field.name()),
+            facetsFor(schema, field.parentTypeName(), field.name()), units));
+    }
+
+    private static void addParticipantRows(LinkedHashMap<String, ConditionCommand> rows, GeneratedUnits units,
             String parentTypeName, String fieldName,
             List<no.sikt.graphitron.rewrite.model.ParticipantFilters> participantFilters) {
         for (var pf : participantFilters) {
             if (pf.filters().isEmpty()) {
                 continue;
             }
-            rows.add(row(parentTypeName, fieldName, pf.participant().table(), pf.filters(),
+            addRow(rows, row(parentTypeName, fieldName, pf.participant().table(), pf.filters(),
                 units.participantConditionMethod(parentTypeName, fieldName, pf.participant().typeName()),
                 List.of(), units));
         }
     }
 
     /**
-     * The validator's mirror of {@code TypeConditionsGenerator}'s lookup skip: lookup keys ride
-     * the VALUES join and the entity layer never emits a generated method for a lookup
-     * coordinate, so a generated column filter here would be a call to a method that does not
-     * exist. The {@code GraphitronSchemaValidator} rejects the shape before production; this
-     * throw is the producer-side backstop.
+     * Registers a row under its {@code (coordinate, resolvedTable)} key. A key hit from a second
+     * nesting reuse site must carry an identical row (same predicates, locals, lifts); anything
+     * else means two reuse sites classified the same nested coordinate differently, and one glue
+     * method cannot serve both, so production fails hard rather than silently keeping one.
+     */
+    private static void addRow(LinkedHashMap<String, ConditionCommand> rows, ConditionCommand row) {
+        var key = row.coordinate() + "@" + row.table().tableName();
+        var existing = rows.putIfAbsent(key, row);
+        if (existing != null && !existing.equals(row)) {
+            throw new IllegalStateException(
+                "condition coordinate '" + key + "' was produced twice with diverging rows; a "
+                + "nesting type shared across parents must classify its nested filters "
+                + "identically at every reuse site (the validator's nested-shape comparison "
+                + "enforces this before production)");
+        }
+    }
+
+    /**
+     * The validator's mirror of the lookup emit gap: lookup keys ride the VALUES join and no
+     * emitter renders a generated column predicate for a lookup coordinate (authored
+     * {@code @condition} entries are ordinary rows). The {@code GraphitronSchemaValidator}
+     * rejects the shape before production; this throw is the producer-side backstop.
      */
     private static void requireNoGeneratedFilterOnLookup(GraphitronField field, List<WhereFilter> filters) {
         if (filters.stream().anyMatch(f -> f instanceof GeneratedConditionFilter)) {
@@ -188,7 +201,7 @@ public final class ConditionCommands {
         var callParams = gcf.callParams();
         if (bodyParams.size() != callParams.size()) {
             throw new IllegalStateException(
-                "generated condition filter '" + gcf.methodName() + "' carries " + bodyParams.size()
+                "generated condition filter on '" + fieldName + "' carries " + bodyParams.size()
                 + " body params but " + callParams.size() + " call params; the two views must pair 1:1");
         }
         var terms = new ArrayList<ColumnTerm>(bodyParams.size());
@@ -197,7 +210,7 @@ public final class ConditionCommands {
             var cp = callParams.get(i);
             if (!bp.name().equals(cp.name())) {
                 throw new IllegalStateException(
-                    "generated condition filter '" + gcf.methodName() + "' pairs body param '" + bp.name()
+                    "generated condition filter on '" + fieldName + "' pairs body param '" + bp.name()
                     + "' with call param '" + cp.name() + "'; the two views must share names positionally");
             }
             terms.add(termOf(bp, new ArgBinding(cp, localNames.of(cp)), fieldName));
@@ -241,13 +254,13 @@ public final class ConditionCommands {
 
     /**
      * The facet specs of the coordinate's synthesised connection carrier, present exactly when
-     * the field is a faceted {@code @asConnection}. The carrier resolves through the default
+     * the coordinate is a faceted {@code @asConnection}. The carrier resolves through the default
      * connection name; faceted carriers using the deprecated {@code connectionName:} override are
      * rejected at classify time, so the derived name always hits where facets exist.
      */
-    private static List<FacetSpec> facetsFor(GraphitronSchema schema, QueryField.QueryTableField qtf) {
+    private static List<FacetSpec> facetsFor(GraphitronSchema schema, String parentTypeName, String fieldName) {
         var entry = schema.types().get(
-            ConnectionNaming.defaultConnectionName(qtf.parentTypeName(), qtf.name()));
+            ConnectionNaming.defaultConnectionName(parentTypeName, fieldName));
         return entry instanceof GraphitronType.ConnectionType ct ? ct.facets() : List.of();
     }
 

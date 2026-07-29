@@ -178,6 +178,7 @@ public final class CompileDependencyGraphBuilder {
             case ChildField.TableTargetField f -> {
                 addTypeClassEdge(fetcher, f.returnType());
                 addConditionsEdge(fetcher, field.parentTypeName());
+                addConditionGlueEdges(field.parentTypeName(), f.filters());
             }
             case ChildField.NestingField f -> addTypeClassEdge(fetcher, f.returnType());
             case ChildField.InterfaceField f -> addParticipantTypeClassEdges(fetcher, f.participants());
@@ -221,13 +222,16 @@ public final class CompileDependencyGraphBuilder {
      */
     private void addRootFieldEdges(String fetcher, String parent, QueryField field) {
         switch (field) {
-            case QueryField.QueryTableField f -> { addTypeClassEdge(fetcher, f.returnType()); addConditionsEdge(fetcher, parent); }
-            case QueryField.QueryLookupTableField f -> { addTypeClassEdge(fetcher, f.returnType()); addConditionsEdge(fetcher, parent); }
-            case QueryField.QueryTableInterfaceField f -> { addTypeClassEdge(fetcher, f.returnType()); addConditionsEdge(fetcher, parent); }
+            case QueryField.QueryTableField f -> { addTypeClassEdge(fetcher, f.returnType()); addConditionsEdge(fetcher, parent); addConditionGlueEdges(parent, f.filters()); }
+            case QueryField.QueryLookupTableField f -> { addTypeClassEdge(fetcher, f.returnType()); addConditionsEdge(fetcher, parent); addConditionGlueEdges(parent, f.filters()); }
+            case QueryField.QueryTableInterfaceField f -> { addTypeClassEdge(fetcher, f.returnType()); addConditionsEdge(fetcher, parent); addConditionGlueEdges(parent, f.filters()); }
             case QueryField.QueryRoutineTableField f -> addTypeClassEdge(fetcher, f.returnType());
             case QueryField.QueryServiceTableField f -> addTypeClassEdge(fetcher, f.returnType());
-            case QueryField.QueryInterfaceField ignored -> { }
-            case QueryField.QueryUnionField ignored -> { }
+            // Polymorphic roots: a filtered participant branch calls its minted glue method, so
+            // the fetcher references the parent's conditions class and the glue unit carries the
+            // participant filters' own references.
+            case QueryField.QueryInterfaceField f -> addParticipantConditionEdges(fetcher, parent, f.participantFilters());
+            case QueryField.QueryUnionField f -> addParticipantConditionEdges(fetcher, parent, f.participantFilters());
             case QueryField.QueryServicePolymorphicField ignored -> { }
             case QueryField.QueryServiceTableInterfaceField ignored -> { }
             case QueryField.QueryServiceRecordField ignored -> { }
@@ -361,11 +365,11 @@ public final class CompileDependencyGraphBuilder {
             // further edges (generated condition class, NodeIdEncoder decode-helper lift).
             case ChildField.TableField f -> {
                 acc.addEdge(hostClass, units.typeClass(f.returnType().returnTypeName()));
-                addInlineFilterEdges(hostClass, f.filters());
+                addInlineFilterEdges(hostClass, f.parentTypeName(), f.filters());
             }
             case ChildField.LookupTableField f -> {
                 acc.addEdge(hostClass, units.typeClass(f.returnType().returnTypeName()));
-                addInlineFilterEdges(hostClass, f.filters());
+                addInlineFilterEdges(hostClass, f.parentTypeName(), f.filters());
             }
             // Nesting projections inline into the same outer type class; recurse with hostClass fixed.
             case ChildField.NestingField f -> {
@@ -405,28 +409,41 @@ public final class CompileDependencyGraphBuilder {
 
     /**
      * The edges an inline {@link ChildField.TableField} / {@link ChildField.LookupTableField}'s
-     * filters contribute to the hosting type class, mirroring what
-     * {@code InlineTableFieldEmitter} / {@code FkTargetConditionEmitter.emitTerm} emit inline into the
-     * {@code $fields} switch arm:
-     *
-     * <ul>
-     *   <li>a Graphitron-<em>generated</em> condition method call ({@link GeneratedConditionFilter},
-     *       whose {@code className()} is the generated {@code <Type>Conditions} unit) references that
-     *       conditions class. Developer-supplied {@code ConditionFilter} /
-     *       {@code FkTargetConditionFilter} name a consumer-authored class (not a generated unit), so
-     *       they contribute no edge;</li>
-     *   <li>a {@code @nodeId}-decoding filter argument lifts a decode helper onto this class, reaching
-     *       {@code NodeIdEncoder} precisely (the one per-type-growing singleton).</li>
-     * </ul>
+     * filters contribute, mirroring the converged emission: the {@code $fields} switch arm emits
+     * one glue call, so the hosting type class references the coordinate's
+     * {@code <Parent>Conditions} unit (the field's own parent, which for a nesting-hosted field
+     * is the nesting type, not the outer host), and the glue unit itself carries the extraction
+     * machinery's references ({@link #addConditionGlueEdges}).
      */
-    private void addInlineFilterEdges(String hostClass, List<WhereFilter> filters) {
-        for (var filter : filters) {
-            if (filter instanceof GeneratedConditionFilter gcf) {
-                acc.addEdge(hostClass, gcf.className());
-            }
+    private void addInlineFilterEdges(String hostClass, String parentTypeName, List<WhereFilter> filters) {
+        if (filters.isEmpty()) {
+            return;
         }
+        acc.addEdge(hostClass, units.conditions(parentTypeName));
+        addConditionGlueEdges(parentTypeName, filters);
+    }
+
+    /**
+     * The condition glue unit a filtered coordinate lands on, with the edges its rendered body
+     * carries: a {@code @nodeId}-decoding binding lifts a decode helper onto the glue class
+     * (reaching {@code NodeIdEncoder} precisely, plus the generated client-error type the
+     * THROW-mode helper raises), and a context-reading binding adds the class's
+     * {@code graphitronContext(env)} helper (reaching the frozen {@code GraphitronContext}
+     * interface). Registering the node here covers glue owners no type arm predicts (nesting
+     * types, polymorphic roots with participant-only filters); {@code addNode} is idempotent.
+     */
+    private void addConditionGlueEdges(String parentTypeName, List<WhereFilter> filters) {
+        if (filters.isEmpty()) {
+            return;
+        }
+        String glue = units.conditions(parentTypeName);
+        acc.addNode(glue);
         if (filtersDecodeNodeId(filters)) {
-            addNodeIdEncoderEdge(hostClass);
+            acc.addEdge(glue, nodeIdEncoderFqcn());
+            acc.addEdge(glue, graphitronClientExceptionFqcn());
+        }
+        if (WhereFilter.anyReadRequestContext(filters)) {
+            acc.addEdge(glue, units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronContext"));
         }
     }
 
@@ -471,6 +488,16 @@ public final class CompileDependencyGraphBuilder {
     private void addConditionsEdge(String fetcher, String parentTypeName) {
         if (hasSqlGeneratingField(parentTypeName)) {
             acc.addEdge(fetcher, units.conditions(parentTypeName));
+        }
+    }
+
+    private void addParticipantConditionEdges(String fetcher, String parentTypeName,
+            List<no.sikt.graphitron.rewrite.model.ParticipantFilters> participantFilters) {
+        for (var pf : participantFilters) {
+            if (!pf.filters().isEmpty()) {
+                acc.addEdge(fetcher, units.conditions(parentTypeName));
+                addConditionGlueEdges(parentTypeName, pf.filters());
+            }
         }
     }
 

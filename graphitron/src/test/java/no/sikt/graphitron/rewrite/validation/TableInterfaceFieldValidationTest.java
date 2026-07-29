@@ -24,7 +24,21 @@ class TableInterfaceFieldValidationTest {
 
         SINGLE_CARDINALITY("single cardinality — implemented, no errors expected",
             new TableInterfaceField("Film", "status", null, new ReturnTypeRef.TableBoundReturnType("Film", TestFixtures.tableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Single(true)), "FILM_TYPE", List.of(), List.of(), List.of(), List.of(), new OrderBySpec.None(), null),
-            List.of());
+            List.of()),
+
+        // The interface fetcher composes only the parent correlation and the discriminator
+        // restriction; an accepted filter would be silently ignored at runtime (unfiltered rows,
+        // wrong data), so the shape is a deferred rejection and the condition producer
+        // backstop-throws on it.
+        FILTERED("carries a filter the fetcher never folds — deferred rejection",
+            new TableInterfaceField("Film", "status", null, new ReturnTypeRef.TableBoundReturnType("Film", TestFixtures.tableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Single(true)), "FILM_TYPE", List.of(), List.of(), List.of(),
+                List.of(new no.sikt.graphitron.rewrite.model.ConditionFilter(
+                    "com.example.Conditions", "statusCondition", List.of())),
+                new OrderBySpec.None(), null),
+            List.of("Field 'Film.status': filters on a single-table interface child coordinate are "
+                + "not emitted: the interface fetcher composes only the parent correlation and the "
+                + "discriminator restriction, so the filter would be silently ignored at runtime; "
+                + "hoist the filterable argument to a concrete coordinate, or drop it"));
 
         private final String description;
         private final GraphitronField field;

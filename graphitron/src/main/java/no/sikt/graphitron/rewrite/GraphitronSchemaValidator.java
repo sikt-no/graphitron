@@ -51,59 +51,49 @@ public class GraphitronSchemaValidator {
     }
 
     /**
-     * Validator mirror for the condition emit's three unimplemented shapes, each a deferred
-     * rejection so an accepted classification whose emission cannot run fails the build instead
-     * of shipping a call to a method that is never generated (the failure would otherwise
-     * surface at the <em>consumer's</em> javac, or worse, at a live request).
+     * Validator mirror for the condition emit's unimplemented shapes, each a deferred rejection
+     * so an accepted classification whose emission cannot run fails the build instead of
+     * shipping wrong output (a call to a method that is never generated, or a filter the fetcher
+     * silently ignores at a live request).
      *
      * <ul>
-     *   <li><b>Env-bound condition bindings on glue-rendered coordinates.</b> The condition glue
-     *       signature is {@code (JooqTable, Map<String, Object>)}: it carries no
-     *       {@code DataFetchingEnvironment}, so a {@code @condition(contextArguments:)} binding
-     *       has nothing to read the request context from. The scope is the producer's own
-     *       committed-set predicate
-     *       ({@link no.sikt.graphitron.plan.ConditionCommands#rendersIntoConditionsClass}), so
-     *       the rejection widens in lockstep as call-site convergence commits more rows, and it
-     *       deletes in one place when the env-appending glue signature is implemented. (The
-     *       retired shim emitted a {@code graphitronContext(env)} call the conditions class
-     *       never carried, an uncompilable output documented only in a source comment; this
-     *       rejection replaces that silent breakage.)</li>
      *   <li><b>Generated column filters on lookup coordinates.</b> Lookup keys ride the VALUES
-     *       join and the entity conditions layer skips every
-     *       {@link no.sikt.graphitron.rewrite.model.LookupField}, so a generated
-     *       filter's method does not exist; authored {@code @condition} entries on lookup
-     *       coordinates stay accepted (they are composed today and become ordinary condition
-     *       rows).</li>
+     *       join and no emitter renders a generated column predicate for a
+     *       {@link no.sikt.graphitron.rewrite.model.LookupField} coordinate; authored
+     *       {@code @condition} entries on lookup coordinates stay accepted (ordinary condition
+     *       rows, composed beside the VALUES join).</li>
      *   <li><b>Generated column filters on nested fields.</b> A field nested inside a
      *       {@code ChildField.NestingField} has no walkable coordinate (no {@code fields()}
-     *       entry), so no conditions method is ever emitted for it while the inline emit sites
-     *       call it unconditionally; rejected until nesting types become walkable projection
-     *       units and give nested coordinates a home. Authored nested conditions resolve to
-     *       developer methods that exist and stay accepted.</li>
+     *       entry); rejected until nesting types become walkable projection units and give
+     *       nested coordinates a home in the walk. Authored nested conditions resolve to
+     *       developer methods that exist and stay accepted: the condition producer reaches them
+     *       by recursing the nesting tree.</li>
+     *   <li><b>Any filter on a single-table interface child coordinate.</b>
+     *       {@code ChildField.TableInterfaceField} carries the shared filter components, but its
+     *       fetcher composes only the FK correlation and the discriminator restriction and folds
+     *       no filters at all, so an accepted filter would be silently ignored at runtime
+     *       (unfiltered rows, wrong data). Rejected, authored and generated alike, until that
+     *       fetcher folds its filter list.</li>
      * </ul>
      */
     private void validateConditionEmitImplemented(GraphitronSchema schema, List<ValidationError> errors) {
         for (var field : schema.fields().values()) {
-            if (no.sikt.graphitron.plan.ConditionCommands.rendersIntoConditionsClass(field)
-                    && field instanceof no.sikt.graphitron.rewrite.model.SqlGeneratingField sgf) {
-                for (var filter : sgf.filters()) {
-                    if (filter.callParams().stream().anyMatch(GraphitronSchemaValidator::readsRequestContext)) {
-                        emitDeferredError(field, (Rejection.Deferred) Rejection.deferred(
-                            "@condition(contextArguments:) on a glue-rendered coordinate is not yet emitted: "
-                            + "the generated condition method takes the argument map only, and a context-bound "
-                            + "parameter needs the env-appending signature, which is not implemented"),
-                            errors);
-                        break;
-                    }
-                }
-            }
             if (field instanceof no.sikt.graphitron.rewrite.model.LookupField
                     && field instanceof no.sikt.graphitron.rewrite.model.SqlGeneratingField sgf
                     && sgf.filters().stream().anyMatch(f -> f instanceof no.sikt.graphitron.rewrite.model.GeneratedConditionFilter)) {
                 emitDeferredError(field, (Rejection.Deferred) Rejection.deferred(
                     "generated column filters on a lookup coordinate are not emitted: lookup keys ride "
-                    + "the VALUES join and no conditions method is generated for a lookup field, so the "
-                    + "emitted call would not compile; use an authored @condition method, or drop the filter"),
+                    + "the VALUES join and no emitter renders a generated column predicate for a lookup "
+                    + "field; use an authored @condition method, or drop the filter"),
+                    errors);
+            }
+            if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField tif
+                    && !tif.filters().isEmpty()) {
+                emitDeferredError(field, (Rejection.Deferred) Rejection.deferred(
+                    "filters on a single-table interface child coordinate are not emitted: the "
+                    + "interface fetcher composes only the parent correlation and the discriminator "
+                    + "restriction, so the filter would be silently ignored at runtime; hoist the "
+                    + "filterable argument to a concrete coordinate, or drop it"),
                     errors);
             }
             if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.NestingField nesting) {
@@ -129,19 +119,6 @@ public class GraphitronSchemaValidator {
                 rejectNestedGeneratedFilters(inner, errors);
             }
         }
-    }
-
-    /**
-     * True when the binding reads the request context ({@code @condition(contextArguments:)}),
-     * either directly or as a nested extraction's leaf; the same predicate the glue renderer's
-     * unreachable-arm guard assumes was applied here.
-     */
-    private static boolean readsRequestContext(no.sikt.graphitron.rewrite.model.CallParam param) {
-        if (param.extraction() instanceof no.sikt.graphitron.rewrite.model.CallSiteExtraction.ContextArg) {
-            return true;
-        }
-        return param.extraction() instanceof no.sikt.graphitron.rewrite.model.CallSiteExtraction.NestedInputField nif
-            && nif.leaf() instanceof no.sikt.graphitron.rewrite.model.CallSiteExtraction.ContextArg;
     }
 
     /**
@@ -1143,14 +1120,26 @@ public class GraphitronSchemaValidator {
                         other.location()
                     ));
                 }
-            } else if (rf instanceof ChildField.TableField) {
-                // TableField is safe to share across parents: each parent's $fields emits its own
-                // DSL.multiset arm (per-parent joinPath / filters / orderBy / pagination are
+            } else if (rf instanceof ChildField.TableField rtf && of instanceof ChildField.TableField otf) {
+                // TableField's join topology is safe to share across parents: each parent's $fields
+                // emits its own DSL.multiset arm (per-parent joinPath / orderBy / pagination are
                 // intentionally not compared), and the reified projected read (PROJECTED_LEAVES) reads
-                // by field name from the source Record without consulting the outer parent table. No
-                // further shape check is needed: returnType() derives from the single SDL declaration
-                // on the shared nested type and is identical by construction. The class-equality gate
-                // above already guarantees `of` is a TableField too.
+                // by field name from the source Record without consulting the outer parent table;
+                // returnType() derives from the single SDL declaration on the shared nested type and
+                // is identical by construction. The FILTERS are not per-parent any more: one condition
+                // glue method per nested coordinate serves every reuse site, so the sites must agree
+                // on the filter list (the condition producer's dedup fails hard on the same fact; this
+                // is the build-boundary mirror that names the diverging parents).
+                if (!rtf.filters().equals(otf.filters())) {
+                    errors.add(new ValidationError(
+                        coord,
+            Rejection.structural("Nested type '" + nestedTypeName + "' shared across '" + repParent
+                            + "' and '" + otherParent + "': field '" + name
+                            + "' classifies different condition filters at the two reuse sites, and "
+                            + "one generated condition method serves every site"),
+                        other.location()
+                    ));
+                }
             } else if (rf instanceof ChildField.NestingField rnf && of instanceof ChildField.NestingField onf) {
                 // Two-level nesting: recurse so divergent inner columns don't slip past the
                 // outer class-equality check. Thread the outer @table parent names so inner
@@ -1335,13 +1324,13 @@ public class GraphitronSchemaValidator {
         }
         // A plain @reference (Direct extraction, single-column by the record's constructor
         // invariant) implicit-predicate field whose terminal column lives on a joined table emits
-        // a correlated EXISTS over the path (TypeConditionsGenerator.emitRemoteExists), which
+        // a correlated EXISTS over the path (the glue renderer's reach emission), which
         // requires every hop to be a resolved FK-derived. Mirror that emitter precondition so a
         // non-FK / condition-join hop fails at validate time with a directed message rather than
         // as an emitter IllegalStateException. (Today the builder cannot resolve a terminal
         // column through a non-FK hop, so this is a defensive mirror against future
         // path-resolution changes; the v1 deferral of condition-join reference filters is the
-        // same posture FkTargetConditionEmitter takes.)
+        // same posture the condition glue renderer takes.)
         if (field.condition().isEmpty()
                 && field.extraction() instanceof no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct
                 && !field.joinPath().isEmpty()

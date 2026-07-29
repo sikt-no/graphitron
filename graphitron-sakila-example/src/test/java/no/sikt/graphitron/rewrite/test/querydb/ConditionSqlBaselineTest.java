@@ -26,10 +26,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * table's name ({@code customer_fkt0_0}), one convention across every host, so the pins never
  * move for aliasing again.
  *
- * <p>The filtered-child coordinate ({@code Store.customersByAddressDistrictSplit}) is composed
- * inline by the split rows method today; its pin is what holds the call-site convergence slice to
- * "call sites moved, SQL did not". Note its EXISTS alias rides the child's own runtime alias
- * ({@code ..._c0_fkt0_0}), the same convention the glue adopted.
+ * <p>The child, lookup, nested and context-bound coordinates were pinned <em>before</em> the
+ * call-site convergence moved their folds into glue calls, so these strings staying green is
+ * "call sites moved, SQL did not" as a result rather than a claim. Note the filtered-child
+ * EXISTS alias rides the child's own runtime alias ({@code ..._c0_fkt0_0}), the same convention
+ * the glue uses everywhere.
  *
  * <p>Conjunct order is data the producer preserves verbatim (generated predicate first, authored
  * conditions after, per the classification's filter order), and the lifted-outer pin makes it
@@ -157,6 +158,63 @@ class ConditionSqlBaselineTest {
                     + "where exists (select 1 as \"one\" from \"public\".\"address\" as \"customersbyaddressdistrictsplit_c0_fkt0_0\" "
                     + "where (\"customersbyaddressdistrictsplit_c0_fkt0_0\".\"address_id\" = \"customersbyaddressdistrictsplit_c0\".\"address_id\" "
                     + "and \"customersbyaddressdistrictsplit_c0_fkt0_0\".\"district\" = ?))");
+    }
+
+    @Test
+    void lookupCoordinate_authoredNonKeyFilterBesideTheValuesJoin() {
+        execute("{ languagesByKeyFiltered(language_id: [1, 2], name: \"En\") { name } }");
+        assertThat(SQL_LOG)
+            .as("lookup coordinate with an authored non-key filter: the lookup keys ride the "
+                + "VALUES join, the authored prefix-match composes in the WHERE beside it; "
+                + "authored on lookup is an ordinary condition row, never a rejection")
+            .containsExactly(
+                "select \"public\".\"language\".\"name\", \"public\".\"language\".\"language_id\" "
+                    + "from \"public\".\"language\" "
+                    + "join (values (0, ?), (1, ?)) as \"languagesbykeyfilteredinput\" (\"idx\", \"language_id\") using (\"language_id\") "
+                    + "where \"public\".\"language\".\"name\" like (replace(replace(replace(?, '!', '!!'), '%', '!%'), '_', '!_') || '%') escape '!' "
+                    + "order by \"languagesbykeyfilteredinput\".\"idx\"");
+    }
+
+    @Test
+    void contextBoundChildCoordinate_batchedStatementCarriesTheContextValue() {
+        execute("{ storeById(store_id: [1]) { customersSeenByUser { firstName } } }");
+        assertThat(SQL_LOG)
+            .as("@condition(contextArguments:) on a batched child: the userId value arrives "
+                + "from the request context (the env, not the argument map) and binds into the "
+                + "batched statement's WHERE")
+            .containsExactlyInAnyOrder(
+                "select \"public\".\"store\".\"store_id\", \"public\".\"store\".\"manager_staff_id\", "
+                    + "\"public\".\"store\".\"address_id\" from \"public\".\"store\" "
+                    + "join (values (0, ?)) as \"storebyidinput\" (\"idx\", \"store_id\") using (\"store_id\") "
+                    + "order by \"storebyidinput\".\"idx\"",
+                "select \"customersseenbyuser_c0\".\"first_name\", "
+                    + "\"customersseenbyuser_c0\".\"address_id\", "
+                    + "\"customersseenbyuser_c0\".\"store_id\", "
+                    + "\"parentinput\".\"idx\" as \"__idx__\" "
+                    + "from (values (0, ?)) as \"parentinput\" (\"idx\", \"store_id\") "
+                    + "join \"public\".\"customer\" as \"customersseenbyuser_c0\" "
+                    + "on \"customersseenbyuser_c0\".\"store_id\" = \"parentinput\".\"store_id\" "
+                    + "where lower(\"customersseenbyuser_c0\".\"first_name\") = lower(?)");
+    }
+
+    @Test
+    void nestedCoordinate_authoredConditionInsideTheNestingTypesMultiset() {
+        execute("{ filmById(film_id: [\"1\"]) { inlineBundle { languageFiltered(name: \"En\") { name } } } }");
+        assertThat(SQL_LOG)
+            .as("authored condition on a field nested inside a plain nesting type: the "
+                + "correlated multiset carries the prefix-match against the nested field's own "
+                + "aliased table, composed with the FK correlation")
+            .containsExactly(
+                "select (select coalesce(jsonb_agg(jsonb_build_array(t.\"v0\", t.\"v1\")), jsonb_build_array()) "
+                    + "from (select \"film_l0\".\"name\" as \"v0\", \"film_l0\".\"language_id\" as \"v1\" "
+                    + "from \"public\".\"language\" as \"film_l0\" "
+                    + "where (\"film_l0\".\"language_id\" = \"public\".\"film\".\"language_id\" "
+                    + "and \"film_l0\".\"name\" like (replace(replace(replace(?, '!', '!!'), '%', '!%'), '_', '!_') || '%') escape '!') "
+                    + "fetch next ? rows only) as t) as \"__rk_languagefiltered\", "
+                    + "\"public\".\"film\".\"title\", \"public\".\"film\".\"film_id\" "
+                    + "from \"public\".\"film\" "
+                    + "join (values (0, ?)) as \"filmbyidinput\" (\"idx\", \"film_id\") using (\"film_id\") "
+                    + "order by \"filmbyidinput\".\"idx\"");
     }
 
     private Map<String, Object> execute(String query) {

@@ -813,7 +813,7 @@ class FieldBuilder {
      * self-contained {@code env.getArgument(outer) instanceof Map<?, ?> ...} traversal, so
      * {@link CallSiteExtraction.Direct}, {@link CallSiteExtraction.JooqConvert}, and
      * {@code NodeIdDecodeKeys} leaves are all admitted through the recursion. The
-     * condition-method generator ({@code TypeConditionsGenerator}) is extraction-agnostic, so the
+     * condition glue renderer is extraction-agnostic, so the
      * generated {@code <Participant>Conditions} method is identical whether the value arrives
      * top-level or Map-traversed.
      *
@@ -1552,7 +1552,7 @@ class FieldBuilder {
         // join), a plain @reference filter resolves the column against the *terminal* table and
         // emits a correlated EXISTS. Read the path before the local findColumn so the column never
         // mis-binds against the field's own table. FK-derived paths only; a condition-join hop
-        // rejects (mirrors FkTargetConditionEmitter).
+        // rejects (mirrors the condition glue renderer's reach emission).
         if (arg.hasAppliedDirective(DIR_REFERENCE)) {
             // @reference is repeatable, so field-level applications compose the table
             // chain; order-composition has no meaning on an argument, so repetition here is a
@@ -1973,12 +1973,10 @@ class FieldBuilder {
 
         var filters = new ArrayList<WhereFilter>();
         if (!bodyParams.isEmpty()) {
-            String conditionsClassName = ctx.ctx().outputPackage() + ".conditions." + returnTypeName + "Conditions";
-            String methodName = fieldDef.getName() + "Condition";
             var callParams = bodyParams.stream()
                 .map(bp -> new CallParam(bp.name(), bp.extraction(), bp.list(), bodyParamCallTypeName(bp)))
                 .toList();
-            filters.add(new GeneratedConditionFilter(conditionsClassName, methodName, rt, callParams, List.copyOf(bodyParams)));
+            filters.add(new GeneratedConditionFilter(rt, callParams, List.copyOf(bodyParams)));
         }
         filters.addAll(argConditions);
         return List.copyOf(filters);

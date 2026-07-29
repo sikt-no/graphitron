@@ -17,7 +17,11 @@ import java.util.List;
  * argument values into named locals and composes its predicates into one {@code org.jooq.Condition},
  * {@code Condition <method>(<JooqTable> table, Map<String, Object> args)}. Callers supply
  * {@code env.getArguments()} or {@code <sf>.getArguments()}; both surfaces expose the same coerced
- * map, so the old per-site argument-source fork is one call-site expression.
+ * map, so the old per-site argument-source fork is one call-site expression. A row whose bindings
+ * read the request context ({@link #readsRequestContext()}) appends
+ * {@code graphql.schema.DataFetchingEnvironment env} to that signature, uniformly across the glue
+ * method and its facet fragments; context is request-global, so the ancestor env every call site
+ * holds serves it correctly.
  *
  * <p>Reserved local names in a glue body are the two parameters and the fold seed
  * ({@code table}, {@code args}, {@code condition}); the producer's binding and lift locals must
@@ -33,8 +37,12 @@ public record ConditionCommand(
     List<FacetFragment> facets
 ) {
 
-    /** Local names every glue body already binds; producer-named locals must avoid them. */
-    private static final List<String> RESERVED_LOCALS = List.of("table", "args", "condition");
+    /**
+     * Local names every glue body already binds; producer-named locals must avoid them.
+     * {@code env} is reserved unconditionally, not only on env-appending rows, so a rename of an
+     * argument cannot flip compilability when a context binding is added beside it.
+     */
+    private static final List<String> RESERVED_LOCALS = List.of("table", "args", "condition", "env");
 
     public ConditionCommand {
         if (coordinate == null) {
@@ -138,5 +146,15 @@ public record ConditionCommand(
     /** Every binding the row's own predicates consume, in declaration order (terms, then call order). */
     public List<ArgBinding> bindings() {
         return bindingsOf(predicates);
+    }
+
+    /**
+     * True when any binding reads the request context ({@code @condition(contextArguments:)}), so
+     * this row's emitted methods take the env-appending signature. Row-grained deliberately: the
+     * glue method and every facet fragment fork together, so a call site derives one fact per
+     * coordinate (from the same leaf predicate on its filters) rather than one per method.
+     */
+    public boolean readsRequestContext() {
+        return bindings().stream().anyMatch(b -> b.param().readsRequestContext());
     }
 }

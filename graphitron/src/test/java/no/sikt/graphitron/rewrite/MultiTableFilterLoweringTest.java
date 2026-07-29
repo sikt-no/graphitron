@@ -61,9 +61,10 @@ class MultiTableFilterLoweringTest {
     }
 
     /**
-     * Each participant carries its own {@link GeneratedConditionFilter}: a table-specific
-     * {@code <Participant>Conditions} class (so the two participants do not collide), a
-     * {@code first_name IN (...)} body param, and the participant's own table.
+     * Each participant carries its own {@link GeneratedConditionFilter}: a
+     * {@code first_name IN (...)} body param lowered against the participant's own table (the
+     * condition producer mints one participant-named glue method per row, so the two
+     * participants cannot collide; the filter itself carries no method identity).
      */
     private static void assertPerParticipantFirstNameFilter(List<ParticipantFilters> participantFilters) {
         assertThat(participantFilters)
@@ -77,12 +78,8 @@ class MultiTableFilterLoweringTest {
                 .orElseThrow(() -> new AssertionError(
                     "participant '" + pf.participant().typeName() + "' carries no GeneratedConditionFilter: "
                         + pf.filters()));
-            assertThat(gcf.className())
-                .as("conditions class is named after the participant, not the interface/union, "
-                    + "so the two participants do not collide on one class")
-                .endsWith(pf.participant().typeName() + "Conditions");
-            assertThat(gcf.methodName()).isEqualTo("occupantsCondition");
             assertThat(gcf.tableRef().tableName())
+                .as("the filter is lowered against the participant's own table, not the union's")
                 .isEqualTo(pf.participant().table().tableName());
             assertThat(gcf.bodyParams())
                 .anySatisfy(bp -> {
@@ -121,7 +118,6 @@ class MultiTableFilterLoweringTest {
                 .orElseThrow(() -> new AssertionError(
                     "participant '" + pf.participant().typeName() + "' carries no GeneratedConditionFilter: "
                         + pf.filters()));
-            assertThat(gcf.methodName()).isEqualTo("occupantsCondition");
             assertThat(gcf.bodyParams())
                 .anySatisfy(bp -> {
                     assertThat(bp).isInstanceOf(BodyParam.In.class);
@@ -361,7 +357,8 @@ class MultiTableFilterLoweringTest {
                 .as("participant '" + pf.participant().typeName() + "' carries the developer @condition")
                 .anySatisfy(f -> {
                     assertThat(f).isInstanceOf(no.sikt.graphitron.rewrite.model.ConditionFilter.class);
-                    assertThat(f.methodName()).isEqualTo(methodName);
+                    assertThat(((no.sikt.graphitron.rewrite.model.ConditionFilter) f).methodName())
+                        .isEqualTo(methodName);
                 });
         }
     }

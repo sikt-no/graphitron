@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite.generators;
 
-import no.sikt.graphitron.render.CompositeDecodeHelperRegistry;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
@@ -8,11 +7,9 @@ import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.On;
-import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping;
 import no.sikt.graphitron.rewrite.model.ParentCorrelation;
 import no.sikt.graphitron.rewrite.model.TableRef;
-import no.sikt.graphitron.rewrite.model.WhereFilter;
 
 import java.util.List;
 import java.util.Map;
@@ -63,12 +60,12 @@ public final class InlineLookupTableFieldEmitter {
      *                     canonical first occurrence); depth-suffixed like {@code sfName}.
      */
     public static CodeBlock buildSwitchArmBody(ChildField.LookupTableField lf, String parentAlias, String sfName,
-            String entryName, String outputPackage, CompositeDecodeHelperRegistry registry) {
-        return buildArm(lf, parentAlias, sfName, entryName, outputPackage, registry);
+            String entryName, String outputPackage) {
+        return buildArm(lf, parentAlias, sfName, entryName, outputPackage);
     }
 
     private static CodeBlock buildArm(ChildField.LookupTableField lf, String parentAlias, String sfName,
-            String entryName, String outputPackage, CompositeDecodeHelperRegistry registry) {
+            String entryName, String outputPackage) {
         List<JoinStep> path = lf.joinPath();
         TableRef terminalTable = lf.returnType().table();
         ClassName typeClass = ClassName.get(outputPackage + ".types", lf.returnType().returnTypeName());
@@ -162,20 +159,8 @@ public final class InlineLookupTableFieldEmitter {
             if (i > 0) onCondition.add(")");
         }
 
-        // Aliased FK-target table locals for FK-target @nodeId override @condition filters, so
-        // buildInnerSelect emits each as a correlated EXISTS rather than mis-passing the lookup's
-        // own table. Runtime-prefixed SQL alias (this arm recurses), like the hop aliases above.
-        Map<WhereFilter, List<String>> fkTargetAliases =
-            FkTargetConditionEmitter.declareAliases(code, lf.filters(), terminalAlias, true);
-
-        // Pre-lift any converter-backed list filter arg into a `<name>Keys` local (read by the
-        // JooqConvert list arm), routed through the field's own SelectedField, matching
-        // InlineTableFieldEmitter. Declared inside the non-empty (else) branch since only the
-        // inner SELECT references it.
-        ArgCallEmitter.emitJooqConvertKeyLifts(code, lf.filters(), new ArgumentValueSource.FromSelectedField(sfName));
-
         CodeBlock innerSelect = buildInnerSelect(lf, path, aliases, terminalAlias, typeClass,
-            parentAlias, onCondition.build(), sfName, entryName, registry, fkTargetAliases);
+            parentAlias, onCondition.build(), sfName, entryName, outputPackage);
         code.addStatement("fields.add($T.multiset($L).as($S + $L.getKey()))",
             DSL, innerSelect, RESERVED_RK_ALIAS_PREFIX, entryName);
         code.endControlFlow();
@@ -191,8 +176,7 @@ public final class InlineLookupTableFieldEmitter {
     private static CodeBlock buildInnerSelect(ChildField.LookupTableField lf, List<JoinStep> path,
             List<String> aliases, String terminalAlias, ClassName typeClass,
             String parentAlias, CodeBlock onCondition, String sfName, String entryName,
-            CompositeDecodeHelperRegistry registry,
-            Map<WhereFilter, List<String>> fkTargetAliases) {
+            String outputPackage) {
         var sel = CodeBlock.builder();
         // The descent hands over the whole result-key bucket so the target projects the union of
         // all occurrences' sub-selections (edges.node vs nodes divergence); each path's readers
@@ -251,10 +235,12 @@ public final class InlineLookupTableFieldEmitter {
                     JoinPathEmitter.emitTwoArgMethodCall(hop.filter(), srcAlias, aliasForStep(path, aliases, hop)));
             }
         }
-        for (WhereFilter f : lf.filters()) {
+        if (!lf.filters().isEmpty()) {
+            // Non-key filters compose as one glue call; the map is the inline field's own
+            // SelectedField arguments (the ancestor env has no such arguments).
             where.add("\n        .and($L)",
-                FkTargetConditionEmitter.emitTerm(new TypeFetcherEmissionContext(), f, terminalAlias, registry, null, fkTargetAliases,
-                    new ArgumentValueSource.FromSelectedField(sfName)));
+                ConditionGlueCall.expression(lf.parentTypeName(), lf.name(), lf.filters(),
+                    terminalAlias, CodeBlock.of("$L.getArguments()", sfName), outputPackage));
         }
         sel.add("\n        .where($L)", where.build());
 

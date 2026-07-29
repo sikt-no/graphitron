@@ -19,9 +19,10 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * A filter input used as the {@code filter:} argument of a reference/list child field that
  * mixes {@code @nodeId}-decoded fields with {@code @condition} fields must generate without
  * throwing. The {@code @nodeId} decode is lifted into a per-class private static helper drained
- * onto the class hosting the filter call site ({@code <Type>} for inline {@code @reference}
- * fields, {@code <Type>Fetchers} for {@code @splitQuery} fields), the same own-and-drain lifecycle
- * {@link no.sikt.graphitron.render.ConditionGlueRenderer} uses for root query fields.
+ * onto the coordinate's own condition glue class ({@code <Parent>Conditions}) — since call-site
+ * convergence the hosting {@code <Type>} / {@code <Type>Fetchers} classes emit only the one-line
+ * glue call and carry no decode machinery, so the inline and the {@code @splitQuery} shape share
+ * one helper on one class.
  *
  * <p>Part B: a condition-only filter input (no {@code @nodeId}/key fields) must also generate,
  * including the degenerate empty-join-path (same-table) reference that previously crashed with an
@@ -54,7 +55,7 @@ class NodeIdReferenceFilterPipelineTest {
         """;
 
     @Test
-    void inlineReferenceField_mixedNodeIdAndConditionFilter_liftsDecodeHelperOntoTypeClass() {
+    void inlineReferenceField_mixedNodeIdAndConditionFilter_liftsDecodeHelperOntoGlueClass() {
         var schema = TestSchemaHelper.buildSchema(MIXED_FILTER_INPUT + """
             type Bar implements Node @table(name: "bar") @node { id: ID! name: String }
             type Baz implements Node @table(name: "baz") @node {
@@ -64,19 +65,15 @@ class NodeIdReferenceFilterPipelineTest {
             type Query { baz: Baz }
             """, FIXTURE_CTX);
 
-        var classes = TypeClassGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE);
-        var baz = classes.stream().filter(t -> t.name().equals("Baz")).findFirst().orElseThrow();
-
-        // The @nodeId decode is lifted to a per-class private static helper on the Baz type class,
-        // alongside its $fields method.
-        var helper = baz.methodSpecs().stream()
-            .filter(m -> m.name().startsWith("decodeBar"))
-            .findFirst().orElseThrow();
-        assertThat(helper.modifiers()).contains(Modifier.PRIVATE, Modifier.STATIC);
+        // The @nodeId decode is lifted to a per-class private static helper on the coordinate's
+        // glue class; the Baz type class emits only the glue call and carries no helper.
+        assertDecodeHelperOnGlueClassOnly(schema,
+            TypeClassGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+                .filter(t -> t.name().equals("Baz")).findFirst().orElseThrow());
     }
 
     @Test
-    void splitQueryReferenceField_mixedNodeIdAndConditionFilter_liftsDecodeHelperOntoFetchersClass() {
+    void splitQueryReferenceField_mixedNodeIdAndConditionFilter_liftsDecodeHelperOntoGlueClass() {
         var schema = TestSchemaHelper.buildSchema(MIXED_FILTER_INPUT + """
             type Bar implements Node @table(name: "bar") @node { id: ID! name: String }
             type Baz implements Node @table(name: "baz") @node {
@@ -86,13 +83,24 @@ class NodeIdReferenceFilterPipelineTest {
             type Query { baz: Baz }
             """, FIXTURE_CTX);
 
-        var bazFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
-            .filter(t -> t.name().equals("BazFetchers")).findFirst().orElseThrow();
+        // Same landing as the inline twin: one helper on the glue class, none on the rows
+        // method's host.
+        assertDecodeHelperOnGlueClassOnly(schema,
+            TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+                .filter(t -> t.name().equals("BazFetchers")).findFirst().orElseThrow());
+    }
 
-        var helper = bazFetchers.methodSpecs().stream()
+    private static void assertDecodeHelperOnGlueClassOnly(
+            no.sikt.graphitron.rewrite.GraphitronSchema schema, TypeSpec host) {
+        var bazConditions = no.sikt.graphitron.rewrite.ConditionRenderTestSupport
+            .renderCommittedConditions(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+            .filter(t -> t.name().equals("BazConditions")).findFirst().orElseThrow();
+        var helper = bazConditions.methodSpecs().stream()
             .filter(m -> m.name().startsWith("decodeBar"))
             .findFirst().orElseThrow();
         assertThat(helper.modifiers()).contains(Modifier.PRIVATE, Modifier.STATIC);
+        assertThat(host.methodSpecs())
+            .noneMatch(m -> m.name().startsWith("decodeBar"));
     }
 
     @Test

@@ -1,9 +1,7 @@
 package no.sikt.graphitron.rewrite.generators;
 
-import no.sikt.graphitron.render.CompositeDecodeHelperRegistry;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.JoinStep;
@@ -13,7 +11,6 @@ import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.ParentCorrelation;
 import no.sikt.graphitron.rewrite.model.TableExpr;
 import no.sikt.graphitron.rewrite.model.TableRef;
-import no.sikt.graphitron.rewrite.model.WhereFilter;
 
 import java.util.List;
 import java.util.Map;
@@ -71,12 +68,12 @@ public final class InlineTableFieldEmitter {
      *                     sub-selection; depth-suffixed like {@code sfName}.
      */
     public static CodeBlock buildSwitchArmBody(ChildField.TableField tf, String parentAlias, String sfName,
-            String entryName, String outputPackage, CompositeDecodeHelperRegistry registry) {
-        return buildArm(tf, parentAlias, sfName, entryName, outputPackage, registry);
+            String entryName, String outputPackage) {
+        return buildArm(tf, parentAlias, sfName, entryName, outputPackage);
     }
 
     private static CodeBlock buildArm(ChildField.TableField tf, String parentAlias, String sfName,
-            String entryName, String outputPackage, CompositeDecodeHelperRegistry registry) {
+            String entryName, String outputPackage) {
         List<JoinStep> path = tf.joinPath();
         TableRef terminalTable = tf.returnType().table();
         List<String> aliases = JoinPathEmitter.generateAliases(path, terminalTable);
@@ -134,22 +131,10 @@ public final class InlineTableFieldEmitter {
             }
         }
 
-        // Declare an aliased FK-target table local per join hop for every FK-target
-        // @nodeId override @condition among the user filters, so buildInnerSelect can emit each as
-        // a correlated EXISTS against that alias instead of mis-passing the field's own table. This
-        // arm recurses (self-referential nested projections), so the SQL alias is runtime-prefixed
-        // onto the terminal alias's getName(), matching the hop aliases above.
-        Map<WhereFilter, List<String>> fkTargetAliases =
-            FkTargetConditionEmitter.declareAliases(code, tf.filters(), terminalAlias, true);
-
-        // Pre-lift any converter-backed list filter arg into a `<name>Keys` local (read by the
-        // JooqConvert list arm), routed through the field's own SelectedField. Without this the arm
-        // would reference an undeclared local; the (List<String>) cast is why the $fields host stamps
-        // @SuppressWarnings (see TypeClassGenerator).
-        ArgCallEmitter.emitJooqConvertKeyLifts(code, tf.filters(), new ArgumentValueSource.FromSelectedField(sfName));
-
-        // Assemble the inner SELECT.
-        CodeBlock innerSelect = buildInnerSelect(tf, path, aliases, terminalAlias, typeClass, parentAlias, sfName, entryName, registry, fkTargetAliases);
+        // Assemble the inner SELECT. Condition content is one glue call inside its WHERE; the
+        // extraction plumbing (FK-target aliases, converter pre-lifts, decode helpers) lives in
+        // the glue body on the coordinate's own conditions class.
+        CodeBlock innerSelect = buildInnerSelect(tf, path, aliases, terminalAlias, typeClass, parentAlias, sfName, entryName, outputPackage);
 
         // Both cardinalities use DSL.multiset(...) uniformly. The single-cardinality path adds
         // .limit(1) to the inner SELECT (inside buildInnerSelect) and the registered DataFetcher
@@ -171,8 +156,7 @@ public final class InlineTableFieldEmitter {
      */
     private static CodeBlock buildInnerSelect(ChildField.TableField tf, List<JoinStep> path,
             List<String> aliases, String terminalAlias, ClassName typeClass,
-            String parentAlias, String sfName, String entryName, CompositeDecodeHelperRegistry registry,
-            Map<WhereFilter, List<String>> fkTargetAliases) {
+            String parentAlias, String sfName, String entryName, String outputPackage) {
         boolean singleCardinality = tf.returnType().wrapper() instanceof FieldWrapper.Single;
 
         var sel = CodeBlock.builder();
@@ -251,10 +235,13 @@ public final class InlineTableFieldEmitter {
                     JoinPathEmitter.emitTwoArgMethodCall(hop.filter(), srcAlias, aliasForStep(path, aliases, hop)));
             }
         }
-        for (WhereFilter f : tf.filters()) {
+        if (!tf.filters().isEmpty()) {
+            // The glue call reads the argument map off the inline field's own SelectedField (the
+            // ancestor env has no such arguments); a context-reading coordinate appends the
+            // ancestor env itself, which is correct for request-global context.
             where.add("\n        .and($L)",
-                FkTargetConditionEmitter.emitTerm(new TypeFetcherEmissionContext(), f, terminalAlias, registry, null, fkTargetAliases,
-                    new ArgumentValueSource.FromSelectedField(sfName)));
+                ConditionGlueCall.expression(tf.parentTypeName(), tf.name(), tf.filters(),
+                    terminalAlias, CodeBlock.of("$L.getArguments()", sfName), outputPackage));
         }
         sel.add("\n        .where($L)", where.build());
 
@@ -287,26 +274,25 @@ public final class InlineTableFieldEmitter {
     }
 
     /**
-     * True when the arm body {@link #buildArm} emits for {@code tf} reads runtime arguments off
-     * the canonical {@code SelectedField} — i.e. when any of its emission sites consumes an
-     * {@link ArgumentValueSource.FromSelectedField} read. This is the predicate the occurrence
-     * argument guard tracks, clause for clause against the emission sites in this file:
+     * True when the arm body {@link #buildArm} emits for {@code tf} serves runtime arguments off
+     * the canonical {@code SelectedField}. This is the predicate the occurrence argument guard
+     * tracks, clause for clause against the emission sites in this file:
      *
      * <ul>
      *   <li>pagination — the non-single-cardinality {@code .limit(...)} reads
      *       {@code sf.getArguments().get("first")};</li>
-     *   <li>filters — {@code FkTargetConditionEmitter.emitTerm} / the JooqConvert key lifts read
-     *       each argument-extracting {@link no.sikt.graphitron.rewrite.model.CallParam} off
-     *       {@code sf}. A
-     *       {@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.ContextArg} param is the
-     *       one extraction that stays env-based at the inline sites (request-scoped context), so
-     *       an all-{@code ContextArg} filter does not consume {@code sf};</li>
+     *   <li>filters — the glue call passes {@code sf.getArguments()} as the argument map, whose
+     *       values the glue body extracts. A binding that reads the request context
+     *       ({@link no.sikt.graphitron.rewrite.model.CallParam#readsRequestContext()}) is served
+     *       by the appended ancestor {@code env} instead (request-scoped context), so an
+     *       all-context filter does not consume the canonical occurrence's arguments even though
+     *       the map is passed;</li>
      *   <li>routine hops — {@code RoutineCallEmitter.emitCall} reads each
      *       {@link no.sikt.graphitron.rewrite.model.ParamSource.Arg} binding off {@code sf}.</li>
      * </ul>
      *
      * <p>Keeping the predicate beside the emission it mirrors (rather than in the switch host)
-     * means a new {@code FromSelectedField}-consuming emission site is added in the same file that
+     * means a new {@code SelectedField}-consuming emission site is added in the same file that
      * must extend this predicate; an arm that merely <em>carries</em> arguments it never consumes
      * stays unguarded, so it cannot false-positive on divergence in arguments nothing reads.
      */
@@ -317,7 +303,7 @@ public final class InlineTableFieldEmitter {
         }
         if (tf.filters().stream()
                 .flatMap(f -> f.callParams().stream())
-                .anyMatch(p -> !(p.extraction() instanceof CallSiteExtraction.ContextArg))) {
+                .anyMatch(p -> !p.readsRequestContext())) {
             return true;
         }
         return tf.joinPath().stream().anyMatch(step ->

@@ -35,10 +35,14 @@ import java.util.Map;
  * <p>The glue body is the readability contract: one named local per argument value (extraction,
  * decode, enum coercion, with nested-path {@code instanceof} chains on the local's right-hand
  * side), then the predicate composition, generated terms with their presence guards and authored
- * predicates as calls into developer code. All value reads root at the {@code args} map
+ * predicates as calls into developer code. All argument-value reads root at the {@code args} map
  * parameter; callers supply {@code env.getArguments()} or {@code <sf>.getArguments()}, which are
  * the same coerced map ({@code DataFetchingEnvironment.getArgument} is
- * {@code getArguments().get}).
+ * {@code getArguments().get}). A row whose bindings read the request context
+ * ({@code @condition(contextArguments:)}) takes the env-appending signature: the environment is
+ * appended after the map, the context locals read through the class's own
+ * {@code graphitronContext(env)} helper ({@link RequestContextHelper}), and the fork is
+ * row-grained so a coordinate's glue method and facet fragments agree.
  *
  * <p>Reach renders as a correlated {@code EXISTS} over the row's proven FK hops. SQL aliases are
  * runtime-prefixed on the base table's name ({@code table.getName() + "_fkt0_0"}): glue methods
@@ -66,18 +70,20 @@ public final class ConditionGlueRenderer {
         var out = new ArrayList<TypeSpec>(byOwner.size());
         for (var entry : byOwner.entrySet()) {
             var classBuilder = TypeSpec.classBuilder(entry.getKey().simpleName()).addModifiers(Modifier.PUBLIC);
-            CompositeDecodeHelperRegistry.collectInto(classBuilder, outputPackage, registry -> {
-                for (var row : entry.getValue()) {
-                    classBuilder.addMethod(buildGlueMethod(
-                        row.glue().methodName(), row.table().tableClass(),
-                        row.predicates(), row.lifts(), registry));
-                    for (var fragment : row.facets()) {
+            CompositeDecodeHelperRegistry.collectInto(classBuilder, outputPackage, registry ->
+                RequestContextHelper.collectInto(classBuilder, outputPackage, contextHelper -> {
+                    for (var row : entry.getValue()) {
+                        boolean takesEnv = row.readsRequestContext();
                         classBuilder.addMethod(buildGlueMethod(
-                            fragment.method().methodName(), row.table().tableClass(),
-                            fragment.predicates(), fragment.lifts(), registry));
+                            row.glue().methodName(), row.table().tableClass(),
+                            row.predicates(), row.lifts(), takesEnv, registry, contextHelper));
+                        for (var fragment : row.facets()) {
+                            classBuilder.addMethod(buildGlueMethod(
+                                fragment.method().methodName(), row.table().tableClass(),
+                                fragment.predicates(), fragment.lifts(), takesEnv, registry, contextHelper));
+                        }
                     }
-                }
-            });
+                }));
             out.add(classBuilder.build());
         }
         return out;
@@ -88,12 +94,16 @@ public final class ConditionGlueRenderer {
     // ------------------------------------------------------------------------------------------
 
     private static MethodSpec buildGlueMethod(String methodName, TypeName jooqTableClass,
-            List<Predicate> predicates, List<OuterLift> lifts, CompositeDecodeHelperRegistry registry) {
+            List<Predicate> predicates, List<OuterLift> lifts, boolean takesEnv,
+            CompositeDecodeHelperRegistry registry, RequestContextHelper contextHelper) {
         var builder = MethodSpec.methodBuilder(methodName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(CONDITION)
             .addParameter(jooqTableClass, "table")
             .addParameter(ARGS_MAP, "args");
+        if (takesEnv) {
+            builder.addParameter(ClassName.get("graphql.schema", "DataFetchingEnvironment"), "env");
+        }
 
         var bindings = distinctBindings(predicates);
         if (bindings.stream().anyMatch(b -> emitsUncheckedLocalCast(b.param()))) {
@@ -111,7 +121,7 @@ public final class ConditionGlueRenderer {
         for (var binding : bindings) {
             builder.addStatement("$T $L = $L",
                 localType(binding.param()), binding.localName(),
-                extractionExpr(binding.param(), liftLocals, registry));
+                extractionExpr(binding.param(), liftLocals, registry, contextHelper));
         }
 
         var aliasesByReach = declareReachAliases(builder, predicates);
@@ -299,6 +309,7 @@ public final class ConditionGlueRenderer {
     private static boolean emitsUncheckedLocalCast(CallParam param) {
         return switch (param.extraction()) {
             case CallSiteExtraction.Direct ignored -> localType(param) instanceof ParameterizedTypeName;
+            case CallSiteExtraction.ContextArg ignored -> localType(param) instanceof ParameterizedTypeName;
             case CallSiteExtraction.NestedInputField nif ->
                 !(nif.leaf() instanceof CallSiteExtraction.JooqConvert)
                     && !(nif.leaf() instanceof CallSiteExtraction.NodeIdDecodeKeys)
@@ -338,7 +349,7 @@ public final class ConditionGlueRenderer {
     }
 
     private static CodeBlock extractionExpr(CallParam param, Map<String, String> liftLocals,
-            CompositeDecodeHelperRegistry registry) {
+            CompositeDecodeHelperRegistry registry, RequestContextHelper contextHelper) {
         return switch (param.extraction()) {
             case CallSiteExtraction.Direct ignored ->
                 CodeBlock.of("($T) args.get($S)", localType(param), param.name());
@@ -357,9 +368,12 @@ public final class ConditionGlueRenderer {
                 decodeCall(registry, nidk, param.list(), CodeBlock.of("args.get($S)", param.name()));
             case CallSiteExtraction.NestedInputField nif ->
                 nestedExtraction(nif, param, liftLocals, registry);
-            case CallSiteExtraction.ContextArg ignored -> throw new IllegalStateException(
-                "a context-bound condition argument reached the glue renderer; the validator's"
-                + " env-bound rejection must reject committed rows whose bindings need the request env");
+            // Request context is not in the args map: the local reads through the class's own
+            // graphitronContext(env) helper, whose need the collector records so the drain and
+            // the call cannot separate (the shipped-twice missing-helper bug class).
+            case CallSiteExtraction.ContextArg ignored ->
+                CodeBlock.of("($T) $L.getContextArgument(env, $S)",
+                    localType(param), contextHelper.call(), param.name());
             case CallSiteExtraction.InputBean ignored -> throw new IllegalStateException(
                 "InputBean is a @service parameter concept and never a condition binding");
             case CallSiteExtraction.JooqRecord ignored -> throw new IllegalStateException(
@@ -387,6 +401,14 @@ public final class ConditionGlueRenderer {
      */
     private static CodeBlock nestedExtraction(CallSiteExtraction.NestedInputField nif, CallParam param,
             Map<String, String> liftLocals, CompositeDecodeHelperRegistry registry) {
+        if (nif.leaf() instanceof CallSiteExtraction.ContextArg) {
+            // The resolver keeps context params bare when it rewraps a nested condition's value
+            // params (ConditionResolver.rewrapForNested), so this leaf shape is unconstructable;
+            // a generic Map-traversal cast here would silently read the wrong surface.
+            throw new IllegalStateException(
+                "a nested extraction with a request-context leaf reached the glue renderer; "
+                + "context params stay bare ContextArg bindings and never traverse the args map");
+        }
         String lifted = liftLocals.get(nif.outerArgName());
         CodeBlock root = lifted != null
             ? CodeBlock.of("$L", lifted)

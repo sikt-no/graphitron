@@ -22,14 +22,18 @@ import static org.assertj.core.api.Assertions.as;
 import static org.assertj.core.api.InstanceOfAssertFactories.MAP;
 
 /**
- * L6 execution-tier tests for the schema-driven {@code Graphitron.newExecutionInput} factory.
- * Two complementary cases:
+ * L6 execution-tier tests for the schema-driven {@code Graphitron.newExecutionInput} factory and
+ * the request-context reads it feeds:
  *
  * <ul>
- *   <li><b>Round-trip</b>: the schema's one {@code @service(contextArguments: ["userId"])} site
+ *   <li><b>Service round-trip</b>: the {@code @service(contextArguments: ["userId"])} site
  *       ({@code Query.greetingByUser}) is queried, threading {@code userId} through the typed
  *       factory parameter. The {@code UserGreetingService.greet(String)} method receives the
  *       value and renders it into the response.</li>
+ *   <li><b>Condition round-trips</b>: the {@code @condition(contextArguments: ["userId"])}
+ *       coordinates (root and batched child) read the same value through the env-appending
+ *       condition glue signature and narrow their rows by it; the sibling same-named filter
+ *       fixture pins the glue's producer-named locals end to end.</li>
  *   <li><b>Missing-value diagnostic</b>: hand-roll an {@code ExecutionInput.Builder} that
  *       bypasses the factory, omits the {@code userId} stash, and asserts the generated fetcher
  *       throws {@code IllegalStateException} naming the contextArgument and pointing at
@@ -72,6 +76,66 @@ class FilmContextArgumentRoundTripTest {
         assertThat(result.getErrors()).isEmpty();
         assertThat(result.<Map<String, Object>>getData())
             .extractingByKey("greetingByUser").isEqualTo("hello alice");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void conditionContextArgument_rootCoordinate_narrowsByTheThreadedUserId() {
+        // The env-appending glue signature end to end: Query.customersSeenByUser carries
+        // @condition(contextArguments: ["userId"]) with no field arguments at all, so the only
+        // way MARY-rows can come back is the glue method reading userId off the request context
+        // through its own graphitronContext helper.
+        ExecutionInput input = Graphitron.newExecutionInput(dsl, "MARY")
+            .query("{ customersSeenByUser { firstName } }")
+            .build();
+        var result = graphql.execute(input);
+        assertThat(result.getErrors()).isEmpty();
+        java.util.List<Map<String, Object>> rows = result.<Map<String, Object>>getData() == null
+            ? java.util.List.of()
+            : (java.util.List<Map<String, Object>>) result.<Map<String, Object>>getData().get("customersSeenByUser");
+        assertThat(rows).isNotEmpty()
+            .allSatisfy(r -> assertThat((String) r.get("firstName")).isEqualToIgnoringCase("MARY"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void conditionContextArgument_batchedChildCoordinate_narrowsByTheThreadedUserId() {
+        // The fetcher-hosted twin: the same context-bound condition on Store.customersSeenByUser
+        // (a @splitQuery child), threading userId into the batched rows method's glue call.
+        ExecutionInput input = Graphitron.newExecutionInput(dsl, "MARY")
+            .query("{ storeById(store_id: [1]) { customersSeenByUser { firstName } } }")
+            .build();
+        var result = graphql.execute(input);
+        assertThat(result.getErrors()).isEmpty();
+        java.util.List<Map<String, Object>> stores =
+            (java.util.List<Map<String, Object>>) result.<Map<String, Object>>getData().get("storeById");
+        assertThat(stores).hasSize(1);
+        java.util.List<Map<String, Object>> rows =
+            (java.util.List<Map<String, Object>>) stores.get(0).get("customersSeenByUser");
+        assertThat(rows).isNotEmpty()
+            .allSatisfy(r -> assertThat((String) r.get("firstName")).isEqualToIgnoringCase("MARY"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void siblingSameNamedFilterFields_bindAsQualifiedLocalsInOneGlueBody() {
+        // Two sibling inputs each expose a field literally named `name` over different columns;
+        // the glue body binds both as producer-named, outer-qualified locals, the shape the
+        // retired entity layer's fixed parameter list could not compile. Both predicates must
+        // fire: Mary + Smith narrows to the one customer carrying both (the generated
+        // predicates are case-sensitive equalities, matching the seed data's exact case).
+        ExecutionInput input = Graphitron.newExecutionInput(dsl, "test-user")
+            .query("{ customersByTwoNames(a: { name: \"Mary\" }, b: { name: \"Smith\" }) { firstName lastName } }")
+            .build();
+        var result = graphql.execute(input);
+        assertThat(result.getErrors()).isEmpty();
+        java.util.List<Map<String, Object>> rows =
+            (java.util.List<Map<String, Object>>) result.<Map<String, Object>>getData().get("customersByTwoNames");
+        assertThat(rows).isNotEmpty()
+            .allSatisfy(r -> {
+                assertThat((String) r.get("firstName")).isEqualTo("Mary");
+                assertThat((String) r.get("lastName")).isEqualTo("Smith");
+            });
     }
 
     @Test

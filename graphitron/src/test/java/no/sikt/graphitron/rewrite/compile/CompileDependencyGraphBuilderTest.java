@@ -82,8 +82,7 @@ class CompileDependencyGraphBuilderTest {
             "Language");
         var param = new CallParam("id",
             new CallSiteExtraction.SkipMismatchedElement(decode), false, "java.lang.Integer");
-        return new GeneratedConditionFilter(
-            "com.example.gen.conditions.LanguageConditions", "byId", languageTable(),
+        return new GeneratedConditionFilter(languageTable(),
             List.of(param), List.of());
     }
 
@@ -205,26 +204,34 @@ class CompileDependencyGraphBuilderTest {
     }
 
     @Test
-    void typeClassReachesNodeIdEncoderOnlyWhenAnInlineFilterDecodesANodeId() {
+    void glueUnitReachesNodeIdEncoderOnlyWhenAFilterDecodesANodeId() {
+        // (The FilmConditions node itself exists in both graphs: Film carries an
+        // SqlGeneratingField field, and the node registration deliberately over-approximates —
+        // a node whose unit is never emitted render-skips.)
         var without = CompileDependencyGraphBuilder.fromModel(filmProjectsLanguageSchema(List.of()), PKG);
-        assertThat(without.directReferences(PKG + ".types.Film"))
+        assertThat(without.directReferences(PKG + ".conditions.FilmConditions"))
             .doesNotContain(PKG + ".util.NodeIdEncoder");
 
         var with = CompileDependencyGraphBuilder.fromModel(
             filmProjectsLanguageSchema(List.of(nodeIdDecodingFilter())), PKG);
-        // A @nodeId-decoding filter lifts a decode helper onto types.Film, reaching NodeIdEncoder
-        // precisely (the one per-type-growing singleton).
-        assertThat(with.directReferences(PKG + ".types.Film")).contains(PKG + ".util.NodeIdEncoder");
+        // The decode helper lives on the coordinate's glue class since call-site convergence, so
+        // the precise NodeIdEncoder edge (the one per-type-growing singleton) attaches there, not
+        // to the hosting type class; the THROW-mode helper's client-error reference rides along.
+        assertThat(with.directReferences(PKG + ".conditions.FilmConditions"))
+            .contains(PKG + ".util.NodeIdEncoder", PKG + ".schema.GraphitronClientException");
+        assertThat(with.directReferences(PKG + ".types.Film"))
+            .doesNotContain(PKG + ".util.NodeIdEncoder");
     }
 
     @Test
-    void typeClassReferencesGeneratedConditionClassOfInlineFilter() {
-        // The inline filter emits a generated FilmConditions/LanguageConditions method call into the
-        // $fields switch arm, so the host type class references that generated conditions unit.
+    void typeClassReferencesGlueUnitOfInlineFilter() {
+        // The inline filter arm emits one glue call, so the host type class references the
+        // coordinate's own conditions unit (keyed by the field's parent, Film — the retired
+        // entity layer's return-type-keyed LanguageConditions no longer exists).
         var g = CompileDependencyGraphBuilder.fromModel(
             filmProjectsLanguageSchema(List.of(nodeIdDecodingFilter())), PKG);
         assertThat(g.directReferences(PKG + ".types.Film"))
-            .contains(PKG + ".conditions.LanguageConditions");
+            .contains(PKG + ".conditions.FilmConditions");
     }
 
     @Test

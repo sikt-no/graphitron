@@ -48,18 +48,25 @@ class CommandSeamRatchetTest {
     /**
      * Entry points in {@code generators/} still taking the model. Ratchets down to zero.
      * Lowered 24 to 23 when the root conditions shim generator retired into the condition
-     * command's producer and glue renderer.
+     * command's producer and glue renderer, then 23 to 22 when call-site convergence deleted the
+     * entity conditions generator (the WHERE family's second and last model-taking emitter).
      */
-    private static final int MODEL_TAKING_ENTRY_POINTS = 23;
+    private static final int MODEL_TAKING_ENTRY_POINTS = 22;
 
     /**
      * {@code instanceof} sites in {@code generators/} naming a leaf of the seven hierarchies.
-     * Lowered 104 to 100 with the conditions shim generator's retirement.
+     * Lowered 104 to 100 with the conditions shim generator's retirement, then 100 to 97 with
+     * call-site convergence (the entity generator's participant dispatch and the inline hosts'
+     * filter plumbing).
      */
-    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 100;
+    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 97;
 
-    /** {@code case} patterns in {@code generators/} naming a leaf of the seven hierarchies. */
-    private static final int GENERATOR_LEAF_CASE_PATTERNS = 89;
+    /**
+     * {@code case} patterns in {@code generators/} naming a leaf of the seven hierarchies.
+     * Lowered 89 to 87 with call-site convergence (the retired entity conditions generator's
+     * participant dispatch).
+     */
+    private static final int GENERATOR_LEAF_CASE_PATTERNS = 87;
 
     /**
      * Leaf references ({@code instanceof} plus {@code case}) inside {@code plan/}: the relocation
@@ -68,9 +75,13 @@ class CommandSeamRatchetTest {
      * node-fetcher membership gate in {@link no.sikt.graphitron.plan.EmitPlan#produce} reads a
      * {@link no.sikt.graphitron.rewrite.model.GraphitronType} leaf); raised to 10 when the
      * condition command's producer ({@link no.sikt.graphitron.plan.ConditionCommands}) relocated
-     * the WHERE family's coordinate dispatch out of the retired shim generator.
+     * the WHERE family's coordinate dispatch out of the retired shim generator; lowered to 6 when
+     * that producer's membership collapsed onto the
+     * {@link no.sikt.graphitron.rewrite.model.SqlGeneratingField} capability read (identity arms
+     * remain only for the participant-bearing roots, the nesting recursion, and the two
+     * emit-gap backstops).
      */
-    private static final int PLAN_LEAF_REFERENCES = 10;
+    private static final int PLAN_LEAF_REFERENCES = 6;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide

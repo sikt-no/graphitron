@@ -74,20 +74,19 @@ class GeneratedSourcesLintTest {
     }
 
     @Test
-    void entityConditionsClassesHaveNoGraphqlJavaImports() throws IOException {
+    void conditionsClassesImportNoGraphqlJavaBeyondTheEnvAppendingParameter() throws IOException {
         Path conditionsRoot = GENERATED_REWRITE_ROOT.resolve("conditions");
         assertThat(conditionsRoot).exists();
         var offenders = new ArrayList<String>();
         try (Stream<Path> paths = Files.walk(conditionsRoot)) {
             paths.filter(p -> p.toString().endsWith("Conditions.java"))
-                .filter(p -> !p.getFileName().toString().equals("QueryConditions.java"))
-                .filter(p -> !p.getFileName().toString().equals("MutationConditions.java"))
                 .forEach(p -> {
                     try {
                         for (String line : Files.readAllLines(p)) {
                             String trimmed = line.trim();
-                            if (trimmed.startsWith("import graphql.")
-                                    || trimmed.startsWith("import static graphql.")) {
+                            if ((trimmed.startsWith("import graphql.")
+                                    || trimmed.startsWith("import static graphql."))
+                                    && !trimmed.equals("import graphql.schema.DataFetchingEnvironment;")) {
                                 offenders.add(p.getFileName() + "  " + trimmed);
                             }
                         }
@@ -97,10 +96,13 @@ class GeneratedSourcesLintTest {
                 });
         }
         assertThat(offenders)
-            .as("Entity-scoped *Conditions classes (FilmConditions, LanguageConditions, …)\n"
-                + "are pure functions — they must not depend on graphql-java runtime types.\n"
-                + "Env-aware argument extraction and composition live in QueryConditions /\n"
-                + "MutationConditions (the env-aware shim layer), not inside the entity classes.")
+            .as("Condition glue methods are value-shaped — a jOOQ table and a java.util argument\n"
+                + "map in, one Condition out — so a conditions class must not depend on graphql-java\n"
+                + "runtime types, with exactly one stated exception: a coordinate whose @condition\n"
+                + "consumes contextArguments takes the env-appending signature, so the one permitted\n"
+                + "import is DataFetchingEnvironment (read only through the class's own\n"
+                + "graphitronContext helper). Anything else is a leak of resolve-side vocabulary\n"
+                + "into the SQL side.")
             .isEmpty();
     }
 

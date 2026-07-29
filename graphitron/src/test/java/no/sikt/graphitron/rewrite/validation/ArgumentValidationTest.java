@@ -49,7 +49,7 @@ class ArgumentValidationTest {
             List.of()),
 
         WITH_COLUMN_FILTER("GeneratedConditionFilter scalar",
-            tableField(List.of(new GeneratedConditionFilter("TestConditions", "actorsCondition",
+            tableField(List.of(new GeneratedConditionFilter(
                 TestFixtures.tableRef("film", "FILM", "Film", List.of()),
                 List.of(new CallParam("id", new CallSiteExtraction.Direct(), false, "java.lang.Integer")),
                 List.of(new BodyParam.Eq("id", new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"),

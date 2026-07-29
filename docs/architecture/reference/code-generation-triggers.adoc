@@ -24,7 +24,7 @@ GraphitronSchema
 Generators
   ├── TypeFetcherGenerator     →  fetchers.*Fetchers
   ├── TypeClassGenerator       →  types.*
-  └── TypeConditionsGenerator  →  conditions.*Conditions
+  └── ConditionGlueRenderer    →  conditions.*Conditions (rendered from ConditionCommand rows)
 ----
 
 Each sealed variant maps to specific generator output. The sections below show the full
@@ -647,13 +647,13 @@ Four families, by what they emit. The Generators package holds emitter helpers (
 |===
 | Family | Generators | What lands
 
-| Fetcher emission | `TypeFetcherGenerator`, `TypeClassGenerator`, `TypeConditionsGenerator` | `fetchers.*Fetchers` (wiring + field fetcher/rows methods); `types.*` (`$fields(sel, table, env)` projection); `conditions.*Conditions` (pure-function WHERE predicates)
+| Fetcher emission | `TypeFetcherGenerator`, `TypeClassGenerator`; `ConditionGlueRenderer` (command-driven) | `fetchers.*Fetchers` (wiring + field fetcher/rows methods); `types.*` (`$fields(sel, table, env)` projection); `conditions.*Conditions` (per-parent condition glue, one method per filtered coordinate)
 | Schema emission (`schema/`) | `ObjectTypeGenerator`, `InputTypeGenerator`, `EnumTypeGenerator`, `GraphitronFacadeGenerator`, `GraphitronSchemaClassGenerator`, `FetcherRegistrationsEmitter`, `DirectiveDefinitionEmitter`, `AppliedDirectiveEmitter`, `GraphQLValueEmitter`, `InputDirectiveInputTypes` | The runtime SDL classes graphql-java consumes: per-type wiring entries, applied-directive emission, registration glue
 | Error-handling emission (`schema/`) | `ConstraintViolationsClassGenerator`, `ErrorMappingsClassGenerator`, `ErrorRouterClassGenerator` | The typed-error classes service payloads project errors into; mappings constant + router that selects per-exception
 | Runtime helpers (`util/`) | `ColumnFetcherClassGenerator`, `ConnectionResultClassGenerator`, `ConnectionHelperClassGenerator`, `GraphitronValuesClassGenerator`, `EntityFetcherDispatchClassGenerator`, `GraphitronContextInterfaceGenerator`, `NodeIdEncoderClassGenerator`, `OrderByResultClassGenerator`, `QueryNodeFetcherClassGenerator` | Per-app emitted runtime classes (`ColumnFetcher`, `ConnectionResult`, `ConnectionHelper`, `GraphitronValues`, `EntityFetcherDispatch`, `GraphitronContext`, `NodeIdEncoder`, `OrderByResult`, `QueryNodeFetcher`) — the runtime extension points graphql-java and the federation library plug into
 |===
 
-`GeneratorUtils` (root of `generators/`) holds shared building blocks reached from any family ; `ResolvedTableNames`, key-type construction, constants. `QueryConditionsGenerator` is part of fetcher emission and emits the `(env, ...) -> typed-args` adapter that fronts user-written `*Conditions` composers (see the "Wire boundaries are typed adapter / composer pairs" principle in xref:../explanation/development-principles.adoc[Graphitron Development Principles]).
+`GeneratorUtils` (root of `generators/`) holds shared building blocks reached from any family ; `ResolvedTableNames`, key-type construction, constants. Condition glue is command-driven: the plan's `ConditionCommands` producer mints one row per filtered coordinate and `render/ConditionGlueRenderer` emits the per-parent `*Conditions` classes whose methods take the jOOQ table and the argument map (the typed adapter / composer pairing now lives inside one glue body; see the "Wire boundaries are typed adapter / composer pairs" principle in xref:../explanation/development-principles.adoc[Graphitron Development Principles]).
 
 === Directives
 

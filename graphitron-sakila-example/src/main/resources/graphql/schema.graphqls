@@ -41,8 +41,26 @@ type Rental @table(name: "rental") {
     customerId:  Int! @field(name: "customer_id")
 }
 
+# Sibling filter inputs whose fields share one name (`name`) over different columns; consumed
+# together on Query.customersByTwoNames so one glue body binds both (outer-qualified locals).
+input CustomerFirstNameOnly { name: String @field(name: "first_name") }
+input CustomerLastNameOnly  { name: String @field(name: "last_name") }
+
 type Query {
     customers(active: Boolean @field(name: "ACTIVEBOOL")): [Customer!]! @auth(role: "admin")
+    # Env-appending condition glue fixture: @condition(contextArguments:) on a root coordinate.
+    # The generated glue method takes (table, args, env) and reads userId through the conditions
+    # class's own graphitronContext helper; the retired shim emitted a call to a helper its class
+    # never carried, so this coordinate used to be a deferred rejection.
+    customersSeenByUser: [Customer!]! @condition(condition: {
+        className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+        method: "customerSeenByUser"}, contextArguments: ["userId"])
+    # Sibling same-named filter fields: the two `name` input fields land as producer-named,
+    # outer-qualified locals in one glue body (aName / bName), the collision the retired entity
+    # layer's fixed parameter list could not represent (its generated method declared `name`
+    # twice and failed the consumer's javac).
+    customersByTwoNames(a: CustomerFirstNameOnly, b: CustomerLastNameOnly): [Customer!]!
+        @defaultOrder(primaryKey: true)
     # R190 fixture: the one @service(contextArguments: ...) site in the example schema.
     # Drives the generated Graphitron.newExecutionInput(DSLContext, String userId) factory's
     # typed userId slot; the L6 round-trip + missing-value diagnostic tests exercise this field.
@@ -103,6 +121,16 @@ type Query {
     # request's original positions. See QueryNodeFetcherClassGenerator.
     nodes(ids: [ID!]!): [Node]
     languageByKey(language_id: [Int] @lookupKey @field(name: "language_id")): [Language!]!
+    # Condition-convergence fixture: an authored @condition on a lookup coordinate. The lookup
+    # keys ride the VALUES join; the non-key authored filter is composed beside it (inline in
+    # the lookup rows method before call-site convergence, one glue call after). override: true
+    # suppresses the implicit column predicate so only the authored prefix-match remains.
+    languagesByKeyFiltered(
+        language_id: [Int] @lookupKey @field(name: "language_id"),
+        name: String @field(name: "name") @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+            method: "languageNameStartsWith"}, override: true)
+    ): [Language!]!
     customerById(customer_id: [ID] @lookupKey, store_id: ID @lookupKey): [Customer!]!
     storeById(store_id: [Int] @lookupKey @field(name: "store_id")): [Store!]!
     categoryById(category_id: [Int] @lookupKey @field(name: "category_id")): [Category!]!
@@ -120,7 +148,7 @@ type Query {
     filmActorByNodeId(id: [ID!]! @lookupKey): [FilmActor!]!
     # R79 compilation-tier regression guard: composite-PK NodeId on a *non-lookupKey* arg, fed
     # through the consumer-resolved input type. Reaches FieldBuilder.compositeImplicitBodyParam →
-    # BodyParam.RowIn → TypeConditionsGenerator's typed `DSL.row(table.c1, table.c2).in(ids)`
+    # BodyParam.RowIn → the condition glue's typed `DSL.row(table.c1, table.c2).in(ids)`
     # form. Before R79 the generated source did not compile (Row vs Row<N> assignment).
     filmActorsByCompositeNodeIds(filter: FilmActorCompositeNodeIdFilter): [FilmActor!]!
     # R131 compilation-tier guard: singular composite-PK same-table @nodeId on a filter
@@ -1073,6 +1101,15 @@ type Store @table(name: "store") {
         @reference(path: [{key: "customer_store_id_fkey"}]) @defaultOrder(primaryKey: true)
     customersByFirstNameSplit(filter: CustomerFirstNameFilter): [Customer!]! @splitQuery
         @reference(path: [{key: "customer_store_id_fkey"}]) @defaultOrder(primaryKey: true)
+    # Condition-convergence fixture: @condition(contextArguments:) on a @splitQuery child. The
+    # userId value arrives from the request context (Graphitron.newExecutionInput's typed slot,
+    # same name and Java type as the @service site, so the context-argument classifier folds
+    # them), not from a field argument; the batched rows method threads it into the condition.
+    customersSeenByUser: [Customer!]! @splitQuery
+        @reference(path: [{key: "customer_store_id_fkey"}]) @defaultOrder(primaryKey: true)
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+            method: "customerSeenByUser"}, contextArguments: ["userId"])
     # R424: inline @reference child list with a `first` pagination arg. Pre-R424 the limit was read
     # off the ancestor env (env.getArgument("first")), so `first` was silently ignored; the fix reads
     # it off the inline field's SelectedField.
@@ -1780,6 +1817,15 @@ type FilmMeta {
 # film_actor junction with an @lookupKey VALUES+ON keyset.
 type FilmInlineBundle {
     language: Language @reference(path: [{key: "film_language_id_fkey"}])
+    # Condition-convergence fixture: an authored @condition on a field nested inside a plain
+    # nesting type. The nested coordinate has no schema.types() entry, so this pins the one
+    # accepted nested condition shape (authored; the generated form is a deferred rejection).
+    # override: true suppresses the implicit name-equality predicate that would otherwise be a
+    # rejected nested generated filter.
+    languageFiltered(name: String @field(name: "name") @condition(condition: {
+        className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+        method: "languageNameStartsWith"}, override: true)): Language
+        @reference(path: [{key: "film_language_id_fkey"}])
     actorsByKey(actor_id: [Int!] @lookupKey): [Actor!]! @reference(path: [
         {key: "film_actor_film_id_fkey"},
         {key: "film_actor_actor_id_fkey"}

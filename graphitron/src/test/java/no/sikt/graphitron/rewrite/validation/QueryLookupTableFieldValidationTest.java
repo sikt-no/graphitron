@@ -38,7 +38,7 @@ class QueryLookupTableFieldValidationTest {
             ? new BodyParam.In(name, FILM_ID_COL, "java.lang.Integer", nonNull, new CallSiteExtraction.Direct())
             : new BodyParam.Eq(name, FILM_ID_COL, "java.lang.Integer", nonNull, new CallSiteExtraction.Direct());
         var callParam = new CallParam(name, new CallSiteExtraction.Direct(), list, FILM_ID_COL.columnClass());
-        return new GeneratedConditionFilter("TestConditions", "testCondition", FILM_TABLE,
+        return new GeneratedConditionFilter(FILM_TABLE,
             List.of(callParam), List.of(bodyParam));
     }
 
@@ -50,8 +50,8 @@ class QueryLookupTableFieldValidationTest {
 
     private static final String GENERATED_FILTER_ON_LOOKUP =
         "Field 'Query.filmById': generated column filters on a lookup coordinate are not emitted: "
-        + "lookup keys ride the VALUES join and no conditions method is generated for a lookup field, "
-        + "so the emitted call would not compile; use an authored @condition method, or drop the filter";
+        + "lookup keys ride the VALUES join and no emitter renders a generated column predicate for "
+        + "a lookup field; use an authored @condition method, or drop the filter";
 
     enum Case implements ValidatorCase {
 

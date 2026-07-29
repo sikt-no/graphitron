@@ -53,59 +53,18 @@ public record CallParam(
     }
 
     /**
-     * True when emitting this argument's extraction produces a Java unchecked cast, so the enclosing
-     * generated method must carry {@code @SuppressWarnings("unchecked")}. The single source of truth
-     * for this fact: every generator that hosts an inline condition-method call (the multitable
-     * {@code MultiTablePolymorphicEmitter}
-     * fetcher) folds over its {@link CallParam}s and asks here, rather than each re-deriving the same
-     * {@code list() && extraction instanceof …} predicate (Generation-thinking: a fact two consumers
-     * branch on belongs on the model).
-     *
-     * <p>Today the only such shape is a list-typed {@link CallSiteExtraction.NestedInputField} whose
-     * leaf casts, which extracts as {@code (List<X>) map.get(key)} — {@code Map.get} is statically
-     * {@code Object} and {@code List<X>} is not reifiable, so the cast is unchecked even though
-     * graphql-java has already coerced the input-object field to {@code List<X>}. A
-     * {@link CallSiteExtraction.JooqConvert} leaf does not cast (its {@code instanceof List<?>}
-     * guard plus {@code DSL.val} coercion own the runtime shape), so it is carved out. If a future
-     * extraction starts emitting an unchecked cast, its arm is added here once and both hosts pick
-     * it up.
+     * True when this binding reads the request context ({@code @condition(contextArguments:)}),
+     * either directly or as a nested extraction's leaf. This is the leaf fact behind the
+     * env-appending glue signature: a condition row with any context-reading binding takes a
+     * {@code DataFetchingEnvironment} parameter after the argument map, and every consumer of the
+     * fact (the producer, the glue renderer, each glue call site, the inline occurrence guard)
+     * reads this one predicate rather than re-deriving the extraction match.
      */
-    public boolean emitsUncheckedCast() {
-        return list && extraction instanceof CallSiteExtraction.NestedInputField nif
-            && !(nif.leaf() instanceof CallSiteExtraction.JooqConvert);
-    }
-
-    /**
-     * True when emitting this argument under the {@code FromSelectedField} argument source (the
-     * two inline emission sites) produces a Java unchecked cast, so the enclosing {@code $fields}
-     * method must carry {@code @SuppressWarnings("unchecked")}. This is the source-aware companion to
-     * {@link #emitsUncheckedCast()}: the {@code $fields} host asks here, while the {@code Env} host
-     * ({@code MultiTablePolymorphicEmitter}) asks
-     * {@link #emitsUncheckedCast()}. Keeping both predicates on the model, keyed by source, is why
-     * broadening the source-agnostic {@code emitsUncheckedCast} would wrongly stamp the {@code Env}
-     * hosts (whose reads target-type and are warning-free) and break their byte-identical output.
-     *
-     * <p>The casts that exist only under {@code FromSelectedField} (because {@code Map.get} is
-     * statically {@code Object}, unlike {@code env.getArgument}'s generic target-typing):
-     * <ul>
-     *   <li>a list-typed {@link CallSiteExtraction.Direct} arg — extracts as {@code (List) sf.getArguments().get(name)};</li>
-     *   <li>a list-typed {@link CallSiteExtraction.JooqConvert} arg — its {@code <name>Keys} pre-lift
-     *       casts to {@code (List<String>)};</li>
-     *   <li>a list-typed {@link CallSiteExtraction.NestedInputField} whose leaf casts — identical to
-     *       the {@code Env} case (the leaf cast is source-independent), so this one also shows up in
-     *       {@link #emitsUncheckedCast()}. A {@link CallSiteExtraction.JooqConvert} leaf is carved out
-     *       (its {@code instanceof List<?>} guard + {@code DSL.val} coercion own the runtime shape).</li>
-     * </ul>
-     * Scalar {@code Direct} / {@code EnumValueOf} casts are checked (reifiable target); the
-     * {@code first} pagination read casts to {@code (Integer)}, also checked; neither counts.
-     */
-    public boolean emitsUncheckedCastFromSelectedField() {
-        if (!list) return false;
-        if (extraction instanceof CallSiteExtraction.Direct) return true;
-        if (extraction instanceof CallSiteExtraction.JooqConvert) return true;
-        if (extraction instanceof CallSiteExtraction.NestedInputField nif) {
-            return !(nif.leaf() instanceof CallSiteExtraction.JooqConvert);
+    public boolean readsRequestContext() {
+        if (extraction instanceof CallSiteExtraction.ContextArg) {
+            return true;
         }
-        return false;
+        return extraction instanceof CallSiteExtraction.NestedInputField nif
+            && nif.leaf() instanceof CallSiteExtraction.ContextArg;
     }
 }

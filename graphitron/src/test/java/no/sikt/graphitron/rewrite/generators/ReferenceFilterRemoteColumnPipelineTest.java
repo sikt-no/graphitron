@@ -34,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Assertions are at the model level (the {@link GeneratedConditionFilter}'s body params), per the
  * design principles; the EXISTS body shape itself is locked at the unit tier in
- * {@code TypeConditionsGeneratorTest}, and semantic correctness at the execution tier in
+ * the glue renderer's per-arm tests, and semantic correctness at the execution tier in
  * {@code GraphQLQueryTest}. The discrimination guard (nodeId FK-target stays local) and the
  * condition-join-path rejection round out the matrix.
  */

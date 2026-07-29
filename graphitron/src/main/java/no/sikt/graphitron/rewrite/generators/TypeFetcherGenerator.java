@@ -536,7 +536,7 @@ public class TypeFetcherGenerator {
                     var lookupTableClass = GeneratorUtils.ResolvedTableNames
                         .of(lookupTableRef, qlf.returnType().returnTypeName(), outputPackage).jooqTableClass();
                     builder.addMethod(buildQueryLookupFetcher(ctx, qlf, outputPackage));
-                    builder.addMethod(buildQueryLookupRowsMethod(ctx, qlf, outputPackage, registry));
+                    builder.addMethod(buildQueryLookupRowsMethod(ctx, qlf, outputPackage));
                     builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(qlf, lookupTableClass));
                 }
                 case QueryField.QueryTableField qtf -> {
@@ -573,11 +573,11 @@ public class TypeFetcherGenerator {
                     // source-shape fact gates the key lift and the record-arm prelude inside
                     // buildBatchedDataFetcher; the framing is shared.
                     builder.addMethod(buildBatchedDataFetcher(ctx, btf, btf.returnType(), btf.sourceKey(), btf.lift(), parentTable, resultType, sourceIsOutcome, outputPackage));
-                    builder.addMethod(SplitRowsMethodEmitter.buildForBatchedTable(ctx, btf, outputPackage, registry));
+                    builder.addMethod(SplitRowsMethodEmitter.buildForBatchedTable(ctx, btf, outputPackage));
                 }
                 case ChildField.BatchedLookupTableField blf -> {
                     builder.addMethod(buildBatchedDataFetcher(ctx, blf, blf.returnType(), blf.sourceKey(), blf.lift(), parentTable, resultType, sourceIsOutcome, outputPackage));
-                    builder.addMethod(SplitRowsMethodEmitter.buildForBatchedLookupTable(ctx, blf, outputPackage, registry));
+                    builder.addMethod(SplitRowsMethodEmitter.buildForBatchedLookupTable(ctx, blf, outputPackage));
                     // Emit the VALUES-building input-rows helper alongside the rows method.
                     // The env-based variant (buildInputRowsMethod) reads args from
                     // env.getArgument(name) — correct for a batched fetcher whose @lookupKey args
@@ -611,12 +611,12 @@ public class TypeFetcherGenerator {
                     var participantFilters = participantFiltersByTypename(f.participantFilters());
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
-                            .emitConnectionMethods(ctx, f.name(), f.participants(), participantFilters, Map.of(),
-                                conn.defaultPageSize(), null, null, null, null, outputPackage, registry)
+                            .emitConnectionMethods(ctx, f.parentTypeName(), f.name(), f.participants(), participantFilters, Map.of(),
+                                conn.defaultPageSize(), null, null, null, null, outputPackage)
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
-                            .emitMethods(ctx, f.name(), f.participants(), participantFilters, f.returnType().wrapper().isList(), outputPackage, registry)
+                            .emitMethods(ctx, f.parentTypeName(), f.name(), f.participants(), participantFilters, f.returnType().wrapper().isList(), outputPackage)
                             .forEach(builder::addMethod);
                     }
                 }
@@ -624,12 +624,12 @@ public class TypeFetcherGenerator {
                     var participantFilters = participantFiltersByTypename(f.participantFilters());
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
-                            .emitConnectionMethods(ctx, f.name(), f.participants(), participantFilters, Map.of(),
-                                conn.defaultPageSize(), null, null, null, null, outputPackage, registry)
+                            .emitConnectionMethods(ctx, f.parentTypeName(), f.name(), f.participants(), participantFilters, Map.of(),
+                                conn.defaultPageSize(), null, null, null, null, outputPackage)
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
-                            .emitMethods(ctx, f.name(), f.participants(), participantFilters, f.returnType().wrapper().isList(), outputPackage, registry)
+                            .emitMethods(ctx, f.parentTypeName(), f.name(), f.participants(), participantFilters, f.returnType().wrapper().isList(), outputPackage)
                             .forEach(builder::addMethod);
                     }
                 }
@@ -685,9 +685,9 @@ public class TypeFetcherGenerator {
                 case ChildField.InterfaceField f -> {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
-                            .emitConnectionMethods(ctx, f.name(), f.participants(), Map.of(), f.participantJoinPaths(),
+                            .emitConnectionMethods(ctx, f.parentTypeName(), f.name(), f.participants(), Map.of(), f.participantJoinPaths(),
                                 conn.defaultPageSize(), f.parentSourceKey(), f.parentKeyLift(), f.parentKeyOwnerTable(),
-                                f.parentResultType(), outputPackage, registry)
+                                f.parentResultType(), outputPackage)
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
@@ -700,9 +700,9 @@ public class TypeFetcherGenerator {
                 case ChildField.UnionField f -> {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
-                            .emitConnectionMethods(ctx, f.name(), f.participants(), Map.of(), f.participantJoinPaths(),
+                            .emitConnectionMethods(ctx, f.parentTypeName(), f.name(), f.participants(), Map.of(), f.participantJoinPaths(),
                                 conn.defaultPageSize(), f.parentSourceKey(), f.parentKeyLift(), f.parentKeyOwnerTable(),
-                                f.parentResultType(), outputPackage, registry)
+                                f.parentResultType(), outputPackage)
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
@@ -1625,12 +1625,10 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * The one-line glue call every root fetcher with live filters emits:
-     * {@code Condition condition = <Parent>Conditions.<field>Condition(<alias>, env.getArguments());}.
-     * The class and method names are the minted
-     * {@link no.sikt.graphitron.plan.GeneratedUnits#conditionMethod} reference, the same formula
-     * the condition producer commits, so the two ends cannot drift; the argument map is the env's
-     * coerced arguments ({@code getArgument} is {@code getArguments().get}).
+     * The one-line glue call every fetcher-hosted coordinate with live filters emits:
+     * {@code Condition condition = <Parent>Conditions.<field>Condition(<alias>, env.getArguments()[, env]);}.
+     * Naming and the env-appending fork live in {@link ConditionGlueCall}; the argument map is
+     * the env's coerced arguments ({@code getArgument} is {@code getArguments().get}).
      *
      * <p>A coordinate with no live filters has no condition row and no glue method; its fetcher
      * composes the neutral condition from that absence. (The retired shim emitted a
@@ -1644,12 +1642,10 @@ public class TypeFetcherGenerator {
                 .addStatement("$T condition = $T.noCondition()", CONDITION, DSL)
                 .build();
         }
-        var glue = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage)
-            .conditionMethod(parentTypeName, fieldName);
         return CodeBlock.builder()
-            .addStatement("$T condition = $T.$L($L, env.getArguments())",
-                CONDITION, ClassName.get(glue.owner().packageName(), glue.owner().simpleName()),
-                glue.methodName(), srcAlias)
+            .addStatement("$T condition = $L", CONDITION,
+                ConditionGlueCall.expression(parentTypeName, fieldName, filters, srcAlias,
+                    CodeBlock.of("env.getArguments()"), outputPackage))
             .build();
     }
 
@@ -5332,19 +5328,23 @@ public class TypeFetcherGenerator {
         } else {
             var units = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage);
             var baseRef = units.facetBaseConditionMethod(qtf.parentTypeName(), qtf.name());
-            var conditionsClass = ClassName.get(baseRef.owner().packageName(), baseRef.owner().simpleName());
             var conditionClass = ClassName.get("org.jooq", "Condition");
             var facetSpecRuntime = connectionResultClass.nestedClass("FacetSpec");
-            builder.addStatement("$T facetBase = $T.$L($L, env.getArguments())",
-                conditionClass, conditionsClass, baseRef.methodName(), tableLocal);
+            // The fragment methods fork their signature with the row (env-appending is
+            // row-grained), so the calls derive through the same shared expression the glue
+            // call sites use.
+            builder.addStatement("$T facetBase = $L", conditionClass,
+                ConditionGlueCall.expression(baseRef, qtf.filters(), tableLocal,
+                    CodeBlock.of("env.getArguments()")));
             builder.addStatement("$T<String, $T> facetConditions = new $T<>()",
                 ClassName.get("java.util", "Map"), conditionClass,
                 ClassName.get("java.util", "LinkedHashMap"));
             for (var facet : facets) {
-                builder.addStatement("facetConditions.put($S, $T.$L($L, env.getArguments()))",
-                    facet.inputFieldName(), conditionsClass,
-                    units.facetConditionMethod(qtf.parentTypeName(), qtf.name(), facet.inputFieldName()).methodName(),
-                    tableLocal);
+                builder.addStatement("facetConditions.put($S, $L)",
+                    facet.inputFieldName(),
+                    ConditionGlueCall.expression(
+                        units.facetConditionMethod(qtf.parentTypeName(), qtf.name(), facet.inputFieldName()),
+                        qtf.filters(), tableLocal, CodeBlock.of("env.getArguments()")));
             }
             var specsArgs = CodeBlock.builder();
             boolean firstSpec = true;
@@ -5724,8 +5724,7 @@ public class TypeFetcherGenerator {
      * }
      * }</pre>
      */
-    private static MethodSpec buildQueryLookupRowsMethod(TypeFetcherEmissionContext ctx, QueryField.QueryLookupTableField field, String outputPackage,
-            CompositeDecodeHelperRegistry registry) {
+    private static MethodSpec buildQueryLookupRowsMethod(TypeFetcherEmissionContext ctx, QueryField.QueryLookupTableField field, String outputPackage) {
         var tableRef = field.returnType().table();
         var names = GeneratorUtils.ResolvedTableNames.of(tableRef, field.returnType().returnTypeName(), outputPackage);
 
@@ -5738,27 +5737,11 @@ public class TypeFetcherGenerator {
         String tableLocal = names.tableLocalName();
 
         // Declare the WHERE condition for non-key filters (field-level @condition or per-arg
-        // @condition). Lookup-key args flow through LookupValuesJoinEmitter and never
-        // appear here; the loop iterates only ConditionFilter / non-lookup GeneratedConditionFilter
-        // entries. For pure-@lookupKey fields (the common case) filters() is empty and this is a
-        // no-op that jOOQ elides.
-        builder.addStatement("$T condition = $T.noCondition()", CONDITION, DSL);
-        // Declare an aliased FK-target table local per join hop for every FK-target @nodeId
-        // override @condition, so each is emitted as a correlated EXISTS rather than mis-passing the
-        // lookup's own table. Top-level (non-recursive) method, so static SQL aliases suffice.
-        var fkDeclarations = CodeBlock.builder();
-        var fkTargetAliases = FkTargetConditionEmitter.declareAliases(fkDeclarations, field.filters(), tableLocal, false);
-        builder.addCode(fkDeclarations.build());
-        for (var filter : field.filters()) {
-            for (var param : filter.callParams()) {
-                if (param.extraction() instanceof CallSiteExtraction.JooqConvert && param.list()) {
-                    builder.addStatement("$T<$T> $L = env.getArgument($S)",
-                        LIST, String.class, toCamelCase(param.name()) + "Keys", param.name());
-                }
-            }
-            builder.addStatement("condition = condition.and($L)",
-                FkTargetConditionEmitter.emitTerm(ctx, filter, tableLocal, registry, null, fkTargetAliases, new ArgumentValueSource.Env()));
-        }
+        // @condition), one glue call composed beside the VALUES join. Lookup-key args flow
+        // through LookupValuesJoinEmitter and never appear here. For pure-@lookupKey fields (the
+        // common case) filters() is empty and the neutral condition is composed from that
+        // absence.
+        builder.addCode(buildConditionCall(field.parentTypeName(), field.name(), field.filters(), tableLocal, outputPackage));
 
         var typeFieldsCall = CodeBlock.of("$T.$$fields(env.getSelectionSet(), $L, env)",
             names.typeClass(), tableLocal);

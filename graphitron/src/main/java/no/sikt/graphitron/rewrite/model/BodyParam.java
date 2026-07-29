@@ -3,9 +3,9 @@ package no.sikt.graphitron.rewrite.model;
 import java.util.List;
 
 /**
- * One parameter of a generated condition method, as seen from the method body generator.
- * Carries what {@link no.sikt.graphitron.rewrite.generators.TypeConditionsGenerator} needs
- * to emit both the method signature and the method body for one filter argument.
+ * One parameter of a generated condition predicate, as seen from the body side. Carries what
+ * the condition producer ({@link no.sikt.graphitron.plan.ConditionCommands}) needs to turn one
+ * filter argument into a column term the glue renderer renders directly.
  *
  * <p>{@link #nonNull()} is the effective runtime nullability at the call site: the AND of
  * the binding source's own declared nullability and every enclosing link's nullability
@@ -117,11 +117,10 @@ public sealed interface BodyParam permits BodyParam.ColumnPredicate, BodyParam.R
      * predicate is an ordinary {@link ColumnPredicate} whose {@link ColumnRef}s are bound to
      * the terminal table; {@link #joinPath} carries how to reach that table.
      *
-     * <p>{@link no.sikt.graphitron.rewrite.generators.TypeConditionsGenerator} emits this as a
-     * correlated {@code DSL.exists(...)} ANDed into the method's condition. The method
-     * signature, call-site extraction, and null / empty-list guards are identical to the
-     * {@link #inner} local predicate; only the SQL shape differs, so every accessor delegates
-     * to {@code inner}.
+     * <p>{@link no.sikt.graphitron.render.ConditionGlueRenderer} emits this as a correlated
+     * {@code DSL.exists(...)} ANDed into the glue method's condition. The call-site extraction
+     * and null / empty-list guards are identical to the {@link #inner} local predicate; only
+     * the SQL shape differs, so every accessor delegates to {@code inner}.
      *
      * <p>The wrapping keeps the local-vs-remote axis off the operator/value-arity
      * {@link ColumnPredicate} taxonomy, mirroring how {@link FkTargetConditionFilter} wraps a

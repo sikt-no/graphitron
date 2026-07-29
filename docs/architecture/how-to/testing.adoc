@@ -58,7 +58,7 @@ Structural invariants on individual classifiers, builders, emitters, and runtime
 
 Three sub-families:
 
-*Generator unit tests* (`TypeFetcherGeneratorTest`, `TypeClassGeneratorTest`, `TypeConditionsGeneratorTest`, `GeneratorCoverageTest`; and the `generators/schema/` subdirectory: `EnumTypeGeneratorTest`, `GraphitronFacadeGeneratorTest`, `InputTypeGeneratorTest`, `ObjectTypeGeneratorTest`, etc.).
+*Generator unit tests* (`TypeFetcherGeneratorTest`, `TypeClassGeneratorTest`, `GeneratorCoverageTest`; and the `generators/schema/` subdirectory: `EnumTypeGeneratorTest`, `GraphitronFacadeGeneratorTest`, `InputTypeGeneratorTest`, `ObjectTypeGeneratorTest`, etc.).
 Take pre-built model fixtures via `TestFixtures`; assert `TypeSpec` shape (method names, return types, parameter signatures).
 Banned: code-string body matching on the generated `MethodSpec` body; that is what compilation and execution cover.
 

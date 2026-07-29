@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite.generators;
 
-import no.sikt.graphitron.render.CompositeDecodeHelperRegistry;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
@@ -10,80 +9,21 @@ import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
-import no.sikt.graphitron.rewrite.model.WhereFilter;
 
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
-import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
-import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.toCamelCase;
-
 /**
- * Emits argument-list and per-argument extraction code for condition-method calls:
- * the shared emission surface for the {@code <ConditionsClass>.<method>(table, argN...)}
- * call pattern, consumed by {@link TypeFetcherGenerator} (filter/where composition in
- * fetcher bodies) and {@link InlineTableFieldEmitter} (inline-subquery WHERE) among others.
+ * Emits argument-list and per-argument extraction code for method-backed developer calls (the
+ * child {@code @service} arms). The condition-method call surface this class once shared with the
+ * WHERE emitters retired with call-site convergence: condition extraction renders inside the
+ * condition glue ({@code no.sikt.graphitron.render.ConditionGlueRenderer}), and every WHERE
+ * consumer emits one glue call ({@link ConditionGlueCall}). What stays here is the
+ * {@link ParamSource}-driven service-call emission, whose reads are always environment-rooted.
  */
 public final class ArgCallEmitter {
 
     private ArgCallEmitter() {}
-
-    /**
-     * Builds the argument list for one condition method call: the table-alias local
-     * first, then one arg per {@link CallParam}. {@code srcAlias} names the jOOQ
-     * table-alias local variable in the caller's scope (e.g. {@code filmTable}),
-     * passed through to {@link #buildArgExtraction} so the {@code JooqConvert} branch
-     * resolves the same local. No extraction arm reads {@code conditionsClassName}.
-     */
-    public static CodeBlock buildCallArgs(TypeFetcherEmissionContext ctx, List<CallParam> params, String conditionsClassName, String srcAlias) {
-        return buildCallArgs(ctx, params, conditionsClassName, srcAlias, null, null);
-    }
-
-    /**
-     * Variant that accepts a {@link CompositeDecodeHelperRegistry}. NodeId decode chains lift
-     * to per-class private helpers registered through it; the call site emits
-     * {@code <helper>(<wireExpr>)}. Other extraction shapes ignore the registry.
-     */
-    public static CodeBlock buildCallArgs(TypeFetcherEmissionContext ctx, List<CallParam> params,
-            String conditionsClassName, String srcAlias, CompositeDecodeHelperRegistry registry) {
-        return buildCallArgs(ctx, params, conditionsClassName, srcAlias, registry, null);
-    }
-
-    /**
-     * Variant that additionally accepts {@code liftedOuters}, a per-method map from
-     * {@link CallSiteExtraction.NestedInputField#outerArgName()} to a local-variable name
-     * that already holds the {@code Map<?, ?>} cast of {@code env.getArgument(outerArg)}.
-     * When an extraction's outer arg is in the map, the depth-0 step of the chain skips
-     * the {@code instanceof Map<?, ?> map1} rebind in favour of a {@code <local> != null}
-     * guard against the lifted local, deduping the rebind when several body params on a
-     * single method share an outer arg.
-     */
-    public static CodeBlock buildCallArgs(TypeFetcherEmissionContext ctx, List<CallParam> params,
-            String conditionsClassName, String srcAlias, CompositeDecodeHelperRegistry registry,
-            Map<String, String> liftedOuters) {
-        return buildCallArgs(ctx, params, conditionsClassName, srcAlias, registry, liftedOuters,
-            new ArgumentValueSource.Env());
-    }
-
-    /**
-     * Source-aware variant: {@code source} routes the runtime argument-value read to either
-     * {@code env.getArgument(name)} ({@link ArgumentValueSource.Env}, root/{@code @splitQuery}
-     * sites) or {@code <sf>.getArguments().get(name)}
-     * ({@link ArgumentValueSource.FromSelectedField}, the two inline emitters, whose {@code env} is
-     * the ancestor fetcher's). Only the {@code getArgument}-shaped read forks; the condition and
-     * decode logic is source-independent.
-     */
-    public static CodeBlock buildCallArgs(TypeFetcherEmissionContext ctx, List<CallParam> params,
-            String conditionsClassName, String srcAlias, CompositeDecodeHelperRegistry registry,
-            Map<String, String> liftedOuters, ArgumentValueSource source) {
-        var args = CodeBlock.builder();
-        args.add("$L", srcAlias);
-        for (var param : params) {
-            args.add(", $L", buildArgExtraction(ctx, param, conditionsClassName, srcAlias, registry, liftedOuters, source));
-        }
-        return args.build();
-    }
 
     /**
      * Builds the argument list for a method-backed call, iterating {@link MethodRef#params()}
@@ -94,10 +34,10 @@ public final class ArgCallEmitter {
      * {@code ServiceRecordField} rows-method body. Root service permits emit their calls
      * elsewhere and do not reach this helper.
      *
-     * <p>Unlike {@link #buildCallArgs}, there is no implicit first argument: the helper
-     * emits exactly the comma-separated argument expressions in user-declared order,
-     * letting the caller wrap with whatever surrounding code (a {@code dsl} local,
-     * a projection, a {@code return} statement) the per-leaf shape requires.
+     * <p>There is no implicit first argument: the helper emits exactly the comma-separated
+     * argument expressions in user-declared order, letting the caller wrap with whatever
+     * surrounding code (a {@code dsl} local, a projection, a {@code return} statement) the
+     * per-leaf shape requires.
      *
      * @param method            the developer method to call.
      * @param tableExpression   every caller passes {@code null}: a {@code @service} method
@@ -216,177 +156,54 @@ public final class ArgCallEmitter {
             }
             return buildListAwarePathExtraction(arg.path(), param.typeName());
         }
-        return buildArgExtraction(
-            ctx,
-            new CallParam(arg.graphqlArgName(),
-                extractionForArg(arg),
-                false, param.typeName()),
-            null,
-            null);
-    }
-
-    public static CodeBlock buildArgExtraction(TypeFetcherEmissionContext ctx, CallParam param, String conditionsClassName, String srcAlias) {
-        return buildArgExtraction(ctx, param, conditionsClassName, srcAlias, null, null);
+        return buildArgExtraction(ctx,
+            new CallParam(arg.graphqlArgName(), extractionForArg(arg), false, param.typeName()));
     }
 
     /**
-     * Registry-aware variant; see
-     * {@link #buildCallArgs(TypeFetcherEmissionContext, List, String, String, CompositeDecodeHelperRegistry)}.
+     * The environment-rooted extraction expression for one service-call argument. Every read is
+     * {@code env}-based (a service call has no {@code SelectedField} and no table alias in
+     * scope), which is why the column-coercing and decode arms throw: those extraction kinds are
+     * condition-binding concepts that render inside the condition glue, never a {@code @service}
+     * parameter binding.
      */
-    public static CodeBlock buildArgExtraction(TypeFetcherEmissionContext ctx, CallParam param,
-            String conditionsClassName, String srcAlias, CompositeDecodeHelperRegistry registry) {
-        return buildArgExtraction(ctx, param, conditionsClassName, srcAlias, registry, null);
-    }
-
-    /**
-     * Lift-aware variant; see
-     * {@link #buildCallArgs(TypeFetcherEmissionContext, List, String, String, CompositeDecodeHelperRegistry, Map)}.
-     */
-    public static CodeBlock buildArgExtraction(TypeFetcherEmissionContext ctx, CallParam param,
-            String conditionsClassName, String srcAlias, CompositeDecodeHelperRegistry registry,
-            Map<String, String> liftedOuters) {
-        return buildArgExtraction(ctx, param, conditionsClassName, srcAlias, registry, liftedOuters,
-            new ArgumentValueSource.Env());
-    }
-
-    /**
-     * Source-aware variant; see
-     * {@link #buildCallArgs(TypeFetcherEmissionContext, List, String, String, CompositeDecodeHelperRegistry, Map, ArgumentValueSource)}.
-     */
-    public static CodeBlock buildArgExtraction(TypeFetcherEmissionContext ctx, CallParam param,
-            String conditionsClassName, String srcAlias, CompositeDecodeHelperRegistry registry,
-            Map<String, String> liftedOuters, ArgumentValueSource source) {
+    private static CodeBlock buildArgExtraction(TypeFetcherEmissionContext ctx, CallParam param) {
         return switch (param.extraction()) {
-            // Env: a bare, uncast env.getArgument(...) relying on generic-method target-typing.
-            // FromSelectedField cannot target-type (Map.get is statically Object), so it casts to
-            // the raw component of the param type. Scalar casts are checked; a generic param type
-            // (e.g. List<String>) makes the cast unchecked, and the $fields host stamps
-            // @SuppressWarnings for it (CallParam.emitsUncheckedCastFromSelectedField).
-            case CallSiteExtraction.Direct ignored -> switch (source) {
-                case ArgumentValueSource.Env ignoredEnv ->
-                    CodeBlock.of("env.getArgument($S)", param.name());
-                case ArgumentValueSource.FromSelectedField sf ->
-                    CodeBlock.of("($T) $L.getArguments().get($S)",
-                        ClassName.bestGuess(rawComponent(param.typeName())), sf.sfLocal(), param.name());
-            };
+            // A bare, uncast env.getArgument(...) relying on generic-method target-typing.
+            case CallSiteExtraction.Direct ignored ->
+                CodeBlock.of("env.getArgument($S)", param.name());
             case CallSiteExtraction.EnumValueOf ev -> {
                 var enumClass = ClassName.bestGuess(ev.enumClassName());
-                // FromSelectedField reads the wire value via a (checked) (String) cast in both the
-                // null-guard and the valueOf call, replacing the Env form's env.<String>getArgument
-                // generic target-typing.
-                yield switch (source) {
-                    case ArgumentValueSource.Env ignoredEnv -> CodeBlock.of(
-                        "env.getArgument($S) != null ? $T.valueOf(env.<$T>getArgument($S)) : null",
-                        param.name(), enumClass, String.class, param.name());
-                    case ArgumentValueSource.FromSelectedField sf -> CodeBlock.of(
-                        "($T) $L.getArguments().get($S) != null ? $T.valueOf(($T) $L.getArguments().get($S)) : null",
-                        String.class, sf.sfLocal(), param.name(), enumClass, String.class, sf.sfLocal(), param.name());
-                };
+                yield CodeBlock.of(
+                    "env.getArgument($S) != null ? $T.valueOf(env.<$T>getArgument($S)) : null",
+                    param.name(), enumClass, String.class, param.name());
             }
-            // GraphQL context is request-scoped, so the ancestor env is legitimately correct at the
-            // inline sites too: this arm stays env-based under BOTH sources.
             case CallSiteExtraction.ContextArg ignored ->
                 CodeBlock.of("($T) $L.getContextArgument(env, $S)",
                     rawTypeOfCallParam(param), ctx.graphitronContextCall(), param.name());
-            // Coerce the wire value through the column's DataType and its registered Converter via
-            // DSL.val(Object, DataType<T>).getValue(), not DataType.convert(Object): convert is
-            // @Deprecated(forRemoval = true) in jOOQ 3.20 and would fail the consumer's
-            // -Xlint:all -Werror compile. val coerces eagerly, so getValue() yields the column's
-            // Java type with any custom converter applied; null in, null out. The list form reads
-            // the shared <name>Keys local the enclosing generator pre-declares
-            // (MultiTablePolymorphicEmitter for Env;
-            // emitJooqConvertKeyLifts for the inline FromSelectedField sites), so the list arm is
-            // source-independent here; only the pre-lift declaration forks. The scalar arm swaps
-            // the wire read (no cast: DSL.val takes Object).
-            case CallSiteExtraction.JooqConvert jc -> param.list()
-                ? CodeBlock.of("$L.stream().map(k -> $T.val(k, $L.$L.getDataType()).getValue()).toList()",
-                    toCamelCase(param.name()) + "Keys", DSL, srcAlias, jc.columnJavaName())
-                : CodeBlock.of("$T.val($L, $L.$L.getDataType()).getValue()",
-                    DSL, argValueRead(source, param.name()), srcAlias, jc.columnJavaName());
             case CallSiteExtraction.NestedInputField nif ->
                 buildNestedInputFieldExtraction(nif.outerArgName(), nif.path(), nif.leaf(),
-                    param.typeName(), param.list(), registry, liftedOuters, srcAlias, source);
-            case CallSiteExtraction.NodeIdDecodeKeys nidk ->
-                buildNodeIdDecodeExtraction(
-                    argValueRead(source, param.name()),
-                    nidk, param.list(), registry);
-            // A jOOQ TableRecord / input-bean @service param is never an inline @reference filter,
-            // so FromSelectedField must never reach here; guard so a mis-wired caller fails loudly
-            // rather than silently emitting the wrong read form. Both arms keep the implicit Env
-            // read.
-            case CallSiteExtraction.InputBean ib -> {
-                requireEnv(source, "InputBean", param.name());
-                yield buildInputBeanCallExtraction(ctx, ib, param.name(), isListShaped(param));
-            }
-            case CallSiteExtraction.JooqRecord jr -> {
-                requireEnv(source, "JooqRecord", param.name());
-                yield buildJooqRecordCallExtraction(ctx, jr, param.name(), isListShaped(param));
-            }
+                    param.typeName(), param.list());
+            case CallSiteExtraction.InputBean ib ->
+                buildInputBeanCallExtraction(ctx, ib, param.name(), isListShaped(param));
+            case CallSiteExtraction.JooqRecord jr ->
+                buildJooqRecordCallExtraction(ctx, jr, param.name(), isListShaped(param));
+            case CallSiteExtraction.JooqConvert ignored ->
+                throw new IllegalStateException(
+                    "CallSiteExtraction.JooqConvert reached the service-call argument emitter for"
+                    + " param '" + param.name() + "'; column coercion is a condition-binding"
+                    + " concept rendered inside the condition glue");
+            case CallSiteExtraction.NodeIdDecodeKeys ignored ->
+                throw new IllegalStateException(
+                    "CallSiteExtraction.NodeIdDecodeKeys reached the service-call argument emitter"
+                    + " for param '" + param.name() + "'; NodeId decodes are condition-binding"
+                    + " concepts rendered inside the condition glue");
             case CallSiteExtraction.NodeIdDecodeRecord ignored ->
                 throw new IllegalStateException(
                     "NodeIdDecodeRecord is an input-bean field leaf only (decoded into a jOOQ record"
-                    + " inside the create<Bean> helper); it must not reach the condition/argument"
-                    + " call-site emitter for param '" + param.name() + "'");
+                    + " inside the create<Bean> helper); it must not reach the service-call"
+                    + " argument emitter for param '" + param.name() + "'");
         };
-    }
-
-    /**
-     * The uncast runtime argument-value read expression for {@code name} under {@code source}:
-     * {@code env.getArgument(name)} for {@link ArgumentValueSource.Env} or
-     * {@code <sf>.getArguments().get(name)} for {@link ArgumentValueSource.FromSelectedField}.
-     * Callers that need a cast wrap the result.
-     */
-    private static CodeBlock argValueRead(ArgumentValueSource source, String name) {
-        return switch (source) {
-            case ArgumentValueSource.Env ignored -> CodeBlock.of("env.getArgument($S)", name);
-            case ArgumentValueSource.FromSelectedField sf ->
-                CodeBlock.of("$L.getArguments().get($S)", sf.sfLocal(), name);
-        };
-    }
-
-    /**
-     * Guards a never-inline extraction arm: throws when {@code source} is
-     * {@link ArgumentValueSource.FromSelectedField}. The {@code InputBean} / {@code JooqRecord} arms
-     * are {@code @service}/input-bean concepts whose producers (root and child-{@code @service}) all
-     * keep the implicit {@link ArgumentValueSource.Env}; a {@code FromSelectedField} here means a
-     * caller mis-wired the source, which we surface rather than silently emit the wrong read form.
-     */
-    private static void requireEnv(ArgumentValueSource source, String arm, String paramName) {
-        if (source instanceof ArgumentValueSource.FromSelectedField) {
-            throw new IllegalStateException(
-                "CallSiteExtraction." + arm + " reached buildArgExtraction under a FromSelectedField"
-                + " argument source for param '" + paramName + "'; this arm is an @service/input-bean"
-                + " concept that is never an inline @reference filter and always reads from env.");
-        }
-    }
-
-    /**
-     * Emits the {@code <name>Keys} pre-lift local(s) that the {@link CallSiteExtraction.JooqConvert}
-     * list arm of {@link #buildArgExtraction} reads: the arm composes as an expression and cannot
-     * introduce the local itself, and without the pre-lift the emitted code references an
-     * undeclared local and fails the consumer's compile. {@link MultiTablePolymorphicEmitter}
-     * declares it inline under {@link ArgumentValueSource.Env};
-     * only the two inline emitters route it here, always under
-     * {@link ArgumentValueSource.FromSelectedField} (hence the narrowed parameter type: there is no
-     * {@code Env} caller, so no {@code Env} branch), where {@code sf.getArguments().get(name)} is
-     * statically {@code Object} and needs the unchecked {@code (List<String>)} cast the
-     * {@code $fields} host stamps {@code @SuppressWarnings} for (see
-     * {@link CallParam#emitsUncheckedCastFromSelectedField()}). Dedupes by arg name so two filters
-     * sharing a converter-backed list arg declare one local.
-     */
-    static void emitJooqConvertKeyLifts(CodeBlock.Builder stmts, List<? extends WhereFilter> filters,
-            ArgumentValueSource.FromSelectedField source) {
-        var declared = new LinkedHashSet<String>();
-        for (var filter : filters) {
-            for (var param : filter.callParams()) {
-                if (param.extraction() instanceof CallSiteExtraction.JooqConvert && param.list()
-                        && declared.add(param.name())) {
-                    stmts.addStatement("$T<$T> $L = ($T<$T>) $L.getArguments().get($S)",
-                        List.class, String.class, toCamelCase(param.name()) + "Keys",
-                        List.class, String.class, source.sfLocal(), param.name());
-                }
-            }
-        }
     }
 
     /**
@@ -433,44 +250,6 @@ public final class ArgCallEmitter {
     }
 
     /**
-     * Emits a NodeId-decode call for either a top-level argument or a Map-traversal leaf.
-     * {@code wireExpr} is the expression that yields the wire-format value (a {@code String}
-     * for scalar, a {@code List<String>} for list). The decode itself lives in a per-class
-     * private helper obtained from the {@link CompositeDecodeHelperRegistry}, which documents
-     * the helper body shapes and the skip-vs-throw mismatch handling; this method registers
-     * the helper and emits {@code <helper>(<wireExpr>)}.
-     */
-    private static CodeBlock buildNodeIdDecodeExtraction(CodeBlock wireExpr,
-            CallSiteExtraction.NodeIdDecodeKeys nidk, boolean list,
-            CompositeDecodeHelperRegistry registry) {
-        var decode = nidk.decodeMethod();
-        boolean throwOnMismatch = nidk instanceof CallSiteExtraction.ThrowOnMismatch;
-
-        // Every NodeId decode (any arity, skip or throw) lifts to a per-class private helper
-        // registered through the collector; the helper bakes in the wire-shape guard, decode call,
-        // and key projection as readable statement-form code, so the call site collapses to
-        // <name>(wireExpr).
-        if (registry == null) {
-            // Every NodeId-decoded condition argument is emitted through a generator that owns a
-            // CompositeDecodeHelperRegistry and drains it onto the class hosting the call site:
-            // the condition glue renderer (<Root>Conditions) for the glue layer, and the
-            // <Type>Fetchers collectInto bracket for the fetcher-inline sites (split/lookup rows
-            // methods; the multitable branch path). A registry-less call site reaching a decode is
-            // a wiring bug: there would be nowhere to emit the lifted helper. Fail loudly.
-            throw new IllegalStateException(
-                "NodeId-decode extraction must be lifted into a per-class decode helper, which requires a "
-                + "CompositeDecodeHelperRegistry; none was supplied for decode '" + decode.methodName()
-                + "'. NodeId-decoded condition arguments must be emitted through a generator that owns "
-                + "and drains a registry onto the call site's host class.");
-        }
-        var mode = throwOnMismatch
-            ? CompositeDecodeHelperRegistry.Mode.THROW
-            : CompositeDecodeHelperRegistry.Mode.SKIP;
-        String helperName = registry.register(decode, mode, list);
-        return CodeBlock.of("$L($L)", helperName, wireExpr);
-    }
-
-    /**
      * A null-safe nested-Map value descent reading from a local that already holds a
      * {@code Map<?, ?>} (the mutation emitters' {@code in} / {@code row} argument-value maps). For a
      * single-segment {@code path} the result is {@code mapLocal.get(key)}; for a
@@ -489,73 +268,27 @@ public final class ArgCallEmitter {
 
     /**
      * Emits a null-safe nested-Map traversal expression for
-     * {@link CallSiteExtraction.NestedInputField}. For {@code path = [k1, k2, ..., kN]} the
-     * generated expression is a chain of {@code instanceof Map<?,?>} ternaries:
-     *
-     * <pre>
-     *     env.getArgument("outer") instanceof Map&lt;?, ?&gt; map1
-     *         ? (map1.get("k1") instanceof Map&lt;?, ?&gt; map2
-     *             ? (... ? (LeafType) mapN.get("kN") : null)
-     *             : null)
-     *         : null
-     * </pre>
-     *
-     * <p>Pattern-variable bindings {@code map1..mapN} are scoped to the ternary's "then" branch,
-     * so peer expressions in the same method call (multiple condition args) may reuse the same
-     * binding names without conflict.
-     *
-     * <p>The leaf cast uses the raw component of {@code leafTypeName} (everything up to the first
-     * {@code <}) so generic type parameters do not appear in the cast target. Since
-     * {@code Map.get(Object)} returns {@code Object} and the condition method signature expects
-     * the declared type, an unchecked raw-type cast is acceptable; if a parameterized leaf type
-     * ever requires it, callers can suppress warnings at the enclosing method.
+     * {@link CallSiteExtraction.NestedInputField}, rooted at {@code env.getArgument(outer)}. For
+     * {@code path = [k1, k2, ..., kN]} the generated expression is a chain of
+     * {@code instanceof Map<?,?>} ternaries yielding {@code null} at any absent level, with the
+     * leaf cast to the raw component of {@code leafTypeName}. The decode and converter leaf
+     * transforms never reach this service-path form ({@link #buildArgExtraction} rejects them);
+     * only the plain cast leaf remains.
      */
     private static CodeBlock buildNestedInputFieldExtraction(String outerArgName, List<String> path,
-            CallSiteExtraction leaf, String leafTypeName, boolean list,
-            CompositeDecodeHelperRegistry registry, Map<String, String> liftedOuters,
-            String srcAlias, ArgumentValueSource source) {
-        // For a Direct leaf the Map.get value is cast directly to the parameter type. For a
-        // NodeIdDecodeKeys leaf the leaf cast is omitted -- the decode chain takes Object and
-        // its own instanceof guard validates the runtime shape -- so the inner pattern stays
-        // "conditional" under -source 17 (no `(List<String>) ... instanceof List` chain).
-        boolean nodeIdLeaf = leaf instanceof CallSiteExtraction.NodeIdDecodeKeys;
-        // When the outer arg has already been lifted to a typed Map<?, ?> local, depth 0 of the
-        // chain references the local directly under a null-check; otherwise it falls back to the
-        // inline `env.getArgument(outer) instanceof Map<?, ?> map1` rebind.
-        // liftedOuters is populated only by the Env site (MultiTablePolymorphicEmitter); the two
-        // inline sites pass null, so under FromSelectedField topBinding is always null and the
-        // depth-0 read routes through the source.
-        String topBinding = liftedOuters != null ? liftedOuters.get(outerArgName) : null;
-        CodeBlock root = topBinding != null
-            ? CodeBlock.of("$L", topBinding)
-            : argValueRead(source, outerArgName);
-
-        if (nodeIdLeaf) {
-            CodeBlock mapChain = buildMapChain(root, path, 0, /* leafType= */ null, topBinding);
-            return buildNodeIdDecodeExtraction(mapChain, (CallSiteExtraction.NodeIdDecodeKeys) leaf,
-                list, registry);
+            CallSiteExtraction leaf, String leafTypeName, boolean list) {
+        if (leaf instanceof CallSiteExtraction.NodeIdDecodeKeys
+                || leaf instanceof CallSiteExtraction.JooqConvert) {
+            throw new IllegalStateException(
+                "a " + leaf.getClass().getSimpleName() + " leaf reached the service-call nested"
+                + " extraction; decode and column coercion render inside the condition glue");
         }
-        // A JooqConvert leaf (a nested [ID!]/ID @field over a converted column)
-        // coerces the traversal result through the column's DataType, mirroring the top-level
-        // JooqConvert arm's DSL.val(...).getValue() form. The scalar form needs no null guard
-        // (val takes Object; null in, null out); the list form guards with an instanceof List
-        // pattern so the traversal runs once. Like NodeIdDecodeKeys, the leaf cast is omitted --
-        // the coercion owns the runtime shape.
-        if (leaf instanceof CallSiteExtraction.JooqConvert jc) {
-            CodeBlock mapChain = buildMapChain(root, path, 0, /* leafType= */ null, topBinding);
-            if (list) {
-                return CodeBlock.of(
-                    "($L) instanceof $T<?> keys ? keys.stream().map(k -> $T.val(k, $L.$L.getDataType()).getValue()).toList() : null",
-                    mapChain, List.class, DSL, srcAlias, jc.columnJavaName());
-            }
-            return CodeBlock.of("$T.val($L, $L.$L.getDataType()).getValue()",
-                DSL, mapChain, srcAlias, jc.columnJavaName());
-        }
+        CodeBlock root = CodeBlock.of("env.getArgument($S)", outerArgName);
         ClassName rawLeaf = ClassName.bestGuess(rawComponent(leafTypeName));
         TypeName castTarget = list
             ? ParameterizedTypeName.get(ClassName.get(List.class), rawLeaf)
             : rawLeaf;
-        return buildMapChain(root, path, 0, castTarget, topBinding);
+        return buildMapChain(root, path, 0, castTarget, null);
     }
 
     /**
@@ -573,7 +306,7 @@ public final class ArgCallEmitter {
 
         if (isLeaf) {
             // leafType == null means "do not cast the Map.get result" -- the consumer applies its
-            // own runtime guard (used by the NodeIdDecodeKeys leaf path).
+            // own runtime guard (the mutation emitters' DSL.val / decode-helper reads).
             if (liftedHead) {
                 if (leafType == null) {
                     return CodeBlock.of("$L != null ? $L.get($S) : null", binding, binding, key);

@@ -13,15 +13,13 @@ import java.util.List;
  * the FK-<em>target</em> table {@code X}; handing it the own-table local fails at consumer
  * compile with a mistyped table argument. The condition producer narrows this filter onto the
  * authored predicate's reach slot, and
- * {@link no.sikt.graphitron.render.ConditionGlueRenderer ConditionGlueRenderer} (plus the
- * not-yet-converged inline hosts through
- * {@link no.sikt.graphitron.rewrite.generators.FkTargetConditionEmitter FkTargetConditionEmitter})
+ * {@link no.sikt.graphitron.render.ConditionGlueRenderer ConditionGlueRenderer}
  * emits a correlated {@code EXISTS} over {@code joinPath} so the developer method receives an
  * alias for {@code X} rather than the root {@code table}.
  *
  * <p>The condition method itself is held as {@link #delegate()} (already rewrapped for nested
  * extraction by {@code ConditionResolver.rewrapForNested} when this filter is built); the
- * {@link WhereFilter} accessors delegate to it. The added components carry the FK correlation the
+ * {@link WhereFilter} accessor delegates to it. The added components carry the FK correlation the
  * emitter needs:
  *
  * <ul>
@@ -55,12 +53,7 @@ public record FkTargetConditionFilter(
         keyColumns = List.copyOf(keyColumns);
     }
 
-    @Override
-    public String className() {
-        return delegate.className();
-    }
-
-    @Override
+    /** The delegate's method name, for producer-side diagnostics. */
     public String methodName() {
         return delegate.methodName();
     }

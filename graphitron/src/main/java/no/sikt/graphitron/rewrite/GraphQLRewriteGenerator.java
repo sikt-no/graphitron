@@ -14,7 +14,6 @@ import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
-import no.sikt.graphitron.rewrite.generators.TypeConditionsGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.lint.LintConfig;
 import no.sikt.graphitron.rewrite.lint.LintEngine;
@@ -332,12 +331,11 @@ public class GraphQLRewriteGenerator {
                 renderGlobal(command, schema, assembled, fetcherBodies.keySet(), tenantKeyType, federationLink),
                 emittedThisRun);
         }
-        // The condition command relation: the plan committed which rows this run renders glue for
-        // (the migration dial), the renderer is total over those rows, and every rendered class
-        // lands at the address its row committed.
+        // The condition command relation: every row renders glue at the address its ref commits,
+        // and every WHERE consumer calls it (call-site convergence closed the render-side dial).
         writeUnits("condition glue",
-            plan.conditions().committedUnits(),
-            no.sikt.graphitron.render.ConditionGlueRenderer.render(plan.conditions().committedRows(), outputPackage),
+            plan.conditions().units(),
+            no.sikt.graphitron.render.ConditionGlueRenderer.render(plan.conditions().rows(), outputPackage),
             emittedThisRun);
 
         write(EnumTypeGenerator.generate(schema),                                                 "schema",     emittedThisRun);
@@ -345,7 +343,6 @@ public class GraphQLRewriteGenerator {
         write(InputRecordGenerator.generate(schema, assembled, outputPackage),                    "inputs",     emittedThisRun);
         write(ObjectTypeGenerator.generate(schema, assembled, fetcherBodies),                     "schema",     emittedThisRun);
         write(TypeClassGenerator.generate(schema, outputPackage),                                 "types",      emittedThisRun);
-        write(TypeConditionsGenerator.generate(schema, outputPackage),                            "conditions", emittedThisRun);
         write(fetcherClasses,                                                                      "fetchers",   emittedThisRun);
         write(ConnectionFetcherClassGenerator.generate(schema, outputPackage),                     "fetchers",   emittedThisRun);
         write(ErrorTypeFetcherClassGenerator.generate(schema, outputPackage),                      "fetchers",   emittedThisRun);

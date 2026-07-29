@@ -1,8 +1,6 @@
 package no.sikt.graphitron.rewrite.generators;
 
 
-import no.sikt.graphitron.render.CompositeDecodeHelperRegistry;
-import no.sikt.graphitron.javapoet.AnnotationSpec;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
@@ -12,18 +10,15 @@ import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.generators.util.SelectionOccurrencesClassGenerator;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.BatchKeyField;
-import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
-import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.ParentRowDemand;
 import no.sikt.graphitron.rewrite.model.ResultKeyAliasedField;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.SourceShape;
 import no.sikt.graphitron.rewrite.model.TableRef;
-import no.sikt.graphitron.rewrite.model.WhereFilter;
 
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.*;
 
@@ -149,12 +144,12 @@ public class TypeClassGenerator {
             .addModifiers(Modifier.PUBLIC);
         builder.addMethod(buildSelectionSetEntryMethod(tableRef));
         builder.addMethod(buildOccurrencesEntryMethod(tableRef, outputPackage));
-        // One decode-helper registry per type class: inline TableField / LookupTableField filter
-        // sites that decode a @nodeId argument lift a per-class private static helper through it.
-        // collectInto co-locates construct and drain so a lift can never be silently dropped; the
-        // registry threads through emitSelectionSwitch's recursion, so nested inline fields share it.
-        CompositeDecodeHelperRegistry.collectInto(builder, outputPackage, registry ->
-            builder.addMethod(build$FieldsGroupedMethod(tableRef, columnFields, columnReferenceFields, tableFields, lookupTableFields, nestingFields, computedFields, pivotFields, requiredProjection, outputPackage, registry)));
+        // Inline filter arms emit one glue call each; the extraction plumbing (decode helpers,
+        // converter pre-lifts) lives on the coordinate's conditions class, so this host owns no
+        // decode-helper registry.
+        builder.addMethod(build$FieldsGroupedMethod(tableRef, columnFields, columnReferenceFields,
+            tableFields, lookupTableFields, nestingFields, computedFields, pivotFields,
+            requiredProjection, outputPackage));
         // Helpers for inline LookupTableFields are hoisted onto this outer type class, including
         // ones nested inside NestingField sub-types, which don't get their own type class (plain
         // objects share the parent's table context). The generated switch arm calls the helper
@@ -251,8 +246,7 @@ public class TypeClassGenerator {
             List<ChildField.ComputedField> computedFields,
             List<ChildField.PivotField> pivotFields,
             List<ColumnRef> requiredProjection,
-            String outputPackage,
-            CompositeDecodeHelperRegistry registry) {
+            String outputPackage) {
         var names = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         var listOfField = ParameterizedTypeName.get(LIST, fieldWildcard);
@@ -287,18 +281,8 @@ public class TypeClassGenerator {
         flat.addAll(nestingFields);
         flat.addAll(computedFields);
         flat.addAll(pivotFields);
-        // Stamp @SuppressWarnings("unchecked") on $fieldsGrouped, the narrowest enclosing member,
-        // when any inline field's filter param emits an unchecked cast under the FromSelectedField
-        // argument source. The predicate is source-aware (CallParam.emitsUncheckedCastFromSelectedField):
-        // the casts exist only here, so the Env hosts (the condition glue renderer /
-        // MultiTablePolymorphicEmitter) keep their warning-free, byte-identical output.
-        if (inlineFiltersNeedUncheckedSuppression(flat)) {
-            builder.addAnnotation(AnnotationSpec.builder(SuppressWarnings.class)
-                .addMember("value", "$S", "unchecked")
-                .build());
-        }
 
-        emitSelectionSwitch(builder, 0, flat, "table", entryType, outputPackage, registry);
+        emitSelectionSwitch(builder, 0, flat, "table", entryType, outputPackage);
 
         // Required-projection append: the columns the parent SELECT must include regardless of the
         // SDL selection, all under their base names (see collectRequiredProjection). A column a
@@ -340,8 +324,7 @@ public class TypeClassGenerator {
     private static void emitSelectionSwitch(MethodSpec.Builder builder, int depth,
                                             List<ChildField> fields, String tableArg,
                                             ParameterizedTypeName entryType,
-                                            String outputPackage,
-                                            CompositeDecodeHelperRegistry registry) {
+                                            String outputPackage) {
         String entry = entryName(depth);
         String sf = sfName(depth);
         var selectionOccurrences = selectionOccurrencesClass(outputPackage);
@@ -376,17 +359,17 @@ public class TypeClassGenerator {
                 }
                 case ChildField.TableField tf -> {
                     builder.addCode("        case $S -> {\n", tf.name());
-                    builder.addCode("$L", InlineTableFieldEmitter.buildSwitchArmBody(tf, tableArg, sf, entry, outputPackage, registry));
+                    builder.addCode("$L", InlineTableFieldEmitter.buildSwitchArmBody(tf, tableArg, sf, entry, outputPackage));
                     builder.addCode("        }\n");
                 }
                 case ChildField.LookupTableField lf -> {
                     builder.addCode("        case $S -> {\n", lf.name());
-                    builder.addCode("$L", InlineLookupTableFieldEmitter.buildSwitchArmBody(lf, tableArg, sf, entry, outputPackage, registry));
+                    builder.addCode("$L", InlineLookupTableFieldEmitter.buildSwitchArmBody(lf, tableArg, sf, entry, outputPackage));
                     builder.addCode("        }\n");
                 }
                 case ChildField.NestingField nf -> {
                     builder.addCode("        case $S -> {\n", nf.name());
-                    emitSelectionSwitch(builder, depth + 1, nf.nestedFields(), tableArg, entryType, outputPackage, registry);
+                    emitSelectionSwitch(builder, depth + 1, nf.nestedFields(), tableArg, entryType, outputPackage);
                     builder.addCode("        }\n");
                 }
                 case ChildField.ComputedField cf -> {
@@ -433,33 +416,6 @@ public class TypeClassGenerator {
     /** The generated {@code <outputPackage>.util.SelectionOccurrences} runtime scaffold. */
     static ClassName selectionOccurrencesClass(String outputPackage) {
         return ClassName.get(outputPackage + ".util", SelectionOccurrencesClassGenerator.CLASS_NAME);
-    }
-
-    /**
-     * True when any inline {@link ChildField.TableField} / {@link ChildField.LookupTableField}
-     * filter among {@code fields} (recursing into {@link ChildField.NestingField} sub-trees, which
-     * emit their inline arms into the same {@code $fields} method) carries a call param that emits an
-     * unchecked cast under the {@code FromSelectedField} argument source. The model owns the
-     * per-source cast fact ({@link CallParam#emitsUncheckedCastFromSelectedField()}), so this host and
-     * the {@code Env} hosts cannot drift.
-     */
-    private static boolean inlineFiltersNeedUncheckedSuppression(List<? extends ChildField> fields) {
-        for (var f : fields) {
-            List<WhereFilter> filters = switch (f) {
-                case ChildField.TableField tf -> tf.filters();
-                case ChildField.LookupTableField lf -> lf.filters();
-                default -> List.of();
-            };
-            boolean hit = filters.stream()
-                .flatMap(wf -> wf.callParams().stream())
-                .anyMatch(CallParam::emitsUncheckedCastFromSelectedField);
-            if (hit) return true;
-            if (f instanceof ChildField.NestingField nf
-                    && inlineFiltersNeedUncheckedSuppression(nf.nestedFields())) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /**

@@ -19,10 +19,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Pipeline-tier assertions on the condition command relation over classified fixture schemas:
- * the produced rows, their keys, the committed subset, and the producer-decided data (glue refs,
- * locals, lifts, facet fragments). Renderer behaviour is covered by
+ * the produced rows, their keys, and the producer-decided data (glue refs, locals, lifts, facet
+ * fragments, the env-appending fact). Renderer behaviour is covered by
  * {@code ConditionGluePipelineTest} and the execution tier; this class pins what the producer
- * mints, so it asserts on rows, never on emitted code.
+ * mints, so it asserts on rows, never on emitted code. The relation's membership enforcer
+ * (relation key-set equals the schema-derived covered set) lives in
+ * {@code ConditionMembershipTest}.
  */
 @PipelineTier
 class ConditionCommandsPipelineTest {
@@ -30,7 +32,7 @@ class ConditionCommandsPipelineTest {
     private static final String STUB = "no.sikt.graphitron.rewrite.TestConditionStub";
 
     @Test
-    void filteredRootCoordinate_producesOneCommittedRowCarryingBothArms() {
+    void filteredRootCoordinate_producesOneRowCarryingBothArms() {
         var schema = TestSchemaHelper.buildSchema("""
             type Language @table(name: "language") { name: String }
             type Query {
@@ -62,12 +64,12 @@ class ConditionCommandsPipelineTest {
         assertThat(authored.reach()).isEmpty();
         assertThat(authored.bindings()).extracting(b -> b.localName()).containsExactly("cityNames");
 
-        // Glue is total and minted from the naming vocabulary; the row is committed (root rows
-        // are the slice's committed set) and the committed unit is the glue owner.
+        // Glue is total and minted from the naming vocabulary; the relation's landing addresses
+        // are the distinct glue owners.
         assertThat(row.glue().owner().fqcn()).isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".conditions.QueryConditions");
         assertThat(row.glue().methodName()).isEqualTo("languagesCondition");
-        assertThat(relation.committedRows()).containsExactly(row);
-        assertThat(relation.committedUnits()).containsExactly(row.glue().owner());
+        assertThat(row.readsRequestContext()).isFalse();
+        assertThat(relation.units()).containsExactly(row.glue().owner());
     }
 
     @Test
@@ -105,7 +107,7 @@ class ConditionCommandsPipelineTest {
     }
 
     @Test
-    void lookupCoordinate_authoredFilterProducesAnUncommittedRow() {
+    void lookupCoordinate_authoredFilterProducesARow() {
         var schema = TestSchemaHelper.buildSchema("""
             type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
             type Query {
@@ -120,19 +122,18 @@ class ConditionCommandsPipelineTest {
         var relation = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
 
         // Lookup keys ride the VALUES join and are not predicates: the row carries only the
-        // authored non-key filter. The lookup fold has not converged onto glue, so the row is
-        // minted but not committed; nothing renders for it this slice.
+        // authored non-key filter, an ordinary row the lookup rows method calls beside its
+        // VALUES join.
         assertThat(relation.rows()).hasSize(1);
         var row = relation.rows().get(0);
         assertThat(row.coordinate()).isEqualTo(FieldCoordinates.coordinates("Query", "customersByKey"));
         assertThat(row.predicates()).hasSize(1);
         assertThat(row.predicates().get(0)).isInstanceOf(Predicate.Authored.class);
-        assertThat(relation.committedRows()).isEmpty();
-        assertThat(relation.committedUnits()).isEmpty();
+        assertThat(row.glue().methodName()).isEqualTo("customersByKeyCondition");
     }
 
     @Test
-    void polymorphicRoot_expandsToOneUncommittedRowPerParticipantTable() {
+    void polymorphicRoot_expandsToOneRowPerParticipantTable() {
         var schema = TestSchemaHelper.buildSchema("""
             type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
             type Staff @table(name: "staff") { firstName: String @field(name: "first_name") }
@@ -147,8 +148,8 @@ class ConditionCommandsPipelineTest {
         // The expansion is the fact, not a special case: the coordinate's filters live per
         // participant, so the row count equals the participant count and the rows share the
         // coordinate while differing in resolved table, which is why the key needs no second
-        // column. Participant rows disambiguate by minted method name and stay uncommitted until
-        // the polymorphic branch folds converge onto glue.
+        // column. Participant rows disambiguate by minted method name, the same refs the
+        // polymorphic branch folds derive at their call sites.
         assertThat(relation.rows()).hasSize(2);
         assertThat(relation.rows())
             .allMatch(r -> r.coordinate().equals(FieldCoordinates.coordinates("Query", "occupants")));
@@ -157,11 +158,10 @@ class ConditionCommandsPipelineTest {
         assertThat(relation.rows()).extracting(r -> r.glue().methodName())
             .containsExactlyInAnyOrder(
                 "occupantsParticipant_CustomerCondition", "occupantsParticipant_StaffCondition");
-        assertThat(relation.committedRows()).isEmpty();
     }
 
     @Test
-    void contextBoundConditionOnCommittedCoordinate_rejectsAtValidateTime() {
+    void contextBoundCondition_producesAnEnvAppendingRow() {
         var schema = TestSchemaHelper.buildSchema("""
             type Language @table(name: "language") { name: String }
             type Query {
@@ -170,14 +170,50 @@ class ConditionCommandsPipelineTest {
             }
             """.formatted(STUB));
 
-        // The env-bound rejection reads the producer's own committed-set predicate, so it fires
-        // exactly on the coordinates whose glue would have nothing to read the context from.
-        // (The retired shim emitted a graphitronContext(env) call its class never carried; this
-        // build-time rejection replaces that uncompilable output.)
+        // A context-reading binding flips the row onto the env-appending glue signature (the
+        // producer-decided, row-grained fact both the renderer and every call site read); the
+        // shape is accepted, not rejected. (The retired shim emitted a graphitronContext(env)
+        // call its class never carried; the glue class owns its own helper.)
+        var relation = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
+        assertThat(relation.rows()).hasSize(1);
+        var row = relation.rows().get(0);
+        assertThat(row.readsRequestContext()).isTrue();
+        // The generated term and the authored call share the cityNames local (one local, one
+        // value); the trailing context param rides the authored call's bindings.
+        assertThat(row.bindings()).extracting(b -> b.localName())
+            .containsExactly("cityNames", "cityNames", "tenantId");
         assertThat(new GraphitronSchemaValidator().validate(schema))
             .extracting(ValidationError::message)
-            .anyMatch(m -> m.contains("Query.languages")
-                && m.contains("@condition(contextArguments:) on a glue-rendered coordinate is not yet emitted"));
+            .noneMatch(m -> m.contains("contextArguments"));
+    }
+
+    @Test
+    void nestedAuthoredCondition_producesARowOnTheNestingCoordinate() {
+        // A field nested inside a plain nesting type has no fieldsOf entry; the producer reaches
+        // it through the NestingField's carried children, and the glue lands on the nesting
+        // type's own conditions class. Only the authored arm is representable here (the
+        // generated form stays a deferred rejection until nesting types become walkable).
+        var schema = TestSchemaHelper.buildSchema("""
+            type Language @table(name: "language") { name: String }
+            type FilmMeta {
+                languages(name: String @field(name: "name")
+                    @condition(condition: {className: "%s", method: "argCondition", argMapping: "cityNames: name"}, override: true)):
+                    [Language!]! @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Film @table(name: "film") {
+                meta: FilmMeta
+            }
+            type Query { films: [Film!]! }
+            """.formatted(STUB));
+
+        var relation = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
+        assertThat(relation.rows()).hasSize(1);
+        var row = relation.rows().get(0);
+        assertThat(row.coordinate()).isEqualTo(FieldCoordinates.coordinates("FilmMeta", "languages"));
+        assertThat(row.glue().owner().fqcn())
+            .isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".conditions.FilmMetaConditions");
+        assertThat(row.predicates()).hasSize(1);
+        assertThat(row.predicates().get(0)).isInstanceOf(Predicate.Authored.class);
     }
 
     @Test

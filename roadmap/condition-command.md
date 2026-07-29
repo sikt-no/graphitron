@@ -7,7 +7,7 @@ priority: 4
 theme: classification-model
 depends-on: [facts-and-commands]
 created: 2026-07-27
-last-updated: 2026-07-28
+last-updated: 2026-07-29
 ---
 
 # Condition command: the WHERE family as coordinate-keyed condition units
@@ -728,6 +728,76 @@ their inline folds untouched until slice 2), no entity-layer edits (`TypeConditi
 emits unchanged through the window; the guarded-AND fold now exists twice, there and in the glue
 renderer, until slice 3 deletes the entity half), and no re-sourcing (production reads
 `filters()` / `participantFilters()` exactly where the generators read).
+
+### Slices 2 and 3 (2026-07-29): call-site convergence and entity-layer retirement, one landing
+
+Landed as one commit, deliberately merging the planned slices 2 and 3: after convergence the
+entity layer had zero callers, so the dual-scheme window rule's merge machinery (fold a
+coinciding glue class into the entity `TypeSpec`) would have been built only to be deleted one
+slice later. Retiring `TypeConditionsGenerator` in the same commit deleted the window, the merge,
+and the duplicate-landing-address risk together; the `EmissionLog` hard failure stays as the
+general backstop. Every inline fold is now one glue call (`ConditionGlueCall`, the shared
+call-expression emitter all five hosts and the facet-plan block read): the split rows methods and
+the lookup rows method pass `env.getArguments()`, the two inline `$fields` emitters pass
+`<sf>.getArguments()`, and the polymorphic branch folds call their participant-minted methods.
+`FkTargetConditionEmitter` deleted in full (the acceptance's structural convergence enforcer),
+with `computeLiftedOuters`, the branch-fold plumbing, the inline `JooqConvert` pre-lifts, the
+condition-path `ArgumentValueSource` uses (the type survives on the routine path), and the
+condition surface of `ArgCallEmitter` (now the `@service`-call argument emitter alone).
+`TypeConditionsGeneratorTest` and the lift test retired with their subjects. Ratchets:
+entry points 23 to 22, generator leaf `instanceof` 100 to 97, `case` 89 to 87, plan leaf
+references 10 to 6.
+
+**The `contextArguments` premise was wrong, and correcting it decided the fork.** Slice 1's log
+argued the env-appending signature would preserve a working inline capability; the code says
+otherwise: the two `$fields`-hosted inline sites passed a throwaway emission context whose
+recorded `graphitronContext` need nothing ever drained ({@code TypeClassGenerator} emits no such
+helper), so an inline `@condition(contextArguments:)` was the shim's missing-helper bug a second
+time, unpinned by any fixture. Convergence makes the glue class the single host for the read and
+a class that can own its helper, so the env-appending signature was implemented rather than the
+rejection widened: `CallParam.readsRequestContext()` is the leaf fact,
+`WhereFilter.anyReadRequestContext` the one fold (read by `SqlGeneratingField`'s default, the
+producer via `ConditionCommand.readsRequestContext()`, and every call site through
+`ConditionGlueCall`), the fork is row-grained (a coordinate's glue method and facet fragments
+agree), and the glue class's `graphitronContext(env)` helper is emitted through a declared-drain
+collector (`render/RequestContextHelper`) so the call and its helper cannot separate again. The
+validator's env-bound rejection deleted; sakila pins the root and batched-child round trips end
+to end.
+
+**Producer membership is one capability read.** The per-leaf switch became
+`SqlGeneratingField` + nonempty filters (a new SQL-generating variant needs no producer edit),
+with identity arms only where the filter surface genuinely lives elsewhere: the polymorphic
+roots (`participantFilters()`, one row per participant table) and the nesting recursion. Nested
+coordinates now produce rows (the walk recurses `NestingField.nestedFields()`; authored-only
+until nesting types become walkable, and the nested-generated rejection stands), deduplicated by
+key with a hard failure on divergence across nesting reuse sites; the validator's nested-shape
+comparison gained the matching filter clause, replacing a comment that declared per-parent
+filters deliberately uncompared. The membership enforcer moved up from the closing slice to land
+here, where a membership gap first becomes uncompilable output: `ConditionMembershipTest` pins
+relation key-set equals an independently derived covered set. `ConditionRelation` collapsed to
+`rows`/`units` (committed == rows would have been a restatement), and
+`rendersIntoConditionsClass` retired with the rejection that read it.
+
+**A fourth deferred rejection, from a silent-wrong-data find:** `ChildField.TableInterfaceField`
+carries the shared filter components but its fetcher folds none of them, so an accepted filter
+was silently ignored at runtime; rejected now (authored and generated alike), producer
+backstop-throw included, membership rule untouched (no exemption list: a valid schema has no
+such row). Implementing that fold is future work, not this item's.
+
+**Second-order moves.** The compile graph's condition edges repointed with the emission: inline
+filter edges target the coordinate's glue unit (the entity `className()` edge died with the
+slot), the decode-helper and context-helper references ride the glue unit, and participant
+filters edge the polymorphic fetcher to its parent's conditions class.
+`CallParam.emitsUncheckedCast` / `emitsUncheckedCastFromSelectedField` retired callerless (the
+renderer's own cast predicate is the single home; the `$fields` and branch-fold suppression
+stamps deleted with the casts they suppressed). `GeneratedConditionFilter.className()` /
+`methodName()` and the `WhereFilter` abstract declarations retired;
+`FieldBuilder.projectFilters` stopped minting the regime-1 names, closing R333 row 5's lift on
+both ends. SQL equivalence held: all seven baseline pins byte-identical across the convergence
+(the three new pre-move pins were authored against the inline folds first, per review-before-move
+discipline: authored-on-lookup, nested-authored, and the batched context-bound coordinate), and
+the sibling same-named filter fixture compiles and executes, closing the collision dissolution
+end to end.
 
 ## Retired vocabulary
 

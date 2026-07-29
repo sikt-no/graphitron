@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.test.conditions;
 import no.sikt.graphitron.rewrite.test.jooq.tables.Address;
 import no.sikt.graphitron.rewrite.test.jooq.tables.Customer;
 import no.sikt.graphitron.rewrite.test.jooq.tables.Film;
+import no.sikt.graphitron.rewrite.test.jooq.tables.Language;
 import no.sikt.graphitron.rewrite.test.jooq.tables.Project;
 import org.jooq.Condition;
 import org.jooq.Table;
@@ -71,7 +72,7 @@ public final class InputFieldConditionFixtures {
     /**
      * FK-target {@code @nodeId} {@code @condition} method. The declared first parameter is
      * the concrete FK-target table {@link Address} (not the input's own {@code customer} table),
-     * so the generated condition only compiles if {@code QueryConditionsGenerator} hands it an
+     * so the generated condition only compiles if the condition glue hands it an
      * aliased {@code Address} from the correlated {@code EXISTS} rather than the root
      * {@code customer} local. Filters on the FK-target table to prove the alias is bound there:
      * customers whose address is in district {@code Alberta}. {@code addressId} is unused (the
@@ -99,7 +100,7 @@ public final class InputFieldConditionFixtures {
      * Composite-key FK-target {@code @nodeId} {@code @condition(override)}. project_note
      * reaches project through a composite FK {@code (org_id, project_id)}. The declared first
      * parameter is the concrete FK-target {@link Project}, so the generated code only compiles if
-     * {@code FkTargetConditionEmitter} hands it an aliased Project from the correlated EXISTS (whose
+     * the condition glue hands it an aliased Project from the correlated EXISTS (whose
      * correlation ANDs both composite-FK slots) rather than the project_note table. Filters notes
      * whose project is named {@code Atlas}. {@code projectId} is unused (override drops the decode).
      */
@@ -125,6 +126,36 @@ public final class InputFieldConditionFixtures {
             c = c.and(table.field(Film.FILM.RENTAL_RATE).le(til));
         }
         return c;
+    }
+
+    /**
+     * Arg-level {@code @condition(override: true)} prefix-match on {@code language.name}. Serves
+     * two call-site shapes that share one method: the authored non-key filter on a lookup
+     * coordinate ({@code Query.languagesByKeyFiltered}, composed beside the VALUES join) and the
+     * authored filter on a field nested inside a plain nesting type
+     * ({@code FilmInlineBundle.languageFiltered}, emitted through the sfName-threaded inline
+     * path). A {@code null} prefix is unconstrained.
+     */
+    public static Condition languageNameStartsWith(Table<?> table, String name) {
+        if (name == null) {
+            return DSL.noCondition();
+        }
+        return table.field(Language.LANGUAGE.NAME).startsWith(name);
+    }
+
+    /**
+     * Field-level {@code @condition(contextArguments: ["userId"])} on a {@code @splitQuery}
+     * child ({@code Store.customersSeenByUser}): the {@code userId} value arrives from the
+     * request context (threaded through {@code Graphitron.newExecutionInput(dsl, userId)}), not
+     * from a field argument, and narrows to customers whose first name matches it
+     * case-insensitively. A {@code null} context value matches no rows rather than all, so a
+     * dropped context read is loud in behaviour tests.
+     */
+    public static Condition customerSeenByUser(Customer table, String userId) {
+        if (userId == null) {
+            return DSL.falseCondition();
+        }
+        return table.FIRST_NAME.equalIgnoreCase(userId);
     }
 
 }

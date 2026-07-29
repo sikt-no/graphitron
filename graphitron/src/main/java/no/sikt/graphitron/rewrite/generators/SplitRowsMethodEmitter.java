@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite.generators;
 
-import no.sikt.graphitron.render.CompositeDecodeHelperRegistry;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
@@ -455,9 +454,12 @@ public final class SplitRowsMethodEmitter {
     /**
      * Builds the WHERE condition expression shared by the three cardinality siblings:
      * {@code DSL.noCondition()} AND-ed with each hop's {@code filter} (paired
-     * {@code (srcAlias, tgtAlias)} per hop) AND the field-level {@code filters} (projected off
-     * {@code terminalAlias}). Returns the condition CodeBlock; the caller wraps it in
-     * {@code .where(...)} so the connection sibling can chain {@code .orderBy()/.seek()} after.
+     * {@code (srcAlias, tgtAlias)} per hop) AND, when the coordinate carries field-level
+     * {@code filters}, one glue call composed off {@code terminalAlias} with the rows method's
+     * own {@code env.getArguments()} as the map. Returns the condition CodeBlock; the caller
+     * wraps it in {@code .where(...)} so the connection sibling can chain
+     * {@code .orderBy()/.seek()} after. Hop filters stay this host's: they are join-path
+     * content, not condition content.
      *
      * <p>The per-hop filter is emitted as {@code method(srcAlias, tgtAlias)}, where {@code srcAlias}
      * is the hop's origin side: the previous hop's alias for hops 1..n, and for hop 0 the parent
@@ -469,22 +471,13 @@ public final class SplitRowsMethodEmitter {
      * {@code instanceof} guard.
      */
     private static CodeBlock buildWhereCondition(
-            CodeBlock.Builder body,
-            TypeFetcherEmissionContext ctx,
+            no.sikt.graphitron.rewrite.model.OutputField field,
             List<JoinStep> path,
             List<String> aliases,
             String terminalAlias,
             ParentCorrelation parentCorrelation,
             List<WhereFilter> filters,
-            CompositeDecodeHelperRegistry registry) {
-        // Declare an aliased FK-target table local per join hop for every FK-target @nodeId
-        // override @condition among the filters, into the enclosing method's `body` (the WHERE is an
-        // expression and cannot introduce locals itself). Each caller embeds the returned WHERE in a
-        // select that is added to `body` after this call, so the aliases precede their use. Rows
-        // methods recurse, so the SQL alias is runtime-prefixed onto the terminal alias's getName().
-        Map<WhereFilter, List<String>> fkTargetAliases =
-            FkTargetConditionEmitter.declareAliases(body, filters, terminalAlias, true);
-
+            String outputPackage) {
         var where = CodeBlock.builder();
         where.add("$T.noCondition()", DSL);
         for (int i = 0; i < path.size(); i++) {
@@ -511,9 +504,10 @@ public final class SplitRowsMethodEmitter {
                     JoinPathEmitter.emitTwoArgMethodCall(hop.filter(), srcAlias, tgtAlias));
             }
         }
-        for (WhereFilter f : filters) {
+        if (!filters.isEmpty()) {
             where.add("\n        .and($L)",
-                FkTargetConditionEmitter.emitTerm(ctx, f, terminalAlias, registry, null, fkTargetAliases, new ArgumentValueSource.Env()));
+                ConditionGlueCall.expression(field.parentTypeName(), field.name(), filters,
+                    terminalAlias, CodeBlock.of("env.getArguments()"), outputPackage));
         }
         return where.build();
     }
@@ -537,8 +531,7 @@ public final class SplitRowsMethodEmitter {
      * {@link TypeFetcherGenerator}'s scatterSingleByIdx helper-emission gate; both ask the same
      * uniform question.
      */
-    static MethodSpec buildForBatchedTable(TypeFetcherEmissionContext ctx, ChildField.BatchedTableField btf, String outputPackage,
-            CompositeDecodeHelperRegistry registry) {
+    static MethodSpec buildForBatchedTable(TypeFetcherEmissionContext ctx, ChildField.BatchedTableField btf, String outputPackage) {
         java.util.function.Function<CodeBlock, RowsMethodBody> permit = RowsMethodBody.SqlBatchedTable::new;
         // Declaration name resolved through the command-mint seam: the Record-sourced arm
         // commits a reentry MethodCommand, the Table-sourced arm passes through uncommitted.
@@ -548,21 +541,21 @@ public final class SplitRowsMethodEmitter {
                 ctx, btf, rowsName, btf.returnType(),
                 btf.joinPath(), btf.filters(), btf.sourceKey(), btf.orderBy(), conn,
                 btf.parentCorrelation(),
-                outputPackage, permit, registry);
+                outputPackage, permit);
         }
         if (btf.emitsSingleRecordPerKey()) {
             return buildSingleMethod(
                 ctx, btf, rowsName, btf.returnType(),
                 btf.joinPath(), btf.filters(), btf.sourceKey(),
                 btf.parentCorrelation(),
-                outputPackage, permit, registry);
+                outputPackage, permit);
         }
         return buildListMethod(
             ctx, btf, rowsName, btf.returnType(),
             btf.joinPath(), btf.filters(), btf.sourceKey(),
             /* lookupMapping */ null,
             btf.parentCorrelation(),
-            outputPackage, permit, registry);
+            outputPackage, permit);
     }
 
     // -----------------------------------------------------------------------
@@ -653,15 +646,14 @@ public final class SplitRowsMethodEmitter {
      * backing-object key extraction) lives above this seam, in {@link TypeFetcherGenerator}'s
      * fetcher fork.
      */
-    static MethodSpec buildForBatchedLookupTable(TypeFetcherEmissionContext ctx, ChildField.BatchedLookupTableField blf, String outputPackage,
-            CompositeDecodeHelperRegistry registry) {
+    static MethodSpec buildForBatchedLookupTable(TypeFetcherEmissionContext ctx, ChildField.BatchedLookupTableField blf, String outputPackage) {
         return buildListMethod(
             ctx, blf, ctx.rowsDeclarationName(blf), blf.returnType(),
             blf.joinPath(), blf.filters(), blf.sourceKey(),
             blf.lookupMapping(),
             blf.parentCorrelation(),
             outputPackage,
-            RowsMethodBody.SqlBatchedLookupTable::new, registry);
+            RowsMethodBody.SqlBatchedLookupTable::new);
     }
 
     /**
@@ -681,8 +673,7 @@ public final class SplitRowsMethodEmitter {
             LookupMapping lookupMapping,
             ParentCorrelation parentCorrelation,
             String outputPackage,
-            java.util.function.Function<CodeBlock, RowsMethodBody> permitFactory,
-            CompositeDecodeHelperRegistry registry) {
+            java.util.function.Function<CodeBlock, RowsMethodBody> permitFactory) {
         String fieldName = field.name();
         ClassName typeClass = ClassName.get(
             outputPackage + ".types",
@@ -784,7 +775,7 @@ public final class SplitRowsMethodEmitter {
         }
 
         sel.add(".where($L)\n",
-            buildWhereCondition(body, ctx, path, aliases, terminalAlias, parentCorrelation, filters, registry));
+            buildWhereCondition(field, path, aliases, terminalAlias, parentCorrelation, filters, outputPackage));
         sel.add(".fetch();\n");
         sel.unindent();
 
@@ -851,8 +842,7 @@ public final class SplitRowsMethodEmitter {
             SourceKey sourceKey,
             ParentCorrelation parentCorrelation,
             String outputPackage,
-            java.util.function.Function<CodeBlock, RowsMethodBody> permitFactory,
-            CompositeDecodeHelperRegistry registry) {
+            java.util.function.Function<CodeBlock, RowsMethodBody> permitFactory) {
         String fieldName = field.name();
         ClassName typeClass = ClassName.get(
             outputPackage + ".types",
@@ -890,7 +880,7 @@ public final class SplitRowsMethodEmitter {
         emitFromBridgeAndParentJoin(sel, path, aliases, firstAlias,
             parentCorrelation, joinOnAlias, joinOnCols, joinOnParentCols);
         sel.add(".where($L)\n",
-            buildWhereCondition(body, ctx, path, aliases, terminalAlias, parentCorrelation, filters, registry));
+            buildWhereCondition(field, path, aliases, terminalAlias, parentCorrelation, filters, outputPackage));
         sel.add(".fetch();\n");
         sel.unindent();
         body.add(sel.build());
@@ -944,8 +934,7 @@ public final class SplitRowsMethodEmitter {
             no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn,
             ParentCorrelation parentCorrelation,
             String outputPackage,
-            java.util.function.Function<CodeBlock, RowsMethodBody> permitFactory,
-            CompositeDecodeHelperRegistry registry) {
+            java.util.function.Function<CodeBlock, RowsMethodBody> permitFactory) {
 
         String fieldName = field.name();
         ClassName typeClass = ClassName.get(
@@ -1031,12 +1020,9 @@ public final class SplitRowsMethodEmitter {
             DSL, DSL, RN_COLUMN);
 
         // WHERE hoisted into a local so the windowed page query and the totalCount countSource
-        // below share the exact same predicate. buildWhereCondition must be called exactly once:
-        // it declares FK-target alias locals into the method body as a side effect
-        // (FkTargetConditionEmitter.declareAliases), so a second call would emit duplicate
-        // local declarations.
+        // below share the exact same predicate (one glue call, evaluated once).
         body.addStatement("$T where = $L", ClassName.get("org.jooq", "Condition"),
-            buildWhereCondition(body, ctx, path, aliases, terminalAlias, parentCorrelation, filters, registry));
+            buildWhereCondition(field, path, aliases, terminalAlias, parentCorrelation, filters, outputPackage));
 
         // Inner windowed SELECT attaches .orderBy()/.seek() for cursor-driven filtering; the
         // seek predicate falls in as WHERE, filtering BEFORE ROW_NUMBER() is computed.
