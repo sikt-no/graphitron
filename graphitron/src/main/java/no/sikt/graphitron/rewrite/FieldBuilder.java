@@ -1388,13 +1388,15 @@ class FieldBuilder {
         if (arg.hasAppliedDirective(DIR_ORDER_BY)) {
             return classifyOrderByArg(arg, name, typeName, nonNull, list, errors);
         }
-        if (paginationResolver.isPaginationArg(name)) {
-            ArgumentRef.PaginationArgRef.Role role = switch (name) {
-                case "first"  -> ArgumentRef.PaginationArgRef.Role.FIRST;
-                case "last"   -> ArgumentRef.PaginationArgRef.Role.LAST;
-                case "after"  -> ArgumentRef.PaginationArgRef.Role.AFTER;
-                case "before" -> ArgumentRef.PaginationArgRef.Role.BEFORE;
-                default       -> throw new IllegalStateException("unreachable: isPaginationArg(" + name + ")");
+        // The pagination fact's gathered row is the sole producer of the reserved-name role
+        // assignment; the classifier routes off the row instead of carrying its own name list.
+        var paginationArg = ctx.facts.pagination().argFor(fieldDef, name);
+        if (paginationArg.isPresent()) {
+            ArgumentRef.PaginationArgRef.Role role = switch (paginationArg.get().role()) {
+                case FIRST  -> ArgumentRef.PaginationArgRef.Role.FIRST;
+                case LAST   -> ArgumentRef.PaginationArgRef.Role.LAST;
+                case AFTER  -> ArgumentRef.PaginationArgRef.Role.AFTER;
+                case BEFORE -> ArgumentRef.PaginationArgRef.Role.BEFORE;
             };
             return new ArgumentRef.PaginationArgRef(name, typeName, nonNull, list, role);
         }
@@ -1800,7 +1802,8 @@ class FieldBuilder {
                 : foldRejections(errors);
             return new TableFieldComponents.Rejected(r);
         }
-        return new TableFieldComponents.Ok(filters, orderBy, paginationResolver.resolve(refs, fieldDef), lookupMapping);
+        return new TableFieldComponents.Ok(filters, orderBy,
+            paginationResolver.resolve(ctx.facts.pagination(), fieldDef), lookupMapping);
     }
 
     /**

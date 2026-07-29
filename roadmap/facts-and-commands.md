@@ -848,12 +848,16 @@ resolved value is a view computed after the walk with no traversal of its own. I
 engine is simple; if it does not, the design becomes a pass-ordering DAG, which is a materially heavier
 thing and should be recognised as such before starting.
 
-Slice 4 also carries a real safety regression to mitigate: `FieldBuilder`'s switch over sealed permits is
-compile-checked today, and a visitor registry is not, so a forgotten registration is a silently missing
-fact rather than a build break. The lint engine hit exactly this and answered it with
-`LintRuleRegistryCoverageTest` (every rule registered exactly once; subscribed kinds union not-linted
-kinds partition the node kinds with no overlap or gap). The equivalent must land with the first visitor,
-not after.
+Slice 4 also carries a real safety regression to mitigate, corrected at the beachhead's code walk: the
+claim that `FieldBuilder`'s dispatch is compile-checked holds only for the inner tiers (the sealed
+switches over resolver-result seals); the outer dispatch is a four-arm `instanceof` chain over the
+seventeen type permits whose fall-through already lands a structural rejection. So the regression to
+mitigate is not lost top-level exhaustiveness but a forgotten registration yielding an empty relation
+and a silently null leaf component. The layered answer, landed with the first visitor: the visitor
+contract is sealed and the engine's slot fill is a total switch over the permits (a registration without
+a wired output slot is a compile error), the registry meta-test pins registered-equals-permitted plus the
+declared subject-kind partition (the `LintRuleRegistryCoverageTest` pattern), and each fact lands its own
+population pin through the readers, which is the assertion an empty relation actually fails.
 
 Slice 5 owes its own design decision before any code: **the general launcher command.** The keystone
 designs the projection half, and R541 (slice 3c) sketches the launcher for one family, the root SELECT
@@ -1215,6 +1219,66 @@ R541's single-operation launchers never need it, and a general launcher cannot d
     generator cases 75 to 74, plan leaf references 61 to 85 (the eighteen-arm form switch plus
     the flag rule's six identity reads), entry points held at 18 by exchange (the assembler's
     rows-taking canonical arrived, an unused set-taking convenience left).
+
+- **Slice 4 beachhead landed (2026-07-29): the fact-visitor engine with the pagination fact.**
+  The owed gather-versus-resolve decision, settled at the consult and held narrow deliberately:
+  for the migrated fact the split is exactly R333's two-populations shape (the authored
+  name-keyed pagination args union the inferred connection-directive default, produced once by
+  the visitor; every reader reads one resolved view, and no reader re-reads the directive).
+  The slice does NOT claim the split holds for the ordered intra-coordinate interlocks (join
+  path into correlation into source key, error channel before leaf minting); whether those
+  force a pass-ordering DAG is a later slice's finding, and the beachhead's success must not be
+  read as the general split having held. Decisions and corrections recorded:
+  - **Stale-spec correction:** the item's "FieldBuilder's switch over sealed permits is
+    compile-checked today" is true only of the inner tiers. The outer dispatch is a four-arm
+    `instanceof` chain over the seventeen type permits whose fall-through already lands a
+    structural rejection, so the top-level regression the registry meta-test was calibrated
+    against does not exist; the real regression is a forgotten registration yielding an empty
+    relation and a silently null leaf component, which a partition test cannot see. The
+    enforcers are therefore layered: the visitor contract is *sealed* and the engine's
+    slot-filling switch is total over the permits with no default (a registered visitor without
+    a wired output slot is a compile error), the registry meta-test pins
+    registered-equals-permitted and the declared subject-kind partition
+    (`FactVisitorRegistryCoverageTest`), and each fact lands its own population pin through the
+    readers, the assertion an empty relation actually fails
+    (`PaginationFactPipelineTest`). The option-2 restructuring (resolvers as ordered visitors)
+    was set aside not as heavier but as a net loss of an existing enforcer: today's interlocks
+    are data dependencies the compiler checks (a resolver that needs `refs` takes them as a
+    parameter); registration order enforces nothing.
+  - **The engine** (`no.sikt.graphitron.facts`): the traversal is the shared half, the sinks
+    are not. `GatheredFacts.gather(schema, traversal)` takes the reachability walk as a
+    function (`SchemaReachability::walk` injected by `BuildContext`), so the fact population
+    and the classified population are one surface and reachability keeps its single home while
+    `facts` imports graphql-java only; the import-direction guard gained the leg in the same
+    commit, with the graphql-java allowance stated positively. Visitors own private typed
+    accumulators (no shared append-only sink, per the non-goal the lint engine's sink shape
+    would have violated); the output is a record with one named typed slot per relation. Rows
+    are labeled with their coordinate but indexed by field-definition node identity within the
+    one pre-rewrite assembled schema: every classification-time reader holds the definition the
+    traversal visited, the connection rewrite transforms definitions strictly downstream, and
+    the population pin is the keying's drift enforcer.
+  - **The beachhead's real payoff**, sharper than the slice table's "genuinely independent
+    fact": the connection directive's `defaultFirstValue` was read and coerced by two
+    independent copies with differing coercion arms (the resolver's static read feeding the
+    wrapper, and the connection promoter's private copy feeding the rebuilt schema's injected
+    `first` argument, under a hand-maintained "mirrors" comment). Both copies are gone; the
+    visitor coerces once, `PaginationResolver.defaultPageSize` is the one view, and the
+    pipeline pin asserts the two emitted materialisations agree. The reserved-name role
+    assignment also has one producer now: the classifier's pagination arm routes off the
+    gathered row (shape (b) at the consult: the visitor is upstream of the ref, dissolving the
+    apparent classified-refs interlock), and `projectForFilter`'s spec is the view over the
+    same row. The directive-argument literal has one lexical home, pinned.
+  - **Deliberately untouched:** `PaginationSpec`'s four nullable slots (which can represent
+    illegal pairs) keep their shape; restating it is a separate decision, not implied by the
+    re-sourcing. The validator's pagination-requires-ordering mirror reads the leaf's stored
+    spec and is unaffected by where the spec's inputs are gathered. The three classification
+    advisories stay at their classification seam (registering them as visitors would give the
+    diagnostic channel a second dispatcher and falsify the lint registry's
+    classifier-advisories-are-not-visitors pin). The post-walk folds (`NestingReach`,
+    `ArgumentReachableInputs`, `ArrivalIndex`, `MixedSourceReachIndex`, `TenantBindingIndex`)
+    are the *view* half of the same story and stay in the core package for now; their eventual
+    home is decided when the second gathered fact lands, not by accident. Ratchets unchanged
+    (the moved reads live in the core package, outside all three scans).
 
 ## The exemption lists are the grain worklist
 

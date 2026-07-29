@@ -22,7 +22,6 @@ import graphql.util.TreeTransformerUtil;
 import graphql.schema.GraphQLInputObjectType;
 import no.sikt.graphitron.rewrite.model.FacetNaming;
 import no.sikt.graphitron.rewrite.model.FacetSpec;
-import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType;
@@ -36,7 +35,6 @@ import java.util.List;
 import java.util.Set;
 
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_CONNECTION_NAME;
-import static no.sikt.graphitron.rewrite.BuildContext.ARG_DEFAULT_FIRST_VALUE;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_AS_CONNECTION;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_AS_FACET;
@@ -148,7 +146,8 @@ final class ConnectionPromoter {
                 && !promotion.connectionName().equals(currentBaseName)) {
             rewrites.add(new CarrierRewrite(
                 parent.getName(), fieldDef.getName(), promotion.connectionName(),
-                resolveDefaultFirstValue(fieldDef), fieldDef.getType() instanceof GraphQLNonNull));
+                PaginationResolver.defaultPageSize(ctx.facts.pagination(), fieldDef),
+                fieldDef.getType() instanceof GraphQLNonNull));
         }
         var carrierLocation = BuildContext.locationOf(fieldDef);
         registerSynthesised(ctx, promotion.connectionName(), new ConnectionType(
@@ -317,7 +316,9 @@ final class ConnectionPromoter {
     private static GraphQLFieldDefinition rewriteCarrierField(GraphQLFieldDefinition original, CarrierRewrite rewrite) {
         var ref = GraphQLTypeReference.typeRef(rewrite.connectionName());
         GraphQLOutputType newType = rewrite.outerNonNull() ? GraphQLNonNull.nonNull(ref) : ref;
-        // defaultPageSize mirrors FieldWrapper.Connection.defaultPageSize at this carrier site.
+        // defaultPageSize rode in on the CarrierRewrite from the pagination fact's one resolved
+        // view (PaginationResolver.defaultPageSize), the same view the wrapper classification
+        // reads, so the two emitted materialisations of the default cannot drift.
         var firstArg = GraphQLArgument.newArgument()
             .name("first")
             .type(GraphQLTypeReference.typeRef("Int"))
@@ -328,18 +329,6 @@ final class ConnectionPromoter {
             .type(GraphQLTypeReference.typeRef("String"))
             .build();
         return original.transform(b -> b.type(newType).argument(firstArg).argument(afterArg));
-    }
-
-    private static int resolveDefaultFirstValue(GraphQLFieldDefinition field) {
-        var applied = field.getAppliedDirective(DIR_AS_CONNECTION);
-        if (applied == null) return FieldWrapper.DEFAULT_PAGE_SIZE;
-        var arg = applied.getArgument(ARG_DEFAULT_FIRST_VALUE);
-        if (arg == null || arg.getValue() == null) return FieldWrapper.DEFAULT_PAGE_SIZE;
-        Object v = arg.getValue();
-        if (v instanceof Integer i) return i;
-        if (v instanceof Number n) return n.intValue();
-        if (v instanceof graphql.language.IntValue iv) return iv.getValue().intValueExact();
-        return FieldWrapper.DEFAULT_PAGE_SIZE;
     }
 
     private record ConnectionPromotion(

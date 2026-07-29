@@ -111,7 +111,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * result channels ({@code FieldBuilder}'s nested seals, the resolver {@code Resolved} families)
  * are gathering scaffolding discarded before the model exists; {@code catalog/}'s projections
  * are views over the model, not hierarchies in it; {@code plan/} internals are producer
- * scaffolding by the same rule. Nested seals inherit their top-level root's kind.
+ * scaffolding by the same rule, and so is {@code facts/}'s visitor contract (the gathered
+ * relations themselves are plain records, not sealed hierarchies; the sealed visitor set is the
+ * engine's registration machinery). Nested seals inherit their top-level root's kind.
  *
  * <p>Each entry is one judgment call, stated so it can be corrected in one line; the enforced
  * property is coverage, not the infallibility of any single label.

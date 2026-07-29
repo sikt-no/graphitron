@@ -100,7 +100,8 @@ class BuildContext {
     static final String DIR_CONDITION           = "condition";
     static final String DIR_MUTATION            = "mutation";
     static final String DIR_DISCRIMINATOR       = "discriminator";
-    static final String DIR_AS_CONNECTION       = "asConnection";
+    // The pagination fact's gather owns this directive's read; the name has one home there.
+    static final String DIR_AS_CONNECTION       = no.sikt.graphitron.facts.PaginationFactVisitor.DIR_AS_CONNECTION;
     static final String DIR_AS_FACET            = "asFacet";
     static final String DIR_SOURCE_ROW          = "sourceRow";
     static final String DIR_PIVOT               = "pivot";
@@ -139,7 +140,7 @@ class BuildContext {
     static final String ARG_SQL_STATE          = "sqlState";
     static final String ARG_MATCHES            = "matches";
     static final String ARG_DESCRIPTION        = "description";
-    static final String ARG_DEFAULT_FIRST_VALUE = "defaultFirstValue";
+    static final String ARG_DEFAULT_FIRST_VALUE = no.sikt.graphitron.facts.PaginationFactVisitor.ARG_DEFAULT_FIRST_VALUE;
     static final String ARG_CONNECTION_NAME     = "connectionName";
     static final String ARG_OVERRIDE            = "override";
     static final String ARG_MULTI_ROW           = "multiRow";
@@ -294,6 +295,14 @@ class BuildContext {
      * it onto the {@link GraphitronSchema} for the validator and the emitters.
      */
     final no.sikt.graphitron.rewrite.model.TenantScopes tenantScopes;
+    /**
+     * The gathered fact relations ({@link no.sikt.graphitron.facts.GatheredFacts}), produced by
+     * the shared fact traversal over this context's pre-rewrite assembled schema before any
+     * classification read. Classification reads resolved views over these relations instead of
+     * re-reading the SDL surface each fact owns; empty for tests that construct a context
+     * without a schema.
+     */
+    final no.sikt.graphitron.facts.GatheredFacts facts;
 
     BuildContext(GraphQLSchema schema, JooqCatalog catalog, RewriteContext ctx) {
         // schema and catalog stay nullable for tests that focus on plumbing the other half; ctx
@@ -308,6 +317,9 @@ class BuildContext {
         this.tenantScopes = catalog == null
             ? no.sikt.graphitron.rewrite.model.TenantScopes.None.INSTANCE
             : TenantScopeClassifier.classify(catalog, ctx.tenantColumn());
+        this.facts = schema == null
+            ? no.sikt.graphitron.facts.GatheredFacts.empty()
+            : no.sikt.graphitron.facts.GatheredFacts.gather(schema, SchemaReachability::walk);
     }
 
     /**
@@ -570,7 +582,7 @@ class BuildContext {
         GraphQLType unwrappedOnce = GraphQLTypeUtil.unwrapNonNull(fieldType);
 
         if (fieldDef.hasAppliedDirective(DIR_AS_CONNECTION) && unwrappedOnce instanceof GraphQLList) {
-            return new FieldWrapper.Connection(outerNullable, PaginationResolver.resolveDefaultFirstValue(fieldDef));
+            return new FieldWrapper.Connection(outerNullable, PaginationResolver.defaultPageSize(facts.pagination(), fieldDef));
         }
 
         if (unwrappedOnce instanceof GraphQLList listType) {

@@ -33,6 +33,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       exactly what {@code command} may (the refs that ride the rows must be readable by the
  *       renderer of those rows, so the two legs read one dial and shrink in lockstep), and never
  *       {@code plan}.</li>
+ *   <li>{@code no.sikt.graphitron.facts} gathers fact relations at the parse boundary: it holds
+ *       graphql-java types legitimately (the gather reads the assembled schema; this is a
+ *       positive allowance, not a gap in the rules), and imports nothing else of the tree: not
+ *       the legacy core (the traversal is injected by the caller so reachability keeps its one
+ *       home), not the emit library, and not {@code command} / {@code plan} / {@code render}
+ *       (facts sit below commands; the corpus will read facts without a plan).</li>
  * </ul>
  *
  * <p>The guard also pins the minting site of {@code UnitRef} and {@code UnitMethodRef}: a unit
@@ -169,10 +175,21 @@ class PackageImportDirectionTest {
             return null;
         });
 
+        int factsFiles = scan(sourceRoot.resolve("facts"), findings, (file, imp) -> {
+            if (imp.startsWith("no.sikt.graphitron.")
+                    && !imp.startsWith("no.sikt.graphitron.facts.")) {
+                return "facts gathers at the parse boundary: graphql-java only, nothing of the"
+                    + " tree (the traversal is injected, so no legacy-core import; commands sit"
+                    + " above facts)";
+            }
+            return null;
+        });
+
         assertThat(findings).as("package-triangle import-direction violations").isEmpty();
         assertThat(commandFiles).as("command sources scanned (walk must not be vacuous)").isGreaterThanOrEqualTo(4);
         assertThat(planFiles).as("plan sources scanned (walk must not be vacuous)").isGreaterThanOrEqualTo(3);
         assertThat(renderFiles).as("render sources scanned (walk must not be vacuous)").isGreaterThanOrEqualTo(3);
+        assertThat(factsFiles).as("facts sources scanned (walk must not be vacuous)").isGreaterThanOrEqualTo(5);
     }
 
     private static boolean isBorrowedRef(String imp) {
