@@ -1299,10 +1299,12 @@ R541's single-operation launchers never need it, and a general launcher cannot d
   - **The relation re-keys on the row's own `UnitMethodRef`** (owner unit plus method), with
     the coordinate as a non-unique index; no `operation` column (it would restate what the arm
     set already discriminates), and each multi-row family carries the discriminator it actually
-    differs in (participant table for the polymorphic family; named roles for the DML
-    write/reentry pair, the two-ref shape the connection fetchers row landed). "One command per
-    emitted method" is then structural, inheriting `MethodCommand.methodKey()`'s one live
-    invariant; `MethodCommand.typePath` is empty at both commit sites, so the four-string
+    differs in (participant table for the polymorphic family; the DML family resolved
+    single-row at the 5e design record: the row is the reentry companion alone, so no named
+    write/reentry roles are needed, and this sentence is corrected in place per the stale-spec
+    rule). "One command per emitted method" is then structural only once a case-folded
+    `UnitMethodRef` census enforces it (the 5e record lands that census with the registry
+    retirement, inheriting `MethodCommand.methodKey()`'s one live invariant); `MethodCommand.typePath` is empty at both commit sites, so the four-string
     record retires into refs with nothing lost. R333's `anchor address` closes with two answers
     by direction: the hosting address is the row's ref; the contributes-to address (the
     ancestor's projection unit) already landed with the keystone's correlation arms, and the
@@ -1669,6 +1671,90 @@ R541's single-operation launchers never need it, and a general launcher cannot d
     `ReentryCommandClosureTest` repoints at the relation; the `loadMethod`/`rowsMethodName`
     duplicate derivation resolves; the four emitted-and-uncommitted polymorphic rows methods
     from the handoff note above meet the closure there).
+  - **5e design record (2026-07-30, consult-checked, binding).** The projected/discriminated
+    DML reentry companions fold into the launcher relation; `MethodCommandRegistry` retires.
+    The nine pre-cutover SQL pins are frozen (`DmlSqlBaselineTest`: projected single INSERT and
+    UPDATE, projected list INSERT and bulk UPDATE, composite-PK single and list, discriminated
+    single and list, the encoded-DELETE one-statement negative; 32 pins across three
+    baselines). UPSERT is retired from the execution corpus and its Projected cell stays
+    generated-Java-pin-only, a recorded coverage gap.
+    - **Source arms.** A `Reentry` capability sub-interface in `LaunchSource` (the `Correlated`
+      precedent) with two arms: `ProjectedReentry(TableRef table, UnitRef projection,
+      ParentCorrelation.OnLiftedSlots correlation)` and `DiscriminatedReentry(DiscriminatedTable
+      discriminated, ParentCorrelation.OnLiftedSlots correlation)`, the discriminated payload
+      borrowed WHOLE (the `FacetPlan.Entry` precedent) so `DiscriminatedTableFragments.assembly`
+      keeps one input type and no sibling restates five slots. One row per
+      projected/discriminated `DmlTableField` coordinate; the row is the COMPANION, not the
+      write (and the DML entry point is honestly not thin: it owns the transaction, the dialect
+      guard, the no-match guard, and the channel envelope; the record says so plainly rather
+      than claiming the thin-entry-point division). `Encoded*` coordinates get no row. The
+      where slot stays null; the list arm's ORDER BY idx is source-entailed (the `KeyedLookup`
+      shape, ordering slot absent). Watch the single discriminated arm's condition composition
+      order (key equality seeded, discriminator ANDed on top today); the frozen pins arbitrate.
+    - **Key-type single-homing (consult-found).** The write's `RETURNING` column list and the
+      companion's `keys` parameter type are today two derivations agreeing by javadoc
+      (`primaryKeyColumns()` vs `correlation.columns()`). The write emitter takes the row's
+      correlation plus the companion's `UnitMethodRef` and derives BOTH from the one fact, so
+      the assignment compatibility across the generated call boundary becomes structural.
+    - **Invocation.** A third arm, `ReturningKeyed`, payload-free: the keys element type
+      derives from the source arm's correlation, the list-lift from the result shape. Reusing
+      `Direct` with a source-read parameter view was rejected as regime fusion (the parameter
+      list is documented as a view over invocation and tenancy). BEFORE the arm lands, the
+      renderer's two derived views (parameter list, `valueTypeOf`) become total switches over
+      `Invocation` so the new arm is a compile error at every view, not a silent default. A
+      stated decision, not a byproduct: the companion's public generated signature keeps
+      `List<Record>` for the list arm (the pins and the compile-spec pin it), so the
+      `ReturningKeyed` view of `RecordList` renders `List<Record>` where `Batched` renders
+      buckets; per-invocation payload views are the existing shape.
+    - **Membership enforcers (consult-found).** The child families' producer chain and the new
+      DML family get the `rowOf` shape: total switches with no default (for DML, over
+      `DmlTableField`'s four permits crossed with `DmlReturnExpression`'s six arms; that
+      mapping switch is the one home of the kind-to-(source, result) projection). A leaf added
+      without a row becomes a compile error, not a silent non-member; the polymorphic
+      carve-out stays the only decided emitted-and-uncommitted population.
+    - **Name derivations end model-side (fork C redirected by the consult).** The two
+      batched-polymorphic dispatch arms read `units.rowsMethod(parent, field)` refs (the
+      orderBy-helper precedent: a `GeneratedUnits` scheme with no row is already the resolved
+      shape for emitted-but-uncommitted methods). `BatchKeyField.rowsMethodName()` and its two
+      `load` overrides retire (the three `RowsMethodCall.batchLoaderLambda` callers get the
+      name threaded from the row's ref; `GeneratedUnits.loadMethod` stays the mint);
+      `DmlTableField.reentryRowsMethodName()` retires: `GeneratedUnits` gains the
+      `reentryRowsMethod` scheme as the mint and the companion's ref rides the row. Zero
+      model-side generated-unit naming facts remain.
+    - **The registry retires with its invariant re-homed (consult-found).** Deleting
+      `MethodCommandRegistry.commit`'s throw would delete the only one-command-per-emitted-
+      method check exactly when a new naming scheme joins the relation, and coordinate
+      uniqueness does not imply method-name uniqueness (`rows` + upperCamel is not injective;
+      the projection producer already fails production on case-folded duplicates with a
+      validator mirror). The same commit that deletes the registry lands a case-folded
+      `UnitMethodRef` census in `LauncherRelation`'s compact constructor plus the validator
+      mirror. Both seams, `MethodCommand`, the registry, the `GenerationResult.methodCommands`
+      slot, the five drift-checks, and `MethodCommandRegistryTest` retire; the
+      `emitsKeyedReQuery` javadoc `{@link}` to the registry repoints.
+    - **Closure repoint (fork D).** `GenerationResult` surfaces the launcher relation in the
+      slot `methodCommands` vacates (the oracle joins what the run RENDERED FROM, never a
+      re-derivation); the expected set stays model-anchored but the anchor is restated
+      per-family (relation membership is per-family production now, not the
+      `emitsKeyedReQuery` conjunct); the test renames off the retired "reentry command"
+      vocabulary. The DML witness pin moves onto the row's `UnitMethodRef`.
+    - **Backstops (fork E).** The `ReturningKeyed`-iff-`Reentry` pair is stated as a
+      biconditional (the service/`LoaderDelegated` precedent); never `Connection`, never
+      `LoaderDelegated`; `TenantStrategy.Single` only, citing the mutation-side `@tenantFanOut`
+      rejection. The companion consumes the EXISTING dsl-declaration shell carve-out; 5e adds
+      no third carve-out. The render-site pin moves 9 to 11 (one render call each in the
+      projected and discriminated write-arm emissions).
+    - **The 3x2 product: a statement, not a retirement.** The reentry half stops re-deriving
+      `DmlReturnExpression`'s kind-by-cardinality product; the write half keeps its six arms
+      because cardinality has NO other carrier on the DML leaves (they carry no
+      `ReturnTypeRef`), which is the real justification; the collapse to three kinds plus a
+      carried arity is recorded follow-up, not this slice. After 5e, `reentryCorrelation` is a
+      producer-only read. `DmlReturnExpression` never enters `command/` (not on the borrow
+      dial).
+    - **Residuals.** The declared-but-unpopulated `Operation.UpdateMatching` /
+      `DeleteMatching` arms get their per-arm answer here or an explicit deferral with a filed
+      home (the root-family mirror-gaps precedent). The earlier "named roles for the DML
+      write/reentry pair" sentence in this log is corrected in place: the family is
+      single-row (the companion), and re-keying on `UnitMethodRef` is not needed for it.
 
 ## The exemption lists are the grain worklist
 
