@@ -12,7 +12,6 @@ import no.sikt.graphitron.rewrite.generators.schema.ConstraintViolationsClassGen
 import no.sikt.graphitron.rewrite.generators.schema.ErrorMappingsClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.OutcomeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator;
-import no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.OrderByResultClassGenerator;
 import no.sikt.graphitron.render.ArgumentValueSource;
 import no.sikt.graphitron.render.PreviousNodeRef;
@@ -420,13 +419,14 @@ public class TypeFetcherGenerator {
             GraphitronSchema graphitronSchema,
             ChildField.NestingField dualWiring,
             no.sikt.graphitron.plan.LauncherRelation launchers) {
-        var className = typeName + "Fetchers";
+        var fetchersRef = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).fetchers(typeName);
+        var className = fetchersRef.simpleName();
         var builder = TypeSpec.classBuilder(className)
             .addModifiers(Modifier.PUBLIC);
         // The class this type's reified fetcher reads are referenced through (e.g.
         // FilmFetchers::title). Only the reified method is collected below; the registration value
         // FetcherEmitter pairs with it is emitted by FetcherRegistrationsEmitter, not here.
-        var reifiedFetchersClass = ClassName.get(outputPackage + ".fetchers", className);
+        var reifiedFetchersClass = ClassName.get(fetchersRef.packageName(), fetchersRef.simpleName());
 
         // Per-class scratchpad for deferred helper-method emission. Every emitter that writes a
         // graphitronContext(env) call obtains the CodeBlock through ctx.graphitronContextCall(),
@@ -564,7 +564,7 @@ public class TypeFetcherGenerator {
                             "Graphitron generator bug (batched child dispatch): coordinate '"
                             + btf.qualifiedName() + "' has no launcher row;"
                             + " the producer's membership and this dispatch have drifted"));
-                    builder.addMethod(buildBatchedDataFetcher(ctx, btf, btf.returnType(), btf.sourceKey(), btf.lift(), parentTable, resultType, sourceIsOutcome, outputPackage, batchedRow.unit().methodName()));
+                    builder.addMethod(buildBatchedDataFetcher(ctx, btf, btf.returnType(), btf.sourceKey(), btf.lift(), parentTable, resultType, sourceIsOutcome, outputPackage, batchedRow));
                     var dslDeclaration = batchedRow.tenancy()
                             instanceof no.sikt.graphitron.command.TenantStrategy.Single
                         ? TenantDslEmitter.resolve(ctx, btf, outputPackage).declaration()
@@ -578,7 +578,7 @@ public class TypeFetcherGenerator {
                             "Graphitron generator bug (batched lookup child dispatch): coordinate '"
                             + blf.qualifiedName() + "' has no launcher row;"
                             + " the producer's membership and this dispatch have drifted"));
-                    builder.addMethod(buildBatchedDataFetcher(ctx, blf, blf.returnType(), blf.sourceKey(), blf.lift(), parentTable, resultType, sourceIsOutcome, outputPackage, lookupChainRow.unit().methodName()));
+                    builder.addMethod(buildBatchedDataFetcher(ctx, blf, blf.returnType(), blf.sourceKey(), blf.lift(), parentTable, resultType, sourceIsOutcome, outputPackage, lookupChainRow));
                     builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
                         .render(lookupChainRow, launchers.carrierDsl(),
                             TenantDslEmitter.resolve(ctx, blf, outputPackage).declaration()));
@@ -5580,12 +5580,12 @@ public class TypeFetcherGenerator {
      *       parent's source is never null mid-query and never Outcome-wrapped: empty prelude.</li>
      * </ul>
      *
-     * <p>The loader's per-key value is {@code Record} whenever the rows-method emits one record
-     * per key ({@link BatchKeyField#emitsSingleRecordPerKey} — the same predicate the rows-method
-     * router and the scatterSingleByIdx helper-emission gate consult), {@code List<Record>}
-     * otherwise, and the connection container (Table-sourced only, by the leaf's constructor) is
-     * the {@code ConnectionResult} carrier. The fetcher's overall result follows the field's
-     * GraphQL cardinality regardless of dispatch.
+     * <p>The loader's per-key value is the row's per-key view
+     * ({@link no.sikt.graphitron.render.BatchedRowsFragments#perKeyValueTypeOf}, whose
+     * {@code List} lift is the launcher's own batch container, so the two ends cannot
+     * disagree). The fetcher's overall result follows the field's GraphQL cardinality
+     * regardless of dispatch, a different axis from the row's per-key shape and deliberately
+     * entry-local; its fanned and connection legs read the same row facts as the per-key view.
      */
     private static <T extends ChildField & BatchKeyField> MethodSpec
             buildBatchedDataFetcher(TypeFetcherEmissionContext ctx, T field,
@@ -5593,27 +5593,21 @@ public class TypeFetcherGenerator {
                     SourceKey sourceKey, KeyLift lift,
                     TableRef parentTable,
                     GraphitronType.ResultType resultType, boolean sourceIsOutcome,
-                    String outputPackage, String rowsMethodName) {
+                    String outputPackage, no.sikt.graphitron.command.LauncherCommand row) {
 
         boolean isList = returnType.wrapper().isList();
-        boolean isConnection = returnType.wrapper() instanceof FieldWrapper.Connection;
         // A fanned batched field's loader values are the merged marker-bearing element lists the
         // fanned rows method produces; the wrap tail collapses them per field invocation, where
-        // each parent's own env yields the right per-element error paths.
-        boolean fanned = TenantDslEmitter.isFanOut(ctx, field.name());
+        // each parent's own env yields the right per-element error paths. The fork is the row's
+        // tenancy arm, the same fact the launcher renders under.
+        boolean fanned = row.tenancy() instanceof no.sikt.graphitron.command.TenantStrategy.Fanned;
+        String rowsMethodName = row.unit().methodName();
 
-        TypeName connectionResult = ClassName.get(
-            outputPackage + ".util", ConnectionResultClassGenerator.CLASS_NAME);
-        TypeName listOfObject = ParameterizedTypeName.get(LIST, ClassName.get(Object.class));
-        TypeName valueType = fanned
-            ? listOfObject
-            : isConnection
-                ? connectionResult
-                : field.emitsSingleRecordPerKey() ? RECORD : ParameterizedTypeName.get(LIST, RECORD);
+        TypeName valueType = no.sikt.graphitron.render.BatchedRowsFragments.perKeyValueTypeOf(row);
         TypeName resultValueType = fanned
-            ? listOfObject
-            : isConnection
-                ? connectionResult
+            ? ParameterizedTypeName.get(LIST, ClassName.get(Object.class))
+            : row.result() instanceof no.sikt.graphitron.command.ResultShape.Connection conn
+                ? ClassName.get(conn.carrier().packageName(), conn.carrier().simpleName())
                 : isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
 
         TypeName keyType = sourceKey.keyElementType();

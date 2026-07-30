@@ -30,7 +30,7 @@ import java.util.List;
  * context object. The reserved {@code __idx__} scatter column is arm-entailed: constant for
  * this delivery, so no extras slot carries it.
  */
-final class BatchedRowsFragments {
+public final class BatchedRowsFragments {
 
     private BatchedRowsFragments() {}
 
@@ -217,23 +217,32 @@ final class BatchedRowsFragments {
     }
 
     /**
-     * The rendered payload for a batched row, read by the launcher renderer and the entry-point
-     * emitter: {@code List<Record>} for the single-per-key shape, {@code List<List<Record>>}
-     * for the list shape, and the scatter's marker-bearing {@code List<List<Object>>} transport
-     * under fanned tenancy.
+     * The per-key element view of the batched payload, the {@code V} the entry point's
+     * DataLoader resolves each key to: the scatter's marker-bearing {@code List<Object>}
+     * element list under fanned tenancy, the connection carrier (its ref minted on the row)
+     * for the connection shape, {@code Record} for the single-per-key shape and
+     * {@code List<Record>} otherwise. {@link #valueTypeOf} is exactly this view's {@code List}
+     * lift and the entry-point emitter reads this method, so the launcher's batch container
+     * and the loader's value type cannot disagree.
      */
-    static TypeName valueTypeOf(LauncherCommand row) {
+    public static TypeName perKeyValueTypeOf(LauncherCommand row) {
         if (row.tenancy() instanceof TenantStrategy.Fanned) {
-            return ParameterizedTypeName.get(LIST_CN,
-                ParameterizedTypeName.get(LIST_CN, ClassName.get(Object.class)));
+            return ParameterizedTypeName.get(LIST_CN, ClassName.get(Object.class));
         }
         if (row.result() instanceof no.sikt.graphitron.command.ResultShape.Connection conn) {
-            return ParameterizedTypeName.get(LIST_CN, className(conn.carrier()));
+            return className(conn.carrier());
         }
-        TypeName listOfRecord = ParameterizedTypeName.get(LIST_CN, RECORD);
         return row.result() instanceof no.sikt.graphitron.command.ResultShape.SingleRecord
-            ? listOfRecord
-            : ParameterizedTypeName.get(LIST_CN, listOfRecord);
+            ? RECORD
+            : ParameterizedTypeName.get(LIST_CN, RECORD);
+    }
+
+    /**
+     * The rendered payload for a batched row, read by the launcher renderer: one
+     * {@link #perKeyValueTypeOf} element per batch key.
+     */
+    static TypeName valueTypeOf(LauncherCommand row) {
+        return ParameterizedTypeName.get(LIST_CN, perKeyValueTypeOf(row));
     }
 
     /**

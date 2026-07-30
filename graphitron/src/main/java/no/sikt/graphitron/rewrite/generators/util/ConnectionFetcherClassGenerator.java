@@ -35,7 +35,7 @@ public final class ConnectionFetcherClassGenerator {
      */
     public static List<TypeSpec> generateFor(GraphitronType.ConnectionType ct, String outputPackage) {
         var helper = ClassName.get(outputPackage + ".util", ConnectionHelperClassGenerator.CLASS_NAME);
-        var conn = TypeSpec.classBuilder(ct.name() + "Fetchers")
+        var conn = TypeSpec.classBuilder(ct.name() + no.sikt.graphitron.plan.GeneratedUnits.FETCHERS_SUFFIX)
             .addModifiers(Modifier.PUBLIC)
             .addMethod(delegate("edges", helper, "edges"))
             .addMethod(delegate("nodes", helper, "nodes"))
@@ -49,7 +49,7 @@ public final class ConnectionFetcherClassGenerator {
         if (!ct.facets().isEmpty()) {
             conn.addMethod(facetsDelegate(helper, outputPackage));
         }
-        var edge = TypeSpec.classBuilder(ct.edgeTypeName() + "Fetchers")
+        var edge = TypeSpec.classBuilder(ct.edgeTypeName() + no.sikt.graphitron.plan.GeneratedUnits.FETCHERS_SUFFIX)
             .addModifiers(Modifier.PUBLIC)
             .addMethod(delegate("node", helper, "edgeNode"))
             .addMethod(delegate("cursor", helper, "edgeCursor"))

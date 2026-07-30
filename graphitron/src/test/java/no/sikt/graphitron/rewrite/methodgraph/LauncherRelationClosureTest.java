@@ -98,6 +98,7 @@ class LauncherRelationClosureTest {
     private static GraphitronSchema model;
     private static EmittedMethodClosure walk;
     private static LauncherRelation launchers;
+    private static Map<String, no.sikt.graphitron.javapoet.TypeSpec> emittedUnits;
 
     @BeforeAll
     static void generateAndWalk(@TempDir Path workDir) throws Exception {
@@ -114,6 +115,7 @@ class LauncherRelationClosureTest {
         var result = new GraphQLRewriteGenerator(ctx).generate();
         walk = EmittedMethodClosure.walk(result.emittedUnits());
         launchers = result.launchers();
+        emittedUnits = result.emittedUnits();
     }
 
     /**
@@ -188,6 +190,38 @@ class LauncherRelationClosureTest {
                 .map(r -> r.unit().owner().fqcn() + "#" + r.unit().methodName())
                 .distinct().count())
             .isEqualTo(launchers.rows().size());
+    }
+
+    /**
+     * The entry-point identity pin, derived from the relation rather than a roster: for every
+     * row, the owner fetchers class declares a DataFetcher entry method named exactly the
+     * coordinate's field name, taking exactly one {@code DataFetchingEnvironment} parameter.
+     * This is the falsifiable form of the formula-derived decision (the entry method's
+     * identity IS the coordinate; the schema wiring rebinds the same accessor): signature
+     * structure only, no body assertions, so body thinness stays with the render-sites pin
+     * (composition can only live in the launcher renderer) and the write entries' deliberate
+     * non-thinness (the {@code Reentry}-sourced rows) needs no carve-out here.
+     */
+    @Test
+    void everyRowsEntryPointIsTheCoordinateNamedEnvMethod() {
+        for (LauncherCommand row : launchers.rows()) {
+            String unitFqcn = row.unit().owner().fqcn();
+            var unit = emittedUnits.get(unitFqcn);
+            assertThat(unit).as("emitted unit %s", unitFqcn).isNotNull();
+            String entryName = row.coordinate().getFieldName();
+            var entries = unit.methodSpecs().stream()
+                .filter(m -> m.name().equals(entryName))
+                .toList();
+            assertThat(entries)
+                .as("row %s: entry method '%s' on %s", coordinateOf(row), entryName, unitFqcn)
+                .hasSize(1);
+            assertThat(entries.get(0).parameters())
+                .as("row %s: the entry method takes exactly (DataFetchingEnvironment env)",
+                    coordinateOf(row))
+                .singleElement()
+                .satisfies(p -> assertThat(p.type().toString())
+                    .isEqualTo("graphql.schema.DataFetchingEnvironment"));
+        }
     }
 
     /**

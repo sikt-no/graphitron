@@ -1871,6 +1871,28 @@ R541's single-operation launchers never need it, and a general launcher cannot d
       union of per-kind edge views cannot cover them; the recompile graph's blanket
       frozen-singleton over-approximation (`CompileDependencyGraphBuilder`) is the deliberate
       class-grain cover, inherited by slice 7 as a stated carve-out.
+  - **5f landed (2026-07-30).** The recorded decision shipped with its enforcers and both
+    folds, behaviour-neutral by construction (no pinned SQL string moved, no ratchet count
+    moved). Fold (a): `BatchedRowsFragments.perKeyValueTypeOf` is the new per-key element view
+    whose `List` lift IS `valueTypeOf` (the class went public beside its fragment siblings),
+    and `buildBatchedDataFetcher` takes the row (the name, the fanned fork, the per-key value
+    type and the connection carrier ref all read off it); the `resultValueType` stays
+    entry-local per the record, its fanned and connection legs reading the same row facts.
+    `TenantDslEmitter.isFanOut` lost its last caller and retired. Fold (b): all nine
+    `<Type>Fetchers` formula sites (plus the tenth, the `.fetchers` package concatenation in
+    the registration emitter's `fetchersPackage` local) now read
+    `GeneratedUnits.fetchers`/`FETCHERS_SUFFIX`; `FetcherRegistrationsEmitter` threads the
+    vocabulary instead of a package string, with a type-grain `fetchersClass` helper stating
+    the never-off-a-coordinate-row rule. The identity enforcer landed on
+    `LauncherRelationClosureTest`: for every relation row, the owner fetchers class declares a
+    method named exactly `coordinate.getFieldName()` taking exactly
+    `(DataFetchingEnvironment)`, signature structure only, derived from the relation with no
+    roster (the `Reentry`-sourced write entries satisfy it too, so no carve-out). One latent
+    oddity corrected by the fold: the schema-free unit-tier assemblies' reified fetchers class
+    previously landed in a package literally named `.fetchers` (the empty output package
+    concatenated); the vocabulary's empty-package handling makes it the root package.
+    Verified: all 32 SQL pins byte-identical, full reactor green. Slice 5 closes with 5f; next
+    per the programme: slice 6.
 
 ## The exemption lists are the grain worklist
 

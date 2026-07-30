@@ -43,7 +43,7 @@ public final class ErrorTypeFetcherClassGenerator {
      * pair for the type the row names.
      */
     public static TypeSpec generateFor(GraphitronType.ErrorType et) {
-        return TypeSpec.classBuilder(et.name() + "Fetchers")
+        return TypeSpec.classBuilder(et.name() + no.sikt.graphitron.plan.GeneratedUnits.FETCHERS_SUFFIX)
             .addModifiers(Modifier.PUBLIC)
             .addMethod(pathMethod())
             .addMethod(messageMethod())

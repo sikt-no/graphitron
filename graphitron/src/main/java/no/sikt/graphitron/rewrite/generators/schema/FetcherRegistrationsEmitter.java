@@ -69,7 +69,7 @@ public final class FetcherRegistrationsEmitter {
      */
     public static Map<String, CodeBlock> emit(GraphitronSchema schema, String outputPackage,
             List<TypeUnitCommand.SchemaShapeUnit> rows) {
-        String fetchersPackage = outputPackage + ".fetchers";
+        var units = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage);
 
         var nestedTypeMap = new LinkedHashMap<String, NestedTypeWiring>();
         schema.fields().values().forEach(field -> collectNestedTypes(field, nestedTypeMap));
@@ -84,9 +84,9 @@ public final class FetcherRegistrationsEmitter {
             var type = schema.type(name);
             CodeBlock body;
             if (type instanceof GraphitronType.ConnectionType ct) {
-                body = connectionBody(ct, fetchersPackage);
+                body = connectionBody(ct, units);
             } else if (type instanceof GraphitronType.EdgeType) {
-                body = edgeBody(name, fetchersPackage);
+                body = edgeBody(name, units);
             } else if (type instanceof GraphitronType.TableType
                     || type instanceof GraphitronType.NodeType
                     || type instanceof GraphitronType.RootType
@@ -96,7 +96,7 @@ public final class FetcherRegistrationsEmitter {
                     // is a mixed-source type whose merged body (dual-shape coordinates as a
                     // run-time source-shape dispatch) is rendered here, never as a nested body.
                     || type instanceof GraphitronType.ResultType) {
-                body = typeBody(schema, name, fetchersPackage, outputPackage, nestedTypeMap.get(name))
+                body = typeBody(schema, name, units, outputPackage, nestedTypeMap.get(name))
                     .orElseThrow(() -> new IllegalStateException(
                         "schema-shape row for '" + name + "' is flagged registersFetchers but its"
                         + " hosting-classification body is empty; the producer's flag rule and the"
@@ -114,7 +114,7 @@ public final class FetcherRegistrationsEmitter {
                         + " the reach fold disagree");
                 }
                 body = nestedBody(new NestedTypeWiring(name, wiring.nestedFields(),
-                        wiring.returnType().table()), fetchersPackage, outputPackage)
+                        wiring.returnType().table()), units, outputPackage)
                     .orElseThrow(() -> new IllegalStateException(
                         "schema-shape row for '" + name + "' is flagged registersFetchers but its"
                         + " nested body is empty; the producer's flag rule and the ownsFetchers"
@@ -135,7 +135,7 @@ public final class FetcherRegistrationsEmitter {
     }
 
     private static Optional<CodeBlock> typeBody(GraphitronSchema schema, String typeName,
-            String fetchersPackage, String outputPackage, NestedTypeWiring dualWiring) {
+            no.sikt.graphitron.plan.GeneratedUnits units, String outputPackage, NestedTypeWiring dualWiring) {
         var type = schema.type(typeName);
         var fields = schema.fieldsOf(typeName).stream()
             .filter(f -> !(f instanceof GraphitronField.UnclassifiedField))
@@ -146,12 +146,13 @@ public final class FetcherRegistrationsEmitter {
         }
         TableRef parentTable = type instanceof GraphitronType.TableBackedType tbt ? tbt.table() : null;
         GraphitronType.ResultType resultType = type instanceof GraphitronType.ResultType rt ? rt : null;
-        ClassName fetchersClass = ClassName.get(fetchersPackage, typeName + "Fetchers");
+        ClassName fetchersClass = fetchersClass(units, typeName);
         return Optional.of(buildBody(schema, typeName, fields, fetchersClass, parentTable, resultType,
             outputPackage, dualWiring));
     }
 
-    private static Optional<CodeBlock> nestedBody(NestedTypeWiring ntw, String fetchersPackage, String outputPackage) {
+    private static Optional<CodeBlock> nestedBody(NestedTypeWiring ntw,
+            no.sikt.graphitron.plan.GeneratedUnits units, String outputPackage) {
         // Every nested object type that owns a fetcher gets its own <Type>Fetchers class, and
         // each field's read (reified or method-backed) references into it. The gate is shared with
         // TypeFetcherGenerator.collectNestedFetcherClasses (which emits the class) via
@@ -159,7 +160,7 @@ public final class FetcherRegistrationsEmitter {
         if (!FetcherEmitter.nestedTypeOwnsFetchers(ntw.fields())) {
             return Optional.empty();
         }
-        ClassName nestedFetchersClass = ClassName.get(fetchersPackage, ntw.nestedTypeName() + "Fetchers");
+        ClassName nestedFetchersClass = fetchersClass(units, ntw.nestedTypeName());
 
         boolean sourceIsOutcome = FetcherEmitter.hasWrapperArmErrors(ntw.fields());
         var body = CodeBlock.builder();
@@ -175,8 +176,9 @@ public final class FetcherRegistrationsEmitter {
         return Optional.of(body.build());
     }
 
-    private static CodeBlock connectionBody(GraphitronType.ConnectionType connectionType, String fetchersPackage) {
-        var fetchers = ClassName.get(fetchersPackage, connectionType.name() + "Fetchers");
+    private static CodeBlock connectionBody(GraphitronType.ConnectionType connectionType,
+            no.sikt.graphitron.plan.GeneratedUnits units) {
+        var fetchers = fetchersClass(units, connectionType.name());
         var connName = connectionType.name();
         var body = CodeBlock.builder()
             .add("codeRegistry")
@@ -204,8 +206,9 @@ public final class FetcherRegistrationsEmitter {
         return body.build();
     }
 
-    private static CodeBlock edgeBody(String edgeTypeName, String fetchersPackage) {
-        var fetchers = ClassName.get(fetchersPackage, edgeTypeName + "Fetchers");
+    private static CodeBlock edgeBody(String edgeTypeName,
+            no.sikt.graphitron.plan.GeneratedUnits units) {
+        var fetchers = fetchersClass(units, edgeTypeName);
         return CodeBlock.builder()
             .add("codeRegistry")
             .indent()
@@ -309,4 +312,14 @@ public final class FetcherRegistrationsEmitter {
         }
     }
 
+
+    /**
+     * The {@code <Type>Fetchers} class a registration references, off the naming vocabulary's
+     * one minting locus ({@code GeneratedUnits.fetchers}) rather than a restated formula; type
+     * grain, never a coordinate row's owner.
+     */
+    private static ClassName fetchersClass(no.sikt.graphitron.plan.GeneratedUnits units, String typeName) {
+        var ref = units.fetchers(typeName);
+        return ClassName.get(ref.packageName(), ref.simpleName());
+    }
 }

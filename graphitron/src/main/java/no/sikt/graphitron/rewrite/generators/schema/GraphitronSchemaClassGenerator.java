@@ -533,7 +533,8 @@ public final class GraphitronSchemaClassGenerator {
         String typeName       = errorType.name();
         var FIELD_COORDINATES = ClassName.get("graphql.schema", "FieldCoordinates");
         var PROPERTY_FETCHER  = ClassName.get("graphql.schema", "PropertyDataFetcher");
-        var fetchers          = ClassName.get(outputPackage + ".fetchers", typeName + "Fetchers");
+        var fetchersRef       = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).fetchers(typeName);
+        var fetchers          = ClassName.get(fetchersRef.packageName(), fetchersRef.simpleName());
         var cb = CodeBlock.builder()
             .addStatement("codeRegistry.dataFetcher($T.coordinates($S, $S), $T::path)",
                 FIELD_COORDINATES, typeName, "path", fetchers)
