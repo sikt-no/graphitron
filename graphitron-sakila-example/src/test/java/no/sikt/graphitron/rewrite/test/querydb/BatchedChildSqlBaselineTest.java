@@ -33,11 +33,17 @@ import static org.assertj.core.api.Assertions.assertThat;
  * ({@code Film.actorsBySplitLookup} table-arm, {@code FilmDetails.actorsByLookup} record-arm;
  * the second {@code @lookupKey} VALUES derived table narrowing the batch), the batched
  * pivot child ({@code Film.titleTranslationsSplit}, the key-preserving left join with filtered
- * aggregates grouped by the idx scatter key), and the service table lift
+ * aggregates grouped by the idx scatter key), the service table lift
  * ({@code Film.castMembers}, the returned records' PKs re-projected by identity through the
- * {@code (idx, seq, pk...)} VALUES join, ordered by the service's flatten order). Seed
- * cardinalities keep the VALUES row counts stable: two {@code split_parent} rows, one customer
- * key, one or two film keys per pin, and film 1's two seeded cast members.
+ * {@code (idx, seq, pk...)} VALUES join, ordered by the service's flatten order), and the
+ * polymorphic batched child in its three DataLoader-backed shapes ({@code Address.occupants}
+ * list, {@code Address.occupantsConnection} with the ranked pages envelope,
+ * {@code OccupantsBatchPayload.occupants} on an accessor-many record parent, the
+ * {@code loader.loadMany} dispatch; each is the stage-1 narrow UNION ALL over the participant
+ * tables plus per-typename stage-2 VALUES-join re-projections). Seed cardinalities keep the
+ * VALUES row counts stable: two {@code split_parent} rows, one customer key, one or two film
+ * keys per pin, film 1's two seeded cast members, and the occupants fixtures' seeded
+ * customer/staff address links.
  */
 @ExecutionTier
 class BatchedChildSqlBaselineTest {
@@ -240,6 +246,133 @@ class BatchedChildSqlBaselineTest {
                     + "on (\"castmembers\".\"actor_id\" = \"projectioninput\".\"actor_id\" "
                     + "and \"castmembers\".\"film_id\" = \"projectioninput\".\"film_id\") "
                     + "order by \"projectioninput\".\"seq\"");
+    }
+
+    @Test
+    void polymorphicListChild_narrowUnionThenPerTypenameValuesJoins() {
+        execute("{ customerByPk(customerId: 1) { addressSplit { occupants { "
+            + "__typename ... on Customer { customerId } ... on Staff { staffId } } } } }");
+        assertThat(SQL_LOG)
+            .as("polymorphic list batched child: the parent statement, the addressSplit batch "
+                + "statement, then the stage-1 narrow UNION ALL over the participant tables "
+                + "joined to the parent-input VALUES table, then one stage-2 per-typename "
+                + "VALUES-join re-projection per typename present in stage 1 (the seeded "
+                + "address has customer occupants only, so the staff stage-2 is skipped by "
+                + "its empty-bindings gate)")
+            .containsExactly(
+                "select \"public\".\"customer\".\"address_id\", \"public\".\"customer\".\"customer_id\" "
+                    + "from \"public\".\"customer\" "
+                    + "where \"public\".\"customer\".\"customer_id\" = ?",
+                "select \"addresssplit_a0\".\"address_id\", \"parentinput\".\"idx\" as \"__idx__\" "
+                    + "from (values (0, ?)) as \"parentinput\" (\"idx\", \"address_id\") "
+                    + "join \"public\".\"address\" as \"addresssplit_a0\" "
+                    + "on \"addresssplit_a0\".\"address_id\" = \"parentinput\".\"address_id\"",
+                "select 'customer' as \"__typename\", "
+                    + "\"public\".\"customer\".\"customer_id\" as \"__pk0__\", "
+                    + "\"parentinput\".\"idx\" as \"__idx__\" "
+                    + "from \"public\".\"customer\" "
+                    + "join (values (0, ?)) as \"parentinput\" (\"idx\", \"address_id\") "
+                    + "on \"public\".\"customer\".\"address_id\" = \"parentinput\".\"address_id\" "
+                    + "union all "
+                    + "select 'staff' as \"__typename\", "
+                    + "\"public\".\"staff\".\"staff_id\" as \"__pk0__\", "
+                    + "\"parentinput\".\"idx\" as \"__idx__\" "
+                    + "from \"public\".\"staff\" "
+                    + "join (values (0, ?)) as \"parentinput\" (\"idx\", \"address_id\") "
+                    + "on \"public\".\"staff\".\"address_id\" = \"parentinput\".\"address_id\"",
+                "select \"public\".\"customer\".\"customer_id\", 'customer' as \"__typename\", "
+                    + "\"customerinput\".\"idx\" "
+                    + "from \"public\".\"customer\" "
+                    + "join (values (?, ?), (?, ?)) as \"customerinput\" (\"idx\", \"customer_id\") "
+                    + "on \"public\".\"customer\".\"customer_id\" = \"customerinput\".\"customer_id\" "
+                    + "order by \"customerinput\".\"idx\"");
+    }
+
+    @Test
+    void polymorphicConnectionChild_rankedUnionPagesPartitionedByIdx() {
+        execute("{ customerByPk(customerId: 1) { addressSplit { occupantsConnection(first: 2) { "
+            + "nodes { __typename ... on Customer { customerId } ... on Staff { staffId } } } } } }");
+        assertThat(SQL_LOG)
+            .as("polymorphic connection batched child: the parent statement, the addressSplit "
+                + "batch statement, then the stage-1 union wrapped as the pages derived table "
+                + "with ROW_NUMBER() partitioned by the idx scatter key and the page bound on "
+                + "the outer WHERE, then the per-typename stage-2 re-projections carrying the "
+                + "__sort__ key")
+            .containsExactly(
+                "select \"public\".\"customer\".\"address_id\", \"public\".\"customer\".\"customer_id\" "
+                    + "from \"public\".\"customer\" "
+                    + "where \"public\".\"customer\".\"customer_id\" = ?",
+                "select \"addresssplit_a0\".\"address_id\", \"parentinput\".\"idx\" as \"__idx__\" "
+                    + "from (values (0, ?)) as \"parentinput\" (\"idx\", \"address_id\") "
+                    + "join \"public\".\"address\" as \"addresssplit_a0\" "
+                    + "on \"addresssplit_a0\".\"address_id\" = \"parentinput\".\"address_id\"",
+                "select \"ranked\".\"__typename\", \"ranked\".\"__pk0__\", \"ranked\".\"__sort__\", "
+                    + "\"ranked\".\"__idx__\", \"ranked\".\"__rn__\" "
+                    + "from (select \"__typename\", \"__pk0__\", \"__sort__\", \"__idx__\", "
+                    + "row_number() over (partition by \"__idx__\" "
+                    + "order by \"__sort__\" asc, \"__typename\" asc) as \"__rn__\" "
+                    + "from (select 'customer' as \"__typename\", "
+                    + "\"public\".\"customer\".\"customer_id\" as \"__pk0__\", "
+                    + "\"public\".\"customer\".\"customer_id\" as \"__sort__\", "
+                    + "\"parentinput\".\"idx\" as \"__idx__\" "
+                    + "from \"public\".\"customer\" "
+                    + "join (values (0, ?)) as \"parentinput\" (\"idx\", \"address_id\") "
+                    + "on \"public\".\"customer\".\"address_id\" = \"parentinput\".\"address_id\" "
+                    + "union all "
+                    + "select 'staff' as \"__typename\", "
+                    + "\"public\".\"staff\".\"staff_id\" as \"__pk0__\", "
+                    + "\"public\".\"staff\".\"staff_id\" as \"__sort__\", "
+                    + "\"parentinput\".\"idx\" as \"__idx__\" "
+                    + "from \"public\".\"staff\" "
+                    + "join (values (0, ?)) as \"parentinput\" (\"idx\", \"address_id\") "
+                    + "on \"public\".\"staff\".\"address_id\" = \"parentinput\".\"address_id\") as \"pages\" "
+                    + "order by \"__sort__\" asc, \"__typename\" asc) as \"ranked\" "
+                    + "where \"ranked\".\"__rn__\" <= ?",
+                "select \"public\".\"customer\".\"customer_id\", 'customer' as \"__typename\", "
+                    + "\"public\".\"customer\".\"customer_id\" as \"__sort__\", "
+                    + "\"customerinput\".\"idx\" "
+                    + "from \"public\".\"customer\" "
+                    + "join (values (?, ?), (?, ?)) as \"customerinput\" (\"idx\", \"customer_id\") "
+                    + "on \"public\".\"customer\".\"customer_id\" = \"customerinput\".\"customer_id\" "
+                    + "order by \"customerinput\".\"idx\"");
+    }
+
+    @Test
+    void polymorphicLoadManyChild_accessorManyKeysSingleUnionBatch() {
+        execute("{ occupantsBatch { occupants { "
+            + "__typename ... on Customer { customerId } ... on Staff { staffId } } } }");
+        assertThat(SQL_LOG)
+            .as("polymorphic list batched child on an accessor-many record parent (the "
+                + "loader.loadMany dispatch): the service produces the payload records "
+                + "Java-side (no SQL of its own), then one stage-1 union batch over all "
+                + "flattened accessor keys, then the per-typename stage-2 re-projections")
+            .containsExactly(
+                "select 'customer' as \"__typename\", "
+                    + "\"public\".\"customer\".\"customer_id\" as \"__pk0__\", "
+                    + "\"parentinput\".\"idx\" as \"__idx__\" "
+                    + "from \"public\".\"customer\" "
+                    + "join (values (0, ?), (1, ?), (2, ?)) as \"parentinput\" (\"idx\", \"address_id\") "
+                    + "on \"public\".\"customer\".\"address_id\" = \"parentinput\".\"address_id\" "
+                    + "union all "
+                    + "select 'staff' as \"__typename\", "
+                    + "\"public\".\"staff\".\"staff_id\" as \"__pk0__\", "
+                    + "\"parentinput\".\"idx\" as \"__idx__\" "
+                    + "from \"public\".\"staff\" "
+                    + "join (values (0, ?), (1, ?), (2, ?)) as \"parentinput\" (\"idx\", \"address_id\") "
+                    + "on \"public\".\"staff\".\"address_id\" = \"parentinput\".\"address_id\"",
+                "select \"public\".\"customer\".\"customer_id\", 'customer' as \"__typename\", "
+                    + "\"customerinput\".\"idx\" "
+                    + "from \"public\".\"customer\" "
+                    + "join (values (?, ?), (?, ?), (?, ?), (?, ?), (?, ?)) "
+                    + "as \"customerinput\" (\"idx\", \"customer_id\") "
+                    + "on \"public\".\"customer\".\"customer_id\" = \"customerinput\".\"customer_id\" "
+                    + "order by \"customerinput\".\"idx\"",
+                "select \"public\".\"staff\".\"staff_id\", 'staff' as \"__typename\", "
+                    + "\"staffinput\".\"idx\" "
+                    + "from \"public\".\"staff\" "
+                    + "join (values (?, ?), (?, ?)) as \"staffinput\" (\"idx\", \"staff_id\") "
+                    + "on \"public\".\"staff\".\"staff_id\" = \"staffinput\".\"staff_id\" "
+                    + "order by \"staffinput\".\"idx\"");
     }
 
     private static void execute(String query) {
