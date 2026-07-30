@@ -120,6 +120,49 @@ below says so.
   registry is the shape that absorbs it then.
 - The rejection rows and input-side rows (unchanged from the original filing).
 
+## Review notes (Spec -> Spec revise, 2026-07-30)
+
+Independent review pass, consult-checked against principles-architect. Every named symbol
+verified live (the closure test's switch, the command biconditionals, the axis-pair census, the
+obligation registry, the strip roster's `@synthesises` gap, the 84 `joinPath()` rows, the
+Count/Facet blocker staleness). The arm-tokens-never-names bullet, the run-grain scoping, the
+strip-roster derivation and the exemption re-anchoring ground are all confirmed and need no
+change. Three revisions block Ready; all sit in the membership-division bullet and Acceptance.
+
+1. **Membership is leaf-grain; a `FIELD_DEFINITION` directive is coordinate-grain, so the corpus
+   can only sample membership, never own it.** "The corpus declaration owns membership for the
+   shapes it demonstrates" is not achievable in the quantified sense: produced-but-undeclared is
+   invisible at coordinate grain (the `@synthesises` harness builds agreement cases only at
+   coordinates carrying the directive), and the spec itself, correctly, declines to require a
+   declaration on every covered-family coordinate (legibility). The sibling family already landed
+   the right shape for this exact invariant, blessed in `development-principles.adoc`:
+   `ProjectionCommands.CONTRIBUTION_MINTING_LEAVES` (a producer-side leaf-set declaration beside
+   the dispatch) bound bidirectionally by
+   `ProjectionMembershipTest.censusMatchesObservedMintingInBothDirections`. Recommended
+   resolution: the launcher producer declares its minting leaf set as data, a membership census
+   test binds declaration to observed minting in both directions, and `@commits` carries arm
+   tokens only, making no membership claim. Alternative resolution: keep the corpus-only route
+   but rewrite the bullet and Acceptance to claim only what a coordinate-grain sample delivers.
+2. **"Exactly two statements of the membership invariant" is false before any retirement.**
+   `LauncherCommands.produceWithoutSchema` is a third statement (an unguarded `instanceof`
+   ladder over the same leaf set, silent fall-through, nothing binding it to `rowOf` /
+   `childRowOf`), and `mintedMethodOf` is a fourth at name grain (that one at least argues the
+   constructor backstop catches drift). Retiring the test-side restatement takes the count from
+   four-plus-a-binding to four-minus-the-binding. Either fold `produceWithoutSchema` into the
+   census of note 1, or narrow the Acceptance sentence to the schema-grain invariant and name
+   `produceWithoutSchema` as a known extra statement with an owner.
+3. **The "(or deletes)" branch loses the only enforcer of an existing arm's verdict.** Producer
+   totality makes a new leaf a compile error (decidedness), but flipping an existing null arm to
+   minting compiles, and the generator routes on row presence, so the row-to-emit leg passes
+   too; today only the model-to-row equality fails, and the closure test's javadoc treats the
+   batched-polymorphic-pair negative as load-bearing. The spec must require the successor
+   negative in the same slice: the model-fact-then-`rowFor(...).isEmpty()` shape the root
+   `@service` passthrough pin already has. That is a spec sentence, not implementer latitude.
+
+Non-blocking note for the same bullet: after retirement nothing quantifies over coordinates in
+the positive direction either (a family member silently ceasing to produce a row). The census of
+note 1 answers it; if the corpus-only route is kept, name where that direction lands.
+
 ## Acceptance
 
 The launcher sibling directive exists in the corpus prelude; the corpus's covered launcher families
