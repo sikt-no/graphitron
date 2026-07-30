@@ -27,10 +27,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>The shapes: the list batched child ({@code SplitParent.tags}, the parent-input VALUES
  * derived table joined through the FK chain with the {@code __idx__} scatter key), the
  * single-cardinality batched child ({@code Customer.addressSplit}, one key row, the
- * single-scatter shape), and the batched connection child ({@code Film.actorsConnection}, the
+ * single-scatter shape), the batched connection child ({@code Film.actorsConnection}, the
  * {@code ROW_NUMBER() OVER (PARTITION BY __idx__)} per-parent page envelope with its shared
- * count source). Seed cardinalities keep the VALUES row counts stable: two {@code split_parent}
- * rows, one film key, one customer key.
+ * count source), the batched lookup child on both source shapes
+ * ({@code Film.actorsBySplitLookup} table-arm, {@code FilmDetails.actorsByLookup} record-arm;
+ * the second {@code @lookupKey} VALUES derived table narrowing the batch), and the batched
+ * pivot child ({@code Film.titleTranslationsSplit}, the key-preserving left join with filtered
+ * aggregates grouped by the idx scatter key). Seed cardinalities keep the VALUES row counts
+ * stable: two {@code split_parent} rows, one customer key, and one or two film keys per pin.
  */
 @ExecutionTier
 class BatchedChildSqlBaselineTest {
@@ -131,6 +135,81 @@ class BatchedChildSqlBaselineTest {
                     + "on \"actorsconnection_f0\".\"actor_id\" = \"actorsconnection_a1\".\"actor_id\" "
                     + "order by \"actorsconnection_a1\".\"actor_id\" asc) as \"ranked\" "
                     + "where \"ranked\".\"__rn__\" <= ?");
+    }
+
+    @Test
+    void lookupBatchedChild_tableArm_lookupInputValuesJoinNarrowsTheBatch() {
+        execute("{ filmById(film_id: [\"1\", \"2\"]) { actorsBySplitLookup(actor_id: [1, 2]) { firstName } } }");
+        assertThat(SQL_LOG)
+            .as("table-arm batched lookup child: the parent (lookup) statement, then one batch "
+                + "statement with both VALUES derived tables, the parent-input keyed for scatter "
+                + "and the lookup-input narrowing on the @lookupKey columns (and, as pinned "
+                + "current behaviour, no ORDER BY on the batch)")
+            .containsExactly(
+                "select \"public\".\"film\".\"film_id\" "
+                    + "from \"public\".\"film\" "
+                    + "join (values (0, ?), (1, ?)) as \"filmbyidinput\" (\"idx\", \"film_id\") using (\"film_id\") "
+                    + "order by \"filmbyidinput\".\"idx\"",
+                "select \"actorsbysplitlookup_a1\".\"first_name\", \"parentinput\".\"idx\" as \"__idx__\" "
+                    + "from (values (0, ?), (1, ?)) as \"parentinput\" (\"idx\", \"film_id\") "
+                    + "join \"public\".\"film_actor\" as \"actorsbysplitlookup_f0\" "
+                    + "on \"actorsbysplitlookup_f0\".\"film_id\" = \"parentinput\".\"film_id\" "
+                    + "join \"public\".\"actor\" as \"actorsbysplitlookup_a1\" "
+                    + "on \"actorsbysplitlookup_f0\".\"actor_id\" = \"actorsbysplitlookup_a1\".\"actor_id\" "
+                    + "join (values (0, ?), (1, ?)) as \"actorsbysplitlookupinput\" (\"idx\", \"actor_id\") "
+                    + "on \"actorsbysplitlookup_a1\".\"actor_id\" = \"actorsbysplitlookupinput\".\"actor_id\"");
+    }
+
+    @Test
+    void lookupBatchedChild_recordArm_sameBatchShapeKeyedOffTheBackingRecord() {
+        execute("{ filmDetailsBatch(ids: [1, 2]) { filmId actorsByLookup(actor_id: [1, 2]) { firstName } } }");
+        assertThat(SQL_LOG)
+            .as("record-arm batched lookup child: the service root's own statement, then one "
+                + "batch statement of the same two-VALUES shape, keyed off the backing record's "
+                + "film_id rather than a jOOQ table row (the inline nesting through filmById "
+                + "would fold the lookup into the parent's multiset instead)")
+            .containsExactly(
+                "select \"public\".\"film\".\"film_id\", \"public\".\"film\".\"title\", "
+                    + "\"public\".\"film\".\"description\", \"public\".\"film\".\"release_year\", "
+                    + "\"public\".\"film\".\"language_id\", \"public\".\"film\".\"original_language_id\", "
+                    + "\"public\".\"film\".\"rental_duration\", \"public\".\"film\".\"rental_rate\", "
+                    + "\"public\".\"film\".\"length\", \"public\".\"film\".\"replacement_cost\", "
+                    + "\"public\".\"film\".\"rating\", \"public\".\"film\".\"text_rating\", "
+                    + "\"public\".\"film\".\"last_update\" "
+                    + "from \"public\".\"film\" "
+                    + "where \"public\".\"film\".\"film_id\" in (?, ?)",
+                "select \"actorsbylookup_a1\".\"first_name\", \"parentinput\".\"idx\" as \"__idx__\" "
+                    + "from (values (0, ?), (1, ?)) as \"parentinput\" (\"idx\", \"film_id\") "
+                    + "join \"public\".\"film_actor\" as \"actorsbylookup_f0\" "
+                    + "on \"actorsbylookup_f0\".\"film_id\" = \"parentinput\".\"film_id\" "
+                    + "join \"public\".\"actor\" as \"actorsbylookup_a1\" "
+                    + "on \"actorsbylookup_f0\".\"actor_id\" = \"actorsbylookup_a1\".\"actor_id\" "
+                    + "join (values (0, ?), (1, ?)) as \"actorsbylookupinput\" (\"idx\", \"actor_id\") "
+                    + "on \"actorsbylookup_a1\".\"actor_id\" = \"actorsbylookupinput\".\"actor_id\"");
+    }
+
+    @Test
+    void pivotBatchedChild_keyPreservingLeftJoinGroupedByIdx() {
+        execute("{ filmById(film_id: [\"1\", \"2\"]) { titleTranslationsSplit { nn nb } } }");
+        assertThat(SQL_LOG)
+            .as("batched pivot child: the parent (lookup) statement, then one batch statement "
+                + "left-joining the attribute table from the parent-input VALUES table "
+                + "(key-preserving: a row-less parent keeps its group) with the filtered "
+                + "aggregates grouped by the idx scatter key")
+            .containsExactly(
+                "select \"public\".\"film\".\"film_id\" "
+                    + "from \"public\".\"film\" "
+                    + "join (values (0, ?), (1, ?)) as \"filmbyidinput\" (\"idx\", \"film_id\") using (\"film_id\") "
+                    + "order by \"filmbyidinput\".\"idx\"",
+                "select max(\"titletranslationssplit_f0\".\"title_txt\") "
+                    + "filter (where \"titletranslationssplit_f0\".\"lang_code\" = 'nno') as \"nn\", "
+                    + "max(\"titletranslationssplit_f0\".\"title_txt\") "
+                    + "filter (where \"titletranslationssplit_f0\".\"lang_code\" = 'nob') as \"nb\", "
+                    + "\"parentinput\".\"idx\" as \"__idx__\" "
+                    + "from (values (0, ?), (1, ?)) as \"parentinput\" (\"idx\", \"film_id\") "
+                    + "left outer join \"public\".\"film_translation\" as \"titletranslationssplit_f0\" "
+                    + "on \"titletranslationssplit_f0\".\"film_id\" = \"parentinput\".\"film_id\" "
+                    + "group by \"parentinput\".\"idx\"");
     }
 
     private static void execute(String query) {
