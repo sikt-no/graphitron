@@ -206,7 +206,7 @@ class MultiTableChildReferencePathRejectionPipelineTest {
             type Film @table(name: "film") { referrers: [FilmReferrer!]! }
             type Query { film: Film }
             """);
-        var field = (ChildField.InterfaceField) schema.field("Film", "referrers");
+        var field = (ChildField.BatchedInterfaceField) schema.field("Film", "referrers");
         assertThat(field.participantJoinPaths().keySet())
             .containsExactlyInAnyOrder("Inventory", "Content");
         for (ParticipantCorrelation correlation : field.participantJoinPaths().values()) {

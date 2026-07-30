@@ -319,6 +319,8 @@ public class TypeFetcherGenerator {
         QueryField.QueryUnionField.class,
         ChildField.InterfaceField.class,
         ChildField.UnionField.class,
+        ChildField.BatchedInterfaceField.class,
+        ChildField.BatchedUnionField.class,
         ChildField.ErrorsField.class);
 
     /**
@@ -683,8 +685,8 @@ public class TypeFetcherGenerator {
                     var participantFilters = participantFiltersByTypename(f.participantFilters());
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
-                            .emitConnectionMethods(ctx, f.parentTypeName(), f.name(), f.participants(), participantFilters, Map.of(),
-                                conn.defaultPageSize(), null, null, null, null, outputPackage)
+                            .emitRootConnectionMethods(ctx, f.parentTypeName(), f.name(), f.participants(), participantFilters,
+                                conn.defaultPageSize(), outputPackage)
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
@@ -696,8 +698,8 @@ public class TypeFetcherGenerator {
                     var participantFilters = participantFiltersByTypename(f.participantFilters());
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
-                            .emitConnectionMethods(ctx, f.parentTypeName(), f.name(), f.participants(), participantFilters, Map.of(),
-                                conn.defaultPageSize(), null, null, null, null, outputPackage)
+                            .emitRootConnectionMethods(ctx, f.parentTypeName(), f.name(), f.participants(), participantFilters,
+                                conn.defaultPageSize(), outputPackage)
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
@@ -754,17 +756,19 @@ public class TypeFetcherGenerator {
                 // read + NodeId encode is likewise reified by FetcherEmitter.bind into a named env
                 // method, collected below. No-op arm here.
                 case ChildField.SingleRecordIdField ignored -> { }
+                // Inline polymorphic children: single cardinality, plus the degenerate
+                // all-unbound set at any cardinality (its connection form emits the root
+                // fetcher shape with no filters, exactly as before the delivery split).
                 case ChildField.InterfaceField f -> {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
-                            .emitConnectionMethods(ctx, f.parentTypeName(), f.name(), f.participants(), Map.of(), f.participantJoinPaths(),
-                                conn.defaultPageSize(), f.parentSourceKey(), f.parentKeyLift(), f.parentKeyOwnerTable(),
-                                f.parentResultType(), outputPackage)
+                            .emitRootConnectionMethods(ctx, f.parentTypeName(), f.name(), f.participants(), Map.of(),
+                                conn.defaultPageSize(), outputPackage)
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
-                            .emitMethods(ctx, f.name(), f.participants(), f.participantJoinPaths(),
-                                f.parentSourceKey(), f.parentKeyLift(), f.parentKeyOwnerTable(), f.parentResultType(),
+                            .emitInlineMethods(ctx, f.name(), f.participants(), f.participantJoinPaths(),
+                                f.sourceKey(), f.parentKeyLift(), f.parentKeyOwnerTable(), f.parentResultType(),
                                 f.returnType().wrapper().isList(), outputPackage)
                             .forEach(builder::addMethod);
                     }
@@ -772,15 +776,48 @@ public class TypeFetcherGenerator {
                 case ChildField.UnionField f -> {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
-                            .emitConnectionMethods(ctx, f.parentTypeName(), f.name(), f.participants(), Map.of(), f.participantJoinPaths(),
-                                conn.defaultPageSize(), f.parentSourceKey(), f.parentKeyLift(), f.parentKeyOwnerTable(),
+                            .emitRootConnectionMethods(ctx, f.parentTypeName(), f.name(), f.participants(), Map.of(),
+                                conn.defaultPageSize(), outputPackage)
+                            .forEach(builder::addMethod);
+                    } else {
+                        MultiTablePolymorphicEmitter
+                            .emitInlineMethods(ctx, f.name(), f.participants(), f.participantJoinPaths(),
+                                f.sourceKey(), f.parentKeyLift(), f.parentKeyOwnerTable(), f.parentResultType(),
+                                f.returnType().wrapper().isList(), outputPackage)
+                            .forEach(builder::addMethod);
+                    }
+                }
+                // Batched polymorphic children: the DataLoader delivery. The rows-method name
+                // is committed through the one declaration seam (a no-op commit here, since
+                // these leaves never emit a keyed re-query); the emitter reads the leaf's
+                // minted LoaderRegistration for the load dispatch instead of re-deriving it.
+                case ChildField.BatchedInterfaceField f -> {
+                    var rowsName = ctx.rowsDeclarationName(f);
+                    if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
+                        MultiTablePolymorphicEmitter
+                            .emitBatchedConnectionMethods(ctx, f, rowsName, f.participants(), f.participantJoinPaths(),
+                                conn.defaultPageSize(), f.parentKeyLift(), f.parentKeyOwnerTable(),
                                 f.parentResultType(), outputPackage)
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
-                            .emitMethods(ctx, f.name(), f.participants(), f.participantJoinPaths(),
-                                f.parentSourceKey(), f.parentKeyLift(), f.parentKeyOwnerTable(), f.parentResultType(),
-                                f.returnType().wrapper().isList(), outputPackage)
+                            .emitBatchedListMethods(ctx, f, rowsName, f.participants(), f.participantJoinPaths(),
+                                f.parentKeyLift(), f.parentKeyOwnerTable(), f.parentResultType(), outputPackage)
+                            .forEach(builder::addMethod);
+                    }
+                }
+                case ChildField.BatchedUnionField f -> {
+                    var rowsName = ctx.rowsDeclarationName(f);
+                    if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
+                        MultiTablePolymorphicEmitter
+                            .emitBatchedConnectionMethods(ctx, f, rowsName, f.participants(), f.participantJoinPaths(),
+                                conn.defaultPageSize(), f.parentKeyLift(), f.parentKeyOwnerTable(),
+                                f.parentResultType(), outputPackage)
+                            .forEach(builder::addMethod);
+                    } else {
+                        MultiTablePolymorphicEmitter
+                            .emitBatchedListMethods(ctx, f, rowsName, f.participants(), f.participantJoinPaths(),
+                                f.parentKeyLift(), f.parentKeyOwnerTable(), f.parentResultType(), outputPackage)
                             .forEach(builder::addMethod);
                     }
                 }
@@ -1027,14 +1064,10 @@ public class TypeFetcherGenerator {
             case ChildField.BatchedTableField f -> f.sourceKey().wrap() instanceof SourceKey.Wrap.Row;
             case ChildField.BatchedLookupTableField f -> f.sourceKey().wrap() instanceof SourceKey.Wrap.Row;
             case ChildField.BatchedPivotField f -> f.sourceKey().wrap() instanceof SourceKey.Wrap.Row;
-            case ChildField.InterfaceField f ->
-                (f.returnType().wrapper().isList() || f.returnType().wrapper() instanceof FieldWrapper.Connection)
-                    && f.participants().stream().anyMatch(p -> p instanceof ParticipantRef.TableBound)
-                    && f.parentSourceKey().wrap() instanceof SourceKey.Wrap.Row;
-            case ChildField.UnionField f ->
-                (f.returnType().wrapper().isList() || f.returnType().wrapper() instanceof FieldWrapper.Connection)
-                    && f.participants().stream().anyMatch(p -> p instanceof ParticipantRef.TableBound)
-                    && f.parentSourceKey().wrap() instanceof SourceKey.Wrap.Row;
+            // Batched delivery and a table-bound participant are both leaf identity after the
+            // polymorphic delivery split, so only the key wrap is left to read.
+            case ChildField.BatchedInterfaceField f -> f.sourceKey().wrap() instanceof SourceKey.Wrap.Row;
+            case ChildField.BatchedUnionField f -> f.sourceKey().wrap() instanceof SourceKey.Wrap.Row;
             default -> false;
         };
     }

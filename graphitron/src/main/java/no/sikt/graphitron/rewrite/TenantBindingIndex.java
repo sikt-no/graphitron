@@ -509,6 +509,8 @@ public record TenantBindingIndex(
                 case MutationField.MutationServicePolymorphicField f -> addParticipantTables(f.participants(), tables);
                 case ChildField.InterfaceField f -> addParticipantTables(f.participants(), tables);
                 case ChildField.UnionField f -> addParticipantTables(f.participants(), tables);
+                case ChildField.BatchedInterfaceField f -> addParticipantTables(f.participants(), tables);
+                case ChildField.BatchedUnionField f -> addParticipantTables(f.participants(), tables);
                 case ChildField.PivotField f -> tables.add(f.spec().pivotTable());
                 case ChildField.BatchedPivotField f -> tables.add(f.spec().pivotTable());
                 default -> { }

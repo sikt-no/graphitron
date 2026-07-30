@@ -81,7 +81,8 @@ public class GeneratorCoverageTest {
                 + " change")
             .containsExactlyInAnyOrder("ColumnBackedField", "ComputedField", "BatchedPivotField",
                 "BatchedTableField", "BatchedLookupTableField", "ServiceTableField",
-                "ServiceRecordField", "TableInterfaceField", "InterfaceField", "UnionField");
+                "ServiceRecordField", "TableInterfaceField", "InterfaceField", "UnionField",
+                "BatchedInterfaceField", "BatchedUnionField");
 
         Set<Class<?>> projected = new HashSet<>(minting);
         projected.removeAll(implemented);

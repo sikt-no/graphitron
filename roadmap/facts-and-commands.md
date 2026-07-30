@@ -1621,6 +1621,54 @@ R541's single-operation launchers never need it, and a general launcher cannot d
       by target shape, so `rowsDeclarationName` no-op commits). The validator's reentry guard
       cannot newly fire, but 5e's closure repoint meets four emitted-and-uncommitted methods;
       recorded here so 5e does not rediscover it.
+  - **5d closed (2026-07-30): the polymorphic capability repair.** Landed per the design record
+    with two refinements found at implementation. First, the batched-leaf gate carries a third
+    conjunct: the degenerate all-unbound participant set (classifier-reachable; the join-path
+    gate passes an empty map) stays on the inline leaves at any cardinality, because its
+    emission is inline (the scalar builder's empty payload, or the root connection fetcher
+    shape with no filters) and a batched leaf whose registration registers nothing would be
+    the false fact the split exists to kill; the batched compact constructors entail a
+    table-bound participant. Second, the fold surfaced the two sites the compiler could not:
+    the `@referenceFor` placement gate (an identity denylist in `FieldBuilder.classifyField`
+    that silently rejected every batched polymorphic child as a misplacement) and
+    `TenantBindingIndex.reachedTables` (a defaulted switch that would have silently dropped
+    the batched leaves' participant tables from tenant reach); both extended, and they are
+    the argument for the seal-derived pins over rosters. What landed: the four-leaf
+    polymorphic child family (`InterfaceField`/`UnionField` inline,
+    `BatchedInterfaceField`/`BatchedUnionField` with `BatchKeyField` + non-null
+    `LoaderRegistration`, `POSITIONAL_LIST` pinned in the constructors); the `sourceKey`
+    rename across the four; the three mint sites (two table-backed constants, the
+    record-parent registration riding `PolymorphicRecordParentResolution.Resolved` where the
+    arity is decided, with `RecordParentMultiTablePolymorphicPipelineTest` pinning
+    `LOAD_ONE`/`LOAD_MANY` per lift); the emitter's four inline `"rows"+cap` sites folded onto
+    the `rowsDeclarationName` seam read at the two batched dispatch arms; the load site
+    reading `loaderRegistration().dispatch()`; the entry-point split (`emitInlineMethods`,
+    `emitBatchedListMethods`, `emitRootConnectionMethods`, `emitBatchedConnectionMethods`; the
+    `parentSourceKey != null` regime fusion deleted, capability non-null by type);
+    `IDX_COLUMN`/`RN_COLUMN`/`TYPENAME_COLUMN` re-pointed to `ReservedAliases` (TYPENAME added
+    to the holder; the three cross-package copies in the schema-class, entity-dispatch, and
+    node-fetcher generators now delegate, the prose bridge deleted; the two bare
+    `"__typename"` strings in the node fetcher are federation representation-map keys, a
+    different namespace, deliberately left). `__sort__` checked: no cross-package reader
+    exists, so it stays emitter-local. Pins: the census biconditional
+    (`ProjectionMembershipTest.loaderRegistrationComponentIffBatchKeyCapability`), the
+    three-home `dataLoaderFactory_registrationHomes` pin (unified seam, this emitter, node
+    fetcher; the design's first census had missed the third), the seam ratchets moved
+    deliberately (generators case patterns 74 to 76, plan leaf references 85 to 87), the
+    dual-arm intersection pin grew to 12, and the batched pair entered `IMPLEMENTED_LEAVES`,
+    `CONTRIBUTION_MINTING_LEAVES` (16 to 18), the corpus registries
+    (`VariantCoverageTest`/`SourceShapeProjectionTest` FIXTURE_GAP entries; a list-cardinality
+    corpus example is the standing follow-up), and a new `@ProjectionFor` snapshot test.
+    Recorded, not changed: `polymorphicParentRowColumns` still forks on `wrapper().isList()`,
+    so a connection child's demand rides the single-fetch union branch (`Connection.isList()`
+    is false); the branches coincide for every reachable correlation shape because
+    auto-discovered FKs target the parent PK, and the batched extraction reads
+    `sourceKey.columns()` regardless. Verified: all 23 SQL pins byte-identical (including the
+    three polymorphic pins frozen pre-cutover), 3052 module tests, full reactor green. Next:
+    5e, the DML verbs and reentry companions (`MethodCommandRegistry` empties;
+    `ReentryCommandClosureTest` repoints at the relation; the `loadMethod`/`rowsMethodName`
+    duplicate derivation resolves; the four emitted-and-uncommitted polymorphic rows methods
+    from the handoff note above meet the closure there).
 
 ## The exemption lists are the grain worklist
 

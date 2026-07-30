@@ -58,9 +58,10 @@ public final class EntityFetcherDispatchClassGenerator {
      * deliberate collision-avoidance device (the alias shares the column namespace with
      * consumer-controlled table columns), not the dunder convention banned for Java identifiers;
      * it reaches generated code only as a string literal, which the dunder guard
-     * ({@code DunderFreeEmissionPipelineTest}) masks before scanning.
+     * ({@code DunderFreeEmissionPipelineTest}) masks before scanning. The literal's one home is
+     * {@link no.sikt.graphitron.command.ReservedAliases#TYPENAME}.
      */
-    public static final String TYPENAME_COLUMN = "__typename";
+    public static final String TYPENAME_COLUMN = no.sikt.graphitron.command.ReservedAliases.TYPENAME;
 
     private static final ClassName ENV          = ClassName.get("graphql.schema", "DataFetchingEnvironment");
     private static final ClassName ENV_IMPL     = ClassName.get("graphql.schema", "DataFetchingEnvironmentImpl");

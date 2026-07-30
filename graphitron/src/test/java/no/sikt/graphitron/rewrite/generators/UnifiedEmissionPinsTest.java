@@ -26,10 +26,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * deliberate moment of
  * touching this test is the architectural review point the pin is designed to create.
  *
- * <p>Note: this pin doesn't cover {@link MultiTablePolymorphicEmitter}'s batched fetcher
- * family, which is its own emit family with its own structural axes. The unified seam targets
- * the service-permit rows-method shape (the SQL-shaped bodies render through the
- * launcher-command path); the polymorphic seam is separate work.
+ * <p>Note: the dispatch and render pins don't cover {@link MultiTablePolymorphicEmitter}'s
+ * batched fetcher family, which is its own emit family with its own structural axes. The
+ * unified seam targets the service-permit rows-method shape (the SQL-shaped bodies render
+ * through the launcher-command path); the polymorphic family reads its registration facts off
+ * the batched leaves' {@code BatchKeyField} capability but keeps its own emission, which is
+ * why {@code dataLoaderFactory_registrationHomes} names it as a distinct registration home.
  */
 @UnitTier
 class UnifiedEmissionPinsTest {
@@ -79,6 +81,39 @@ class UnifiedEmissionPinsTest {
                 + "RootLauncherRenderer.render; a count move in either direction is a "
                 + "deliberate edit here")
             .isEqualTo(9);
+    }
+
+    @Test
+    void dataLoaderFactory_registrationHomes() throws IOException {
+        // The DataLoader-regime census: every source file (recursively under generators/) that
+        // emits a DataLoaderFactory.newDataLoader / newMappedDataLoader call is a registration
+        // home, and the homes are named exactly so a new hand-rolled regime cannot hide. The
+        // three: DataLoaderFetcherEmitter (the unified seam; container-forked factory name),
+        // MultiTablePolymorphicEmitter (the batched polymorphic family's list and connection
+        // fetchers; positional-list by the batched leaves' constructor entailment), and
+        // util/QueryNodeFetcherClassGenerator (the node-resolution batch loader). A fourth
+        // match means a fourth regime: fold it through the seam or name it here deliberately.
+        Pattern factoryCall = Pattern.compile("\\$T\\.new(Mapped)?DataLoader\\(|\"new(Mapped)?DataLoader\"");
+        var homes = new java.util.TreeMap<String, Long>();
+        try (var stream = Files.walk(GENERATORS_DIR)) {
+            stream.filter(p -> p.getFileName().toString().endsWith(".java"))
+                .forEach(p -> {
+                    try {
+                        long n = factoryCall.matcher(Files.readString(p)).results().count();
+                        if (n > 0) homes.put(p.getFileName().toString(), n);
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                });
+        }
+        assertThat(homes)
+            .as("DataLoaderFactory emission homes under generators/ (file -> factory-call "
+                + "emission count); a new entry is a new DataLoader regime and a deliberate "
+                + "review point")
+            .containsExactly(
+                java.util.Map.entry("DataLoaderFetcherEmitter.java", 2L),
+                java.util.Map.entry("MultiTablePolymorphicEmitter.java", 2L),
+                java.util.Map.entry("QueryNodeFetcherClassGenerator.java", 1L));
     }
 
     private static long countAcrossGenerators(Pattern pattern, String excludeFile) throws IOException {

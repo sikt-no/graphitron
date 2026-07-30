@@ -90,7 +90,9 @@ public final class ProjectionCommands {
         ChildField.ServiceRecordField.class,
         ChildField.TableInterfaceField.class,
         ChildField.InterfaceField.class,
-        ChildField.UnionField.class
+        ChildField.UnionField.class,
+        ChildField.BatchedInterfaceField.class,
+        ChildField.BatchedUnionField.class
     );
 
     public static ProjectionRelation produce(GraphitronSchema schema, ConditionRelation conditions,
@@ -235,6 +237,8 @@ public final class ProjectionCommands {
             case ChildField.TableInterfaceField tif -> correlationKeyArm(tif, tif.parentRowColumns());
             case ChildField.InterfaceField pif -> correlationKeyArm(pif, pif.parentRowColumns());
             case ChildField.UnionField uf -> correlationKeyArm(uf, uf.parentRowColumns());
+            case ChildField.BatchedInterfaceField bif -> correlationKeyArm(bif, bif.parentRowColumns());
+            case ChildField.BatchedUnionField buf -> correlationKeyArm(buf, buf.parentRowColumns());
             // No projection output: leaves with no parent-row read of any kind.
             case ChildField.ParticipantColumnReferenceField ignored -> Optional.empty();
             case ChildField.RecordReadField ignored -> Optional.empty();

@@ -262,6 +262,10 @@ public final class CatalogBuilder {
                 new FieldClassification.Polymorphic(participantNames(f.participants()));
             case ChildField.UnionField f ->
                 new FieldClassification.Polymorphic(participantNames(f.participants()));
+            case ChildField.BatchedInterfaceField f ->
+                new FieldClassification.Polymorphic(participantNames(f.participants()));
+            case ChildField.BatchedUnionField f ->
+                new FieldClassification.Polymorphic(participantNames(f.participants()));
             case ChildField.NestingField ignored ->
                 new FieldClassification.Nesting();
             case ChildField.PivotField f ->

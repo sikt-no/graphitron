@@ -186,6 +186,8 @@ public final class CompileDependencyGraphBuilder {
             case ChildField.NestingField ignored -> { }
             case ChildField.InterfaceField f -> addParticipantTypeClassEdges(fetcher, f.participants());
             case ChildField.UnionField f -> addParticipantTypeClassEdges(fetcher, f.participants());
+            case ChildField.BatchedInterfaceField f -> addParticipantTypeClassEdges(fetcher, f.participants());
+            case ChildField.BatchedUnionField f -> addParticipantTypeClassEdges(fetcher, f.participants());
             // NodeId-encoded carriers: precise NodeIdEncoder edge (the one per-type-growing singleton).
             // The column-backed leaves gate on their compaction, which subsumes the composite case
             // (a multi-column carrier always carries NodeIdEncodeKeys by its constructor invariant).
@@ -405,6 +407,8 @@ public final class CompileDependencyGraphBuilder {
             case ChildField.ServiceTableField ignored -> { }
             case ChildField.InterfaceField ignored -> { }
             case ChildField.UnionField ignored -> { }
+            case ChildField.BatchedInterfaceField ignored -> { }
+            case ChildField.BatchedUnionField ignored -> { }
             case ChildField.ServiceRecordField ignored -> { }
             case ChildField.RecordCompositeField ignored -> { }
             case ChildField.RecordReadField ignored -> { }

@@ -46,4 +46,15 @@ public final class ReservedAliases {
      * outer page filter and by the connection scatter helper's per-parent slice.
      */
     public static final String ROW_NUMBER = "__rn__";
+
+    /**
+     * The multi-table polymorphic routing alias: each participant branch projects its concrete
+     * GraphQL type name as an inline constant under this alias
+     * ({@code DSL.inline("Customer").as("__typename")}), and the readers route on it across
+     * packages: the polymorphic emitter's own stage-1 dispatcher, the emitted schema class's
+     * {@code TypeResolver}, the federation entity dispatcher, and the node-resolution fetcher.
+     * The double-underscore spelling cannot collide with a projected catalog column, and GraphQL
+     * reserves the bare {@code __typename} introspection key this alias deliberately mirrors.
+     */
+    public static final String TYPENAME = "__typename";
 }

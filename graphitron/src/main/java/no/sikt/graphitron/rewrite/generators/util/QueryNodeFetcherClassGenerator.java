@@ -41,9 +41,12 @@ public class QueryNodeFetcherClassGenerator {
      * deliberate collision-avoidance device (the alias shares the column namespace with
      * consumer-controlled table columns), not the lazy dunder convention banned for Java locals; it
      * reaches generated code as a string literal, so the dunder-identifier meta-test
-     * ({@code DunderFreeEmissionPipelineTest}) leaves it alone.
+     * ({@code DunderFreeEmissionPipelineTest}) leaves it alone. The literal's one home is
+     * {@link no.sikt.graphitron.command.ReservedAliases#TYPENAME}; the bare {@code "__typename"}
+     * strings elsewhere in this generator are federation representation-map keys (the GraphQL
+     * introspection namespace), deliberately not this alias.
      */
-    public static final String TYPENAME_COLUMN           = "__typename";
+    public static final String TYPENAME_COLUMN           = no.sikt.graphitron.command.ReservedAliases.TYPENAME;
     public static final String NODE_INTERFACE_NAME       = "Node";
 
     private static final ClassName ENV                    = ClassName.get("graphql.schema", "DataFetchingEnvironment");

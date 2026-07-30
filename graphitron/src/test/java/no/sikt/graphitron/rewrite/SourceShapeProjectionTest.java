@@ -59,7 +59,16 @@ class SourceShapeProjectionTest {
             "R156 payload-returning DELETE: the only admissible data field is an encoded-PK ID off "
             + "RETURNING, which needs the synthesised __NODE_TYPE_ID metadata absent from the corpus "
             + "catalog (see VariantCoverageTest.NO_CASE_REQUIRED). Record-backed payload parent — "
-            + "SourceShape.Record."));
+            + "SourceShape.Record."),
+        Map.entry(ChildField.BatchedInterfaceField.class,
+            "The DataLoader half of the polymorphic delivery split; the corpus's `interface` example "
+            + "demonstrates the inline half at single cardinality. SourceShape.Table by the same "
+            + "projection as the inline sibling; the batched shape is pinned by "
+            + "RecordParentMultiTablePolymorphicPipelineTest and the polymorphic SQL baselines. A "
+            + "list-cardinality corpus example is the standing follow-up."),
+        Map.entry(ChildField.BatchedUnionField.class,
+            "Same delivery split as BatchedInterfaceField, union-sourced participant set; the "
+            + "corpus's `union` example demonstrates the inline half."));
 
     /** The independent expectation: a child's source-shape mirrors its parent type's classified backing. */
     private static SourceShape projectedFromParentBacking(GraphitronSchema schema, ChildField c) {

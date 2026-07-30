@@ -116,7 +116,7 @@ class MultiTableChildReferenceForPipelineTest {
             }
             type Query { category: Category }
             """);
-        var field = (ChildField.InterfaceField) schema.field("Category", "things");
+        var field = (ChildField.BatchedInterfaceField) schema.field("Category", "things");
         var self = field.participantJoinPaths().get("CategorySelf");
         assertThat(self).isInstanceOf(ParticipantCorrelation.KeyTupleWhere.class);
         var selfSlots = ((ParticipantCorrelation.KeyTupleWhere) self).slots();

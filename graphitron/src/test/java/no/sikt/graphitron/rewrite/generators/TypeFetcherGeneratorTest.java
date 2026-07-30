@@ -2036,7 +2036,14 @@ class TypeFetcherGeneratorTest {
             "FilmActor", null, null, filmActorParentTableForList());
     }
 
-    private static ChildField.InterfaceField childInterfaceField(String parentType, String name, boolean isList) {
+    /** The batched leaves' catalog-FK registration: one key per parent row. */
+    private static no.sikt.graphitron.rewrite.model.LoaderRegistration polymorphicRowRegistration(boolean valueIsList) {
+        return new no.sikt.graphitron.rewrite.model.LoaderRegistration(valueIsList,
+            no.sikt.graphitron.rewrite.model.LoaderRegistration.Container.POSITIONAL_LIST,
+            no.sikt.graphitron.rewrite.model.LoaderRegistration.Dispatch.LOAD_ONE);
+    }
+
+    private static ChildField childInterfaceField(String parentType, String name, boolean isList) {
         var wrapper = isList ? (FieldWrapper) nonNullList() : single();
         var returnType = new ReturnTypeRef.PolymorphicReturnType("FilmOrActor", wrapper);
         var participants = List.<ParticipantRef>of(
@@ -2045,13 +2052,20 @@ class TypeFetcherGeneratorTest {
                 TestFixtures.tableRef("actor", "ACTOR", "Actor",
                     List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"))),
                 null));
+        if (isList) {
+            return new ChildField.BatchedInterfaceField(parentType, name, null,
+                returnType, participants, filmActorChildJoinPaths(),
+                filmActorParentSourceKey(), TestFixtures.fkColumnsLift(),
+                filmActorParentTableForList(), filmActorParentResultType(),
+                polymorphicRowRegistration(true));
+        }
         return new ChildField.InterfaceField(parentType, name, null,
             returnType, participants, filmActorChildJoinPaths(),
             filmActorParentSourceKey(), TestFixtures.fkColumnsLift(),
             filmActorParentTableForList(), filmActorParentResultType());
     }
 
-    private static ChildField.UnionField childUnionField(String parentType, String name, boolean isList) {
+    private static ChildField childUnionField(String parentType, String name, boolean isList) {
         var wrapper = isList ? (FieldWrapper) nonNullList() : single();
         var returnType = new ReturnTypeRef.PolymorphicReturnType("FilmOrActor", wrapper);
         var participants = List.<ParticipantRef>of(
@@ -2060,6 +2074,13 @@ class TypeFetcherGeneratorTest {
                 TestFixtures.tableRef("actor", "ACTOR", "Actor",
                     List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"))),
                 null));
+        if (isList) {
+            return new ChildField.BatchedUnionField(parentType, name, null,
+                returnType, participants, filmActorChildJoinPaths(),
+                filmActorParentSourceKey(), TestFixtures.fkColumnsLift(),
+                filmActorParentTableForList(), filmActorParentResultType(),
+                polymorphicRowRegistration(true));
+        }
         return new ChildField.UnionField(parentType, name, null,
             returnType, participants, filmActorChildJoinPaths(),
             filmActorParentSourceKey(), TestFixtures.fkColumnsLift(),
@@ -2158,7 +2179,7 @@ class TypeFetcherGeneratorTest {
             .contains("org.jooq.Row1<java.sql.Timestamp> key = org.jooq.impl.DSL.row(((org.jooq.Record) env.getSource()).get(no.sikt.graphitron.rewrite.test.jooq.Tables.FILM_ACTOR.LAST_UPDATE))");
     }
 
-    private static ChildField.InterfaceField compositePkChildListField() {
+    private static ChildField.BatchedInterfaceField compositePkChildListField() {
         var wrapper = new FieldWrapper.List(false, false);
         var returnType = new ReturnTypeRef.PolymorphicReturnType("ProjectItem", wrapper);
         var note = compositeFkParticipant("project_note", "PROJECT_NOTE", "ProjectNote", "note_id", "NOTE_ID");
@@ -2171,19 +2192,22 @@ class TypeFetcherGeneratorTest {
         var parentResultType = (no.sikt.graphitron.rewrite.model.GraphitronType.ResultType)
             new no.sikt.graphitron.rewrite.model.GraphitronType.JooqTableRecordType(
                 "Project", null, null, parentTable);
-        return new ChildField.InterfaceField("Project", "items", null,
+        return new ChildField.BatchedInterfaceField("Project", "items", null,
             returnType, participants, compositePkParentJoinPaths(),
-            parentSourceKey, TestFixtures.fkColumnsLift(), parentTable, parentResultType);
+            parentSourceKey, TestFixtures.fkColumnsLift(), parentTable, parentResultType,
+            polymorphicRowRegistration(true));
     }
 
     @Test
     void childInterfaceField_isImplementedLeaf_notInNotImplementedReasons() {
-        // ChildField.InterfaceField and ChildField.UnionField are IMPLEMENTED_LEAVES,
+        // Both delivery halves of the polymorphic child pair are IMPLEMENTED_LEAVES,
         // not STUBBED_VARIANTS.
         assertThat(TypeFetcherGenerator.IMPLEMENTED_LEAVES)
-            .contains(ChildField.InterfaceField.class, ChildField.UnionField.class);
+            .contains(ChildField.InterfaceField.class, ChildField.UnionField.class,
+                ChildField.BatchedInterfaceField.class, ChildField.BatchedUnionField.class);
         assertThat(TypeFetcherGenerator.STUBBED_VARIANTS)
-            .doesNotContainKeys(ChildField.InterfaceField.class, ChildField.UnionField.class);
+            .doesNotContainKeys(ChildField.InterfaceField.class, ChildField.UnionField.class,
+                ChildField.BatchedInterfaceField.class, ChildField.BatchedUnionField.class);
     }
 
     // ===== Connection pagination on ChildField.InterfaceField / ChildField.UnionField =====
@@ -2193,7 +2217,7 @@ class TypeFetcherGeneratorTest {
     // buckets. Each bucket's ConnectionResult carries the shared pagesTable plus idxField.eq(i),
     // so totalCount counts only that parent's occupants.
 
-    private static ChildField.InterfaceField childInterfaceConnectionField(
+    private static ChildField.BatchedInterfaceField childInterfaceConnectionField(
             String parentType, String name, int defaultPageSize) {
         var wrapper = new FieldWrapper.Connection(false, defaultPageSize);
         var returnType = new ReturnTypeRef.PolymorphicReturnType("FilmOrActor", wrapper);
@@ -2203,13 +2227,14 @@ class TypeFetcherGeneratorTest {
                 TestFixtures.tableRef("actor", "ACTOR", "Actor",
                     List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"))),
                 null));
-        return new ChildField.InterfaceField(parentType, name, null,
+        return new ChildField.BatchedInterfaceField(parentType, name, null,
             returnType, participants, filmActorChildJoinPaths(),
             filmActorParentSourceKey(), TestFixtures.fkColumnsLift(),
-            filmActorParentTableForList(), filmActorParentResultType());
+            filmActorParentTableForList(), filmActorParentResultType(),
+            polymorphicRowRegistration(false));
     }
 
-    private static ChildField.UnionField childUnionConnectionField(
+    private static ChildField childUnionConnectionField(
             String parentType, String name, int defaultPageSize) {
         var wrapper = new FieldWrapper.Connection(false, defaultPageSize);
         var returnType = new ReturnTypeRef.PolymorphicReturnType("FilmOrActor", wrapper);
@@ -2219,10 +2244,11 @@ class TypeFetcherGeneratorTest {
                 TestFixtures.tableRef("actor", "ACTOR", "Actor",
                     List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"))),
                 null));
-        return new ChildField.UnionField(parentType, name, null,
+        return new ChildField.BatchedUnionField(parentType, name, null,
             returnType, participants, filmActorChildJoinPaths(),
             filmActorParentSourceKey(), TestFixtures.fkColumnsLift(),
-            filmActorParentTableForList(), filmActorParentResultType());
+            filmActorParentTableForList(), filmActorParentResultType(),
+            polymorphicRowRegistration(false));
     }
 
     /**
@@ -2419,7 +2445,7 @@ class TypeFetcherGeneratorTest {
             "ProjectEvent", TestFixtures.participantFkPath(pair, pair));
     }
 
-    private static ChildField.InterfaceField compositePkChildInterfaceConnectionField() {
+    private static ChildField.BatchedInterfaceField compositePkChildInterfaceConnectionField() {
         var wrapper = new FieldWrapper.Connection(false, 5);
         var returnType = new ReturnTypeRef.PolymorphicReturnType("ProjectItem", wrapper);
         var note = compositeFkParticipant("project_note", "PROJECT_NOTE", "ProjectNote", "note_id", "NOTE_ID");
@@ -2432,9 +2458,10 @@ class TypeFetcherGeneratorTest {
         var parentResultType = (no.sikt.graphitron.rewrite.model.GraphitronType.ResultType)
             new no.sikt.graphitron.rewrite.model.GraphitronType.JooqTableRecordType(
                 "Project", null, null, parentTable);
-        return new ChildField.InterfaceField("Project", "itemsConnection", null,
+        return new ChildField.BatchedInterfaceField("Project", "itemsConnection", null,
             returnType, participants, compositePkParentJoinPaths(),
-            parentSourceKey, TestFixtures.fkColumnsLift(), parentTable, parentResultType);
+            parentSourceKey, TestFixtures.fkColumnsLift(), parentTable, parentResultType,
+            polymorphicRowRegistration(false));
     }
 
     @Test

@@ -8,8 +8,12 @@ package no.sikt.graphitron.rewrite.model;
  * <p>Implemented by all field variants that are DataLoader-backed:
  * {@link ChildField.BatchedTableField} and {@link ChildField.BatchedLookupTableField} (both
  * source shapes; the {@code @sourceRow} DTO-parent shape dissolves onto the former's
- * Record arm), {@link ChildField.ServiceTableField},
- * {@link ChildField.ServiceRecordField}.
+ * Record arm), {@link ChildField.BatchedPivotField},
+ * {@link ChildField.ServiceTableField}, {@link ChildField.ServiceRecordField}, and the
+ * batched polymorphic pair {@link ChildField.BatchedInterfaceField} /
+ * {@link ChildField.BatchedUnionField}. The "all" is enforced as a biconditional by the
+ * projection membership census: a {@link ChildField} leaf declares a
+ * {@link LoaderRegistration} record component iff it implements this interface.
  *
  * <p>This interface is intentionally standalone (does not extend {@link GraphitronField}) so that
  * it can be applied as an orthogonal capability without being restricted by the sealed hierarchy.
@@ -67,7 +71,10 @@ public interface BatchKeyField {
      * {@code TypeFetcherGenerator}'s {@code scatterSingleByIdx} helper-emission gate and the
      * launcher producer's batched result-shape fold (single-record vs record-list); both ask
      * the same uniform question of multiple variants and so collapse onto this capability
-     * rather than each repeating the disjunction.
+     * rather than each repeating the disjunction. The batched polymorphic pair sits outside
+     * both sites (it inlines its own scatter and renders through no launcher row) and
+     * overrides to a stated {@code false}; the iff above scopes to the leaves those two
+     * sites dispatch on.
      */
     default boolean emitsSingleRecordPerKey() {
         return false;

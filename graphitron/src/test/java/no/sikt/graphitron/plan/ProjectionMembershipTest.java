@@ -165,14 +165,17 @@ class ProjectionMembershipTest {
         assertThat(unexercised)
             .as("declared minting kinds this fixture does not observe directly: the computed"
                 + " field (needs an authored @externalField method; its minting is covered by"
-                + " ServiceProjectionPipelineTest) and the three polymorphic child shapes, whose"
-                + " gated correlation-key arms are pinned per-shape by"
-                + " CorrelationKeyArmPipelineTest")
+                + " ServiceProjectionPipelineTest) and the polymorphic child shapes (both"
+                + " delivery halves of the interface/union pair, plus the single-table"
+                + " discriminated leaf), whose gated correlation-key arms are pinned per-shape"
+                + " by CorrelationKeyArmPipelineTest")
             .containsExactlyInAnyOrder(
                 ChildField.ComputedField.class,
                 ChildField.TableInterfaceField.class,
                 ChildField.InterfaceField.class,
-                ChildField.UnionField.class);
+                ChildField.UnionField.class,
+                ChildField.BatchedInterfaceField.class,
+                ChildField.BatchedUnionField.class);
     }
 
     /**
@@ -199,6 +202,34 @@ class ProjectionMembershipTest {
             .isNotEmpty()
             .allSatisfy(leaf -> assertThat(ProjectionCommands.CONTRIBUTION_MINTING_LEAVES)
                 .contains(leaf.asSubclass(GraphitronField.class)));
+    }
+
+    /**
+     * The DataLoader capability census, as a biconditional against a base fact rather than a
+     * name roster: a {@link ChildField} leaf declares a
+     * {@link no.sikt.graphitron.rewrite.model.LoaderRegistration} record component iff it
+     * implements {@link BatchKeyField}. A leaf that carries a registration without the
+     * capability is invisible to every capability-keyed enforcer (the array-key validator,
+     * the reentry boundary, the extraction emitters); a leaf that claims the capability
+     * without carrying the registration fails its readers at generation time. Either way the
+     * eighth DataLoader-backed leaf cannot hide behind a roster nobody bumped.
+     */
+    @Test
+    void loaderRegistrationComponentIffBatchKeyCapability() {
+        var leaves = new LinkedHashSet<Class<?>>();
+        collectSealedLeaves(ChildField.class, leaves);
+        for (var leaf : leaves) {
+            if (!leaf.isRecord()) {
+                continue;
+            }
+            boolean declaresRegistration = java.util.Arrays.stream(leaf.getRecordComponents())
+                .anyMatch(rc -> rc.getType() == no.sikt.graphitron.rewrite.model.LoaderRegistration.class);
+            boolean claimsCapability = BatchKeyField.class.isAssignableFrom(leaf);
+            assertThat(declaresRegistration)
+                .as("leaf %s: a LoaderRegistration component and the BatchKeyField capability"
+                    + " arrive together or not at all", leaf.getSimpleName())
+                .isEqualTo(claimsCapability);
+        }
     }
 
     private static void collectSealedLeaves(Class<?> node, Set<Class<?>> leaves) {

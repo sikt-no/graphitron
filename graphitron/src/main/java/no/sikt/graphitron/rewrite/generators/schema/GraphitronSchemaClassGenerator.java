@@ -79,15 +79,14 @@ public final class GraphitronSchemaClassGenerator {
 
     /**
      * Synthetic result-set column carrying the participant typename, read off the jOOQ
-     * {@code Record} inside the emitted polymorphic {@code typeResolver}. The {@code __}-wrapping
-     * avoids collisions with consumer-controlled table columns, which share the column namespace.
-     * The spelling mirrors the GraphQL introspection {@code __typename} meta-field the column
-     * feeds, but the two live in different namespaces: this constant is the SQL column projected
-     * by {@link MultiTablePolymorphicEmitter}, whereas the federation {@code _entities} resolver
-     * below reads the GraphQL {@code __typename} straight off the gateway's representation map
-     * (see that site's note).
+     * {@code Record} inside the emitted polymorphic {@code typeResolver}. The writer is
+     * {@link MultiTablePolymorphicEmitter}; the literal's one home is
+     * {@link no.sikt.graphitron.command.ReservedAliases#TYPENAME} and this constant is this
+     * generator's read of it. Distinct from the federation {@code _entities} resolver below,
+     * which reads the GraphQL introspection {@code __typename} straight off the gateway's
+     * representation map (a different namespace; see that site's note).
      */
-    private static final String TYPENAME_COLUMN = "__typename";
+    private static final String TYPENAME_COLUMN = no.sikt.graphitron.command.ReservedAliases.TYPENAME;
 
     private GraphitronSchemaClassGenerator() {}
 

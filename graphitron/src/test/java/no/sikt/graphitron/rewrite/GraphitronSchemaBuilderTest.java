@@ -2240,6 +2240,36 @@ class GraphitronSchemaBuilderTest {
         assertThat(iface.participantTypeNames()).contains("Address");
     }
 
+    @Test
+    @ProjectionFor({
+        no.sikt.graphitron.rewrite.model.ChildField.BatchedInterfaceField.class,
+        no.sikt.graphitron.rewrite.model.ChildField.BatchedUnionField.class
+    })
+    void batchedPolymorphicFieldProjectionCarriesParticipants() {
+        // The DataLoader half of the polymorphic delivery split: the same Polymorphic
+        // projection payload as the inline half, reached through list cardinality. Both
+        // participants hold a single FK back to the parent table (the auto-discovery shape
+        // the batched correlation requires).
+        var s1 = buildSnapshot("""
+            type Inventory @table(name: "inventory") { inventoryId: Int @field(name: "INVENTORY_ID") }
+            type FilmActor @table(name: "film_actor") { actorId: Int @field(name: "ACTOR_ID") }
+            union FilmRef = Inventory | FilmActor
+            type Film @table(name: "film") { refs: [FilmRef!]! }
+            type Query { film: Film }
+            """);
+        var fld = (FieldClassification.Polymorphic) s1.fieldClassificationsByCoord().get("Film.refs");
+        assertThat(fld.participantTypeNames()).containsExactlyInAnyOrder("Inventory", "FilmActor");
+
+        var s2 = buildSnapshot("""
+            interface Occupant { name: String }
+            type Customer implements Occupant @table(name: "customer") { name: String @field(name: "FIRST_NAME") }
+            type Address @table(name: "address") { occupants: [Occupant!]! }
+            type Query { address: Address }
+            """);
+        var fld2 = (FieldClassification.Polymorphic) s2.fieldClassificationsByCoord().get("Address.occupants");
+        assertThat(fld2.participantTypeNames()).contains("Customer");
+    }
+
     // ===== Fields on record-backed parents =====
 
     /** The resolved accessor's own member name (method or field), for locator assertions. */

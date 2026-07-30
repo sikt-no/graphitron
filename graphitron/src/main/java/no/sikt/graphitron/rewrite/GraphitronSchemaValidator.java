@@ -301,6 +301,8 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField f     -> validateTableInterfaceField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.InterfaceField f          -> validateInterfaceField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.UnionField f              -> validateUnionField(f, types, errors);
+            case no.sikt.graphitron.rewrite.model.ChildField.BatchedInterfaceField f   -> validateBatchedInterfaceField(f, errors);
+            case no.sikt.graphitron.rewrite.model.ChildField.BatchedUnionField f       -> validateBatchedUnionField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.NestingField f            -> validateNestingField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.PivotField f              -> validatePivotSpec(f, f.spec(), errors);
             case no.sikt.graphitron.rewrite.model.ChildField.BatchedPivotField f       -> validatePivotSpec(f, f.spec(), errors);
@@ -912,13 +914,25 @@ public class GraphitronSchemaValidator {
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
         validateMultiTableParticipants(field.qualifiedName(), field.location(), field.participants(), errors);
         validateChildMultiTableParentPk(field.qualifiedName(), field.location(),
-            field.parentTypeName(), field.parentSourceKey(), errors);
+            field.parentTypeName(), field.sourceKey(), errors);
     }
     private void validateUnionField(no.sikt.graphitron.rewrite.model.ChildField.UnionField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
         validateMultiTableParticipants(field.qualifiedName(), field.location(), field.participants(), errors);
         validateChildMultiTableParentPk(field.qualifiedName(), field.location(),
-            field.parentTypeName(), field.parentSourceKey(), errors);
+            field.parentTypeName(), field.sourceKey(), errors);
+    }
+    private void validateBatchedInterfaceField(no.sikt.graphitron.rewrite.model.ChildField.BatchedInterfaceField field, List<ValidationError> errors) {
+        validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
+        validateMultiTableParticipants(field.qualifiedName(), field.location(), field.participants(), errors);
+        validateChildMultiTableParentPk(field.qualifiedName(), field.location(),
+            field.parentTypeName(), field.sourceKey(), errors);
+    }
+    private void validateBatchedUnionField(no.sikt.graphitron.rewrite.model.ChildField.BatchedUnionField field, List<ValidationError> errors) {
+        validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
+        validateMultiTableParticipants(field.qualifiedName(), field.location(), field.participants(), errors);
+        validateChildMultiTableParentPk(field.qualifiedName(), field.location(),
+            field.parentTypeName(), field.sourceKey(), errors);
     }
     private void validateNestingField(no.sikt.graphitron.rewrite.model.ChildField.NestingField field, List<ValidationError> errors) {
         // List cardinality has no source-passthrough semantic: one parent Record in, one list value out.

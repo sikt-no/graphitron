@@ -26,6 +26,8 @@ import no.sikt.graphitron.rewrite.model.ChildField.ParticipantColumnReferenceFie
 import no.sikt.graphitron.rewrite.model.ChildField.ComputedField;
 import no.sikt.graphitron.rewrite.model.ChildField.ErrorsField;
 import no.sikt.graphitron.rewrite.model.ChildField.InterfaceField;
+import no.sikt.graphitron.rewrite.model.ChildField.BatchedInterfaceField;
+import no.sikt.graphitron.rewrite.model.ChildField.BatchedUnionField;
 import no.sikt.graphitron.rewrite.model.ChildField.NestingField;
 import no.sikt.graphitron.rewrite.model.ChildField.RecordReadField;
 import no.sikt.graphitron.rewrite.model.SourceShape;
@@ -1012,8 +1014,25 @@ class FieldBuilder {
                 buildTableBackedPolymorphicParentSourceKey(pkCols, parentKeyLift);
             GraphitronType.ResultType parentResultType =
                 new GraphitronType.JooqTableRecordType(parentTypeName, location, null, parentTableType.table());
+            var wrapper = buildWrapper(fieldDef);
+            var polymorphicReturnType = new ReturnTypeRef.PolymorphicReturnType(elementTypeName, wrapper);
+            // Delivery is leaf identity: list / connection cardinalities with at least one
+            // table-bound participant batch through a DataLoader; single cardinality, and the
+            // degenerate all-unbound participant set (nothing to batch), fetch inline per
+            // parent. A catalog-FK key is one key per parent row, so the batched leaf's
+            // dispatch is LOAD_ONE as a fact.
+            if ((wrapper instanceof FieldWrapper.Connection || wrapper.isList())
+                    && interfaceType.participants().stream().anyMatch(p -> p instanceof ParticipantRef.TableBound)) {
+                return new BatchedInterfaceField(parentTypeName, name, location,
+                    polymorphicReturnType,
+                    interfaceType.participants(), resolved.paths(), parentSourceKey, parentKeyLift,
+                    parentTableType.table(), parentResultType,
+                    new LoaderRegistration(wrapper.isList(),
+                        LoaderRegistration.Container.POSITIONAL_LIST,
+                        LoaderRegistration.Dispatch.LOAD_ONE));
+            }
             return new InterfaceField(parentTypeName, name, location,
-                new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef)),
+                polymorphicReturnType,
                 interfaceType.participants(), resolved.paths(), parentSourceKey, parentKeyLift,
                 parentTableType.table(), parentResultType);
         }
@@ -1035,8 +1054,20 @@ class FieldBuilder {
                 buildTableBackedPolymorphicParentSourceKey(pkCols, parentKeyLift);
             GraphitronType.ResultType parentResultType =
                 new GraphitronType.JooqTableRecordType(parentTypeName, location, null, parentTableType.table());
+            var wrapper = buildWrapper(fieldDef);
+            var polymorphicReturnType = new ReturnTypeRef.PolymorphicReturnType(elementTypeName, wrapper);
+            if ((wrapper instanceof FieldWrapper.Connection || wrapper.isList())
+                    && unionType.participants().stream().anyMatch(p -> p instanceof ParticipantRef.TableBound)) {
+                return new BatchedUnionField(parentTypeName, name, location,
+                    polymorphicReturnType,
+                    unionType.participants(), resolved.paths(), parentSourceKey, parentKeyLift,
+                    parentTableType.table(), parentResultType,
+                    new LoaderRegistration(wrapper.isList(),
+                        LoaderRegistration.Container.POSITIONAL_LIST,
+                        LoaderRegistration.Dispatch.LOAD_ONE));
+            }
             return new UnionField(parentTypeName, name, location,
-                new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef)),
+                polymorphicReturnType,
                 unionType.participants(), resolved.paths(), parentSourceKey, parentKeyLift,
                 parentTableType.table(), parentResultType);
         }
@@ -2352,7 +2383,9 @@ class FieldBuilder {
         if (fieldDef.hasAppliedDirective(DIR_REFERENCE_FOR)
                 && !(result instanceof UnclassifiedField)
                 && !(result instanceof InterfaceField)
-                && !(result instanceof UnionField)) {
+                && !(result instanceof UnionField)
+                && !(result instanceof BatchedInterfaceField)
+                && !(result instanceof BatchedUnionField)) {
             return new UnclassifiedField(parentTypeName,
                 fieldDef.getName(), locationOf(fieldDef), fieldDef, Rejection.structural(
                     "Field '" + parentTypeName + "." + fieldDef.getName() + "': @referenceFor is only "
@@ -6839,26 +6872,43 @@ class FieldBuilder {
             return new UnclassifiedField(parentTypeName, name, location, fieldDef, paths.rejection());
         }
 
+        boolean batched = (returnType.wrapper() instanceof FieldWrapper.Connection
+            || returnType.wrapper().isList())
+            && participants.stream().anyMatch(p -> p instanceof ParticipantRef.TableBound);
         if (isInterface) {
-            return new InterfaceField(parentTypeName, name, location, returnType,
+            return batched
+                ? new BatchedInterfaceField(parentTypeName, name, location, returnType,
+                    participants, paths.paths(), resolved.parentSourceKey(), resolved.parentKeyLift(),
+                    resolved.hubTable(), parentResultType, resolved.loaderRegistration())
+                : new InterfaceField(parentTypeName, name, location, returnType,
+                    participants, paths.paths(), resolved.parentSourceKey(), resolved.parentKeyLift(),
+                    resolved.hubTable(), parentResultType);
+        }
+        return batched
+            ? new BatchedUnionField(parentTypeName, name, location, returnType,
+                participants, paths.paths(), resolved.parentSourceKey(), resolved.parentKeyLift(),
+                resolved.hubTable(), parentResultType, resolved.loaderRegistration())
+            : new UnionField(parentTypeName, name, location, returnType,
                 participants, paths.paths(), resolved.parentSourceKey(), resolved.parentKeyLift(),
                 resolved.hubTable(), parentResultType);
-        }
-        return new UnionField(parentTypeName, name, location, returnType,
-            participants, paths.paths(), resolved.parentSourceKey(), resolved.parentKeyLift(),
-            resolved.hubTable(), parentResultType);
     }
 
     /**
      * Builder-internal sealed result of {@link #resolvePolymorphicRecordParent}. The classifier
      * arm reads {@code Resolved.parentSourceKey()} / {@code Resolved.hubTable()} when
-     * constructing the {@link InterfaceField} / {@link UnionField}: the hub is handed to
+     * constructing the polymorphic child leaf: the hub is handed to
      * {@link #resolveChildPolymorphicJoinPaths} and also carried onto the field
      * record as {@code parentKeyOwnerTable}, so the batched rows methods can bind the parent-key
      * VALUES cells through the hub columns' registered Converter DataTypes.
+     *
+     * <p>{@code loaderRegistration} is minted beside the lift, where the accessor arity is
+     * decided, so the {@code load}-vs-{@code loadMany} dispatch derivation has one home; the
+     * classifier arm carries it onto the batched leaf and discards it on the inline
+     * single-cardinality leaf, which registers no DataLoader.
      */
     private sealed interface PolymorphicRecordParentResolution {
-        record Resolved(SourceKey parentSourceKey, KeyLift parentKeyLift, TableRef hubTable)
+        record Resolved(SourceKey parentSourceKey, KeyLift parentKeyLift, TableRef hubTable,
+                        LoaderRegistration loaderRegistration)
             implements PolymorphicRecordParentResolution {}
         record Rejected(Rejection rejection) implements PolymorphicRecordParentResolution {}
     }
@@ -6911,10 +6961,14 @@ class FieldBuilder {
                         + jtr.table().tableName() + "'"));
                 }
                 // Polymorphic Row arm: the parent IS the source; the key is its PK tuple, read
-                // per column (a single parent entity — the arity fork is accessor-only).
+                // per column (a single parent entity — the arity fork is accessor-only, so the
+                // dispatch here is LOAD_ONE as a fact).
                 var rowLift = new KeyLift.FkColumns();
                 SourceKey parentSourceKey = new SourceKey(pkCols, rowLift.wrap());
-                yield new PolymorphicRecordParentResolution.Resolved(parentSourceKey, rowLift, jtr.table());
+                yield new PolymorphicRecordParentResolution.Resolved(parentSourceKey, rowLift, jtr.table(),
+                    new LoaderRegistration(fieldIsList,
+                        LoaderRegistration.Container.POSITIONAL_LIST,
+                        LoaderRegistration.Dispatch.LOAD_ONE));
             }
             case GraphitronType.PojoResultType _, GraphitronType.JavaRecordType _ ->
                 // Both cardinalities route through the hub-deriving accessor classifier. The
@@ -7017,7 +7071,15 @@ class FieldBuilder {
             ClassName.get(elementClass));
         var hubLift = new KeyLift.Accessor(ref, accessorIsMany ? Arity.MANY : Arity.ONE);
         SourceKey parentSourceKey = new SourceKey(hubTable.primaryKeyColumns(), hubLift.wrap());
-        return new PolymorphicRecordParentResolution.Resolved(parentSourceKey, hubLift, hubTable);
+        // The dispatch derivation's one home: an accessor-many parent fans out per element, so
+        // its batched fetcher dispatches loader.loadMany; every other shape loads one key. The
+        // per-key value follows the wrapper (a list bucket, or one ConnectionResult when the
+        // isList parameter is false because the wrapper is a connection).
+        var loaderRegistration = new LoaderRegistration(fieldIsList,
+            LoaderRegistration.Container.POSITIONAL_LIST,
+            accessorIsMany ? LoaderRegistration.Dispatch.LOAD_MANY : LoaderRegistration.Dispatch.LOAD_ONE);
+        return new PolymorphicRecordParentResolution.Resolved(parentSourceKey, hubLift, hubTable,
+            loaderRegistration);
     }
 
     private record ReturnAxis(ServiceCatalog.ContainerKind container, Class<?> elementClass) {}

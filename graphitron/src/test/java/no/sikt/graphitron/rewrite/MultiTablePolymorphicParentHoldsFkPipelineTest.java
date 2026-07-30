@@ -144,7 +144,7 @@ class MultiTablePolymorphicParentHoldsFkPipelineTest {
             }
             type Query { customer: Customer }
             """);
-        var field = (ChildField.InterfaceField) schema.field("Customer", "refs");
+        var field = (ChildField.BatchedInterfaceField) schema.field("Customer", "refs");
         var rental = field.participantJoinPaths().get("RentalP");
         assertThat(rental).isInstanceOf(ParticipantCorrelation.KeyTupleWhere.class);
         // Parent side is customer.customer_id (the parent key), participant side is rental.customer_id.

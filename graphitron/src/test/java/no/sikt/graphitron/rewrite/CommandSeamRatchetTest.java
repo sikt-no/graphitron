@@ -88,9 +88,11 @@ class CommandSeamRatchetTest {
      * (the retired pivot-wiring helpers' PivotField/BatchedPivotField cases moved into the
      * reach fold with the same relocation), then 75 to 74 when the schema-shape kind folded
      * (the input generator's InputType membership case moved into the type-unit producer's
-     * total form switch).
+     * total form switch), then 74 to 76 when the polymorphic delivery split doubled the child
+     * leaf pair (the fetcher dispatch gained the two batched arms; the parent-input rows-method
+     * gate swapped its two wrapper-derived arms for two identity reads).
      */
-    private static final int GENERATOR_LEAF_CASE_PATTERNS = 74;
+    private static final int GENERATOR_LEAF_CASE_PATTERNS = 76;
 
     /**
      * Leaf references ({@code instanceof} plus {@code case}) inside {@code plan/}: the relocation
@@ -130,9 +132,11 @@ class CommandSeamRatchetTest {
      * retired two-pass loops. Raised to 85 when the schema-shape kind joined it: the total form
      * switch over the classification's eighteen leaf permits (including the two deliberate
      * no-row verdicts) plus the registersFetchers rule's six identity reads, replacing the
-     * fifth and last membership copy (the schema-class assembler's own enumeration).
+     * fifth and last membership copy (the schema-class assembler's own enumeration). Raised to
+     * 87 when the polymorphic delivery split doubled the child leaf pair (the projection
+     * producer's contribution switch gained the two batched leaves' correlation-key arms).
      */
-    private static final int PLAN_LEAF_REFERENCES = 85;
+    private static final int PLAN_LEAF_REFERENCES = 87;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide

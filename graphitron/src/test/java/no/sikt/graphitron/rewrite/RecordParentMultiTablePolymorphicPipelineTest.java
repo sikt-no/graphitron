@@ -76,11 +76,14 @@ class RecordParentMultiTablePolymorphicPipelineTest {
               filmInfo: FilmInfo @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
             }
             """);
-        var field = (ChildField.InterfaceField) schema.field("FilmInfo", "referrers");
+        var field = (ChildField.BatchedInterfaceField) schema.field("FilmInfo", "referrers");
         assertThat(field.parentKeyLift()).isInstanceOf(KeyLift.FkColumns.class);
-        assertThat(field.parentSourceKey().columns()).hasSize(1);
-        assertThat(field.parentSourceKey().columns().get(0).sqlName()).isEqualTo("film_id");
+        assertThat(field.sourceKey().columns()).hasSize(1);
+        assertThat(field.sourceKey().columns().get(0).sqlName()).isEqualTo("film_id");
         assertThat(field.participantJoinPaths().keySet()).containsExactlyInAnyOrder("Inventory", "Content");
+        // The row-keyed lift is one key per parent row, so the minted dispatch is LOAD_ONE.
+        assertThat(field.loaderRegistration().dispatch()).isEqualTo(LoaderRegistration.Dispatch.LOAD_ONE);
+        assertThat(field.loaderRegistration().container()).isEqualTo(LoaderRegistration.Container.POSITIONAL_LIST);
     }
 
     @Test
@@ -136,7 +139,7 @@ class RecordParentMultiTablePolymorphicPipelineTest {
             }
             """);
         var field = (ChildField.InterfaceField) schema.field("SinglePayloadType", "film");
-        var psk = field.parentSourceKey();
+        var psk = field.sourceKey();
         var lift = field.parentKeyLift();
         assertThat(lift).isInstanceOf(KeyLift.Accessor.class);
         assertThat(((KeyLift.Accessor) lift).arity()).isEqualTo(Arity.ONE);
@@ -159,8 +162,8 @@ class RecordParentMultiTablePolymorphicPipelineTest {
               lp: ListPayloadType @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeAccessorListPayload"})
             }
             """);
-        var field = (ChildField.InterfaceField) schema.field("ListPayloadType", "films");
-        var psk = field.parentSourceKey();
+        var field = (ChildField.BatchedInterfaceField) schema.field("ListPayloadType", "films");
+        var psk = field.sourceKey();
         var lift = field.parentKeyLift();
         assertThat(lift).isInstanceOf(KeyLift.Accessor.class);
         assertThat(((KeyLift.Accessor) lift).arity()).isEqualTo(Arity.MANY);
@@ -168,6 +171,9 @@ class RecordParentMultiTablePolymorphicPipelineTest {
         assertThat(psk.columns()).hasSize(1);
         assertThat(psk.columns().get(0).sqlName()).isEqualTo("film_id");
         assertThat(((KeyLift.Accessor) lift).accessor().methodName()).isEqualTo("films");
+        // The accessor-many arm is the loader.loadMany dispatch, minted where the arity is
+        // decided rather than re-derived at the emitter's load site.
+        assertThat(field.loaderRegistration().dispatch()).isEqualTo(LoaderRegistration.Dispatch.LOAD_MANY);
     }
 
     @Test
@@ -184,8 +190,8 @@ class RecordParentMultiTablePolymorphicPipelineTest {
               lp: ListPayloadType @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeAccessorListPayload"})
             }
             """);
-        var field = (ChildField.InterfaceField) schema.field("ListPayloadType", "referrers");
-        var psk = field.parentSourceKey();
+        var field = (ChildField.BatchedInterfaceField) schema.field("ListPayloadType", "referrers");
+        var psk = field.sourceKey();
         var lift = field.parentKeyLift();
         assertThat(lift).isInstanceOf(KeyLift.Accessor.class);
         assertThat(((KeyLift.Accessor) lift).arity()).isEqualTo(Arity.MANY);
@@ -210,9 +216,9 @@ class RecordParentMultiTablePolymorphicPipelineTest {
               filmInfo: FilmInfo @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
             }
             """);
-        var field = (ChildField.UnionField) schema.field("FilmInfo", "referrers");
+        var field = (ChildField.BatchedUnionField) schema.field("FilmInfo", "referrers");
         assertThat(field.parentKeyLift()).isInstanceOf(KeyLift.FkColumns.class);
-        assertThat(field.parentSourceKey().columns()).hasSize(1);
+        assertThat(field.sourceKey().columns()).hasSize(1);
         assertThat(field.participantJoinPaths().keySet()).containsExactlyInAnyOrder("Inventory", "Content");
     }
 
@@ -228,7 +234,7 @@ class RecordParentMultiTablePolymorphicPipelineTest {
             }
             """);
         var field = (ChildField.UnionField) schema.field("SinglePayloadType", "film");
-        var psk = field.parentSourceKey();
+        var psk = field.sourceKey();
         var lift = field.parentKeyLift();
         assertThat(lift).isInstanceOf(KeyLift.Accessor.class);
         assertThat(((KeyLift.Accessor) lift).arity()).isEqualTo(Arity.ONE);
@@ -246,12 +252,13 @@ class RecordParentMultiTablePolymorphicPipelineTest {
               lp: ListPayloadType @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeAccessorListPayload"})
             }
             """);
-        var field = (ChildField.UnionField) schema.field("ListPayloadType", "films");
-        var psk = field.parentSourceKey();
+        var field = (ChildField.BatchedUnionField) schema.field("ListPayloadType", "films");
+        var psk = field.sourceKey();
         var lift = field.parentKeyLift();
         assertThat(lift).isInstanceOf(KeyLift.Accessor.class);
         assertThat(((KeyLift.Accessor) lift).arity()).isEqualTo(Arity.MANY);
         assertThat(field.parentKeyOwnerTable().tableName()).isEqualTo("film");
+        assertThat(field.loaderRegistration().dispatch()).isEqualTo(LoaderRegistration.Dispatch.LOAD_MANY);
     }
 
     // ===== Rejection arms =====
@@ -308,7 +315,7 @@ class RecordParentMultiTablePolymorphicPipelineTest {
             }
             """);
 
-        var field = (ChildField.UnionField) schema.field("Film", "referrers");
+        var field = (ChildField.BatchedUnionField) schema.field("Film", "referrers");
         assertThat(field.participantJoinPaths().keySet())
             .containsExactlyInAnyOrder("Inventory", "Content");
 

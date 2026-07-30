@@ -55,6 +55,17 @@ class VariantCoverageTest {
      * schema-reachable leaf should have a case showing the classifier lands there.
      */
     static final Map<Class<?>, Exemption> NO_CASE_REQUIRED = Map.ofEntries(
+        Map.entry(no.sikt.graphitron.rewrite.model.ChildField.BatchedInterfaceField.class,
+            new Exemption(Exemption.Category.FIXTURE_GAP,
+            "The DataLoader half of the polymorphic delivery split; the corpus's `interface` "
+            + "example demonstrates the inline half at single cardinality. Classification is "
+            + "pinned by GraphitronSchemaBuilderTest.batchedPolymorphicFieldProjectionCarriesParticipants "
+            + "and RecordParentMultiTablePolymorphicPipelineTest; a list-cardinality corpus "
+            + "example is the standing follow-up.")),
+        Map.entry(no.sikt.graphitron.rewrite.model.ChildField.BatchedUnionField.class,
+            new Exemption(Exemption.Category.FIXTURE_GAP,
+            "Same delivery split as BatchedInterfaceField, union-sourced participant set; the "
+            + "corpus's `union` example demonstrates the inline half.")),
         Map.entry(no.sikt.graphitron.rewrite.model.MutationField.MutationUpsertTableField.class,
             new Exemption(Exemption.Category.UNIMPLEMENTED_BEHAVIOUR,
             "R144 retires UPSERT generation pending R145 (mutation-cardinality-safety-upsert); "

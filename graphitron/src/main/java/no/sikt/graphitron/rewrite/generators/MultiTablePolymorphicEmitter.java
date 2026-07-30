@@ -12,7 +12,10 @@ import no.sikt.graphitron.rewrite.generators.util.PolymorphicSelectionSetClassGe
 import no.sikt.graphitron.render.ProjectionCall;
 import no.sikt.graphitron.render.ValuesJoinRowBuilder;
 import no.sikt.graphitron.rewrite.model.Arity;
+import no.sikt.graphitron.rewrite.model.BatchKeyField;
+import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinSlot;
 import no.sikt.graphitron.rewrite.model.JoinStep;
@@ -67,8 +70,14 @@ public final class MultiTablePolymorphicEmitter {
     // never as Java identifiers, so DunderFreeEmissionPipelineTest (which scans for
     // dunder-prefixed identifiers) leaves them alone.
 
-    /** Synthetic stage-1 projection column carrying the participant typename literal. */
-    public static final String TYPENAME_COLUMN = "__typename";
+    /**
+     * Synthetic stage-1 projection column carrying the participant typename literal. The
+     * literal's one home is {@link no.sikt.graphitron.command.ReservedAliases#TYPENAME} (its
+     * readers span packages: this emitter's dispatchers, the emitted schema class's
+     * {@code TypeResolver}, the federation entity dispatcher, and the node fetcher); this
+     * constant is this emitter's read of it.
+     */
+    public static final String TYPENAME_COLUMN = no.sikt.graphitron.command.ReservedAliases.TYPENAME;
     /**
      * Synthetic projection alias carrying the discriminator value for a single-table discriminated
      * interface ({@code @table @discriminate}). The discriminated {@code TypeResolver} routes off this
@@ -86,10 +95,19 @@ public final class MultiTablePolymorphicEmitter {
         no.sikt.graphitron.command.ReservedAliases.DISCRIMINATOR;
     /** Stage-1 sort key column alias. Single PK projects the column directly; composite PKs use {@code DSL.jsonbArray(...)}. */
     public static final String SORT_COLUMN = "__sort__";
-    /** Stage-1 parent-index column alias; drives the Java-side scatter back to the originating parent row. */
-    public static final String IDX_COLUMN = "__idx__";
-    /** Stage-1 windowed row-number alias; the outer SELECT filters {@code RN_COLUMN <= page.limit()} for the per-partition limit. */
-    public static final String RN_COLUMN = "__rn__";
+    /**
+     * Stage-1 parent-index column alias; drives the Java-side scatter back to the originating
+     * parent row. The literal's one home is
+     * {@link no.sikt.graphitron.command.ReservedAliases#IDX} (the batched launcher family
+     * writes the same scatter key); this constant is this emitter's read of it.
+     */
+    public static final String IDX_COLUMN = no.sikt.graphitron.command.ReservedAliases.IDX;
+    /**
+     * Stage-1 windowed row-number alias; the outer SELECT filters {@code RN_COLUMN <= page.limit()}
+     * for the per-partition limit. One home:
+     * {@link no.sikt.graphitron.command.ReservedAliases#ROW_NUMBER}.
+     */
+    public static final String RN_COLUMN = no.sikt.graphitron.command.ReservedAliases.ROW_NUMBER;
     /** Stage-1 PK projection alias prefix; per-slot index appended ({@code __pk0__}, {@code __pk1__}, …). */
     public static final String PK_COLUMN_PREFIX = "__pk";
     /** Stage-1 PK projection alias suffix. */
@@ -477,19 +495,13 @@ public final class MultiTablePolymorphicEmitter {
     }
 
     /**
-     * Child-fetcher overload. Routes on cardinality:
-     *
-     * <ul>
-     *   <li><b>List</b>: registers a {@link org.dataloader.DataLoader} keyed on the parent's
-     *       {@link no.sikt.graphitron.rewrite.model.SourceKey} and emits a paired
-     *       {@code rows<Field>(List<RowN<…>>, env)} batch loader that runs ONE polymorphic
-     *       UNION ALL with {@code JOIN parentInput} per branch, scattering typed Records into
-     *       per-parent {@code List<Record>} buckets. Same SQL shape as the connection arm minus
-     *       the windowed-CTE pagination.</li>
-     *   <li><b>Single</b>: per-parent inline fetcher with structural ranking by
-     *       {@code parentRecord.<parent_pk>}-correlated WHERE on each branch. No batching is
-     *       available at this cardinality (one record per parent invocation; nothing to dedup).</li>
-     * </ul>
+     * Inline child-fetcher entry point ({@link ChildField.InterfaceField} /
+     * {@link ChildField.UnionField}): the per-parent inline delivery, with structural ranking by
+     * {@code parentRecord.<parent_pk>}-correlated WHERE on each branch. No DataLoader at this
+     * leaf; the batched delivery is its own leaf pair and enters through
+     * {@link #emitBatchedListMethods} / {@link #emitBatchedConnectionMethods}. {@code isList}
+     * covers the degenerate all-unbound participant set, which stays on the inline leaf at any
+     * cardinality (the fetcher hands back the empty payload).
      *
      * @param participantJoinPaths typename-keyed {@link ParticipantCorrelation} from the parent
      *                              table to each {@link ParticipantRef.TableBound} participant. The
@@ -511,12 +523,12 @@ public final class MultiTablePolymorphicEmitter {
      *                              so {@code env.getSource()} is cast and read against the right
      *                              Java type.
      */
-    public static List<MethodSpec> emitMethods(
+    public static List<MethodSpec> emitInlineMethods(
             TypeFetcherEmissionContext ctx,
             String fieldName,
             List<ParticipantRef> participants,
             Map<String, ParticipantCorrelation> participantJoinPaths,
-            SourceKey parentSourceKey,
+            SourceKey sourceKey,
             KeyLift parentKeyLift,
             TableRef parentKeyOwnerTable,
             GraphitronType.ResultType parentResultType,
@@ -527,14 +539,8 @@ public final class MultiTablePolymorphicEmitter {
             .map(p -> (ParticipantRef.TableBound) p)
             .toList();
         var methods = new ArrayList<MethodSpec>();
-        if (isList && !tableBoundParticipants.isEmpty()) {
-            methods.add(buildBatchedListFetcher(ctx, fieldName, parentSourceKey, parentKeyLift, parentKeyOwnerTable, parentResultType, outputPackage));
-            methods.add(buildBatchedListRowsMethod(ctx, fieldName, tableBoundParticipants,
-                participantJoinPaths, parentSourceKey, parentKeyOwnerTable, outputPackage));
-        } else {
-            methods.add(buildScalarPerParentFetcher(ctx, fieldName, tableBoundParticipants,
-                participantJoinPaths, parentKeyLift, parentSourceKey, parentKeyOwnerTable, isList, outputPackage));
-        }
+        methods.add(buildScalarPerParentFetcher(ctx, fieldName, tableBoundParticipants,
+            participantJoinPaths, parentKeyLift, sourceKey, parentKeyOwnerTable, isList, outputPackage));
         for (var participant : tableBoundParticipants) {
             methods.add(buildPerTypenameSelect(fieldName, participant, false,
                 outputPackage));
@@ -543,57 +549,22 @@ public final class MultiTablePolymorphicEmitter {
     }
 
     /**
-     * Connection-fetcher entry point. Emits the public main fetcher
-     * plus one private {@code select<Participant>For<Field>} helper per table-bound participant.
-     * Two forms switch on {@code parentKey}:
-     *
-     * <ul>
-     *   <li><b>{@code parentKey == null}</b> (root): the main fetcher returns a
-     *       {@code DataFetcherResult<ConnectionResult>}; stage 1 wraps the UNION-ALL of
-     *       per-branch projections in a derived table {@code pages} so cursor decode + seek +
-     *       LIMIT N+1 apply uniformly across the union; stage 2 reuses the VALUES-JOIN dispatch
-     *       and projects {@code __sort__} on each typed Record so
-     *       {@code ConnectionHelper.encodeCursor} can read the sort key. {@code totalCount}
-     *       runs a polymorphic {@code SELECT count(*) FROM (UNION ALL) AS pages} via the same
-     *       UNION-ALL derived table the page query uses, lazy on selection.</li>
-     *   <li><b>{@code parentKey != null}</b> (DataLoader-batched windowed CTE): emits a
-     *       {@code DataLoader}-registering main fetcher ({@link #buildBatchedConnectionFetcher})
-     *       plus a {@code rows<Field>(List<RowN<...>>, env)} rows method
-     *       ({@link #buildBatchedConnectionRowsMethod}, which documents the SQL shape).</li>
-     * </ul>
-     *
-     * <p>Scope: forward/backward pagination ({@code first}/{@code last}/{@code after}/
-     * {@code before}); single-PK participants only (validator rejects composite-PK participants;
-     * the JSONB cursor round-trip is unsupported); the same single-hop-FK or
-     * multi-hop / condition-join participant correlations the list arm accepts, for child
-     * connections; parent PK arity 1..21 for the batched form (parent PK + idx fits in
-     * {@code Row22}; validator rejects above).
-     *
-     * @param participantJoinPaths typename-keyed {@link ParticipantCorrelation} (resolved single-hop FK
-     *                              column pairs) from the parent table to each
-     *                              {@link ParticipantRef.TableBound} participant. Must be
-     *                              {@code Map.of()} when {@code parentKey} is null;
-     *                              non-empty otherwise.
-     * @param parentSourceKey       parent-object source-side key; non-null for child
-     *                              connections, null for root queries.
-     * @param parentKeyOwnerTable   the parent/hub table owning {@code parentSourceKey.columns()};
-     *                              non-null when {@code parentSourceKey} is non-null (see the
-     *                              child overload of {@code emitMethods} for the rationale).
-     * @param parentResultType      the parent's classified {@link GraphitronType.ResultType};
-     *                              non-null when {@code parentSourceKey} is non-null. Threaded
-     *                              into {@link GeneratorUtils#buildRecordParentKeyExtraction} so
-     *                              {@code env.getSource()} is cast and read against the right
-     *                              Java type.
+     * Batched child-list entry point ({@link ChildField.BatchedInterfaceField} /
+     * {@link ChildField.BatchedUnionField}): registers a {@link org.dataloader.DataLoader} keyed
+     * on the leaf's {@link BatchKeyField#sourceKey()} and emits a paired
+     * {@code rows<Field>(List<K>, env)} batch loader that runs ONE polymorphic UNION ALL with
+     * {@code JOIN parentInput} per branch, scattering typed Records into per-parent
+     * {@code List<Record>} buckets. Same SQL shape as the connection arm minus the windowed-CTE
+     * pagination. The rows-method name is the caller's read of the
+     * {@code rowsDeclarationName} seam, never recomputed here; the loader dispatch is the
+     * leaf's {@link BatchKeyField#loaderRegistration()} read as data.
      */
-    public static List<MethodSpec> emitConnectionMethods(
+    public static List<MethodSpec> emitBatchedListMethods(
             TypeFetcherEmissionContext ctx,
-            String parentTypeName,
-            String fieldName,
+            BatchKeyField batchKey,
+            String rowsMethodName,
             List<ParticipantRef> participants,
-            Map<String, List<WhereFilter>> participantFilters,
             Map<String, ParticipantCorrelation> participantJoinPaths,
-            int defaultPageSize,
-            SourceKey parentSourceKey,
             KeyLift parentKeyLift,
             TableRef parentKeyOwnerTable,
             GraphitronType.ResultType parentResultType,
@@ -603,19 +574,95 @@ public final class MultiTablePolymorphicEmitter {
             .map(p -> (ParticipantRef.TableBound) p)
             .toList();
         var methods = new ArrayList<MethodSpec>();
-        // The empty-tableBound defensive path falls into the root branch; both fetcher builders
-        // emit a non-throwing empty payload when participants is empty.
-        if (parentSourceKey != null && !tableBoundParticipants.isEmpty()) {
-            methods.add(buildBatchedConnectionFetcher(ctx, fieldName, parentSourceKey, parentKeyLift, parentKeyOwnerTable, parentResultType,
+        methods.add(buildBatchedListFetcher(ctx, batchKey, rowsMethodName,
+            parentKeyLift, parentKeyOwnerTable, parentResultType, outputPackage));
+        methods.add(buildBatchedListRowsMethod(ctx, batchKey.name(), rowsMethodName,
+            tableBoundParticipants, participantJoinPaths, batchKey.sourceKey(),
+            parentKeyOwnerTable, outputPackage));
+        for (var participant : tableBoundParticipants) {
+            methods.add(buildPerTypenameSelect(batchKey.name(), participant, false,
                 outputPackage));
-            methods.add(buildBatchedConnectionRowsMethod(ctx, fieldName, tableBoundParticipants,
-                participantJoinPaths, defaultPageSize, parentSourceKey, parentKeyOwnerTable, outputPackage));
-        } else {
-            methods.add(buildRootConnectionFetcher(ctx, parentTypeName, fieldName, tableBoundParticipants,
-                participantFilters, defaultPageSize, outputPackage));
         }
+        return methods;
+    }
+
+    /**
+     * Root connection-fetcher entry point. Emits the public main fetcher plus one private
+     * {@code select<Participant>For<Field>} helper per table-bound participant. The main
+     * fetcher returns a {@code DataFetcherResult<ConnectionResult>}; stage 1 wraps the
+     * UNION-ALL of per-branch projections in a derived table {@code pages} so cursor decode +
+     * seek + LIMIT N+1 apply uniformly across the union; stage 2 reuses the VALUES-JOIN
+     * dispatch and projects {@code __sort__} on each typed Record so
+     * {@code ConnectionHelper.encodeCursor} can read the sort key. {@code totalCount} runs a
+     * polymorphic {@code SELECT count(*) FROM (UNION ALL) AS pages} via the same UNION-ALL
+     * derived table the page query uses, lazy on selection.
+     *
+     * <p>Also serves the degenerate all-unbound child connection (nothing to batch: the inline
+     * leaves' connection cardinality), whose emission is the root fetcher with no filters.
+     *
+     * <p>Scope: forward/backward pagination ({@code first}/{@code last}/{@code after}/
+     * {@code before}); single-PK participants only (validator rejects composite-PK
+     * participants; the JSONB cursor round-trip is unsupported).
+     */
+    public static List<MethodSpec> emitRootConnectionMethods(
+            TypeFetcherEmissionContext ctx,
+            String parentTypeName,
+            String fieldName,
+            List<ParticipantRef> participants,
+            Map<String, List<WhereFilter>> participantFilters,
+            int defaultPageSize,
+            String outputPackage) {
+        var tableBoundParticipants = participants.stream()
+            .filter(p -> p instanceof ParticipantRef.TableBound)
+            .map(p -> (ParticipantRef.TableBound) p)
+            .toList();
+        var methods = new ArrayList<MethodSpec>();
+        methods.add(buildRootConnectionFetcher(ctx, parentTypeName, fieldName, tableBoundParticipants,
+            participantFilters, defaultPageSize, outputPackage));
         for (var participant : tableBoundParticipants) {
             methods.add(buildPerTypenameSelect(fieldName, participant, true,
+                outputPackage));
+        }
+        return methods;
+    }
+
+    /**
+     * Batched child-connection entry point ({@link ChildField.BatchedInterfaceField} /
+     * {@link ChildField.BatchedUnionField} with a connection wrapper): emits a
+     * {@code DataLoader}-registering main fetcher ({@link #buildBatchedConnectionFetcher}) plus
+     * a {@code rows<Field>(List<K>, env)} rows method
+     * ({@link #buildBatchedConnectionRowsMethod}, which documents the windowed-CTE SQL shape),
+     * plus the per-typename stage-2 helpers projecting {@code __sort__}. The capability
+     * parameter is non-null by type; the root regime has its own entry point rather than a
+     * null-keyed fork here.
+     *
+     * <p>Scope: the same single-hop-FK or multi-hop / condition-join participant correlations
+     * the list arm accepts; parent PK arity 1..21 (parent PK + idx fits in {@code Row22};
+     * validator rejects above).
+     */
+    public static List<MethodSpec> emitBatchedConnectionMethods(
+            TypeFetcherEmissionContext ctx,
+            BatchKeyField batchKey,
+            String rowsMethodName,
+            List<ParticipantRef> participants,
+            Map<String, ParticipantCorrelation> participantJoinPaths,
+            int defaultPageSize,
+            KeyLift parentKeyLift,
+            TableRef parentKeyOwnerTable,
+            GraphitronType.ResultType parentResultType,
+            String outputPackage) {
+        var tableBoundParticipants = participants.stream()
+            .filter(p -> p instanceof ParticipantRef.TableBound)
+            .map(p -> (ParticipantRef.TableBound) p)
+            .toList();
+        var methods = new ArrayList<MethodSpec>();
+        methods.add(buildBatchedConnectionFetcher(ctx, batchKey, rowsMethodName,
+            parentKeyLift, parentKeyOwnerTable, parentResultType, outputPackage));
+        methods.add(buildBatchedConnectionRowsMethod(ctx, batchKey.name(), rowsMethodName,
+            tableBoundParticipants, participantJoinPaths, defaultPageSize, batchKey.sourceKey(),
+            parentKeyOwnerTable, outputPackage));
+        for (var participant : tableBoundParticipants) {
+            methods.add(buildPerTypenameSelect(batchKey.name(), participant, true,
                 outputPackage));
         }
         return methods;
@@ -1424,21 +1471,21 @@ public final class MultiTablePolymorphicEmitter {
      */
     private static MethodSpec buildBatchedConnectionFetcher(
             TypeFetcherEmissionContext ctx,
-            String fieldName,
-            SourceKey parentSourceKey,
+            BatchKeyField batchKey,
+            String rowsMethodName,
             KeyLift parentKeyLift,
             TableRef parentKeyOwnerTable,
             GraphitronType.ResultType parentResultType,
             String outputPackage) {
 
+        String fieldName = batchKey.name();
         var connectionResultClass = ClassName.get(outputPackage + ".util",
             no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator.CLASS_NAME);
         TypeName valueType = connectionResultClass;
 
-        TypeName keyType = parentSourceKey.keyElementType();
+        TypeName keyType = batchKey.sourceKey().keyElementType();
         TypeName loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
         TypeName lambdaKeysType = ParameterizedTypeName.get(LIST, keyType);
-        String rowsMethodName = "rows" + cap(fieldName);
 
         var lambdaBlock = CodeBlock.builder()
             .add("($T keys, $T batchEnv) -> {\n", lambdaKeysType, BATCH_LOADER_ENV)
@@ -1462,8 +1509,11 @@ public final class MultiTablePolymorphicEmitter {
 
         // Parent-object key extraction: delegated to the canonical KeyLift helper.
         // Emits the typed {@code <KeyType> key = ...} statement consumed by load(key, env).
-        builder.addCode(GeneratorUtils.buildRecordParentKeyExtraction(parentSourceKey, parentKeyLift, parentKeyOwnerTable, parentResultType));
+        builder.addCode(GeneratorUtils.buildRecordParentKeyExtraction(batchKey.sourceKey(), parentKeyLift, parentKeyOwnerTable, parentResultType));
 
+        // Dispatch is LOAD_ONE by classifier construction: a connection cannot resolve an
+        // accessor-many parent (the cardinality gate rejects the mismatch upstream), so the
+        // minted registration never carries LOAD_MANY here.
         builder.addCode(CodeBlock.builder()
             .add("return loader.load(key, env)\n")
             .add("    ").add(asyncWrapTail(valueType, outputPackage)).add(";\n")
@@ -1479,34 +1529,34 @@ public final class MultiTablePolymorphicEmitter {
      * (one bucket per parent in the batch). Same async-tail shape as the connection arm; only the
      * value type differs ({@code List<Record>} per parent vs. {@code ConnectionResult}).
      *
-     * <p>The load site forks on the parent lift's
-     * {@link no.sikt.graphitron.rewrite.model.Arity}, matching what
-     * {@link GeneratorUtils#buildRecordParentKeyExtraction} declared:
-     * {@link no.sikt.graphitron.rewrite.model.Arity#ONE} lifts (catalog-FK
-     * {@code FkColumns} on a {@code @table} parent, accessor-single on a record parent) declare a
-     * single {@code key} and dispatch {@code loader.load(key, env)};
-     * {@link no.sikt.graphitron.rewrite.model.Arity#MANY} lifts (accessor-many,
-     * produced-record-many on a Pojo / {@code @record} carrier) declare a {@code List<key> keys}
-     * and dispatch {@code loader.loadMany(keys, …)}, then concat the one-bucket-per-element
-     * {@code List<List<Record>>} into the field's single flat {@code List<Record>}. The load site
-     * must match the declared key shape or the emitted code fails javac.
+     * <p>The load site reads the leaf's {@link BatchKeyField#loaderRegistration()} dispatch,
+     * the classify-time decision {@link GeneratorUtils#buildRecordParentKeyExtraction}'s
+     * declared key shape agrees with by construction (both derive from the lift's
+     * {@link no.sikt.graphitron.rewrite.model.Arity} at the same classifier site):
+     * {@code LOAD_ONE} (catalog-FK {@code FkColumns} on a {@code @table} parent,
+     * accessor-single on a record parent) declares a single {@code key} and dispatches
+     * {@code loader.load(key, env)}; {@code LOAD_MANY} (accessor-many on a Pojo /
+     * {@code @record} carrier) declares a {@code List<key> keys} and dispatches
+     * {@code loader.loadMany(keys, …)}, then concats the one-bucket-per-element
+     * {@code List<List<Record>>} into the field's single flat {@code List<Record>}. The load
+     * site must match the declared key shape or the emitted code fails javac.
      */
     private static MethodSpec buildBatchedListFetcher(
             TypeFetcherEmissionContext ctx,
-            String fieldName,
-            SourceKey parentSourceKey,
+            BatchKeyField batchKey,
+            String rowsMethodName,
             KeyLift parentKeyLift,
             TableRef parentKeyOwnerTable,
             GraphitronType.ResultType parentResultType,
             String outputPackage) {
 
+        String fieldName = batchKey.name();
         TypeName listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
         TypeName valueType = listOfRecord;
 
-        TypeName keyType = parentSourceKey.keyElementType();
+        TypeName keyType = batchKey.sourceKey().keyElementType();
         TypeName loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
         TypeName lambdaKeysType = ParameterizedTypeName.get(LIST, keyType);
-        String rowsMethodName = "rows" + cap(fieldName);
 
         var lambdaBlock = CodeBlock.builder()
             .add("($T keys, $T batchEnv) -> {\n", lambdaKeysType, BATCH_LOADER_ENV)
@@ -1528,12 +1578,12 @@ public final class MultiTablePolymorphicEmitter {
             + "    .computeIfAbsent(name, k -> $T.newDataLoader($L));\n",
             loaderType, DATA_LOADER_FACTORY, lambdaBlock);
 
-        builder.addCode(GeneratorUtils.buildRecordParentKeyExtraction(parentSourceKey, parentKeyLift, parentKeyOwnerTable, parentResultType));
+        builder.addCode(GeneratorUtils.buildRecordParentKeyExtraction(batchKey.sourceKey(), parentKeyLift, parentKeyOwnerTable, parentResultType));
 
         // The load site must match the key shape buildRecordParentKeyExtraction declared
-        // (single key for ONE lifts, List of keys for MANY lifts).
-        if (parentKeyLift instanceof KeyLift.Accessor a && a.arity() == Arity.MANY
-                || parentKeyLift instanceof KeyLift.ProducedRecords pr && pr.arity() == Arity.MANY) {
+        // (single key for LOAD_ONE, List of keys for LOAD_MANY); the dispatch is the
+        // classifier's minted registration read as data.
+        if (batchKey.loaderRegistration().dispatch() == LoaderRegistration.Dispatch.LOAD_MANY) {
             builder.addCode(CodeBlock.builder()
                 .add("return loader.loadMany(keys, $T.nCopies(keys.size(), env))\n", COLLECTIONS)
                 .add("    .thenApply(buckets -> buckets.stream().flatMap($T::stream).toList())\n", LIST)
@@ -1593,7 +1643,8 @@ public final class MultiTablePolymorphicEmitter {
      */
     private static MethodSpec buildBatchedConnectionRowsMethod(
             TypeFetcherEmissionContext ctx,
-            String fieldName, List<ParticipantRef.TableBound> participants,
+            String fieldName, String rowsMethodName,
+            List<ParticipantRef.TableBound> participants,
             Map<String, ParticipantCorrelation> participantJoinPaths,
             int defaultPageSize, SourceKey parentSourceKey, TableRef parentKeyOwnerTable,
             String outputPackage) {
@@ -1606,8 +1657,6 @@ public final class MultiTablePolymorphicEmitter {
             "ConnectionHelper", "PageRequest");
         var integerClass = ClassName.get(Integer.class);
         var stringClass = ClassName.get(String.class);
-
-        String rowsMethodName = "rows" + cap(fieldName);
 
         // Parent FK / lifter-projected columns on the source side; arity 1..21 enforced upstream
         // by validateChildMultiTableParentPk (idx adds one slot to the parentInput Row<N+1>).
@@ -2073,14 +2122,14 @@ public final class MultiTablePolymorphicEmitter {
      */
     private static MethodSpec buildBatchedListRowsMethod(
             TypeFetcherEmissionContext ctx,
-            String fieldName, List<ParticipantRef.TableBound> participants,
+            String fieldName, String rowsMethodName,
+            List<ParticipantRef.TableBound> participants,
             Map<String, ParticipantCorrelation> participantJoinPaths,
             SourceKey parentSourceKey, TableRef parentKeyOwnerTable,
             String outputPackage) {
 
         var integerClass = ClassName.get(Integer.class);
         var stringClass = ClassName.get(String.class);
-        String rowsMethodName = "rows" + cap(fieldName);
 
         var parentPkCols = parentSourceKey.columns();
         TypeName keyType = parentSourceKey.keyElementType();

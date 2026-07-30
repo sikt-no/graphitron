@@ -15,6 +15,7 @@ public sealed interface ChildField extends OutputField
             ChildField.ParticipantColumnReferenceField,
             ChildField.TableTargetField,
             ChildField.InterfaceField, ChildField.UnionField,
+            ChildField.BatchedInterfaceField, ChildField.BatchedUnionField,
             ChildField.NestingField,
             ChildField.PivotField, ChildField.BatchedPivotField, ChildField.PivotSlotField,
             ChildField.ServiceRecordField,
@@ -67,6 +68,8 @@ public sealed interface ChildField extends OutputField
             case NestingField ignored -> SourceShape.Table;
             case InterfaceField ignored -> SourceShape.Table;
             case UnionField ignored -> SourceShape.Table;
+            case BatchedInterfaceField ignored -> SourceShape.Table;
+            case BatchedUnionField ignored -> SourceShape.Table;
             // @pivot leaves sit on an SQL-backed (@table) parent by classifier guarantee (a
             // record-backed parent is rejected at classify time), so the source is a table row.
             case PivotField ignored -> SourceShape.Table;
@@ -103,6 +106,8 @@ public sealed interface ChildField extends OutputField
             // Method-backed / polymorphic table reads carry no field-level filter surface.
             case InterfaceField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
             case UnionField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
+            case BatchedInterfaceField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
+            case BatchedUnionField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
             // Lookup-keyed reads.
             case LookupTableField f -> new Operation.Lookup(f.lookupMapping());
             case BatchedLookupTableField f -> new Operation.Lookup(f.lookupMapping());
@@ -159,6 +164,8 @@ public sealed interface ChildField extends OutputField
             // Polymorphic children: catalog-bound.
             case InterfaceField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Interface());
             case UnionField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Union());
+            case BatchedInterfaceField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Interface());
+            case BatchedUnionField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Union());
             // Encoded-PK scalar carriers: Column.
             case SingleRecordIdFieldFromReturning f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Column());
             case SingleRecordIdField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Column());
@@ -692,11 +699,19 @@ public sealed interface ChildField extends OutputField
     }
 
     /**
-     * A child field on a {@link GraphitronType.TableBackedType} parent returning a multi-table
-     * {@link GraphitronType.InterfaceType}. Carries the resolved participants list plus the
-     * per-participant {@code joinPath} (one auto-discovered FK chain from the parent table to
-     * each participant's table) so the multi-table polymorphic emitter can emit a per-branch
-     * WHERE in the stage-1 narrow UNION ALL.
+     * A single-cardinality child field returning a multi-table
+     * {@link GraphitronType.InterfaceType}: the inline per-parent delivery. Carries the resolved
+     * participants list plus the per-participant {@code joinPath} (one auto-discovered FK chain
+     * from the parent table to each participant's table) so the multi-table polymorphic emitter
+     * can emit a per-branch WHERE in the stage-1 narrow UNION ALL.
+     *
+     * <p>Delivery is leaf identity, mirroring the {@link PivotField} / {@link BatchedPivotField}
+     * split: this inline arm fetches per parent (no DataLoader) and deliberately does not
+     * implement {@link BatchKeyField}; the list and connection cardinalities with at least one
+     * table-bound participant classify as {@link BatchedInterfaceField}, which does. The
+     * degenerate all-unbound participant set stays here at any cardinality (nothing to batch;
+     * the fetcher hands back the empty payload inline), which is why this leaf reads its
+     * cardinality off the wrapper rather than pinning single.
      *
      * <p>{@code participantJoinPaths} is keyed by participant typename: exactly one entry per
      * {@link ParticipantRef.TableBound} participant. {@link ParticipantRef.Unbound} participants
@@ -708,16 +723,16 @@ public sealed interface ChildField extends OutputField
      * {@link ParticipantCorrelation.JoinedCorrelation} (multi-hop FK chain or condition
      * correlation).
      *
-     * <p>{@code parentSourceKey} and {@code parentResultType} are the parent-object key-extraction
+     * <p>{@code sourceKey} and {@code parentResultType} are the parent-object key-extraction
      * strategy and shape, threaded into {@code GeneratorUtils.buildRecordParentKeyExtraction}.
      * The classifier produces a catalog-FK {@link KeyLift.FkColumns} key for a table-backed
      * parent and an accessor-derived {@link KeyLift.Accessor} key for a class-backed / record
      * parent (the hub discovered by {@code FieldBuilder.derivePolymorphicHubSource}).
-     * {@link KeyLift#checkResidueAgreement} pins the residue {@code parentSourceKey} to the lift
+     * {@link KeyLift#checkResidueAgreement} pins the residue {@code sourceKey} to the lift
      * arm at construction.
      *
      * <p>{@code parentKeyOwnerTable} is the parent/hub table owning
-     * {@code parentSourceKey.columns()} (the parent's {@code @table} on the table-backed arm,
+     * {@code sourceKey.columns()} (the parent's {@code @table} on the table-backed arm,
      * the accessor-discovered hub on the record-backed arm), resolved at the same classification
      * site as the key. The batched rows methods read
      * {@code Tables.<OWNER>.<COL>.getDataType()} off it so converter-backed parent keys bind
@@ -730,7 +745,7 @@ public sealed interface ChildField extends OutputField
         ReturnTypeRef.PolymorphicReturnType returnType,
         List<ParticipantRef> participants,
         java.util.Map<String, ParticipantCorrelation> participantJoinPaths,
-        SourceKey parentSourceKey,
+        SourceKey sourceKey,
         KeyLift parentKeyLift,
         TableRef parentKeyOwnerTable,
         GraphitronType.ResultType parentResultType
@@ -738,28 +753,31 @@ public sealed interface ChildField extends OutputField
         public InterfaceField {
             participants = List.copyOf(participants);
             participantJoinPaths = java.util.Map.copyOf(participantJoinPaths);
-            // Validator and emitter both read parentSourceKey / parentResultType
+            // Validator and emitter both read sourceKey / parentResultType
             // unconditionally; carry the non-null contract in the type system rather than
             // by reviewer-tracked correspondence.
-            java.util.Objects.requireNonNull(parentSourceKey, "parentSourceKey");
+            java.util.Objects.requireNonNull(sourceKey, "sourceKey");
             java.util.Objects.requireNonNull(parentKeyLift, "parentKeyLift");
             java.util.Objects.requireNonNull(parentKeyOwnerTable, "parentKeyOwnerTable");
             java.util.Objects.requireNonNull(parentResultType, "parentResultType");
-            KeyLift.checkResidueAgreement(parentKeyLift, parentSourceKey, "InterfaceField");
+            KeyLift.checkResidueAgreement(parentKeyLift, sourceKey, "InterfaceField");
         }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Plain(OBJECT_CLASS);
         }
         @Override public List<ColumnRef> parentRowColumns() {
             return ParentRowDemand.polymorphicParentRowColumns(
-                returnType.wrapper().isList(), participantJoinPaths, parentSourceKey);
+                returnType.wrapper().isList(), participantJoinPaths, sourceKey);
         }
     }
 
     /**
-     * A child field on a {@link GraphitronType.TableBackedType} parent returning a multi-table
-     * {@link GraphitronType.UnionType}. Same shape as {@link InterfaceField}; differs only in
-     * the source of the participant set (union member types vs. interface implementers).
+     * A single-cardinality child field returning a multi-table
+     * {@link GraphitronType.UnionType}: the inline per-parent delivery. Same shape as
+     * {@link InterfaceField}; differs only in the source of the participant set (union member
+     * types vs. interface implementers). The list and connection cardinalities with a
+     * table-bound participant classify as {@link BatchedUnionField}; the degenerate all-unbound
+     * set stays here at any cardinality.
      */
     record UnionField(
         String parentTypeName,
@@ -768,7 +786,7 @@ public sealed interface ChildField extends OutputField
         ReturnTypeRef.PolymorphicReturnType returnType,
         List<ParticipantRef> participants,
         java.util.Map<String, ParticipantCorrelation> participantJoinPaths,
-        SourceKey parentSourceKey,
+        SourceKey sourceKey,
         KeyLift parentKeyLift,
         TableRef parentKeyOwnerTable,
         GraphitronType.ResultType parentResultType
@@ -776,18 +794,137 @@ public sealed interface ChildField extends OutputField
         public UnionField {
             participants = List.copyOf(participants);
             participantJoinPaths = java.util.Map.copyOf(participantJoinPaths);
-            java.util.Objects.requireNonNull(parentSourceKey, "parentSourceKey");
+            java.util.Objects.requireNonNull(sourceKey, "sourceKey");
             java.util.Objects.requireNonNull(parentKeyLift, "parentKeyLift");
             java.util.Objects.requireNonNull(parentKeyOwnerTable, "parentKeyOwnerTable");
             java.util.Objects.requireNonNull(parentResultType, "parentResultType");
-            KeyLift.checkResidueAgreement(parentKeyLift, parentSourceKey, "UnionField");
+            KeyLift.checkResidueAgreement(parentKeyLift, sourceKey, "UnionField");
         }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Plain(OBJECT_CLASS);
         }
         @Override public List<ColumnRef> parentRowColumns() {
             return ParentRowDemand.polymorphicParentRowColumns(
-                returnType.wrapper().isList(), participantJoinPaths, parentSourceKey);
+                returnType.wrapper().isList(), participantJoinPaths, sourceKey);
+        }
+    }
+
+    /**
+     * A list- or connection-cardinality child field returning a multi-table
+     * {@link GraphitronType.InterfaceType}: the DataLoader-batched delivery, the batched half of
+     * the {@link InterfaceField} delivery split. Component semantics are {@link InterfaceField}'s;
+     * this leaf additionally carries the {@link LoaderRegistration} the batched fetcher registers
+     * with, so the loader container and the {@code load}-vs-{@code loadMany} dispatch are
+     * classifier decisions read as data, not emitter re-derivations from the lift's arity.
+     *
+     * <p>The compact constructor pins {@link LoaderRegistration.Container#POSITIONAL_LIST}: the
+     * polymorphic classifier never mints a mapped container (there is no {@code Set}-shaped
+     * source declaration on this path), and the emitter's single
+     * {@code DataLoaderFactory.newDataLoader} call assumes it without a guard because this
+     * entailment makes the mapped cell unrepresentable.
+     */
+    record BatchedInterfaceField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        ReturnTypeRef.PolymorphicReturnType returnType,
+        List<ParticipantRef> participants,
+        java.util.Map<String, ParticipantCorrelation> participantJoinPaths,
+        SourceKey sourceKey,
+        KeyLift parentKeyLift,
+        TableRef parentKeyOwnerTable,
+        GraphitronType.ResultType parentResultType,
+        LoaderRegistration loaderRegistration
+    ) implements ChildField, BatchKeyField, ParentRowDemand {
+        public BatchedInterfaceField {
+            participants = List.copyOf(participants);
+            participantJoinPaths = java.util.Map.copyOf(participantJoinPaths);
+            java.util.Objects.requireNonNull(sourceKey, "sourceKey");
+            java.util.Objects.requireNonNull(parentKeyLift, "parentKeyLift");
+            java.util.Objects.requireNonNull(parentKeyOwnerTable, "parentKeyOwnerTable");
+            java.util.Objects.requireNonNull(parentResultType, "parentResultType");
+            java.util.Objects.requireNonNull(loaderRegistration, "loaderRegistration");
+            KeyLift.checkResidueAgreement(parentKeyLift, sourceKey, "BatchedInterfaceField");
+            if (loaderRegistration.container() != LoaderRegistration.Container.POSITIONAL_LIST) {
+                throw new IllegalStateException("BatchedInterfaceField '" + name
+                    + "': the polymorphic batched delivery registers a positional-list "
+                    + "DataLoader; a mapped container cannot be minted on this path");
+            }
+            if (participants.stream().noneMatch(p -> p instanceof ParticipantRef.TableBound)) {
+                throw new IllegalStateException("BatchedInterfaceField '" + name
+                    + "': the batched delivery requires a table-bound participant; the "
+                    + "all-unbound set classifies as the inline leaf");
+            }
+        }
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Plain(OBJECT_CLASS);
+        }
+        @Override public List<ColumnRef> parentRowColumns() {
+            return ParentRowDemand.polymorphicParentRowColumns(
+                returnType.wrapper().isList(), participantJoinPaths, sourceKey);
+        }
+        /**
+         * {@code false} unconditionally, stated rather than inherited: the polymorphic family
+         * is outside both consumer sites the base contract names (it inlines its own scatter
+         * and never renders through the launcher relation), and its per-key value is never a
+         * single record — a bucket on the list arm, one {@code ConnectionResult} on the
+         * connection arm, a bucket flattened by the {@code loadMany} tail on the accessor-many
+         * arm.
+         */
+        @Override public boolean emitsSingleRecordPerKey() {
+            return false;
+        }
+    }
+
+    /**
+     * A list- or connection-cardinality child field returning a multi-table
+     * {@link GraphitronType.UnionType}: the DataLoader-batched delivery, the batched half of the
+     * {@link UnionField} delivery split. Same shape as {@link BatchedInterfaceField}; differs
+     * only in the source of the participant set.
+     */
+    record BatchedUnionField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        ReturnTypeRef.PolymorphicReturnType returnType,
+        List<ParticipantRef> participants,
+        java.util.Map<String, ParticipantCorrelation> participantJoinPaths,
+        SourceKey sourceKey,
+        KeyLift parentKeyLift,
+        TableRef parentKeyOwnerTable,
+        GraphitronType.ResultType parentResultType,
+        LoaderRegistration loaderRegistration
+    ) implements ChildField, BatchKeyField, ParentRowDemand {
+        public BatchedUnionField {
+            participants = List.copyOf(participants);
+            participantJoinPaths = java.util.Map.copyOf(participantJoinPaths);
+            java.util.Objects.requireNonNull(sourceKey, "sourceKey");
+            java.util.Objects.requireNonNull(parentKeyLift, "parentKeyLift");
+            java.util.Objects.requireNonNull(parentKeyOwnerTable, "parentKeyOwnerTable");
+            java.util.Objects.requireNonNull(parentResultType, "parentResultType");
+            java.util.Objects.requireNonNull(loaderRegistration, "loaderRegistration");
+            KeyLift.checkResidueAgreement(parentKeyLift, sourceKey, "BatchedUnionField");
+            if (loaderRegistration.container() != LoaderRegistration.Container.POSITIONAL_LIST) {
+                throw new IllegalStateException("BatchedUnionField '" + name
+                    + "': the polymorphic batched delivery registers a positional-list "
+                    + "DataLoader; a mapped container cannot be minted on this path");
+            }
+            if (participants.stream().noneMatch(p -> p instanceof ParticipantRef.TableBound)) {
+                throw new IllegalStateException("BatchedUnionField '" + name
+                    + "': the batched delivery requires a table-bound participant; the "
+                    + "all-unbound set classifies as the inline leaf");
+            }
+        }
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Plain(OBJECT_CLASS);
+        }
+        @Override public List<ColumnRef> parentRowColumns() {
+            return ParentRowDemand.polymorphicParentRowColumns(
+                returnType.wrapper().isList(), participantJoinPaths, sourceKey);
+        }
+        /** See {@link BatchedInterfaceField#emitsSingleRecordPerKey()}: same fact, same reasons. */
+        @Override public boolean emitsSingleRecordPerKey() {
+            return false;
         }
     }
 
