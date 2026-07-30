@@ -6,7 +6,7 @@ bucket: architecture
 theme: classification-model
 depends-on: []
 created: 2026-07-27
-last-updated: 2026-07-29
+last-updated: 2026-07-30
 ---
 
 # Facts and commands: grain-first hierarchies and the three command relations
@@ -1993,6 +1993,93 @@ R541's single-operation launchers never need it, and a general launcher cannot d
     targetShape` 12/14 to 13/14 with the sole remaining hole structural. Census prose counts
     replaced by counting rules per the record. Verified: full reactor green (3062 graphitron module tests), all 32 SQL
     pins byte-identical.
+  - **Slice 7 design record (2026-07-30, consult-checked, binding): the recompile graph becomes
+    a projection.** The census: `CompileDependencyGraphBuilder` (in `rewrite/compile/`, 782
+    lines) re-derives from the classified model, by its own switch tree (seven switches, about
+    ninety leaf case labels, five `instanceof` sites, counted by no ratchet because `compile/`
+    sits outside every scan), edges the producers already compute when they mint the plan. Its
+    sole production consumer is `RecompileSet.directDependents`, one reverse-reachability query;
+    `nodes()` and `directReferences()` are test-only. It reconstructs the `TypeUnitRelation`
+    populations by string-prefix scans over emitted class names, and it papers over what it
+    cannot see with a blanket: every fetcher depends on all twelve frozen-scaffold singletons,
+    about twenty-five hand-maintained wiring edges, and an unconditional node/entity block. The
+    slice replaces derivation with projection: the graph is read off the `EmitPlan`'s relations,
+    and the builder's switch tree deletes.
+    - **The globals fork dissolves by sealing (consult verdict).** `GlobalCommand` today is
+      `(kind, List<UnitRef>)` with zero outbound refs, so the wiring hub's edges have no
+      carrier. Rather than bolting an edge list onto the flat record, seal it per the
+      slice-3b `TypeUnitCommand` precedent: arms carry only their own `UnitRef`, the fixed
+      substrate's internal edges are arm-entailed exactly as `__idx__`/`__rn__` are entailed by
+      their arms, and the two schema-dependent arms (entity dispatch, keyed per
+      `entitiesByType` entry; the node-type projections block) carry mandatory non-empty
+      outbound ref components. The globals edge view is then a total switch over the arms, and
+      the closure leg comes free and non-tautological: the facade-to-schema-class edge crosses
+      arms, so the oracle's emit walk genuinely checks it.
+    - **The residual relation is a producer, so it lives in `plan/` (consult verdict).**
+      Non-launcher coordinate families with real outbound edges exist (the six polymorphic
+      participant type-class edges, node/nodes, routine-write and service-mutation, the
+      payload arms' conditions edges, read-side `NodeIdEncoder` uses, `ErrorsField`), and a
+      total switch over model leaves producing emit-grain edges is a producer by definition:
+      it belongs on `EmitPlan`, not in `compile/`, and `PLAN_LEAF_REFERENCES` prices it where
+      a `compile/` home would hide it from every ratchet. Its enforcer is a declared family
+      set in the `LauncherRelationClosureTest.coveredCoordinates` shape: (a) the residual's
+      key set equals exactly the declared families' coordinates, and (b) it is disjoint from
+      the other relations' key sets. No edge-count pin. Two principled exclusions: the payload
+      arms' conditions edges are derived from the condition relation rather than re-evaluating
+      `hasSqlGeneratingField` (a third over-collection fix, see below), and read-side
+      `NodeIdEncoder` edges stay leaf-derived, because boundaries decode and encode; lifting
+      encode-ness onto rows would smear a boundary fact across the relation.
+    - **Acceptance is three-legged; the over-approximation becomes data (consult verdict).**
+      The existing one-directional oracle plus `IncrementalCompileHarnessTest` cannot see
+      over-collection, so the slice's oracle gains the third leg: (1) relation to emit, every
+      projected endpoint names an emitted unit; (2) emit to relation, the existing check that
+      every reference the emitted source makes is in `directReferences(u)`; (3) bounded gap,
+      `directReferences(u)` minus the emitted-source walk's edges is a subset of the
+      *declared* over-approximation, which is exactly the slice-5f frozen-singleton cover plus
+      the residual relation's declared families. Leg 3 is what makes silent over-collection
+      fail. The four current over-collections (an `inputRecord` node for every input type,
+      conditions nodes keyed on `hasSqlGeneratingField` rather than live filter rows, four
+      unconditional `addSingletonNodes` calls, and the payload-arm conditions re-evaluation)
+      are all node-only with zero production consumers, so the honest payload claim is
+      deletion plus enforcer, not a correctness fix; the builder's javadoc, which over-claims
+      precision today, is corrected in the same commit.
+    - **The graph's node space lifts to `UnitRef` (consult verdict).** `CompileDependencyGraph`
+      is String-keyed today, which is why `UnitNames` exists. The projected graph carries typed
+      `UnitRef` to `UnitRef` edges, the interface narrows to what `RecompileSet` actually
+      needs, and stringification happens in one adapter at the engine boundary. `UnitNames`
+      genuinely retires, and the oracle reads the projection's typed rows instead of parsing
+      names back apart. The anchor/host-recovery threading dies with it: an edge is
+      `row.unit()` to `contribution.callee()` with no ancestry reconstruction, which is the
+      R459/R462 bug class dissolving rather than being fixed. R462's advisory stands: fix by
+      hand now was its verdict, and this slice retires the class.
+    - **Sub-slicing: 7a projection, 7b connection-synthesis relation, 7c files separately.**
+      7a is this record's scope: seal `GlobalCommand`, build the edge projection over the
+      plan's relations plus the residual relation, port `CompileDependencyGraphBuilderTest`'s
+      eleven pins onto the projection (each pin ports or dies with a stated reason), land the
+      three-leg oracle, delete the builder. Step 0, in its own commit: `GenerationResult`
+      carries the whole `EmitPlan` and retires the `launchers()` accessor in the same change
+      (`LauncherRelationClosureTest` repoints at `plan.launchers()`), and the graph build
+      re-sites onto the plan. 7b makes connection synthesis a relation at the
+      `ConnectionPromoter.synthesiseForField` / `rebuildAssembledForConnections` site; it
+      clears whichever `SynthesisedNoSdlOrigin` exemption rows the registry's own filter then
+      selects (not a hand-counted four; the Count/Facet rows exit when the coordinate exists,
+      which is a connection-launcher question), and it owes a population pin, because an empty
+      synthesis relation compiles green. R10's assembled-schema-rebuild drop is gated on 7b,
+      not 7a, and leaving the programme's slices table for R10's own item is a
+      bundle-contract decision with named future consumers, filed as its own backlog entry
+      rather than absorbed here. 7a's validator-mirror obligation is empty, recorded
+      explicitly: the slice adds no schema-conditional emission, so there is nothing for
+      `GraphitronSchemaValidator` to mirror.
+    - **Predictions and housekeeping, stated before the build runs.** `PLAN_LEAF_REFERENCES`
+      is predicted to rise, not stay flat (the residual relation's total switch over model
+      leaves is priced there), while the `generators/` branch and `instanceof` counts do not
+      move, and that asymmetry is the architectural evidence: the edges were always computed
+      in the plan, only the re-derivation deletes. The slice-5f blanket inheritance survives
+      deliberately: the slice deletes the coarsening switch, not the over-approximation, which
+      leg 3 now prices as declared data. `SelectTerm.HelperCall` is named in the edge-view
+      javadoc as the external arm contributing no edge (same status as the service
+      `MethodRef`). The unused `GeneratedConditionFilter` import in the builder goes with the
+      file.
 
 ## The exemption lists are the grain worklist
 
