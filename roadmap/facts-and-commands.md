@@ -1813,6 +1813,64 @@ R541's single-operation launchers never need it, and a general launcher cannot d
     (including the nine DML pins frozen pre-cutover, which arbitrated the discriminated
     condition order and the `keysinput` join shape), 3048 module tests, full reactor green.
     Next: 5f per the programme.
+  - **5f design record (2026-07-30, consult-checked, binding): the entry points stay
+    formula-derived.** The slice's specified fork ("the entry points, or the recorded decision
+    that they stay formula-derived") resolves to the recorded decision, grounded in a census of
+    the whole entry-point emission surface rather than assertion. Three facts carry it. The
+    entry method's identity IS the coordinate: every family names its DataFetcher method
+    `field.name()` and the schema wiring binds `coordinates(typeName, field.name())` to
+    `<Type>Fetchers::<field.name()>` through the same accessor at both ends, so there is no
+    naming freedom and nothing to mint. Membership is row presence (`rowFor` at the dispatch,
+    `registersFetchers` on the type-unit row), already single-homed in the producers. And every
+    fact an entry point shares with its launcher already rides the row (the unit ref, the
+    payload type, the tenancy fork, the loader registration). An entry-point relation would be
+    a second coordinate-keyed relation restating the launcher relation's key with no new
+    columns, the intermediary-model shape the R546-absorption verdict rejects.
+    - **The entry-local residue is single-consumer, said in the programme's vocabulary.** Error
+      catch arms, async wrap tails, Outcome preludes, key extraction and the loader-name
+      declaration each have exactly one consumer (the entry point), so promoting them to
+      columns buys no single-sourcing; the arm-split rule (counted downstream consumers, never
+      provenance) says they stay emission. Key extraction is the sharpest case: half its inputs
+      (`sourceKey`) already ride the row as borrowed facts, half (`lift`, parent table, result
+      type, source shape, source-is-Outcome) do not and should not. The service arms'
+      `perKeyType` looks like a second derivation of the launcher's return type but has a named
+      enforcer of the equality (`validateChildServiceReturnType`), the acceptances corollary
+      working as designed.
+    - **Thinness is derived, not enumerated.** The three-way classification reads off data:
+      a row whose source is a `Reentry` arm has the deliberately-not-thin write entry (the 5e
+      record); every other row's entry is thin by consequence of the launcher seam; the batched
+      polymorphic family has no row and its hand-rolled registration is carved out by the
+      existing registration-homes pin. Body thinness is already enforced:
+      `UnifiedEmissionPinsTest.launcherRenderer_unifiedRenderSites` means composition can only
+      live in the renderer. The missing enforcer is identity, landed with this slice as a
+      derived pipeline-tier pin on the closure oracle: for every relation row, the owner
+      fetchers class declares a method named `coordinate.getFieldName()` taking exactly
+      `(DataFetchingEnvironment)`; signature-and-wiring structure, no body assertions.
+    - **Convergence folds (the non-payment deliverable), both consult-widened.** (a) The
+      batched entry point re-derives the whole per-key value type, not just the fan-out
+      boolean: `isFanOut(ctx, ...)` restates `row.tenancy()`, the
+      connection/single-per-key/list fork restates the fold that minted the result arm, and
+      `ClassName.get(outputPackage + ".util", ...)` re-derives the carrier ref the row carries
+      minted. The fold exposes the per-key element view beside
+      `BatchedRowsFragments.valueTypeOf` (the container is its `List` lift) and the entry reads
+      it plus the carrier ref off the row, making the "two ends cannot disagree" javadoc claim
+      structural. `resultValueType` stays entry-local: the field's GraphQL cardinality is a
+      different axis from the row's per-key shape, single-consumer. Stated so the fold is not
+      oversold: `TenantDslEmitter.loaderNameDeclaration` keeps its seven-arm `TenantBinding`
+      read at the same site by the recorded declaration-form carve-out; it reads a different
+      projection of tenancy than the row's two-arm strategy, deliberately. (b) The
+      `<Type>Fetchers` name formula is restated at nine sites across five files (two with live
+      drift partners in the connection unit refs slice 3b committed as data); half-folding one
+      would misrepresent the name as single-homed, so the fold takes all nine through
+      `GeneratedUnits.fetchers`/`FETCHERS_SUFFIX` in one mechanical edit, minted at type grain,
+      never off a coordinate row's `row.unit().owner()` (reading a type-grain fact off a
+      coordinate-keyed row is the grain error).
+    - **Slice-7 carve-out, recorded here so it is not rediscovered mid-slice.** The entry
+      points' outbound edges (the error router and per-channel `ErrorMappings` constants, the
+      tenant carrier, `GraphitronContext`, `LightFetcher`) belong to no command row, so the
+      union of per-kind edge views cannot cover them; the recompile graph's blanket
+      frozen-singleton over-approximation (`CompileDependencyGraphBuilder`) is the deliberate
+      class-grain cover, inherited by slice 7 as a stated carve-out.
 
 ## The exemption lists are the grain worklist
 
