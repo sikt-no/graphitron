@@ -1893,6 +1893,71 @@ R541's single-operation launchers never need it, and a general launcher cannot d
     concatenated); the vocabulary's empty-package handling makes it the root package.
     Verified: all 32 SQL pins byte-identical, full reactor green. Slice 5 closes with 5f; next
     per the programme: slice 6.
+  - **Slice 6 design record (2026-07-30, consult-checked, binding).** A census of the live
+    lists reframed the slice: the roadmap's "19 data points" is 21 (5d's two batched-polymorphic
+    entries never updated the prose), two further untyped lists exist that the prose did not
+    know about (`SourceShapeProjectionTest.NOT_CORPUS_COVERED`,
+    `ProjectionCoverageTest.NO_PROJECTION_REQUIRED`), two `NOT_CORPUS_COVERED` rows are dead at
+    the leaf-class key while their reasons state a live leaf-by-arity fact, two
+    `NO_CASE_REQUIRED` reasons are factually stale (the composite-PK metadata they claim absent
+    exists on `film_actor` in the corpus's own catalog), and the one `RIDES_ANOTHER_ROWS_KEY`
+    member was mis-triaged: the projection side has no grain defect (a slot is a contribution
+    inside the pivot unit's row, like every column read), the emit side's
+    first-occurrence-wins wiring key is the real defect and is already filed (the
+    pivot/nesting representative-read item), and the residue is an instrument gap (the
+    coverage walkers read top-level coordinates only). The stale reasons are not bad luck:
+    every exemption names its covering test in free text and nothing checks any of it.
+    - **The enforcer first, shared at the right axis (consult-corrected).** The slice's
+      capability payload is an exemption-obligation registry: one row per obligation
+      (domain supplier, covered-set supplier, exemption map) with a parameterized meta-test
+      asserting in-domain, still-uncovered, and domain-minus-covered-minus-exempt empty, plus
+      a reflective discovery guard failing on any exemption map in the test tree that is not a
+      registry row (per-list mirrors would fix three instances and reproduce the failure mode
+      for list five). Keyed by obligation, not by list: `NO_CASE_REQUIRED` serves two
+      obligations with two covered-sets (output leaves against the corpus walk, input leaves
+      against the enum cases), and a single-keyed still-uncovered check is vacuously green on
+      exactly the three input rows this slice closes. `ProjectionCoverageTest` stays
+      unit-tier: the registry declaration and assertion helper are shared, the corpus
+      classification is not folded into it.
+    - **Covering evidence moves into the type.** `Exemption` becomes a sealed interface whose
+      arms carry what each closure needs (unimplemented-with-blocker, synthesised-no-SDL-origin,
+      walker-gap-naming-the-walker, fixture-absent-naming-the-shape,
+      harness-single-catalog) and a `Class<?> demonstratedBy` component where a demonstration
+      is claimed, so a renamed covering test is a compile error and the free text shrinks to
+      the why. `RIDES_ANOTHER_ROWS_KEY` is not re-minted: its single member never genuinely
+      had the defect, and the warning it carried lives in the programme's invariant 2. The
+      synthesised arm keeps `HierarchyKindRegistryTest`'s cross-check working by arm type.
+      The blocker facts are single-homed: one shared blockers declaration referenced by every
+      obligation's entry, never restated per list (the copies are why the stale reasons went
+      unnoticed and why closures currently ripple as a chore).
+    - **The PivotSlotField outcome is a triage correction, said plainly.** The corpus
+      walker/harness widens to descend the ridden lists (`NestingField.nestedFields()`,
+      `PivotSpec.slots()`); the coordinate relation is untouched (the SDL coordinate exists
+      and carries real axis verdicts; the reader was what was missing, so `@classified`'s
+      meaning is not diluted). That closes the entry's corpus-obligation rows; the
+      LSP-projection obligation's row is annotation-driven and untouched by a corpus walk, so
+      it gets a corrected reason, not deletion. The emit-side key defect stays with its filed
+      item, not absorbed (its own review pipeline).
+    - **Closures, counted by the enforcer rather than asserted.** The lists are keyed per
+      (leaf, obligation), so the arithmetic is per row: the batched polymorphic pair needs
+      both an interface-flavoured and a union-flavoured list-cardinality corpus example (one
+      example closes neither union row); the FilmActor composite-PK input example closes the
+      two stale-reason input rows and is authored to also exercise output-side composite
+      (RowN) column projection, converting the two dead `NOT_CORPUS_COVERED` rows from
+      deletions (which would drop the live arity fact) into closures; the
+      `JooqRecordType`/`JooqRecordInputType` pair closes in-slice (one test-classpath class,
+      no catalog work; an exemption with no closure condition and no owner is permanently
+      green under any enforcer, the weakest row to leave behind); `UnboundField` closes via a
+      new enum `ClassificationCase` (the two tests exist; widening `@ProjectionFor`'s meaning
+      to a second obligation would collapse two deliberately independent derivations). The
+      DELETE-payload trio's reasons are corrected in-slice to name the actual blocker; the
+      fixture attempt is time-boxed and files its wrinkle if the classification path fights
+      back (the slice-3.3 rule: an enforcer slice does not carry a finding).
+    - **Counts leave the prose.** The census paragraphs are repaired by removing the figures
+      and stating the counting rule (the registry's failure message and the axis-pair census
+      print the live numbers); re-recording fresh matrix figures in the body would set up the
+      identical rot one slice later. The axis-pair census is re-derived after the fixtures
+      land, as the instrument, not as prose.
 
 ## The exemption lists are the grain worklist
 
