@@ -28,9 +28,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * appears in many non-polymorphic emit sites across {@code FetcherEmitter},
  * {@code SplitRowsMethodEmitter}, and several {@code TypeFetcherGenerator}
  * sites that are correct as-is per the "Filter at the call site, not inside
- * {@code $project}" reasoning, plus the same-table interface emit site at
- * {@code TypeFetcherGenerator.buildInterfaceFieldsList} that this pin intentionally
- * leaves alone. A folder-wide count would couple the pin to those unrelated
+ * {@code $project}" reasoning. (The same-table interface emit this caveat once named
+ * relocated to {@code no.sikt.graphitron.render.DiscriminatedTableFragments}, outside
+ * this scan's folder.) A folder-wide count would couple the pin to those unrelated
  * correct sites; a single-file scope pins exactly the Stage-2 invariant.
  */
 @UnitTier

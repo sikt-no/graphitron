@@ -168,8 +168,8 @@ public final class GraphitronSchemaClassGenerator {
                 var cb = CodeBlock.builder();
                 cb.add("codeRegistry.typeResolver($S, env -> {\n", tit.name()).indent();
                 cb.addStatement("$T record = ($T) env.getObject()", JOOQ_RECORD, JOOQ_RECORD);
-                // Route off the synthetic discriminator alias the interface fetcher projects
-                // (TypeFetcherGenerator.buildInterfaceFieldsList), not the raw discriminator column name:
+                // Route off the synthetic discriminator alias the interface emission projects
+                // (render/DiscriminatedTableFragments), not the raw discriminator column name:
                 // when the interface exposes the discriminator as a queryable field, the real column is
                 // also projected by the participant $project, and a bare read of the column name matches
                 // both ambiguously. The alias is distinct from any real column, so the read is unambiguous.

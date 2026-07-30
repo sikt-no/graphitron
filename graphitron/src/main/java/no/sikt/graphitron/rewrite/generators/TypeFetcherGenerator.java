@@ -1251,8 +1251,9 @@ public class TypeFetcherGenerator {
      * only the columns hop 0's key pairs need from the routine's result rows — the exact analog
      * of DML's PK-only {@code RETURNING}. Step 2 runs after the commit: a read-only SELECT
      * anchored on hop 0's table keyed by the captured values
-     * ({@link #buildKeysInCondition}), remaining hops joined forward as in
-     * {@link #buildQueryRoutineFetcher}, projecting the terminus type. The routine never appears
+     * ({@link #buildKeysInCondition}), remaining hops joined forward as in the root routine
+     * launcher's arm ({@link no.sikt.graphitron.render.RootLauncherRenderer}), projecting the
+     * terminus type. The routine never appears
      * in step 2's {@code FROM} — re-invoking it would re-execute the write. Read errors during
      * step 2 propagate as field errors and cannot undo the committed write (the same documented
      * caveat the DML fetchers carry); an SQL error from the routine rolls the transaction back at

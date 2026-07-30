@@ -22,7 +22,8 @@ import java.util.function.Function;
  * {@code VALUES (idx, col1, col2, ...) JOIN <table> ON ... ORDER BY idx} SELECT for one
  * batched group and scatters result rows back to {@code result[idx]}.
  *
- * <p>Sibling shape to {@code TypeFetcherGenerator.buildQueryLookupRowsMethod} but rooted in
+ * <p>Sibling shape to the root {@code @lookupKey} launcher (the keyed-lookup arm of
+ * {@link no.sikt.graphitron.render.RootLauncherRenderer}) but rooted in
  * representations rather than GraphQL arguments. The shared row-construction core (typed row
  * array, alias-args list) lives in {@link ValuesJoinRowBuilder}; only the dispatcher-specific
  * outer plumbing (per-rep binding tuple decode, {@code result[idx] = r} scatter, the
