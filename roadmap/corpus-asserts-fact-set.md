@@ -1,88 +1,132 @@
 ---
 id: R543
 title: "Corpus asserts a coordinate's facts and commands, not one verdict triple"
-status: Backlog
+status: Spec
 bucket: testing
 theme: testing
 depends-on: []
 created: 2026-07-26
-last-updated: 2026-07-26
+last-updated: 2026-07-30
 ---
 
 # Corpus asserts a coordinate's facts and commands, not one verdict triple
 
-`@classified` asserts one three-axis verdict per coordinate: a `source`, a single `operation` arm token, and a `target` wrapper plus outer shape. R333's *Corpus assertion shape* question resolves that this generalizes: the directive should assert a `source` fact, a `target` fact, and a **set** of `operation` rows, each independently assertable, because `operation` is the one genuinely multi-valued relation in the model (collapsing it into a single slot is the 1NF fault that multiplies the leaf cross-product in the first place). A coordinate that selects, joins, paginates and filters is four operation rows today squeezed into one arm token, so the corpus can currently name only the arm the leaf happens to expose.
+Spec, rewritten 2026-07-30 against the post-slice-7 reality (the original 2026-07-26 body rested on
+`MethodCommand` and `RowsMethodBody`, both since retired, and on a slot-row census that has moved).
+Consult-checked (principles-architect, 2026-07-30); this body encodes the census and the verdict.
 
-The consequence is a ceiling on what the corpus can be the spec for, and it is the reason the classification truth table still holds ~149 slot-asserting rows. Those rows assert `joinPath()`, `resolvedTable`, `sourceKey()`, `returnType().wrapper()`, `columnName()` and friends, and they stay in `GraphitronSchemaBuilderTest` because the corpus vocabulary has nowhere to put them. That exclusion is a property of the vocabulary, not a law: under R333 each of those *is* a fact with its own natural key and its own walk, and R333's seam-placement rule already treats corpus assertability as a first-class design criterion (rule c, taken in its looser reading: seam wherever the corpus might want to assert). Widening the directive vocabulary to the fact set is what lets the corpus absorb slot detail instead of quarantining it, and it removes the "verdict, not slots" split that currently divides one classification spec across two mechanisms.
+## What the item is now
 
-Part of this is available before the leaf zoo dissolves. Several facts are already materialized as fact-shaped records that a widened directive could read directly: `JoinStep.Hop` / `On` (R438), `TableExpr` including `RoutineCall` (R435), `PivotSpec` (R501), `NodeMetadata`. Others wait on the emit re-platforming (R314 shipped the reentry family as the first one driven by the model). Spec should decide how much to land against today's accessors versus how much to hold for the facts, and pick the directive shape: a repeatable per-operation directive, a set-valued argument, or a separate `@triggers` sibling. Also due at Spec: what the coverage obligation becomes when it can no longer be stated over sealed leaf classes, since `ClassifiedCorpus.coveredLeaves()` and `VariantCoverageTest`'s corpus check are both defined over `Class<?>` leaves (see the fourth-reader note in R333's consumers section, which owns the re-sourcing requirement this item inherits).
+The corpus asserts, per coordinate, one three-axis classification verdict (`@classified`) and, since
+R549 slice 7b, a synthesis declaration (`@synthesises`) checked against the connection-synthesis
+relation on declared-equals-produced agreement. The emit side has no corpus voice at all: which
+launcher row a coordinate commits is asserted only by test-code re-walks of the model
+(`LauncherRelationClosureTest.isCoveredFamilyMember`, a twelve-arm leaf switch that must agree with
+`LauncherCommands`' production membership switch, with nothing binding them). This item gives the
+command half its corpus voice, in the `@synthesises` shape: a sibling directive, declared at the
+coordinate, agreement-checked against the launcher relation's produced row, with coverage counted
+only on agreement.
 
-## Both halves, one altitude rule
+## The spine: three criteria, replacing the old identity/payload cut
 
-The facts are R333's front half. The back half is the method graph, and under the functional-core /
-imperative-shell cut R333 draws (thread B: the core decides the entire emit, the shell renders and never
-assembles, and commands must be complete) the back half is equally declarative data: a set of committed
-method commands plus the edges that close over them. So the corpus's natural reach is both halves of one
-coordinate, and the two want the same treatment rather than two mechanisms.
+What the corpus may assert is governed by three criteria, each with its own discharge condition,
+not by a single "identity and wiring, never payload" rule (which, read literally, would admit the
+join path it was meant to exclude):
 
-This matters because emit behaviour is currently assertable only two ways, both bad for a spec: code-string
-matching on generated bodies, which the project treats as an anti-pattern and R387 exists to migrate off,
-or end-to-end through the compilation and execution tiers, which answers "it compiles and runs" but never
-"this coordinate emits these methods and wires them to each other". A command set is data produced by a
-pure function over the SDL, so it is assertable from a fixture directive with no javac in the loop. That is
-the missing rung between the pipeline and compilation tiers.
+1. **Grain.** A 1:N family (join hops, filters, pivot slots, operations) is corpus-declarable only
+   once it is a relation with its own key, and then in the `@synthesises` shape: declared set
+   against produced rows. Until then it has no assertable identity, only payload of something else.
+2. **Legibility.** Even after the relation exists, the corpus asserts a coordinate's
+   *distinguishing* facts, never its complete facts. A directive that spells out a whole method
+   body's structure is not a spec anyone reads. This criterion permanently keeps the bulk of the
+   truth table's slot rows (84 `joinPath()` assertions and kin) where they are.
+3. **Reconstructibility.** SQL expression structure and column-level term algebra are never corpus
+   content; javac and PostgreSQL own them (the existing `DimensionTuple` ground, kept).
 
-**Precondition: a command is pure data, in ordinary Java records.** A command carries no vocabulary from the
-emit library. The moment a command holds a `CodeBlock` (or a `TypeName`, or any other javapoet type) it stops
-being a decision the core made and becomes output the core already rendered, which defeats the point twice
-over: the core has reached into the shell's job, and the command is no longer comparable, printable, or
-assertable as data, only as text. This is the dual of R333's thread-B law. Thread B says the shell makes no
-decision the core could have made; the same cut requires that the core render nothing the shell should
-render, and only the second half is currently at risk.
+Consequence, stated positively: the ~132 output-side slot-asserting truth-table rows in
+`GraphitronSchemaBuilderTest` are **correctly tiered**, not quarantined. They stay the pipeline
+tier's obligation. The one narrow future exception: a minimal-pair corpus example whose *lesson* is
+a reference chain could declare hop identity once join hops are a relation; that waits on its grain
+condition and is not this item's work.
 
-It is at risk concretely, so this is a precondition rather than a principle. `RowsMethodBody` is a sealed
-hierarchy in the *model* package whose every permit carries an opaque `CodeBlock content()`, constructed by
-`SplitRowsMethodEmitter` and `TypeFetcherGenerator` and consumed by `RowsMethodSkeleton`: emitters on both
-ends, so it is a shell-to-shell handoff misfiled as a model type, with the boundary inverted (the shell owns
-the declaration scaffolding while a model type carries pre-rendered body text). More broadly the model's
-Java-type vocabulary *is* javapoet's, with `ClassName` in 21 model files and `TypeName` in 20, plus
-`ParameterizedTypeName` / `ArrayTypeName`, reaching as far as author-facing rejection text through
-`TypeNames.simple`. A plain type reference record would serve every one of those slots. `MethodCommand` is
-the counter-example that shows the target shape: four strings, no emit vocabulary, fully comparable.
-Whether that purge lands here or as its own item is a Spec-time call; the command half of this item cannot
-assert commands as data until it does.
+## Deliverable: the launcher commitment directive
 
-**The altitude rule, stated once and inherited by both halves.** Even as pure records, command completeness
-and command assertability pull against each other: a command complete enough that the shell decides nothing
-carries the whole structure of a method body, and a directive that spells that out is not a spec anyone
-reads. The resolution already exists on the front half, where `DimensionTuple` deliberately asserts the
-`Operation` *arm token* and not the arm payload, on the stated grounds that the payload is not reconstructible
-from a directive and its completeness belongs to the tiers that compile and run the result. The constraint is
-payload size and structure, not the vocabulary the payload is written in. Apply the same rule one layer down:
+A sibling directive (working name `@commits`; siblings compose, one mega-directive fuses fact-base
+and plan assertions at one key), `FIELD_DEFINITION`-targeted, keyed exactly as `LauncherRelation`
+is keyed: by coordinate alone. It declares the arm tokens of the coordinate's launcher row, and
+absence of the directive on a covered-family coordinate is a corpus error only where the enforcer
+below says so.
 
-| layer | the corpus declares | who owns the rest |
-|---|---|---|
-| facts (front half) | `source`, `target`, the coordinate's operation set | slot payloads stay with the pipeline tier |
-| commands (back half) | which methods the coordinate commits, and the edges they close over | bodies stay with the compilation and execution tiers |
-| bodies | nothing | javac and PostgreSQL |
+- **Axes by measured independence, not by enumeration.** Before fixing the directive's arguments,
+  run the landed axis-pair census instrument over the launcher relation's arms
+  (`LaunchSource`/`Invocation`/`TenantStrategy`/`ResultShape`) across the corpus. Declare only axes
+  that vary independently; axes locked by the `LauncherCommand` compact constructor's biconditionals
+  (service source iff `LoaderDelegated`; reentry iff `ReturningKeyed`) are one fact, declared once.
+- **Arm tokens, never emitted names.** No `(owner, method)` declaration: launcher method names are
+  formula-derived, and the relation's case-folded census plus the closure test's row-to-emit leg
+  already enforce them. A corpus copy of a derived name is a maintenance site with no certainty.
+  (`@synthesises` declaring type names is not a counter-precedent: those names are author-facing
+  schema surface; a launcher method name is emit-internal.)
+- **Membership division, stated as the point.** The corpus declaration owns membership for the
+  shapes it demonstrates: `LauncherRelationClosureTest`'s model-to-row direction re-sources onto
+  the corpus (or deletes) for the demonstrated families, retiring the hand-maintained
+  `isCoveredFamilyMember` restatement of the producer's switch. The row-to-emit leg and the
+  coordinate-named env-method identity pin stay: they cross into the render, where the corpus
+  cannot reach. Two statements of the membership invariant, not three.
+- **Coverage obligation, registered.** A new `ExemptionRegistry` obligation row in the existing
+  shape: domain = the sealed arms of the declared command axes, covered = arms reached by a
+  declared-and-agreeing corpus row, exemptions = typed reasons. Registered in `obligations()` so
+  the reflective discovery guard sees it; without this the command half is an unguarded census.
+- **Run-grain scoping.** The plan is produced per run (`federationLink`, `usesOneOf`, session
+  state, output package). The harness fixes one canonical run configuration and states it;
+  run-grain facts (`carrierDsl`, the federation/oneOf gates) are explicitly out of the coordinate
+  directive's reach. A fixture needing a different configuration is a pipeline-tier test, not a
+  corpus example.
+- **Doc-render hygiene.** The item adds a test-only directive, and `QueryViewRenderer`'s
+  `INTERNAL_DIRECTIVES` strip roster is hand-maintained (it already misses `@synthesises`,
+  latent only because the faceted example carries no doc query). Derive the strip set from the
+  parsed prelude's directive definitions so a test directive cannot leak into the published
+  triggers page by construction.
 
-Both halves assert identity and wiring, never payload. That keeps one answer to "what is a declarative test
-for here" instead of one rule per half, and it keeps the directive readable as a spec.
+## In-scope corrections
 
-**Phasing.** The fact half can start now (several facts are already materialized records, as above). The
-command half is gated on commands carrying more than a name: today's `MethodCommand` is a name-authority
-record (coordinate, unit, type path, method name) and the closure oracle is name-level, which is enough to
-assert *that* a coordinate commits a method and that every callee resolves, but not what kind of method it
-is. R541 is spending that registry as it lifts the root query unit, so the command half should follow its
-lead rather than mint a parallel notion of command. Do not block the fact half on it.
+- **Re-anchor the `Operation.Count`/`Operation.Facet` exemptions.** Their stated blocker (the
+  connection launcher's `ConnectionResult` carrier fork) is discharged: `ResultShape.Connection`
+  carries the helper, carrier and facet plan today. The live reason those arms are unreachable is
+  that a synthesised connection type's `totalCount`/`facets` fields are not classified coordinates
+  in the fact base at all. Rewrite both reasons to that ground and name the owner of the
+  synthesised-fields-as-coordinates model question in them.
 
-Two knock-on effects, worth weighing at Spec because they argue for the item's size. R25's coverage baseline
-puts the emitters at the bottom of the generator source (`JooqRecordInstantiationEmitter` 40.7%,
-`FetcherEmitter` 50.2%), which is what you would predict when emit behaviour is reachable only through the
-whole pipeline; asserting commands moves that coverage debt to a tier that can reach it directly. And R387's
-migration off code-string assertions gets a destination: a command assertion is what those tests were
-reaching for when they matched on generated text.
+## Out of scope, with owners
 
-Out of scope: the rejection rows (their own mechanism, filed separately) and the input-side rows. Not a
-re-litigation of R333's model or of the FCIS cut; this item consumes both. Not the closure oracle's
-extension to further emit families, which rides with the families themselves.
+- **Set-capable `operations` vocabulary.** Rejected as vocabulary landed ahead of semantics: the
+  model's operation axis is single-valued (one arm per `OutputField`), a list argument whose
+  cardinality is always one has no enforcer for the "always one" fact, and the plural form's real
+  cost sits elsewhere (the coordinate-grain axis-pair census would re-grain to one row per
+  operation, changing what a programme instrument measures, and `OPERATION_ARMS` would re-source).
+  The plural directive lands together with the model's operation relation, the census re-grain and
+  the obligation re-sourcing as one coherent edit, owned by whichever item makes operations a
+  relation.
+- **The condition sibling** (`(coordinate, resolvedTable)`-keyed, one coordinate declaring several
+  rows: the first key where the declared-set-versus-produced-rows pattern earns its generality).
+  Files as its own item once the launcher sibling has proven the shape.
+- **A fetcher-edge sibling.** Not planned: its content would be a list of generated unit names,
+  a derived-name restatement with no author-visible content.
+- **R387's migration** is NOT gated on this item: its destination is the per-family pipeline-tier
+  row assertions (two already landed and populated); this item later generalises those into
+  author-declared form. R387 proceeds family by family today.
+- **The coverage-obligation re-typing** (obligations keyed by `Class<?>` leaves) bites only when
+  the leaf zoo dissolves, a model change this item does not make; the slice-6 obligation-keyed
+  registry is the shape that absorbs it then.
+- The rejection rows and input-side rows (unchanged from the original filing).
+
+## Acceptance
+
+The launcher sibling directive exists in the corpus prelude; the corpus's covered launcher families
+carry declarations that agree with the produced relation; the membership invariant has exactly two
+statements (producer switch, corpus declarations) with the closure test's model-to-row direction
+re-sourced or deleted for demonstrated families; the new obligation row is registered and honoured;
+the strip roster is derived; the two exemption reasons are re-anchored. Full reactor green; the
+slice stays emit-neutral (test-tree and corpus only, zero main-source emission changes expected;
+any main-source change is limited to what the directive's agreement check needs to read and must
+not alter output).
