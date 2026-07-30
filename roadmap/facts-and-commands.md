@@ -1541,6 +1541,86 @@ R541's single-operation launchers never need it, and a general launcher cannot d
     3049 module tests and the full reactor green. Next: 5d, the polymorphic children
     (`MultiTablePolymorphicEmitter`'s `__idx__`/`__rn__` copy re-points to
     `ReservedAliases`; the `BatchKeyField` capability repair).
+  - **5d design record (2026-07-30, consult-checked, binding).** The polymorphic child regime's
+    capability repair, no command-relation fold. The authority for staying out of the launcher
+    relation is R541's fork 4 and its Out-of-scope entry (the hand-rolled polymorphic loader
+    registration and stage 1 both defer to a dedicated polymorphic-emit item); the slice log's
+    earlier "polymorphic projection needs no folding in" paragraph is about the *projection*
+    command only and does not carry this. The `RootLauncherRenderer.render` site pin stays 9 and
+    `UnifiedEmissionPinsTest`'s carve-out javadoc stands.
+    - **The delivery axis becomes leaf identity (the main fork, decided per the `PivotField` /
+      `BatchedPivotField` precedent).** The recorded intent said "`InterfaceField` / `UnionField`
+      implement `BatchKeyField`"; the repair refines that: one leaf per delivery regime, not a
+      nullable bag. `InterfaceField` / `UnionField` stay the inline single-cardinality leaves
+      (`ParentRowDemand` only, deliberately not `BatchKeyField`, exactly as `PivotField` declines
+      it), and new `BatchedInterfaceField` / `BatchedUnionField` leaves cover the list and
+      connection cardinalities: `implements BatchKeyField, ParentRowDemand`, a non-null
+      `LoaderRegistration` component, and the compact constructor pinning
+      `Container.POSITIONAL_LIST` (producer entailment; the emitter reads `dispatch()` with no
+      guard and no defensive throw; the container switch was declined as speculative generality
+      for a cell the classifier cannot mint). The classifier picks the leaf on the wrapper
+      (`Connection` or list → batched), so the delivery predicate has exactly one home. The
+      nullable-registration alternative was rejected because it makes the array-key validator
+      an over-rejection with a false message at inline coordinates, falsifies
+      `emitsSingleRecordPerKey()`'s documented iff on inheritance, and forecloses the
+      biconditional census pin. The rejected alternative's residue is recorded, not built:
+      the interface/union pair is a spliced identifier over a provenance the generator never
+      forks on (`UnionField`'s own javadoc: same shape, different participant-set source);
+      collapsing the pair is not 5d's business.
+    - **Vocabulary convergence.** The key component is named `sourceKey` on all four leaves
+      (satisfying `BatchKeyField.sourceKey()` on the batched pair directly; a bridging accessor
+      was rejected as the two-reads-agreeing-by-comment pattern). Deliberate residue: the
+      sibling components keep `parentKeyLift` / `parentKeyOwnerTable` / `parentResultType`
+      names while the sibling *families* name the lift `lift`, so
+      `KeyLift.checkResidueAgreement(parentKeyLift, sourceKey, ...)` straddles two naming
+      regimes; noted here so a reader does not infer two concepts.
+    - **Mint sites.** The table-backed construction site mints
+      `new LoaderRegistration(valueIsList, POSITIONAL_LIST, LOAD_ONE)` inline (a fact:
+      `KeyLift.FkColumns` entails one key per parent row). The record-backed site does not
+      restate the arity formula: the registration rides
+      `PolymorphicRecordParentResolution.Resolved` beside the lift it already carries, minted
+      where the arity is computed (`accessorIsMany` → `LOAD_MANY`, the same derivation the
+      batched-table sibling consumes), so the emitter's arity re-fork retires without minting
+      two new copies of the formula. `valueIsList` reads off the wrapper (list → true,
+      connection → false: the per-key value is one `ConnectionResult`).
+    - **The emitter fold.** The four inline `"rows" + cap(fieldName)` sites retire; the
+      generator arm computes the name once through the existing
+      `TypeFetcherEmissionContext.rowsDeclarationName` seam (typed over
+      `OutputField & BatchKeyField`; commits nothing when `emitsKeyedReQuery()` is false, which
+      it is for these leaves by target shape) and passes it in, keeping one read path for 5e's
+      registry retirement. The `load`-vs-`loadMany` fork reads
+      `loaderRegistration().dispatch()`. `emitConnectionMethods` splits into root and child
+      entry points (the pair the non-connection path already has), deleting the
+      `parentSourceKey != null` regime fusion and the unenforced "non-null when" javadoc
+      clauses; the child entry's capability parameter is non-null by type.
+      `emitsRowKeyedParentInputRowsMethod`'s two polymorphic arms become identity reads.
+    - **Alias re-pointing.** `IDX_COLUMN` / `RN_COLUMN` re-point to `ReservedAliases.IDX` /
+      `ROW_NUMBER` (the `DISCRIMINATOR_COLUMN` shape: local constant kept, defined as the
+      holder's read). `__typename` fails the stay-local criterion and joins `ReservedAliases`
+      too: the writer is this emitter, the readers are the emitted `TypeResolver`
+      (`GraphitronSchemaClassGenerator`, whose private copy hand-maintains the correspondence
+      in prose) plus `EntityFetcherDispatchClassGenerator` and `QueryNodeFetcherClassGenerator`
+      copies; all four local spellings delegate and the prose bridge deletes. `__sort__` gets a
+      cross-package check at implementation (the cursor-encode path); `__pk<i>__`, `pages`,
+      `ranked`, `parentInput` are genuinely intra-family and stay local.
+    - **Pins.** (a) The three pre-cutover SQL pins are frozen (list, connection, accessor-many
+      `loadMany`; `BatchedChildSqlBaselineTest`, 10 pins there, 23 total). (b) The census pin is
+      a biconditional against a base fact, not a seven-name roster: a `ChildField` leaf declares
+      a `LoaderRegistration` record component iff it implements `BatchKeyField` (roster-free, an
+      eighth leaf fails automatically). (c) The DataLoader-regime pin counts
+      `DataLoaderFactory.newDataLoader` / `newMappedDataLoader` emission homes across
+      generators and names all *three* live homes (the unified `DataLoaderFetcherEmitter` seam,
+      this emitter, and `QueryNodeFetcherClassGenerator`'s nodes loader, which the design's
+      first census missed), so a fourth hand-rolled regime cannot hide. (d) `BatchKeyField`'s
+      javadoc implementor list is repaired (it omitted `BatchedPivotField`; the "implemented by
+      all DataLoader-backed variants" claim becomes true) and the batched polymorphic leaves
+      override `emitsSingleRecordPerKey()` to `false` with the fact stated (their per-key value
+      is a bucket / one `ConnectionResult`; the family is outside both named consumer sites).
+    - **Handed to 5e, not fixed here.** The repair populates a new cell: `BatchKeyField` leaves
+      whose emitted rows methods are never committed as commands (`emitsKeyedReQuery()` false
+      by target shape, so `rowsDeclarationName` no-op commits). The validator's reentry guard
+      cannot newly fire, but 5e's closure repoint meets four emitted-and-uncommitted methods;
+      recorded here so 5e does not rediscover it.
 
 ## The exemption lists are the grain worklist
 
