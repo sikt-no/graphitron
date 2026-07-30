@@ -1,7 +1,10 @@
 package no.sikt.graphitron.rewrite.compile;
 
+import no.sikt.graphitron.command.UnitRef;
+
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
@@ -56,18 +59,33 @@ public final class RecompileSet {
      * The units to recompile this round: the delta plus the reverse-transitive dependents of every
      * ABI-changed unit. Pure over {@code graph}; {@code abiChanged} is normally a subset of
      * {@code delta} but any extra seed is tolerated (its closure is simply included).
+     *
+     * <p>This is the one stringification adapter at the engine boundary: the graph is typed over
+     * {@link no.sikt.graphitron.command.UnitRef}, while the engine keys ABI hashes and javac
+     * units by FQCN string, so the FQCN-to-ref view is built here, once per call, and nothing
+     * else parses a unit name back apart. A seed with no graph node (an over-approximated delta
+     * entry) is included in the recompile set but seeds no traversal, matching the graph's
+     * empty-answer contract for unknown nodes.
      */
     public static Set<String> compute(CompileDependencyGraph graph,
                                       Set<String> delta,
                                       Set<String> abiChanged) {
+        Map<String, UnitRef> byFqcn = new LinkedHashMap<>();
+        for (UnitRef node : graph.nodes()) {
+            byFqcn.put(node.fqcn(), node);
+        }
         Set<String> recompile = new LinkedHashSet<>(delta);
         Set<String> visited = new LinkedHashSet<>(abiChanged);
         Deque<String> frontier = new ArrayDeque<>(abiChanged);
         while (!frontier.isEmpty()) {
             String unit = frontier.poll();
-            for (String dependent : graph.directDependents(unit)) {
-                if (visited.add(dependent)) {
-                    frontier.add(dependent);
+            UnitRef node = byFqcn.get(unit);
+            if (node == null) {
+                continue;
+            }
+            for (UnitRef dependent : graph.directDependents(node)) {
+                if (visited.add(dependent.fqcn())) {
+                    frontier.add(dependent.fqcn());
                 }
             }
         }

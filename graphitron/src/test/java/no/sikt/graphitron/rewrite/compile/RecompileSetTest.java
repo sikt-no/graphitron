@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.compile;
 
+import no.sikt.graphitron.command.UnitRef;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.FieldSpec;
 import no.sikt.graphitron.javapoet.MethodSpec;
@@ -32,9 +33,17 @@ class RecompileSetTest {
         var acc = new MapCompileDependencyGraph.Accumulator();
         for (String edge : edges) {
             String[] parts = edge.split("->");
-            acc.addEdge(parts[0], parts[1]);
+            acc.addEdge(ref(parts[0]), ref(parts[1]));
         }
         return acc.build();
+    }
+
+    /** A {@link UnitRef} whose {@code fqcn()} is exactly {@code fqcn} (split on the last dot). */
+    private static UnitRef ref(String fqcn) {
+        int lastDot = fqcn.lastIndexOf('.');
+        return lastDot < 0
+            ? new UnitRef("", fqcn)
+            : new UnitRef(fqcn.substring(0, lastDot), fqcn.substring(lastDot + 1));
     }
 
     @Test

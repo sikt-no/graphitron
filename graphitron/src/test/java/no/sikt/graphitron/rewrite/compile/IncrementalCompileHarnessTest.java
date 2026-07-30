@@ -37,8 +37,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code @table} return). Three obligations:
  *
  * <ul>
- *   <li>the {@link TypeSpecReferenceWalk} completeness oracle: the model graph is a superset of the
- *       references the emit artifact actually contains (falsifies graph incompleteness);</li>
+ *   <li>the three-leg acceptance oracle over the plan-projected graph: (1) relation to emit,
+ *       every projected edge endpoint names an emitted unit; (2) emit to relation, the graph is
+ *       a superset of the references the emit artifact actually contains (the
+ *       {@link TypeSpecReferenceWalk}, falsifies incompleteness); (3) bounded gap, the graph's
+ *       surplus over the walk sits inside {@link PlanCompileGraph}'s declared superset
+ *       (falsifies silent over-collection);</li>
  *   <li>clause (a): after a schema edit driven through the incremental engine, the
  *       {@code target/graphitron-classes} tree is byte-for-byte identical to a clean full compile of
  *       the edited sources;</li>
@@ -63,10 +67,10 @@ class IncrementalCompileHarnessTest {
      * <p>Corpus extension: {@code Language.films} is an inline list reference filtered by a
      * {@code @nodeId}-decoding input. Its inline emit composes {@code Film.$project(...)} (a same-package
      * nested-{@code $L} projection the oracle was blind to before), lifts a decode helper onto
-     * the Language type class (exercising the {@code typeClass -> NodeIdEncoder} edge and the
-     * decode-helper lift), and calls a generated {@code FilmConditions} method (exercising the inline
-     * {@code typeClass -> conditions} edge). Nesting-hosted attribution is covered at unit tier in
-     * {@code CompileDependencyGraphBuilderTest}.
+     * the coordinate's glue class (exercising the condition row's {@code decodesNodeId} edges),
+     * and calls the generated glue method from {@code Language.$project} (exercising the
+     * projection row's glue-call edge). Nesting-hosted attribution is covered in
+     * {@code PlanCompileGraphTest}.
      *
      * <p>Corpus extension: {@code Film.meta: FilmMeta} is a fetcher-owning plain-object nesting
      * type ({@code FilmMeta { language: Language @reference }}); FilmMeta shares Film's table context,
@@ -151,30 +155,65 @@ class IncrementalCompileHarnessTest {
         """;
 
     @Test
-    void completenessOracle_modelGraphIsSupersetOfTheReferenceWalk(@TempDir Path workDir) throws Exception {
+    void threeLegOracle_projectedGraphMatchesTheEmitArtifact(@TempDir Path workDir) throws Exception {
         Generated generated = generate(workDir, SCHEMA);
-        var graph = CompileDependencyGraphBuilder.fromModel(generated.model, OUTPUT_PACKAGE);
+        var projection = PlanCompileGraph.project(generated.plan, generated.model);
+        var graph = projection.graph();
         Map<String, Set<String>> walk = TypeSpecReferenceWalk.edges(generated.emittedUnits);
-        Set<String> frozenSources = frozenScaffoldFqcns();
+        Set<String> frozenSources = frozenScaffoldFqcns(generated.plan);
 
-        // Every reference the walk finds between two generated units must be present in the model-sourced
-        // graph, or the graph is incomplete (a dependency it would silently skip on an incremental
-        // recompile). Frozen-scaffold units are exempt AS SOURCES: their content is schema-independent,
-        // so they never enter a schema-driven delta and their outgoing edges never drive a recompile;
-        // modeling their template-internal references would mean reverse-engineering the fixed runtime
-        // templates, which the frozen-scaffold design deliberately avoids. They stay checked as targets.
+        // Leg 1, relation -> emit: the projected node set is exactly the emitted unit set (every
+        // endpoint names an emitted unit, and every emitted unit is a node the recompile walk
+        // can reach). Committed-refs-as-nodes is what retired the builder's phantom nodes.
+        Map<String, no.sikt.graphitron.command.UnitRef> nodesByFqcn = new LinkedHashMap<>();
+        graph.nodes().forEach(node -> nodesByFqcn.put(node.fqcn(), node));
+        assertThat(nodesByFqcn.keySet())
+            .as("projected nodes == emitted units")
+            .containsExactlyInAnyOrderElementsOf(generated.emittedUnits.keySet());
+
+        // Leg 2, emit -> relation: every reference the walk finds between two generated units must
+        // be present in the projected graph, or the graph is incomplete (a dependency it would
+        // silently skip on an incremental recompile). Frozen-scaffold units are exempt AS SOURCES:
+        // their content is schema-independent, so they never enter a schema-driven delta and their
+        // outgoing edges never drive a recompile; modeling their template-internal references would
+        // mean reverse-engineering the fixed runtime templates, which the frozen-scaffold design
+        // deliberately avoids. They stay checked as targets.
         var gaps = new LinkedHashMap<String, Set<String>>();
         walk.forEach((unit, referenced) -> {
             if (frozenSources.contains(unit)) {
                 return;
             }
             var missing = new java.util.LinkedHashSet<>(referenced);
-            missing.removeAll(graph.directReferences(unit));
+            missing.removeAll(fqcns(graph.directReferences(nodesByFqcn.get(unit))));
             if (!missing.isEmpty()) {
                 gaps.put(unit, missing);
             }
         });
-        assertThat(gaps).as("model graph gaps vs reference walk").isEmpty();
+        assertThat(gaps).as("projected graph gaps vs reference walk").isEmpty();
+
+        // Leg 3, bounded gap: the graph's surplus over the walk must sit inside the DECLARED
+        // over-approximation (the frozen-scaffold blanket, the wiring hub, the fetcher edge
+        // relation's families, the leaf-derived write-side encoder edges), read from the same
+        // code the projection uses. Silent over-collection in the precise sources fails here.
+        var declared = projection.declaredSuperset();
+        var undeclared = new LinkedHashMap<String, Set<String>>();
+        for (var node : graph.nodes()) {
+            var surplus = new java.util.LinkedHashSet<>(fqcns(graph.directReferences(node)));
+            surplus.removeAll(walk.getOrDefault(node.fqcn(), Set.of()));
+            surplus.removeAll(fqcns(declared.directReferences(node)));
+            if (!surplus.isEmpty()) {
+                undeclared.put(node.fqcn(), surplus);
+            }
+        }
+        assertThat(undeclared)
+            .as("projected edges neither emitted nor declared as superset")
+            .isEmpty();
+    }
+
+    private static Set<String> fqcns(Set<no.sikt.graphitron.command.UnitRef> units) {
+        var out = new java.util.LinkedHashSet<String>();
+        units.forEach(unit -> out.add(unit.fqcn()));
+        return out;
     }
 
     @Test
@@ -195,7 +234,7 @@ class IncrementalCompileHarnessTest {
             // Edit S0 -> S1 in the same source dir: the writer reports the delta.
             Generated g1 = generate(incWork, SCHEMA_EDITED);
             Map<String, String> hashes1 = abiHashes(g1.emittedUnits);
-            var graph1 = CompileDependencyGraphBuilder.fromModel(g1.model, OUTPUT_PACKAGE);
+            var graph1 = PlanCompileGraph.fromPlan(g1.plan, g1.model);
             Set<String> abiChanged = RecompileSet.abiChanged(g1.changedUnits, hashes0, hashes1);
             Set<String> recompile = RecompileSet.compute(graph1, g1.changedUnits, abiChanged);
 
@@ -233,14 +272,15 @@ class IncrementalCompileHarnessTest {
     @Test
     void clauseB_bodyEditPrunesButAbiEditPropagates(@TempDir Path workDir) throws Exception {
         Generated g = generate(workDir, SCHEMA);
-        var graph = CompileDependencyGraphBuilder.fromModel(g.model, OUTPUT_PACKAGE);
+        var graph = PlanCompileGraph.fromPlan(g.plan, g.model);
         var units = new GeneratedUnits(OUTPUT_PACKAGE);
         String filmType = units.typeClass("Film").fqcn();            // referenced by the root + DML fetchers
         String queryFetchers = units.fetchers("Query").fqcn();
         String mutationFetchers = units.fetchers("Mutation").fqcn();
 
         // Sanity: the graph really does route both fetchers at the Film projection.
-        assertThat(graph.directDependents(filmType)).contains(queryFetchers, mutationFetchers);
+        assertThat(fqcns(graph.directDependents(units.typeClass("Film"))))
+            .contains(queryFetchers, mutationFetchers);
 
         // Body-only edit to the Film projection: nothing propagates.
         assertThat(RecompileSet.compute(graph, Set.of(filmType), Set.of()))
@@ -255,19 +295,14 @@ class IncrementalCompileHarnessTest {
     // ------------------------------------------------------------------------------------------------
 
     /** The fixed, schema-independent runtime scaffolds; exempt as oracle sources (see the oracle test). */
-    private static Set<String> frozenScaffoldFqcns() {
-        var units = new GeneratedUnits(OUTPUT_PACKAGE);
+    private static Set<String> frozenScaffoldFqcns(no.sikt.graphitron.plan.EmitPlan plan) {
         var frozen = new java.util.LinkedHashSet<String>();
-        for (var singleton : UtilSingleton.ALL) {
-            if (singleton instanceof UtilSingleton.FrozenScaffold fs) {
-                frozen.add(units.singleton(fs.subPackage(), fs.simpleName()).fqcn());
-            }
-        }
+        PlanCompileGraph.frozenScaffoldUnits(plan).forEach(unit -> frozen.add(unit.fqcn()));
         return frozen;
     }
 
-    private record Generated(GraphitronSchema model, Map<String, TypeSpec> emittedUnits,
-                             Set<String> changedUnits) {}
+    private record Generated(GraphitronSchema model, no.sikt.graphitron.plan.EmitPlan plan,
+                             Map<String, TypeSpec> emittedUnits, Set<String> changedUnits) {}
 
     private static Generated generate(Path workDir, String schemaText) throws Exception {
         Files.createDirectories(workDir);
@@ -285,10 +320,11 @@ class IncrementalCompileHarnessTest {
         var result = new GraphQLRewriteGenerator(ctx).generate();
 
         // The model, from the same SDL the generator classified (plain untagged schema, so a direct
-        // parse + buildBundle matches the generator's attributed pipeline).
+        // parse + buildBundle matches the generator's attributed pipeline). The plan rides the
+        // result: the projection reads what the run actually rendered from.
         TypeDefinitionRegistry registry = new SchemaParser().parse(directivesPrelude() + schemaText);
         var model = GraphitronSchemaBuilder.buildBundle(registry, ctx).model();
-        return new Generated(model, result.emittedUnits(), result.changedUnits());
+        return new Generated(model, result.plan(), result.emittedUnits(), result.changedUnits());
     }
 
     /** Renders the selected emitted units to in-memory source compilation units. */

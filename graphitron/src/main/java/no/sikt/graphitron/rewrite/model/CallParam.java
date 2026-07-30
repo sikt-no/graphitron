@@ -67,4 +67,20 @@ public record CallParam(
         return extraction instanceof CallSiteExtraction.NestedInputField nif
             && nif.leaf() instanceof CallSiteExtraction.ContextArg;
     }
+
+    /**
+     * True when this binding decodes a {@code @nodeId} argument, either directly or as a nested
+     * extraction's leaf: exactly the predicate {@code CompositeDecodeHelperRegistry} lifts a
+     * decode helper on, so a condition row with any such binding emits glue that references the
+     * generated {@code NodeIdEncoder} (and the client-error type the THROW-mode helper raises).
+     * Sibling of {@link #readsRequestContext()}: one leaf fact, read by every consumer instead
+     * of re-derived per site.
+     */
+    public boolean decodesNodeId() {
+        if (extraction instanceof CallSiteExtraction.NodeIdDecodeKeys) {
+            return true;
+        }
+        return extraction instanceof CallSiteExtraction.NestedInputField nif
+            && nif.leaf() instanceof CallSiteExtraction.NodeIdDecodeKeys;
+    }
 }

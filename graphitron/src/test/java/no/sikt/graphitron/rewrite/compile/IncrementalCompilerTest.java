@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.compile;
 
+import no.sikt.graphitron.command.UnitRef;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
@@ -87,17 +88,21 @@ class IncrementalCompilerTest {
         return map;
     }
 
+    private static UnitRef ref(String name) {
+        return new UnitRef(PKG, name);
+    }
+
     /** A graph where {@code gen.pkg.B} depends on {@code gen.pkg.A} (so an A ABI change recompiles B). */
     private static CompileDependencyGraph bDependsOnA() {
         return new CompileDependencyGraph() {
-            @Override public Set<String> nodes() {
-                return Set.of(fqcn("A"), fqcn("B"));
+            @Override public Set<UnitRef> nodes() {
+                return Set.of(ref("A"), ref("B"));
             }
-            @Override public Set<String> directReferences(String node) {
-                return fqcn("B").equals(node) ? Set.of(fqcn("A")) : Set.of();
+            @Override public Set<UnitRef> directReferences(UnitRef node) {
+                return ref("B").equals(node) ? Set.of(ref("A")) : Set.of();
             }
-            @Override public Set<String> directDependents(String node) {
-                return fqcn("A").equals(node) ? Set.of(fqcn("B")) : Set.of();
+            @Override public Set<UnitRef> directDependents(UnitRef node) {
+                return ref("A").equals(node) ? Set.of(ref("B")) : Set.of();
             }
         };
     }
@@ -158,9 +163,9 @@ class IncrementalCompilerTest {
         // A later save touching only A must still re-attempt B (and keep reporting failure), or the
         // round would read as clean while B's stale last-good .class lingered.
         var noEdges = new CompileDependencyGraph() {
-            @Override public Set<String> nodes() { return Set.of(fqcn("A"), fqcn("B")); }
-            @Override public Set<String> directReferences(String node) { return Set.of(); }
-            @Override public Set<String> directDependents(String node) { return Set.of(); }
+            @Override public Set<UnitRef> nodes() { return Set.of(ref("A"), ref("B")); }
+            @Override public Set<UnitRef> directReferences(UnitRef node) { return Set.of(); }
+            @Override public Set<UnitRef> directDependents(UnitRef node) { return Set.of(); }
         };
         try (var compiler = new IncrementalCompiler(dir, List.of())) {
             var startup = compiler.compileAll(units(typeReturning("A", "v0"), typeThatFailsToCompile("B")));

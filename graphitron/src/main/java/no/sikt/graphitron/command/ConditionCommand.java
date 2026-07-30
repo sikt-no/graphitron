@@ -157,4 +157,15 @@ public record ConditionCommand(
     public boolean readsRequestContext() {
         return bindings().stream().anyMatch(b -> b.param().readsRequestContext());
     }
+
+    /**
+     * True when any binding decodes a {@code @nodeId} argument, so this row's emitted glue
+     * lifts a decode helper (referencing the generated {@code NodeIdEncoder} and the client
+     * exception the THROW-mode helper raises). Row-grained like
+     * {@link #readsRequestContext()}: the recompile-graph projection reads the fact off the
+     * row instead of re-walking the model's filters.
+     */
+    public boolean decodesNodeId() {
+        return bindings().stream().anyMatch(b -> b.param().decodesNodeId());
+    }
 }

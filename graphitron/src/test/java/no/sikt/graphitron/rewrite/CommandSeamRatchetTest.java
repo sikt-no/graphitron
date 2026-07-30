@@ -138,9 +138,15 @@ class CommandSeamRatchetTest {
      * Raised to 91 when the DML reentry fold landed the launcher producer's per-family
      * membership switches and the validator's launcher-method census mirror (the mirror's
      * root-kind case labels; the child and DML arms reference their leaves fully qualified,
-     * which this counting rule deliberately does not chase).
+     * which this counting rule deliberately does not chase). Raised to 145 when the recompile
+     * graph became a projection: the fetcher edge relation's producer
+     * ({@link no.sikt.graphitron.plan.FetcherEdgeCommands}) landed three total
+     * membership-and-production switches (query, mutation and child families) so the
+     * non-launcher fetcher references are plan data, and the model-sourced graph builder's
+     * unpriced switch tree in {@code compile/} deleted; the edges were always computed at
+     * produce time, only the re-derivation died.
      */
-    private static final int PLAN_LEAF_REFERENCES = 91;
+    private static final int PLAN_LEAF_REFERENCES = 145;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide

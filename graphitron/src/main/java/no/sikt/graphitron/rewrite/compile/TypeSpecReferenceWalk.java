@@ -12,20 +12,20 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * Completeness oracle for the model-sourced {@link CompileDependencyGraph}. It reverse-engineers
+ * Reference oracle for the plan-projected {@link CompileDependencyGraph}. It reverse-engineers
  * the file-level reference structure from the emit artifact (the emitted {@link TypeSpec}s)
- * rather than from the model, so it is explicitly <strong>not</strong> the graph's source. Its
- * sole job is to <em>falsify incompleteness</em>: a reference this walk finds between two
- * generated units that the model-sourced graph misses is a gap in the exhaustive-switch
- * projection.
+ * rather than from the plan, so it is explicitly <strong>not</strong> the graph's source. It
+ * feeds two legs of the acceptance oracle in the incremental harness: the emit-to-graph leg
+ * falsifies incompleteness (a reference this walk finds that the projected graph misses is a
+ * gap), and the bounded-gap leg falsifies undeclared over-collection (a projected edge this walk
+ * cannot see must sit inside {@link PlanCompileGraph}'s declared superset).
  *
- * <p>The model graph must be a <em>superset</em> of javac's true cross-unit dependencies, so the
- * oracle must be a faithful superset of those dependencies, or a gap it cannot see is a
- * false-green. The contract, enforced by
- * {@code IncrementalCompileHarnessTest#completenessOracle_modelGraphIsSupersetOfTheReferenceWalk},
- * is {@code edges(u) ⊆ CompileDependencyGraph.directReferences(u)} for every generated unit
- * {@code u}: a violation means the model missed a real dependency (fix the builder) or the walk
- * over-collected (tighten the scan).
+ * <p>The projected graph must be a <em>superset</em> of javac's true cross-unit dependencies, so
+ * the oracle must be a faithful superset of those dependencies, or a gap it cannot see is a
+ * false-green. The emit-to-graph contract, enforced by the harness's three-leg oracle test, is
+ * {@code edges(u) ⊆ CompileDependencyGraph.directReferences(u)} for every generated unit
+ * {@code u}: a violation means the projection missed a real dependency (fix the edge view or the
+ * producing relation) or the walk over-collected (tighten the scan).
  *
  * <p><b>How references are detected.</b> Two sources unioned:
  * <ol>

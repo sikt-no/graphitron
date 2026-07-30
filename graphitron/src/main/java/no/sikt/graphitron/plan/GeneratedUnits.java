@@ -219,6 +219,11 @@ public final class GeneratedUnits {
         return unit(SUB_SCHEMA, "TenantConnections");
     }
 
+    /** {@code <pkg>.fetchers.QueryNodeFetcher}: the node-lookup dispatch unit. */
+    public UnitRef queryNodeFetcher() {
+        return unit(SUB_FETCHERS, "QueryNodeFetcher");
+    }
+
     /** A fixed-name singleton in the given sub-package (e.g. {@code util.NodeIdEncoder}). */
     public UnitRef singleton(String subPackage, String className) {
         return unit(subPackage, className);

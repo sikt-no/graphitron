@@ -8,7 +8,7 @@ import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.plan.EmitPlan;
 import no.sikt.graphitron.rewrite.compile.CompileDependencyGraph;
-import no.sikt.graphitron.rewrite.compile.CompileDependencyGraphBuilder;
+import no.sikt.graphitron.rewrite.compile.PlanCompileGraph;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
@@ -111,8 +111,8 @@ public class GraphQLRewriteGenerator {
      * {@link CompileDependencyGraph} the incremental compile driver needs to compute the per-save
      * recompile set. Production one-shot generation ({@code GenerateMojo}) stays on {@link #generate()}
      * and never pays the graph-build cost; only {@code graphitron:dev} (with compilation enabled) reaches
-     * for this. The graph is built from the same classified model this run rendered, so it is always
-     * consistent with the sources just written.
+     * for this. The graph is projected from the same {@link EmitPlan} this run rendered from, so it is
+     * always consistent with the sources just written.
      */
     public IncrementalGeneration generateIncremental() {
         return runPipeline(loadAttributedRegistry(), true);
@@ -120,8 +120,8 @@ public class GraphQLRewriteGenerator {
 
     /**
      * A {@link #generateIncremental()} run's products: the {@link GenerationResult} (emitted set + writer
-     * delta + emitted {@link TypeSpec}s) paired with the {@link CompileDependencyGraph} coarsened from
-     * the same classified model. Together these are the raw material the dev-loop compile driver
+     * delta + emitted {@link TypeSpec}s) paired with the {@link CompileDependencyGraph} projected from
+     * the same plan. Together these are the raw material the dev-loop compile driver
      * reads: the graph and the ABI hashes derived from {@code result.emittedUnits()} decide which units a
      * save must recompile.
      */
@@ -394,9 +394,11 @@ public class GraphQLRewriteGenerator {
             plan
         );
         // Only the dev-loop incremental compiler needs the compile-dependency graph; production
-        // generate() skips the build. See the sourcing seam in CompileDependencyGraph.
+        // generate() skips the build. See the sourcing seam in CompileDependencyGraph: the graph
+        // is projected from the same plan this run rendered from, so it is always consistent
+        // with the sources just written.
         CompileDependencyGraph graph = buildCompileGraph
-            ? CompileDependencyGraphBuilder.fromModel(schema, outputPackage)
+            ? PlanCompileGraph.fromPlan(plan, schema)
             : null;
         return new IncrementalGeneration(result, graph);
     }

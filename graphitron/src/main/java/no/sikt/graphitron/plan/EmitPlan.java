@@ -22,8 +22,11 @@ import java.util.List;
  * the projection command relation ({@link ProjectionRelation}: one row per projection unit,
  * produced after conditions because projection rows reference glue by condition row), and the
  * launcher command relation ({@link LauncherRelation}: one row per migrated root SELECT
- * coordinate, produced after conditions for the same reason, its WHERE slot is a glue ref), and
- * the type-keyed command relation ({@link TypeUnitRelation}: one row per per-type unit, the
+ * coordinate, produced after conditions for the same reason, its WHERE slot is a glue ref), the
+ * fetcher edge relation ({@link FetcherEdgeRelation}: one row per covered non-launcher
+ * coordinate whose emitted fetcher methods reference other generated units, produced after
+ * conditions because a polymorphic root's glue targets are derived from the condition rows),
+ * and the type-keyed command relation ({@link TypeUnitRelation}: one row per per-type unit, the
  * generator families' membership loops replaced kind by kind).
  * The shell folds over the rows and renders; membership decisions that used to sit in the shell
  * (the federation {@code @oneOf} gate) or inside a generator's early return (entity dispatch on a
@@ -33,7 +36,7 @@ import java.util.List;
  */
 public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions,
                        ProjectionRelation projections, LauncherRelation launchers,
-                       TypeUnitRelation typeUnits) {
+                       FetcherEdgeRelation fetcherEdges, TypeUnitRelation typeUnits) {
 
     public EmitPlan {
         globals = List.copyOf(globals);
@@ -49,6 +52,9 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         }
         if (launchers == null) {
             throw new IllegalArgumentException("the plan carries the launcher relation; an empty relation is a value, not null");
+        }
+        if (fetcherEdges == null) {
+            throw new IllegalArgumentException("the plan carries the fetcher edge relation; an empty relation is a value, not null");
         }
         if (typeUnits == null) {
             throw new IllegalArgumentException("the plan carries the type-unit relation; an empty relation is a value, not null");
@@ -112,8 +118,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         globals.add(one(GlobalUnitKind.ERROR_MAPPINGS, units.singleton(GeneratedUnits.SUB_SCHEMA, "ErrorMappings")));
         globals.add(one(GlobalUnitKind.SCHEMA_CLASS, units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronSchema")));
         if (schema.types().values().stream().anyMatch(t -> t instanceof GraphitronType.NodeType)) {
-            globals.add(one(GlobalUnitKind.QUERY_NODE_FETCHER,
-                units.singleton(GeneratedUnits.SUB_FETCHERS, "QueryNodeFetcher")));
+            globals.add(one(GlobalUnitKind.QUERY_NODE_FETCHER, units.queryNodeFetcher()));
         }
         globals.add(one(GlobalUnitKind.FACADE, units.rootUnit("Graphitron")));
         if (!federationLink) {
@@ -123,6 +128,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         return new EmitPlan(globals, conditions,
             ProjectionCommands.produce(schema, conditions, outputPackage),
             LauncherCommands.produce(schema, conditions, outputPackage),
+            FetcherEdgeCommands.produce(schema, conditions, outputPackage),
             TypeUnitCommands.produce(schema, outputPackage));
     }
 

@@ -2080,6 +2080,50 @@ R541's single-operation launchers never need it, and a general launcher cannot d
       javadoc as the external arm contributing no edge (same status as the service
       `MethodRef`). The unused `GeneratedConditionFilter` import in the builder goes with the
       file.
+  - **Slice 7a landed (2026-07-30).** Four commits: step 0 (the generation result carries the
+    whole `EmitPlan`, `launchers()` retired, closure oracle repointed at `plan().launchers()`),
+    the `GlobalCommand` seal (`Fixed` rows with kind-entailed edges; the `EntityDispatch` arm
+    carries its per-type projection targets as mandatory non-empty data, node types included
+    through the `@node`-to-`@key` synthesis; the hierarchy-kind registry labels the new sealed
+    hierarchy), and the projection body. The body: `FetcherEdgeRelation` on the plan
+    (coordinate-keyed rows: owner fetchers ref plus non-empty targets, produced by three total
+    membership-and-production switches in `FetcherEdgeCommands`), `PlanCompileGraph` projecting
+    nodes and edges off the plan's relations with the precise and declared-superset edge classes
+    returned separably, the graph's node space lifted to `UnitRef` with the one FQCN
+    stringification adapter at `RecompileSet.compute`, and the three-leg oracle in
+    `IncrementalCompileHarnessTest` (leg 1 strengthened to node-set equality with the emitted
+    units; leg 2 the kept superset walk; leg 3 bounded gap against the projection's own declared
+    superset). Deleted: `CompileDependencyGraphBuilder` (782 lines), `UnitNames`,
+    `UtilSingleton` (the frozen/growing split became `FROZEN_SCAFFOLD_KINDS` over
+    `GlobalUnitKind`, resolved from committed refs), and both builder test classes, their twelve
+    pins (the census said eleven; the file had twelve) ported into `PlanCompileGraphTest` with
+    two over-collection pins inverted into absence pins. Enforcers:
+    `FetcherEdgeRelationTest` asserts key set equals the declared families' model-derived
+    coordinates, disjointness from the launcher relation, and every target committed; the
+    condition relation's key space deliberately overlaps (a polymorphic root's glue targets are
+    consumed by its fetcher edge row) and the test says why. Deltas from the record, all
+    emission-verified against generated sources: the polymorphic roots carry participant
+    type-class targets too, not only conditions glue (the builder had missed those edges
+    entirely); the two service-table mutation/query arms are OUT (emitted bodies are
+    passthrough; the builder's type-class edges were spurious);
+    `MutationServiceTableInterfaceField` targets participant type classes, not the interface's
+    phantom type class; four families joined beyond the record's inventory
+    (`TableInterfaceField`, `QueryServicePolymorphicField`, `QueryServiceTableInterfaceField`,
+    `MutationServicePolymorphicField`); the declared superset is slightly wider than
+    frozen-plus-families (the connection-runtime substrate's configuration-conditional internal
+    wiring, and the DML arms' leaf-grain `NodeIdEncoder` edges). Two findings the record did not
+    predict: the builder *under*-approximated as well as over (the polymorphic participant
+    projections and `GraphitronTransactionProvider` to `PinnedConnection` were real emitted
+    references with no edge, wrong-output-risk gaps in the dev loop, closed by the projection);
+    and no `MutationField` leaf is `SqlGeneratingField`, so the builder's payload-arm conditions
+    edges were dead code and the fetcher edge relation's DML conditions family is provably empty
+    today, kept live by derivation so the enforcer proves the emptiness. One parity gap filed as
+    R559 (tenant-routed fetchers reference `TenantConnections`; neither graph carries the edge;
+    harmless for schema-edit recompiles, fixture gap in the oracle). Ratchets:
+    `PLAN_LEAF_REFERENCES` 91 to 145 with history line (the predicted rise); the generators
+    counts flat at 18/71/76, the predicted asymmetry. Byte-identical incremental and
+    prune/propagate harness clauses green unchanged; SQL pins untouched (emit-neutral, sakila
+    704 green). Verified: full reactor green, 3073 graphitron module tests.
 
 ## The exemption lists are the grain worklist
 
@@ -2217,7 +2261,7 @@ than re-deriving at the gate.
 | `AnchorUnit.requiredProjection` (the interim slot), `appendsRequiredColumn` | 3.2 (landed) | every entry gated; `TypeSpecAssertions.armProjectsColumn` |
 | `MethodCommandRegistry`, `MethodCommand`, "reentry command" (the test vocabulary) | 5e (landed) | the launcher relation surfaced on the generation result, its compact constructor carrying the case-folded `UnitMethodRef` census |
 | `BatchKeyField.rowsMethodName`, `DmlTableField.reentryRowsMethodName`, the `rowsDeclarationName` / `dmlRowsDeclarationName` context seams | 5e (landed) | the row's `UnitMethodRef` (`GeneratedUnits` mints; call sites read the ref) |
-| `CompileDependencyGraphBuilder` | 7 | the recompile graph as a projection over the command relation |
+| `CompileDependencyGraphBuilder`, `UnitNames`, `UtilSingleton` | 7a (landed) | `PlanCompileGraph`, the recompile graph as a projection over the plan's relations; the frozen/growing split as `FROZEN_SCAFFOLD_KINDS` |
 | the `no.sikt.graphitron.rewrite` package | end state | `command` / `plan` / `render` and the shared pure-data floor |
 
 The sibling items declare their own: R541's launcher terms and R552's condition terms are swept at their
