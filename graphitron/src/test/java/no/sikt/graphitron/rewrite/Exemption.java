@@ -41,17 +41,6 @@ public sealed interface Exemption {
     }
 
     /**
-     * Synthesised with no SDL declaration to carry a corpus annotation. This is the
-     * connection-promotion residue: the entries are command outputs stored in the fact model,
-     * and they leave the list when connection synthesis becomes a relation.
-     */
-    record SynthesisedNoSdlOrigin(String reason) implements Exemption {
-        public SynthesisedNoSdlOrigin {
-            requireReason(reason);
-        }
-    }
-
-    /**
      * Demonstrated, but by a test shape the obligation's coverage walker does not read.
      * {@link #walker} names the instrument that would have to widen; {@link #demonstratedBy}
      * is the covering test, compile-checked. Leaves the list when the walker widens or the

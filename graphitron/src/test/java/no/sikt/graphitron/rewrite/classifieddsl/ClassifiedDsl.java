@@ -20,6 +20,13 @@ package no.sikt.graphitron.rewrite.classifieddsl;
  *       classifies to; {@code TypeVerdict} enumerates those leaves minus the failure leaf
  *       {@code UnclassifiedType}, and {@link ClassifiedHarness} mirrors the enum against the live
  *       leaf set.</li>
+ *   <li>{@code @synthesises(mints:)} on a connection carrier field asserts the type names the
+ *       carrier causes to exist and the synthesised arm each is minted as. The synthesised types
+ *       have no SDL declaration to carry {@code @classifiedType}, so the expectation is stated
+ *       at the coordinate that causes the synthesis; coverage is derived from the agreement of
+ *       the declaration with the connection-synthesis relation's produced rows, never from the
+ *       producer's output alone. {@code SynthesisedType} mirrors the relation's declared
+ *       minted-arm vocabulary.</li>
  * </ul>
  */
 public final class ClassifiedDsl {
@@ -30,6 +37,8 @@ public final class ClassifiedDsl {
     public static final String CLASSIFIED = "classified";
     /** The {@code @classifiedType} directive name (read off the type-definition AST by the harness). */
     public static final String CLASSIFIED_TYPE = "classifiedType";
+    /** The {@code @synthesises} directive name (read off the field-definition AST by the harness). */
+    public static final String SYNTHESISES = "synthesises";
 
     /**
      * The test-only directive and enum declarations, prepended to every corpus fixture before the
@@ -63,6 +72,10 @@ public final class ClassifiedDsl {
           ConnectionType EdgeType PageInfoType FacetsType FacetValueType
         }
 
+        enum SynthesisedType { ConnectionType EdgeType PageInfoType FacetsType FacetValueType }
+
+        input Mint { name: String!, as: SynthesisedType! }
+
         directive @classified(
           source: SourceWrapper!, operation: Operation!, target: TargetWrapper!, targetShape: TargetShape!
           sourceShape: SourceShape
@@ -70,5 +83,7 @@ public final class ClassifiedDsl {
 
         directive @classifiedType(as: TypeVerdict!) on
           OBJECT | INTERFACE | UNION | INPUT_OBJECT | ENUM | SCALAR
+
+        directive @synthesises(mints: [Mint!]!) on FIELD_DEFINITION
         """;
 }

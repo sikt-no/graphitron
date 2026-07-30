@@ -63,8 +63,26 @@ public final class ClassifiedHarness {
     public record TypeCase(String typeName, String expectedVerdict, String actualVerdict,
                            Class<? extends GraphitronType> leaf) {}
 
+    /**
+     * One declared or produced synthesis mint: a type name paired with the synthesised
+     * {@code GraphitronType} arm it is minted as (the {@code SynthesisedType} enum constant,
+     * which is the arm's simple name).
+     */
+    public record Mint(String name, String arm) {}
+
+    /**
+     * One {@code @synthesises} coordinate: the mints the carrier declares vs. the mints the
+     * connection-synthesis relation produced for the coordinate. A produced mint appears only
+     * when the relation's row names it AND the classified registry's actual entry is an instance
+     * of the arm the row declares, so coverage can only ever be claimed by declaration-and-
+     * production agreement, never by the producer's output alone.
+     */
+    public record SynthesisCase(String parentType, String fieldName,
+                                Set<Mint> declared, Set<Mint> produced) {}
+
     /** The full outcome of classifying one fixture: every annotated coordinate, plus the schema. */
-    public record Result(List<FieldCase> fields, List<TypeCase> types, GraphitronSchema schema) {}
+    public record Result(List<FieldCase> fields, List<TypeCase> types,
+                         List<SynthesisCase> synthesises, GraphitronSchema schema) {}
 
     /**
      * Classifies {@code fixtureSdl} (the {@link ClassifiedDsl#PRELUDE} prepended automatically) and
@@ -77,6 +95,7 @@ public final class ClassifiedHarness {
 
         var fields = new ArrayList<FieldCase>();
         var types = new ArrayList<TypeCase>();
+        var synthesises = new ArrayList<SynthesisCase>();
 
         for (TypeDefinition<?> def : registry.types().values()) {
             List<FieldDefinition> fieldDefs = switch (def) {
@@ -86,8 +105,13 @@ public final class ClassifiedHarness {
             };
             for (var fd : fieldDefs) {
                 Directive d = directive(fd.getDirectives(), ClassifiedDsl.CLASSIFIED);
-                if (d == null) continue;
-                fields.add(fieldCase(schema, def.getName(), fd.getName(), d));
+                if (d != null) {
+                    fields.add(fieldCase(schema, def.getName(), fd.getName(), d));
+                }
+                Directive ds = directive(fd.getDirectives(), ClassifiedDsl.SYNTHESISES);
+                if (ds != null) {
+                    synthesises.add(synthesisCase(schema, def.getName(), fd.getName(), ds));
+                }
             }
             Directive dt = directive(def.getDirectives(), ClassifiedDsl.CLASSIFIED_TYPE);
             if (dt != null) {
@@ -102,7 +126,42 @@ public final class ClassifiedHarness {
                 types.add(typeCase(schema, scalarDef.getName(), dt));
             }
         }
-        return new Result(fields, types, schema);
+        return new Result(fields, types, synthesises, schema);
+    }
+
+    /**
+     * Resolves one {@code @synthesises} coordinate: the declared mints parsed off the directive's
+     * {@code mints:} list, and the produced mints derived from the connection-synthesis
+     * relation's row at the coordinate ({@code GraphitronSchema.connectionSynthesis().mintedAt}),
+     * filtered to entries whose classified registry arm matches the row's declaration.
+     */
+    private static SynthesisCase synthesisCase(GraphitronSchema schema, String parentType,
+            String fieldName, Directive d) {
+        var declared = new LinkedHashSet<Mint>();
+        var mintsValue = (graphql.language.ArrayValue) argValue(d, "mints");
+        for (Value<?> v : mintsValue.getValues()) {
+            var ov = (graphql.language.ObjectValue) v;
+            String name = null;
+            String arm = null;
+            for (var of : ov.getObjectFields()) {
+                if (of.getName().equals("name")) {
+                    name = ((graphql.language.StringValue) of.getValue()).getValue();
+                } else if (of.getName().equals("as")) {
+                    arm = ((EnumValue) of.getValue()).getName();
+                }
+            }
+            if (name == null || arm == null) {
+                throw new AssertionError("@synthesises: each mint needs name: and as:");
+            }
+            declared.add(new Mint(name, arm));
+        }
+        var produced = new LinkedHashSet<Mint>();
+        for (var minted : schema.connectionSynthesis().mintedAt(parentType, fieldName)) {
+            if (minted.declaredArm().isInstance(schema.type(minted.name()))) {
+                produced.add(new Mint(minted.name(), minted.declaredArm().getSimpleName()));
+            }
+        }
+        return new SynthesisCase(parentType, fieldName, declared, produced);
     }
 
     private static FieldCase fieldCase(GraphitronSchema schema, String parentType, String fieldName, Directive d) {
@@ -299,6 +358,11 @@ public final class ClassifiedHarness {
     /** The {@code SourceShape} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */
     public static Set<String> sourceShapeEnumConstants() {
         return preludeEnumConstants("SourceShape");
+    }
+
+    /** The {@code SynthesisedType} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */
+    public static Set<String> synthesisedTypeEnumConstants() {
+        return preludeEnumConstants("SynthesisedType");
     }
 
     /**

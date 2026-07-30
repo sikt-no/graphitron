@@ -56,7 +56,7 @@ Facets are a best-effort aggregate, never a structural guarantee. The `facets` o
 * The field must be nullable (optional): an always-active filter value could never show unfiltered pivot counts, and the generated filter-minus-self fragments suppress a facet's own predicate by leaving it unset.
 * v1 serves facets only on root `Query` connections over a `@table`-backed object element. A faceted child (`@splitQuery`) or interface/union connection is rejected at build time (its facets would resolve to null); lifting this is a follow-up.
 * A facet's name must be unique across the carrier's whole filter surface (every filter input's fields and every top-level argument): the facet fragments and the generated condition method key parameters by name, so any same-named sibling filter is rejected at build time.
-* Not combinable with the deprecated `@asConnection(connectionName:)` override; a faceted connection field must own its derived-name Connection type.
+* Composes with the deprecated `@asConnection(connectionName:)` override: the generator resolves a faceted carrier by its field coordinate, so an overridden connection name synthesises its facet surface (`<ConnName>Facets` and the facet value types) under the overridden name. The override itself remains deprecated; see xref:asConnection.adoc[`@asConnection`].
 * Facet synthesis applies to directive-driven `@asConnection` carriers only; a hand-written structural Connection type is author-owned and never gains a `facets` field. Sharing a filter input between a served root carrier and a structural carrier is legal (the directive is inert at the structural consumer), but an input consumed *only* by structural connections is rejected: its facets could never surface anywhere.
 
 == See also

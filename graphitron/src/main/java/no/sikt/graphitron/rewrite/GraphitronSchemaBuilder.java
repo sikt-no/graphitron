@@ -236,11 +236,11 @@ public class GraphitronSchemaBuilder {
         var typeBuilder = new TypeBuilder(bctx, svc);
         bctx.typeBuilder = typeBuilder;
         // The types-only half of the single walk: classify the reachable composites on enter
-        // (a ClassifyingVisitor with no FieldBuilder, so no field-classification side effects),
-        // then the post-walk type-level work.
+        // (a ClassifyingVisitor with no FieldBuilder, so no field-classification side effects
+        // and no connection synthesis), then the post-walk type-level work.
         typeBuilder.prepareForWalk();
         SchemaReachability.walk(bctx.schema,
-            new ClassifyingVisitor(bctx, typeBuilder, null, null, null));
+            new ClassifyingVisitor(bctx, typeBuilder, null, null));
         typeBuilder.finishTypeClassification();
         return bctx;
     }
@@ -253,32 +253,41 @@ public class GraphitronSchemaBuilder {
         // input edges alike) classifies each type on enter and the fields of each reached object
         // in the same visit; see ClassifyingVisitor. Connection synthesis is a byproduct of
         // visiting each field (ConnectionPromoter.synthesiseForField inside
-        // classifyFieldsOfObject); the walk accumulates the carrier rewrites and the synthesised
-        // names absent from the assembled schema.
+        // classifyFieldsOfObject); the walk accumulates one ConnectionSynthesis row per carrier
+        // into the relation builder. Ordering constraint, review-only prose: synthesis fires
+        // before the classification early-returns inside classifyFieldsOfObject; the relation
+        // records the walk's output but does not entail that ordering.
         typeBuilder.prepareForWalk();
-        var connectionRewrites = new ArrayList<ConnectionPromoter.CarrierRewrite>();
-        var synthesisedConnectionNames = new LinkedHashSet<String>();
+        var synthesisAccumulator = new ConnectionSynthesisRelation.Builder();
         SchemaReachability.walk(ctx.schema, new ClassifyingVisitor(
-            ctx, typeBuilder, fieldBuilder, connectionRewrites, synthesisedConnectionNames));
+            ctx, typeBuilder, fieldBuilder, synthesisAccumulator));
         // The post-walk type-level work: the global validation reductions over the finished
         // registry. Field classification is registry-read-free, so running the reductions after
         // the walk changes no verdict.
         typeBuilder.finishTypeClassification();
+        // The relation seals against the finished registry view: the coordinate-keyed sidecar
+        // the rebuild, the facet-misuse reduction and the plan's facet producers all read.
+        var connectionSynthesis = synthesisAccumulator.build(ctx.types);
         // The reductions below register build-time diagnostics on ctx rather than demoting a
         // verdict; the validator drains the channel. See GraphitronSchema.diagnostics.
         collectDomainReturnTypeConflicts(ctx);
+        // Ordering constraint, review-only prose: the dangling-references reduction must run
+        // after the walk's connection synthesis has populated the registry (running earlier
+        // would demote every Connection-returning field); nothing in the relation entails it.
         rejectDanglingTypeReferences(ctx);
-        // The rebuild consumes the walk's own synthesised-name output as a typed set rather than
-        // re-deriving it, so the rebuilt assembled schema cannot drift from the registry; see
-        // resolveSynthesisedConnectionTypes.
-        var synthesisedConnectionTypes = resolveSynthesisedConnectionTypes(ctx, synthesisedConnectionNames);
+        // The rebuild consumes the walk's own output (the relation's rows and their
+        // absent-from-assembled discriminators) rather than re-deriving it, so the rebuilt
+        // assembled schema cannot drift from the registry; see resolveSynthesisedConnectionTypes.
+        var synthesisedConnectionTypes = resolveSynthesisedConnectionTypes(ctx, connectionSynthesis);
         var rebuiltAssembled = ConnectionPromoter.rebuildAssembledForConnections(
-            ctx.schema, synthesisedConnectionTypes, connectionRewrites);
-        // Runs post-promotion so synth-vs-synth Connection-name clashes are visible; see
+            ctx.schema, synthesisedConnectionTypes, connectionSynthesis);
+        // Ordering constraint, review-only prose: runs after the walk's synthesis has registered
+        // every minted name, so synth-vs-synth Connection-name clashes are visible; the relation
+        // does not entail the ordering (the reduction reads the registry, not the relation). See
         // rejectCaseInsensitiveTypeCollisions.
         rejectCaseInsensitiveTypeCollisions(ctx);
         rejectNonIdNodeId(ctx);
-        rejectFacetMisuse(ctx);
+        rejectFacetMisuse(ctx, connectionSynthesis);
         // Apply the collision-suffix rule to ErrorChannel.mappingsConstantName on every
         // WithErrorChannel field so the resolved name lands on the carrier before the emitter
         // runs. Pass-through for the common case (at most one channel shape per payload class).
@@ -308,7 +317,7 @@ public class GraphitronSchemaBuilder {
         var model = new GraphitronSchema(
             ctx.types, Collections.unmodifiableMap(dedupedFields), entitiesByType, ctx.warnings(),
             ctx.diagnostics(), arrivals, reachableSourceShapes, ctx.tenantScopes, tenantBindings,
-            argumentReachableInputs);
+            argumentReachableInputs, connectionSynthesis);
         return new BuildResult(model, rebuiltAssembled);
     }
 
@@ -334,18 +343,15 @@ public class GraphitronSchemaBuilder {
         private final BuildContext ctx;
         private final TypeBuilder typeBuilder;
         private final FieldBuilder fieldBuilder;
-        private final List<ConnectionPromoter.CarrierRewrite> connectionRewrites;
-        private final Set<String> synthesisedConnectionNames;
+        private final ConnectionSynthesisRelation.Builder connectionSynthesis;
 
         ClassifyingVisitor(
                 BuildContext ctx, TypeBuilder typeBuilder, FieldBuilder fieldBuilder,
-                List<ConnectionPromoter.CarrierRewrite> connectionRewrites,
-                Set<String> synthesisedConnectionNames) {
+                ConnectionSynthesisRelation.Builder connectionSynthesis) {
             this.ctx = ctx;
             this.typeBuilder = typeBuilder;
             this.fieldBuilder = fieldBuilder;
-            this.connectionRewrites = connectionRewrites;
-            this.synthesisedConnectionNames = synthesisedConnectionNames;
+            this.connectionSynthesis = connectionSynthesis;
         }
 
         @Override
@@ -353,8 +359,7 @@ public class GraphitronSchemaBuilder {
                 GraphQLObjectType node, TraverserContext<GraphQLSchemaElement> context) {
             typeBuilder.classifyAndRegister(node);
             if (fieldBuilder != null) {
-                classifyFieldsOfObject(ctx, typeBuilder, fieldBuilder, node,
-                    connectionRewrites, synthesisedConnectionNames);
+                classifyFieldsOfObject(ctx, typeBuilder, fieldBuilder, node, connectionSynthesis);
             }
             return TraversalControl.CONTINUE;
         }
@@ -410,13 +415,12 @@ public class GraphitronSchemaBuilder {
      */
     private static void classifyFieldsOfObject(
             BuildContext ctx, TypeBuilder typeBuilder, FieldBuilder fieldBuilder, GraphQLObjectType objType,
-            List<ConnectionPromoter.CarrierRewrite> connectionRewrites, Set<String> synthesisedConnectionNames) {
+            ConnectionSynthesisRelation.Builder connectionSynthesis) {
         // Connection synthesis runs before the classification early-returns below so it fires
         // for every field, including fields on directiveless parents whose standalone
         // classification is skipped. register owns dedup and the cross-carrier @tag union.
         for (var fieldDef : objType.getFieldDefinitions()) {
-            ConnectionPromoter.synthesiseForField(
-                ctx, objType, fieldDef, connectionRewrites, synthesisedConnectionNames);
+            ConnectionPromoter.synthesiseForField(ctx, objType, fieldDef, connectionSynthesis);
         }
         var parentType = ctx.types.get(objType.getName());
         // A directiveless nesting target has its fields resolved through the embedding
@@ -558,18 +562,22 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
-     * Resolves the connection names the walk flagged as synthesised (absent from the
-     * assembled schema) to their final graphql-java forms on the registry, in walk-visit order. The
-     * forms are read after the walk so any cross-carrier {@code @tag} union {@code register} applied
-     * has settled; {@link ConnectionPromoter#rebuildAssembledForConnections} adds exactly these via
-     * {@code additionalType}. This is a keyed lookup of the walk's own output, not a sweep of
-     * {@code ctx.types}, so there remains one producer of the synthesised-type set.
+     * Resolves the relation's absent-from-assembled minted names to their final graphql-java
+     * forms on the registry, in walk-visit order. The discriminator was stored per name at
+     * registration time ({@link no.sikt.graphitron.rewrite.model.ConnectionSynthesis.MintedName}),
+     * so this reads the walk's own output instead of re-probing the schema. The forms are read
+     * after the walk so any cross-carrier {@code @tag} union {@code register} applied has
+     * settled; {@link ConnectionPromoter#rebuildAssembledForConnections} adds exactly these via
+     * {@code additionalType}. A minted name whose registry entry demoted (a synthesised name
+     * colliding with an SDL declaration) resolves to no form and is dropped here; the demoted
+     * entry carries its own diagnostic, surfaced by the validator's unclassified-type pass.
      */
     private static List<GraphQLObjectType> resolveSynthesisedConnectionTypes(
-            BuildContext ctx, Set<String> synthesisedConnectionNames) {
-        var forms = new ArrayList<GraphQLObjectType>(synthesisedConnectionNames.size());
-        for (var name : synthesisedConnectionNames) {
-            GraphQLObjectType form = switch (ctx.typeRegistry.get(name)) {
+            BuildContext ctx, ConnectionSynthesisRelation connectionSynthesis) {
+        var absent = connectionSynthesis.absentMinted();
+        var forms = new ArrayList<GraphQLObjectType>(absent.size());
+        for (var minted : absent) {
+            GraphQLObjectType form = switch (ctx.typeRegistry.get(minted.name())) {
                 case ConnectionType ct -> ct.schemaType();
                 case EdgeType et -> et.schemaType();
                 case PageInfoType pi -> pi.schemaType();
@@ -897,39 +905,35 @@ public class GraphitronSchemaBuilder {
      * qualifier map classifies as a reference carrier with no directive trace, which the v1
      * direct-column facet emitter cannot serve.
      *
-     * <p>Like {@link #rejectNonIdNodeId}, this reads {@code ctx.schema} applied directives rather
-     * than the classified registries: the promoter's facet walk skips malformed applications, so
-     * they leave no trace on the classified model. Registers build-time diagnostics on the shared
-     * channel that {@link GraphitronSchemaValidator} drains; it demotes no verdict.
+     * <p>The carrier scan is sourced off the connection-synthesis relation's directive-driven
+     * rows (the validator mirrors the classifier: exactly the carriers the walk promoted are the
+     * carriers whose filter inputs can surface facets), while the per-application binding checks
+     * still read {@code ctx.schema} applied directives, like {@link #rejectNonIdNodeId}: the
+     * promoter's facet walk skips malformed applications, so they leave no trace on the
+     * classified model. Registers build-time diagnostics on the shared channel that
+     * {@link GraphitronSchemaValidator} drains; it demotes no verdict.
      */
-    private static void rejectFacetMisuse(BuildContext ctx) {
-        // Per input type: consumed by any @asConnection field at all; consumed by one
-        // carrying the deprecated connectionName: override (the facet emitters resolve a carrier's
-        // ConnectionType through the derived ConnectionNaming.defaultConnectionName, which an
-        // overridden name would silently miss); and consumed by a carrier the v1 facet emitter
-        // does not serve (only root Query connections over a @table-backed object element bind a
-        // facet plan — a faceted child/@splitQuery or interface/union carrier would expose a
-        // facets field whose resolver always returns null, a green build with a dead surface).
+    private static void rejectFacetMisuse(BuildContext ctx, ConnectionSynthesisRelation connectionSynthesis) {
+        // Per input type: consumed by any directive-driven @asConnection carrier at all; and
+        // consumed by a carrier the v1 facet emitter does not serve (only root Query connections
+        // over a @table-backed object element bind a facet plan; a faceted child/@splitQuery or
+        // interface/union carrier would expose a facets field whose resolver always returns
+        // null, a green build with a dead surface). Structural rows never gain facets, since the
+        // promoter's structural arm synthesises nothing, so @asFacet is inert there per the
+        // spec's "inert at the others" rule; they contribute neither reached nor unsupported: an
+        // input consumed ONLY by structural carriers still lands in the dead-schema rejection
+        // below, while sharing with a served root carrier stays legal.
         String queryRootName = ctx.schema.getQueryType() != null
             ? ctx.schema.getQueryType().getName() : null;
         var connectionFilterInputs = new LinkedHashSet<String>();
-        var overriddenNameConsumers = new LinkedHashMap<String, String>();
         var unsupportedCarrierConsumers = new LinkedHashMap<String, String>();
-        for (var type : ctx.schema.getAllTypesAsList()) {
-            if (!(type instanceof GraphQLObjectType obj)) continue;
-            for (var field : obj.getFieldDefinitions()) {
-                if (!field.hasAppliedDirective(DIR_AS_CONNECTION)) continue;
-                // Structural carriers (the SDL return type already names a declared Connection,
-                // i.e. the return is not a bare list) never gain facets — the promoter's
-                // structural arm synthesises nothing — so @asFacet is inert there per the spec's
-                // "inert at the others" rule. They contribute neither reached nor unsupported:
-                // an input consumed ONLY by structural carriers still lands in the dead-schema
-                // rejection below, while sharing with a served root carrier stays legal.
-                var unwrappedOnce = field.getType() instanceof graphql.schema.GraphQLNonNull nn
-                    ? nn.getWrappedType() : field.getType();
-                if (!(unwrappedOnce instanceof graphql.schema.GraphQLList)) continue;
-                boolean overriddenName = argString(field, DIR_AS_CONNECTION, ARG_CONNECTION_NAME)
-                    .filter(s -> !s.isEmpty()).isPresent();
+        for (var row : connectionSynthesis.rows().values()) {
+            if (!(row instanceof no.sikt.graphitron.rewrite.model.ConnectionSynthesis.DirectiveDriven)) {
+                continue;
+            }
+            var obj = (GraphQLObjectType) ctx.schema.getType(row.parentTypeName());
+            var field = obj.getFieldDefinition(row.fieldName());
+            {
                 String carrierCoordinate = obj.getName() + "." + field.getName();
                 String unsupportedReason = unsupportedFacetCarrierReason(
                     ctx, obj, field, queryRootName, carrierCoordinate);
@@ -939,9 +943,6 @@ public class GraphitronSchemaBuilder {
                 for (var arg : field.getArguments()) {
                     if (GraphQLTypeUtil.unwrapAll(arg.getType()) instanceof GraphQLInputObjectType in) {
                         connectionFilterInputs.add(in.getName());
-                        if (overriddenName) {
-                            overriddenNameConsumers.putIfAbsent(in.getName(), carrierCoordinate);
-                        }
                         if (unsupportedReason != null) {
                             unsupportedCarrierConsumers.putIfAbsent(in.getName(), unsupportedReason);
                         }
@@ -989,7 +990,7 @@ public class GraphitronSchemaBuilder {
             for (var field : input.getFieldDefinitions()) {
                 if (!field.hasAppliedDirective(DIR_AS_FACET)) continue;
                 String reason = facetMisuseReason(field, input.getName(), connectionFilterInputs,
-                    overriddenNameConsumers, unsupportedCarrierConsumers);
+                    unsupportedCarrierConsumers);
                 if (reason == null) continue;
                 String coordinate = input.getName() + "." + field.getName();
                 ctx.addDiagnostic(ValidationError.forField(coordinate,
@@ -1027,7 +1028,7 @@ public class GraphitronSchemaBuilder {
      */
     private static String facetMisuseReason(
             graphql.schema.GraphQLInputObjectField field, String inputTypeName,
-            Set<String> connectionFilterInputs, Map<String, String> overriddenNameConsumers,
+            Set<String> connectionFilterInputs,
             Map<String, String> unsupportedCarrierConsumers) {
         // Definition-keyed half: the shared predicate the promoter's synthesis walk also gates
         // on, so what the reduction rejects and what the promoter skips cannot drift.
@@ -1039,12 +1040,6 @@ public class GraphitronSchemaBuilder {
             return "@asFacet has no effect: input type '" + inputTypeName + "' is not used as a "
                 + "filter input on any @asConnection field, so the facets expansion would be dead "
                 + "schema; move the directive to a connection filter input or remove it";
-        }
-        String overrideConsumer = overriddenNameConsumers.get(inputTypeName);
-        if (overrideConsumer != null) {
-            return "@asFacet cannot be combined with the deprecated @asConnection(connectionName:) "
-                + "override (used by '" + overrideConsumer + "'); facets require the connection "
-                + "field to own its derived-name Connection type. Drop the connectionName: override";
         }
         String unsupportedCarrier = unsupportedCarrierConsumers.get(inputTypeName);
         if (unsupportedCarrier != null) {

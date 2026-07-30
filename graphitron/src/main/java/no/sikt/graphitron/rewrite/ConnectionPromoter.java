@@ -19,7 +19,10 @@ import graphql.util.TraversalControl;
 import graphql.util.TraverserContext;
 import graphql.util.TreeTransformerUtil;
 
+import graphql.schema.FieldCoordinates;
 import graphql.schema.GraphQLInputObjectType;
+import no.sikt.graphitron.rewrite.model.ConnectionSynthesis;
+import no.sikt.graphitron.rewrite.model.ConnectionSynthesis.MintedName;
 import no.sikt.graphitron.rewrite.model.FacetNaming;
 import no.sikt.graphitron.rewrite.model.FacetSpec;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -28,11 +31,11 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.FacetsType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.FacetValueType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType;
+import no.sikt.graphitron.rewrite.model.Rejection;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Set;
 
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_CONNECTION_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_NAME;
@@ -51,14 +54,16 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE;
  * per visited field during the classification walk: when the field is an {@code @asConnection} or
  * structural connection carrier it registers the supporting types through
  * {@code ctx.typeRegistry.register} (the accumulator owns dedup and the {@code @tag} union across
- * carriers), records any carrier rewrite, and notes which synthesised names are absent from the
- * assembled schema. {@link #rebuildAssembledForConnections} then consumes the resolved
- * synthesised-type set and the rewrite list to produce a {@link GraphQLSchema} whose carriers point
+ * carriers) and adds one {@link ConnectionSynthesis} row to the relation, carrying the minted
+ * names with their absent-from-assembled discriminators and, on the directive-driven arm, the
+ * carrier-rewrite facts. {@link #rebuildAssembledForConnections} then folds the finished
+ * {@link ConnectionSynthesisRelation} to produce a {@link GraphQLSchema} whose carriers point
  * at the synthesised types and whose {@code first} / {@code after} arguments are present. The
  * rebuild consumes only the walk's outputs, so it cannot drift from the registry; rejection of
  * malformed {@code @asConnection} usage lives upstream in {@link FieldBuilder#classifyField}.
  *
- * <p>Stateless utility class. Per-build state lives in {@link BuildContext}.
+ * <p>Stateless utility class. Per-build state lives in {@link BuildContext} and the relation's
+ * {@link ConnectionSynthesisRelation.Builder}.
  */
 final class ConnectionPromoter {
 
@@ -92,22 +97,11 @@ final class ConnectionPromoter {
     private static final String DESC_FACET_COUNT = "The number of items in this bucket.";
 
     /**
-     * Per-carrier info collected during connection-type promotion so the schema-rebuild pass can
-     * find and rewrite each directive-driven carrier field.
-     */
-    record CarrierRewrite(
-        String parentTypeName,
-        String fieldName,
-        String connectionName,
-        int defaultPageSize,
-        boolean outerNonNull
-    ) {}
-
-    /**
      * Promotes one visited field, when it is a Relay connection carrier (directive-driven
      * {@code @asConnection} on a bare list, or a structural Connection-shaped return type), to a
      * first-class {@link ConnectionType} / {@link EdgeType} / {@link PageInfoType} entry in
-     * {@code ctx.types}. A no-op for every other field, so the walk calls it unconditionally per
+     * {@code ctx.types}, and adds the carrier's {@link ConnectionSynthesis} row to
+     * {@code relation}. A no-op for every other field, so the walk calls it unconditionally per
      * field. Synthesis happens as a byproduct of visiting the carrier, never by scanning
      * siblings.
      *
@@ -125,106 +119,143 @@ final class ConnectionPromoter {
      * {@code location} is deliberately {@code null}: a single PageInfo serves every connection, so no
      * carrier site is the actionable one.
      *
-     * @param rewrites           accumulates the per-carrier {@link CarrierRewrite}s (carriers whose
-     *                           graphql-java return type must change to name the Connection)
-     * @param synthesisedNames   accumulates the registered Connection / Edge / PageInfo names that are
-     *                           <em>absent from the assembled schema</em>, i.e. the set
-     *                           {@link #rebuildAssembledForConnections} must add via
-     *                           {@code additionalType}; the walk's owner resolves these to their final
-     *                           (post-tag-union) schema forms after the walk
+     * <p>The relation's construction enforces the minted-name axis: two carriers minting the same
+     * connection name must agree on the shape they mint (the registry keeps only one reconciled
+     * entry per name, so a disagreement would silently first-win there); a disagreement registers
+     * a build diagnostic naming both carriers. Ordering constraint, review-only prose: this
+     * method must run before the classification early-returns in the walk (so it fires for every
+     * field, including fields on parents whose standalone classification is skipped); nothing in
+     * the relation entails that, the walk's code order carries it.
      */
     static void synthesiseForField(
             BuildContext ctx, GraphQLObjectType parent, GraphQLFieldDefinition fieldDef,
-            List<CarrierRewrite> rewrites, Set<String> synthesisedNames) {
+            ConnectionSynthesisRelation.Builder relation) {
         ConnectionPromotion promotion = promotionFor(ctx, parent, fieldDef);
         if (promotion == null) return;
-        // Record a carrier rewrite only when the graphql-java return type actually needs to
-        // change: directive-driven bare-list carriers do; structural carriers (the SDL return
-        // type already names the Connection) do not, even when they carry @asConnection alongside.
-        String currentBaseName = baseTypeName(fieldDef.getType());
-        if (fieldDef.hasAppliedDirective(DIR_AS_CONNECTION)
-                && !promotion.connectionName().equals(currentBaseName)) {
-            rewrites.add(new CarrierRewrite(
-                parent.getName(), fieldDef.getName(), promotion.connectionName(),
-                PaginationResolver.defaultPageSize(ctx.facts.pagination(), fieldDef),
-                fieldDef.getType() instanceof GraphQLNonNull));
-        }
         var carrierLocation = BuildContext.locationOf(fieldDef);
-        registerSynthesised(ctx, promotion.connectionName(), new ConnectionType(
+        var rowMinted = new ArrayList<MintedName>(3);
+        rowMinted.add(registerSynthesised(ctx, promotion.connectionName(), new ConnectionType(
             promotion.connectionName(), carrierLocation, promotion.elementTypeName(),
             promotion.edgeName(), promotion.itemNullable(), promotion.shareable(),
-            promotion.facets(), promotion.connectionSchemaType()), synthesisedNames);
-        registerSynthesised(ctx, promotion.edgeName(), new EdgeType(
+            promotion.facets(), promotion.connectionSchemaType())));
+        rowMinted.add(registerSynthesised(ctx, promotion.edgeName(), new EdgeType(
             promotion.edgeName(), carrierLocation, promotion.elementTypeName(),
             promotion.itemNullable(), promotion.shareable(),
-            promotion.edgeSchemaType()), synthesisedNames);
-        registerFacetTypes(ctx, promotion, carrierLocation, synthesisedNames);
-        registerPageInfo(ctx, promotion, synthesisedNames);
+            promotion.edgeSchemaType())));
+        var facetsMinted = registerFacetTypes(ctx, promotion, carrierLocation, relation);
+        if (facetsMinted != null) rowMinted.add(facetsMinted);
+        registerPageInfo(ctx, promotion, relation);
+
+        ConnectionSynthesis row;
+        if (promotion.directiveDriven()) {
+            // The return type is rewritten unless the declared base type already carries the
+            // minted connection name, in which case there is no swap to make.
+            String currentBaseName = baseTypeName(fieldDef.getType());
+            row = new ConnectionSynthesis.DirectiveDriven(
+                parent.getName(), fieldDef.getName(), promotion.connectionName(),
+                PaginationResolver.defaultPageSize(ctx.facts.pagination(), fieldDef),
+                fieldDef.getType() instanceof GraphQLNonNull,
+                !promotion.connectionName().equals(currentBaseName),
+                rowMinted);
+        } else {
+            row = new ConnectionSynthesis.Structural(
+                parent.getName(), fieldDef.getName(), promotion.connectionName(), rowMinted);
+        }
+        var conflict = relation.add(row, new ConnectionSynthesisRelation.MintedShape(
+            promotion.elementTypeName(), promotion.itemNullable(), promotion.edgeName(),
+            promotion.facets()));
+        if (conflict != null) {
+            var other = conflict.existingRow();
+            ctx.addDiagnostic(ValidationError.forField(
+                parent.getName() + "." + fieldDef.getName(),
+                Rejection.invalidSchema("connection carriers '"
+                    + other.parentTypeName() + "." + other.fieldName() + "' and '"
+                    + parent.getName() + "." + fieldDef.getName() + "' both mint connection type '"
+                    + promotion.connectionName() + "' but disagree on its shape (element type, "
+                    + "item nullability, edge type or facets). Carriers sharing one connection "
+                    + "name must project the same shape; give one of them its own connection name."),
+                carrierLocation));
+        }
     }
 
     /**
      * Registers the facet container ({@code <ConnName>Facets}) and each distinct
-     * {@code <Scalar>FacetValue} entry for a faceted directive-driven carrier.
-     * {@code FacetValue} types are reusable across the whole schema (one per (scalar,
-     * nullability) pair, named by {@link FacetNaming}); repeat registration from another carrier
-     * reconciles in {@code TypeRegistry.register} like every other synthesised arm.
+     * {@code <Scalar>FacetValue} entry for a faceted directive-driven carrier, returning the
+     * container's {@link MintedName} (coordinate-grain, it rides the row) or {@code null} for a
+     * facet-free carrier. {@code FacetValue} types are reusable across the whole schema (one per
+     * (scalar, nullability) pair, named by {@link FacetNaming}), so they land on the relation's
+     * schema-grain pool rather than the row; repeat registration from another carrier reconciles
+     * in {@code TypeRegistry.register} like every other synthesised arm.
      */
-    private static void registerFacetTypes(
+    private static MintedName registerFacetTypes(
             BuildContext ctx, ConnectionPromotion promotion,
-            graphql.language.SourceLocation carrierLocation, Set<String> synthesisedNames) {
-        if (promotion.facets().isEmpty()) return;
+            graphql.language.SourceLocation carrierLocation,
+            ConnectionSynthesisRelation.Builder relation) {
+        if (promotion.facets().isEmpty()) return null;
         String facetsName = FacetNaming.facetsTypeName(promotion.connectionName());
-        registerSynthesised(ctx, facetsName, new FacetsType(
+        var facetsMinted = registerSynthesised(ctx, facetsName, new FacetsType(
             facetsName, carrierLocation, promotion.connectionName(),
-            buildSynthesisedFacets(facetsName, promotion.facets())), synthesisedNames);
+            buildSynthesisedFacets(facetsName, promotion.facets())));
         for (var spec : promotion.facets()) {
-            registerSynthesised(ctx, spec.facetValueTypeName(), new FacetValueType(
+            relation.addShared(registerSynthesised(ctx, spec.facetValueTypeName(), new FacetValueType(
                 spec.facetValueTypeName(), carrierLocation, spec.valueTypeName(),
                 spec.valueNullable(),
-                buildSynthesisedFacetValue(spec)), synthesisedNames);
+                buildSynthesisedFacetValue(spec))));
         }
+        return facetsMinted;
     }
 
     /**
-     * The single {@code PageInfo} every connection shares. When the SDL declares {@code PageInfo} it
-     * is registered verbatim (author-owned, never tagged by promotion); otherwise a synthesised form
-     * carrying this carrier's {@code shareable} flag and {@code @tag} applications is registered, and
-     * {@code register} unions across carriers. Idempotent across repeated carriers either way.
+     * The single {@code PageInfo} every connection shares, a schema-grain slot on the relation.
+     * When the SDL declares {@code PageInfo} it is registered verbatim (author-owned, never
+     * tagged by promotion); otherwise a synthesised form carrying this carrier's
+     * {@code shareable} flag and {@code @tag} applications is registered, and {@code register}
+     * unions across carriers. Idempotent across repeated carriers either way.
      */
     private static void registerPageInfo(
-            BuildContext ctx, ConnectionPromotion promotion, Set<String> synthesisedNames) {
+            BuildContext ctx, ConnectionPromotion promotion,
+            ConnectionSynthesisRelation.Builder relation) {
         if (ctx.schema.getType("PageInfo") instanceof GraphQLObjectType sdlPageInfo) {
             boolean shareable = sdlPageInfo.hasAppliedDirective("shareable");
             ctx.typeRegistry.register("PageInfo", new PageInfoType("PageInfo", null, shareable, sdlPageInfo));
+            relation.addShared(new MintedName("PageInfo", PageInfoType.class, false));
         } else {
-            registerSynthesised(ctx, "PageInfo", new PageInfoType("PageInfo", null,
+            relation.addShared(registerSynthesised(ctx, "PageInfo", new PageInfoType("PageInfo", null,
                 promotion.shareable(),
-                buildSynthesisedPageInfo(promotion.shareable(), promotion.tags())), synthesisedNames);
+                buildSynthesisedPageInfo(promotion.shareable(), promotion.tags()))));
         }
     }
 
     /**
-     * Registers a synthesised arm and notes its name in {@code synthesisedNames} when it is absent
-     * from the assembled schema (directive-driven Connection / Edge, and the synthesised PageInfo),
-     * so the post-walk rebuild adds exactly those via {@code additionalType}. Structural / SDL-declared
-     * names are already in the assembled schema, so they are registered but not noted.
+     * Registers a synthesised arm and returns its {@link MintedName}, carrying the
+     * absent-from-assembled discriminator (directive-driven Connection / Edge / facet types, and
+     * the synthesised PageInfo, are absent; structural / SDL-declared names are present). The
+     * post-walk rebuild reads the discriminator off the relation instead of re-probing the
+     * schema, so exactly the absent set is added via {@code additionalType}.
      */
-    private static void registerSynthesised(
-            BuildContext ctx, String name, GraphitronType type, Set<String> synthesisedNames) {
-        if (ctx.schema.getType(name) == null) synthesisedNames.add(name);
+    private static MintedName registerSynthesised(BuildContext ctx, String name, GraphitronType type) {
+        boolean absentFromAssembled = ctx.schema.getType(name) == null;
         ctx.typeRegistry.register(name, type);
+        return new MintedName(name, type.getClass(), absentFromAssembled);
     }
 
     /**
      * Rewrites directive-driven {@code @asConnection} carrier fields so their return type
      * references the synthesised Connection and their arguments include {@code first} /
      * {@code after}, and registers the {@code synthesisedTypes} (the schema forms of every
-     * Connection / Edge / PageInfo entry absent from the original assembled schema) via
+     * synthesised entry absent from the original assembled schema) via
      * {@code additionalType(...)}.
      *
-     * <p>{@code synthesisedTypes} is the set the walk produced via {@link #synthesiseForField}
-     * (resolved to final forms by the builder after the walk), so the rebuilt assembled schema
-     * cannot drift from the registry.
+     * <p>Both inputs are the walk's own output: {@code synthesisedTypes} is resolved by the
+     * builder from the relation's absent-from-assembled discriminators (never re-probed against
+     * the schema), and the carrier-rewrite fold below is a total switch over the relation's two
+     * row arms, so the rebuilt assembled schema cannot drift from the registry.
+     *
+     * <p>Ordering constraint, now partly a data dependency: step 1 (additional types) must run
+     * before step 2 (carrier rewrites) because step 2's {@code typeRef("<ConnName>")} resolves
+     * against the types step 1 adds, and graphql-java fails the transform loudly otherwise; the
+     * sequencing itself stays code order inside this method, but step 1's input is relation row
+     * data rather than a schema probe, so the two steps consume one producer's output.
      *
      * <p>Returns the rebuilt schema; untouched types pass through by reference via
      * {@link SchemaTransformer}, preserving applied directives and field order on everything
@@ -233,8 +264,22 @@ final class ConnectionPromoter {
     static GraphQLSchema rebuildAssembledForConnections(
             GraphQLSchema original,
             List<GraphQLObjectType> synthesisedTypes,
-            List<CarrierRewrite> rewrites) {
-        if (rewrites.isEmpty() && synthesisedTypes.isEmpty()) {
+            ConnectionSynthesisRelation relation) {
+        // The carrier-rewrite fold: a TOTAL switch over the two row arms, so a third arm is a
+        // compile error here rather than a silently-skipped carrier.
+        var rewriteIndex = new LinkedHashMap<FieldCoordinates, ConnectionSynthesis.DirectiveDriven>();
+        for (var row : relation.rows().values()) {
+            switch (row) {
+                case ConnectionSynthesis.DirectiveDriven dd -> {
+                    if (dd.rewritesCarrierReturnType()) {
+                        rewriteIndex.put(
+                            FieldCoordinates.coordinates(dd.parentTypeName(), dd.fieldName()), dd);
+                    }
+                }
+                case ConnectionSynthesis.Structural ignored -> { }
+            }
+        }
+        if (rewriteIndex.isEmpty() && synthesisedTypes.isEmpty()) {
             return original;
         }
 
@@ -256,7 +301,7 @@ final class ConnectionPromoter {
         for (var schemaType : synthesisedTypes) {
             pinned.putIfAbsent(((GraphQLNamedType) schemaType).getName(), schemaType);
         }
-        for (var rewrite : rewrites) {
+        for (var rewrite : rewriteIndex.values()) {
             var elementType = carrierElementType(original, rewrite);
             if (elementType != null) pinned.putIfAbsent(elementType.getName(), elementType);
         }
@@ -270,20 +315,17 @@ final class ConnectionPromoter {
             withSynthesised = extrasBuilder.build();
         }
 
-        if (rewrites.isEmpty()) return withSynthesised;
+        if (rewriteIndex.isEmpty()) return withSynthesised;
 
-        // Step 2: transform carrier fields. typeRef("<ConnName>") now resolves against the
-        // synthesised types added in step 1.
-        var rewriteIndex = new LinkedHashMap<String, CarrierRewrite>();
-        for (var r : rewrites) rewriteIndex.put(r.parentTypeName() + "." + r.fieldName(), r);
-
+        // Step 2: transform carrier fields, looked up by coordinate. typeRef("<ConnName>") now
+        // resolves against the synthesised types added in step 1.
         var visitor = new GraphQLTypeVisitorStub() {
             @Override
             public TraversalControl visitGraphQLFieldDefinition(
                     GraphQLFieldDefinition node, TraverserContext<GraphQLSchemaElement> context) {
                 var parent = context.getParentNode();
                 if (!(parent instanceof GraphQLObjectType parentObj)) return TraversalControl.CONTINUE;
-                var rewrite = rewriteIndex.get(parentObj.getName() + "." + node.getName());
+                var rewrite = rewriteIndex.get(FieldCoordinates.coordinates(parentObj.getName(), node.getName()));
                 if (rewrite == null) return TraversalControl.CONTINUE;
                 var rewritten = rewriteCarrierField(node, rewrite);
                 return TreeTransformerUtil.changeNode(context, rewritten);
@@ -299,7 +341,8 @@ final class ConnectionPromoter {
      * is not a named type still present in the original schema; the rebuild then pins nothing
      * extra for that carrier rather than failing.
      */
-    private static GraphQLNamedType carrierElementType(GraphQLSchema original, CarrierRewrite rewrite) {
+    private static GraphQLNamedType carrierElementType(
+            GraphQLSchema original, ConnectionSynthesis.DirectiveDriven rewrite) {
         if (!(original.getType(rewrite.parentTypeName()) instanceof GraphQLObjectType parent)) return null;
         var field = parent.getFieldDefinition(rewrite.fieldName());
         if (field == null) return null;
@@ -313,12 +356,13 @@ final class ConnectionPromoter {
      * reference; {@code first} / {@code after} arguments appended after any existing ones.
      * Description, deprecation, and applied directives pass through untouched.
      */
-    private static GraphQLFieldDefinition rewriteCarrierField(GraphQLFieldDefinition original, CarrierRewrite rewrite) {
+    private static GraphQLFieldDefinition rewriteCarrierField(
+            GraphQLFieldDefinition original, ConnectionSynthesis.DirectiveDriven rewrite) {
         var ref = GraphQLTypeReference.typeRef(rewrite.connectionName());
         GraphQLOutputType newType = rewrite.outerNonNull() ? GraphQLNonNull.nonNull(ref) : ref;
-        // defaultPageSize rode in on the CarrierRewrite from the pagination fact's one resolved
-        // view (PaginationResolver.defaultPageSize), the same view the wrapper classification
-        // reads, so the two emitted materialisations of the default cannot drift.
+        // defaultPageSize rode in on the directive-driven row from the pagination fact's one
+        // resolved view (PaginationResolver.defaultPageSize), the same view the wrapper
+        // classification reads, so the two emitted materialisations of the default cannot drift.
         var firstArg = GraphQLArgument.newArgument()
             .name("first")
             .type(GraphQLTypeReference.typeRef("Int"))
@@ -332,6 +376,7 @@ final class ConnectionPromoter {
     }
 
     private record ConnectionPromotion(
+        boolean directiveDriven,
         String connectionName,
         String edgeName,
         String elementTypeName,
@@ -371,7 +416,7 @@ final class ConnectionPromoter {
             var facets = facetSpecsFor(fieldDef);
             var connSchema = buildSynthesisedConnection(connName, edgeName, elementTypeName, itemNullable, shareable, tags, facets);
             var edgeSchema = buildSynthesisedEdge(edgeName, elementTypeName, itemNullable, shareable, tags);
-            return new ConnectionPromotion(connName, edgeName, elementTypeName,
+            return new ConnectionPromotion(true, connName, edgeName, elementTypeName,
                 itemNullable, shareable, tags, facets, connSchema, edgeSchema);
         }
 
@@ -381,8 +426,12 @@ final class ConnectionPromoter {
             var connSchema = (GraphQLObjectType) ctx.schema.getType(typeName);
             boolean itemNullable = ctx.connectionItemNullable(typeName);
             String elementTypeName = ctx.connectionElementTypeName(typeName);
-            String edgeName = typeName.replace("Connection", "Edge");
-            var edgeSchema = (GraphQLObjectType) ctx.schema.getType(edgeName);
+            // The edge name is the edges field's actual element type: the author owns the
+            // structural shape, so no naming convention is assumed. (The directive arm above
+            // keeps its minting formula; there the promoter owns both names.)
+            var edgeSchema = (GraphQLObjectType) GraphQLTypeUtil.unwrapAll(
+                connSchema.getFieldDefinition("edges").getType());
+            String edgeName = edgeSchema.getName();
             boolean shareable = connSchema.hasAppliedDirective("shareable");
             // Structural arm: the SDL-declared Connection type is the tag source. Its own
             // @tag applications already ride on connSchema (the referenced SDL type), so they are
@@ -390,7 +439,7 @@ final class ConnectionPromoter {
             var tags = connSchema.getAppliedDirectives(TAG_DIRECTIVE);
             // Facet synthesis applies only to directive-driven carriers: a structural Connection's
             // shape is author-owned, so the promoter never appends a facets field to it.
-            return new ConnectionPromotion(typeName, edgeName, elementTypeName,
+            return new ConnectionPromotion(false, typeName, edgeName, elementTypeName,
                 itemNullable, shareable, tags, List.of(), connSchema, edgeSchema);
         }
         return null;

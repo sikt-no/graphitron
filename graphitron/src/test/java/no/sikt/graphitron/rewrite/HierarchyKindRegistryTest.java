@@ -6,6 +6,7 @@ import no.sikt.graphitron.rewrite.model.BodyParam;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.ConnectionSynthesis;
 import no.sikt.graphitron.rewrite.model.DeleteRows;
 import no.sikt.graphitron.rewrite.model.DeleteRowsError;
 import no.sikt.graphitron.rewrite.model.DialectRequirement;
@@ -126,15 +127,13 @@ class HierarchyKindRegistryTest {
      * {@link GraphitronType}'s synthesised permits: command outputs stored in the fact map, the
      * one place the walked label is knowingly impure. The facet pair has no SDL declaration at
      * all; the connection triple is dual-provenance (synthesised by {@code @asConnection},
-     * walked when authored structurally). This set is the single statement of that population;
-     * the coverage exemptions' synthesised category must stay inside it.
+     * walked when authored structurally). Sourced live from the connection-synthesis relation's
+     * declared minted-arm vocabulary: the relation's producer is the single producer of exactly
+     * these permits, and {@link ConnectionSynthesis.MintedName} enforces the vocabulary at
+     * construction, so a sixth synthesised type must widen the declaration before it can mint.
      */
-    static final Set<Class<?>> SYNTHESISED_TYPE_PERMITS = Set.of(
-        GraphitronType.ConnectionType.class,
-        GraphitronType.EdgeType.class,
-        GraphitronType.PageInfoType.class,
-        GraphitronType.FacetsType.class,
-        GraphitronType.FacetValueType.class);
+    static final Set<Class<? extends GraphitronType>> SYNTHESISED_TYPE_PERMITS =
+        ConnectionSynthesis.MINTED_ARM_VOCABULARY;
 
     private static final Map<Class<?>, HierarchyKind> REGISTRY = Map.ofEntries(
         // The classification hierarchies: walked off the SDL against the catalog.
@@ -186,6 +185,11 @@ class HierarchyKindRegistryTest {
         Map.entry(InputColumnBinding.class, HierarchyKind.RESOLVED_VIEW),
         Map.entry(InputColumnBindingGroup.class, HierarchyKind.RESOLVED_VIEW),
         Map.entry(DomainReturnType.class, HierarchyKind.RESOLVED_VIEW),
+        // The connection-synthesis row: produced during the classify walk but not itself an
+        // authored SDL fact; it coalesces the carrier's directive facts, the pagination
+        // resolution and the assembled schema's name presence into one resolved per-coordinate
+        // product, with no walk of its own (it rides the classify walk's visits).
+        Map.entry(ConnectionSynthesis.class, HierarchyKind.RESOLVED_VIEW),
 
         // Minted at emit grain: these describe what the emit does. The commands-in-waiting.
         Map.entry(no.sikt.graphitron.command.Predicate.class, HierarchyKind.COMMAND),
@@ -289,18 +293,5 @@ class HierarchyKindRegistryTest {
             .allSatisfy(c -> assertThat(GraphitronType.class)
                 .as("%s must be a GraphitronType member", c.getSimpleName())
                 .isAssignableFrom(c));
-    }
-
-    @Test
-    void synthesisedCoverageExemptionsStayInsideTheDeclaredPermitSet() {
-        var synthesisedExemptions = ExemptionRegistry.CORPUS_NO_CASE_REQUIRED.entrySet().stream()
-            .filter(e -> e.getValue() instanceof Exemption.SynthesisedNoSdlOrigin)
-            .map(Map.Entry::getKey)
-            .toList();
-        assertThat(synthesisedExemptions)
-            .as("a coverage exemption claiming synthesised-no-SDL-origin must name one of the "
-                + "declared synthesised permits; anything else is either mislabelled or a sixth "
-                + "synthesised type this registry does not know about")
-            .allSatisfy(c -> assertThat(SYNTHESISED_TYPE_PERMITS).contains(c));
     }
 }

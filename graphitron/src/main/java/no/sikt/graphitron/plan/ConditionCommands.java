@@ -16,12 +16,10 @@ import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ConditionFilter;
-import no.sikt.graphitron.rewrite.model.ConnectionNaming;
 import no.sikt.graphitron.rewrite.model.FacetSpec;
 import no.sikt.graphitron.rewrite.model.FkTargetConditionFilter;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
-import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.LookupField;
 import no.sikt.graphitron.rewrite.model.QueryField;
@@ -254,14 +252,13 @@ public final class ConditionCommands {
 
     /**
      * The facet specs of the coordinate's synthesised connection carrier, present exactly when
-     * the coordinate is a faceted {@code @asConnection}. The carrier resolves through the default
-     * connection name; faceted carriers using the deprecated {@code connectionName:} override are
-     * rejected at classify time, so the derived name always hits where facets exist.
+     * the coordinate is a faceted {@code @asConnection}. Resolved by coordinate through the
+     * connection-synthesis relation ({@code GraphitronSchema.connectionSynthesis()}), whose typed
+     * accessor reads the registry's reconciled connection entry, so a carrier using the
+     * deprecated {@code connectionName:} override resolves identically to a derived-name one.
      */
     static List<FacetSpec> facetsFor(GraphitronSchema schema, String parentTypeName, String fieldName) {
-        var entry = schema.types().get(
-            ConnectionNaming.defaultConnectionName(parentTypeName, fieldName));
-        return entry instanceof GraphitronType.ConnectionType ct ? ct.facets() : List.of();
+        return schema.connectionSynthesis().facetsAt(parentTypeName, fieldName);
     }
 
     /**

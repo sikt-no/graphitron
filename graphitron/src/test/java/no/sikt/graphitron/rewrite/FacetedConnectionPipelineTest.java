@@ -285,10 +285,11 @@ class FacetedConnectionPipelineTest {
     }
 
     @Test
-    void asFacetWithConnectionNameOverride_rejected() {
-        // The facet emitters resolve the carrier's ConnectionType through the derived
-        // ConnectionNaming.defaultConnectionName; the deprecated connectionName: override would
-        // silently miss that lookup, so the combination is rejected.
+    void asFacetWithConnectionNameOverride_accepted() {
+        // Acceptance pin for the dissolved rejection: the facet producers resolve the carrier's
+        // ConnectionType by coordinate through the connection-synthesis relation, so the
+        // deprecated connectionName: override no longer forfeits facets. The named connection
+        // carries the facet specs and the facet types are synthesised under the overridden name.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             input FilmFilter {
@@ -302,9 +303,18 @@ class FacetedConnectionPipelineTest {
             """);
 
         assertThat(schema.diagnostics())
-            .anyMatch(e -> e.kind() == RejectionKind.INVALID_SCHEMA
-                && e.message().contains("FilmFilter.title")
-                && e.message().contains("connectionName"));
+            .as("a named faceted connection is legal; no facet diagnostics may surface")
+            .noneMatch(e -> e.message().contains("@asFacet") || e.message().contains("connectionName"));
+        assertThat(schema.types().get("LegacyFilmsConnection"))
+            .isInstanceOfSatisfying(GraphitronType.ConnectionType.class, conn ->
+                assertThat(conn.facets()).containsExactly(
+                    new FacetSpec("filter", "title", "title", "String", false, "StringFacetValue")));
+        assertThat(schema.types().get("LegacyFilmsConnectionFacets"))
+            .isInstanceOfSatisfying(GraphitronType.FacetsType.class, ft ->
+                assertThat(ft.connectionName()).isEqualTo("LegacyFilmsConnection"));
+        // The plan-side lookup is coordinate-keyed, so the overridden name resolves identically.
+        assertThat(schema.connectionSynthesis().facetsAt("Query", "films"))
+            .containsExactly(new FacetSpec("filter", "title", "title", "String", false, "StringFacetValue"));
     }
 
     @Test

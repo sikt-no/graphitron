@@ -6,6 +6,7 @@ import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLTypeReference;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
+import no.sikt.graphitron.rewrite.model.ConnectionSynthesis;
 import no.sikt.graphitron.rewrite.model.FacetSpec;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType;
@@ -21,8 +22,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -32,14 +31,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Resolver-tier coverage for {@link ConnectionPromoter}: asserts that promotion synthesises
  * {@link ConnectionType} / {@link EdgeType} / {@link PageInfoType} entries on the registry and
- * returns the appropriate carrier-rewrite list, across the directive-driven and structural
- * arms plus the dedup, item-nullability, and SDL-PageInfo enrich edges.
+ * produces the appropriate {@link ConnectionSynthesis} rows, across the directive-driven and
+ * structural arms plus the dedup, item-nullability, and SDL-PageInfo enrich edges.
  *
  * <p>Wiring: {@link GraphitronSchemaBuilder#buildContextForTests} runs the schema generator and
  * {@code TypeBuilder} but stops before field classification, returning the same fully-wired
  * {@link BuildContext} the orchestrator hands to {@link FieldBuilder}. The {@link #promoteAll} helper
  * drives {@link ConnectionPromoter#synthesiseForField} over every object field of that context,
- * standing in for the field-first walk so each carrier is promoted exactly once.
+ * standing in for the field-first walk so each carrier is promoted exactly once, and returns the
+ * built {@link ConnectionSynthesisRelation}, the same product the real walk produces.
  */
 @UnitTier
 class ConnectionPromoterTest {
@@ -61,18 +61,30 @@ class ConnectionPromoterTest {
             """;
         var bctx = buildBuildContext(sdl);
 
-        var rewrites = promoteAll(bctx);
+        var relation = promoteAll(bctx);
 
-        assertThat(rewrites).singleElement().satisfies(r -> {
-            assertThat(r.parentTypeName()).isEqualTo("Query");
-            assertThat(r.fieldName()).isEqualTo("customers");
-            assertThat(r.connectionName()).isEqualTo("QueryCustomersConnection");
-            assertThat(r.defaultPageSize()).isEqualTo(FieldWrapper.DEFAULT_PAGE_SIZE);
-            assertThat(r.outerNonNull()).isTrue();
-        });
+        assertThat(relation.rows().values()).singleElement().satisfies(row ->
+            assertThat(row).isInstanceOfSatisfying(ConnectionSynthesis.DirectiveDriven.class, dd -> {
+                assertThat(dd.parentTypeName()).isEqualTo("Query");
+                assertThat(dd.fieldName()).isEqualTo("customers");
+                assertThat(dd.connectionName()).isEqualTo("QueryCustomersConnection");
+                assertThat(dd.defaultPageSize()).isEqualTo(FieldWrapper.DEFAULT_PAGE_SIZE);
+                assertThat(dd.outerNonNull()).isTrue();
+                assertThat(dd.rewritesCarrierReturnType()).isTrue();
+            }));
         assertThat(bctx.types.get("QueryCustomersConnection")).isInstanceOf(ConnectionType.class);
         assertThat(bctx.types.get("QueryCustomersEdge")).isInstanceOf(EdgeType.class);
         assertThat(bctx.types.get("PageInfo")).isInstanceOf(PageInfoType.class);
+        // The row carries the absent-from-assembled discriminator per minted name; the shared
+        // PageInfo is a schema-grain slot on the relation, not a row entry.
+        assertThat(relation.row("Query", "customers").mintedNames())
+            .extracting(ConnectionSynthesis.MintedName::name, ConnectionSynthesis.MintedName::absentFromAssembled)
+            .containsExactly(
+                org.assertj.core.groups.Tuple.tuple("QueryCustomersConnection", true),
+                org.assertj.core.groups.Tuple.tuple("QueryCustomersEdge", true));
+        assertThat(relation.sharedMinted())
+            .extracting(ConnectionSynthesis.MintedName::name, ConnectionSynthesis.MintedName::absentFromAssembled)
+            .containsExactly(org.assertj.core.groups.Tuple.tuple("PageInfo", true));
     }
 
     @Test
@@ -122,10 +134,10 @@ class ConnectionPromoterTest {
             """;
         var bctx = buildBuildContext(sdl);
 
-        var rewrites = promoteAll(bctx);
+        var relation = promoteAll(bctx);
 
-        assertThat(rewrites).singleElement().satisfies(r ->
-            assertThat(r.connectionName()).isEqualTo("MyCustomerConnection"));
+        assertThat(relation.rows().values()).singleElement().satisfies(row ->
+            assertThat(row.connectionName()).isEqualTo("MyCustomerConnection"));
         assertThat(bctx.types.get("MyCustomerConnection")).isInstanceOf(ConnectionType.class);
         assertThat(bctx.types.get("MyCustomerEdge")).isInstanceOf(EdgeType.class);
     }
@@ -140,18 +152,18 @@ class ConnectionPromoterTest {
             """;
         var bctx = buildBuildContext(sdl);
 
-        var rewrites = promoteAll(bctx);
+        var relation = promoteAll(bctx);
 
-        assertThat(rewrites).singleElement().satisfies(r ->
-            assertThat(r.defaultPageSize()).isEqualTo(42));
+        assertThat(relation.rows().values()).singleElement().satisfies(row ->
+            assertThat(((ConnectionSynthesis.DirectiveDriven) row).defaultPageSize()).isEqualTo(42));
     }
 
     @Test
     void structuralConnectionTypedReturn_enrichesPlainObjectEntries_noCarrierRewrite() {
         // SDL declares the Connection / Edge object types itself; the carrier field returns
         // CustomerConnection without @asConnection. Promotion should enrich the
-        // NestingType entries to typed ConnectionType / EdgeType, but emit no
-        // CarrierRewrite (the return type already names the Connection).
+        // NestingType entries to typed ConnectionType / EdgeType and produce a Structural row,
+        // which carries no rewrite facts (the return type already names the Connection).
         String sdl = """
             type Customer { id: ID! }
             type CustomerEdge {
@@ -176,12 +188,16 @@ class ConnectionPromoterTest {
             """;
         var bctx = buildBuildContext(sdl);
 
-        var rewrites = promoteAll(bctx);
+        var relation = promoteAll(bctx);
 
-        assertThat(rewrites).isEmpty();
+        assertThat(relation.rows().values()).singleElement()
+            .isInstanceOf(ConnectionSynthesis.Structural.class);
         assertThat(bctx.types.get("CustomerConnection")).isInstanceOf(ConnectionType.class);
         assertThat(bctx.types.get("CustomerEdge")).isInstanceOf(EdgeType.class);
         assertThat(bctx.types.get("PageInfo")).isInstanceOf(PageInfoType.class);
+        // SDL-declared names carry a false absent-from-assembled discriminator, so the rebuild
+        // adds nothing for them.
+        assertThat(relation.absentMinted()).isEmpty();
     }
 
     @Test
@@ -201,12 +217,17 @@ class ConnectionPromoterTest {
             """;
         var bctx = buildBuildContext(sdl);
 
-        var rewrites = promoteAll(bctx);
+        var relation = promoteAll(bctx);
 
-        assertThat(rewrites).hasSize(1);
+        assertThat(relation.rows()).hasSize(1);
         var pageInfo = bctx.types.get("PageInfo");
         assertThat(pageInfo).isInstanceOf(PageInfoType.class);
         assertThat(((PageInfoType) pageInfo).shareable()).isTrue();
+        // The SDL-declared PageInfo lands on the relation's schema-grain slot, present in the
+        // assembled schema already.
+        assertThat(relation.sharedMinted())
+            .extracting(ConnectionSynthesis.MintedName::name, ConnectionSynthesis.MintedName::absentFromAssembled)
+            .containsExactly(org.assertj.core.groups.Tuple.tuple("PageInfo", false));
     }
 
     @Test
@@ -220,20 +241,27 @@ class ConnectionPromoterTest {
             """;
         var bctx = buildBuildContext(sdl);
 
-        var rewrites = promoteAll(bctx);
+        var relation = promoteAll(bctx);
 
-        assertThat(rewrites).hasSize(2);
-        assertThat(rewrites).allSatisfy(r -> assertThat(r.connectionName()).isEqualTo("CustomerConnection"));
+        assertThat(relation.rows()).hasSize(2);
+        assertThat(relation.rows().values())
+            .allSatisfy(row -> assertThat(row.connectionName()).isEqualTo("CustomerConnection"));
         assertThat(bctx.types.get("CustomerConnection")).isInstanceOf(ConnectionType.class);
         assertThat(bctx.types.get("CustomerEdge")).isInstanceOf(EdgeType.class);
+        // Two rows agreeing on the minted shape pass the name-axis check: no diagnostic.
+        assertThat(bctx.diagnostics()).isEmpty();
+        // The rebuild set dedups by name: one Connection, one Edge (plus the shared PageInfo).
+        assertThat(relation.absentMinted())
+            .extracting(ConnectionSynthesis.MintedName::name)
+            .containsExactly("CustomerConnection", "CustomerEdge", "PageInfo");
     }
 
     @Test
     void asConnectionOnAlreadyConnectionTypedReturn_emitsNoCarrierRewrite() {
-        // The currentBaseName.equals(connectionName) guard: when the SDL return type already
-        // names the Connection (here "CustomerConnection"), promotion must not emit a
-        // CarrierRewrite — there is no return-type swap to make. The synthesised type
-        // entries still get registered (enrich path).
+        // When the SDL return type already names the Connection (here "CustomerConnection"),
+        // @asConnection alongside routes through the structural arm: no rewrite facts exist,
+        // there is no return-type swap to make. The synthesised type entries still get
+        // registered (enrich path).
         String sdl = """
             type Customer { id: ID! }
             type CustomerEdge {
@@ -258,9 +286,10 @@ class ConnectionPromoterTest {
             """;
         var bctx = buildBuildContext(sdl);
 
-        var rewrites = promoteAll(bctx);
+        var relation = promoteAll(bctx);
 
-        assertThat(rewrites).isEmpty();
+        assertThat(relation.rows().values()).singleElement()
+            .isInstanceOf(ConnectionSynthesis.Structural.class);
         assertThat(bctx.types.get("CustomerConnection")).isInstanceOf(ConnectionType.class);
     }
 
@@ -283,8 +312,8 @@ class ConnectionPromoterTest {
 
     @Test
     void rebuildAssembledForConnections_shortCircuitsWhenNoRewritesAndNoSynthesisedTypes() {
-        // The empty-set short-circuit: no synthesised types and no rewrites must return the original
-        // GraphQLSchema instance by reference.
+        // The empty-set short-circuit: no synthesised types and no rewriting rows must return the
+        // original GraphQLSchema instance by reference.
         String sdl = """
             type Foo { id: ID! }
             type Query { foo: Foo }
@@ -292,9 +321,65 @@ class ConnectionPromoterTest {
         var bctx = buildBuildContext(sdl);
 
         var rebuilt = ConnectionPromoter.rebuildAssembledForConnections(
-            bctx.schema, List.of(), List.of());
+            bctx.schema, List.of(), ConnectionSynthesisRelation.EMPTY);
 
         assertThat(rebuilt).isSameAs(bctx.schema);
+    }
+
+    @Test
+    void structuralEdgeName_isReadOffTheEdgesFieldsActualType() {
+        // The author owns a structural Connection's shape, so the Edge entry is keyed by the
+        // edges field's actual element type, not by a <X>Connection -> <X>Edge naming formula.
+        String sdl = """
+            type Customer { id: ID! }
+            type CustomerLink {
+                cursor: String!
+                node: Customer
+            }
+            type CustomerConnection {
+                edges: [CustomerLink!]!
+                nodes: [Customer]!
+                totalCount: Int
+            }
+            type Query {
+                customers: CustomerConnection!
+            }
+            """;
+        var bctx = buildBuildContext(sdl);
+
+        var relation = promoteAll(bctx);
+
+        assertThat(bctx.types.get("CustomerLink")).isInstanceOf(EdgeType.class);
+        assertThat(((ConnectionType) bctx.types.get("CustomerConnection")).edgeTypeName())
+            .isEqualTo("CustomerLink");
+        assertThat(relation.row("Query", "customers").mintedNames())
+            .extracting(ConnectionSynthesis.MintedName::name)
+            .containsExactly("CustomerConnection", "CustomerLink");
+    }
+
+    @Test
+    void twoCarriersSameConnectionNameDifferentShape_registersNameAxisDiagnostic() {
+        // The minted-name axis enforcer: an explicit connectionName: lets two carriers mint one
+        // name, and the registry merge would silently keep the first shape; disagreeing carriers
+        // are an author error, surfaced as a typed build diagnostic naming both coordinates.
+        String sdl = """
+            type Customer { id: ID! }
+            type Film { id: ID! }
+            type Query {
+                first: [Customer!]! @asConnection(connectionName: "SharedConnection")
+                second: [Film!]! @asConnection(connectionName: "SharedConnection")
+            }
+            """;
+        var bctx = buildBuildContext(sdl);
+
+        promoteAll(bctx);
+
+        assertThat(bctx.diagnostics()).singleElement().satisfies(e -> {
+            assertThat(e.message()).contains("Query.first");
+            assertThat(e.message()).contains("Query.second");
+            assertThat(e.message()).contains("SharedConnection");
+            assertThat(e.message()).contains("disagree");
+        });
     }
 
     // ---- federation @tag inheritance on synthesised connection types ----
@@ -593,20 +678,18 @@ class ConnectionPromoterTest {
     /**
      * Drives {@link ConnectionPromoter#synthesiseForField} over every object-type field of the
      * context, standing in for the field-first walk that the real builder runs, and returns the
-     * accumulated carrier rewrites. The synthesised-name set is not asserted on here (the tests read
-     * {@code bctx.types} directly), so it is discarded.
+     * built {@link ConnectionSynthesisRelation}, the walk's own product (no second path).
      */
-    private static List<ConnectionPromoter.CarrierRewrite> promoteAll(BuildContext bctx) {
-        var rewrites = new ArrayList<ConnectionPromoter.CarrierRewrite>();
-        var synthesisedNames = new LinkedHashSet<String>();
+    private static ConnectionSynthesisRelation promoteAll(BuildContext bctx) {
+        var builder = new ConnectionSynthesisRelation.Builder();
         for (var t : bctx.schema.getAllTypesAsList()) {
             if (t.getName().startsWith("_")) continue;
             if (!(t instanceof GraphQLObjectType objType)) continue;
             for (var fieldDef : objType.getFieldDefinitions()) {
-                ConnectionPromoter.synthesiseForField(bctx, objType, fieldDef, rewrites, synthesisedNames);
+                ConnectionPromoter.synthesiseForField(bctx, objType, fieldDef, builder);
             }
         }
-        return rewrites;
+        return builder.build(bctx.types);
     }
 
     private static BuildContext buildBuildContext(String sdl) {

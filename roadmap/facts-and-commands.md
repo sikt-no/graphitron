@@ -2220,6 +2220,49 @@ R541's single-operation launchers never need it, and a general launcher cannot d
       unit tests are audited against the population pin and the subsumed ones are named in the
       closed entry rather than kept as a second live path. R10 stays its own item; this slice
       is its concrete signal, not its execution.
+  - **Slice 7b landed (2026-07-30).** `ConnectionSynthesis` (sealed, `rewrite/model`, labelled
+    RESOLVED_VIEW: it rides the classify walk and coalesces directive facts, pagination
+    resolution and assembled-name presence, authored by no SDL and minted at classify grain)
+    seals `DirectiveDriven` and `Structural` rows keyed by carrier coordinate, each carrying
+    its `MintedName(name, declaredArm, absentFromAssembled)` list;
+    `ConnectionSynthesisRelation` homes on `GraphitronSchema` beside the other post-walk
+    sidecars, holds the schema-grain shared slots (`PageInfo`, the `FacetValue` pool), and
+    resolves type-grain facts through typed registry accessors, never copies. The construction
+    enforcer guards the minted-name axis (same name, different `MintedShape` registers a
+    validation error naming both carriers; agreeing repeats pass); no duplicate-coordinate
+    guard, with the unreachability stated. The promoter's two accumulators are gone; the
+    rebuild folds over rows as a total switch, reads the absent-from-assembled discriminators
+    instead of re-probing, and keys carriers by coordinate instead of a concatenated string.
+    The capability payload landed both halves: `facetsFor` reads the relation by coordinate,
+    and the `connectionName:` plus `@asFacet` rejection dissolved (acceptance-pinned end to
+    end; the manual's `asFacet` bullet rewritten). `rejectFacetMisuse`'s carrier scan
+    re-sourced off the relation's directive-driven keys. Population pin
+    (`ConnectionSynthesisPopulationPipelineTest`): key set equals the pre-assembly-derived
+    carrier predicate, minted-name closure on both the registry (declared arm paired against
+    actual, demote carve-out stated) and the rebuilt assembled schema (names present, carriers
+    retyped with first/after), plus the non-vacuity witnesses; it subsumes and replaces
+    `ConnectionAssembledDeltaPipelineTest`. Corpus instrument: a `@synthesises(mints:)`
+    carrier-side declaration with a new `faceted-connection` example; coverage derives from
+    declared-equals-produced agreement only, and the `SynthesisedType` enum mirror-tests the
+    relation's minted-arm vocabulary. Exemptions: the `FacetsType`/`FacetValueType` rows
+    exited (the still-uncovered ratchet forced it); `Operation.Count`/`Operation.Facet`
+    re-armed as `Unimplemented` on the shared `CONNECTION_RESULT_CARRIER_FORK` blocker; the
+    `SynthesisedNoSdlOrigin` arm deleted with its vacuous cross-check, and
+    `SYNTHESISED_TYPE_PERMITS` is now the live `MINTED_ARM_VOCABULARY` derivation.
+    `ConnectionPromoterTest` audit: the class had twenty tests, not the handoff's twenty-one;
+    all kept, ten ported to the relation seam (`promoteAll` returns the relation, one honest
+    path), two added (name-axis diagnostic, author-owned structural edge naming). Deltas
+    worth naming: reading the structural edge name off the `edges` field's actual type made
+    the validator's null-edge-form rejection unreachable, so it dissolved by the same
+    rejection-propping-a-formula pattern (the record named the facet one only); the record's
+    row-shape sentence lost to its own consult clause where they conflicted (facet specs and
+    built forms live on the registry, reached through the accessor); `additionalType`
+    registration order shifted harmlessly (graphql-java sorts the type map, emit-neutrality
+    confirmed); the relation-sourced misuse scan sees walk-reached carriers only, documented
+    as validator-mirrors-classifier. Ratchet: `PLAN_LEAF_REFERENCES` 145 to 144 (the
+    `facetsFor` probe left `plan/` for the typed accessor), history line added; generators
+    counts flat. SQL pins untouched, emit-neutral against the checked-in sakila expectations.
+    Verified: full reactor green, 3076 graphitron module tests.
 
 ## The exemption lists are the grain worklist
 
@@ -2358,6 +2401,7 @@ than re-deriving at the gate.
 | `MethodCommandRegistry`, `MethodCommand`, "reentry command" (the test vocabulary) | 5e (landed) | the launcher relation surfaced on the generation result, its compact constructor carrying the case-folded `UnitMethodRef` census |
 | `BatchKeyField.rowsMethodName`, `DmlTableField.reentryRowsMethodName`, the `rowsDeclarationName` / `dmlRowsDeclarationName` context seams | 5e (landed) | the row's `UnitMethodRef` (`GeneratedUnits` mints; call sites read the ref) |
 | `CompileDependencyGraphBuilder`, `UnitNames`, `UtilSingleton` | 7a (landed) | `PlanCompileGraph`, the recompile graph as a projection over the plan's relations; the frozen/growing split as `FROZEN_SCAFFOLD_KINDS` |
+| `CarrierRewrite`, the synthesised-names set, `Exemption.SynthesisedNoSdlOrigin` (the test vocabulary) | 7b (landed) | `ConnectionSynthesis` rows on `ConnectionSynthesisRelation` (a `GraphitronSchema` sidecar); the surviving Count/Facet exemptions re-armed as `Unimplemented` |
 | the `no.sikt.graphitron.rewrite` package | end state | `command` / `plan` / `render` and the shared pure-data floor |
 
 The sibling items declare their own: R541's launcher terms and R552's condition terms are swept at their

@@ -2,16 +2,14 @@ package no.sikt.graphitron.rewrite.model;
 
 /**
  * Single source of truth for the derived Connection type name of a directive-driven
- * {@code @asConnection} carrier: {@code <ParentType><FieldName>Connection}. Shared by the
- * synthesis pass ({@code ConnectionPromoter}) and the emitters that must resolve a carrier
- * field's {@link GraphitronType.ConnectionType} entry from the classified model
- * (the condition command producer, {@code TypeFetcherGenerator} for the facet plan), so
- * naming can never drift between synthesis and lookup.
+ * {@code @asConnection} carrier: {@code <ParentType><FieldName>Connection}. Read by the
+ * synthesis pass ({@code ConnectionPromoter}) when the carrier does not override the name.
  *
- * <p>The deprecated {@code @asConnection(connectionName:)} override bypasses this derivation;
- * carriers that combine it with {@code @asFacet} are rejected at build time
- * ({@code GraphitronSchemaBuilder.rejectFacetMisuse}), so every faceted connection resolves
- * correctly through this name.
+ * <p>The deprecated {@code @asConnection(connectionName:)} override bypasses this derivation.
+ * Consumers no longer re-derive the name to find a carrier's
+ * {@link GraphitronType.ConnectionType} entry; they resolve the carrier coordinate through the
+ * connection-synthesis relation ({@code GraphitronSchema.connectionSynthesis()}), so an
+ * overridden name resolves like any other.
  */
 public final class ConnectionNaming {
 

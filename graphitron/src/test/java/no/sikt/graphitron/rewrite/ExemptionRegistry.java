@@ -107,16 +107,14 @@ public final class ExemptionRegistry {
         "The ErrorsField permit landed alongside the ErrorChannel slot (its C2), but the "
         + "classifier does not mint the leaf until the rejection sites lift.");
 
-    private static final Exemption FACETS_SYNTHESISED = new Exemption.SynthesisedNoSdlOrigin(
-        "R13: the @asFacet expansion on a directive-driven @asConnection carrier. No SDL "
-        + "declaration exists to carry @classifiedType, and the corpus's structural connection "
-        + "form has no facet analogue. Demonstrated by FacetedConnectionPipelineTest and "
-        + "ConnectionPromoterTest.");
-
-    private static final Exemption FACET_VALUE_SYNTHESISED = new Exemption.SynthesisedNoSdlOrigin(
-        "R13: synthesised-only sibling of FacetsType (one reusable entry per (scalar, "
-        + "nullability) pair); same no-SDL-declaration constraint. Demonstrated by "
-        + "FacetedConnectionPipelineTest and ConnectionPromoterTest.");
+    /**
+     * The connection launcher's {@code ConnectionResult} carrier fork: {@code totalCount}'s
+     * {@code (table, condition)} binding and the facet condition fragments have no slot in the
+     * launcher's result shape yet, so no classified coordinate produces the Count / Facet
+     * operation arms. Shared by both rows; the fork's landing retires them together.
+     */
+    private static final String CONNECTION_RESULT_CARRIER_FORK =
+        "the connection launcher's ConnectionResult carrier fork";
 
     /** The instrument the LSP-projection obligation reads; shared by its walker-gap rows. */
     private static final String PROJECTION_WALKER =
@@ -131,8 +129,6 @@ public final class ExemptionRegistry {
      */
     public static final Map<Class<?>, Exemption> CORPUS_NO_CASE_REQUIRED = Map.ofEntries(
         Map.entry(MutationField.MutationUpsertTableField.class, UPSERT_RETIRED),
-        Map.entry(GraphitronType.FacetsType.class, FACETS_SYNTHESISED),
-        Map.entry(GraphitronType.FacetValueType.class, FACET_VALUE_SYNTHESISED),
         Map.entry(ChildField.ErrorsField.class, ERRORS_FIELD_PENDING));
 
     /**
@@ -152,12 +148,16 @@ public final class ExemptionRegistry {
             "a federation _entities classification item",
             "Federation _entities resolution is not a classified leaf yet, so no fixture can "
             + "produce the arm."),
-        Operation.Count.class, new Exemption.SynthesisedNoSdlOrigin(
+        Operation.Count.class, new Exemption.Unimplemented(
+            CONNECTION_RESULT_CARRIER_FORK,
             "Connection totalCount is generator-only emit behind the ConnectionType quarantine; "
-            + "no SDL coordinate exists to carry a @classified verdict."),
-        Operation.Facet.class, new Exemption.SynthesisedNoSdlOrigin(
+            + "the classifier mints no Count coordinate until the launcher's carrier fork gives "
+            + "totalCount a slot of its own."),
+        Operation.Facet.class, new Exemption.Unimplemented(
+            CONNECTION_RESULT_CARRIER_FORK,
             "Connection facets are generator-only emit behind the ConnectionType quarantine; "
-            + "no SDL coordinate exists to carry a @classified verdict."),
+            + "the classifier mints no Facet coordinate until the launcher's carrier fork gives "
+            + "the facet aggregate a slot of its own."),
         Operation.UpdateMatching.class, new Exemption.Unimplemented(
             "condition-matched UPDATE",
             "The condition-matched write verbs are declared ahead of implementation; the "

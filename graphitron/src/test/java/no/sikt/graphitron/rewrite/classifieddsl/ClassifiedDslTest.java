@@ -77,6 +77,12 @@ class ClassifiedDslTest {
                 .as("type %s classifies to its declared TypeVerdict", tc.typeName())
                 .isEqualTo(tc.expectedVerdict());
         }
+        for (var sc : result.synthesises()) {
+            assertThat(sc.produced())
+                .as("%s.%s mints exactly its declared synthesis set (declared vs the "
+                    + "connection-synthesis relation's produced row)", sc.parentType(), sc.fieldName())
+                .isEqualTo(sc.declared());
+        }
     }
 
     /**
@@ -280,6 +286,17 @@ class ClassifiedDslTest {
 
     private static <E extends Enum<E>> Set<String> enumNames(E[] values) {
         return Arrays.stream(values).map(Enum::name).collect(Collectors.toSet());
+    }
+
+    @Test
+    void synthesisedTypeMirrorsTheRelationsMintedArmVocabulary() {
+        assertThat(ClassifiedHarness.synthesisedTypeEnumConstants())
+            .as("the SDL SynthesisedType enum must mirror the connection-synthesis relation's "
+                + "declared minted-arm vocabulary; widening one side without the other fails here")
+            .containsExactlyInAnyOrderElementsOf(
+                no.sikt.graphitron.rewrite.model.ConnectionSynthesis.MINTED_ARM_VOCABULARY.stream()
+                    .map(Class::getSimpleName)
+                    .collect(Collectors.toSet()));
     }
 
     @Test

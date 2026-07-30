@@ -112,28 +112,15 @@ class ConnectionTypeValidationTest {
             .satisfies(e -> assertThat(e.kind()).isEqualTo(RejectionKind.INVALID_SCHEMA));
     }
 
-    // ===== structural edge naming convention =====
+    // ===== structural edge naming =====
 
     @Test
-    void structuralConnection_withConventionNamedEdge_hasNoEdgeNamingError() {
-        var schema = TestSchemaHelper.buildSchema("""
-            type Film @table(name: "film") { id: ID }
-            type FilmsConnection { edges: [FilmsEdge!]! nodes: [Film!]! pageInfo: PageInfo! }
-            type FilmsEdge { cursor: String! node: Film! }
-            type PageInfo { hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String }
-            type Query { films: FilmsConnection }
-            """);
-        var errors = new GraphitronSchemaValidator().validate(schema);
-        assertThat(errors).noneMatch(e -> e.message().contains("naming convention"));
-    }
-
-    @Test
-    void structuralConnection_withMisnamedEdgeType_failsValidation() {
-        // The classifier derives a structural connection's edge type by naming convention
-        // (FilmsConnection pairs with FilmsEdge). An edge declared under any other name leaves
-        // the derived EdgeType without a schema form; before this rejection the emitted
-        // GraphitronSchema referenced a FilmsEdgeType class that was never generated, surfacing
-        // as a missing-symbol error at the consumer's javac.
+    void structuralConnection_withNonConventionEdgeName_classifiesAndValidatesClean() {
+        // The classifier reads a structural connection's edge type off the edges field's actual
+        // element type, so the author owns the name; no <Name>Connection to <Name>Edge naming
+        // convention applies. (The old convention-derived lookup registered a phantom EdgeType
+        // with no schema form for this shape, propped up by a validator rejection; both retired
+        // when connection synthesis became a coordinate-keyed relation.)
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { id: ID }
             type FilmsConnection { edges: [FilmEdge!]! nodes: [Film!]! pageInfo: PageInfo! }
@@ -141,14 +128,14 @@ class ConnectionTypeValidationTest {
             type PageInfo { hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String }
             type Query { films: FilmsConnection }
             """);
+        assertThat(schema.types().get("FilmEdge"))
+            .isInstanceOfSatisfying(no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType.class,
+                edge -> assertThat(edge.schemaType()).isNotNull());
+        assertThat(schema.types().get("FilmsEdge")).isNull();
         var errors = new GraphitronSchemaValidator().validate(schema);
         assertThat(errors)
-            .filteredOn(e -> e.coordinate().equals("FilmsEdge"))
-            .singleElement()
-            .satisfies(e -> {
-                assertThat(e.message()).contains("naming convention");
-                assertThat(e.message()).contains("FilmsEdge");
-            });
+            .as("no edge-related validation error may surface for an author-named edge type")
+            .noneMatch(e -> e.coordinate().contains("Edge") || e.message().contains("Edge"));
     }
 
     private static boolean noTotalCountErrors(no.sikt.graphitron.rewrite.GraphitronSchema schema) {

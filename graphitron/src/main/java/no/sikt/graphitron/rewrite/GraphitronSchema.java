@@ -54,6 +54,11 @@ import java.util.Set;
  * {@code <tenantColumn>} element. The validator's tenant drain and the tenant-routing emitters
  * both read this field. {@link TenantScopes.None} for single-tenant builds and every
  * test-constructed schema.
+ *
+ * <p>{@link #connectionSynthesis} is the coordinate-keyed connection-synthesis relation
+ * ({@link ConnectionSynthesisRelation}): one row per Relay connection carrier the classify walk
+ * visited, plus the schema-grain minted names. The plan's facet producers read it by coordinate.
+ * {@link ConnectionSynthesisRelation#EMPTY} for every schema built without the classify walk.
  */
 public record GraphitronSchema(
     Map<String, GraphitronType> types,
@@ -67,7 +72,8 @@ public record GraphitronSchema(
     Map<FieldCoordinates, Set<ReachableSourceShape>> reachableSourceShapes,
     TenantScopes tenantScopes,
     TenantBindingIndex tenantBindings,
-    Set<String> argumentReachableInputs
+    Set<String> argumentReachableInputs,
+    ConnectionSynthesisRelation connectionSynthesis
 ) {
 
     public GraphitronSchema {
@@ -76,6 +82,7 @@ public record GraphitronSchema(
         tenantScopes = tenantScopes == null ? TenantScopes.None.INSTANCE : tenantScopes;
         tenantBindings = tenantBindings == null ? TenantBindingIndex.EMPTY : tenantBindings;
         argumentReachableInputs = argumentReachableInputs == null ? Set.of() : argumentReachableInputs;
+        connectionSynthesis = connectionSynthesis == null ? ConnectionSynthesisRelation.EMPTY : connectionSynthesis;
     }
 
     /**
@@ -113,7 +120,8 @@ public record GraphitronSchema(
     public GraphitronSchema(Map<String, GraphitronType> types, Map<FieldCoordinates, GraphitronField> fields) {
         this(types, fields, groupByType(fields), Map.of(), List.of(),
             ContextArgumentClassifier.classify(fields.values()), List.of(), Map.of(), Map.of(),
-            TenantScopes.None.INSTANCE, TenantBindingIndex.EMPTY, Set.of());
+            TenantScopes.None.INSTANCE, TenantBindingIndex.EMPTY, Set.of(),
+            ConnectionSynthesisRelation.EMPTY);
     }
 
     /**
@@ -151,7 +159,7 @@ public record GraphitronSchema(
     /**
      * The {@link GraphitronSchemaBuilder} constructor with the argument-reachability fold
      * ({@link ArgumentReachableInputs}); the nine-arg form defaults it empty for callers with
-     * no assembled schema to walk.
+     * no assembled schema to walk. Defaults the connection-synthesis relation empty.
      */
     public GraphitronSchema(Map<String, GraphitronType> types,
                             Map<FieldCoordinates, GraphitronField> fields,
@@ -163,9 +171,29 @@ public record GraphitronSchema(
                             TenantScopes tenantScopes,
                             TenantBindingIndex tenantBindings,
                             Set<String> argumentReachableInputs) {
+        this(types, fields, entitiesByType, warnings, diagnostics, arrivals, reachableSourceShapes,
+            tenantScopes, tenantBindings, argumentReachableInputs, ConnectionSynthesisRelation.EMPTY);
+    }
+
+    /**
+     * The {@link GraphitronSchemaBuilder} constructor with the connection-synthesis relation
+     * ({@link ConnectionSynthesisRelation}), the classify walk's coordinate-keyed sidecar.
+     */
+    public GraphitronSchema(Map<String, GraphitronType> types,
+                            Map<FieldCoordinates, GraphitronField> fields,
+                            Map<String, EntityResolution> entitiesByType,
+                            List<BuildWarning> warnings,
+                            List<ValidationError> diagnostics,
+                            Map<String, Arrival> arrivals,
+                            Map<FieldCoordinates, Set<ReachableSourceShape>> reachableSourceShapes,
+                            TenantScopes tenantScopes,
+                            TenantBindingIndex tenantBindings,
+                            Set<String> argumentReachableInputs,
+                            ConnectionSynthesisRelation connectionSynthesis) {
         this(types, fields, groupByType(fields), Map.copyOf(entitiesByType), List.copyOf(warnings),
             ContextArgumentClassifier.classify(fields.values()), List.copyOf(diagnostics), Map.copyOf(arrivals),
-            Map.copyOf(reachableSourceShapes), tenantScopes, tenantBindings, argumentReachableInputs);
+            Map.copyOf(reachableSourceShapes), tenantScopes, tenantBindings, argumentReachableInputs,
+            connectionSynthesis);
     }
 
     /**
@@ -192,7 +220,7 @@ public record GraphitronSchema(
                             ContextArgumentClassifier.Classification contextArguments,
                             List<ValidationError> diagnostics) {
         this(types, fields, fieldsByType, entitiesByType, warnings, contextArguments, diagnostics, Map.of(), Map.of(),
-            TenantScopes.None.INSTANCE, TenantBindingIndex.EMPTY, Set.of());
+            TenantScopes.None.INSTANCE, TenantBindingIndex.EMPTY, Set.of(), ConnectionSynthesisRelation.EMPTY);
     }
 
     private static Map<String, List<GraphitronField>> groupByType(Map<FieldCoordinates, GraphitronField> fields) {

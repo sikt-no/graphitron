@@ -678,6 +678,34 @@ public final class ClassifiedCorpus {
             """),
 
         /*
+         * Faceted directive-driven connection: an @asConnection carrier on a bare list whose
+         * filter input marks an @asFacet field. The synthesised facet surface (the per-connection
+         * FacetsType container and the reusable FacetValueType pool entry) has no SDL declaration
+         * to carry @classifiedType, so the expectation is declared at the coordinate that causes
+         * the synthesis: @synthesises names every type the carrier mints, and coverage counts an
+         * arm only when the declaration agrees with the connection-synthesis relation's produced
+         * row. The carrier uses the derived connection name (the recommended authoring); the
+         * deprecated connectionName: override composing with @asFacet is pinned at pipeline tier
+         * (FacetedConnectionPipelineTest), not taught here.
+         */
+        new Example("faceted-connection", """
+            type Film @table(name: "film") { title: String }
+            input FilmFilter {
+                title: [String!] @field(name: "title") @asFacet
+            }
+            type Query {
+                films(filter: FilmFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
+                    @classified(source: Query, operation: Paginate, target: Single, targetShape: Connection)
+                    @synthesises(mints: [
+                        {name: "QueryFilmsConnection", as: ConnectionType},
+                        {name: "QueryFilmsEdge", as: EdgeType},
+                        {name: "QueryFilmsConnectionFacets", as: FacetsType},
+                        {name: "StringFacetValue", as: FacetValueType},
+                        {name: "PageInfo", as: PageInfoType}])
+            }
+            """),
+
+        /*
          * Input-type backing (the input-side type-verdict cluster, mirroring `result-backing` on the
          * output side). An input type acquires its leaf by reflection on the @service consumer's
          * parameter class: a plain Java class is PojoInputType, a Java record is JavaRecordInputType, a
@@ -1121,9 +1149,18 @@ public final class ClassifiedCorpus {
      * walk observe it. This set alone carries the output-field and type side of the variant-coverage
      * obligation ({@code ExemptionRegistry}): a leaf absent here fails coverage even when an enum
      * case still asserts it.
+     *
+     * <p>Synthesised type leaves join through {@code @synthesises} on a carrier coordinate: an
+     * arm counts only when a declared mint agrees with the connection-synthesis relation's
+     * produced row (same name, same arm, registry entry matching), never from the producer's
+     * output alone, so the coverage stays author-checkable.
      */
     public static Set<Class<?>> coveredLeaves() {
         var leaves = new HashSet<Class<?>>();
+        var mintedArmsBySimpleName = new java.util.HashMap<String, Class<?>>();
+        for (var arm : no.sikt.graphitron.rewrite.model.ConnectionSynthesis.MINTED_ARM_VOCABULARY) {
+            mintedArmsBySimpleName.put(arm.getSimpleName(), arm);
+        }
         for (Example example : EXAMPLES) {
             var result = ClassifiedHarness.classify(example.sdl());
             for (var fc : result.fields()) {
@@ -1133,6 +1170,13 @@ public final class ClassifiedCorpus {
             for (var tc : result.types()) {
                 if (tc.leaf() != null) {
                     leaves.add(tc.leaf());
+                }
+            }
+            for (var sc : result.synthesises()) {
+                for (var declared : sc.declared()) {
+                    if (sc.produced().contains(declared)) {
+                        leaves.add(mintedArmsBySimpleName.get(declared.arm()));
+                    }
                 }
             }
         }

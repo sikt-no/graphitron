@@ -144,9 +144,13 @@ class CommandSeamRatchetTest {
      * membership-and-production switches (query, mutation and child families) so the
      * non-launcher fetcher references are plan data, and the model-sourced graph builder's
      * unpriced switch tree in {@code compile/} deleted; the edges were always computed at
-     * produce time, only the re-derivation died.
+     * produce time, only the re-derivation died. Lowered to 144 when connection synthesis
+     * became a coordinate-keyed relation and the facet lookup
+     * ({@link no.sikt.graphitron.plan.ConditionCommands}) cut over from a
+     * name-recomputing registry probe (an {@code instanceof} on the ConnectionType leaf) to the
+     * relation's typed accessor on {@link no.sikt.graphitron.rewrite.GraphitronSchema#connectionSynthesis()}.
      */
-    private static final int PLAN_LEAF_REFERENCES = 145;
+    private static final int PLAN_LEAF_REFERENCES = 144;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide

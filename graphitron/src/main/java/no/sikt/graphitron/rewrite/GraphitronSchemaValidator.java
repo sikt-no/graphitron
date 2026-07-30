@@ -242,7 +242,8 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType t          -> {} // no structural validation needed
             case no.sikt.graphitron.rewrite.model.GraphitronType.InputType t          -> validateInputType(t, types, errors);
             case no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType t     -> validateConnectionType(t, errors);
-            case no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType t           -> validateEdgeType(t, errors);
+            case no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType t           -> {} // schema form always present: structural edges reference the declared edges-element type, synthesised edges are built
+
             case no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType t       -> {} // structural validation is a downstream concern
             case no.sikt.graphitron.rewrite.model.GraphitronType.NestingType t    -> {} // no domain directives, nothing to validate structurally
             case no.sikt.graphitron.rewrite.model.GraphitronType.FacetsType t     -> {} // synthesised; shape is promoter-owned, nothing to validate structurally
@@ -1434,27 +1435,6 @@ public class GraphitronSchemaValidator {
             ));
         }
     }
-    /**
-     * A structural connection derives its edge type by naming convention
-     * ({@code <X>Connection} pairs with {@code <X>Edge}); when the SDL declares the connection
-     * shape but no type under the derived edge name, the classifier registers an
-     * {@link no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType} with no schema form.
-     * Reject it here with a directed message: emission would otherwise reference an edge class
-     * that is never generated and fail at the consumer's compile. Directive-driven edges always
-     * carry a synthesised form, so only the structural mismatch reaches this.
-     */
-    private void validateEdgeType(no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType type, List<ValidationError> errors) {
-        if (type.schemaType() == null) {
-            errors.add(ValidationError.forType(
-                type.name(),
-                Rejection.structural("connection edge type '" + type.name() + "' is not declared in the "
-                    + "schema; a structural connection's edge type is derived by naming convention "
-                    + "(<Name>Connection pairs with <Name>Edge), so declare '" + type.name()
-                    + "' or rename the existing edge type to match"),
-                type.location()));
-        }
-    }
-
     private void validateUnclassifiedType(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType type, List<ValidationError> errors) {
         errors.add(ValidationError.forType(type.name(), type.rejection(), type.location()));
     }
