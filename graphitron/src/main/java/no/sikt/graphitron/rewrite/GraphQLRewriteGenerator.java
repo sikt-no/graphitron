@@ -168,9 +168,7 @@ public class GraphQLRewriteGenerator {
          * Records a compilation-unit write, folding its {@code changed} flag into both deltas.
          * A duplicate landing address is a hard failure: two families writing one FQCN would
          * clobber silently (second write wins) and surface as a missing-symbol error at the
-         * consumer's javac, the failure class this guard exists to remove. The condition glue
-         * and entity conditions classes share one {@code <Type>Conditions} name template through
-         * the entity layer's retirement window, so this is that window's backstop.
+         * consumer's javac, the failure class this guard exists to remove.
          */
         void record(String fqcn, TypeSpec spec, JavaFile.WriteResult result) {
             emitted.add(result.path());

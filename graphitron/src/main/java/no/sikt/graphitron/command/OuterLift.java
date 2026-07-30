@@ -4,9 +4,9 @@ package no.sikt.graphitron.command;
  * One shared-outer map lift in a glue body: the outer argument name whose coerced
  * {@code Map<?, ?>} is bound once to a named local, referenced by every nested extraction riding
  * that argument. The producer lifts an outer exactly when two or more of the method's retained
- * bindings traverse it, generalising the old per-generator {@code computeLiftedOuters} into the
- * one-local-per-argument convention; the lift is method-grain data, so two predicates sharing an
- * outer can never race to declare the same local.
+ * bindings traverse it, the one-local-per-argument convention applied to a shared prefix of the
+ * extraction path; the lift is method-grain data, so two predicates sharing an outer can never
+ * race to declare the same local.
  */
 public record OuterLift(String outerArgName, String localName) {
 

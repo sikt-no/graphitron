@@ -1457,7 +1457,7 @@ below draws the member-to-seam crosswalk that wires the two together.
 | 2 | `<Type>.$project(grouped, table, env)` | `ProjectionUnitRenderer` (command-driven; landed 2026-07-29, R549 slice 3.1) | one method per projection unit: anchors, `(anchor, typeName)` nesting units, per-coordinate pivot units | R1 (unit addresses minted by `GeneratedUnits`, the call composed by `render/ProjectionCall` at every host) | seam (b, c): reused + assertable | landed; unmigrated launcher hosts read the same call emitter, so the literal has one home |
 | 3 | `rows<X>` / `load<X>` | `SplitRowsMethodEmitter`, `MultiTablePolymorphicEmitter` | anchor (SELECT launcher) | R1 | seam (a, b): batched/direct dispatch + reuse | settled (`rowsMethodName`) |
 | 4 | `scatter*ByIdx` | `SplitRowsMethodEmitter` | dedup-by-class | R2 | seam (b): class-level reuse | lift to R1 |
-| 5 | `<field>Condition(...)` | `TypeConditionsGenerator`, `QueryConditionsGenerator` | field / method | R1 + R2 (half-migrated) | seam (c): assertable | finish lift (`QueryConditionsGenerator` end) |
+| 5 | `<field>Condition(...)` | `ConditionGlueRenderer` (command-driven; landed 2026-07-29, R552) | one glue method per `(coordinate, table)` row, classes grouped per parent type | R1 (class and method refs minted by `GeneratedUnits`; every consumer emits the shared `ConditionGlueCall`) | seam (c): assertable | landed; the lift closed on both ends (the entity layer, its `className()`/`methodName()` naming facts, and the shim's `+ "Condition"` formula all retired) |
 | 6 | join-path helper | `JoinPathEmitter` | per join path | R1 | seam (b): reused | settled (`MethodRef`) |
 | 7 | `<field>InputRows` | `LookupRows` (render core; legacy root hosts delegate) | per lookup field | R1 on the migrated side (`GeneratedUnits.inputRowsMethod` minted onto the lookup wrap), R2 at the unmigrated root hosts (same formula, one spelling) | seam (c): assertable | half-lifted 2026-07-29; the root-host end lifts with R541 (slice 3c) |
 | 8 | `create<Bean>` / `create<Record>` / `decode<Record>` | `InputBeanInstantiationEmitter`, `JooqRecordInstantiationEmitter` | dedup-by-class | R2 | seam (b): class-level reuse | lift to R1 |
@@ -1675,9 +1675,10 @@ closure turns on:
   `scatterSingleByIdx` (literal at definer plus three calls); `<Type>Fetchers`, `<field>OrderBy`,
   `<field>InputRows`, `create<Bean>` / `create<Record>` / `decode<Record>` (prefix/suffix formula at both
   ends).
-- **The half-migrated seam.** `<field>Condition` is read from the model in `TypeConditionsGenerator`
-  (R1 end) but recomputed as `fieldName + "Condition"` in `QueryConditionsGenerator` (R2 end). One name, two
-  loci, one of which is the model: the migration is per-edge, and this is what a half-done edge looks like.
+- **The half-migrated seam (closed 2026-07-29, R552).** `<field>Condition` was read from the model at the
+  entity end but recomputed as `fieldName + "Condition"` at the shim end: one name, two loci. The condition
+  command closed it by dissolving the second locus rather than repointing it; `GeneratedUnits` mints every
+  condition class and method name and both retired generators' formulas are gone.
 
 The R2 set is the worklist for thread F's closure; the cut is "make every edge look like `MethodRef` /
 `rowsMethodName`, none like `$fields`." This makes thread I's invariant grep-able: every `$$fields`,
@@ -1739,7 +1740,7 @@ regime; the R2 rows plus the missing seams of thread K are the promotion worklis
 | Projection | `<Type>.$fields(sel, table, env)` | type-bound fold | `TypeClassGenerator` | Projection (recursive; cyclic), Condition/Join | R2 |
 | Rows-method | `rows<X>` / `load<X>` | anchor (SELECT launcher) | `SplitRowsMethodEmitter`, `MultiTablePolymorphicEmitter` | Projection, Scatter, InputRows | R1 |
 | Scatter | `scatter*ByIdx` | dedup-by-class | `SplitRowsMethodEmitter` | leaf | R2 |
-| Condition | `<field>Condition` | field | `TypeConditionsGenerator`, `QueryConditionsGenerator` | Join | R1 / R2 (half-migrated) |
+| Condition | `<field>Condition` | one glue method per `(coordinate, table)` row | `ConditionGlueRenderer` (command-driven; landed 2026-07-29, R552) | Join | R1 (`GeneratedUnits`) |
 | Join | join-path helper (`MethodRef` target) | per join path | `JoinPathEmitter` | leaf | R1 |
 | InputRows | `<field>InputRows` | per lookup field | `LookupValuesJoinEmitter` | Join | R2 |
 | Bean/Record | `create<Bean>` / `create<Record>` / `decode<Record>` | dedup-by-class | `InputBeanInstantiationEmitter`, `JooqRecordInstantiationEmitter` | leaf | R2 |
