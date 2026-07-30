@@ -31,10 +31,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code ROW_NUMBER() OVER (PARTITION BY __idx__)} per-parent page envelope with its shared
  * count source), the batched lookup child on both source shapes
  * ({@code Film.actorsBySplitLookup} table-arm, {@code FilmDetails.actorsByLookup} record-arm;
- * the second {@code @lookupKey} VALUES derived table narrowing the batch), and the batched
+ * the second {@code @lookupKey} VALUES derived table narrowing the batch), the batched
  * pivot child ({@code Film.titleTranslationsSplit}, the key-preserving left join with filtered
- * aggregates grouped by the idx scatter key). Seed cardinalities keep the VALUES row counts
- * stable: two {@code split_parent} rows, one customer key, and one or two film keys per pin.
+ * aggregates grouped by the idx scatter key), and the service table lift
+ * ({@code Film.castMembers}, the returned records' PKs re-projected by identity through the
+ * {@code (idx, seq, pk...)} VALUES join, ordered by the service's flatten order). Seed
+ * cardinalities keep the VALUES row counts stable: two {@code split_parent} rows, one customer
+ * key, one or two film keys per pin, and film 1's two seeded cast members.
  */
 @ExecutionTier
 class BatchedChildSqlBaselineTest {
@@ -210,6 +213,33 @@ class BatchedChildSqlBaselineTest {
                     + "left outer join \"public\".\"film_translation\" as \"titletranslationssplit_f0\" "
                     + "on \"titletranslationssplit_f0\".\"film_id\" = \"parentinput\".\"film_id\" "
                     + "group by \"parentinput\".\"idx\"");
+    }
+
+    @Test
+    void serviceTableLift_identityJoinReprojectionOrderedByServiceFlattenOrder() {
+        execute("{ filmById(film_id: [\"1\"]) { castMembers { actorId } } }");
+        assertThat(SQL_LOG)
+            .as("service table lift: the parent (lookup) statement, the service's own fixture "
+                + "statement, then the lift's re-projection joining the returned records' PKs "
+                + "by identity through the (idx, seq, pk...) VALUES table, ordered by the seq "
+                + "column so each parent bucket keeps the service's flatten order")
+            .containsExactly(
+                "select \"public\".\"film\".\"film_id\" "
+                    + "from \"public\".\"film\" "
+                    + "join (values (0, ?)) as \"filmbyidinput\" (\"idx\", \"film_id\") using (\"film_id\") "
+                    + "order by \"filmbyidinput\".\"idx\"",
+                "select \"public\".\"film_actor\".\"actor_id\", \"public\".\"film_actor\".\"film_id\", "
+                    + "\"public\".\"film_actor\".\"last_update\" "
+                    + "from \"public\".\"film_actor\" "
+                    + "where \"public\".\"film_actor\".\"film_id\" in (?) "
+                    + "order by \"public\".\"film_actor\".\"actor_id\"",
+                "select \"castmembers\".\"actor_id\", \"projectioninput\".\"idx\" as \"__idx__\" "
+                    + "from \"public\".\"film_actor\" as \"castmembers\" "
+                    + "join (values (0, 0, ?, ?), (0, 1, ?, ?)) as \"projectioninput\" "
+                    + "(\"idx\", \"seq\", \"actor_id\", \"film_id\") "
+                    + "on (\"castmembers\".\"actor_id\" = \"projectioninput\".\"actor_id\" "
+                    + "and \"castmembers\".\"film_id\" = \"projectioninput\".\"film_id\") "
+                    + "order by \"projectioninput\".\"seq\"");
     }
 
     private static void execute(String query) {
