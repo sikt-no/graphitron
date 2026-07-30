@@ -144,14 +144,14 @@ public class GraphQLRewriteGenerator {
      * specs is a transient reference the run discards. The SDL resource is not a compilation unit and
      * appears in neither map.
      *
-     * <p>{@code launchers} is the launcher command relation the run rendered from: one row per
-     * covered coordinate (see {@link no.sikt.graphitron.plan.LauncherRelation}). The
-     * bidirectional closure oracle joins it against {@code emittedUnits}, so the oracle reads
-     * what the run actually rendered from, never a re-derivation.
+     * <p>{@code plan} is the {@link EmitPlan} the run rendered from, whole: every relation the
+     * producers minted, never a re-derivation. The bidirectional closure oracle joins
+     * {@code plan().launchers()} against {@code emittedUnits}, and the recompile graph is
+     * projected from the same plan, so both read what the run actually rendered from.
      */
     public record GenerationResult(Set<Path> emitted, Set<Path> changed,
                                    Map<String, TypeSpec> emittedUnits, Set<String> changedUnits,
-                                   no.sikt.graphitron.plan.LauncherRelation launchers) {}
+                                   EmitPlan plan) {}
 
     /**
      * Mutable per-run accumulator for the emitted set and the changed-file delta, tracked both by path
@@ -391,7 +391,7 @@ public class GraphQLRewriteGenerator {
             Collections.unmodifiableSet(emittedThisRun.changed),
             Collections.unmodifiableMap(emittedThisRun.emittedUnits),
             Collections.unmodifiableSet(emittedThisRun.changedUnits),
-            plan.launchers()
+            plan
         );
         // Only the dev-loop incremental compiler needs the compile-dependency graph; production
         // generate() skips the build. See the sourcing seam in CompileDependencyGraph.

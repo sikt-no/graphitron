@@ -34,8 +34,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * The level-2 bidirectional closure oracle over the launcher relation. The level-1 oracle
  * ({@link MethodClosureOracleTest}) proves every callee name resolves to an emitted method;
- * this oracle adds the relation direction: joining the relation the run rendered from (surfaced
- * on {@code GraphQLRewriteGenerator.GenerationResult#launchers()}, never a re-derivation)
+ * this oracle adds the relation direction: joining the relation the run rendered from (read off
+ * the {@code GenerationResult}'s carried plan, {@code plan().launchers()}, never a re-derivation)
  * against the same emit walk and against the classified model, it asserts that
  *
  * <ul>
@@ -114,7 +114,7 @@ class LauncherRelationClosureTest {
             Map.of());
         var result = new GraphQLRewriteGenerator(ctx).generate();
         walk = EmittedMethodClosure.walk(result.emittedUnits());
-        launchers = result.launchers();
+        launchers = result.plan().launchers();
         emittedUnits = result.emittedUnits();
     }
 
