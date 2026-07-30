@@ -1455,17 +1455,7 @@ class TypeFetcherGeneratorTest {
             String parentType, String name, boolean isList, ServiceSourceShape shape, no.sikt.graphitron.javapoet.TypeName perKeyType) {
         var returnWrapper = isList ? (FieldWrapper) listWrapper() : single();
         var returnType = new no.sikt.graphitron.rewrite.model.ReturnTypeRef.ScalarReturnType("String", returnWrapper);
-        var container = shape.mapped()
-            ? no.sikt.graphitron.rewrite.model.LoaderRegistration.Container.MAPPED_SET
-            : no.sikt.graphitron.rewrite.model.LoaderRegistration.Container.POSITIONAL_LIST;
-        var method = TestFixtures.staticServiceMethodRef(
-            "no.example.Service", "getValues", perKeyType,
-            List.of(TestFixtures.sourced("keys", shape.wrap(), shape.columns(), container)));
-        return new no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField(
-            parentType, name, null, returnType, List.of(), method,
-            TestFixtures.serviceSourceKey(shape.wrap(), shape.columns()),
-            TestFixtures.loaderRegistration(returnType, shape.mapped(), false),
-            java.util.Optional.empty());
+        return serviceRecordField(parentType, name, "getValues", returnType, shape, perKeyType);
     }
 
     private static no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField recordBackedServiceRecordField(
@@ -1473,15 +1463,29 @@ class TypeFetcherGeneratorTest {
         var returnWrapper = isList ? (FieldWrapper) listWrapper() : single();
         var returnType = new no.sikt.graphitron.rewrite.model.ReturnTypeRef.ResultReturnType(
             "FilmDetails", returnWrapper, fqBackingClass);
+        return serviceRecordField(parentType, name, "getDetails", returnType, shape,
+            ClassName.bestGuess(fqBackingClass));
+    }
+
+    private static no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField serviceRecordField(
+            String parentType, String name, String methodName,
+            no.sikt.graphitron.rewrite.model.ReturnTypeRef returnType, ServiceSourceShape shape,
+            no.sikt.graphitron.javapoet.TypeName perKeyType) {
         var container = shape.mapped()
             ? no.sikt.graphitron.rewrite.model.LoaderRegistration.Container.MAPPED_SET
             : no.sikt.graphitron.rewrite.model.LoaderRegistration.Container.POSITIONAL_LIST;
+        var sourceKey = TestFixtures.serviceSourceKey(shape.wrap(), shape.columns());
+        // The method ref declares the outer loader-container wrap over the per-key V, the
+        // shape the classifier acceptance guarantees for every corpus member (the validator's
+        // strict return-type equality); the rows method returns it verbatim.
+        var outerReturn = no.sikt.graphitron.rewrite.model.RowsMethodShape.outerRowsReturnType(
+            perKeyType, returnType, sourceKey.keyElementType(), shape.mapped());
         var method = TestFixtures.staticServiceMethodRef(
-            "no.example.Service", "getDetails", ClassName.bestGuess(fqBackingClass),
+            "no.example.Service", methodName, outerReturn,
             List.of(TestFixtures.sourced("keys", shape.wrap(), shape.columns(), container)));
         return new no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField(
             parentType, name, null, returnType, List.of(), method,
-            TestFixtures.serviceSourceKey(shape.wrap(), shape.columns()),
+            sourceKey,
             TestFixtures.loaderRegistration(returnType, shape.mapped(), false),
             java.util.Optional.empty());
     }

@@ -5,8 +5,10 @@ import graphql.schema.FieldCoordinates;
 import java.util.Objects;
 
 /**
- * One row of the launcher command relation: a root SELECT launcher, the named
- * {@code rows<Field>(dsl, env)} unit owning one coordinate's whole query composition as data.
+ * One row of the launcher command relation: the named {@code rows<Field>}-shaped unit owning
+ * one coordinate's whole payload production as data — a query composition for the SQL-composing
+ * source arms, a delegated service invocation (plus, for the table arm, its re-projection) for
+ * the {@code @service} arms.
  * The relation is keyed by {@link #coordinate}; the fetcher entry point owns connection
  * acquisition and invocation strategy, calls the launcher with the resolved {@code DSLContext},
  * and has nothing else left to say, so root and child stop building the same query two ways.
@@ -106,6 +108,27 @@ public record LauncherCommand(
                     "a batched-lookup launcher never paginates; lookup fields must not return"
                     + " a connection");
             }
+        }
+        // The service arms and the LoaderDelegated result pin each other in both directions:
+        // the service payload derives wholly from the source and delivery axes, so the result
+        // slot is typed vacuity read at no site, and no other source may claim it. Never
+        // Fanned (the @tenantFanOut ladder rejects the @service pair at classify time). The
+        // Connection cell has no child-level classifier mirror (only the root @service
+        // rejection exists); a child @service declared @asConnection classifies today with the
+        // Connection wrapper riding only the loader's valueIsList fact, a recorded mirror gap
+        // beside the batched lookup's two.
+        boolean serviceSource = source instanceof LaunchSource.ServiceCall
+            || source instanceof LaunchSource.ServiceTableLift;
+        if (serviceSource != result instanceof ResultShape.LoaderDelegated) {
+            throw new IllegalArgumentException(
+                "the service arms and the LoaderDelegated result imply each other; got "
+                + source.getClass().getSimpleName() + " with "
+                + result.getClass().getSimpleName());
+        }
+        if (serviceSource && !(tenancy instanceof TenantStrategy.Single)) {
+            throw new IllegalArgumentException(
+                "a service-delegating launcher runs single-tenant (the fan-out ladder rejects"
+                + " @tenantFanOut with @service); got " + tenancy.getClass().getSimpleName());
         }
         // The batched pivot runs single-tenant and answers one record per key: the fan-out
         // ladder's non-list rung (no.sikt.graphitron.rewrite.TenantBindingIndex) rejects

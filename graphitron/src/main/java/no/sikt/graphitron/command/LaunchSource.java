@@ -11,11 +11,14 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * How a launcher's rows are sourced and projected: the FROM clause's origin and the select
- * list's derivation, one axis because the two co-vary (a routine chain's projection targets the
- * terminus alias, never a declared table local; the discriminated arm has no single projection
- * unit at all). Absorbing both facts into the arm keeps the illegal cells unrepresentable and
- * spares the command a table slot whose meaning would change per arm.
+ * How a launcher's rows are sourced and projected: for the SQL-composing arms, the FROM
+ * clause's origin and the select list's derivation, one axis because the two co-vary (a routine
+ * chain's projection targets the terminus alias, never a declared table local; the discriminated
+ * arm has no single projection unit at all); for the {@code @service} arms, the developer
+ * method whose invocation IS the sourcing ({@link ServiceCall} delegates outright,
+ * {@link ServiceTableLift} re-projects the returned records). Absorbing both facts into the arm
+ * keeps the illegal cells unrepresentable and spares the command a table slot whose meaning
+ * would change per arm.
  */
 public sealed interface LaunchSource {
 
@@ -106,6 +109,44 @@ public sealed interface LaunchSource {
             Objects.requireNonNull(correlation, "correlation");
             Objects.requireNonNull(mapping, "mapping");
             Objects.requireNonNull(inputRows, "inputRows");
+        }
+    }
+
+    /**
+     * A {@code @service} record child: the rows method delegates outright to the developer's
+     * method, whose declared return type IS the rows method's return type (the classifier
+     * acceptance enforces strict equality with the loader-container wrap, so the borrowed
+     * {@link #method} carries the shape and no derivation runs here). Whether a {@code dsl}
+     * local exists at all derives from the borrowed
+     * {@code method().callShape()} (the one arm where the rendered method may bind no
+     * {@code DSLContext}); the call expression itself is shell-composed argument assembly
+     * handed to the renderer as a fragment, the dsl declaration's carve-out. The rendered body
+     * deliberately has no empty-keys gate: adding one to a service rows method would change
+     * behaviour (the developer method owns the empty batch).
+     */
+    record ServiceCall(no.sikt.graphitron.rewrite.model.MethodRef.Service method)
+            implements LaunchSource {
+        public ServiceCall {
+            Objects.requireNonNull(method, "method");
+        }
+    }
+
+    /**
+     * A {@code @service} table child: the developer's method produces real table records; the
+     * rows method lifts them back by re-projecting each returned record's primary key by
+     * identity through {@link #projection}'s {@code $project} over an {@code (idx, seq, pk...)}
+     * VALUES join against {@link #table}, so multiset sub-fields resolve off the projected row
+     * where the verbatim service return carried only stored columns. The {@code seq} ordering
+     * (each parent bucket keeps the service's flatten order) and the {@code dsl} local are
+     * arm-entailed: the lift always SELECTs. Like {@link ServiceCall}, the call expression is
+     * the shell's fragment and the body has no empty-keys gate.
+     */
+    record ServiceTableLift(no.sikt.graphitron.rewrite.model.MethodRef.Service method,
+            TableRef table, UnitRef projection) implements LaunchSource {
+        public ServiceTableLift {
+            Objects.requireNonNull(method, "method");
+            Objects.requireNonNull(table, "table");
+            Objects.requireNonNull(projection, "projection");
         }
     }
 

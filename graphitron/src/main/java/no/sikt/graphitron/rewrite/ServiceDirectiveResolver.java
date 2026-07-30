@@ -302,14 +302,14 @@ final class ServiceDirectiveResolver {
 
     /**
      * Strict return-type validation for child {@code @service} fields. Mirrors the structural
-     * shape {@code TypeFetcherGenerator.buildServiceRowsMethod} produces for the rows method:
+     * shape the rendered rows method carries:
      * {@code Map<KeyType, V>} or {@code Map<KeyType, List<V>>} for mapped variants,
      * {@code List<V>} or {@code List<List<V>>} for positional variants. The developer's method
      * return type must equal that expected outer type exactly (per {@link TypeName#equals}); a
      * mismatch is rejected at classify time rather than left to surface as a {@code javac} error
      * on the generated {@code return ServiceClass.method(...)} line. The construction defers to
-     * {@link RowsMethodShape}; the emitter calls the same helper for {@code .returns(...)}, so
-     * the two cannot drift.
+     * {@link RowsMethodShape}; this acceptance is what lets the launcher renderer's delegate
+     * arm declare the developer method's own return type verbatim, so the two cannot drift.
      *
      * <p>Returns {@code null} (skip) when the schema carries no derivable shape
      * ({@link ReturnTypeRef.ResultReturnType} with no backing class,

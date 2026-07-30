@@ -28,10 +28,9 @@ public final class ArgCallEmitter {
     /**
      * Builds the argument list for a method-backed call, iterating {@link MethodRef#params()}
      * in declaration order and emitting one expression per {@link ParamSource} variant
-     * (see {@link #emitForParam}). Both call sites are child {@code @service} arms: the
-     * {@code ServiceTableField} lift-back call feeding
-     * {@link SplitRowsMethodEmitter#buildServiceTableLift}, and the
-     * {@code ServiceRecordField} rows-method body. Root service permits emit their calls
+     * (see {@link #emitForParam}). Both call sites are child {@code @service} arms in
+     * {@code TypeFetcherGenerator}'s dispatch, composing the shell's service-call fragment for
+     * the launcher renderer's lift and delegate arms. Root service permits emit their calls
      * elsewhere and do not reach this helper.
      *
      * <p>There is no implicit first argument: the helper emits exactly the comma-separated

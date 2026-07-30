@@ -92,7 +92,12 @@ class PackageImportDirectionTest {
         // (container and dispatch). Both were already in the component closure via
         // ParentCorrelation; naming them here admits the direct import the Batched arm carries.
         "no.sikt.graphitron.rewrite.model.SourceKey",
-        "no.sikt.graphitron.rewrite.model.LoaderRegistration"
+        "no.sikt.graphitron.rewrite.model.LoaderRegistration",
+        // A derivation helper rather than a ref: the four-cell loader-container wrap
+        // (Map/List by per-key list-ness) has one formula, and the launcher renderer's
+        // service arms read the same one the classifier's return-type equality check reads,
+        // so the two hosts cannot drift.
+        "no.sikt.graphitron.rewrite.model.RowsMethodShape"
     );
 
     /**
@@ -126,6 +131,7 @@ class PackageImportDirectionTest {
         "no.sikt.graphitron.rewrite.model.ParentCorrelation",
         "no.sikt.graphitron.rewrite.model.ParticipantRef",
         "no.sikt.graphitron.rewrite.model.RoutineRef",
+        "no.sikt.graphitron.rewrite.model.RowsMethodShape",
         "no.sikt.graphitron.rewrite.model.SourceKey",
         "no.sikt.graphitron.rewrite.model.TableExpr",
         "no.sikt.graphitron.rewrite.model.TableRef"

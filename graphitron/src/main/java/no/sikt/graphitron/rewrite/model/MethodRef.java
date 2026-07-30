@@ -194,6 +194,21 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
     sealed interface CallShape permits CallShape.Static, CallShape.InstanceWithDslHolder {
 
         /**
+         * Whether the surrounding generated method needs a {@code DSLContext dsl} local to host
+         * this call: the {@link Static} arm's pre-resolved flag, or (for the holder arm) whether
+         * any constructor parameter binds from {@link ParamSource.DslContext}. The one home of
+         * the static-vs-instance fork; every emit site reads this rather than re-stating the
+         * disjunction.
+         */
+        default boolean needsDsl() {
+            return switch (this) {
+                case Static s -> s.needsDslLocal();
+                case InstanceWithDslHolder holder -> holder.ctorParams().stream()
+                    .anyMatch(p -> p.source() instanceof ParamSource.DslContext);
+            };
+        }
+
+        /**
          * Static utility method. Emits {@code ClassName.method(...)} at the call site.
          * {@code needsDslLocal} reflects whether any parameter has
          * {@link ParamSource.DslContext}.

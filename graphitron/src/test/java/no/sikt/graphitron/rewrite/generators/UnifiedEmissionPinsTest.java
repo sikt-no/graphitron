@@ -11,20 +11,19 @@ import java.util.regex.Pattern;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Structural pins for the unified batched-rows seam: post-flip, every batched-rows DataFetcher emission site routes through
- * {@link DataLoaderFetcherEmitter#build}, and every batched-rows method emission site routes
- * through {@link RowsMethodSkeleton#build}. The pins enforce the unified-seam invariant the
- * spec promises in its Tests section
- * ({@code fetcherEmitter_unifiedDispatch}, {@code rowsMethodEmitter_unifiedSkeleton}).
+ * Structural pins for the unified emission seams: every batched-rows DataFetcher emission site
+ * routes through {@link DataLoaderFetcherEmitter#build}, and every launcher (root and rows
+ * method alike) renders through {@code RootLauncherRenderer.render} over a launcher command row
+ * ({@code fetcherEmitter_unifiedDispatch}, {@code launcherRenderer_unifiedRenderSites}).
  *
  * <p>Implementation: source-file scan. The unified-emitter call count is asserted against the
  * generators package's source files (excluding the unified emitters themselves). A handcrafted
  * regression — a fourth DataFetcher builder that bypasses {@code DataLoaderFetcherEmitter.build},
- * or a fifth rows-method builder that bypasses {@code RowsMethodSkeleton.build} — removes one
- * call site, drops the count, and trips the assertion.
+ * or a launcher body built inline instead of through the renderer — moves one
+ * call site, moves the count, and trips the assertion.
  *
- * <p>If a new emission site is legitimately added (e.g. a sixth rows-method body permit for
- * {@code ResultRowWalk}), update the expected count here; the deliberate moment of
+ * <p>If a new emission site is legitimately added, update the expected count here; the
+ * deliberate moment of
  * touching this test is the architectural review point the pin is designed to create.
  *
  * <p>Note: this pin doesn't cover {@link MultiTablePolymorphicEmitter}'s batched fetcher
@@ -61,23 +60,25 @@ class UnifiedEmissionPinsTest {
     }
 
     @Test
-    void rowsMethodEmitter_unifiedSkeleton() throws IOException {
-        // Every rows-method MethodSpec emit site in the generators package routes through
-        // RowsMethodSkeleton.build. Current sites (2):
-        // TypeFetcherGenerator.buildServiceRowsMethod (ServiceRecordField verbatim return) plus
-        // SplitRowsMethodEmitter.buildServiceTableLift (ServiceTableField lift-back
-        // re-projection). Together they cover the one remaining RowsMethodBody permit
-        // (Service). The batched table, lookup and pivot rows methods no longer route here:
-        // they render through the launcher-command path (RootLauncherRenderer over
-        // LauncherCommands' batched rows).
-        long unifiedCalls = countAcrossGenerators(
-            Pattern.compile("\\bRowsMethodSkeleton\\.build\\b"),
-            "RowsMethodSkeleton.java");
-        assertThat(unifiedCalls)
-            .as("Every R38 rows-method emit site outside RowsMethodSkeleton itself routes through "
-                + "RowsMethodSkeleton.build. A handcrafted bypass replaces one call here with "
-                + "inline rows-method MethodSpec construction; the count drop trips this pin.")
-            .isEqualTo(2);
+    void launcherRenderer_unifiedRenderSites() throws IOException {
+        // The rows-method skeleton retired with the service fold: every rows-method (and root
+        // launcher) body now renders through RootLauncherRenderer.render over a launcher
+        // command row. This pin is the skeleton pin's successor with a live failure mode
+        // (asserting zero RowsMethodSkeleton calls after its deletion could never fail again):
+        // it counts the render call sites in the generators package. Current sites (9), all in
+        // TypeFetcherGenerator's dispatch: the four root arms (table, routine, interface,
+        // lookup) and the five child arms (batched table, batched lookup, batched pivot,
+        // service table lift, service record delegate). A handcrafted bypass replaces one call
+        // with inline MethodSpec construction and drops the count; a legitimately new launcher
+        // family raises it, and touching this number is the review point.
+        long renderSites = countAcrossGenerators(
+            Pattern.compile("RootLauncherRenderer\\s*\\.render\\("),
+            "RootLauncherRenderer.java");
+        assertThat(renderSites)
+            .as("Every launcher emit site in generators/ routes through "
+                + "RootLauncherRenderer.render; a count move in either direction is a "
+                + "deliberate edit here")
+            .isEqualTo(9);
     }
 
     private static long countAcrossGenerators(Pattern pattern, String excludeFile) throws IOException {

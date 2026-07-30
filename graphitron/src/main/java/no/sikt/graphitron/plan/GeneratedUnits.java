@@ -136,6 +136,19 @@ public final class GeneratedUnits {
     }
 
     /**
+     * {@code <Parent>Fetchers#load<Field>}: a {@code @service} child coordinate's launcher
+     * unit, the DataLoader-backed method delegating to (or lifting back from) the developer's
+     * method. The emitted name predates the seam and is kept, so the launcher-name formula
+     * forks on the row's kind here, in the one minting locus, exactly like
+     * {@link #lookupMethod}. The model-side {@code rowsMethodName()} override on the service
+     * leaves spells the same formula for the loader-lambda call and the reentry registry; the
+     * dispatch drift-check binds the pair until the registry retires.
+     */
+    public UnitMethodRef loadMethod(String parentTypeName, String fieldName) {
+        return new UnitMethodRef(fetchers(parentTypeName), "load" + upperCamel(fieldName));
+    }
+
+    /**
      * {@code <Parent>Fetchers#lookup<Field>}: a keyed-lookup coordinate's launcher unit. The
      * emitted name predates the seam (the lookup root was the one root path that already
      * delegated to a named unit) and is kept as signed off on the launcher item, so the

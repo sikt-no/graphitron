@@ -23,7 +23,6 @@ import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.BatchKeyField;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
-import no.sikt.graphitron.rewrite.model.RowsMethodBody;
 import no.sikt.graphitron.rewrite.model.KeyLift;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.CallParam;
@@ -525,18 +524,63 @@ public class TypeFetcherGenerator {
                     // Lift-back projection. The loader value is the projected Record (carrying
                     // the multiset @reference columns), not the developer-returned XRecord; the lift
                     // rows-method calls the service, then re-projects the returned records by identity
-                    // through Type.$project(...). See SplitRowsMethodEmitter.buildServiceTableLift.
+                    // through Type.$project(...). The call expression is composed here (argument
+                    // extraction rides this context's per-class helper naming) and handed to the
+                    // launcher renderer's service lift arm as the shell's fragment.
                     var stfService = (MethodRef.Service) stf.method();
                     CodeBlock stfServiceCall = CodeBlock.of("$L.$L($L)",
                         serviceCallTarget(stfService, ClassName.bestGuess(stf.method().className())),
                         stf.method().methodName(),
                         ArgCallEmitter.buildMethodBackedCallArgs(ctx, stf.method(), null, CodeBlock.of("keys")));
                     builder.addMethod(buildServiceDataFetcher(ctx, stf.name(), stf, stf.method(), stf.returnType(), parentTable, RECORD, className, outputPackage, stf.errorChannel()));
-                    builder.addMethod(SplitRowsMethodEmitter.buildServiceTableLift(ctx, stf, stfServiceCall, outputPackage));
+                    var liftRow = launchers.rowFor(stf.parentTypeName(), stf.name())
+                        .orElseThrow(() -> new IllegalStateException(
+                            "Graphitron generator bug (service table child dispatch): coordinate '"
+                            + stf.qualifiedName() + "' has no launcher row;"
+                            + " the producer's membership and this dispatch have drifted"));
+                    // The command-mint seam still commits the reentry MethodCommand (the
+                    // closure oracle's input, retiring with the registry); the committed
+                    // name and the row's ref are one formula, drift-checked here.
+                    String mintedLiftRows = ctx.rowsDeclarationName(stf);
+                    if (!mintedLiftRows.equals(liftRow.unit().methodName())) {
+                        throw new IllegalStateException(
+                            "Graphitron generator bug (service table child dispatch): the minted"
+                            + " reentry name '" + mintedLiftRows + "' and the row's ref '"
+                            + liftRow.unit().methodName() + "' disagree for '"
+                            + stf.qualifiedName() + "'");
+                    }
+                    builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
+                        .render(liftRow, launchers.carrierDsl(),
+                            TenantDslEmitter.resolve(ctx, stf, outputPackage).declaration(),
+                            stfServiceCall));
                 }
                 case ChildField.ServiceRecordField srf -> {
                     builder.addMethod(buildServiceDataFetcher(ctx, srf.name(), srf, srf.method(), srf.returnType(), parentTable, srf.elementType(), className, outputPackage, srf.errorChannel()));
-                    builder.addMethod(buildServiceRowsMethod(ctx, srf, srf.method(), srf.returnType(), srf.elementType(), srf.parentTypeName(), outputPackage));
+                    var srfService = (MethodRef.Service) srf.method();
+                    CodeBlock srfServiceCall = CodeBlock.of("$L.$L($L)",
+                        serviceCallTarget(srfService, ClassName.bestGuess(srf.method().className())),
+                        srf.method().methodName(),
+                        ArgCallEmitter.buildMethodBackedCallArgs(ctx, srf.method(), null, CodeBlock.of("keys")));
+                    var delegateRow = launchers.rowFor(srf.parentTypeName(), srf.name())
+                        .orElseThrow(() -> new IllegalStateException(
+                            "Graphitron generator bug (service record child dispatch): coordinate '"
+                            + srf.qualifiedName() + "' has no launcher row;"
+                            + " the producer's membership and this dispatch have drifted"));
+                    // Same one drift-check seam as every batched arm: the seam commits a
+                    // MethodCommand only for the reentry (table) sibling and returns the name
+                    // either way, so both service arms bind minted name and row ref one way.
+                    String mintedDelegateRows = ctx.rowsDeclarationName(srf);
+                    if (!mintedDelegateRows.equals(delegateRow.unit().methodName())) {
+                        throw new IllegalStateException(
+                            "Graphitron generator bug (service record child dispatch): the minted"
+                            + " reentry name '" + mintedDelegateRows + "' and the row's ref '"
+                            + delegateRow.unit().methodName() + "' disagree for '"
+                            + srf.qualifiedName() + "'");
+                    }
+                    builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
+                        .render(delegateRow, launchers.carrierDsl(),
+                            TenantDslEmitter.resolve(ctx, srf, outputPackage).declaration(),
+                            srfServiceCall));
                 }
                 case ChildField.BatchedTableField btf -> {
                     // One fetcher builder for both source shapes: the stored
@@ -1632,21 +1676,14 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Decides whether the surrounding method needs a {@code DSLContext dsl} local. Single source
-     * of truth for the static-vs-instance fork; both {@link #buildServiceFetcherCommon} and
-     * {@link #buildServiceRowsMethod} route through here so the disjunction lives in one place.
-     * The {@link MethodRef.CallShape.Static#needsDslLocal()} flag is computed once at classify
-     * time inside {@code ServiceCatalog.reflectServiceMethod} (any param has
-     * {@link no.sikt.graphitron.rewrite.model.ParamSource.DslContext}); the
-     * {@link MethodRef.CallShape.InstanceWithDslHolder} arm always needs the local because the
-     * holder ctor takes the {@code DSLContext} regardless of the method's param list.
+     * Decides whether the surrounding method needs a {@code DSLContext dsl} local. Delegates to
+     * {@link MethodRef.CallShape#needsDsl()}, the one home of the static-vs-instance fork (the
+     * launcher renderer's service arm reads the same method), kept as a named local seam for
+     * {@link #buildServiceFetcherCommon} and the unit-tier exercise in
+     * {@code MethodRefCallShapeTest}.
      */
     static boolean needsDsl(MethodRef.CallShape callShape) {
-        return switch (callShape) {
-            case MethodRef.CallShape.Static s -> s.needsDslLocal();
-            case MethodRef.CallShape.InstanceWithDslHolder holder ->
-                holder.ctorParams().stream().anyMatch(p -> p.source() instanceof ParamSource.DslContext);
-        };
+        return callShape.needsDsl();
     }
 
     /** Whether any flattened handler on the channel is a {@code ValidationHandler}. */
@@ -4410,9 +4447,9 @@ public class TypeFetcherGenerator {
      * {@code keys}. Same framing family as the batched rows methods: the unit resolves its own
      * {@code DSLContext} through the per-class {@code graphitronContext} helper, so it stands
      * alone as a seam (the re-projection is independently assertable),
-     * but keyed by the write's key record(s) rather than DataLoader keys, so it does not ride
-     * {@code RowsMethodSkeleton}'s empty-input gate (a null/empty key set is handled by the
-     * fetcher's no-match guard before the call).
+     * but keyed by the write's key record(s) rather than DataLoader keys, so it carries no
+     * empty-input gate of its own (a null/empty key set is handled by the fetcher's no-match
+     * guard before the call).
      */
     private static MethodSpec buildDmlReentryRowsMethod(
             TypeFetcherEmissionContext ctx,
@@ -5747,69 +5784,6 @@ public class TypeFetcherGenerator {
             asyncWrapTail(valueType, outputPackage, errorChannel),
             dataLoaderSyncCatchBody(valueType, outputPackage, errorChannel),
             TenantDslEmitter.loaderNameDeclaration(ctx, fieldName, "name", outputPackage));
-    }
-
-    /**
-     * Emits the rows method backing a {@code ServiceTableField} or {@code ServiceRecordField}
-     * DataLoader. The body shapes as {@code [DSLContext dsl = ...; ] return ServiceClass.method(<args>);}
-     * — argument assembly walks {@link MethodRef#params()} via
-     * {@link ArgCallEmitter#buildMethodBackedCallArgs}, with {@code Sources → keys},
-     * {@code DslContext → dsl} local, {@code Arg}/{@code Context} via the existing extraction
-     * path. The developer's method returns the loader's expected {@code Map}/{@code List}
-     * shape directly; graphql-java resolves columns off whatever records or values the developer
-     * returns, so no per-record projection step is needed.
-     *
-     * <p>Signature follows the batch-loader contract:
-     * <ul>
-     *   <li>{@link LoaderRegistration.Container#POSITIONAL_LIST}: {@code keys} is
-     *       {@code List<KeyType>}; return is {@code List<List<V>>} (list field) or
-     *       {@code List<V>} (single).</li>
-     *   <li>{@link LoaderRegistration.Container#MAPPED_SET}: {@code keys} is
-     *       {@code Set<KeyType>}; return is {@code Map<KeyType, List<V>>} (list field) or
-     *       {@code Map<KeyType, V>} (single).</li>
-     * </ul>
-     *
-     * <p>{@code V} is {@code tb.table().recordClass()} for {@code ServiceTableField} (the
-     * jOOQ-generated {@code XRecord} class for the field's bound table) and the per-key
-     * element type for {@code ServiceRecordField} (caller passes {@code srf.elementType()}).
-     */
-    private static MethodSpec buildServiceRowsMethod(
-            TypeFetcherEmissionContext ctx,
-            BatchKeyField bkf,
-            MethodRef method,
-            ReturnTypeRef schemaReturnType,
-            TypeName perKeyType,
-            String parentTypeName,
-            String outputPackage) {
-
-        SourceKey sourceKey = bkf.sourceKey();
-        LoaderRegistration registration = bkf.loaderRegistration();
-        boolean isMapped = registration.container() == LoaderRegistration.Container.MAPPED_SET;
-        ClassName containerClass = isMapped ? SET : LIST;
-        TypeName keysContainerType = ParameterizedTypeName.get(containerClass, sourceKey.keyElementType());
-        TypeName returnType = no.sikt.graphitron.rewrite.model.RowsMethodShape
-            .outerRowsReturnType(perKeyType, schemaReturnType, sourceKey.keyElementType(), isMapped);
-
-        var serviceClass = ClassName.bestGuess(method.className());
-        var service = (MethodRef.Service) method;
-        boolean needsDsl = needsDsl(service.callShape());
-        CodeBlock callTarget = serviceCallTarget(service, serviceClass);
-
-        CodeBlock body = CodeBlock.builder()
-            .addStatement("return $L.$L($L)",
-                callTarget,
-                method.methodName(),
-                ArgCallEmitter.buildMethodBackedCallArgs(ctx, method, null, CodeBlock.of("keys")))
-            .build();
-
-        return RowsMethodSkeleton.build(
-            bkf.rowsMethodName(),
-            returnType,
-            keysContainerType,
-            bkf instanceof no.sikt.graphitron.rewrite.model.OutputField of
-                ? TenantDslEmitter.resolve(ctx, of, outputPackage).declaration()
-                : TenantDslEmitter.singleTenantDeclaration(ctx),
-            new RowsMethodBody.Service(body, needsDsl));
     }
 
     // -----------------------------------------------------------------------

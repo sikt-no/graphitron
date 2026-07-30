@@ -75,6 +75,12 @@ public final class LauncherCommands {
                 if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.BatchedPivotField bpf) {
                     rows.add(batchedPivotRow(bpf, units));
                 }
+                if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField stf) {
+                    rows.add(serviceTableRow(stf, units));
+                }
+                if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField srf) {
+                    rows.add(serviceRecordRow(srf, units));
+                }
             }
         }
         var carrierDsl = schema.tenantScopes() instanceof TenantScopes.Configured
@@ -154,6 +160,10 @@ public final class LauncherCommands {
                     new TenantStrategy.Single(), units));
             } else if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.BatchedPivotField bpf) {
                 rows.add(batchedPivotRow(bpf, units));
+            } else if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField stf) {
+                rows.add(serviceTableRow(stf, units));
+            } else if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField srf) {
+                rows.add(serviceRecordRow(srf, units));
             }
         }
         return new LauncherRelation(rows, CarrierDsl.ENV_ACQUIRED);
@@ -411,6 +421,69 @@ public final class LauncherCommands {
             new Invocation.Batched(bpf.sourceKey(), bpf.loaderRegistration()),
             new TenantStrategy.Single(),
             new ResultShape.SingleRecord());
+    }
+
+    /**
+     * The {@code @service} table child's row: the source arm carries the developer's method
+     * ref, the returned table and the projection unit the lift re-projects through; the
+     * delivery arm carries the key and loader facts. No WHERE slot (the classifier constructs
+     * the leaf with an empty filter surface); the result slot is the service arms' typed
+     * vacuity. The key facts are validator-guaranteed present for the table leaf (a
+     * table-bound {@code @service} without a Sources parameter is rejected).
+     */
+    private static LauncherCommand serviceTableRow(
+            no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField stf, GeneratedUnits units) {
+        return new LauncherCommand(
+            units.loadMethod(stf.parentTypeName(), stf.name()),
+            FieldCoordinates.coordinates(stf.parentTypeName(), stf.name()),
+            new LaunchSource.ServiceTableLift(
+                (no.sikt.graphitron.rewrite.model.MethodRef.Service) stf.method(),
+                stf.returnType().table(),
+                units.typeClass(stf.returnType().returnTypeName())),
+            null,
+            new Invocation.Batched(stf.sourceKey(), stf.loaderRegistration()),
+            new TenantStrategy.Single(),
+            new ResultShape.LoaderDelegated());
+    }
+
+    /**
+     * The {@code @service} record child's row: pure delegation, so the source arm carries only
+     * the method ref, whose declared return type IS the rows method's return type (the
+     * classifier acceptance enforces the equality). Two loud production guards for the
+     * validator's recorded skip holes: a record child without a Sources parameter classifies
+     * with null key facts today (nothing rejects it; the legacy emission raised a bare NPE),
+     * and a backing-less result return skips the return-shape equality check entirely (the
+     * legacy emission wrapped the whole reflected type once more, which does not compile).
+     * Both fail here with the cause until a validator rejection lands.
+     */
+    private static LauncherCommand serviceRecordRow(
+            no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField srf, GeneratedUnits units) {
+        if (srf.sourceKey() == null || srf.loaderRegistration() == null) {
+            throw new IllegalStateException(
+                "Graphitron generator bug (service record child): coordinate '"
+                + srf.qualifiedName() + "' has no Sources parameter, so no DataLoader key"
+                + " exists; the validator accepts this shape today (a recorded mirror gap;"
+                + " the table-bound sibling is rejected) and no emission exists for it.");
+        }
+        if (no.sikt.graphitron.rewrite.model.RowsMethodShape.strictPerKeyType(srf.returnType()) == null
+                && !(srf.returnType() instanceof no.sikt.graphitron.rewrite.model.ReturnTypeRef.ScalarReturnType)) {
+            throw new IllegalStateException(
+                "Graphitron generator bug (service record child): coordinate '"
+                + srf.qualifiedName() + "' returns a shape the classifier's return-type"
+                + " equality check skips (a backing-less result type), so the developer"
+                + " method's declared return type is unverified against the loader container"
+                + " wrap; the legacy emission produced uncompilable output here. Failing at"
+                + " production keeps the gap loud until a validator rejection lands.");
+        }
+        return new LauncherCommand(
+            units.loadMethod(srf.parentTypeName(), srf.name()),
+            FieldCoordinates.coordinates(srf.parentTypeName(), srf.name()),
+            new LaunchSource.ServiceCall(
+                (no.sikt.graphitron.rewrite.model.MethodRef.Service) srf.method()),
+            null,
+            new Invocation.Batched(srf.sourceKey(), srf.loaderRegistration()),
+            new TenantStrategy.Single(),
+            new ResultShape.LoaderDelegated());
     }
 
     /**

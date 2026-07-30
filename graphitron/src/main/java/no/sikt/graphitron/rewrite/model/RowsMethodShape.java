@@ -21,12 +21,13 @@ import no.sikt.graphitron.rewrite.ScalarTypeResolver;
  *
  * <p>One source of truth for three consumers: the validator (strict-equality check on the
  * developer-declared rows-method return type at classify time, in
- * {@code ServiceDirectiveResolver}), the rows-method emitter ({@code .returns(...)} on the
- * rows method body in {@code TypeFetcherGenerator.buildServiceRowsMethod}), and the
+ * {@code ServiceDirectiveResolver}), the launcher renderer's service lift arm (the
+ * {@code Record}-projected wrap the rendered rows method returns; the delegate arm returns the
+ * developer method's own type, which the validator's equality pins to this same wrap), and the
  * data-fetcher emitter (the {@code DataLoader<K, V>} typing line built in
  * {@code TypeFetcherGenerator.buildServiceDataFetcher}, which Java generics invariance
  * forces to match the rows method's declared {@code V} exactly). This helper is the
- * implementation the validator and both emit sites share so the cross-product cannot drift.
+ * implementation the validator and the emit sites share so the cross-product cannot drift.
  */
 public final class RowsMethodShape {
 
@@ -93,7 +94,21 @@ public final class RowsMethodShape {
             ReturnTypeRef returnType,
             TypeName keyElementType,
             boolean isMapped) {
-        boolean isList = returnType.wrapper().isList();
+        return outerRowsReturnType(perKey, returnType.wrapper().isList(), keyElementType, isMapped);
+    }
+
+    /**
+     * The primitive form of {@link #outerRowsReturnType(TypeName, ReturnTypeRef, TypeName,
+     * boolean)}, taking per-key list-ness directly: the launcher renderer's service-lift arm
+     * reads it off the command's delivery facts ({@code LoaderRegistration.valueIsList()}, the
+     * same wrapper projection the classifier stored) rather than a {@link ReturnTypeRef}. One
+     * wrap formula, two access paths.
+     */
+    public static TypeName outerRowsReturnType(
+            TypeName perKey,
+            boolean isList,
+            TypeName keyElementType,
+            boolean isMapped) {
         TypeName valuePerKey = isList ? ParameterizedTypeName.get(LIST, perKey) : perKey;
         if (isMapped) {
             return ParameterizedTypeName.get(MAP, keyElementType, valuePerKey);

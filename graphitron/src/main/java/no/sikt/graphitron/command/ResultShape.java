@@ -6,8 +6,9 @@ import java.util.Objects;
  * The payload a launcher returns and its thin entry point wraps: one fact with two consumers,
  * derived once by the producer from the coordinate's cardinality and pagination so the renderer
  * reads a shape instead of deriving one. A single {@code org.jooq.Record} fetched with
- * {@code fetchOne()}, a {@code Result<Record>} fetched with {@code fetch()}, or the connection
- * carrier built over the seek/limit page query.
+ * {@code fetchOne()}, a {@code Result<Record>} fetched with {@code fetch()}, the connection
+ * carrier built over the seek/limit page query, or the typed vacuity of the service arms
+ * ({@link LoaderDelegated}), whose payload derives wholly from the source and delivery axes.
  *
  * <p>The ordering rides the shape rather than the command, because the two co-vary: a
  * single-record launcher is unordered by construction (the model's ordering contract gives
@@ -22,6 +23,17 @@ public sealed interface ResultShape {
 
     /** One record or null: the {@code fetchOne()} shape, unordered by construction. */
     record SingleRecord() implements ResultShape {}
+
+    /**
+     * The service arms' typed vacuity: a {@code @service}-delegating launcher's payload derives
+     * wholly from the source arm (the developer method's own return type, or the lift's
+     * {@code Record}-projected wrap) and the delivery arm's loader facts (container and per-key
+     * cardinality), so this arm carries no fact and is read at no site; it exists because every
+     * launcher states a result, and a dedicated empty arm keeps the fetch-shape arms' meaning
+     * pure instead of lending {@link SingleRecord}/{@link RecordList} a second, per-arm meaning.
+     * The command backstop pins it to the service sources in both directions.
+     */
+    record LoaderDelegated() implements ResultShape {}
 
     /**
      * A record list: the {@code fetch()} shape under {@link #ordering}. The slot is absent for

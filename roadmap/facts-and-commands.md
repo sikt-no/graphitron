@@ -1510,6 +1510,37 @@ R541's single-operation launchers never need it, and a general launcher cannot d
     `Film.languageByService` execution coverage; the positional cells are covered by
     generated-Java signature pins only (FetcherPipelineTest / TypeFetcherGeneratorTest), a
     reporting fact, not a new test obligation.
+  - **5c closed (2026-07-30): the service children fold and the skeleton retires.** Landed
+    exactly per the design record: `LaunchSource.ServiceCall` + `ServiceTableLift`,
+    `ResultShape.LoaderDelegated` (backstopped both ways, with the widened contract prose on
+    `LaunchSource`/`LauncherCommand`/`ResultShape`), `GeneratedUnits.loadMethod`, producer
+    arms in both walks, and the renderer's `ServiceRowsFragments` (delegate body gated on the
+    model-side `CallShape.needsDsl()`, the one home of the static-vs-instance fork, with
+    `TypeFetcherGenerator.needsDsl` now delegating; lift body ported whole with the four-cell
+    re-wrap tail and the seq-ordered identity join; the deliberate empty-keys-gate ABSENCE is
+    the class javadoc's headline). The keys parameter forks `Set<K>`/`List<K>` on the loader
+    container in one place (`BatchedRowsFragments.keysType`); the delegate arm's return type
+    is `method.returnType()` verbatim and the lift's fetched local likewise, both riding the
+    classifier's return-shape equality; the lift's outer type derives through
+    `RowsMethodShape`'s new primitive overload, with `RowsMethodShape` added to the render
+    borrow dial as a derivation helper. Census results recorded: the table arm's equality is
+    hole-free; the record arm's two skip holes (no-Sources classification with null key
+    facts, backing-less result return) are not corpus-reachable and now fail loud at
+    production with the gap named; the child-level @asConnection+@service cell has no
+    classifier mirror (gap named in the backstop comment). Both service dispatch arms
+    drift-check through the one `ctx.rowsDeclarationName` seam. Two unit fixtures that
+    declared the per-key element type as the method return (a validator-rejected shape)
+    were corrected to the accepted outer wrap. Retired: `RowsMethodBody`,
+    `RowsMethodSkeleton`, `buildServiceRowsMethod`, `buildServiceTableLift`, and
+    `SplitRowsMethodEmitter`'s last model imports (the class is now purely the
+    scatter/`parentKeyCellValue` helper host); the skeleton pin's successor counts the nine
+    `RootLauncherRenderer.render` call sites (four root arms, five child arms) instead of
+    ratcheting to an unfailable zero. All 20 SQL pins held byte-identical (the 5c prep
+    commit's lift pin among them), the service execution nets green (`castMembers`,
+    `titleUppercase`, `cityLowercase`, `languageByService` inside GraphQLQueryTest's 332),
+    3049 module tests and the full reactor green. Next: 5d, the polymorphic children
+    (`MultiTablePolymorphicEmitter`'s `__idx__`/`__rn__` copy re-points to
+    `ReservedAliases`; the `BatchKeyField` capability repair).
 
 ## The exemption lists are the grain worklist
 

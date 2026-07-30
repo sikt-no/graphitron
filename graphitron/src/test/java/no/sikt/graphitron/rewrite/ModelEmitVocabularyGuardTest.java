@@ -61,7 +61,6 @@ class ModelEmitVocabularyGuardTest {
         "QueryField.java",
         "ResolvedContextArg.java",
         "RoutineRef.java",
-        "RowsMethodBody.java",
         "RowsMethodShape.java",
         "ScalarResolution.java",
         "ServiceMethodCall.java",

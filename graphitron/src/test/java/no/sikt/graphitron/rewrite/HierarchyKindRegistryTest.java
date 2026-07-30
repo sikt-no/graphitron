@@ -49,7 +49,6 @@ import no.sikt.graphitron.rewrite.model.ReflectionError;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.RootField;
-import no.sikt.graphitron.rewrite.model.RowsMethodBody;
 import no.sikt.graphitron.rewrite.model.ScalarResolution;
 import no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError;
 import no.sikt.graphitron.rewrite.model.ServiceMethodCall;
@@ -206,7 +205,6 @@ class HierarchyKindRegistryTest {
         Map.entry(CallSiteExtraction.class, HierarchyKind.COMMAND),
         Map.entry(CallSiteCompaction.class, HierarchyKind.COMMAND),
         Map.entry(OrderBySpec.class, HierarchyKind.COMMAND),
-        Map.entry(RowsMethodBody.class, HierarchyKind.COMMAND),
         Map.entry(KeyLift.class, HierarchyKind.COMMAND),
         Map.entry(PayloadConstructionShape.class, HierarchyKind.COMMAND),
         Map.entry(LookupMapping.class, HierarchyKind.COMMAND),

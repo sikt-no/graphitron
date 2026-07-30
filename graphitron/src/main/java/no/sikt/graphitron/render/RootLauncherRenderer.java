@@ -67,6 +67,18 @@ public final class RootLauncherRenderer {
      */
     public static MethodSpec render(LauncherCommand row, CarrierDsl carrierDsl,
             CodeBlock batchedDslDeclaration) {
+        return render(row, carrierDsl, batchedDslDeclaration, CodeBlock.of(""));
+    }
+
+    /**
+     * The service overload: {@code serviceCall} is the composed
+     * {@code <target>.<method>(<args>)} expression, the second and last shell argument-assembly
+     * fragment beside the {@code dsl} declaration (the call's argument extraction rides the
+     * emission context's per-class helper naming, which the command must not hold). Ignored by
+     * every non-service row.
+     */
+    public static MethodSpec render(LauncherCommand row, CarrierDsl carrierDsl,
+            CodeBlock batchedDslDeclaration, CodeBlock serviceCall) {
         var builder = MethodSpec.methodBuilder(row.unit().methodName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(valueTypeOf(row));
@@ -102,6 +114,9 @@ public final class RootLauncherRenderer {
                             }
                             case ResultShape.Connection connection ->
                                 builder.addCode(connectionBody(anchor, connection, tableLocal, carrierDsl));
+                            case ResultShape.LoaderDelegated ignored2 -> throw new IllegalStateException(
+                                "the LoaderDelegated result belongs to the service arms; the"
+                                + " command constructor rejects the pair before rendering");
                         }
                     }
                     case TenantStrategy.Fanned fanned ->
@@ -113,6 +128,10 @@ public final class RootLauncherRenderer {
                 builder.addCode(BatchedRowsFragments.body(row, chain, batchedDslDeclaration, carrierDsl));
             case LaunchSource.PivotAggregate pivot ->
                 builder.addCode(BatchedRowsFragments.pivotBody(row, pivot, batchedDslDeclaration));
+            case LaunchSource.ServiceCall sc ->
+                builder.addCode(ServiceRowsFragments.delegateBody(sc, batchedDslDeclaration, serviceCall));
+            case LaunchSource.ServiceTableLift lift ->
+                builder.addCode(ServiceRowsFragments.liftBody(row, lift, batchedDslDeclaration, serviceCall));
             case LaunchSource.KeyedLookup lookup -> {
                 String tableLocal = TableLocal.name(lookup.table());
                 builder.addCode(TableLocal.declare(lookup.table()));
@@ -141,6 +160,9 @@ public final class RootLauncherRenderer {
                     case ResultShape.Connection ignored -> throw new IllegalStateException(
                         "a discriminated-interface launcher never paginates; the command"
                         + " constructor rejects the pair before rendering");
+                    case ResultShape.LoaderDelegated ignored -> throw new IllegalStateException(
+                        "the LoaderDelegated result belongs to the service arms; the"
+                        + " command constructor rejects the pair before rendering");
                 }
             }
         }
@@ -155,6 +177,10 @@ public final class RootLauncherRenderer {
      * emitter, so the two ends cannot disagree.
      */
     public static TypeName valueTypeOf(LauncherCommand row) {
+        if (row.source() instanceof LaunchSource.ServiceCall
+                || row.source() instanceof LaunchSource.ServiceTableLift) {
+            return ServiceRowsFragments.valueTypeOf(row);
+        }
         if (row.invocation() instanceof Invocation.Batched) {
             return BatchedRowsFragments.valueTypeOf(row);
         }
@@ -165,6 +191,9 @@ public final class RootLauncherRenderer {
             case ResultShape.RecordList ignored -> RESULT_OF_RECORD;
             case ResultShape.SingleRecord ignored -> RECORD;
             case ResultShape.Connection connection -> className(connection.carrier());
+            case ResultShape.LoaderDelegated ignored -> throw new IllegalStateException(
+                "the LoaderDelegated result belongs to the service arms, whose value type"
+                + " derives in ServiceRowsFragments; the command constructor rejects the pair");
         };
     }
 

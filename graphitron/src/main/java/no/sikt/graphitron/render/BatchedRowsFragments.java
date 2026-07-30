@@ -315,9 +315,18 @@ final class BatchedRowsFragments {
             + (carrierDsl == no.sikt.graphitron.command.CarrierDsl.ROUTED ? ", dsl" : "") + ")");
     }
 
-    /** The keys parameter's type: {@code List<K>} over the source key's element type. */
+    /**
+     * The keys parameter's type over the source key's element type: {@code Set<K>} for the
+     * mapped loader container (the developer's {@code Set}-declared {@code @sources} param),
+     * {@code List<K>} for the positional one, the same fact the entry point's loader dispatch
+     * reads off the borrowed registration.
+     */
     static TypeName keysType(no.sikt.graphitron.command.Invocation.Batched batched) {
-        return ParameterizedTypeName.get(LIST_CN, batched.sourceKey().keyElementType());
+        ClassName container = batched.loader().container()
+                == no.sikt.graphitron.rewrite.model.LoaderRegistration.Container.MAPPED_SET
+            ? ClassName.get("java.util", "Set")
+            : LIST_CN;
+        return ParameterizedTypeName.get(container, batched.sourceKey().keyElementType());
     }
 
     private record PreludeBindings(
