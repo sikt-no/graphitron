@@ -1958,10 +1958,46 @@ R541's single-operation launchers never need it, and a general launcher cannot d
       print the live numbers); re-recording fresh matrix figures in the body would set up the
       identical rot one slice later. The axis-pair census is re-derived after the fixtures
       land, as the instrument, not as prose.
+  - **Slice 6 landed (2026-07-30).** Test-tree only (zero main-source changes, so the SQL
+    baselines could not move and did not). The enforcer: `ExemptionRegistry` holds five
+    obligation rows (variant-coverage output leaves against the corpus walk, input leaves
+    against the enum cases, the Operation arms, the source-shape corpus obligation, the
+    LSP-projection annotation obligation), each with memoized domain and covered-set suppliers
+    and its exemption map, asserted by one shared helper (in-domain, still-uncovered, closure
+    equality); `ExemptionRegistryTest` runs the four corpus-backed rows at pipeline tier plus
+    the reflective discovery guard (an exemption map in the test tree that is not a registry
+    row fails), and `ProjectionCoverageTest` asserts its row at unit tier through the same
+    helper. Blockers are single-homed constants shared across obligations. `Exemption` is the
+    sealed taxonomy with compile-checked `demonstratedBy` covering-test refs; the
+    rides-another-rows-key category is retired un-replaced (its single member was mis-triaged;
+    the warning lives in invariant 2). The corpus walker descends ridden lists
+    (`NestingField.nestedFields()`, `PivotSpec.slots()`) via
+    `ClassifiedHarness.forEachWithRiddenFields`. Closures, forced by the ratchet: eleven of
+    the fifteen `NO_CASE_REQUIRED` rows closed (the batched polymorphic pair via new
+    list-cardinality interface and union corpus coordinates; the DELETE-payload trio, whose
+    predicted classification wrinkle did not bite, `FieldRegistry.reclassify` already
+    registers the payload coordinate; the composite-PK input pair via the new
+    `composite-node-key` example on film_actor, whose stale reasons had claimed fixtures
+    absent that existed; the plain-jOOQ-record pair via a new `PlainJooqRecord` fixture class;
+    `PivotSlotField` via the descent; `UnboundField` via new enum cases, whose old reason
+    cited a test that never existed); `NOT_CORPUS_COVERED` is now empty (the two dead
+    leaf-class rows converted to closures, composite Row2 output projection demonstrated
+    rather than the arity fact dropped). Three findings recorded: a list-cardinality
+    polymorphic child correlating through a parent-held non-PK FK rejects at classification
+    (the corpus coordinate moved to a child-holds-FK shape; boundary documented in the corpus
+    comment); composite output `ColumnBackedReferenceField` is structurally out of the
+    corpus's reach (the FK-mirror collapses to `ColumnBackedField`; the non-mirror path is a
+    deferred rejection); `HarnessSingleCatalog` ended with zero uses, so the per-example
+    context slot deferral was never needed. Axis-pair census re-derived as the instrument:
+    coordinates 83 to 92, `operation x targetShape` 20/77 to 21/77, `targetWrapper x
+    targetShape` 12/14 to 13/14 with the sole remaining hole structural. Census prose counts
+    replaced by counting rules per the record. Verified: full reactor green (3062 graphitron module tests), all 32 SQL
+    pins byte-identical.
 
 ## The exemption lists are the grain worklist
 
-`VariantCoverageTest.NO_CASE_REQUIRED` (13 entries) and `ClassifiedDslTest.OPERATION_KNOWN_GAPS` (6) each
+The exemption lists (counting rule: the maps on `ExemptionRegistry`'s obligation rows; the registry's
+meta-test prints and polices the live population, so no count is restated here) each
 state why something the model declares cannot be reached at the grain a test walks. Read as a set rather
 than one at a time, they should partition into (a) genuinely unimplemented behaviour, (b) synthesised
 things with no SDL origin, and (c) things riding another row's list rather than their own key. Category (c)
@@ -1970,19 +2006,20 @@ read them as a class yet. Slice 2 owns the triage: it is cheap, it sharpens slic
 starts, and writing it down alongside the labelling keeps the worklist from being re-derived at each
 slice.
 
-**Triage verdict (slice 2, 2026-07-28).** The triage lives as data on the lists themselves, not as prose
-here: both maps now carry a typed `Exemption(category, reason)` value, so the worklist is a filter over
-the live lists and a new entry must pick a category. Two findings from reading the 19 entries as a set.
-First, the predicted three-way partition did not close: eight entries are neither unimplemented nor
-synthesised nor mis-keyed but *demonstrated outside the corpus's reach* (composite-PK node types,
-synthesised node-id metadata and plain jOOQ records missing from the fixture catalog, plus one entry whose
-demonstration lives in a test shape the coverage walker does not read), so the taxonomy gained a fourth
-category, `FIXTURE_GAP`. Second, the measured partition is: unimplemented behaviour 6 (UPSERT and its
-operation-arm mirror, condition-matched UPDATE and DELETE, the errors field, federation `_entities`),
-synthesised with no SDL origin 4 (the facet pair, connection `Count` and `Facet`), riding another row's
-key exactly 1 (`PivotSlotField`, slice 6's whole current worklist at this grain), fixture gaps 8. The
-synthesised rows are additionally pinned against the labelling's `SYNTHESISED_TYPE_PERMITS` set
-(`HierarchyKindRegistryTest`), so a sixth synthesised type fails a test rather than drifting a paragraph.
+**Triage verdict (slice 2, 2026-07-28; counts repaired out at slice 6 after they drifted).** The triage
+lives as data on the lists themselves, not as prose here: the maps carry a typed `Exemption` value, so
+the worklist is a filter over the live lists and a new entry must pick an arm. Two findings from reading
+the entries as a set. First, the predicted three-way partition did not close: a fourth population is
+neither unimplemented nor synthesised nor mis-keyed but *demonstrated outside the corpus's reach*, which
+slice 6 later split further (a genuinely absent fixture, a walker that does not read the demonstrating
+test shape, and a harness that cannot reach the demonstrating catalog are three different blockers with
+three different closures). Second, the partition's exact figures are deliberately not restated here: the
+slice-2 numbers were stale within two slices (5d's additions never updated them), which is the rot the
+registry's meta-test now prevents by policing the live population instead. The one category the triage
+predicted with a single member (riding another row's key, `PivotSlotField`) was mis-triaged and is
+retired; see the slice 6 log entry. The synthesised rows are additionally pinned against the labelling's
+`SYNTHESISED_TYPE_PERMITS` set (`HierarchyKindRegistryTest`), so a sixth synthesised type fails a test
+rather than drifting a paragraph.
 
 ## Empirically deciding which families are independent
 

@@ -22,6 +22,7 @@ public final class DummyService {
     // ===== Top-level backing classes =====
     public static DummyRecord makeDummyRecord() { return unused(); }
     public static TestRecordDto makeTestRecordDto() { return unused(); }
+    public static PlainJooqRecord makePlainJooqRecord() { return unused(); }
     public static SakPayload makeSakPayload() { return unused(); }
     public static BothShapesSakPayload makeBothShapesSakPayload() { return unused(); }
     public static MultiCtorSakPayload makeMultiCtorSakPayload() { return unused(); }
@@ -37,6 +38,7 @@ public final class DummyService {
     public static String consumeDummyRecord(DummyRecord in) { return unused(); }
     public static String consumeTestRecordDto(TestRecordDto in) { return unused(); }
     public static String consumeFilmRecord(no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord in) { return unused(); }
+    public static String consumePlainJooqRecord(PlainJooqRecord in) { return unused(); }
 
     // A @service result whose reflected return is a jOOQ TableRecord, so the SDL type binds to a
     // JooqTableRecordType (a JooqRecordCarrier). Used to exercise the mixed-source shape-set rejection:

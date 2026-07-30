@@ -217,6 +217,29 @@ public final class ClassifiedHarness {
         return directives.stream().filter(x -> x.getName().equals(name)).findFirst().orElse(null);
     }
 
+    /**
+     * Applies {@code action} to {@code field} and, recursively, to every field riding one of its
+     * carried lists: a {@code NestingField}'s {@code nestedFields()} and a pivot leaf's
+     * {@code PivotSpec.slots()}. Those fields have no {@code schema.fields()} coordinate of
+     * their own (a pivot slot never appears there; a nesting target's children live only on the
+     * embedding leaf), so a coverage walk that stops at top-level coordinates never observes
+     * them. The coordinate relation is untouched: the SDL coordinate is still the consuming
+     * leaf; this widens the reader, not the {@code @classified} contract.
+     */
+    public static void forEachWithRiddenFields(
+            GraphitronField field, java.util.function.Consumer<GraphitronField> action) {
+        action.accept(field);
+        switch (field) {
+            case no.sikt.graphitron.rewrite.model.ChildField.NestingField n ->
+                n.nestedFields().forEach(f -> forEachWithRiddenFields(f, action));
+            case no.sikt.graphitron.rewrite.model.ChildField.PivotField p ->
+                p.spec().slots().forEach(s -> forEachWithRiddenFields(s, action));
+            case no.sikt.graphitron.rewrite.model.ChildField.BatchedPivotField p ->
+                p.spec().slots().forEach(s -> forEachWithRiddenFields(s, action));
+            default -> { }
+        }
+    }
+
     // ----- meta-test support: the SDL-vs-Java enum mirrors -----
 
     /** The {@code TypeVerdict} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */

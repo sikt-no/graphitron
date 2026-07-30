@@ -360,10 +360,18 @@ public final class ClassifiedCorpus {
          * derived, not an axis. The exception's verdict is the same: a @table+@discriminate interface child
          * (TableInterfaceField) is FK-correlatable from the parent and classifies as a plain Fetch,
          * though the generator currently emits a per-parent query (a known defect; the corpus asserts the
-         * correct verdict). Of the four shapes below (plain interface, union, table-interface, Relay Node)
-         * the interface and the union render doc examples, the interface over its shared interface-level
-         * field and the union through inline fragments on its participants;
-         * table-interface and Relay Node stay corpus-only.
+         * correct verdict). Delivery is leaf identity, not a tuple axis: at list (or connection)
+         * cardinality with at least one table-bound participant the child batches through a DataLoader
+         * (BatchedInterfaceField / BatchedUnionField) with the same Fetch verdict its single-cardinality
+         * inline sibling holds, exactly as the child-table inline/split pairs do; `namedPlaces`
+         * (child-holds-FK: address.city_id points at the parent) and `relatedList` (parent-holds-FK
+         * with the FK columns inside film_actor's primary key) pin the batched halves. A parent-holds-FK
+         * participant whose FK columns sit outside the parent's primary key is single-valued and
+         * rejects at list cardinality, so the customer/address pair stays single. Of the four shapes
+         * below (plain interface, union,
+         * table-interface, Relay Node) the interface and the union render doc examples, the interface
+         * over its shared interface-level field and the union through inline fragments on its
+         * participants; table-interface and Relay Node stay corpus-only.
          */
         new Example("interface", """
             interface Named @classifiedType(as: InterfaceType) { name: String }
@@ -371,8 +379,12 @@ public final class ClassifiedCorpus {
             type Customer @table(name: "customer") {
               address: Named @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Interface)
             }
+            type City @table(name: "city") {
+              namedPlaces: [Named!]! @classified(source: OnlyChild, operation: Fetch, target: List, targetShape: Interface)
+            }
             type Query {
               customer: Customer
+              city: City
               anyNamed: Named @classified(source: Query, operation: Fetch, target: Single, targetShape: Interface)
             }
             """,
@@ -384,6 +396,7 @@ public final class ClassifiedCorpus {
             union FilmOrActor @classifiedType(as: UnionType) = Film | Actor
             type FilmActor @table(name: "film_actor") {
               related: FilmOrActor @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Union)
+              relatedList: [FilmOrActor!]! @classified(source: OnlyChild, operation: Fetch, target: List, targetShape: Union)
             }
             type Query {
               filmActor: FilmActor
@@ -686,6 +699,24 @@ public final class ClassifiedCorpus {
             """),
 
         /*
+         * Plain jOOQ Record backing, both axes. A backing class assignable to org.jooq.Record but not
+         * to org.jooq.TableRecord (the PlainJooqRecord test fixture) classifies the result type as
+         * JooqRecordType and the input type as JooqRecordInputType, completing the reflection-driven
+         * backing clusters of `result-backing` and `input-backing`. @classifiedType asserts the
+         * verdicts directly; there is no field-side dimensional lesson.
+         */
+        new Example("plain-jooq-record-backing", """
+            type PlainJooqRecordBacked @classifiedType(as: JooqRecordType) { id: ID }
+            input PlainJooqRecordBackedInput @classifiedType(as: JooqRecordInputType) { id: ID }
+            type Query {
+              plainRecord: PlainJooqRecordBacked
+                @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makePlainJooqRecord"})
+              consumePlainRecord(in: PlainJooqRecordBackedInput): String
+                @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "consumePlainJooqRecord"})
+            }
+            """),
+
+        /*
          * A @table+@node type classifies as NodeType (the Relay-identified table, key columns resolved).
          * @classifiedType asserts it directly; `id` carries the @nodeId encode but is the type's own key,
          * not a separate dimensional lesson.
@@ -775,11 +806,10 @@ public final class ClassifiedCorpus {
          * operation: Update for MutationUpdatePayloadField / MutationBulkUpdatePayloadField, and Insert for
          * the bulk INSERT carrier (MutationBulkDmlRecordField, whose DmlKind reads INSERT). Distinct
          * payload types keep the per-kind carrier scans isolated. The DELETE payload siblings
-         * (MutationDeletePayloadField / MutationBulkDeletePayloadField) are not corpus-covered: their
-         * only admissible data field is an ID-element (a @table-element projection off a deleted
-         * row is impossible), which needs the synthesised __NODE_TYPE_ID metadata absent from the corpus
-         * catalog; they are covered by MutationDmlNodeIdClassificationTest under the nodeidfixture and
-         * carried in VariantCoverageTest's NO_CASE_REQUIRED.
+         * (MutationDeletePayloadField / MutationBulkDeletePayloadField) live in the
+         * `dml-delete-payload` example: their only admissible data field is an ID-element (a
+         * @table-element projection off a deleted row is impossible), grounded on film_actor's
+         * synthesised node metadata.
          */
         new Example("dml-payloads", """
             type Film @table(name: "film") { title: String }
@@ -867,6 +897,63 @@ public final class ClassifiedCorpus {
               createFilmPayload(in: FilmCreateInput!): FilmPayload
                 @mutation(typeName: INSERT)
                 @classified(source: Mutation, operation: Insert, target: Single, targetShape: Record)
+            }
+            """),
+
+        /*
+         * Composite node key (arity is a column count on the leaf, not a leaf dimension). film_actor
+         * carries a two-column primary key with synthesised node metadata (__NODE_TYPE_ID "FilmActor",
+         * __NODE_KEY_COLUMNS (actor_id, film_id)), so the @nodeId output carrier is the same
+         * ColumnBackedField leaf the arity-1 `id` fields land on, now spanning two columns (a RowN
+         * projection through the NodeIdEncodeKeys compaction). `filmActorId` is the FK-mirror read:
+         * film_actor_note's composite FK targets film_actor's key columns positionally, so the
+         * @nodeId(typeName:) reference collapses to the parent's own FK source columns, again a
+         * composite ColumnBackedField with no join. The composite output *reference* flavour
+         * (ColumnBackedReferenceField at arity > 1) exists only on the rooted-at-parent non-mirror
+         * path, which is a validate-time deferred rejection, so the corpus pins its arity-1 form
+         * (the `reference-and-computed` example) and the composite column form here.
+         */
+        new Example("composite-node-key", """
+            type FilmActor implements Node @table(name: "film_actor") @node @classifiedType(as: NodeType) {
+              id: ID! @nodeId @classified(source: Child, operation: Fetch, target: Single, targetShape: Column)
+            }
+            type FilmActorNote @table(name: "film_actor_note") @classifiedType(as: TableType) {
+              note: String @field(name: "note_txt") @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Column)
+              filmActorId: ID @nodeId(typeName: "FilmActor") @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Column)
+            }
+            type Query {
+              filmActor: FilmActor
+              filmActorNote: FilmActorNote
+            }
+            """),
+
+        /*
+         * Payload-returning DELETE, both cardinalities. A DELETE's only admissible data field is an
+         * ID-element encoded off RETURNING (the row is gone; a @table-element projection is rejected),
+         * so the carrier classifies as MutationDeletePayloadField / MutationBulkDeletePayloadField
+         * (Mutation / Delete / Single(Record), the bulk-ness riding the input cardinality and the data
+         * field's list wrapper) and the data field as SingleRecordIdFieldFromReturning (an encoded-PK
+         * column read off the RETURNING record: Fetch / Column with sourceShape Record). film_actor's
+         * synthesised node metadata grounds the encode; the @nodeId input filter covers the composite
+         * PK, satisfying DELETE's key-coverage admission.
+         */
+        new Example("dml-delete-payload", """
+            type FilmActor implements Node @table(name: "film_actor") @node { id: ID! @nodeId }
+            input FilmActorRef { id: ID! @nodeId }
+            type DeletedFilmActorPayload {
+              deletedId: ID @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Column, sourceShape: Record)
+            }
+            type DeletedFilmActorsPayload {
+              deletedIds: [ID!] @classified(source: OnlyChild, operation: Fetch, target: List, targetShape: Column, sourceShape: Record)
+            }
+            type Query { x: String }
+            type Mutation {
+              deleteFilmActor(in: FilmActorRef!): DeletedFilmActorPayload
+                @mutation(typeName: DELETE, table: "film_actor")
+                @classified(source: Mutation, operation: Delete, target: Single, targetShape: Record)
+              deleteFilmActors(in: [FilmActorRef!]!): DeletedFilmActorsPayload
+                @mutation(typeName: DELETE, table: "film_actor")
+                @classified(source: Mutation, operation: Delete, target: Single, targetShape: Record)
             }
             """),
 
@@ -1028,17 +1115,20 @@ public final class ClassifiedCorpus {
     /**
      * The set of sealed {@code GraphitronField} / {@code GraphitronType} leaves the corpus demonstrates
      * classification for, by classifying every fixture and collecting the leaf each {@code @classified}
-     * / {@code @classifiedType} coordinate landed on. This set alone carries the output-field and type
-     * side of {@code VariantCoverageTest}: its
-     * {@code everyOutputFieldAndTypeLeafIsDemonstratedByTheCorpus} obligation reads this and nothing
-     * else, so a leaf absent here fails coverage even when an enum case still asserts it.
+     * / {@code @classifiedType} coordinate landed on, descending the ridden lists a classified leaf
+     * carries ({@code NestingField.nestedFields()}, {@code PivotSpec.slots()}); a pivot slot or a
+     * nesting child has no top-level coordinate of its own, so the descent is what lets the corpus
+     * walk observe it. This set alone carries the output-field and type side of the variant-coverage
+     * obligation ({@code ExemptionRegistry}): a leaf absent here fails coverage even when an enum
+     * case still asserts it.
      */
     public static Set<Class<?>> coveredLeaves() {
         var leaves = new HashSet<Class<?>>();
         for (Example example : EXAMPLES) {
             var result = ClassifiedHarness.classify(example.sdl());
             for (var fc : result.fields()) {
-                leaves.add(fc.leaf());
+                var field = result.schema().field(fc.parentType(), fc.fieldName());
+                ClassifiedHarness.forEachWithRiddenFields(field, f -> leaves.add(f.getClass()));
             }
             for (var tc : result.types()) {
                 if (tc.leaf() != null) {

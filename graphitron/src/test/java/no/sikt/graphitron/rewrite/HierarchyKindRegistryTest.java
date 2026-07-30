@@ -292,8 +292,8 @@ class HierarchyKindRegistryTest {
 
     @Test
     void synthesisedCoverageExemptionsStayInsideTheDeclaredPermitSet() {
-        var synthesisedExemptions = VariantCoverageTest.NO_CASE_REQUIRED.entrySet().stream()
-            .filter(e -> e.getValue().category() == Exemption.Category.SYNTHESISED_NO_SDL_ORIGIN)
+        var synthesisedExemptions = ExemptionRegistry.CORPUS_NO_CASE_REQUIRED.entrySet().stream()
+            .filter(e -> e.getValue() instanceof Exemption.SynthesisedNoSdlOrigin)
             .map(Map.Entry::getKey)
             .toList();
         assertThat(synthesisedExemptions)

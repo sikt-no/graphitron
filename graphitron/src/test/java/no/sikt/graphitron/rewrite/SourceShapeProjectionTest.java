@@ -2,7 +2,6 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedCorpus;
 import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedHarness;
-import no.sikt.graphitron.rewrite.generators.GeneratorCoverageTest;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.SourceShape;
@@ -10,9 +9,6 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
-import java.util.TreeSet;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -30,45 +26,19 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <em>field</em>-leaf classification that {@code sourceShape()} switches on. The invariant
  * ({@link #projectedFromParentBacking}) is asserted for <em>every</em> classified {@link ChildField}
  * the spec-by-example corpus demonstrates ({@link ClassifiedCorpus}), so the leaf-identity switch is
- * cross-checked against a genuinely independent derivation rather than against itself.
+ * cross-checked against a genuinely independent derivation rather than against itself. The walk
+ * descends the ridden lists ({@code NestingField.nestedFields()}, {@code PivotSpec.slots()}), whose
+ * fields have no top-level coordinate; their independent expectation is the ridden container's
+ * hand-off (a nesting leaf passes its table row through; a pivot leaf hands its slots the
+ * graphitron-built jOOQ record).
  *
- * <p>{@link #everyChildFieldLeafIsCoveredOrDocumented()} keeps it honest as the leaf set grows: every
- * concrete {@link ChildField} sealed leaf is either exercised by the corpus walk (and thus verified
- * above) or carries a one-line entry in {@link #NOT_CORPUS_COVERED}, so the mirror cannot silently
- * lapse.
+ * <p>{@link #everyChildFieldLeafIsCoveredOrDocumented()} keeps it honest as the leaf set grows:
+ * every concrete {@link ChildField} sealed leaf is either observed by the corpus walk or carries a
+ * typed {@link Exemption} on the {@code ExemptionRegistry.SOURCE_SHAPE_CORPUS} obligation, so the
+ * mirror cannot silently lapse.
  */
 @PipelineTier
 class SourceShapeProjectionTest {
-
-    /**
-     * Concrete {@link ChildField} leaves the corpus does not reach, each with the reason. Kept
-     * deliberately small: the goal is for the corpus to demonstrate every schema-reachable leaf.
-     */
-    private static final Map<Class<?>, String> NOT_CORPUS_COVERED = Map.ofEntries(
-        Map.entry(ChildField.ColumnBackedField.class,
-            "Composite (RowN) column projection; no corpus fixture declares a composite scalar yet. "
-            + "Catalog column carrier — SourceShape.Table by the same parent-backing projection."),
-        Map.entry(ChildField.ColumnBackedReferenceField.class,
-            "Composite (RowN) reference projection; not in the corpus. Catalog reference carrier — "
-            + "SourceShape.Table by the parent-backing projection."),
-        Map.entry(ChildField.PivotSlotField.class,
-            "A @pivot projection slot rides the consuming leaf's PivotSpec.slots(), never "
-            + "schema.fields(), so the corpus walk cannot observe it. Its source is the pivot "
-            + "subselect's graphitron-built jOOQ Record — SourceShape.Record by construction."),
-        Map.entry(ChildField.SingleRecordIdFieldFromReturning.class,
-            "R156 payload-returning DELETE: the only admissible data field is an encoded-PK ID off "
-            + "RETURNING, which needs the synthesised __NODE_TYPE_ID metadata absent from the corpus "
-            + "catalog (see VariantCoverageTest.NO_CASE_REQUIRED). Record-backed payload parent — "
-            + "SourceShape.Record."),
-        Map.entry(ChildField.BatchedInterfaceField.class,
-            "The DataLoader half of the polymorphic delivery split; the corpus's `interface` example "
-            + "demonstrates the inline half at single cardinality. SourceShape.Table by the same "
-            + "projection as the inline sibling; the batched shape is pinned by "
-            + "RecordParentMultiTablePolymorphicPipelineTest and the polymorphic SQL baselines. A "
-            + "list-cardinality corpus example is the standing follow-up."),
-        Map.entry(ChildField.BatchedUnionField.class,
-            "Same delivery split as BatchedInterfaceField, union-sourced participant set; the "
-            + "corpus's `union` example demonstrates the inline half."));
 
     /** The independent expectation: a child's source-shape mirrors its parent type's classified backing. */
     private static SourceShape projectedFromParentBacking(GraphitronSchema schema, ChildField c) {
@@ -78,16 +48,15 @@ class SourceShapeProjectionTest {
 
     @Test
     void everyCorpusChildFieldSourceShapeMirrorsParentBacking() {
-        var observedLeaves = new HashSet<Class<?>>();
         for (var example : ClassifiedCorpus.examples()) {
             var schema = ClassifiedHarness.classify(example.sdl()).schema();
             schema.fields().forEach((coord, field) -> {
                 if (field instanceof ChildField c) {
-                    observedLeaves.add(c.getClass());
                     assertThat(c.sourceShape())
                         .as("%s (%s): sourceShape() must mirror the parent type's classified backing "
                             + "(TableBackedType -> Table, else Record)", coord, c.getClass().getSimpleName())
                         .isEqualTo(projectedFromParentBacking(schema, c));
+                    assertRiddenFieldsMirrorTheirContainer(c);
                 }
             });
         }
@@ -104,31 +73,39 @@ class SourceShapeProjectionTest {
             .containsExactlyInAnyOrder(SourceShape.values());
     }
 
+    /**
+     * The descent half of the mirror. A field riding another leaf's list has no classified parent
+     * backing of its own to project from, so the independent expectation is what the container
+     * hands it: a {@code NestingField} is a pass-through of the parent's table-bound projection
+     * (its children read the shared table row), and a pivot leaf's slots read the graphitron-built
+     * jOOQ record the pivot subselect produces.
+     */
+    private static void assertRiddenFieldsMirrorTheirContainer(ChildField container) {
+        switch (container) {
+            case ChildField.NestingField n -> n.nestedFields().forEach(f -> {
+                assertThat(f.sourceShape())
+                    .as("%s.%s (%s): a nesting child reads the passed-through table row",
+                        f.parentTypeName(), f.name(), f.getClass().getSimpleName())
+                    .isEqualTo(SourceShape.Table);
+                assertRiddenFieldsMirrorTheirContainer(f);
+            });
+            case ChildField.PivotField p -> p.spec().slots().forEach(s ->
+                assertThat(s.sourceShape())
+                    .as("%s.%s: a pivot slot reads the pivot subselect's built record",
+                        s.parentTypeName(), s.name())
+                    .isEqualTo(SourceShape.Record));
+            case ChildField.BatchedPivotField p -> p.spec().slots().forEach(s ->
+                assertThat(s.sourceShape())
+                    .as("%s.%s: a pivot slot reads the scattered per-key record",
+                        s.parentTypeName(), s.name())
+                    .isEqualTo(SourceShape.Record));
+            default -> { }
+        }
+    }
+
     @Test
     void everyChildFieldLeafIsCoveredOrDocumented() {
-        Set<Class<?>> allLeaves = GeneratorCoverageTest.sealedLeaves(ChildField.class);
-
-        var covered = new HashSet<Class<?>>();
-        for (var example : ClassifiedCorpus.examples()) {
-            var schema = ClassifiedHarness.classify(example.sdl()).schema();
-            schema.fields().values().forEach(f -> {
-                if (f instanceof ChildField c) covered.add(c.getClass());
-            });
-        }
-        covered.addAll(NOT_CORPUS_COVERED.keySet());
-
-        var uncovered = new TreeSet<String>();
-        allLeaves.stream().filter(leaf -> !covered.contains(leaf))
-            .forEach(leaf -> uncovered.add(leaf.getSimpleName()));
-        assertThat(uncovered)
-            .as("every concrete ChildField leaf must be exercised by the corpus source-shape mirror "
-                + "or carry a documented NOT_CORPUS_COVERED entry; a new leaf landed in neither")
-            .isEmpty();
-
-        // The escape hatch must not rot: every documented exemption must still be a real, uncovered leaf.
-        assertThat(NOT_CORPUS_COVERED.keySet())
-            .as("NOT_CORPUS_COVERED must only list real ChildField leaves")
-            .allMatch(allLeaves::contains);
+        ExemptionRegistry.assertHonoured(ExemptionRegistry.SOURCE_SHAPE_CORPUS);
     }
 
     @Test

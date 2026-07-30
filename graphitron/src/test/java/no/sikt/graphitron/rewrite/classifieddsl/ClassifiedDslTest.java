@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.classifieddsl;
 
-import no.sikt.graphitron.rewrite.Exemption;
+import no.sikt.graphitron.rewrite.ExemptionRegistry;
 import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedCorpus.Example;
 import no.sikt.graphitron.rewrite.model.Operation;
 import no.sikt.graphitron.rewrite.model.Source;
@@ -88,28 +88,6 @@ class ClassifiedDslTest {
     private static final Map<String, String> SOURCE_KNOWN_GAPS = Map.of();
 
     /**
-     * Operation arms the model declares but the current leaf set cannot populate, each with its
-     * triage category and the reason no fixture lands on it ({@link Exemption}). An arm leaves
-     * this list the moment a fixture exercises it; an unexercised arm not listed here fails
-     * {@link #everyDimensionValueIsExercised()}.
-     */
-    private static final Map<Class<? extends Operation>, Exemption> OPERATION_KNOWN_GAPS = Map.of(
-        Operation.EntityResolve.class, new Exemption(Exemption.Category.UNIMPLEMENTED_BEHAVIOUR,
-            "Federation _entities is not a classified leaf yet (separate item)."),
-        Operation.Count.class, new Exemption(Exemption.Category.SYNTHESISED_NO_SDL_ORIGIN,
-            "Connection totalCount is generator-only emit behind the ConnectionType quarantine."),
-        Operation.Facet.class, new Exemption(Exemption.Category.SYNTHESISED_NO_SDL_ORIGIN,
-            "Connection facets are generator-only emit behind the ConnectionType quarantine."),
-        Operation.UpdateMatching.class, new Exemption(Exemption.Category.UNIMPLEMENTED_BEHAVIOUR,
-            "Condition-matched UPDATE is unimplemented."),
-        Operation.DeleteMatching.class, new Exemption(Exemption.Category.UNIMPLEMENTED_BEHAVIOUR,
-            "Condition-matched DELETE is unimplemented."),
-        Operation.Upsert.class, new Exemption(Exemption.Category.UNIMPLEMENTED_BEHAVIOUR,
-            "R144 retires UPSERT generation pending R145; the classifier rejects every "
-            + "UPSERT mutation at MutationInputResolver, so no schema-reachable fixture lands on it "
-            + "(mirrors VariantCoverageTest.NO_CASE_REQUIRED for MutationUpsertTableField)."));
-
-    /**
      * One corpus coordinate's classified position on the five axes; {@code sourceShape} is null
      * on Root rows (the shape exists only on the nested source arms). Extracted once and shared
      * by {@link #everyDimensionValueIsExercised()} and {@link #axisPairCensusIsDerivable()} so
@@ -148,7 +126,6 @@ class ClassifiedDslTest {
     void everyDimensionValueIsExercised() {
         var sourceArms = new HashSet<String>();
         var sourceShapes = EnumSet.noneOf(SourceShape.class);
-        var operations = new HashSet<String>();
         var targetWrappers = new HashSet<String>();
         var targetShapes = new HashSet<String>();
 
@@ -157,7 +134,6 @@ class ClassifiedDslTest {
             if (row.sourceShape() != null) {
                 sourceShapes.add(row.sourceShape());
             }
-            operations.add(row.operation());
             targetWrappers.add(row.targetWrapper());
             targetShapes.add(row.targetShape());
         }
@@ -187,19 +163,10 @@ class ClassifiedDslTest {
             .as("a known-gap source arm that a fixture now exercises must be removed from SOURCE_KNOWN_GAPS")
             .doesNotContainAnyElementsOf(sourceArms);
 
-        // Operation arms: every arm exercised or on the known-gap list.
-        Set<String> operationGapNames = OPERATION_KNOWN_GAPS.keySet().stream()
-            .map(Class::getSimpleName).collect(Collectors.toSet());
-        var unexercisedOps = new HashSet<>(ClassifiedHarness.operationArmSimpleNames());
-        unexercisedOps.removeAll(operations);
-        unexercisedOps.removeAll(operationGapNames);
-        assertThat(unexercisedOps)
-            .as("every Operation arm must be exercised by a fixture or listed in OPERATION_KNOWN_GAPS "
-                + "with a stated reason; these are neither")
-            .isEmpty();
-        assertThat(operationGapNames)
-            .as("a known-gap operation that a fixture now exercises must be removed from OPERATION_KNOWN_GAPS")
-            .doesNotContainAnyElementsOf(operations);
+        // Operation arms: every arm exercised or exempt with a typed reason. The known-gap map
+        // (ExemptionRegistry.OPERATION_KNOWN_GAPS) is one registry obligation; the shared
+        // assertion carries the exercised-must-be-removed ratchet this test used to state inline.
+        ExemptionRegistry.assertHonoured(ExemptionRegistry.OPERATION_ARMS);
     }
 
     /**

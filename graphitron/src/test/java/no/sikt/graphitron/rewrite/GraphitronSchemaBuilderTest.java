@@ -4976,6 +4976,153 @@ class GraphitronSchemaBuilderTest {
 
     // ===== Input-type classification and per-consumer input-field resolution =====
 
+    // ===== InputField.UnboundField =====
+
+    /**
+     * The enum truth-table home of the {@code UnboundField} verdict (input field with no column
+     * binding). The two admission gates are the field's own {@code @condition(override: true)}
+     * and the enclosing-consumer override cascade; the sibling {@code @Test} methods above pin
+     * the boundary and projection details (one carries the {@code @ProjectionFor}).
+     */
+    enum UnboundFieldCase implements ClassificationCase {
+        OVERRIDE_TRUE_WITHOUT_MATCHING_COLUMN(
+            "plain-input field with @condition(override: true) and no matching column on the "
+                + "resolving table → UnboundField; the condition method owns the predicate, so "
+                + "only the explicit ConditionFilter is emitted",
+            """
+            input PlainFilter {
+              sakskode: String
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "sakskodeCondition"}, override: true)
+            }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { films(filter: PlainFilter): [Film!]! }
+            """,
+            schema -> {
+                var f = (QueryField.QueryTableField) schema.field("Query", "films");
+                assertThat(f.filters().stream().anyMatch(GeneratedConditionFilter.class::isInstance))
+                    .as("no implicit predicate for an unbound carrier")
+                    .isFalse();
+                var explicit = f.filters().stream()
+                    .filter(ConditionFilter.class::isInstance)
+                    .map(ConditionFilter.class::cast)
+                    .findFirst().orElseThrow();
+                assertThat(explicit.methodName()).isEqualTo("sakskodeCondition");
+            }),
+
+        CASCADE_ADMITTED_BARE_FIELD(
+            "bare non-binding plain-input field admitted by the consumer's arg-level "
+                + "@condition(override: true) cascade → UnboundField with condition.empty(); the "
+                + "arg-level condition is the only filter",
+            """
+            input PlainFilter { foo: String }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query {
+              films(filter: PlainFilter
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "lifterFieldCondition"}, override: true)
+              ): [Film!]!
+            }
+            """,
+            schema -> {
+                var f = (QueryField.QueryTableField) schema.field("Query", "films");
+                assertThat(f.filters().stream().anyMatch(GeneratedConditionFilter.class::isInstance))
+                    .isFalse();
+                assertThat(f.filters().stream().filter(ConditionFilter.class::isInstance).count())
+                    .isEqualTo(1L);
+            });
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        UnboundFieldCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public Set<Class<?>> variants() { return Set.of(InputField.UnboundField.class); }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(UnboundFieldCase.class)
+    void unboundFieldClassification(UnboundFieldCase tc) {
+        tc.assertions.accept(build(tc.sdl));
+    }
+
+    // ===== Composite @nodeId input carriers (InputField.ColumnBackedField / ColumnBackedReferenceField, arity > 1) =====
+
+    /**
+     * Composite-key input carriers on the default catalog: film_actor carries a two-column
+     * primary key with synthesised node metadata (__NODE_TYPE_ID "FilmActor"), and
+     * film_actor_note's composite FK targets it. Arity is a column count on the carrier leaf,
+     * not a leaf dimension; these cases pin the arity > 1 flavour of the same leaves the
+     * arity-1 cases land on.
+     */
+    enum CompositeNodeIdInputCase implements ClassificationCase {
+        SAME_TABLE_COMPOSITE_NODE_ID_FILTER(
+            "input `id: ID! @nodeId(typeName: \"FilmActor\")` consumed against FilmActor's own "
+                + "composite-PK table → composite ColumnBackedField projecting a RowEq over "
+                + "(actor_id, film_id) with the NodeIdDecodeKeys extraction",
+            """
+            type FilmActor implements Node @table(name: "film_actor") @node { id: ID! @nodeId }
+            input FilmActorSelector { id: ID! @nodeId(typeName: "FilmActor") }
+            type Query { filmActors(in: FilmActorSelector): [FilmActor!] }
+            """,
+            schema -> {
+                var bp = compositeInputBodyParam(schema, "filmActors", BodyParam.RowEq.class);
+                assertThat(bp.columns()).extracting(ColumnRef::sqlName)
+                    .containsExactly("actor_id", "film_id");
+                var leaf = ((CallSiteExtraction.NestedInputField) bp.extraction()).leaf();
+                assertThat(((CallSiteExtraction.NodeIdDecodeKeys) leaf).decodeMethod().methodName())
+                    .isEqualTo("decodeFilmActor");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(InputField.ColumnBackedField.class); }
+        },
+
+        FK_TARGET_COMPOSITE_NODE_ID_REFERENCE(
+            "input `filmActor: ID! @nodeId(typeName: \"FilmActor\")` consumed on film_actor_note, "
+                + "whose composite FK mirrors FilmActor's key columns → composite "
+                + "ColumnBackedReferenceField whose lifted source columns are the note's own FK "
+                + "pair (the arity > 1 FK-target case)",
+            """
+            type FilmActor implements Node @table(name: "film_actor") @node { id: ID! @nodeId }
+            type FilmActorNote @table(name: "film_actor_note") { note: String @field(name: "note_txt") }
+            input NoteFilter { filmActor: ID! @nodeId(typeName: "FilmActor") }
+            type Query { filmActorNotes(in: NoteFilter): [FilmActorNote!] }
+            """,
+            schema -> {
+                var bp = compositeInputBodyParam(schema, "filmActorNotes", BodyParam.RowEq.class);
+                assertThat(bp.columns()).extracting(ColumnRef::sqlName)
+                    .containsExactly("actor_id", "film_id");
+                var leaf = ((CallSiteExtraction.NestedInputField) bp.extraction()).leaf();
+                assertThat(leaf).isInstanceOf(CallSiteExtraction.NodeIdDecodeKeys.class);
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(InputField.ColumnBackedReferenceField.class); }
+        };
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        CompositeNodeIdInputCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public Set<Class<?>> variants() { return Set.of(); }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    private static <T extends BodyParam> T compositeInputBodyParam(
+            GraphitronSchema schema, String queryFieldName, Class<T> shape) {
+        var f = (QueryField.QueryTableField) schema.field("Query", queryFieldName);
+        var gcf = (GeneratedConditionFilter) f.filters().stream()
+            .filter(GeneratedConditionFilter.class::isInstance)
+            .findFirst().orElseThrow();
+        return gcf.bodyParams().stream()
+            .filter(shape::isInstance).map(shape::cast).findFirst().orElseThrow();
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(CompositeNodeIdInputCase.class)
+    void compositeNodeIdInputClassification(CompositeNodeIdInputCase tc) {
+        tc.assertions.accept(build(tc.sdl));
+    }
+
     enum InputFieldResolutionCase implements ClassificationCase {
         TABLE_ON_INPUT_RETIRED(
             "input type with @table → UnclassifiedType with the migration message (the directive "
