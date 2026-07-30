@@ -110,6 +110,32 @@ public sealed interface LaunchSource {
     }
 
     /**
+     * A batched {@code @pivot} child: the parent-input VALUES table LEFT JOINs the attribute
+     * {@link #pivotTable} over {@link #correlation}'s FK slots, and the batch collapses to one
+     * aggregate row per key under {@code GROUP BY} on the idx column. Both are source-entailed,
+     * the discriminated arm's IN-restriction reasoning: the key-preserving left join and the
+     * per-key group are what make the arm's one-record-per-parent invariant hold (a row-less
+     * parent keeps its group and scatters to one record of null slots), so neither rides the
+     * WHERE slot or the result shape. The select list is {@link #projection}'s {@code $project},
+     * the coordinate-grain pivot unit the inline delivery's multiset arm shares. The correlation
+     * is the narrowed {@link no.sikt.graphitron.rewrite.model.ParentCorrelation.OnFkSlots}: a
+     * {@code @pivot} path is a single unfiltered FK hop by
+     * {@link no.sikt.graphitron.rewrite.model.PivotSpec}'s own pin, so the parent-anchor
+     * topology is unrepresentable here, and the hop is not carried beside the correlation (it
+     * is the correlation's own {@code firstHop()}; a second slot would denormalise the same
+     * column pairs unbound).
+     */
+    record PivotAggregate(TableRef pivotTable, UnitRef projection,
+            no.sikt.graphitron.rewrite.model.ParentCorrelation.OnFkSlots correlation)
+            implements LaunchSource {
+        public PivotAggregate {
+            Objects.requireNonNull(pivotTable, "pivotTable");
+            Objects.requireNonNull(projection, "projection");
+            Objects.requireNonNull(correlation, "correlation");
+        }
+    }
+
+    /**
      * A {@code @lookupKey} root: the anchor {@link #table} joined to the input VALUES derived
      * table over the mapping's key columns, projected through the one {@link #projection} unit's
      * {@code $project}. The key arguments ride {@link #mapping}'s VALUES rows (built by the

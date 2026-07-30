@@ -107,6 +107,23 @@ public record LauncherCommand(
                     + " a connection");
             }
         }
+        // The batched pivot runs single-tenant and answers one record per key: the fan-out
+        // ladder's non-list rung (no.sikt.graphitron.rewrite.TenantBindingIndex) rejects
+        // @tenantFanOut on a non-list field and a @pivot field is single by classification,
+        // and one projection record per parent is the pivot invariant itself (the
+        // key-preserving left join exists to guarantee it).
+        if (source instanceof LaunchSource.PivotAggregate) {
+            if (!(tenancy instanceof TenantStrategy.Single)) {
+                throw new IllegalArgumentException(
+                    "a batched-pivot launcher runs single-tenant; got "
+                    + tenancy.getClass().getSimpleName());
+            }
+            if (!(result instanceof ResultShape.SingleRecord)) {
+                throw new IllegalArgumentException(
+                    "a batched-pivot launcher answers one record per key (the pivot"
+                    + " invariant); got " + result.getClass().getSimpleName());
+            }
+        }
         // A keyed lookup runs single-tenant and never paginates: the fan-out ladder rejects
         // @tenantFanOut with @lookupKey (fanning breaks one-row-per-key), and the classifier
         // rejects the connection return ("lookup fields must not return a connection").

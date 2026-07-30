@@ -28,9 +28,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * touching this test is the architectural review point the pin is designed to create.
  *
  * <p>Note: this pin doesn't cover {@link MultiTablePolymorphicEmitter}'s batched fetcher
- * family, which is its own emit family with its own structural axes. The unified seam targets the
- * five-permit rows-method shape on table-bound batched fields; the polymorphic seam is
- * separate work.
+ * family, which is its own emit family with its own structural axes. The unified seam targets
+ * the service-permit rows-method shape (the SQL-shaped bodies render through the
+ * launcher-command path); the polymorphic seam is separate work.
  */
 @UnitTier
 class UnifiedEmissionPinsTest {
@@ -63,13 +63,11 @@ class UnifiedEmissionPinsTest {
     @Test
     void rowsMethodEmitter_unifiedSkeleton() throws IOException {
         // Every rows-method MethodSpec emit site in the generators package routes through
-        // RowsMethodSkeleton.build. Current sites (3): SplitRowsMethodEmitter's
-        // buildForBatchedPivot (the key-preserving left-join aggregate shape, the
-        // SqlBatchedPivot permit), plus
+        // RowsMethodSkeleton.build. Current sites (2):
         // TypeFetcherGenerator.buildServiceRowsMethod (ServiceRecordField verbatim return) plus
         // SplitRowsMethodEmitter.buildServiceTableLift (ServiceTableField lift-back
-        // re-projection). Together they cover both RowsMethodBody permits. Plain
-        // BatchedTableField and BatchedLookupTableField rows methods no longer route here:
+        // re-projection). Together they cover the one remaining RowsMethodBody permit
+        // (Service). The batched table, lookup and pivot rows methods no longer route here:
         // they render through the launcher-command path (RootLauncherRenderer over
         // LauncherCommands' batched rows).
         long unifiedCalls = countAcrossGenerators(
@@ -79,7 +77,7 @@ class UnifiedEmissionPinsTest {
             .as("Every R38 rows-method emit site outside RowsMethodSkeleton itself routes through "
                 + "RowsMethodSkeleton.build. A handcrafted bypass replaces one call here with "
                 + "inline rows-method MethodSpec construction; the count drop trips this pin.")
-            .isEqualTo(3);
+            .isEqualTo(2);
     }
 
     private static long countAcrossGenerators(Pattern pattern, String excludeFile) throws IOException {

@@ -111,6 +111,8 @@ public final class RootLauncherRenderer {
             case LaunchSource.RoutineChain chain -> builder.addCode(routineBody(row, chain));
             case LaunchSource.Correlated chain ->
                 builder.addCode(BatchedRowsFragments.body(row, chain, batchedDslDeclaration, carrierDsl));
+            case LaunchSource.PivotAggregate pivot ->
+                builder.addCode(BatchedRowsFragments.pivotBody(row, pivot, batchedDslDeclaration));
             case LaunchSource.KeyedLookup lookup -> {
                 String tableLocal = TableLocal.name(lookup.table());
                 builder.addCode(TableLocal.declare(lookup.table()));

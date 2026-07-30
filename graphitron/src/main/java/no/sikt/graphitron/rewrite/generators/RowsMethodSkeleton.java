@@ -8,14 +8,13 @@ import no.sikt.graphitron.rewrite.model.RowsMethodBody;
 import javax.lang.model.element.Modifier;
 
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.ENV;
-import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.LIST;
 
 /**
  * Single entry point for emitting a DataLoader rows-method's {@link MethodSpec}: the
  * declaration scaffolding around a {@link RowsMethodBody} permit. Each construction site
- * ({@link SplitRowsMethodEmitter} and {@code TypeFetcherGenerator}'s service rows method)
- * projects from the field's variant and {@code LoaderRegistration.container()} to the
- * matching permit and hands it here.
+ * ({@link SplitRowsMethodEmitter}'s service table lift and {@code TypeFetcherGenerator}'s
+ * service rows method) projects from the field's variant and
+ * {@code LoaderRegistration.container()} to the matching permit and hands it here.
  *
  * <p>Body content is opaque to the skeleton: each permit carries its own
  * {@link RowsMethodBody#content()} {@code CodeBlock}, pasted unchanged after the framing.
@@ -37,8 +36,8 @@ public final class RowsMethodSkeleton {
      * @param dslDeclaration    the full {@code DSLContext dsl = ...;} declaration statement(s),
      *                          resolved per the field's tenant binding by
      *                          {@link TenantDslEmitter}.
-     * @param body              the per-shape body permit; carries the SELECT / scatter /
-     *                          service-call content the skeleton pastes after the framing.
+     * @param body              the per-shape body permit; carries the service-call content the
+     *                          skeleton pastes after the framing.
      */
     public static MethodSpec build(
             String methodName,
@@ -54,22 +53,9 @@ public final class RowsMethodSkeleton {
             .addParameter(ENV, "env");
 
         switch (body) {
-            case RowsMethodBody.SqlBatchedPivot s      -> emitSqlBody(b, s.content(), dslDeclaration);
-            case RowsMethodBody.Service s              -> emitServiceBody(b, s, dslDeclaration);
+            case RowsMethodBody.Service s -> emitServiceBody(b, s, dslDeclaration);
         }
         return b.build();
-    }
-
-    /**
-     * SQL framing. The permit's body content references both {@code keys} and the {@code dsl}
-     * local declared here.
-     */
-    private static void emitSqlBody(MethodSpec.Builder b, CodeBlock content, CodeBlock dslDeclaration) {
-        b.beginControlFlow("if (keys.isEmpty())")
-         .addStatement("return $T.of()", LIST)
-         .endControlFlow();
-        b.addCode(dslDeclaration);
-        b.addCode(content);
     }
 
     /**

@@ -1437,8 +1437,31 @@ R541's single-operation launchers never need it, and a general launcher cannot d
     full reactor green. An infrastructure note for the record: the first landing of this
     commit was lost uncommitted to a container recycle and replayed from the session log;
     the pins and counts above are the replay's.
-  - The pivot fold (5b's closing commit) follows the same record: `PivotAggregate` lands, the
-    prelude's last legacy caller goes, `RowsMethodBody` shrinks to the `Service` permit.
+  - **5b closed (2026-07-30): the pivot fold.** `LaunchSource.PivotAggregate(pivotTable,
+    projection, ParentCorrelation.OnFkSlots correlation)` lands exactly per the design record:
+    the renderer's `pivotBody` reads the LEFT JOIN's ON off the arm's slots (the hop stays the
+    correlation's own `firstHop()`, never a second slot), the key-preserving left join and the
+    `GROUP BY` on the idx column are source-entailed, and the narrowed correlation type makes
+    the parent-anchor topology unrepresentable, with the producer throwing a generator bug on
+    any non-`OnFkSlots` correlation (a checked pattern, not a cast). No WHERE slot: the leaf
+    has no filter surface and the legacy emission composed none. The parent-input VALUES
+    declarations are shared with the correlated prelude through one extracted helper
+    (`declareParentInput`), so the batch anchor has one derivation across all three batched
+    arms; the attribute alias derives through `PathFragments.liftedAlias` (the one-element
+    chain's formula collapses to the lifted form). Backstop: `PivotAggregate` entails Single
+    tenancy + SingleRecord result, citing the fan-out ladder's non-list rung. Retired:
+    `buildForBatchedPivot`, `emitParentInputAndFkChain` + `PreludeBindings` + the legacy
+    `parentKeyCells` copy (caller-less once the pivot left), `pivotUnitClass`, the
+    `SqlBatchedPivot` permit and the skeleton's SQL framing arm (`emitSqlBody`).
+    `SplitRowsMethodEmitter` is now the per-fetcher-class helper host (the scatter helpers,
+    `parentKeyCellValue`, the service table lift); `RowsMethodBody` holds the `Service` permit
+    alone, sealed structure kept for 5c's exhaustive-switch guard. The rows-method emit-site
+    pin ratchets 3 to 2; the permit coverage walks one shape; the seam ratchet counts are
+    unmoved (the new producer arm follows the sibling arms' spelling). All 19 SQL pins held
+    byte-identical (`pivotBatchedChild_keyPreservingLeftJoinGroupedByIdx` among them, 6/6 +
+    13/13), `PivotExecutionTest` 9/9 parity, 3052 module tests and the full reactor green.
+    Next: 5c, the service children (`RowsMethodBody`/`RowsMethodSkeleton` retire fully; the
+    command carries the rows-method shape's inputs; the isMapped-by-isList re-wrap tail folds).
 
 ## The exemption lists are the grain worklist
 

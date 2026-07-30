@@ -14,8 +14,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Unit-tier coverage of {@link RowsMethodSkeleton}'s framing dispatch — one test per
  * {@link RowsMethodBody} permit. Each test pins the framing the skeleton owns (signature,
- * empty-input gate, {@code DSLContext dsl} resolution, body paste-through), not the body
- * content (the permit's content is opaque {@link CodeBlock}).
+ * {@code DSLContext dsl} resolution, body paste-through), not the body content (the permit's
+ * content is opaque {@link CodeBlock}).
  */
 @UnitTier
 class RowsMethodSkeletonTest {
@@ -26,7 +26,6 @@ class RowsMethodSkeletonTest {
     private static final TypeName  KEY    = ClassName.bestGuess("java.lang.Integer");
     private static final TypeName  LIST_OF_LIST_OF_RECORD =
         ParameterizedTypeName.get(LIST, ParameterizedTypeName.get(LIST, RECORD));
-    private static final TypeName  LIST_OF_KEY = ParameterizedTypeName.get(LIST, KEY);
     private static final TypeName  SET_OF_KEY  = ParameterizedTypeName.get(SET, KEY);
 
     // The caller-resolved declaration (TenantDslEmitter's single-tenant form).
@@ -34,27 +33,6 @@ class RowsMethodSkeletonTest {
         .addStatement("$T dsl = graphitronContext(env).getDslContext(env)",
             ClassName.get("org.jooq", "DSLContext"))
         .build();
-    private static final CodeBlock SQL_BODY = CodeBlock.builder()
-        .addStatement("return $T.of()", LIST)  // body content placeholder
-        .build();
-
-    @Test
-    void sqlBatchedPivot_emitsGateAndDslLineBeforeContent() {
-        MethodSpec spec = RowsMethodSkeleton.build(
-            "rowsFilms",
-            LIST_OF_LIST_OF_RECORD,
-            LIST_OF_KEY,
-            DSL_DECLARATION,
-            new RowsMethodBody.SqlBatchedPivot(SQL_BODY));
-
-        String src = spec.toString();
-        assertThat(src).contains("public static java.util.List<java.util.List<org.jooq.Record>> rowsFilms(");
-        assertThat(src).contains("java.util.List<java.lang.Integer> keys");
-        assertThat(src).contains("graphql.schema.DataFetchingEnvironment env");
-        assertThat(src).contains("if (keys.isEmpty())");
-        assertThat(src).contains("return java.util.List.of();");
-        assertThat(src).contains("org.jooq.DSLContext dsl = graphitronContext(env).getDslContext(env);");
-    }
 
     @Test
     void service_needsDslTrue_emitsDslLineButNoGate() {
@@ -70,6 +48,7 @@ class RowsMethodSkeletonTest {
         String src = spec.toString();
         assertThat(src).contains("public static java.util.List<java.util.List<org.jooq.Record>> loadFilms(");
         assertThat(src).contains("java.util.Set<java.lang.Integer> keys");
+        assertThat(src).contains("graphql.schema.DataFetchingEnvironment env");
         assertThat(src).contains("DSLContext dsl");
         assertThat(src)
             .as("Service permit omits the empty-input gate (preserved per spec's Out-of-scope carve-out)")
@@ -98,11 +77,9 @@ class RowsMethodSkeletonTest {
     void rowsMethodBody_sealedSwitchIsExhaustive() {
         Class<?>[] permitted = RowsMethodBody.class.getPermittedSubclasses();
         assertThat(permitted)
-            .as("RowsMethodBody permits exactly the two body shapes (plain batched-table and "
-                + "batched-lookup bodies no longer route here; they render through the "
-                + "launcher-command path)")
-            .containsExactlyInAnyOrder(
-                RowsMethodBody.SqlBatchedPivot.class,
-                RowsMethodBody.Service.class);
+            .as("RowsMethodBody permits exactly the service body shape (the batched table,"
+                + " lookup and pivot bodies no longer route here; they render through the"
+                + " launcher-command path)")
+            .containsExactlyInAnyOrder(RowsMethodBody.Service.class);
     }
 }

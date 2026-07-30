@@ -62,7 +62,8 @@ public final class LauncherCommands {
                     }
                 }
                 // The child family: the plain batched child in every cardinality (list, single,
-                // and the windowed connection page), and its @lookupKey sibling.
+                // and the windowed connection page), its @lookupKey sibling, and the @pivot
+                // aggregate.
                 if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField btf) {
                     rows.add(batchedRow(btf, schema, conditions, units));
                 }
@@ -70,6 +71,9 @@ public final class LauncherCommands {
                     rows.add(batchedLookupRow(blf,
                         whereOf(blf.parentTypeName(), blf.name(), conditions),
                         tenancyOf(schema, blf.parentTypeName(), blf.name(), units), units));
+                }
+                if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.BatchedPivotField bpf) {
+                    rows.add(batchedPivotRow(bpf, units));
                 }
             }
         }
@@ -148,6 +152,8 @@ public final class LauncherCommands {
                 rows.add(batchedLookupRow(blf,
                     glueFromFilters(blf.parentTypeName(), blf.name(), blf.filters(), units),
                     new TenantStrategy.Single(), units));
+            } else if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.BatchedPivotField bpf) {
+                rows.add(batchedPivotRow(bpf, units));
             }
         }
         return new LauncherRelation(rows, CarrierDsl.ENV_ACQUIRED);
@@ -371,6 +377,40 @@ public final class LauncherCommands {
             new Invocation.Batched(blf.sourceKey(), blf.loaderRegistration()),
             tenancy,
             new ResultShape.RecordList(null));
+    }
+
+    /**
+     * The {@code @pivot} batched child's row: the source arm carries the attribute table, the
+     * coordinate-grain pivot projection unit (minted through the same scheme the emission
+     * reads) and the narrowed FK correlation whose slots the renderer's LEFT JOIN reads. No
+     * WHERE slot: the leaf carries no filter surface (no condition row exists for the
+     * coordinate), and the arm's key-preserving topology admits no per-row filtering anyway.
+     * One record per key is the pivot invariant, so the result is the single shape; tenancy is
+     * single by classification (backstopped on the command). The correlation narrowing is a
+     * checked pattern rather than a cast: the pivot spec pins the path to one unfiltered FK
+     * hop, which the classifier always lands on {@code OnFkSlots}, so anything else is a
+     * generator bug surfaced here at production.
+     */
+    private static LauncherCommand batchedPivotRow(
+            no.sikt.graphitron.rewrite.model.ChildField.BatchedPivotField bpf, GeneratedUnits units) {
+        if (!(bpf.parentCorrelation()
+                instanceof no.sikt.graphitron.rewrite.model.ParentCorrelation.OnFkSlots fkSlots)) {
+            throw new IllegalStateException(
+                "Graphitron generator bug (batched pivot child): coordinate '"
+                + bpf.qualifiedName() + "' carries a "
+                + bpf.parentCorrelation().getClass().getSimpleName()
+                + " correlation; a @pivot path is a single unfiltered FK hop, which the"
+                + " classifier always lands on ParentCorrelation.OnFkSlots");
+        }
+        return new LauncherCommand(
+            units.rowsMethod(bpf.parentTypeName(), bpf.name()),
+            FieldCoordinates.coordinates(bpf.parentTypeName(), bpf.name()),
+            new LaunchSource.PivotAggregate(bpf.spec().pivotTable(),
+                units.pivotUnit(bpf.parentTypeName(), bpf.name()), fkSlots),
+            null,
+            new Invocation.Batched(bpf.sourceKey(), bpf.loaderRegistration()),
+            new TenantStrategy.Single(),
+            new ResultShape.SingleRecord());
     }
 
     /**

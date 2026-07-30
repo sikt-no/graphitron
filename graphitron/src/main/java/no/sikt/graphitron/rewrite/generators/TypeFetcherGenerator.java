@@ -749,7 +749,25 @@ public class TypeFetcherGenerator {
                 case ChildField.PivotSlotField ignored          -> { }
                 case ChildField.BatchedPivotField f -> {
                     builder.addMethod(buildPivotBatchedDataFetcher(ctx, f, parentTable, outputPackage));
-                    builder.addMethod(SplitRowsMethodEmitter.buildForBatchedPivot(ctx, f, outputPackage));
+                    var pivotRow = launchers.rowFor(f.parentTypeName(), f.name())
+                        .orElseThrow(() -> new IllegalStateException(
+                            "Graphitron generator bug (batched pivot child dispatch): coordinate '"
+                            + f.qualifiedName() + "' has no launcher row;"
+                            + " the producer's membership and this dispatch have drifted"));
+                    // The command-mint seam still commits the reentry MethodCommand (the
+                    // closure oracle's input, retiring with the registry); the committed
+                    // name and the row's ref are one formula, drift-checked here.
+                    String mintedPivotRows = ctx.rowsDeclarationName(f);
+                    if (!mintedPivotRows.equals(pivotRow.unit().methodName())) {
+                        throw new IllegalStateException(
+                            "Graphitron generator bug (batched pivot child dispatch): the minted"
+                            + " reentry name '" + mintedPivotRows + "' and the row's ref '"
+                            + pivotRow.unit().methodName() + "' disagree for '"
+                            + f.qualifiedName() + "'");
+                    }
+                    builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
+                        .render(pivotRow, launchers.carrierDsl(),
+                            TenantDslEmitter.resolve(ctx, f, outputPackage).declaration()));
                 }
                 case ChildField.RecordReadField ignored         -> { /* locator read reified by FetcherEmitter.bind, collected below */ }
                 // The @service record-composite carrier's data field: the Outcome/source

@@ -21,7 +21,9 @@ import java.util.List;
  * The batched child launcher's composition fragments: the parent-input VALUES derived table
  * built from the delivery arm's key facts, the correlation's step-0 attach, the forward hop
  * chain to the terminal, the WHERE fold (per-hop filters plus the coordinate's condition glue),
- * and the per-cardinality scatter tails. Twin of the retiring split rows-method emission, in
+ * and the per-cardinality scatter tails; the {@code @pivot} arm's aggregate body
+ * ({@link #pivotBody}) shares the parent-input anchor and forks on topology. Twin of the
+ * retired split rows-method emission, in
  * the {@code DiscriminatedTableFragments} shape: command arms in, javapoet fragments out,
  * preconditions as named in-scope locals ({@code keys}, {@code env}, and for the single-tenant
  * form a {@code dsl} declared by the caller-supplied declaration fragment) rather than a
@@ -136,6 +138,81 @@ final class BatchedRowsFragments {
         body.addStatement(single
             ? "return scatterSingleByIdx(flat, keys.size())"
             : "return scatterByIdx(flat, keys.size())");
+        return body.build();
+    }
+
+    /**
+     * The whole rows-method body for a batched {@code @pivot} row: skeleton framing, the shared
+     * parent-input VALUES table, the attribute-table alias, and the aggregate topology the arm
+     * entails: the parent-input LEFT JOINs the attribute table over the correlation's FK slots
+     * (key-preserving, so a row-less parent keeps its group and scatters to one record of null
+     * slots, the one-record-per-parent invariant inline delivery satisfies for free) and
+     * {@code GROUP BY} on the idx column collapses the batch to one aggregate row per key. The
+     * select list is the coordinate's pivot projection unit, the same {@code $project} the
+     * inline delivery's multiset arm selects, so the projected aliases cannot drift between
+     * the two hosts. No WHERE fold: the leaf carries no filter surface, and a filter would
+     * re-drop the null-extended row. Tenancy is single by the command backstop, so the
+     * caller-supplied {@code dsl} declaration is added unconditionally.
+     */
+    static CodeBlock pivotBody(LauncherCommand row, LaunchSource.PivotAggregate pivot,
+            CodeBlock dslDeclaration) {
+        var batched = (no.sikt.graphitron.command.Invocation.Batched) row.invocation();
+        String fieldName = row.coordinate().getFieldName();
+        var body = CodeBlock.builder();
+
+        body.beginControlFlow("if (keys.isEmpty())");
+        body.addStatement("return $T.of()", LIST_CN);
+        body.endControlFlow();
+        body.add(dslDeclaration);
+
+        TableRef ownerTable = pivot.correlation().parentKeyOwnerTable();
+        declareParentInput(body, batched.sourceKey(), ownerTable);
+
+        // The single FK hop's target alias: the one-element chain's alias formula collapses to
+        // the lifted form, and the hop's target is always a catalog table (the pivot spec's
+        // own pin), so the declaration wraps the bare Tables singleton.
+        TableRef pivotTable = pivot.pivotTable();
+        String pivotAlias = PathFragments.liftedAlias(pivotTable);
+        body.addStatement("$T $L = $T.$L.as($S)",
+            pivotTable.tableClass(), pivotAlias,
+            pivotTable.constantsClass(), pivotTable.javaFieldName(),
+            fieldName + "_" + pivotAlias);
+
+        TypeName wildField = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
+        TypeName listOfField = ParameterizedTypeName.get(LIST_CN, wildField);
+        body.addStatement("$T selectFields = new $T<>($L)",
+            listOfField, ARRAY_LIST,
+            ProjectionCall.fromEnvSelection(className(pivot.projection()), pivotAlias));
+        body.addStatement("selectFields.add(parentInput.field(0, $T.class).as($S))",
+            Integer.class, IDX_COLUMN);
+
+        // The key-preserving LEFT JOIN's ON, over the correlation's slot pairs (arity-generic):
+        // attribute side by column reference, parent-input side by sqlName plus the owner
+        // column's DataType, the same division the correlated topology keeps.
+        var slots = pivot.correlation().slots();
+        List<ColumnRef> targetCols = slots.targetSideColumns();
+        List<ColumnRef> sourceCols = slots.sourceSideColumns();
+        var onCond = CodeBlock.builder();
+        for (int i = 0; i < targetCols.size(); i++) {
+            if (i > 0) onCond.add(".and(");
+            onCond.add("$L.$L.eq($L)",
+                pivotAlias, targetCols.get(i).javaName(),
+                parentInputFieldLookup(sourceCols.get(i), ownerTable));
+            if (i > 0) onCond.add(")");
+        }
+
+        var sel = CodeBlock.builder();
+        sel.add("$T<$T> flat = dsl\n", RESULT, RECORD);
+        sel.indent();
+        sel.add(".select(selectFields)\n");
+        sel.add(".from(parentInput)\n");
+        sel.add(".leftJoin($L).on($L)\n", pivotAlias, onCond.build());
+        sel.add(".groupBy(parentInput.field(0, $T.class))\n", Integer.class);
+        sel.add(".fetch();\n");
+        sel.unindent();
+        body.add(sel.build());
+
+        body.addStatement("return scatterSingleByIdx(flat, keys.size())");
         return body.build();
     }
 
@@ -263,23 +340,6 @@ final class BatchedRowsFragments {
             SourceKey sourceKey, LaunchSource.Correlated chain) {
         List<JoinStep> joinPath = chain.joinPath();
         ParentCorrelation correlation = chain.correlation();
-        List<ColumnRef> pkCols = sourceKey.columns();
-        TypeName keyElement = sourceKey.keyElementType();
-
-        int parentRowArity = pkCols.size() + 1;
-        if (parentRowArity > 22) {
-            throw new IllegalStateException(
-                "Parent PK arity " + pkCols.size() + " + idx exceeds jOOQ's typed Row/Record arity limit (22)");
-        }
-        TypeName[] parentRowTypeArgs = new TypeName[parentRowArity];
-        parentRowTypeArgs[0] = ClassName.get(Integer.class);
-        for (int i = 0; i < pkCols.size(); i++) {
-            parentRowTypeArgs[i + 1] = pkCols.get(i).columnType();
-        }
-        // ValuesJoinRowBuilder's schemes take the slot count and add the idx cell themselves.
-        TypeName parentRowType = ParameterizedTypeName.get(ValuesJoinRowBuilder.rowClass(pkCols.size()), parentRowTypeArgs);
-        TypeName parentRecordType = ParameterizedTypeName.get(ValuesJoinRowBuilder.recordClass(pkCols.size()), parentRowTypeArgs);
-        TypeName parentInputTableType = ParameterizedTypeName.get(TABLE, parentRecordType);
 
         // The command constructor's contract mirrors the classifier's: a correlated chain is
         // non-empty except under the pre-keyed lifted shape.
@@ -321,24 +381,7 @@ final class BatchedRowsFragments {
             }
         }
 
-        // Parent-input VALUES rows, fully typed: one Row<N+1><Integer, pkType1, ...> per key[i].
-        // Generic array creation is the one unavoidable unchecked cast, scoped to this line.
-        body.add("@$T({$S, $S})\n", ClassName.get("java.lang", "SuppressWarnings"), "unchecked", "rawtypes");
-        body.addStatement("$T[] parentRows = ($T[]) new $T[keys.size()]",
-            parentRowType, parentRowType, ValuesJoinRowBuilder.rowClass(pkCols.size()));
-        body.beginControlFlow("for (int i = 0; i < keys.size(); i++)");
-        body.addStatement("$T k = keys.get(i)", keyElement);
-        body.addStatement("parentRows[i] = $T.row($L)", DSL,
-            parentKeyCells(sourceKey, pkCols, correlation.parentKeyOwnerTable()));
-        body.endControlFlow();
-
-        var parentInputAlias = CodeBlock.builder();
-        parentInputAlias.add("$S, $S", "parentInput", "idx");
-        for (var col : pkCols) {
-            parentInputAlias.add(", $S", col.sqlName());
-        }
-        body.addStatement("$T parentInput = $T.values(parentRows).as($L)",
-            parentInputTableType, DSL, parentInputAlias.build());
+        declareParentInput(body, sourceKey, correlation.parentKeyOwnerTable());
 
         // Hop aliases, one declaration per hop; the lifted shape has no hops and declares its
         // single synthesized target alias directly.
@@ -372,6 +415,54 @@ final class BatchedRowsFragments {
         }
 
         return new PreludeBindings(aliases, terminalAlias, firstAlias, joinOnAlias, joinOnCols, joinOnParentCols);
+    }
+
+    /**
+     * The parent-input VALUES derived table's declarations: typed {@code parentRows[]} with
+     * the one scoped {@code @SuppressWarnings} cast (Java forbids generic array creation), one
+     * row per batch key through {@link #parentKeyCells}, and the {@code parentInput}
+     * derived-table aliasing ({@code "parentInput", "idx", <key sqlNames...>}). Shared by the
+     * correlated prelude and the pivot arm, which anchor the same batch shape before diverging
+     * on topology.
+     */
+    private static void declareParentInput(CodeBlock.Builder body, SourceKey sourceKey,
+            TableRef ownerTable) {
+        List<ColumnRef> pkCols = sourceKey.columns();
+        TypeName keyElement = sourceKey.keyElementType();
+
+        int parentRowArity = pkCols.size() + 1;
+        if (parentRowArity > 22) {
+            throw new IllegalStateException(
+                "Parent PK arity " + pkCols.size() + " + idx exceeds jOOQ's typed Row/Record arity limit (22)");
+        }
+        TypeName[] parentRowTypeArgs = new TypeName[parentRowArity];
+        parentRowTypeArgs[0] = ClassName.get(Integer.class);
+        for (int i = 0; i < pkCols.size(); i++) {
+            parentRowTypeArgs[i + 1] = pkCols.get(i).columnType();
+        }
+        // ValuesJoinRowBuilder's schemes take the slot count and add the idx cell themselves.
+        TypeName parentRowType = ParameterizedTypeName.get(ValuesJoinRowBuilder.rowClass(pkCols.size()), parentRowTypeArgs);
+        TypeName parentRecordType = ParameterizedTypeName.get(ValuesJoinRowBuilder.recordClass(pkCols.size()), parentRowTypeArgs);
+        TypeName parentInputTableType = ParameterizedTypeName.get(TABLE, parentRecordType);
+
+        // Parent-input VALUES rows, fully typed: one Row<N+1><Integer, pkType1, ...> per key[i].
+        // Generic array creation is the one unavoidable unchecked cast, scoped to this line.
+        body.add("@$T({$S, $S})\n", ClassName.get("java.lang", "SuppressWarnings"), "unchecked", "rawtypes");
+        body.addStatement("$T[] parentRows = ($T[]) new $T[keys.size()]",
+            parentRowType, parentRowType, ValuesJoinRowBuilder.rowClass(pkCols.size()));
+        body.beginControlFlow("for (int i = 0; i < keys.size(); i++)");
+        body.addStatement("$T k = keys.get(i)", keyElement);
+        body.addStatement("parentRows[i] = $T.row($L)", DSL,
+            parentKeyCells(sourceKey, pkCols, ownerTable));
+        body.endControlFlow();
+
+        var parentInputAlias = CodeBlock.builder();
+        parentInputAlias.add("$S, $S", "parentInput", "idx");
+        for (var col : pkCols) {
+            parentInputAlias.add(", $S", col.sqlName());
+        }
+        body.addStatement("$T parentInput = $T.values(parentRows).as($L)",
+            parentInputTableType, DSL, parentInputAlias.build());
     }
 
     /**
