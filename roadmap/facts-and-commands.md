@@ -2124,6 +2124,102 @@ R541's single-operation launchers never need it, and a general launcher cannot d
     counts flat at 18/71/76, the predicted asymmetry. Byte-identical incremental and
     prune/propagate harness clauses green unchanged; SQL pins untouched (emit-neutral, sakila
     704 green). Verified: full reactor green, 3073 graphitron module tests.
+  - **Slice 7b design record (2026-07-30, consult-checked, binding): connection synthesis
+    becomes a relation.** The census: `ConnectionPromoter.synthesiseForField` runs inside the
+    classify walk, per visited field, before every classification early-return, accumulating
+    into two un-keyed carriers (`ArrayList<CarrierRewrite>` plus a `LinkedHashSet<String>` of
+    synthesised names) that `rebuildAssembledForConnections` and
+    `resolveSynthesisedConnectionTypes` consume post-walk; the minted artifacts land both in
+    `schema.types()` (through `TypeRegistry.register`'s load-bearing merge/demote/idempotency
+    reconciliation) and in the rebuilt assembled schema; four documented ordering constraints
+    hold the interleaving; roughly forty main-source sites special-case the five synthesised
+    arms, ten of which do structural detection off the pre-rewrite assembled schema
+    independently of the promoter. The slice re-keys the walk's output as a coordinate-keyed
+    relation; it does not re-phase the pipeline.
+    - **The row seals, and carries only what the coordinate owns (consult verdict).** The row
+      value is a sealed two-arm hierarchy (directive-driven and structural): the
+      directive-driven arm carries the rewrite facts (`defaultPageSize`, `outerNonNull`, facet
+      specs, the programmatically built forms); the structural arm carries none of them, so the
+      rebuild folds as a total switch instead of an `if (rewrite present)`, and
+      `rejectFacetMisuse` stops re-deriving the arm discriminator by hand. Type-grain facts
+      (`elementTypeName`, `itemNullable`, `edgeTypeName`, the facet list) are NOT copied onto
+      the row: they live on the registered `ConnectionType`/`EdgeType`/`FacetsType` arms, where
+      `TypeRegistry.register` reconciles first-wins across carriers minting one shared name,
+      and a row-side copy would disagree with the reconciled entry by construction. The row
+      references the registry (a typed accessor returning the sealed arm), never restates it.
+      The shared `PageInfo` and the reusable per-(scalar, nullability) `FacetValue` pool are
+      schema-grain slots on the same producer's output, not replicated per row. The row
+      carries the absent-from-assembled discriminator (`registerSynthesised` computes it
+      today), so the rebuild stops re-evaluating `ctx.schema.getType(name) == null`. The new
+      sealed hierarchy gets its `HierarchyKindRegistryTest` label.
+    - **The enforcer guards the live axis (consult verdict).** Duplicate coordinates are
+      structurally unreachable in the production walk (one visit per node, one iteration per
+      field), so a duplicate-key guard proves nothing; the genuinely N:1 axis is coordinate to
+      minted connection name (explicit `connectionName:` lets two carriers mint one name, and
+      the registry merge silently keeps the first shape). The relation's construction check is
+      therefore the name axis: rows minting the same connection name must agree on the shape
+      they mint, else a typed rejection.
+    - **Home: a `GraphitronSchema` sidecar, beside the other post-walk folds (consult
+      verdict).** Not the Bundle: the validator, the LSP catalog builder and the plan producers
+      all take the schema, the builder's own `build()` discards the bundle, and the bundle's
+      two members are pre-assembly SDL booleans, not post-walk folds. Not the plan: the
+      relation's first consumer is `rebuildAssembledForConnections`, inside the builder, two
+      phases before the plan exists, and the plan's own boundary is "what this run emits". The
+      precedent is `arrivals`/`reachableSourceShapes`/`tenantBindings`/`argumentReachableInputs`.
+    - **The capability payload is the `facetsFor`/`rejectFacetMisuse` cutover (consult
+      verdict, resolving the census's open fork).** Without it the slice is a re-keyed internal
+      accumulator plus exemption edits, the "purely a migration payment" failure case.
+      `ConditionCommands.facetsFor` cuts over from the recomputed
+      `ConnectionNaming.defaultConnectionName` string lookup to the coordinate-keyed relation,
+      which dissolves the sole stated reason for the user-visible `connectionName:` plus
+      `@asFacet` rejection; the restriction is not kept as naming discipline (a rejection that
+      outlives its cause is an allow-list tracking nothing), and its removal is the slice's
+      user-visible win. `rejectFacetMisuse` re-sources its carrier set off the relation's keys
+      instead of re-scanning the schema for the directive, the validator mirroring the
+      classifier. The ten structural-detection sites are out of scope and the record is
+      explicit about the reason: they ask a type-grain question already homed on
+      `ConnectionType`, so their fix is reading the landed arm, not this relation;
+      `BuildContext.buildWrapper` is the one coordinate-grain site the relation could serve
+      later. The structural arm's edge name is read off the `edges` field's actual type
+      instead of the `replace("Connection", "Edge")` formula, same producer, same visit.
+    - **The population pin keeps both legs and names its carve-out (consult verdict).** Leg
+      one: the relation's key set equals the model-derived carrier predicate (directive-driven
+      bare-list carriers union structural connection-typed returns), the declared-family
+      shape. Leg two: the minted-name closure generalises
+      `ConnectionAssembledDeltaPipelineTest` on BOTH sides, the registry (each row's declared
+      arms against the registry's actual entries, so a demote is a paired mismatch rather than
+      a bare null) and the rebuilt assembled schema (minted names present, carriers retyped),
+      because the registry-versus-assembled delta is the drift R10 is gated on. The demote
+      carve-out (a minted name colliding with an SDL declaration demotes with its diagnostic)
+      is stated in the pin, not discovered by it. Plus the non-vacuity witness over a
+      connection fixture, closing the empty-relation-compiles-green hazard the parent record
+      flagged.
+    - **The instrument stays author-checkable (consult verdict on the dilution question).**
+      Counting producer-reported minted arms as corpus coverage would make the facet rows
+      permanently green whatever the promoter does. Instead the corpus states the expectation
+      at the coordinate that causes the synthesis (a carrier-side annotation naming the arms
+      it mints), coverage is derived from the agreement of declared and produced, and the new
+      `@asConnection` plus `@asFacet` corpus example makes it non-vacuous. The
+      `FacetsType`/`FacetValueType` exemption rows then exit against a falsifiable instrument.
+    - **`SynthesisedNoSdlOrigin` retires with its cross-check (consult verdict).** After the
+      facet pair exits, the arm's permit-set cross-check filters an empty population and goes
+      vacuously green, and the arm's own javadoc claim ("they leave the list when connection
+      synthesis becomes a relation") is false for the two rows that stay. So:
+      `SYNTHESISED_TYPE_PERMITS` re-sources off the relation's declared minted-arm set (the
+      relation is now the single producer of exactly those permits, turning a vacuous
+      cross-check into a live derivation), the surviving `Operation.Count`/`Operation.Facet`
+      rows re-arm as `Exemption.Unimplemented` with the launcher's `ConnectionResult` carrier
+      fork as their single-homed blocker (their true shape after 7b; the coordinate question
+      belongs to the connection launcher, per the parent record), and the
+      `SynthesisedNoSdlOrigin` arm is deleted rather than left quietly green.
+    - **Predictions and residue.** `PLAN_LEAF_REFERENCES` moves only by `facetsFor`'s cutover
+      (the producer lives in the builder, outside `plan/`); generators counts flat. The four
+      ordering constraints are restated per-constraint in the implementation: which the
+      relation now entails as a data dependency (rebuild step 1 before step 2 becomes a fold
+      over row data) and which stay review-only prose. `ConnectionPromoterTest`'s twenty-one
+      unit tests are audited against the population pin and the subsumed ones are named in the
+      closed entry rather than kept as a second live path. R10 stays its own item; this slice
+      is its concrete signal, not its execution.
 
 ## The exemption lists are the grain worklist
 
