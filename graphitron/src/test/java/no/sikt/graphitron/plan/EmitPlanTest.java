@@ -116,6 +116,33 @@ class EmitPlanTest {
             .doesNotContain(GlobalUnitKind.QUERY_NODE_FETCHER);
     }
 
+    /**
+     * The dispatch row is the sealed relation's one data-carrying arm: its schema-dependent
+     * outbound refs (the per-type projection classes the emitted dispatch references) ride the
+     * row, node types included through the {@code @node}-to-{@code @key} synthesis. A plain
+     * schema gets no row at all (pinned by {@link #plainSchema_producesTheUnconditionalKindsPlusDevExecutor}),
+     * so the arm's non-empty guard never meets a live empty set.
+     */
+    @Test
+    void entityDispatchRow_carriesItsDispatchTargets() {
+        var withNode = TestSchemaHelper.buildBundle("""
+            type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
+                id: ID!
+            }
+            type Query { film: Film }
+            """);
+        var plan = EmitPlan.produce(withNode.model(), withNode.federationLink(), withNode.usesOneOf(),
+            SessionStateConfig.none(), DEFAULT_OUTPUT_PACKAGE);
+
+        var dispatch = plan.globals().stream()
+            .filter(command -> command.kind() == GlobalUnitKind.ENTITY_FETCHER_DISPATCH)
+            .findFirst().orElseThrow();
+        assertThat(dispatch).isInstanceOf(GlobalCommand.EntityDispatch.class);
+        assertThat(((GlobalCommand.EntityDispatch) dispatch).dispatchTargets())
+            .extracting(UnitRef::fqcn)
+            .containsExactly(DEFAULT_OUTPUT_PACKAGE + ".types.Film");
+    }
+
     @Test
     void bundleLandsTheOneOfFactOnce() {
         assertThat(TestSchemaHelper.buildBundle(PLAIN_SDL).usesOneOf()).isFalse();

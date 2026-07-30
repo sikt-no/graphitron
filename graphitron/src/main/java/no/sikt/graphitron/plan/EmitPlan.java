@@ -72,8 +72,14 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         globals.add(one(GlobalUnitKind.LIGHT_FETCHER, units.singleton(GeneratedUnits.SUB_UTIL, "LightFetcher")));
         globals.add(one(GlobalUnitKind.NODE_ID_ENCODER, units.singleton(GeneratedUnits.SUB_UTIL, "NodeIdEncoder")));
         if (!schema.entitiesByType().isEmpty()) {
-            globals.add(one(GlobalUnitKind.ENTITY_FETCHER_DISPATCH,
-                units.singleton(GeneratedUnits.SUB_UTIL, "EntityFetcherDispatch")));
+            // The dispatch row carries its schema-dependent outbound refs: one per-type
+            // projection class per resolvable entity (node types included through the
+            // @node-to-@key synthesis), sorted for a deterministic plan.
+            globals.add(new GlobalCommand.EntityDispatch(
+                units.singleton(GeneratedUnits.SUB_UTIL, "EntityFetcherDispatch"),
+                schema.entitiesByType().keySet().stream().sorted()
+                    .map(units::typeClass)
+                    .toList()));
         }
         globals.add(one(GlobalUnitKind.CONNECTION_RESULT, units.connectionResult()));
         globals.add(one(GlobalUnitKind.CONNECTION_HELPER, units.connectionHelper()));
@@ -120,9 +126,9 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
             TypeUnitCommands.produce(schema, outputPackage));
     }
 
-    /** A global command committing exactly one unit. */
+    /** A fixed-substrate global command committing exactly one unit. */
     private static GlobalCommand one(GlobalUnitKind kind, UnitRef unit) {
-        return new GlobalCommand(kind, List.of(unit));
+        return new GlobalCommand.Fixed(kind, List.of(unit));
     }
 
     /**
@@ -139,6 +145,6 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         if (sessionStateConfig.emitsHookImplementation()) {
             refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronSessionHook"));
         }
-        return new GlobalCommand(GlobalUnitKind.CONNECTION_RUNTIME, refs);
+        return new GlobalCommand.Fixed(GlobalUnitKind.CONNECTION_RUNTIME, refs);
     }
 }
