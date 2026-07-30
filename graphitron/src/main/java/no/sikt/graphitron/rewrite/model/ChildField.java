@@ -1101,10 +1101,6 @@ public sealed interface ChildField extends OutputField
         LoaderRegistration loaderRegistration,
         Optional<ErrorChannel.RouterDispatched> errorChannel
     ) implements TableTargetField, MethodBackedField, BatchKeyField, WithErrorChannel {
-        @Override
-        public String rowsMethodName() {
-            return "load" + Character.toUpperCase(name().charAt(0)) + name().substring(1);
-        }
         /**
          * Although the service method returns the typed {@code XRecord} (or
          * {@code List<XRecord>}) per the service-producer-strict-return contract, the typed
@@ -1145,11 +1141,6 @@ public sealed interface ChildField extends OutputField
         LoaderRegistration loaderRegistration,
         Optional<ErrorChannel.RouterDispatched> errorChannel
     ) implements ChildField, MethodBackedField, BatchKeyField, WithErrorChannel {
-
-        @Override
-        public String rowsMethodName() {
-            return "load" + Character.toUpperCase(name().charAt(0)) + name().substring(1);
-        }
 
         /**
          * The per-key Java element type this field's loader resolves to (the {@code V} before

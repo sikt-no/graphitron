@@ -47,6 +47,7 @@ public class GraphitronSchemaValidator {
         validateTenantBindings(schema, errors);
         validateConditionEmitImplemented(schema, errors);
         validateProjectionUnitAddresses(schema, errors);
+        validateLauncherMethodNames(schema, errors);
         validateJoinedTableReprojection(schema, errors);
         drainBuildDiagnostics(schema, errors);
         return List.copyOf(errors);
@@ -139,6 +140,33 @@ public class GraphitronSchemaValidator {
                         + collision.foldedSimpleName() + "' (case-folded), which " + others
                         + " also mints; rename the nesting type, the pivot field, or the colliding "
                         + "type so every projection unit has a distinct class name"),
+                origins.get(0).location() == null
+                    ? SourceLocation.EMPTY
+                    : origins.get(0).location()));
+        }
+    }
+
+    /**
+     * Validator mirror of the launcher relation's case-folded method-name census
+     * ({@code LauncherCommands.methodCollisions}): the {@code rows} / {@code load} /
+     * {@code lookup} formulas upper-camel a field name, which is not injective, so two covered
+     * coordinates on one type can mint one emitted method. The relation constructor's hard
+     * failure is the backstop; this rejection is what an author sees, located at the colliding
+     * declarations.
+     */
+    private void validateLauncherMethodNames(GraphitronSchema schema, List<ValidationError> errors) {
+        for (var collision : no.sikt.graphitron.plan.LauncherCommands.methodCollisions(schema)) {
+            var origins = collision.origins();
+            var others = origins.stream().skip(1)
+                .map(no.sikt.graphitron.plan.LauncherCommands.MethodOrigin::description)
+                .collect(java.util.stream.Collectors.joining(", "));
+            errors.add(new ValidationError(
+                origins.get(0).description(),
+                Rejection.invalidSchema(
+                    origins.get(0).description() + " mints the generated launcher method '"
+                        + collision.foldedKey() + "' (case-folded), which " + others
+                        + " also mints; rename one of the colliding fields so every launcher"
+                        + " method has a distinct name"),
                 origins.get(0).location() == null
                     ? SourceLocation.EMPTY
                     : origins.get(0).location()));

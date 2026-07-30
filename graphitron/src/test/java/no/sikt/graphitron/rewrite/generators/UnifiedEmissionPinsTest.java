@@ -67,12 +67,14 @@ class UnifiedEmissionPinsTest {
         // launcher) body now renders through RootLauncherRenderer.render over a launcher
         // command row. This pin is the skeleton pin's successor with a live failure mode
         // (asserting zero RowsMethodSkeleton calls after its deletion could never fail again):
-        // it counts the render call sites in the generators package. Current sites (9), all in
-        // TypeFetcherGenerator's dispatch: the four root arms (table, routine, interface,
-        // lookup) and the five child arms (batched table, batched lookup, batched pivot,
-        // service table lift, service record delegate). A handcrafted bypass replaces one call
-        // with inline MethodSpec construction and drops the count; a legitimately new launcher
-        // family raises it, and touching this number is the review point.
+        // it counts the render call sites in the generators package. Current sites (10), all in
+        // TypeFetcherGenerator: the four root arms (table, routine, interface, lookup), the
+        // five child arms (batched table, batched lookup, batched pivot, service table lift,
+        // service record delegate), and the DML reentry companion's one shared write-arm call
+        // (emitReentry; the projected and discriminated arms converge on it, so the fold added
+        // one site, not two). A handcrafted bypass replaces one call with inline MethodSpec
+        // construction and drops the count; a legitimately new launcher family raises it, and
+        // touching this number is the review point.
         long renderSites = countAcrossGenerators(
             Pattern.compile("RootLauncherRenderer\\s*\\.render\\("),
             "RootLauncherRenderer.java");
@@ -80,7 +82,7 @@ class UnifiedEmissionPinsTest {
             .as("Every launcher emit site in generators/ routes through "
                 + "RootLauncherRenderer.render; a count move in either direction is a "
                 + "deliberate edit here")
-            .isEqualTo(9);
+            .isEqualTo(10);
     }
 
     @Test

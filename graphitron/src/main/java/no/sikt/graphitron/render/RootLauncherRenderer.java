@@ -82,16 +82,23 @@ public final class RootLauncherRenderer {
         var builder = MethodSpec.methodBuilder(row.unit().methodName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(valueTypeOf(row));
-        // The parameter list is a derived view over (invocation, tenancy): a direct
-        // single-tenant launcher takes the one resolved DSLContext its entry point acquired; a
-        // fanned launcher takes none, its acquisition being plural and internal to the scatter
-        // carrier; a batched launcher takes its keys, the dsl declared in the body (single) or
-        // bound by the scatter lambda (fanned).
-        if (row.invocation() instanceof Invocation.Batched batched) {
-            builder.addParameter(BatchedRowsFragments.keysType(batched), "keys");
-        } else if (row.invocation() instanceof Invocation.Direct
-                && row.tenancy() instanceof TenantStrategy.Single) {
-            builder.addParameter(DSL_CONTEXT, "dsl");
+        // The parameter list is a derived view over (invocation, tenancy), total over the
+        // delivery axis so a new arm is a compile error here rather than a silent default: a
+        // direct single-tenant launcher takes the one resolved DSLContext its entry point
+        // acquired; a fanned launcher takes none, its acquisition being plural and internal to
+        // the scatter carrier; a batched launcher takes its loader keys; a reentry companion
+        // takes the write's captured RETURNING keys, the dsl declared in the body by the
+        // shell's fragment.
+        switch (row.invocation()) {
+            case Invocation.Batched batched ->
+                builder.addParameter(BatchedRowsFragments.keysType(batched), "keys");
+            case Invocation.ReturningKeyed ignored ->
+                builder.addParameter(ReentryRowsFragments.keysType(row), "keys");
+            case Invocation.Direct ignored -> {
+                if (row.tenancy() instanceof TenantStrategy.Single) {
+                    builder.addParameter(DSL_CONTEXT, "dsl");
+                }
+            }
         }
         builder.addParameter(ENV, "env");
 
@@ -138,6 +145,10 @@ public final class RootLauncherRenderer {
                 builder.addCode(conditionStatement(row, tableLocal));
                 builder.addCode(lookupBody(row, lookup, tableLocal));
             }
+            case LaunchSource.ProjectedReentry projected -> builder.addCode(
+                ReentryRowsFragments.projectedBody(row, projected, batchedDslDeclaration));
+            case LaunchSource.DiscriminatedReentry discriminated -> builder.addCode(
+                ReentryRowsFragments.discriminatedBody(row, discriminated, batchedDslDeclaration));
             case LaunchSource.DiscriminatedTable disc -> {
                 String tableLocal = TableLocal.name(disc.table());
                 builder.addCode(TableLocal.declare(disc.table()));
@@ -181,19 +192,23 @@ public final class RootLauncherRenderer {
                 || row.source() instanceof LaunchSource.ServiceTableLift) {
             return ServiceRowsFragments.valueTypeOf(row);
         }
-        if (row.invocation() instanceof Invocation.Batched) {
-            return BatchedRowsFragments.valueTypeOf(row);
-        }
-        if (row.tenancy() instanceof TenantStrategy.Fanned) {
-            return ParameterizedTypeName.get(LIST, ClassName.get(Object.class));
-        }
-        return switch (row.result()) {
-            case ResultShape.RecordList ignored -> RESULT_OF_RECORD;
-            case ResultShape.SingleRecord ignored -> RECORD;
-            case ResultShape.Connection connection -> className(connection.carrier());
-            case ResultShape.LoaderDelegated ignored -> throw new IllegalStateException(
-                "the LoaderDelegated result belongs to the service arms, whose value type"
-                + " derives in ServiceRowsFragments; the command constructor rejects the pair");
+        // Total over the delivery axis, so a new arm is a compile error at this view too.
+        return switch (row.invocation()) {
+            case Invocation.Batched ignored -> BatchedRowsFragments.valueTypeOf(row);
+            case Invocation.ReturningKeyed ignored -> ReentryRowsFragments.valueTypeOf(row);
+            case Invocation.Direct ignored -> {
+                if (row.tenancy() instanceof TenantStrategy.Fanned) {
+                    yield ParameterizedTypeName.get(LIST, ClassName.get(Object.class));
+                }
+                yield switch (row.result()) {
+                    case ResultShape.RecordList ignored2 -> RESULT_OF_RECORD;
+                    case ResultShape.SingleRecord ignored2 -> RECORD;
+                    case ResultShape.Connection connection -> className(connection.carrier());
+                    case ResultShape.LoaderDelegated ignored2 -> throw new IllegalStateException(
+                        "the LoaderDelegated result belongs to the service arms, whose value type"
+                        + " derives in ServiceRowsFragments; the command constructor rejects the pair");
+                };
+            }
         };
     }
 

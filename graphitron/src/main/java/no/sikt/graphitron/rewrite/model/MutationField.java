@@ -130,20 +130,6 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         SourceLocation location();
 
         String name();
-
-        /**
-         * The reentry query unit's method name for a {@code Projected*} / {@code Discriminated*}
-         * return: the follow-up SELECT re-projecting the {@code @table} from the
-         * {@code RETURNING}-captured keys lives in a {@code rows<Name>} method, minted through the
-         * run's method-command registry exactly like {@link BatchKeyField#rowsMethodName()}. The
-         * declaration and the fetcher's call site both read this one fact. Never consulted on the
-         * {@code Encoded*} arms, which carry no reentry.
-         */
-        default String reentryRowsMethodName() {
-            String n = name();
-            if (n == null || n.isEmpty()) return n;
-            return "rows" + Character.toUpperCase(n.charAt(0)) + n.substring(1);
-        }
     }
 
     /**

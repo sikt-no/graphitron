@@ -135,8 +135,12 @@ class CommandSeamRatchetTest {
      * fifth and last membership copy (the schema-class assembler's own enumeration). Raised to
      * 87 when the polymorphic delivery split doubled the child leaf pair (the projection
      * producer's contribution switch gained the two batched leaves' correlation-key arms).
+     * Raised to 91 when the DML reentry fold landed the launcher producer's per-family
+     * membership switches and the validator's launcher-method census mirror (the mirror's
+     * root-kind case labels; the child and DML arms reference their leaves fully qualified,
+     * which this counting rule deliberately does not chase).
      */
-    private static final int PLAN_LEAF_REFERENCES = 87;
+    private static final int PLAN_LEAF_REFERENCES = 91;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide

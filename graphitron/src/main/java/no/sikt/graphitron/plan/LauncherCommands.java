@@ -61,25 +61,17 @@ public final class LauncherCommands {
                         rows.add(row);
                     }
                 }
-                // The child family: the plain batched child in every cardinality (list, single,
-                // and the windowed connection page), its @lookupKey sibling, and the @pivot
-                // aggregate.
-                if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField btf) {
-                    rows.add(batchedRow(btf, schema, conditions, units));
+                if (field instanceof no.sikt.graphitron.rewrite.model.ChildField cf) {
+                    var row = childRowOf(schema, cf, conditions, units);
+                    if (row != null) {
+                        rows.add(row);
+                    }
                 }
-                if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.BatchedLookupTableField blf) {
-                    rows.add(batchedLookupRow(blf,
-                        whereOf(blf.parentTypeName(), blf.name(), conditions),
-                        tenancyOf(schema, blf.parentTypeName(), blf.name(), units), units));
-                }
-                if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.BatchedPivotField bpf) {
-                    rows.add(batchedPivotRow(bpf, units));
-                }
-                if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField stf) {
-                    rows.add(serviceTableRow(stf, units));
-                }
-                if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField srf) {
-                    rows.add(serviceRecordRow(srf, units));
+                if (field instanceof no.sikt.graphitron.rewrite.model.MutationField.DmlTableField dml) {
+                    var row = dmlRowOf(schema, dml, units);
+                    if (row != null) {
+                        rows.add(row);
+                    }
                 }
             }
         }
@@ -119,6 +111,142 @@ public final class LauncherCommands {
             case QueryField.QueryServicePolymorphicField ignored -> null;
             case QueryField.QueryServiceTableInterfaceField ignored -> null;
         };
+    }
+
+    /**
+     * The child family's membership-and-production switch, the {@link #rowOf} shape over
+     * {@link no.sikt.graphitron.rewrite.model.ChildField}'s permits: each leaf either mints the
+     * coordinate's row or is outside the family by the fact ({@code null}), total with no
+     * default, so a new child leaf is a compile-time decision here rather than a silent
+     * non-member.
+     */
+    private static LauncherCommand childRowOf(GraphitronSchema schema,
+            no.sikt.graphitron.rewrite.model.ChildField field,
+            ConditionRelation conditions, GeneratedUnits units) {
+        return switch (field) {
+            // The batched and service families own their coordinates' whole payload production.
+            case no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField btf ->
+                batchedRow(btf, schema, conditions, units);
+            case no.sikt.graphitron.rewrite.model.ChildField.BatchedLookupTableField blf ->
+                batchedLookupRow(blf,
+                    whereOf(blf.parentTypeName(), blf.name(), conditions),
+                    tenancyOf(schema, blf.parentTypeName(), blf.name(), units), units);
+            case no.sikt.graphitron.rewrite.model.ChildField.BatchedPivotField bpf ->
+                batchedPivotRow(bpf, units);
+            case no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField stf ->
+                serviceTableRow(stf, units);
+            case no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField srf ->
+                serviceRecordRow(srf, units);
+            // Inline SQL children: their composition rides the parent's query (the projection
+            // wrap or a correlated subquery), so no launcher unit exists at the coordinate.
+            case no.sikt.graphitron.rewrite.model.ChildField.TableField ignored -> null;
+            case no.sikt.graphitron.rewrite.model.ChildField.LookupTableField ignored -> null;
+            case no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField ignored -> null;
+            // Inline polymorphic delivery: the UNION-ALL stage is the dedicated
+            // polymorphic-emit family, out by the fact like the polymorphic roots.
+            case no.sikt.graphitron.rewrite.model.ChildField.InterfaceField ignored -> null;
+            case no.sikt.graphitron.rewrite.model.ChildField.UnionField ignored -> null;
+            // The batched polymorphic pair: names minted through the same GeneratedUnits scheme
+            // with no row behind them, the one decided emitted-and-uncommitted population (the
+            // per-participant UNION assembly is the polymorphic-emit family's, not a launcher).
+            case no.sikt.graphitron.rewrite.model.ChildField.BatchedInterfaceField ignored -> null;
+            case no.sikt.graphitron.rewrite.model.ChildField.BatchedUnionField ignored -> null;
+            // Column and scalar reads off the parent's already-fetched row: no query of their own.
+            case no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedField ignored -> null;
+            case no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedReferenceField ignored -> null;
+            case no.sikt.graphitron.rewrite.model.ChildField.ParticipantColumnReferenceField ignored -> null;
+            case no.sikt.graphitron.rewrite.model.ChildField.ComputedField ignored -> null;
+            case no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdField ignored -> null;
+            case no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning ignored -> null;
+            // Pass-through and record shapes: they read the parent's row (or a service record)
+            // through the projection family, never a query of their own.
+            case no.sikt.graphitron.rewrite.model.ChildField.NestingField ignored -> null;
+            case no.sikt.graphitron.rewrite.model.ChildField.RecordReadField ignored -> null;
+            case no.sikt.graphitron.rewrite.model.ChildField.RecordCompositeField ignored -> null;
+            // The inline pivot rides its parent's multiset; the slot rides the aggregate's row.
+            case no.sikt.graphitron.rewrite.model.ChildField.PivotField ignored -> null;
+            case no.sikt.graphitron.rewrite.model.ChildField.PivotSlotField ignored -> null;
+            // The error channel is synthesised delivery, not a query coordinate.
+            case no.sikt.graphitron.rewrite.model.ChildField.ErrorsField ignored -> null;
+        };
+    }
+
+    /**
+     * The DML family's membership-and-production switch, the {@link #rowOf} shape over
+     * {@link no.sikt.graphitron.rewrite.model.DmlReturnExpression}'s arms; this switch is the
+     * one home of the kind-to-(source, result) projection. The {@code Projected*} and
+     * {@code Discriminated*} arms mint the coordinate's reentry companion row (the write itself
+     * stays with the mutation entry point, which is deliberately not thin: it owns the
+     * transaction, the dialect guard, the no-match guard and the channel envelope); the
+     * {@code Encoded*} arms carry no reentry and get no row.
+     */
+    private static LauncherCommand dmlRowOf(GraphitronSchema schema,
+            no.sikt.graphitron.rewrite.model.MutationField.DmlTableField field, GeneratedUnits units) {
+        return switch (field.returnExpression()) {
+            case no.sikt.graphitron.rewrite.model.DmlReturnExpression.EncodedSingle ignored -> null;
+            case no.sikt.graphitron.rewrite.model.DmlReturnExpression.EncodedList ignored -> null;
+            case no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedSingle ps ->
+                reentryRow(field,
+                    new LaunchSource.ProjectedReentry(units.typeClass(ps.returnTypeName()),
+                        ps.reentryCorrelation()),
+                    new ResultShape.SingleRecord(), units);
+            case no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList pl ->
+                reentryRow(field,
+                    new LaunchSource.ProjectedReentry(units.typeClass(pl.returnTypeName()),
+                        pl.reentryCorrelation()),
+                    new ResultShape.RecordList(null), units);
+            case no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedSingle ds ->
+                reentryRow(field,
+                    discriminatedReentrySource(schema, ds.interfaceName(), ds.discriminatorColumn(),
+                        ds.knownDiscriminatorValues(), ds.participants(), ds.reentryCorrelation(), units),
+                    new ResultShape.SingleRecord(), units);
+            case no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedList dl ->
+                reentryRow(field,
+                    discriminatedReentrySource(schema, dl.interfaceName(), dl.discriminatorColumn(),
+                        dl.knownDiscriminatorValues(), dl.participants(), dl.reentryCorrelation(), units),
+                    new ResultShape.RecordList(null), units);
+        };
+    }
+
+    /**
+     * A DML reentry companion's row: the named unit holding the mutation's follow-up SELECT,
+     * keyed on the {@code RETURNING}-captured keys. The where slot stays null (the mutation's
+     * filter surface belongs to the write, never the re-select); the list arm's ORDER BY idx is
+     * source-entailed, so the ordering slot is absent; single-tenant by classification
+     * (backstopped on the command with the delivery biconditional).
+     */
+    private static LauncherCommand reentryRow(
+            no.sikt.graphitron.rewrite.model.MutationField.DmlTableField field,
+            LaunchSource source, ResultShape result, GeneratedUnits units) {
+        return new LauncherCommand(
+            units.reentryRowsMethod(field.parentTypeName(), field.name()),
+            FieldCoordinates.coordinates(field.parentTypeName(), field.name()),
+            source,
+            null,
+            new Invocation.ReturningKeyed(),
+            new TenantStrategy.Single(),
+            result);
+    }
+
+    /**
+     * The discriminated reentry's source: the borrowed-whole {@link LaunchSource.DiscriminatedTable}
+     * payload assembled exactly as {@link #interfaceRow}'s (the base slice copied off the
+     * schema's joined-table reprojection fold, the branches through the shared assembly), plus
+     * the write's correlation.
+     */
+    private static LaunchSource.DiscriminatedReentry discriminatedReentrySource(
+            GraphitronSchema schema, String interfaceName, String discriminatorColumn,
+            List<String> knownDiscriminatorValues,
+            List<no.sikt.graphitron.rewrite.model.ParticipantRef> participants,
+            no.sikt.graphitron.rewrite.model.ParentCorrelation.OnLiftedSlots correlation,
+            GeneratedUnits units) {
+        var reprojection = schema.joinedTableReprojectionOf(interfaceName);
+        return new LaunchSource.DiscriminatedReentry(
+            new LaunchSource.DiscriminatedTable(correlation.targetTable(),
+                discriminatorColumn, knownDiscriminatorValues,
+                reprojection.baseSlice(),
+                discriminatedBranches(participants, reprojection, units)),
+            correlation);
     }
 
     /**
@@ -574,6 +702,81 @@ public final class LauncherCommands {
                 + " fragment '" + ref.methodName() + "' but the condition row's fragment set does"
                 + " not carry it; the two producers read one naming formula and have drifted");
         }
+    }
+
+    /**
+     * The validator's mirror of the relation's case-folded method-name census: every launcher
+     * method the schema's covered coordinates mint, grouped case-folded by
+     * {@code (owner, method)}, with the groups that collide across distinct coordinates
+     * returned for rejection (the projection producer's address-census division: the relation
+     * constructor's hard failure is the backstop, this is what an author sees, located at the
+     * colliding declarations). The kind-to-scheme mapping restates the membership switches
+     * above at name grain only; a drift produces a census that misses or over-reports, caught
+     * by the constructor backstop either way.
+     */
+    public static List<MethodCollision> methodCollisions(GraphitronSchema schema) {
+        var units = new GeneratedUnits("");
+        var origins = new java.util.LinkedHashMap<String,
+            java.util.LinkedHashMap<String, graphql.language.SourceLocation>>();
+        for (var type : schema.types().values()) {
+            for (var field : schema.fieldsOf(type.name())) {
+                var ref = mintedMethodOf(field, units);
+                if (ref == null) {
+                    continue;
+                }
+                var key = (ref.owner().fqcn() + "#" + ref.methodName())
+                    .toLowerCase(java.util.Locale.ROOT);
+                origins.computeIfAbsent(key, k -> new java.util.LinkedHashMap<>())
+                    .putIfAbsent("field '" + field.qualifiedName() + "'", field.location());
+            }
+        }
+        return origins.entrySet().stream()
+            .filter(e -> e.getValue().size() > 1)
+            .map(e -> new MethodCollision(e.getKey(),
+                e.getValue().entrySet().stream()
+                    .map(o -> new MethodOrigin(o.getKey(), o.getValue()))
+                    .toList()))
+            .toList();
+    }
+
+    /** One case-folded launcher-method collision: the folded {@code owner#method} key and its origins. */
+    public record MethodCollision(String foldedKey, List<MethodOrigin> origins) {}
+
+    /** One colliding coordinate: its description and source location, for the located rejection. */
+    public record MethodOrigin(String description,
+            graphql.language.SourceLocation location) {}
+
+    /**
+     * The name the covered family would mint for {@code field}, or {@code null} for a
+     * non-member: the census-grain restatement of {@link #rowOf}, {@link #childRowOf} and
+     * {@link #dmlRowOf}'s minting arms, reading only the naming schemes (never conditions or
+     * tenancy, which a name census does not need).
+     */
+    private static no.sikt.graphitron.command.UnitMethodRef mintedMethodOf(
+            GraphitronField field, GeneratedUnits units) {
+        return switch (field) {
+            case QueryField.QueryTableField f -> units.launcherMethod(f.parentTypeName(), f.name());
+            case QueryField.QueryRoutineTableField f -> units.launcherMethod(f.parentTypeName(), f.name());
+            case QueryField.QueryTableInterfaceField f -> units.launcherMethod(f.parentTypeName(), f.name());
+            case QueryField.QueryLookupTableField f -> units.lookupMethod(f.parentTypeName(), f.name());
+            case no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField f ->
+                units.rowsMethod(f.parentTypeName(), f.name());
+            case no.sikt.graphitron.rewrite.model.ChildField.BatchedLookupTableField f ->
+                units.rowsMethod(f.parentTypeName(), f.name());
+            case no.sikt.graphitron.rewrite.model.ChildField.BatchedPivotField f ->
+                units.rowsMethod(f.parentTypeName(), f.name());
+            case no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField f ->
+                units.loadMethod(f.parentTypeName(), f.name());
+            case no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField f ->
+                units.loadMethod(f.parentTypeName(), f.name());
+            case no.sikt.graphitron.rewrite.model.MutationField.DmlTableField f ->
+                switch (f.returnExpression()) {
+                    case no.sikt.graphitron.rewrite.model.DmlReturnExpression.EncodedSingle ignored -> null;
+                    case no.sikt.graphitron.rewrite.model.DmlReturnExpression.EncodedList ignored -> null;
+                    default -> units.reentryRowsMethod(f.parentTypeName(), f.name());
+                };
+            default -> null;
+        };
     }
 
     /**

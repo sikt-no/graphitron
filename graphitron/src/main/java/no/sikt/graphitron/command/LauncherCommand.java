@@ -162,5 +162,33 @@ public record LauncherCommand(
                     + " connection return on @lookupKey fields");
             }
         }
+        // The reentry arms and the ReturningKeyed delivery imply each other in both directions
+        // (the service/LoaderDelegated precedent): the keys parameter only makes sense against
+        // a key-restricted source, and no other delivery can hand captured RETURNING keys in.
+        boolean reentrySource = source instanceof LaunchSource.Reentry;
+        if (reentrySource != invocation instanceof Invocation.ReturningKeyed) {
+            throw new IllegalArgumentException(
+                "the reentry arms and the ReturningKeyed delivery imply each other; got "
+                + source.getClass().getSimpleName() + " with "
+                + invocation.getClass().getSimpleName());
+        }
+        if (reentrySource) {
+            // Single-tenant only: the fan-out ladder
+            // (no.sikt.graphitron.rewrite.TenantBindingIndex) rejects @tenantFanOut on
+            // mutation-side coordinates, so a fanned companion is unreachable by classification.
+            if (!(tenancy instanceof TenantStrategy.Single)) {
+                throw new IllegalArgumentException(
+                    "a reentry companion runs single-tenant (the fan-out ladder rejects"
+                    + " @tenantFanOut on mutations); got " + tenancy.getClass().getSimpleName());
+            }
+            // Never a connection (no paginating mutation payload exists) and never
+            // LoaderDelegated (that shape is the service arms' biconditional partner).
+            if (result instanceof ResultShape.Connection
+                || result instanceof ResultShape.LoaderDelegated) {
+                throw new IllegalArgumentException(
+                    "a reentry companion answers the written records themselves; got "
+                    + result.getClass().getSimpleName());
+            }
+        }
     }
 }

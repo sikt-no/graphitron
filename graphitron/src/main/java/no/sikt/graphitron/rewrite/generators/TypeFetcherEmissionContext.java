@@ -42,12 +42,6 @@ final class TypeFetcherEmissionContext {
     // TypeFetcherGenerator installs a populated one up front.
     private FetchersHelperNames fetchersHelperNames = FetchersHelperNames.bare();
 
-    // The per-run command registry + this class's unit FQCN, installed by TypeFetcherGenerator
-    // up front; the throwaway defaults keep out-of-band contexts on the same single code path.
-    private no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry methodCommands =
-        new no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry();
-    private String unitFqcn = "<out-of-band>";
-
     TypeFetcherEmissionContext(GraphQLSchema assembledSchema, String parentTypeName) {
         this(assembledSchema, parentTypeName, null);
     }
@@ -135,44 +129,6 @@ final class TypeFetcherEmissionContext {
      */
     void setFetchersHelperNames(FetchersHelperNames names) {
         this.fetchersHelperNames = names;
-    }
-
-    /**
-     * Install the per-run {@link MethodCommandRegistry} and this class's unit FQCN so
-     * {@link #rowsDeclarationName} commits into the run's registry. Called once by
-     * {@link TypeFetcherGenerator#generateTypeSpec} before any field body emits. Contexts that
-     * never receive an install (unit-tier convenience constructors, out-of-band helper emission)
-     * mint into a private throwaway registry, so the declaration path is one code path with no
-     * null branch; a production run that failed to install would surface as a covered coordinate
-     * with no command in the run's registry, which the bidirectional closure oracle reports.
-     */
-    void setMethodCommandMint(no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry registry,
-            String unitFqcn) {
-        this.methodCommands = registry;
-        this.unitFqcn = unitFqcn;
-    }
-
-    /**
-     * The reentry-aware rows/load-method declaration name for {@code field}: the single seam the
-     * rows-method emitters obtain their declaration name through. Delegates to
-     * {@link no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry#declareReentryRowsMethod},
-     * which reads the name off the model's naming fact and commits a {@code MethodCommand} exactly
-     * when the field's site-level fact ({@code OutputField.emitsKeyedReQuery()}) holds — the
-     * Table-sourced {@code @splitQuery} arm flows through the same call and commits nothing.
-     */
-    <F extends no.sikt.graphitron.rewrite.model.OutputField & no.sikt.graphitron.rewrite.model.BatchKeyField>
-            String rowsDeclarationName(F field) {
-        return methodCommands.declareReentryRowsMethod(field, unitFqcn);
-    }
-
-    /**
-     * DML sibling of {@link #rowsDeclarationName}: resolves the named reentry
-     * query unit's declaration name for a {@code Projected*} / {@code Discriminated*} mutation
-     * field through the command-mint seam.
-     */
-    <F extends no.sikt.graphitron.rewrite.model.OutputField & no.sikt.graphitron.rewrite.model.MutationField.DmlTableField>
-            String dmlRowsDeclarationName(F field) {
-        return methodCommands.declareDmlReentryRowsMethod(field, unitFqcn);
     }
 
     // Companion methods a field-body emitter declares alongside the fetcher method it is

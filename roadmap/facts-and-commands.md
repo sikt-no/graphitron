@@ -1755,6 +1755,64 @@ R541's single-operation launchers never need it, and a general launcher cannot d
       home (the root-family mirror-gaps precedent). The earlier "named roles for the DML
       write/reentry pair" sentence in this log is corrected in place: the family is
       single-row (the companion), and re-keying on `UnitMethodRef` is not needed for it.
+  - **5e landed (2026-07-30).** The DML reentry companions joined the launcher relation and the
+    method-command registry retired, per the design record with three deltas worth naming.
+    First, the projected and discriminated write halves turned out identical once the follow-up
+    fork moved into the row's source arm, so the generator's two emissions merged into ONE
+    shared `emitReentry` (write transaction, no-match guard, channel envelope; one render call),
+    and the render-site pin moved 9 to 10, not the record's predicted 11. Second,
+    `ProjectedReentry` carries `(projection, correlation)` only, deriving `table()` from
+    `correlation.targetTable()` rather than restating it as the record's sketch did (the write
+    and the payload share the table by construction on this arm). Third, the companion's public
+    payload type is a stated decision surfaced in `ReentryRowsFragments.valueTypeOf`:
+    `List<Record>` for the list arm (the mapped `fetch(r -> r)` terminal the pins and the
+    compile spec hold), where the batched families render buckets; per-invocation payload views
+    were already the shape. What landed: `Invocation.ReturningKeyed` (payload-free; both
+    renderer views, the parameter list and `valueTypeOf`, became total switches over the
+    delivery axis BEFORE the arm, per the record) with the `Reentry`-iff-`ReturningKeyed`
+    biconditional, Single-only and never-Connection/LoaderDelegated backstops on the command;
+    `render/ReentryRowsFragments` (the correlation seam ported verbatim from the generator,
+    VALUES join at list cardinality, key equality at single, the discriminated arm folding
+    `DiscriminatedTableFragments.assembly` with the pin-arbitrated condition order); the
+    producer's `childRowOf` (total over `ChildField`'s permits, the batched polymorphic pair's
+    null arm stating the emitted-and-uncommitted carve-out) and `dmlRowOf` (total over
+    `DmlReturnExpression`'s six arms, the one home of kind-to-(source, result));
+    `GeneratedUnits.reentryRowsMethod` as the mint. Key-type single-homing held: the write's
+    `RETURNING` list (`emitKeysTransaction`, re-signatured onto the row's correlation) and the
+    companion's `keys` parameter (`ReentryRowsFragments.keysType`) now derive from the one
+    fact. Retired in the same commit: `MethodCommandRegistry`, `MethodCommand`, both emission-
+    context seams and their five dispatch drift-checks, `BatchKeyField.rowsMethodName` with its
+    two service `load` overrides, `DmlTableField.reentryRowsMethodName` (zero model-side
+    generated-unit naming facts remain; the three `RowsMethodCall.batchLoaderLambda` callers
+    take the name threaded from the row's ref, and the two batched-polymorphic dispatch arms
+    read `GeneratedUnits.rowsMethod` refs). The registry's one live invariant re-homed as the
+    case-folded `(owner, method)` census in `LauncherRelation`'s compact constructor with
+    `validateLauncherMethodNames` as the authored-schema mirror
+    (`LauncherCommands.methodCollisions`). `GenerationResult` surfaces the launcher relation in
+    the slot `methodCommands` vacated, and the closure oracle became
+    `LauncherRelationClosureTest`: model-to-row per-family (the polymorphic exclusion is now a
+    failing condition, not prose), row-to-emit over the whole relation, the run-level
+    exactly-one pin, and the DML witness on the row's `UnitMethodRef` plus source/delivery
+    arms. Ratchets moved deliberately: plan leaf references 87 to 91 (the census mirror's
+    root-kind case labels; the FQN-spelled child and DML arms sit outside the counting rule),
+    render sites 9 to 10. Two inherited repairs, both reproduced against the unmodified HEAD
+    before fixing. The javadoc reference gate failed on trunk as published at 5d (a stale
+    `@param parentSourceKey` left by that slice's key-lift split in
+    `MultiTablePolymorphicEmitter.emitInlineMethods`), so the 5d verification round mis-read
+    that gate; repaired with the one-line rename. And the 5e prep's `DmlSqlBaselineTest`
+    leaked its mutations (PIN-titled inserts persisted; the UPDATE pins renamed seed films 1
+    to 3 in place, and even a reverted seed-row UPDATE moves the heap tuple, flipping the row
+    order unordered queries elsewhere implicitly pin), which poisons whichever data-reading
+    class the shared `-Plocal-db` PostgreSQL serves next, order-dependently; repaired by
+    pointing the UPDATE pins at self-seeded rows and deleting every PIN-titled row per test,
+    which touches no pinned SQL string (every pinned value is a bind), plus a manual re-seed
+    of the sandbox database the earlier runs had dirtied. The
+    `Operation.UpdateMatching`/`DeleteMatching` residual is an
+    explicit deferral filed on the validator-mirror-gaps item (per-arm reachability verdicts
+    for all five declared-but-unpopulated arms). Verified: all 32 SQL pins byte-identical
+    (including the nine DML pins frozen pre-cutover, which arbitrated the discriminated
+    condition order and the `keysinput` join shape), 3048 module tests, full reactor green.
+    Next: 5f per the programme.
 
 ## The exemption lists are the grain worklist
 
@@ -1888,7 +1946,8 @@ than re-deriving at the gate.
 | `TypeClassGenerator.collectRequiredProjection` | 3.2 (landed) | gated `Project` contribution carrying the correlation columns |
 | `ParentProjectionContainmentCheck`, `ParentProjectionContainmentCheckTest` | 3.2 (landed) | single-sourced correlation columns plus the seal-derived membership pin |
 | `AnchorUnit.requiredProjection` (the interim slot), `appendsRequiredColumn` | 3.2 (landed) | every entry gated; `TypeSpecAssertions.armProjectsColumn` |
-| `MethodCommandRegistry`, `MethodCommand` | 5 | the coordinate-keyed command relation |
+| `MethodCommandRegistry`, `MethodCommand`, "reentry command" (the test vocabulary) | 5e (landed) | the launcher relation surfaced on the generation result, its compact constructor carrying the case-folded `UnitMethodRef` census |
+| `BatchKeyField.rowsMethodName`, `DmlTableField.reentryRowsMethodName`, the `rowsDeclarationName` / `dmlRowsDeclarationName` context seams | 5e (landed) | the row's `UnitMethodRef` (`GeneratedUnits` mints; call sites read the ref) |
 | `CompileDependencyGraphBuilder` | 7 | the recompile graph as a projection over the command relation |
 | the `no.sikt.graphitron.rewrite` package | end state | `command` / `plan` / `render` and the shared pure-data floor |
 

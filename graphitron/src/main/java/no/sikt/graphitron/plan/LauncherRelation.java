@@ -26,6 +26,15 @@ import java.util.Optional;
  * <p>{@link #carrierDsl} is the run-grain carrier-routing fact (see {@link CarrierDsl}),
  * carried on the family view that renders carriers rather than copied onto every row; it moves
  * up to the plan if a second family ever reads it.
+ *
+ * <p><b>Method-name census.</b> Coordinate uniqueness does not imply method-name uniqueness:
+ * the {@code rows} / {@code load} / {@code lookup} formulas upper-camel a field name, which is
+ * not injective, and several naming schemes mint onto one fetchers class. Every relation
+ * therefore also passes a case-folded {@code (owner, method)} census, failing construction when
+ * two rows mint one emitted method (the projection producer's address-census precedent, and the
+ * invariant the retired method-command registry's commit throw used to carry). The validator's
+ * launcher-method census is the authored-schema mirror, so an authored collision fails
+ * validation with a located error before production runs.
  */
 public record LauncherRelation(List<LauncherCommand> rows, CarrierDsl carrierDsl) {
 
@@ -36,6 +45,20 @@ public record LauncherRelation(List<LauncherCommand> rows, CarrierDsl carrierDsl
         if (distinctKeys != rows.size()) {
             throw new IllegalArgumentException(
                 "the launcher relation is keyed by coordinate; a coordinate appeared twice");
+        }
+        var byFoldedMethod = new LinkedHashMap<String, LauncherCommand>();
+        for (var row : rows) {
+            var key = (row.unit().owner().fqcn() + "#" + row.unit().methodName())
+                .toLowerCase(java.util.Locale.ROOT);
+            var existing = byFoldedMethod.putIfAbsent(key, row);
+            if (existing != null) {
+                throw new IllegalArgumentException(
+                    "launcher method '" + row.unit().owner().fqcn() + "#"
+                    + row.unit().methodName() + "' minted twice (case-folded): coordinates "
+                    + existing.coordinate() + " and " + row.coordinate()
+                    + "; every emitted method is exactly one row's output, and the validator's"
+                    + " launcher-method census must reject this before production");
+            }
         }
     }
 

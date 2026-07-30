@@ -18,7 +18,9 @@ import java.util.Objects;
  * method whose invocation IS the sourcing ({@link ServiceCall} delegates outright,
  * {@link ServiceTableLift} re-projects the returned records). Absorbing both facts into the arm
  * keeps the illegal cells unrepresentable and spares the command a table slot whose meaning
- * would change per arm.
+ * would change per arm. The {@link Reentry} arms source rows from the mutation's captured
+ * {@code RETURNING} keys: the write already happened, and the launcher re-selects the payload
+ * by key.
  */
 public sealed interface LaunchSource {
 
@@ -194,6 +196,61 @@ public sealed interface LaunchSource {
             Objects.requireNonNull(projection, "projection");
             Objects.requireNonNull(mapping, "mapping");
             Objects.requireNonNull(inputRows, "inputRows");
+        }
+    }
+
+    /**
+     * The DML reentry capability shared by the mutation companions: the launcher's FROM anchors
+     * on the {@link #table} the write returned keys for, restricted to exactly those keys by
+     * {@link #correlation}'s lifted slots (single: key equality; list: an {@code (idx, keys...)}
+     * VALUES join, input-ordered by {@code idx}). The write emitter derives its {@code RETURNING}
+     * column list from the same correlation, so the keys handed across the generated call
+     * boundary are assignment-compatible by construction, not by javadoc agreement.
+     */
+    sealed interface Reentry extends LaunchSource permits ProjectedReentry, DiscriminatedReentry {
+        TableRef table();
+
+        no.sikt.graphitron.rewrite.model.ParentCorrelation.OnLiftedSlots correlation();
+    }
+
+    /**
+     * A projected mutation companion: the returned type is one table-backed object, re-selected
+     * through the {@link #projection} unit's {@code $project} over the key restriction. The
+     * table is the correlation's own target (the write's table IS the payload's table for this
+     * arm), so no second slot restates it. Deliberately no empty-input gate: the write emitter
+     * owns the no-match guard, and the companion is only called with captured keys.
+     */
+    record ProjectedReentry(UnitRef projection,
+            no.sikt.graphitron.rewrite.model.ParentCorrelation.OnLiftedSlots correlation)
+            implements Reentry {
+        public ProjectedReentry {
+            Objects.requireNonNull(projection, "projection");
+            Objects.requireNonNull(correlation, "correlation");
+        }
+
+        @Override
+        public TableRef table() {
+            return correlation().targetTable();
+        }
+    }
+
+    /**
+     * A discriminated mutation companion: the returned type is a single-table interface, so the
+     * payload re-select is the {@link #discriminated} arm's participant-driven composition (the
+     * payload borrowed whole, the {@code FacetPlan.Entry} precedent) with the key restriction
+     * seeded into the condition ahead of the discriminator {@code IN}.
+     */
+    record DiscriminatedReentry(DiscriminatedTable discriminated,
+            no.sikt.graphitron.rewrite.model.ParentCorrelation.OnLiftedSlots correlation)
+            implements Reentry {
+        public DiscriminatedReentry {
+            Objects.requireNonNull(discriminated, "discriminated");
+            Objects.requireNonNull(correlation, "correlation");
+        }
+
+        @Override
+        public TableRef table() {
+            return discriminated().table();
         }
     }
 

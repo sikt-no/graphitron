@@ -508,13 +508,13 @@ public final class MultiTablePolymorphicEmitter {
      *                              classifier admits a single-hop FK ({@link ParticipantCorrelation.KeyTupleWhere})
      *                              or a multi-hop / condition-join chain
      *                              ({@link ParticipantCorrelation.JoinedCorrelation}).
-     * @param parentSourceKey       parent-object source-side key, projected from the field's
+     * @param parentKeyLift         parent-object source-side key lift, projected from the field's
      *                              parent classification. The classifier produces a catalog-FK
      *                              {@link KeyLift.FkColumns} key for a table-backed parent and an
      *                              accessor-derived {@link KeyLift.Accessor} key for a class-backed
      *                              / record parent; a source=target produced-record parent carries
      *                              {@link KeyLift.ProducedRecords}.
-     * @param parentKeyOwnerTable   the parent/hub table owning {@code parentSourceKey.columns()},
+     * @param parentKeyOwnerTable   the parent/hub table owning {@code sourceKey.columns()},
      *                              threaded from the field's classification site so the batched
      *                              rows method's VALUES cells and JOIN lookups can bind through
      *                              the key columns' registered Converter DataTypes.
@@ -555,8 +555,8 @@ public final class MultiTablePolymorphicEmitter {
      * {@code rows<Field>(List<K>, env)} batch loader that runs ONE polymorphic UNION ALL with
      * {@code JOIN parentInput} per branch, scattering typed Records into per-parent
      * {@code List<Record>} buckets. Same SQL shape as the connection arm minus the windowed-CTE
-     * pagination. The rows-method name is the caller's read of the
-     * {@code rowsDeclarationName} seam, never recomputed here; the loader dispatch is the
+     * pagination. The rows-method name is the caller's read of a
+     * {@code GeneratedUnits} ref, never recomputed here; the loader dispatch is the
      * leaf's {@link BatchKeyField#loaderRegistration()} read as data.
      */
     public static List<MethodSpec> emitBatchedListMethods(

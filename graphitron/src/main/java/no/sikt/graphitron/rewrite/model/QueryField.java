@@ -259,7 +259,7 @@ public sealed interface QueryField extends RootField
      * ({@link OutputField#emitsKeyedReQuery()} is false): the emitted fetcher hands the record
      * straight through, and the re-projection is realized by the downstream child fetchers'
      * {@code $project}. The site-level fact is the single carrier of this distinction — the emit
-     * dispatch, the method-command registry's covered-family boundary, and the reentry validate
+     * dispatch, the launcher relation's per-family membership switches, and the reentry validate
      * guard all read it rather than recomputing the root-service exclusion per site.
      */
     record QueryServiceTableField(

@@ -19,10 +19,9 @@ package no.sikt.graphitron.rewrite.model;
  * it can be applied as an orthogonal capability without being restricted by the sealed hierarchy.
  * Generators receive {@link GraphitronField} and pattern-match with {@code instanceof BatchKeyField}.
  *
- * <p>The DataLoader fetcher references {@link #rowsMethodName()} as its rows-method target —
- * the same name the rows method uses when emitting its declaration. The contract is: the fetcher
- * and the rows method agree on this name. DataLoader-backed variants default to {@code rows<Name>};
- * service-backed variants override to {@code load<Name>} to mark the body as a service delegation.
+ * <p>The rows/load-method a DataLoader fetcher targets is named by the launcher row's
+ * {@code UnitMethodRef} (minted in {@code no.sikt.graphitron.plan.GeneratedUnits}, the one
+ * minting locus); this capability carries no generated-unit naming fact.
  */
 public interface BatchKeyField {
     /**
@@ -38,20 +37,8 @@ public interface BatchKeyField {
     LoaderRegistration loaderRegistration();
 
     /**
-     * Method name shared by the rows method's declaration and the DataLoader fetcher's call site.
-     *
-     * <p>Default: {@code "rows" + capitalize(name())} for DataLoader-backed variants. Service-
-     * backed variants ({@link ChildField.ServiceTableField}, {@link ChildField.ServiceRecordField})
-     * override to {@code "load" + capitalize(name())} to mark the body as a service delegation.
-     */
-    default String rowsMethodName() {
-        String n = name();
-        if (n == null || n.isEmpty()) return n;
-        return "rows" + Character.toUpperCase(n.charAt(0)) + n.substring(1);
-    }
-
-    /**
-     * The field's GraphQL name. Required by {@link #rowsMethodName()}'s default; the in-tree
+     * The field's GraphQL name. Read by the polymorphic batched emission (which keys its
+     * per-typename helpers and parent-input aliases on the field); the in-tree
      * {@code BatchKeyField} implementers all expose {@code name()} on their underlying
      * {@code ChildField} record, so wiring it through is mechanical.
      */

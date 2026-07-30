@@ -40,6 +40,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Email fixtures seed their own rows in mailbox 9 at {@code message_no >= 700} (other email
  * tests own the lower ranges) and clean up after; seeding happens before the per-test SQL-log
  * clear so seed statements never enter a pin.
+ *
+ * <p>Every write targets rows this class seeds itself, and every effect is reverted per test
+ * ({@code @AfterEach} deletes the {@code PIN}-titled rows): the {@code -Plocal-db} profile
+ * shares one PostgreSQL across test classes, so a leaked row poisons whichever data-reading
+ * class runs next, and even a reverted UPDATE of a seed row moves its heap tuple, flipping the
+ * row order that unordered queries elsewhere implicitly pin. Seeding happens before the
+ * per-test SQL-log clear, so seed statements never enter a pin, and every pinned value is a
+ * bind ({@code ?}), so self-seeded ids change no pinned string.
  */
 @ExecutionTier
 class DmlSqlBaselineTest {
@@ -85,11 +93,28 @@ class DmlSqlBaselineTest {
     }
 
     @AfterEach
-    void cleanUpEmails() {
+    void revertMutationEffects() {
         dsl.deleteFrom(DSL.table("email"))
             .where(DSL.field("mailbox_id", Integer.class).eq(MAILBOX_BOB))
             .and(DSL.field("message_no", Integer.class).ge(700))
             .execute();
+        // Every row this class creates or updates carries a PIN-prefixed title (film and
+        // content alike; the UPDATE pins target self-seeded rows, never init.sql's).
+        dsl.deleteFrom(DSL.table("content"))
+            .where(DSL.field("title", String.class).like("PIN %"))
+            .execute();
+        dsl.deleteFrom(DSL.table("film"))
+            .where(DSL.field("title", String.class).like("PIN %"))
+            .execute();
+    }
+
+    private static int seedFilm(String title) {
+        return dsl.insertInto(DSL.table("film"),
+                DSL.field("title"), DSL.field("language_id"))
+            .values(title, 1)
+            .returningResult(DSL.field("film_id", Integer.class))
+            .fetchOne()
+            .value1();
     }
 
     @Test
@@ -109,7 +134,9 @@ class DmlSqlBaselineTest {
 
     @Test
     void projectedSingleUpdate_writeThenPlainKeyEqualityCompanion() {
-        execute("mutation { updateFilm(in: {filmId: 1, title: \"PIN TITLE\"}) { filmId title } }");
+        int filmId = seedFilm("PIN SEED U1");
+        SQL_LOG.clear();
+        execute("mutation { updateFilm(in: {filmId: " + filmId + ", title: \"PIN TITLE\"}) { filmId title } }");
         assertThat(SQL_LOG)
             .as("projected single UPDATE: the UPDATE..RETURNING pk, then the same companion "
                 + "shape as the INSERT sibling")
@@ -142,8 +169,11 @@ class DmlSqlBaselineTest {
 
     @Test
     void projectedListBulkUpdate_valuesFromWriteThenValuesJoinCompanion() {
-        execute("mutation { updateFilms(in: [{filmId: 2, title: \"PIN C\"}, "
-            + "{filmId: 3, title: \"PIN D\"}]) { filmId title } }");
+        int filmA = seedFilm("PIN SEED U2");
+        int filmB = seedFilm("PIN SEED U3");
+        SQL_LOG.clear();
+        execute("mutation { updateFilms(in: [{filmId: " + filmA + ", title: \"PIN C\"}, "
+            + "{filmId: " + filmB + ", title: \"PIN D\"}]) { filmId title } }");
         assertThat(SQL_LOG)
             .as("projected bulk UPDATE: the UPDATE .. FROM (VALUES ..) write half, then the "
                 + "same VALUES-join companion as the bulk INSERT")
@@ -251,12 +281,7 @@ class DmlSqlBaselineTest {
 
     @Test
     void encodedListDelete_singleStatementNoCompanion() {
-        Integer filmId = dsl.insertInto(DSL.table("film"),
-                DSL.field("title"), DSL.field("language_id"))
-            .values("PIN DELETE ME", 1)
-            .returningResult(DSL.field("film_id", Integer.class))
-            .fetchOne()
-            .value1();
+        int filmId = seedFilm("PIN DELETE ME");
         SQL_LOG.clear();
         execute("mutation { deleteFilms(in: [{filmId: " + filmId + "}]) }");
         assertThat(SQL_LOG)

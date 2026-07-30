@@ -16,8 +16,6 @@ import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.lint.LintConfig;
 import no.sikt.graphitron.rewrite.lint.LintEngine;
-import no.sikt.graphitron.rewrite.methodgraph.MethodCommand;
-import no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry;
 import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
 import no.sikt.graphitron.rewrite.schema.federation.KeyNodeSynthesiser;
 import no.sikt.graphitron.rewrite.schema.input.DescriptionNoteApplier;
@@ -146,14 +144,14 @@ public class GraphQLRewriteGenerator {
      * specs is a transient reference the run discards. The SDL resource is not a compilation unit and
      * appears in neither map.
      *
-     * <p>{@code methodCommands} is the run's committed method-command relation: one command per
-     * named method a covered emit family claims (see {@link MethodCommandRegistry}). The
-     * bidirectional closure oracle ({@code MethodClosureOracleTest}) joins it against
-     * {@code emittedUnits}.
+     * <p>{@code launchers} is the launcher command relation the run rendered from: one row per
+     * covered coordinate (see {@link no.sikt.graphitron.plan.LauncherRelation}). The
+     * bidirectional closure oracle joins it against {@code emittedUnits}, so the oracle reads
+     * what the run actually rendered from, never a re-derivation.
      */
     public record GenerationResult(Set<Path> emitted, Set<Path> changed,
                                    Map<String, TypeSpec> emittedUnits, Set<String> changedUnits,
-                                   List<MethodCommand> methodCommands) {}
+                                   no.sikt.graphitron.plan.LauncherRelation launchers) {}
 
     /**
      * Mutable per-run accumulator for the emitted set and the changed-file delta, tracked both by path
@@ -310,8 +308,7 @@ public class GraphQLRewriteGenerator {
         // emission, one without falls through to its legacy builder).
         var plan = EmitPlan.produce(schema, federationLink, bundle.usesOneOf(), ctx.sessionStateConfig(), outputPackage);
 
-        var methodCommands = new MethodCommandRegistry();
-        var fetcherClasses = TypeFetcherGenerator.generate(schema, assembled, outputPackage, methodCommands,
+        var fetcherClasses = TypeFetcherGenerator.generate(schema, assembled, outputPackage,
             plan.launchers(), plan.typeUnits().fetchers());
         // registerFetchers bodies render from the schema-shape rows' registersFetchers flag,
         // the same fact the per-type emitter and the schema-class assembler read.
@@ -394,7 +391,7 @@ public class GraphQLRewriteGenerator {
             Collections.unmodifiableSet(emittedThisRun.changed),
             Collections.unmodifiableMap(emittedThisRun.emittedUnits),
             Collections.unmodifiableSet(emittedThisRun.changedUnits),
-            methodCommands.committed()
+            plan.launchers()
         );
         // Only the dev-loop incremental compiler needs the compile-dependency graph; production
         // generate() skips the build. See the sourcing seam in CompileDependencyGraph.

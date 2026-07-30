@@ -136,13 +136,23 @@ public final class GeneratedUnits {
     }
 
     /**
+     * {@code <Parent>Fetchers#rows<Field>}: a DML reentry companion, the named unit holding a
+     * projected / discriminated mutation's follow-up SELECT, keyed on the {@code RETURNING}-
+     * captured keys. Same formula as {@link #rowsMethod} and deliberately a separate method,
+     * per that scheme's own precedent: the population joins the relation from the mutation
+     * family, and a future fork in the formula happens here, in the one minting locus.
+     */
+    public UnitMethodRef reentryRowsMethod(String parentTypeName, String fieldName) {
+        return new UnitMethodRef(fetchers(parentTypeName), "rows" + upperCamel(fieldName));
+    }
+
+    /**
      * {@code <Parent>Fetchers#load<Field>}: a {@code @service} child coordinate's launcher
      * unit, the DataLoader-backed method delegating to (or lifting back from) the developer's
      * method. The emitted name predates the seam and is kept, so the launcher-name formula
      * forks on the row's kind here, in the one minting locus, exactly like
-     * {@link #lookupMethod}. The model-side {@code rowsMethodName()} override on the service
-     * leaves spells the same formula for the loader-lambda call and the reentry registry; the
-     * dispatch drift-check binds the pair until the registry retires.
+     * {@link #lookupMethod}; the loader-lambda call sites read the row's ref, so both ends
+     * spell one name with no model-side naming fact behind it.
      */
     public UnitMethodRef loadMethod(String parentTypeName, String fieldName) {
         return new UnitMethodRef(fetchers(parentTypeName), "load" + upperCamel(fieldName));

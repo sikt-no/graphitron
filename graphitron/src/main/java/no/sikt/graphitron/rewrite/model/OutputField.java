@@ -160,9 +160,9 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
      * re-query is emitted at the root site. The child {@code @service} arm, the record-sourced
      * batched arms, and the projected DML arms all emit the re-query at their own site.
      *
-     * <p>Every site-level consumer (the reentry emit dispatch, the
-     * {@link no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry}'s covered-family
-     * boundary, the validate-time reentry guard) reads this predicate rather than recomputing
+     * <p>Every site-level consumer (the reentry emit dispatch, the launcher relation's
+     * per-family membership switches in {@code no.sikt.graphitron.plan.LauncherCommands},
+     * the validate-time reentry guard) reads this predicate rather than recomputing
      * {@code requiresReFetch() && !rootServicePassthrough} per site (two consumers evaluating
      * the same compound predicate over model fields is the drift {@code requiresReFetch}'s own
      * single-homing exists to prevent).

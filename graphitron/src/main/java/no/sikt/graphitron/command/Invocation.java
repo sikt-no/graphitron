@@ -36,4 +36,14 @@ public sealed interface Invocation {
             java.util.Objects.requireNonNull(loader, "loader");
         }
     }
+
+    /**
+     * The DML reentry delivery: the mutation entry point runs the write itself (the transaction,
+     * the dialect guard, the {@code RETURNING} key capture), then calls the launcher once with
+     * the captured keys to re-select the payload. Payload-free by design: the keys parameter's
+     * element type derives from the {@link LaunchSource.Reentry} correlation, the list lift from
+     * the result shape, and the {@code dsl} binding from the shell's dsl-declaration fragment,
+     * so every fact this arm would carry already rides another axis.
+     */
+    record ReturningKeyed() implements Invocation {}
 }
