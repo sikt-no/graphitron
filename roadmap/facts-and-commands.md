@@ -1462,6 +1462,54 @@ R541's single-operation launchers never need it, and a general launcher cannot d
     13/13), `PivotExecutionTest` 9/9 parity, 3052 module tests and the full reactor green.
     Next: 5c, the service children (`RowsMethodBody`/`RowsMethodSkeleton` retire fully; the
     command carries the rows-method shape's inputs; the isMapped-by-isList re-wrap tail folds).
+  - **5c design (2026-07-30, consult-checked; binding).** Two arms, not one (the bodies share
+    only the service invocation): `LaunchSource.ServiceCall(MethodRef.Service method)` for the
+    record leaf (pure delegation, no table/projection slots) and
+    `LaunchSource.ServiceTableLift(MethodRef.Service method, TableRef table, UnitRef
+    projection)` for the table leaf's identity-join re-projection. The record arm's rows-method
+    outer return type IS `method.returnType()`: the classifier acceptance
+    (`ServiceDirectiveResolver.validateChildServiceReturnType`) enforces strict equality with
+    `outerRowsReturnType(...)`, so no per-key TypeName slot exists (a javapoet slot on a
+    command is banned by the import-direction guard, no dial); the two validator skip holes
+    (`sourced == null`, `perKey == null` off a non-scalar return) get censused during the
+    fold and closed with a rejection if corpus-reachable, never re-derived. The table arm's
+    outer type is the four-cell wrap with V pinned to `Record`, derived through
+    `RowsMethodShape.outerRowsReturnType` with `RowsMethodShape` added to the render dial's
+    borrowed refs (a derivation helper, not a ref; one formula, one home, the validator reads
+    the same one). The container axis rides `Invocation.Batched.loader()` (isMapped =
+    MAPPED_SET, per-key list-ness = valueIsList); the keys parameter forks `Set<K>`/`List<K>`
+    on the same fact. The result slot is typed vacuity: a new empty
+    `ResultShape.LoaderDelegated` arm (the service payload derives wholly from source plus
+    delivery; every launcher states a result), backstopped both ways (service arms iff
+    LoaderDelegated), with `LaunchSource`/`LauncherCommand`/`ResultShape` contract prose
+    widened in the same commit so no javadoc claims every launcher composes a query. Never
+    Connection or Fanned: the Fanned half mirrors the classifier's @tenantFanOut+@service
+    rejection; the Connection half's child-level mirror gets censused and named in the
+    backstop comment, or recorded as a mirror gap beside 5b's two. `needsDsl` is two facts:
+    `ServiceTableLift` entails the dsl local (it always SELECTs), `ServiceCall` derives it
+    from the borrowed `callShape()`; no slot. The service-call `<target>.<method>(<args>)`
+    fragment is shell-composed and handed to the renderer like the dsl declaration: the
+    second and LAST named carve-out (helper names like create<Record> ride the ctx resolver
+    today; target shape is minting through `GeneratedUnits` with params on borrowed
+    CallParams). `GeneratedUnits.loadMethod` = "load" + upperCamel (the lookupMethod-precedent
+    fork); BOTH dispatch arms route through `ctx.rowsDeclarationName(field)` and drift-check
+    against the row's ref (the seam already no-ops the commit for the record leaf's
+    emitsKeyedReQuery=false), and the loadMethod/rowsMethodName duplicate derivation is
+    knowingly temporary until the registry retires at 5e. The lift's (idx, seq, pk) VALUES
+    join and the isMapped-by-isList re-wrap tail move renderer-side as tail assembly off
+    command facts; the deliberate ABSENCE of the empty-keys gate on service bodies (the
+    skeleton's one behavioural fact) transfers to the new arms' javadoc, since a copy-paste
+    of the sibling arms' opening gate would change behaviour and the emitted container type.
+    Retirements: `RowsMethodBody`, `RowsMethodSkeleton`, `buildServiceRowsMethod`,
+    `buildServiceTableLift`; `SplitRowsMethodEmitter` shrinks to the scatter and
+    parentKeyCellValue helper host. The `rowsMethodEmitter_unifiedSkeleton` pin is not
+    ratcheted to an unfailable zero; its successor is a count pin on
+    `RootLauncherRenderer.render` call sites in the generators package (same review-point
+    property, live failure mode). Oracles per re-wrap cell, stated: (mapped, list) =
+    `Film.castMembers` execution test plus the frozen lift SQL pin; (mapped, single) =
+    `Film.languageByService` execution coverage; the positional cells are covered by
+    generated-Java signature pins only (FetcherPipelineTest / TypeFetcherGeneratorTest), a
+    reporting fact, not a new test obligation.
 
 ## The exemption lists are the grain worklist
 
