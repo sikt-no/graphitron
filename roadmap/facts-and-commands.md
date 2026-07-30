@@ -1393,6 +1393,52 @@ R541's single-operation launchers never need it, and a general launcher cannot d
     coverage test walks three shapes. All 16 SQL pins held byte-identical (the three
     batched-child pins re-verified explicitly), 3051 module tests and the full reactor green.
     Next: 5b, the batched lookup and pivot children.
+  - **5b design (2026-07-30, consult-checked; binding for both 5b commits).** Two new source
+    arms, not extensions: the lookup child carries what neither sibling alone can (the root's
+    `KeyedLookup` has mapping + inputRows ref but no hop chain; `CorrelatedChain` has the chain
+    but no mapping), and pivot-as-a-result-shape would put FROM-clause topology on the payload
+    axis. (1) `LaunchSource.CorrelatedLookupChain(table, projection, joinPath, correlation,
+    mapping, inputRows)`, sharing a `LaunchSource.Correlated` capability sub-interface with
+    `CorrelatedChain` so the renderer's prelude/topology/WHERE read the capability and the arms
+    fork only where the SQL differs (the second VALUES join, the arm-entailed empty-input
+    short-circuit). (2) `LaunchSource.PivotAggregate(pivotTable, projection,
+    ParentCorrelation.OnFkSlots correlation)`: the LEFT JOIN's ON reads off the arm's slots
+    (one derivation; the hop is NOT carried beside the correlation, which would denormalise the
+    same column pairs unbound), the narrowed `OnFkSlots` type makes the classifier-unreachable
+    `OnParentJoin` topology unrepresentable, and the left join + `GROUP BY idx` is
+    source-entailed (the discriminated arm's IN-restriction reasoning). Result shapes derive
+    from the shared per-key capability, not per-leaf pinning: the lookup's one-record-per-key
+    cell (single-cardinality record-arm lookup, validator-accepted) has no emission on either
+    side of the fold (the legacy pairing did not compile), so the producer throws a generator
+    bug there; the validator mirror gap is recorded, as is its sibling: `@orderBy` on a batched
+    lookup child is silently ignored (the root lookup rejects it; the child leaf's dead
+    `orderBy`/`pagination` components stay as the recorded evidence, retirement deferred until
+    the rejection lands). `__idx__`/`__rn__` moved to `ReservedAliases` (writer in `render`,
+    readers in the surviving scatter helpers; the polymorphic emitter's copy follows at 5d).
+    The `inputRows` name closes its duplicate derivation (dispatch passes the row's minted ref;
+    the leaf-formula overload retired). `RowsMethodBody` keeps its sealed structure until 5c
+    (the exhaustive-switch compile error is 5c's guard); its permits shrink as the producers
+    die. Backstops per axis pair; the pivot backstop's mirrored rejection is the fan-out
+    ladder's non-list rung (a `@pivot` field is single by classification), cited as such.
+  - **5b first commit landed (2026-07-30): the lookup child folds.** `CorrelatedLookupChain`
+    lands with rows for all four corpus coordinates (table-arm `Film.actorsBySplitLookup` /
+    `FilmInfo.castByKey`, record-arm `FilmDetails.actorsByLookup` /
+    `FilmDetailsCarrier.actorsByLookup`); the renderer composes the lookup VALUES pieces
+    through `render/LookupRows` (one row-construction derivation with the root and inline
+    hosts) and keeps the child's deliberately positional `lookupInput.field(i+1, ColType)` ON
+    read (the parent-input side stays sqlName+DataType; decided and recorded, not converged).
+    Retired: `buildForBatchedLookupTable`, `buildListMethod` (with its dead fanned fork:
+    fan-out + lookup is rejected upstream), the shared `emitFromBridgeAndParentJoin` /
+    `buildWhereCondition` (caller-less once list left), the `SqlBatchedLookupTable` permit and
+    its skeleton arm, and `LookupValuesJoinEmitter`'s leaf-formula overload (the class is now
+    the one leaf-taking entry point over `LookupRows`). The rows-method emit-site pin ratchets
+    5 to 3; the permit coverage walks two shapes. All 16 SQL pins held byte-identical
+    (including the two lookup pins frozen in the 5b prep commit); 3050 module tests and the
+    full reactor green. An infrastructure note for the record: the first landing of this
+    commit was lost uncommitted to a container recycle and replayed from the session log;
+    the pins and counts above are the replay's.
+  - The pivot fold (5b's closing commit) follows the same record: `PivotAggregate` lands, the
+    prelude's last legacy caller goes, `RowsMethodBody` shrinks to the `Service` permit.
 
 ## The exemption lists are the grain worklist
 

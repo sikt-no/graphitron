@@ -63,16 +63,13 @@ class UnifiedEmissionPinsTest {
     @Test
     void rowsMethodEmitter_unifiedSkeleton() throws IOException {
         // Every rows-method MethodSpec emit site in the generators package routes through
-        // RowsMethodSkeleton.build. Current sites (5): SplitRowsMethodEmitter's
-        // buildListMethod (two call sites, since the tenant fan-out fork assembles the same
-        // batch statement into a per-tenant scatter lambda instead of a single-DSL body), its
-        // @pivot sibling buildForBatchedPivot (the key-preserving left-join aggregate shape,
-        // the SqlBatchedPivot permit), plus
+        // RowsMethodSkeleton.build. Current sites (3): SplitRowsMethodEmitter's
+        // buildForBatchedPivot (the key-preserving left-join aggregate shape, the
+        // SqlBatchedPivot permit), plus
         // TypeFetcherGenerator.buildServiceRowsMethod (ServiceRecordField verbatim return) plus
         // SplitRowsMethodEmitter.buildServiceTableLift (ServiceTableField lift-back
-        // re-projection). Together they cover all three RowsMethodBody permits (the SQL
-        // permits route through the SQL builders by shape; the Service permit routes via the
-        // two service emit sites). Plain BatchedTableField rows methods no longer route here:
+        // re-projection). Together they cover both RowsMethodBody permits. Plain
+        // BatchedTableField and BatchedLookupTableField rows methods no longer route here:
         // they render through the launcher-command path (RootLauncherRenderer over
         // LauncherCommands' batched rows).
         long unifiedCalls = countAcrossGenerators(
@@ -82,7 +79,7 @@ class UnifiedEmissionPinsTest {
             .as("Every R38 rows-method emit site outside RowsMethodSkeleton itself routes through "
                 + "RowsMethodSkeleton.build. A handcrafted bypass replaces one call here with "
                 + "inline rows-method MethodSpec construction; the count drop trips this pin.")
-            .isEqualTo(5);
+            .isEqualTo(3);
     }
 
     private static long countAcrossGenerators(Pattern pattern, String excludeFile) throws IOException {

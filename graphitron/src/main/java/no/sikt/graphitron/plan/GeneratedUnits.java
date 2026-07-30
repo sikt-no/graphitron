@@ -160,7 +160,7 @@ public final class GeneratedUnits {
      * {@code <owner>#<field>InputRows}: a lookup coordinate's generated VALUES-rows helper,
      * hosted on the projection unit whose {@code $project} arm consumes it. One formula for both
      * ends: the projection producer mints the ref onto the lookup wrap, and the legacy hosts'
-     * emitter ({@code LookupValuesJoinEmitter.inputRowsMethodName}) spells the same name.
+     * emitter consumes this ref's name, so both ends spell one name.
      */
     public UnitMethodRef inputRowsMethod(UnitRef owner, String fieldName) {
         return new UnitMethodRef(owner, fieldName + "InputRows");

@@ -32,4 +32,18 @@ public final class ReservedAliases {
      * exposes the discriminator as a queryable field.
      */
     public static final String DISCRIMINATOR = "__discriminator__";
+
+    /**
+     * The batched delivery's scatter key: the parent-input VALUES table's index column projected
+     * under a synthetic name, written by the batched launcher body and read back by the per-class
+     * scatter helpers that regroup the flat result per DataLoader key.
+     */
+    public static final String IDX = "__idx__";
+
+    /**
+     * The batched connection page's windowed row number ({@code ROW_NUMBER() OVER (PARTITION BY
+     * <idx>)}): written by the batched connection launcher's ranked projection, read by its own
+     * outer page filter and by the connection scatter helper's per-parent slice.
+     */
+    public static final String ROW_NUMBER = "__rn__";
 }

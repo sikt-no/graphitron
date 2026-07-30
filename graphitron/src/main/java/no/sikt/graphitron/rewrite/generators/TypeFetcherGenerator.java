@@ -568,18 +568,37 @@ public class TypeFetcherGenerator {
                 }
                 case ChildField.BatchedLookupTableField blf -> {
                     builder.addMethod(buildBatchedDataFetcher(ctx, blf, blf.returnType(), blf.sourceKey(), blf.lift(), parentTable, resultType, sourceIsOutcome, outputPackage));
-                    builder.addMethod(SplitRowsMethodEmitter.buildForBatchedLookupTable(ctx, blf, outputPackage));
-                    // Emit the VALUES-building input-rows helper alongside the rows method.
-                    // The env-based variant (buildInputRowsMethod) reads args from
-                    // env.getArgument(name) — correct for a batched fetcher whose @lookupKey args
-                    // live on the field itself (vs. the inline child-lookup path where
-                    // args live on a parent's SelectedField). Identical for both source shapes.
-                    if (blf.lookupMapping() instanceof no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) {
-                        var lookupTableRef = blf.returnType().table();
-                        var lookupTableClass = GeneratorUtils.ResolvedTableNames
-                            .of(lookupTableRef, blf.returnType().returnTypeName(), outputPackage).jooqTableClass();
-                        builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(blf, lookupTableClass));
+                    var lookupChainRow = launchers.rowFor(blf.parentTypeName(), blf.name())
+                        .orElseThrow(() -> new IllegalStateException(
+                            "Graphitron generator bug (batched lookup child dispatch): coordinate '"
+                            + blf.qualifiedName() + "' has no launcher row;"
+                            + " the producer's membership and this dispatch have drifted"));
+                    // The command-mint seam still commits the reentry MethodCommand (the
+                    // closure oracle's input, retiring with the registry); the committed
+                    // name and the row's ref are one formula, drift-checked here.
+                    String mintedLookupRows = ctx.rowsDeclarationName(blf);
+                    if (!mintedLookupRows.equals(lookupChainRow.unit().methodName())) {
+                        throw new IllegalStateException(
+                            "Graphitron generator bug (batched lookup child dispatch): the minted"
+                            + " reentry name '" + mintedLookupRows + "' and the row's ref '"
+                            + lookupChainRow.unit().methodName() + "' disagree for '"
+                            + blf.qualifiedName() + "'");
                     }
+                    builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
+                        .render(lookupChainRow, launchers.carrierDsl(),
+                            TenantDslEmitter.resolve(ctx, blf, outputPackage).declaration()));
+                    // Emit the VALUES-building input-rows helper alongside the rows method,
+                    // named by the row's minted ref (one derivation with the body's call). The
+                    // env-based variant reads args from env.getArgument(name) — correct for a
+                    // batched fetcher whose @lookupKey args live on the field itself (vs. the
+                    // inline child-lookup path where args live on a parent's SelectedField).
+                    // Identical for both source shapes.
+                    var lookupTableRef = blf.returnType().table();
+                    var lookupTableClass = GeneratorUtils.ResolvedTableNames
+                        .of(lookupTableRef, blf.returnType().returnTypeName(), outputPackage).jooqTableClass();
+                    var lookupChain = (no.sikt.graphitron.command.LaunchSource.CorrelatedLookupChain) lookupChainRow.source();
+                    builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(blf, lookupTableClass,
+                        lookupChain.inputRows().methodName()));
                 }
                 case QueryField.QueryNodeField f              -> builder.addMethod(buildQueryNodeFetcher(ctx, f, outputPackage));
                 case QueryField.QueryNodesField f             -> builder.addMethod(buildQueryNodesFetcher(ctx, f, outputPackage));

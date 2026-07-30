@@ -109,7 +109,7 @@ public final class RootLauncherRenderer {
                 }
             }
             case LaunchSource.RoutineChain chain -> builder.addCode(routineBody(row, chain));
-            case LaunchSource.CorrelatedChain chain ->
+            case LaunchSource.Correlated chain ->
                 builder.addCode(BatchedRowsFragments.body(row, chain, batchedDslDeclaration, carrierDsl));
             case LaunchSource.KeyedLookup lookup -> {
                 String tableLocal = TableLocal.name(lookup.table());

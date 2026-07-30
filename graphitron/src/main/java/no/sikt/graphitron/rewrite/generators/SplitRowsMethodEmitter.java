@@ -89,15 +89,18 @@ public final class SplitRowsMethodEmitter {
 
     /**
      * SELECT-projection alias for the parent-input {@code idx} column that drives the Java-side
-     * scatter back to the originating parent row.
+     * scatter back to the originating parent row. Single-sourced on
+     * {@link no.sikt.graphitron.command.ReservedAliases#IDX}: the batched launcher renderer
+     * writes the alias, the scatter helpers emitted here read it back.
      */
-    public static final String IDX_COLUMN = "__idx__";
+    public static final String IDX_COLUMN = no.sikt.graphitron.command.ReservedAliases.IDX;
 
     /**
      * SELECT-projection alias for the windowed {@code ROW_NUMBER()} column; the outer SELECT
      * filters {@code RN_COLUMN <= page.limit()} to enforce the per-partition page limit.
+     * Single-sourced on {@link no.sikt.graphitron.command.ReservedAliases#ROW_NUMBER}.
      */
-    public static final String RN_COLUMN = "__rn__";
+    public static final String RN_COLUMN = no.sikt.graphitron.command.ReservedAliases.ROW_NUMBER;
 
     private SplitRowsMethodEmitter() {}
 
@@ -200,8 +203,8 @@ public final class SplitRowsMethodEmitter {
     }
 
     /**
-     * Emits the five-act prelude shared by {@link #buildListMethod} and
-     * {@link #buildForBatchedPivot}: empty-input short-circuit, {@code dsl} resolution,
+     * Emits the five-act prelude for {@link #buildForBatchedPivot}, its last remaining
+     * caller: empty-input short-circuit, {@code dsl} resolution,
      * typed {@code parentRows[]} VALUES with its {@code @SuppressWarnings} cast,
      * {@code parentInput} derived-table aliasing, and the FK-chain alias declarations. Mutates
      * {@code body} and returns the bindings each sibling needs at its divergence point.
@@ -283,8 +286,8 @@ public final class SplitRowsMethodEmitter {
             case ParentCorrelation.OnParentJoin pj -> {
                 // The DataLoader key tuple IS the parent-PK tuple (parentKeyColumns), so both
                 // sides of the predicate use the same ColumnRef set; only the alias differs.
-                // Hop 0 then attaches off parentAlias (its On dispatched in
-                // emitFromBridgeAndParentJoin), so a hop-0 filter has a real parent alias to bind.
+                // The topology hosts attach hop 0 off parentAlias, so a hop-0 filter has a
+                // real parent alias to bind.
                 joinOnAlias = "parentAlias";
                 joinOnCols = pj.parentKeyColumns();
                 joinOnParentCols = pj.parentKeyColumns();
@@ -375,143 +378,7 @@ public final class SplitRowsMethodEmitter {
         return new PreludeBindings(aliases, terminalAlias, firstAlias, joinOnAlias, joinOnCols, joinOnParentCols, keyElement);
     }
 
-    /**
-     * Emits the flat join topology for {@link #buildListMethod}: {@code .from(parentInput)},
-     * the step-0 attach per correlation arm (including the optional {@code OnParentJoin} parent
-     * JOIN), then the forward bridging-hop chain out to the terminal. Appends to {@code sel} and
-     * stops before the WHERE clause (the caller inserts its lookup-input JOIN there and frames
-     * the projection and tail itself).
-     *
-     * <p>The walk is start-first with {@code parentInput} as the FROM anchor: a lateral routine
-     * hop's call arguments reference the previous node's alias ({@code parentInput} itself at the
-     * chain head) and SQL LATERAL scoping only sees FROM entries to its left, so a terminal-back
-     * walk cannot host a lateral node. For the pure INNER-join chains every other shape emits,
-     * anchor and direction are behaviour-equivalent (the execution tier pins the multi-hop,
-     * single-cardinality, and connection shapes). The pre-keyed lifted shape carries no hops at
-     * all, so the bridging loop is a no-op for it and for any single-hop path.
-     */
-    private static void emitFromBridgeAndParentJoin(
-            CodeBlock.Builder sel,
-            List<JoinStep> path,
-            List<String> aliases,
-            String firstAlias,
-            ParentCorrelation parentCorrelation,
-            String joinOnAlias,
-            List<ColumnRef> joinOnCols,
-            List<ColumnRef> joinOnParentCols) {
-        // The parentInput correlation predicate; alias and column pairs come pre-resolved per
-        // correlation arm from the prelude (empty lists for OnLateralArgs: correlation rides the
-        // lateral call's arguments). The parentInput field is resolved by sqlName + the owner
-        // column's DataType rather than positional index, sidestepping @node(keyColumns: [...])
-        // vs FK column ordering mismatches and keeping converter-backed columns' type metadata
-        // faithful.
-        TableRef ownerTable = parentCorrelation.parentKeyOwnerTable();
-        var onCond = CodeBlock.builder();
-        for (int i = 0; i < joinOnCols.size(); i++) {
-            if (i > 0) onCond.add(".and(");
-            onCond.add("$L.$L.eq($L)",
-                joinOnAlias,
-                joinOnCols.get(i).javaName(),
-                parentInputFieldLookup("parentInput", joinOnParentCols.get(i), ownerTable));
-            if (i > 0) onCond.add(")");
-        }
-        sel.add(".from(parentInput)\n");
-        // Step 0: attach the chain's first node to parentInput, per correlation arm.
-        switch (parentCorrelation) {
-            case ParentCorrelation.OnFkSlots ignored ->
-                sel.add(".join($L).on($L)\n", firstAlias, onCond.build());
-            case ParentCorrelation.OnLiftedSlots ignored ->
-                sel.add(".join($L).on($L)\n", firstAlias, onCond.build());
-            case ParentCorrelation.OnParentJoin pj -> {
-                // parentAlias pairs with parentInput on the parent's PK, then hop 0 attaches
-                // firstAlias off parentAlias per the hop's own On. Either way firstAlias hangs
-                // off a real parent alias, so a hop-0 filter (emitted in buildWhereCondition)
-                // can bind parentAlias as its source.
-                sel.add(".join(parentAlias).on($L)\n", onCond.build());
-                switch (pj.firstHop().on()) {
-                    case On.ColumnPairs cp -> sel.add("$L\n",
-                        JoinPathEmitter.emitForwardJoin(cp, "parentAlias", firstAlias));
-                    case On.Predicate pred -> sel.add(".join($L).on($L)\n", firstAlias,
-                        JoinPathEmitter.emitTwoArgMethodCall(pred.condition(), "parentAlias", firstAlias));
-                    case On.Lateral ignored -> throw new IllegalStateException(
-                        "ParentCorrelation.OnParentJoin cannot wrap a lateral hop; its compact "
-                        + "constructor rejects On.Lateral (a routine node is OnLateralArgs)");
-                }
-            }
-            case ParentCorrelation.OnLateralArgs ignored ->
-                sel.add(".crossJoin($T.lateral($L))\n", DSL, firstAlias);
-        }
-        // Bridging hops: step 0 forward to the terminal. No-op when path.size() == 1.
-        for (int i = 1; i < path.size(); i++) {
-            JoinStep bridging = path.get(i);
-            String prevAlias = aliases.get(i - 1);
-            switch (bridging) {
-                case JoinStep.Hop hop -> sel.add("$L\n",
-                    JoinPathEmitter.emitForwardBridging(hop, prevAlias, aliases.get(i)));
-            }
-        }
-    }
 
-    /**
-     * Builds the WHERE condition expression shared by the three cardinality siblings:
-     * {@code DSL.noCondition()} AND-ed with each hop's {@code filter} (paired
-     * {@code (srcAlias, tgtAlias)} per hop) AND, when the coordinate carries field-level
-     * {@code filters}, one glue call composed off {@code terminalAlias} with the rows method's
-     * own {@code env.getArguments()} as the map. Returns the condition CodeBlock; the caller
-     * wraps it in {@code .where(...)} so the connection sibling can chain
-     * {@code .orderBy()/.seek()} after. Hop filters stay this host's: they are join-path
-     * content, not condition content.
-     *
-     * <p>The per-hop filter is emitted as {@code method(srcAlias, tgtAlias)}, where {@code srcAlias}
-     * is the hop's origin side: the previous hop's alias for hops 1..n, and for hop 0 the parent
-     * alias declared by the {@link ParentCorrelation.OnParentJoin} arm. The classifier lands any
-     * hop-0 {@code filter()} on that arm precisely so a parent alias exists here; under the
-     * other arms a hop-0 filter is unreachable and guarded.
-     *
-     * <p>Only {@link JoinStep.Hop}s carry a per-hop filter; lifter hops are skipped by the
-     * {@code instanceof} guard.
-     */
-    private static CodeBlock buildWhereCondition(
-            no.sikt.graphitron.rewrite.model.OutputField field,
-            List<JoinStep> path,
-            List<String> aliases,
-            String terminalAlias,
-            ParentCorrelation parentCorrelation,
-            List<WhereFilter> filters,
-            String outputPackage) {
-        var where = CodeBlock.builder();
-        where.add("$T.noCondition()", DSL);
-        for (int i = 0; i < path.size(); i++) {
-            if (!(path.get(i) instanceof JoinStep.Hop hop)) continue;
-            if (hop.filter() != null) {
-                String srcAlias;
-                if (i == 0) {
-                    // Under OnFkSlots / OnLateralArgs no parent alias exists, so a hop-0 filter
-                    // is classifier-unreachable; fail loudly rather than silently bind the
-                    // target alias twice.
-                    if (!(parentCorrelation instanceof ParentCorrelation.OnParentJoin)) {
-                        throw new IllegalStateException(
-                            "hop-0 filter reached buildWhereCondition under "
-                            + parentCorrelation.getClass().getSimpleName() + "; the classifier lands "
-                            + "any hop-0 filter on ParentCorrelation.OnParentJoin so a parent alias "
-                            + "is in scope to bind the filter's source parameter");
-                    }
-                    srcAlias = "parentAlias";
-                } else {
-                    srcAlias = aliases.get(i - 1);
-                }
-                String tgtAlias = aliases.get(i);
-                where.add("\n        .and($L)",
-                    JoinPathEmitter.emitTwoArgMethodCall(hop.filter(), srcAlias, tgtAlias));
-            }
-        }
-        if (!filters.isEmpty()) {
-            where.add("\n        .and($L)",
-                ConditionGlueCall.expression(field.parentTypeName(), field.name(), filters,
-                    terminalAlias, CodeBlock.of("env.getArguments()"), outputPackage));
-        }
-        return where.build();
-    }
 
     // -----------------------------------------------------------------------
     // BatchedPivotField
@@ -520,8 +387,8 @@ public final class SplitRowsMethodEmitter {
     /**
      * Builds the rows-method for a {@link ChildField.BatchedPivotField}: the discriminator-keyed
      * aggregate projection delivered through the DataLoader seam. Reuses the shared parent-input
-     * prelude ({@link #emitParentInputAndFkChain}) but deliberately not
-     * {@link #emitFromBridgeAndParentJoin}: the pivot attaches the attribute table to the
+     * prelude ({@link #emitParentInputAndFkChain}) but deliberately not the forward-bridging
+     * join topology: the pivot attaches the attribute table to the
      * parent-input {@code VALUES} table with a <em>left</em> join (the one deviation from the
      * table shape's inner join) so every batch key produces a {@code GROUP BY __idx__} group and
      * a row-less parent scatters to one record of null slots via {@code scatterSingleByIdx},
@@ -600,183 +467,6 @@ public final class SplitRowsMethodEmitter {
         var unit = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage)
             .pivotUnit(field.parentTypeName(), field.name());
         return ClassName.get(unit.packageName(), unit.simpleName());
-    }
-
-    // -----------------------------------------------------------------------
-    // BatchedLookupTableField (C2)
-    // -----------------------------------------------------------------------
-
-    /**
-     * Entry point invoked once per {@link ChildField.BatchedLookupTableField} coordinate;
-     * {@link #buildListMethod} emits the body. Both source shapes carry the same
-     * {@code SourceKey} (Wrap.Row) + {@code LookupMapping} shape, so one body emitter handles
-     * both. The parent-backing divergence (jOOQ-table-row vs backing-object key extraction)
-     * lives above this seam, in {@link TypeFetcherGenerator}'s fetcher fork.
-     */
-    static MethodSpec buildForBatchedLookupTable(TypeFetcherEmissionContext ctx, ChildField.BatchedLookupTableField blf, String outputPackage) {
-        return buildListMethod(
-            ctx, blf, ctx.rowsDeclarationName(blf), blf.returnType(),
-            blf.joinPath(), blf.filters(), blf.sourceKey(),
-            blf.lookupMapping(),
-            blf.parentCorrelation(),
-            outputPackage,
-            RowsMethodBody.SqlBatchedLookupTable::new);
-    }
-
-    /**
-     * Body emitter for the list-cardinality {@link ChildField.BatchedLookupTableField} rows
-     * method: the shared parent-input prelude and join topology, plus a second VALUES
-     * derived-table JOIN narrowing on the {@code @lookupKey} args when {@code lookupMapping}
-     * is non-null.
-     */
-    private static MethodSpec buildListMethod(
-            TypeFetcherEmissionContext ctx,
-            no.sikt.graphitron.rewrite.model.OutputField field,
-            String rowsMethodName,
-            ReturnTypeRef.TableBoundReturnType returnType,
-            List<JoinStep> joinPath,
-            List<WhereFilter> filters,
-            SourceKey sourceKey,
-            LookupMapping lookupMapping,
-            ParentCorrelation parentCorrelation,
-            String outputPackage,
-            java.util.function.Function<CodeBlock, RowsMethodBody> permitFactory) {
-        String fieldName = field.name();
-        ClassName typeClass = ClassName.get(
-            outputPackage + ".types",
-            returnType.returnTypeName());
-
-        TypeName listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
-        TypeName listOfListOfRecord = ParameterizedTypeName.get(LIST, listOfRecord);
-
-        var body = CodeBlock.builder();
-        PreludeBindings p = emitParentInputAndFkChain(ctx,
-            body, fieldName, sourceKey, returnType, joinPath, parentCorrelation, outputPackage);
-        List<JoinStep> path = joinPath;
-        List<String> aliases = p.aliases();
-        String terminalAlias = p.terminalAlias();
-        String firstAlias = p.firstAlias();
-        String joinOnAlias = p.joinOnAlias();
-        List<ColumnRef> joinOnCols = p.joinOnCols();
-        List<ColumnRef> joinOnParentCols = p.joinOnParentCols();
-        TypeName keyElement = p.keyElement();
-        TypeName keysListType = ParameterizedTypeName.get(LIST, keyElement);
-
-        // Projection: $project(env.getSelectionSet(), terminalAlias, env) + idx.as("__idx__").
-        // env.getSelectionSet() is the child-selection for the Split field itself, exactly what
-        // a SelectedField.getSelectionSet() would return, so the rows method signature needs no
-        // separate SelectedField parameter.
-        //
-        // Typed idx access: parentInput.field(0, Integer.class) → Field<Integer>. Table.fieldsRow()
-        // returns untyped Row (not overridden on Table<RecordN> with a typed return, despite
-        // RecordN itself exposing typed fieldsRow); the typed-by-index Fields.field(int, Class<T>)
-        // is the idiomatic jOOQ alternative and preserves type safety.
-        TypeName wildField = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
-        TypeName listOfField = ParameterizedTypeName.get(LIST, wildField);
-        body.addStatement("$T selectFields = new $T<>($L)",
-            listOfField, ARRAY_LIST, ProjectionCall.fromEnvSelection(typeClass, terminalAlias));
-        body.addStatement("selectFields.add(parentInput.field(0, $T.class).as($S))",
-            Integer.class, IDX_COLUMN);
-
-        // Lookup-input VALUES (BatchedLookupTableField only). Uses the env-based helper shape:
-        // args live on env.getArgument(name) for a Split fetcher (not on a child SelectedField
-        // as in the inline-projection path). The helper method name follows the
-        // <fieldName>InputRows convention used by the inline-projection path.
-        String lookupInputAlias = fieldName + "Input";
-        if (lookupMapping instanceof LookupMapping.ColumnMapping columnMapping) {
-            List<ColumnRef> lookupCols = columnMapping.slotColumns();
-            // Typed Row<M+1> / Record<M+1> for lookupInput: idx + one cell per @lookupKey
-            // slot. Arity known at codegen time; the cap is enforced inside LookupValuesJoinEmitter
-            // (which emits the helper this call consumes). DSL.values(Row<M+1>...) returns
-            // Table<Record<M+1>>, typed through to field access by index or name.
-            int lookupArity = lookupCols.size() + 1;
-            TypeName[] lookupTypeArgs = new TypeName[lookupArity];
-            lookupTypeArgs[0] = ClassName.get(Integer.class);
-            for (int i = 0; i < lookupCols.size(); i++) {
-                lookupTypeArgs[i + 1] = lookupCols.get(i).columnType();
-            }
-            TypeName lookupRowType = ParameterizedTypeName.get(rowClass(lookupArity), lookupTypeArgs);
-            TypeName lookupRecordType = ParameterizedTypeName.get(recordClass(lookupArity), lookupTypeArgs);
-            TypeName lookupInputTableType = ParameterizedTypeName.get(TABLE, lookupRecordType);
-            body.addStatement("$T[] lookupRows = $LInputRows(env, $L)", lookupRowType, fieldName, terminalAlias);
-            // Empty lookup input → every parent gets an empty list; short-circuit before building
-            // the VALUES table (jOOQ rejects empty Row<M+1>[] → DSL.values).
-            body.beginControlFlow("if (lookupRows.length == 0)");
-            body.addStatement("return emptyScatter(keys.size())");
-            body.endControlFlow();
-            // Labels: ("fieldNameInput", "idx", lookupCol1.sqlName, ...).
-            var lookupAliasArgs = CodeBlock.builder();
-            lookupAliasArgs.add("$S, $S", lookupInputAlias, "idx");
-            for (var col : lookupCols) {
-                lookupAliasArgs.add(", $S", col.sqlName());
-            }
-            body.addStatement("$T lookupInput = $T.values(lookupRows).as($L)",
-                lookupInputTableType, DSL, lookupAliasArgs.build());
-        }
-
-        var sel = CodeBlock.builder();
-        sel.add("$T<$T> flat = dsl\n", ClassName.get("org.jooq", "Result"), RECORD);
-        sel.indent();
-        sel.add(".select(selectFields)\n");
-        emitFromBridgeAndParentJoin(sel, path, aliases, firstAlias,
-            parentCorrelation, joinOnAlias, joinOnCols, joinOnParentCols);
-
-        // Lookup-input JOIN (BatchedLookupTableField only). ON predicate uses typed
-        // lookupInput.field(i+1, ColType.class) so the .eq against terminalAlias.COL matches
-        // types directly. Position mapping inside lookupInput: index 0 is idx, indices 1..M
-        // are the lookup columns in LookupMapping order. Same USING-vs-ON reasoning as the
-        // parent-input JOIN.
-        if (lookupMapping instanceof LookupMapping.ColumnMapping columnMapping2) {
-            var lookupOnCond = CodeBlock.builder();
-            List<ColumnRef> lookupCols = columnMapping2.slotColumns();
-            for (int i = 0; i < lookupCols.size(); i++) {
-                if (i > 0) lookupOnCond.add(".and(");
-                var col = lookupCols.get(i);
-                TypeName colType = col.columnType();
-                lookupOnCond.add("$L.$L.eq(lookupInput.field($L, $T.class))",
-                    terminalAlias, col.javaName(),
-                    i + 1, colType);
-                if (i > 0) lookupOnCond.add(")");
-            }
-            sel.add(".join(lookupInput).on($L)\n", lookupOnCond.build());
-        }
-
-        sel.add(".where($L)\n",
-            buildWhereCondition(field, path, aliases, terminalAlias, parentCorrelation, filters, outputPackage));
-        sel.add(".fetch();\n");
-        sel.unindent();
-
-        if (TenantDslEmitter.isFanOut(ctx, fieldName)) {
-            // The fanned batched form: the same batch statement, one execution per domain tenant
-            // through the scatter helper (the lambda parameter is the `dsl` the statement already
-            // names; no per-method DSL declaration exists). The per-key groups merge across
-            // tenants with per-element tenant stamping; markers ride to the fetcher's collapse.
-            var tenantConnections = TenantDslEmitter.tenantConnectionsClass(outputPackage);
-            body.add("return $T.fanOutBatchRows(env, keys.size(), dsl -> {\n", tenantConnections);
-            body.indent();
-            body.add(sel.build());
-            body.add("return scatterByIdx(flat, keys.size());\n");
-            body.unindent();
-            body.add("});\n");
-            TypeName listOfListOfObject = ParameterizedTypeName.get(LIST,
-                ParameterizedTypeName.get(LIST, ClassName.get(Object.class)));
-            return RowsMethodSkeleton.build(
-                rowsMethodName,
-                listOfListOfObject,
-                keysListType,
-                CodeBlock.of(""),
-                permitFactory.apply(body.build()));
-        }
-
-        body.add(sel.build());
-        body.addStatement("return scatterByIdx(flat, keys.size())");
-
-        return RowsMethodSkeleton.build(
-            rowsMethodName,
-            listOfListOfRecord,
-            keysListType,
-            TenantDslEmitter.resolve(ctx, field, outputPackage).declaration(),
-            permitFactory.apply(body.build()));
     }
 
     // -----------------------------------------------------------------------

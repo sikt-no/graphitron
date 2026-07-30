@@ -49,6 +49,23 @@ public sealed interface LaunchSource {
     }
 
     /**
+     * The correlated-chain capability shared by the batched child arms: the terminal
+     * {@link #table}, its {@link #projection} unit, the hop chain and the step-0
+     * {@link #correlation}. The batched renderer's prelude, topology and WHERE fold read this
+     * capability; the arms fork only where the SQL genuinely differs (the lookup sibling's
+     * second VALUES join).
+     */
+    sealed interface Correlated extends LaunchSource permits CorrelatedChain, CorrelatedLookupChain {
+        TableRef table();
+
+        UnitRef projection();
+
+        List<JoinStep> joinPath();
+
+        no.sikt.graphitron.rewrite.model.ParentCorrelation correlation();
+    }
+
+    /**
      * A batched child's sourcing: the composition anchors on the parent-input VALUES derived
      * table (the batch keys, built by the delivery arm's key facts), attaches the chain's first
      * hop per {@link #correlation}'s arm, joins the remaining {@link #joinPath} hops forward,
@@ -59,12 +76,36 @@ public sealed interface LaunchSource {
      * reads, one derivation per fact.
      */
     record CorrelatedChain(TableRef table, UnitRef projection, List<JoinStep> joinPath,
-            no.sikt.graphitron.rewrite.model.ParentCorrelation correlation) implements LaunchSource {
+            no.sikt.graphitron.rewrite.model.ParentCorrelation correlation) implements Correlated {
         public CorrelatedChain {
             Objects.requireNonNull(table, "table");
             Objects.requireNonNull(projection, "projection");
             joinPath = List.copyOf(joinPath);
             Objects.requireNonNull(correlation, "correlation");
+        }
+    }
+
+    /**
+     * A batched {@code @lookupKey} child: {@link CorrelatedChain}'s topology narrowed further by
+     * the {@code @lookupKey} VALUES derived table joined against the terminal on
+     * {@link #mapping}'s key columns. Carries what neither sibling alone can:
+     * {@link KeyedLookup} holds the mapping and {@link #inputRows} ref but no hop chain;
+     * {@link CorrelatedChain} holds the chain but no key mapping. The division mirrors the
+     * root's: key arguments ride the mapping's VALUES rows (built by the emitted
+     * {@link #inputRows} helper, whose ref is minted beside the row's own), never the WHERE
+     * slot. An empty lookup input short-circuits to per-key empty results before any SQL,
+     * arm-entailed like the {@code idx} scatter column.
+     */
+    record CorrelatedLookupChain(TableRef table, UnitRef projection, List<JoinStep> joinPath,
+            no.sikt.graphitron.rewrite.model.ParentCorrelation correlation,
+            LookupMapping.ColumnMapping mapping, UnitMethodRef inputRows) implements Correlated {
+        public CorrelatedLookupChain {
+            Objects.requireNonNull(table, "table");
+            Objects.requireNonNull(projection, "projection");
+            joinPath = List.copyOf(joinPath);
+            Objects.requireNonNull(correlation, "correlation");
+            Objects.requireNonNull(mapping, "mapping");
+            Objects.requireNonNull(inputRows, "inputRows");
         }
     }
 

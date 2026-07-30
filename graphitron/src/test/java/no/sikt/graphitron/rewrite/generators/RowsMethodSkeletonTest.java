@@ -39,25 +39,7 @@ class RowsMethodSkeletonTest {
         .build();
 
     @Test
-    void sqlBatchedLookupTable_emitsGateAndDslLineBeforeContent() {
-        MethodSpec spec = RowsMethodSkeleton.build(
-            "rowsFilms",
-            LIST_OF_LIST_OF_RECORD,
-            LIST_OF_KEY,
-            DSL_DECLARATION,
-            new RowsMethodBody.SqlBatchedLookupTable(SQL_BODY));
-
-        String src = spec.toString();
-        assertThat(src).contains("public static java.util.List<java.util.List<org.jooq.Record>> rowsFilms(");
-        assertThat(src).contains("java.util.List<java.lang.Integer> keys");
-        assertThat(src).contains("graphql.schema.DataFetchingEnvironment env");
-        assertThat(src).contains("if (keys.isEmpty())");
-        assertThat(src).contains("return java.util.List.of();");
-        assertThat(src).contains("org.jooq.DSLContext dsl = graphitronContext(env).getDslContext(env);");
-    }
-
-    @Test
-    void sqlBatchedPivot_emitsSqlFraming() {
+    void sqlBatchedPivot_emitsGateAndDslLineBeforeContent() {
         MethodSpec spec = RowsMethodSkeleton.build(
             "rowsFilms",
             LIST_OF_LIST_OF_RECORD,
@@ -66,8 +48,12 @@ class RowsMethodSkeletonTest {
             new RowsMethodBody.SqlBatchedPivot(SQL_BODY));
 
         String src = spec.toString();
+        assertThat(src).contains("public static java.util.List<java.util.List<org.jooq.Record>> rowsFilms(");
+        assertThat(src).contains("java.util.List<java.lang.Integer> keys");
+        assertThat(src).contains("graphql.schema.DataFetchingEnvironment env");
         assertThat(src).contains("if (keys.isEmpty())");
-        assertThat(src).contains("DSLContext dsl");
+        assertThat(src).contains("return java.util.List.of();");
+        assertThat(src).contains("org.jooq.DSLContext dsl = graphitronContext(env).getDslContext(env);");
     }
 
     @Test
@@ -112,10 +98,10 @@ class RowsMethodSkeletonTest {
     void rowsMethodBody_sealedSwitchIsExhaustive() {
         Class<?>[] permitted = RowsMethodBody.class.getPermittedSubclasses();
         assertThat(permitted)
-            .as("RowsMethodBody permits exactly the three body shapes (plain batched-table "
-                + "bodies no longer route here; they render through the launcher-command path)")
+            .as("RowsMethodBody permits exactly the two body shapes (plain batched-table and "
+                + "batched-lookup bodies no longer route here; they render through the "
+                + "launcher-command path)")
             .containsExactlyInAnyOrder(
-                RowsMethodBody.SqlBatchedLookupTable.class,
                 RowsMethodBody.SqlBatchedPivot.class,
                 RowsMethodBody.Service.class);
     }

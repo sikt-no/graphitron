@@ -92,6 +92,21 @@ public record LauncherCommand(
                     + " @asConnection on the single-table-interface root");
             }
         }
+        // The batched lookup child mirrors the keyed-lookup root's pair: the fan-out ladder
+        // rejects @tenantFanOut with @lookupKey (fanning breaks one-row-per-key), and the
+        // resolver/validator pair rejects the connection return on both lookup arms.
+        if (source instanceof LaunchSource.CorrelatedLookupChain) {
+            if (!(tenancy instanceof TenantStrategy.Single)) {
+                throw new IllegalArgumentException(
+                    "a batched-lookup launcher runs single-tenant; got "
+                    + tenancy.getClass().getSimpleName());
+            }
+            if (result instanceof ResultShape.Connection) {
+                throw new IllegalArgumentException(
+                    "a batched-lookup launcher never paginates; lookup fields must not return"
+                    + " a connection");
+            }
+        }
         // A keyed lookup runs single-tenant and never paginates: the fan-out ladder rejects
         // @tenantFanOut with @lookupKey (fanning breaks one-row-per-key), and the classifier
         // rejects the connection return ("lookup fields must not return a connection").

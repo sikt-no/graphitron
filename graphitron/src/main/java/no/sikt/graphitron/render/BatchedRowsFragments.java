@@ -41,10 +41,10 @@ final class BatchedRowsFragments {
     private static final ClassName ARRAY_LIST = ClassName.get("java.util", "ArrayList");
 
     /** SELECT-projection alias for the parent-input index; the scatter key. */
-    static final String IDX_COLUMN = "__idx__";
+    static final String IDX_COLUMN = no.sikt.graphitron.command.ReservedAliases.IDX;
 
     /** SELECT-projection alias for the windowed row number; the page filter's read. */
-    static final String RN_COLUMN = "__rn__";
+    static final String RN_COLUMN = no.sikt.graphitron.command.ReservedAliases.ROW_NUMBER;
 
     /**
      * The whole rows-method body for one batched child row: skeleton framing (empty-keys gate,
@@ -54,7 +54,7 @@ final class BatchedRowsFragments {
      * classification-side emission); it is ignored under fanned tenancy, whose {@code dsl} is
      * the scatter lambda's parameter.
      */
-    static CodeBlock body(LauncherCommand row, LaunchSource.CorrelatedChain chain,
+    static CodeBlock body(LauncherCommand row, LaunchSource.Correlated chain,
             CodeBlock dslDeclaration, no.sikt.graphitron.command.CarrierDsl carrierDsl) {
         var batched = (no.sikt.graphitron.command.Invocation.Batched) row.invocation();
         String fieldName = row.coordinate().getFieldName();
@@ -87,12 +87,33 @@ final class BatchedRowsFragments {
         body.addStatement("selectFields.add(parentInput.field(0, $T.class).as($S))",
             Integer.class, IDX_COLUMN);
 
+        // The lookup sibling's key-set narrowing: the emitted input-rows helper's typed
+        // Row<M+1>[] (idx + one cell per @lookupKey slot), the arm-entailed empty-input
+        // short-circuit (every parent gets an empty list before any SQL; jOOQ rejects an empty
+        // VALUES), and the second derived table the topology joins against the terminal.
+        if (chain instanceof LaunchSource.CorrelatedLookupChain lookup) {
+            String diagnostic = row.coordinate().getTypeName() + "." + fieldName;
+            body.addStatement("$T lookupRows = $L(env, $L)",
+                LookupRows.rowArrayType(lookup.mapping(), diagnostic),
+                lookup.inputRows().methodName(), prelude.terminalAlias());
+            body.beginControlFlow("if (lookupRows.length == 0)");
+            body.addStatement("return emptyScatter(keys.size())");
+            body.endControlFlow();
+            body.addStatement("$T lookupInput = $T.values(lookupRows).as($L)",
+                LookupRows.inputTableType(lookup.mapping(), diagnostic), DSL,
+                LookupRows.aliasArgs(lookup.mapping(), LookupRows.inputTableAlias(fieldName), diagnostic));
+        }
+
         var sel = CodeBlock.builder();
         sel.add("$T<$T> flat = dsl\n", RESULT, RECORD);
         sel.indent();
         sel.add(".select(selectFields)\n");
         fromBridgeAndParentJoin(sel, chain.joinPath(), prelude.aliases(), prelude.firstAlias(),
             chain.correlation(), prelude.joinOnAlias(), prelude.joinOnCols(), prelude.joinOnParentCols());
+        if (chain instanceof LaunchSource.CorrelatedLookupChain lookup) {
+            sel.add(".join(lookupInput).on($L)\n",
+                lookupJoinCondition(lookup, prelude.terminalAlias()));
+        }
         sel.add(".where($L)\n", whereCondition(row, chain, prelude));
         sel.add(".fetch();\n");
         sel.unindent();
@@ -148,7 +169,7 @@ final class BatchedRowsFragments {
      * scatter call's trailing {@code dsl} rides the run's carrier-routing fact.
      */
     private static void connectionTail(CodeBlock.Builder body, LauncherCommand row,
-            LaunchSource.CorrelatedChain chain, PreludeBindings prelude,
+            LaunchSource.Correlated chain, PreludeBindings prelude,
             no.sikt.graphitron.command.ResultShape.Connection conn,
             no.sikt.graphitron.command.CarrierDsl carrierDsl) {
         var helperClass = className(conn.helper());
@@ -239,7 +260,7 @@ final class BatchedRowsFragments {
      * declaration precede this in {@link #body}.
      */
     private static PreludeBindings prelude(CodeBlock.Builder body, String fieldName,
-            SourceKey sourceKey, LaunchSource.CorrelatedChain chain) {
+            SourceKey sourceKey, LaunchSource.Correlated chain) {
         List<JoinStep> joinPath = chain.joinPath();
         ParentCorrelation correlation = chain.correlation();
         List<ColumnRef> pkCols = sourceKey.columns();
@@ -445,7 +466,7 @@ final class BatchedRowsFragments {
      * condition glue off the terminal alias with the rows method's own {@code env.getArguments()}.
      * Hop filters stay this host's: join-path content, not condition content.
      */
-    private static CodeBlock whereCondition(LauncherCommand row, LaunchSource.CorrelatedChain chain,
+    private static CodeBlock whereCondition(LauncherCommand row, LaunchSource.Correlated chain,
             PreludeBindings prelude) {
         var where = CodeBlock.builder();
         where.add("$T.noCondition()", DSL);
@@ -476,6 +497,28 @@ final class BatchedRowsFragments {
                 RootLauncherRenderer.glueExpression(row.where(), prelude.terminalAlias()));
         }
         return where.build();
+    }
+
+    /**
+     * The lookup-input JOIN's ON predicate: {@code terminal.COL.eq(lookupInput.field(i+1,
+     * ColType.class))} per mapping slot, chained with {@code .and}. The read is deliberately
+     * positional (index 0 is idx, indices 1..M the lookup columns in mapping order) where the
+     * parent-input side resolves by sqlName plus the owner column's {@code DataType}: the
+     * lookup cells were built by the emitted helper against the terminal's own columns, so the
+     * type metadata is already faithful and the position is the mapping's own order.
+     */
+    private static CodeBlock lookupJoinCondition(LaunchSource.CorrelatedLookupChain lookup,
+            String terminalAlias) {
+        var onCond = CodeBlock.builder();
+        List<ColumnRef> lookupCols = lookup.mapping().slotColumns();
+        for (int i = 0; i < lookupCols.size(); i++) {
+            if (i > 0) onCond.add(".and(");
+            var col = lookupCols.get(i);
+            onCond.add("$L.$L.eq(lookupInput.field($L, $T.class))",
+                terminalAlias, col.javaName(), i + 1, col.columnType());
+            if (i > 0) onCond.add(")");
+        }
+        return onCond.build();
     }
 
     private static ClassName className(no.sikt.graphitron.command.UnitRef ref) {

@@ -61,10 +61,15 @@ public final class LauncherCommands {
                         rows.add(row);
                     }
                 }
-                // The child family's first population: the plain batched child, every
-                // cardinality (list, single, and the windowed connection page).
+                // The child family: the plain batched child in every cardinality (list, single,
+                // and the windowed connection page), and its @lookupKey sibling.
                 if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField btf) {
                     rows.add(batchedRow(btf, schema, conditions, units));
+                }
+                if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.BatchedLookupTableField blf) {
+                    rows.add(batchedLookupRow(blf,
+                        whereOf(blf.parentTypeName(), blf.name(), conditions),
+                        tenancyOf(schema, blf.parentTypeName(), blf.name(), units), units));
                 }
             }
         }
@@ -138,6 +143,10 @@ public final class LauncherCommands {
             } else if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField btf) {
                 rows.add(batchedRow(btf,
                     glueFromFilters(btf.parentTypeName(), btf.name(), btf.filters(), units),
+                    new TenantStrategy.Single(), units));
+            } else if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.BatchedLookupTableField blf) {
+                rows.add(batchedLookupRow(blf,
+                    glueFromFilters(blf.parentTypeName(), blf.name(), blf.filters(), units),
                     new TenantStrategy.Single(), units));
             }
         }
@@ -325,6 +334,43 @@ public final class LauncherCommands {
             new Invocation.Batched(btf.sourceKey(), btf.loaderRegistration()),
             tenancy,
             batchedResultOf(btf, units));
+    }
+
+    /**
+     * The {@code @lookupKey} batched child's row: {@code CorrelatedChain}'s facts plus the
+     * borrowed key mapping and the input-rows helper ref (minted here through the same formula
+     * the helper emission reads, the root lookup's division). The result derives from the
+     * per-key cardinality capability like the plain sibling's, but the one-record-per-key cell
+     * has no batched-lookup emission (the legacy emitter paired a {@code Record}-valued loader
+     * with a list-shaped rows method there, which does not compile), so production fails loud
+     * on it rather than asserting a shape the model contradicts; the validator accepts that
+     * schema today, a recorded mirror gap.
+     */
+    private static LauncherCommand batchedLookupRow(
+            no.sikt.graphitron.rewrite.model.ChildField.BatchedLookupTableField blf,
+            GlueCall where, TenantStrategy tenancy, GeneratedUnits units) {
+        if (blf.emitsSingleRecordPerKey()) {
+            throw new IllegalStateException(
+                "Graphitron generator bug (batched lookup child): coordinate '"
+                + blf.qualifiedName() + "' answers one record per key (a single-cardinality"
+                + " record-arm lookup, or a loadMany dispatch); no batched-lookup emission"
+                + " exists for that cell, and generating the list shape against a"
+                + " Record-valued loader does not compile. Failing at production keeps the"
+                + " gap loud until a single-shaped lookup emission or a validator rejection"
+                + " lands.");
+        }
+        return new LauncherCommand(
+            units.rowsMethod(blf.parentTypeName(), blf.name()),
+            FieldCoordinates.coordinates(blf.parentTypeName(), blf.name()),
+            new LaunchSource.CorrelatedLookupChain(blf.returnType().table(),
+                units.typeClass(blf.returnType().returnTypeName()),
+                blf.joinPath(), blf.parentCorrelation(),
+                (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) blf.lookupMapping(),
+                units.inputRowsMethod(units.fetchers(blf.parentTypeName()), blf.name())),
+            where,
+            new Invocation.Batched(blf.sourceKey(), blf.loaderRegistration()),
+            tenancy,
+            new ResultShape.RecordList(null));
     }
 
     /**
