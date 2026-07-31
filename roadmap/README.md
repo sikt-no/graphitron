@@ -30,8 +30,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-07-14 <sub>created 2026-05-21</sub> | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec | 2026-07-14 | [plan](operation-driven-test-corpus.md) |
 | `R180` | Resolved accessors for record-parent column reads (recordColumnReadArgs) | Spec | 2026-07-15 <sub>created 2026-05-19</sub> | [plan](record-parent-column-read-helper.md) |
-| `R543` | Corpus asserts a coordinate's facts and commands, not one verdict triple | In Progress | 2026-07-31 <sub>created 2026-07-26</sub> | [plan](corpus-asserts-fact-set.md) |
 | `R549` | Facts and commands: grain-first hierarchies and the three command relations | In Progress | 2026-07-31 <sub>created 2026-07-27</sub> | [plan](facts-and-commands.md) |
+| `R543` | Corpus asserts a coordinate's facts and commands, not one verdict triple | In Review | 2026-07-31 <sub>created 2026-07-26</sub> | [plan](corpus-asserts-fact-set.md) |
 
 ---
 
@@ -400,7 +400,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R560` [**Un-skip graphitron-javapoet test suite**](unskip-javapoet-tests.md) — Backlog, cleanup
 - `R116` [**Cover composite-key Row2 path-keyed @sourceRow classification**](composite-key-row2-source-row-coverage.md) — Backlog, cleanup
 - `R25` [**Measure the test pyramid: JaCoCo coverage instrumentation**](rebalance-test-pyramid.md) — In Review, architecture
-- `R543` [**Corpus asserts a coordinate's facts and commands, not one verdict triple**](corpus-asserts-fact-set.md) — In Progress, testing
+- `R543` [**Corpus asserts a coordinate's facts and commands, not one verdict triple**](corpus-asserts-fact-set.md) — In Review, testing
 - `R544` [**Declarative mechanism for the rejection rows the classified corpus cannot hold**](rejection-spec-by-example.md) — Backlog, testing
 - `R252` [**Multi-file federation fixture coverage for schema.graphqls emission**](multi-file-federation-fixture-coverage.md) — Backlog
 
