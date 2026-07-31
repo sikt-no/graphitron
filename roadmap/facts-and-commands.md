@@ -6,7 +6,7 @@ bucket: architecture
 theme: classification-model
 depends-on: []
 created: 2026-07-27
-last-updated: 2026-07-30
+last-updated: 2026-07-31
 ---
 
 # Facts and commands: grain-first hierarchies and the three command relations
@@ -2263,6 +2263,108 @@ R541's single-operation launchers never need it, and a general launcher cannot d
     `facetsFor` probe left `plan/` for the typed accessor), history line added; generators
     counts flat. SQL pins untouched, emit-neutral against the checked-in sakila expectations.
     Verified: full reactor green, 3076 graphitron module tests.
+
+  - **Slice 8 design record (2026-07-31, consult-checked, binding): the launcher commitment
+    directive.** R543's reviewed Spec (Ready 2026-07-31) binds the shape; this record fixes the
+    slots the Spec deferred to measurement, using a launcher-arm axis census run over the corpus
+    (47 rows) and a principles consult on the assembled design.
+    - **Measured verdicts.** `source` and `result` vary independently (`AnchorTable` alone
+      carries `SingleRecord`, `RecordList` and `Connection`; 11 of 24 source-result pairs
+      observed). `invocation` is functionally determined by the source arm in every observed
+      row. `tenancy` is `Single` in all 47 rows; no corpus example configures tenants. Four arms
+      are corpus-unreached: `ServiceCall`, `ServiceTableLift`, `DiscriminatedReentry`,
+      `LoaderDelegated`. Two examples (`record-method`, `service`) fail
+      `LauncherCommands.produce` loudly on the recorded validator-mirror-gap invariants.
+    - **The directive.** `directive @commits(source: LauncherSource!, result: LauncherResult!)
+      on FIELD_DEFINITION` in the corpus prelude. Two new prelude enums whose constants are the
+      sealed arms' simple names (11 `LaunchSource` concrete arms, 4 `ResultShape` arms),
+      mirror-tested against the seal-derived arm sets (the `SynthesisedType` precedent).
+      `invocation` is not an argument: the determination is producer-declared data, a total
+      `Map` from `LaunchSource` leaf class to `Invocation` arm class beside the dispatch in
+      `LauncherCommands`, with totality asserted and the "every produced row's invocation arm
+      equals the declared arm for its source arm" pin applied at each relation the test tree
+      builds (membership fixture, closure run, corpus sweep). A corpus-only pin would reach 8 of
+      11 arms; the producer data reaches all of them (consult). `tenancy` stays out of the
+      directive's reach with the other run-configuration facts; the canonical run configuration
+      is fixed and stated in the harness. `Invocation`'s class javadoc re-grounds its "populated
+      corpus cell" sentence on the live pipeline fixture, which is where the fanned cell
+      actually lives (consult; the corpus does not populate it).
+    - **Membership as one declared relation, not two flat sets.** Launcher membership is
+      leaf-grain except the DML leaf, which is conditioned on its return-expression arm (census;
+      the Spec's single-set assumption does not fit). The producer declares one set of a small
+      sealed key: `Leaf(Class)` arms for the nine non-DML minting leaves and `DmlReturn(Class)`
+      arms for the four minting return-expression arms, with exactly one accessor owning the
+      leaf-plus-return-arm conjunction. Consumers (the closure test's covered set,
+      `mintedMethodOf`, `produceWithoutSchema`'s filter, the Encoded negative pin) read the
+      accessor, so the Encoded-arms exclusion is stated once instead of five times, and no
+      consumer special-cases the sealed DML intermediate (consult; the flat-set shape would have
+      declared `DmlTableField`, which `getClass()` never returns). A membership census test in
+      the `ProjectionMembershipTest` shape binds declared to observed minting in both directions
+      (observed a subset of declared; declared minus observed enumerated with prose).
+    - **Closure test.** `coveredCoordinates()` re-sources onto the accessor;
+      `isCoveredFamilyMember` retires. The row-to-emit leg and the coordinate-named env-method
+      identity pin stay. The class javadoc's "a producer that started minting rows for it would
+      fail the equality here" sentence becomes true in this slice (see the pair pin below) and
+      is updated with it.
+    - **`produceWithoutSchema`.** Gains a leading filter derived from the declared data (the
+      non-DML members; its deliberate DML absence stated in javadoc), plus a positive-direction
+      probe test feeding one hand-built field per declared non-DML member and asserting the
+      served set (fallback, only if a leaf is prohibitively heavy to construct: state the
+      asymmetry in javadoc; the probe is the default).
+    - **Negative pins for decided absences.** The root `@service` passthrough pin stays. The
+      batched polymorphic pair pin is added, not kept: the Spec's premise that the closure test
+      pins it today is false (no fixture even instantiates the pair; its absence rode the
+      retiring switch's default arm), so the closure fixture gains an interface-typed
+      `@splitQuery` child and the model-fact-then-`rowFor(...).isEmpty()` pin. An Encoded-DML
+      pin is added the same way, grounded on the return-arm fact and the membership accessor,
+      never on `emitsKeyedReQuery()`: that predicate is true for an Encoded DELETE via its
+      `Operation` arm while the relation deliberately mints no row, so the passthrough pin's
+      model-fact leg does not transfer (consult). `OutputField.emitsKeyedReQuery`'s javadoc
+      consumer list is corrected in the same slice: `LauncherCommands` switches on leaf kind and
+      return arm, never on that predicate.
+    - **Corpus production and the agreement check.** The harness produces the launcher relation
+      for every example under the one canonical run configuration, with the outcome typed as a
+      small sealed result (produced relation, or failed with reason), never thrown through the
+      sweep. A roster test binds the failed-example id set by equality in both directions to the
+      stated two-entry roster with per-entry prose, so a landed validator rejection or emission
+      shows up as a roster mismatch and a third example acquiring the gap is loud (consult;
+      per-declaring-example lazy production would have hidden both). The agreement check itself:
+      declared `@commits` tokens equal the produced row's arm simple names per coordinate; a
+      declaration on a coordinate with no produced row fails; a produced row with no declaration
+      is fine (no membership claim, per Spec review round 1).
+    - **The obligation row.** Domain: the sealed leaves of `LaunchSource` plus `ResultShape`
+      (15 arms). Covered: arms reached by a declared-and-agreeing corpus row (the
+      `coveredLeaves()` agreement-gate shape). Registered in `obligations()` and
+      `corpusObligations()`. `LoaderDelegated`'s coverage is entailed by the service source arms
+      through the compact constructor's biconditional; the row's javadoc states that entailment
+      so the cell is not read as an independent witness (consult). To reach the four unreached
+      arms the corpus gains three examples copied from live fixtures: a table-returning
+      `@service` child (the closure test's `filmsViaService` shape; reaches `ServiceTableLift`
+      and `LoaderDelegated`), a scalar `@service` child (the `getRankMapped` shape, whose
+      loader passes both `serviceRecordRow` guards; reaches `ServiceCall`), and a
+      discriminated-return mutation (the `DML_INSERT_DISCRIMINATED_INTERFACE_SINGLE` fixture
+      shape; reaches `DiscriminatedReentry`). Expected ripple: `corpusObservedOperations`,
+      `coveredLeaves` and the classification census row counts move, and the
+      covered-exemption-must-exit ratchet may force same-commit edits to existing registry rows.
+      Truly blocked arms, if any remain, get typed exemptions naming live grounds.
+    - **Strip roster.** `QueryViewRenderer.INTERNAL_DIRECTIVES` becomes the parsed prelude's
+      directive-definition name set (the `DeclaredDirectives` precedent), closing the latent
+      `@synthesises` leak by construction.
+    - **Count/Facet re-anchor.** The discharged `CONNECTION_RESULT_CARRIER_FORK` blocker is
+      replaced with the live ground: a synthesised connection type's `totalCount`/`facets`
+      fields are not classified coordinates. The reasons keep the both-live-mechanism-and-id
+      shape and name R562 as the owner (test-source literals sit outside the reference guard's
+      string scan by the documented carve-out).
+    - **Instrument.** A trimmed launcher-arm occupancy census lands beside the classification
+      axis-pair census, sourced off the canonical per-example production sweep, printing pair
+      occupancy and asserting non-vacuity, so the next re-measurement is a test run instead of a
+      scratch file.
+    - **Emit-neutrality.** Test tree, corpus and producer-side declaration data only.
+      Main-source changes are limited to `LauncherCommands` (declaration data, the accessor,
+      `mintedMethodOf` and `produceWithoutSchema` re-sourced onto it) and the two javadoc
+      corrections; output must not change, and the sakila expectations stay byte-identical.
+      `CommandSeamRatchetTest` counts may move where the declaration data adds leaf references
+      in `plan/`; any movement gets a history line, per the ratchet's own rules.
 
 ## The exemption lists are the grain worklist
 

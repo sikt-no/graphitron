@@ -31,7 +31,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec | 2026-07-14 | [plan](operation-driven-test-corpus.md) |
 | `R180` | Resolved accessors for record-parent column reads (recordColumnReadArgs) | Spec | 2026-07-15 <sub>created 2026-05-19</sub> | [plan](record-parent-column-read-helper.md) |
 | `R543` | Corpus asserts a coordinate's facts and commands, not one verdict triple | In Progress | 2026-07-31 <sub>created 2026-07-26</sub> | [plan](corpus-asserts-fact-set.md) |
-| `R549` | Facts and commands: grain-first hierarchies and the three command relations | In Progress | 2026-07-30 <sub>created 2026-07-27</sub> | [plan](facts-and-commands.md) |
+| `R549` | Facts and commands: grain-first hierarchies and the three command relations | In Progress | 2026-07-31 <sub>created 2026-07-27</sub> | [plan](facts-and-commands.md) |
 
 ---
 
