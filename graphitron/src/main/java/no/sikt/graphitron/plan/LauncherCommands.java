@@ -12,8 +12,11 @@ import no.sikt.graphitron.command.LauncherCommand;
 import no.sikt.graphitron.command.Ordering;
 import no.sikt.graphitron.command.ResultShape;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.TenantBinding;
@@ -21,6 +24,9 @@ import no.sikt.graphitron.rewrite.model.TenantScopes;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Produces the launcher command relation: one {@link LauncherCommand} row per covered root
@@ -48,6 +54,104 @@ import java.util.List;
 public final class LauncherCommands {
 
     private LauncherCommands() {}
+
+    /**
+     * One declared member of the launcher family's minting membership. Launcher membership is
+     * leaf-grain except for the DML family, where it is conditioned on the leaf's
+     * return-expression arm, so the declared set carries two key shapes: {@link Leaf} names a
+     * field leaf whose every instance mints a row, and {@link DmlReturn} names a
+     * {@link DmlReturnExpression} arm that mints on every
+     * {@link MutationField.DmlTableField} leaf carrying that return arm (the flat leaf-class
+     * form cannot express this: {@code getClass()} never returns the sealed
+     * {@code DmlTableField} intermediate). {@link #covers} is the one accessor owning the
+     * leaf-plus-return-arm conjunction.
+     */
+    public sealed interface MintingKind {
+
+        /** A field leaf whose every instance mints the coordinate's launcher row. */
+        record Leaf(Class<? extends GraphitronField> leaf) implements MintingKind {}
+
+        /**
+         * A DML return-expression arm minting the reentry companion row on every
+         * {@link MutationField.DmlTableField} leaf that carries it.
+         */
+        record DmlReturn(Class<? extends DmlReturnExpression> returnArm) implements MintingKind {}
+    }
+
+    /**
+     * The minting kinds this producer mints launcher rows for, declared beside the dispatch
+     * ({@link #rowOf}, {@link #childRowOf}, {@link #dmlRowOf}) that implements it: the four
+     * migrated root kinds, the three batched child kinds, the two {@code @service} child kinds,
+     * and the four reentry-carrying DML return arms (the {@code Encoded*} arms carry no reentry
+     * and are outside by their absence here, stated once). The launcher membership census test
+     * validates this declaration against observed minting in both directions, so the set cannot
+     * drift from the switches it sits beside.
+     */
+    public static final Set<MintingKind> MINTING_KINDS = Set.of(
+        new MintingKind.Leaf(QueryField.QueryTableField.class),
+        new MintingKind.Leaf(QueryField.QueryRoutineTableField.class),
+        new MintingKind.Leaf(QueryField.QueryTableInterfaceField.class),
+        new MintingKind.Leaf(QueryField.QueryLookupTableField.class),
+        new MintingKind.Leaf(ChildField.BatchedTableField.class),
+        new MintingKind.Leaf(ChildField.BatchedLookupTableField.class),
+        new MintingKind.Leaf(ChildField.BatchedPivotField.class),
+        new MintingKind.Leaf(ChildField.ServiceTableField.class),
+        new MintingKind.Leaf(ChildField.ServiceRecordField.class),
+        new MintingKind.DmlReturn(DmlReturnExpression.ProjectedSingle.class),
+        new MintingKind.DmlReturn(DmlReturnExpression.ProjectedList.class),
+        new MintingKind.DmlReturn(DmlReturnExpression.DiscriminatedSingle.class),
+        new MintingKind.DmlReturn(DmlReturnExpression.DiscriminatedList.class));
+
+    /**
+     * The non-DML declared members ({@link MintingKind.Leaf} arms only), derived from
+     * {@link #MINTING_KINDS}: the filter {@link #produceWithoutSchema} walks with. The DML
+     * reentry companions are deliberately absent from the schema-free walk (see that method's
+     * javadoc).
+     */
+    private static final Set<Class<? extends GraphitronField>> SCHEMA_FREE_MINTING_LEAVES =
+        MINTING_KINDS.stream()
+            .filter(k -> k instanceof MintingKind.Leaf)
+            .map(k -> ((MintingKind.Leaf) k).leaf())
+            .collect(Collectors.toUnmodifiableSet());
+
+    /**
+     * The one membership accessor over the declared set: {@code field} mints a launcher row iff
+     * its leaf class is a declared {@link MintingKind.Leaf}, or it is a
+     * {@link MutationField.DmlTableField} whose return-expression arm is a declared
+     * {@link MintingKind.DmlReturn}. Every membership consumer (the closure test's covered set,
+     * {@link #mintedMethodOf}, {@link #produceWithoutSchema}'s filter through its derived
+     * non-DML view, the Encoded-DML negative pin) reads this conjunction here, so the
+     * {@code Encoded*} exclusion is stated once instead of per consumer.
+     */
+    public static boolean covers(GraphitronField field) {
+        if (field instanceof MutationField.DmlTableField dml) {
+            return MINTING_KINDS.contains(new MintingKind.DmlReturn(dml.returnExpression().getClass()));
+        }
+        return MINTING_KINDS.contains(new MintingKind.Leaf(field.getClass()));
+    }
+
+    /**
+     * The delivery arm each source arm's rows carry, declared beside the dispatch as producer
+     * data: the invocation axis is functionally determined by the source arm (the root and
+     * discriminated kinds run direct, the batched and service children register a DataLoader,
+     * the reentry companions take the write's captured {@code RETURNING} keys). Total over
+     * {@link LaunchSource}'s concrete arms; the test tree asserts totality and, at every
+     * relation it builds, that each produced row's invocation arm equals the declared arm for
+     * its source arm.
+     */
+    public static final Map<Class<? extends LaunchSource>, Class<? extends Invocation>> INVOCATION_BY_SOURCE =
+        Map.ofEntries(
+            Map.entry(LaunchSource.AnchorTable.class, Invocation.Direct.class),
+            Map.entry(LaunchSource.RoutineChain.class, Invocation.Direct.class),
+            Map.entry(LaunchSource.DiscriminatedTable.class, Invocation.Direct.class),
+            Map.entry(LaunchSource.KeyedLookup.class, Invocation.Direct.class),
+            Map.entry(LaunchSource.CorrelatedChain.class, Invocation.Batched.class),
+            Map.entry(LaunchSource.CorrelatedLookupChain.class, Invocation.Batched.class),
+            Map.entry(LaunchSource.PivotAggregate.class, Invocation.Batched.class),
+            Map.entry(LaunchSource.ServiceCall.class, Invocation.Batched.class),
+            Map.entry(LaunchSource.ServiceTableLift.class, Invocation.Batched.class),
+            Map.entry(LaunchSource.ProjectedReentry.class, Invocation.ReturningKeyed.class),
+            Map.entry(LaunchSource.DiscriminatedReentry.class, Invocation.ReturningKeyed.class));
 
     public static LauncherRelation produce(GraphitronSchema schema, ConditionRelation conditions,
             String outputPackage) {
@@ -259,40 +363,48 @@ public final class LauncherCommands {
      * sibling of the relation copy; both ends read {@code GeneratedUnits}, so they cannot
      * disagree). Facetedness is a schema fact, so schema-free connection rows are facetless by
      * construction, matching what a schema-free assembly can classify.
+     *
+     * <p>The walk filters through the declared membership's non-DML view
+     * ({@link #SCHEMA_FREE_MINTING_LEAVES}), so it is bound to {@link #MINTING_KINDS} rather
+     * than restating it. The DML reentry companions are deliberately absent: a schema-free
+     * assembly builds no mutation writes, so no captured {@code RETURNING} keys exist for a
+     * companion to re-select by.
      */
     public static LauncherRelation produceWithoutSchema(List<? extends GraphitronField> fields,
             String outputPackage) {
         var units = new GeneratedUnits(outputPackage);
         var rows = new ArrayList<LauncherCommand>();
         for (var field : fields) {
-            if (field instanceof QueryField.QueryTableField qtf) {
-                rows.add(row(qtf, glueFromFilters(qtf, units), units, null, new TenantStrategy.Single()));
-            } else if (field instanceof QueryField.QueryRoutineTableField qrtf) {
-                rows.add(routineRow(qrtf, units));
-            } else if (field instanceof QueryField.QueryTableInterfaceField qtif) {
+            if (!SCHEMA_FREE_MINTING_LEAVES.contains(field.getClass())) {
+                continue;
+            }
+            rows.add(switch (field) {
+                case QueryField.QueryTableField qtf ->
+                    row(qtf, glueFromFilters(qtf, units), units, null, new TenantStrategy.Single());
+                case QueryField.QueryRoutineTableField qrtf -> routineRow(qrtf, units);
                 // The residence split is a classified-schema fact; a schema-free assembly's
                 // joined participants carry no base slice and no detail fields, the same
                 // fallback the retired inline assembly took on a null schema.
-                rows.add(interfaceRow(qtif, no.sikt.graphitron.rewrite.JoinedTableReprojection.EMPTY,
-                    glueFromInterfaceFilters(qtif, units), units));
-            } else if (field instanceof QueryField.QueryLookupTableField qlf) {
-                rows.add(lookupRow(qlf,
-                    glueFromFilters(qlf.parentTypeName(), qlf.name(), qlf.filters(), units), units));
-            } else if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField btf) {
-                rows.add(batchedRow(btf,
+                case QueryField.QueryTableInterfaceField qtif ->
+                    interfaceRow(qtif, no.sikt.graphitron.rewrite.JoinedTableReprojection.EMPTY,
+                        glueFromInterfaceFilters(qtif, units), units);
+                case QueryField.QueryLookupTableField qlf -> lookupRow(qlf,
+                    glueFromFilters(qlf.parentTypeName(), qlf.name(), qlf.filters(), units), units);
+                case ChildField.BatchedTableField btf -> batchedRow(btf,
                     glueFromFilters(btf.parentTypeName(), btf.name(), btf.filters(), units),
-                    new TenantStrategy.Single(), units));
-            } else if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.BatchedLookupTableField blf) {
-                rows.add(batchedLookupRow(blf,
+                    new TenantStrategy.Single(), units);
+                case ChildField.BatchedLookupTableField blf -> batchedLookupRow(blf,
                     glueFromFilters(blf.parentTypeName(), blf.name(), blf.filters(), units),
-                    new TenantStrategy.Single(), units));
-            } else if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.BatchedPivotField bpf) {
-                rows.add(batchedPivotRow(bpf, units));
-            } else if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField stf) {
-                rows.add(serviceTableRow(stf, units));
-            } else if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField srf) {
-                rows.add(serviceRecordRow(srf, units));
-            }
+                    new TenantStrategy.Single(), units);
+                case ChildField.BatchedPivotField bpf -> batchedPivotRow(bpf, units);
+                case ChildField.ServiceTableField stf -> serviceTableRow(stf, units);
+                case ChildField.ServiceRecordField srf -> serviceRecordRow(srf, units);
+                default -> throw new IllegalStateException(
+                    "Graphitron generator bug (schema-free launcher production): field '"
+                    + field.qualifiedName() + "' passed the declared non-DML membership filter"
+                    + " but has no production arm here; the declared set and this switch have"
+                    + " drifted");
+            });
         }
         return new LauncherRelation(rows, CarrierDsl.ENV_ACQUIRED);
     }
@@ -750,32 +862,30 @@ public final class LauncherCommands {
      * The name the covered family would mint for {@code field}, or {@code null} for a
      * non-member: the census-grain restatement of {@link #rowOf}, {@link #childRowOf} and
      * {@link #dmlRowOf}'s minting arms, reading only the naming schemes (never conditions or
-     * tenancy, which a name census does not need).
+     * tenancy, which a name census does not need). Membership is {@link #covers}' verdict (so
+     * the {@code Encoded*} exclusion is not restated here); the switch maps only the declared
+     * minting kinds onto their naming schemes.
      */
     private static no.sikt.graphitron.command.UnitMethodRef mintedMethodOf(
             GraphitronField field, GeneratedUnits units) {
+        if (!covers(field)) {
+            return null;
+        }
         return switch (field) {
             case QueryField.QueryTableField f -> units.launcherMethod(f.parentTypeName(), f.name());
             case QueryField.QueryRoutineTableField f -> units.launcherMethod(f.parentTypeName(), f.name());
             case QueryField.QueryTableInterfaceField f -> units.launcherMethod(f.parentTypeName(), f.name());
             case QueryField.QueryLookupTableField f -> units.lookupMethod(f.parentTypeName(), f.name());
-            case no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField f ->
-                units.rowsMethod(f.parentTypeName(), f.name());
-            case no.sikt.graphitron.rewrite.model.ChildField.BatchedLookupTableField f ->
-                units.rowsMethod(f.parentTypeName(), f.name());
-            case no.sikt.graphitron.rewrite.model.ChildField.BatchedPivotField f ->
-                units.rowsMethod(f.parentTypeName(), f.name());
-            case no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField f ->
-                units.loadMethod(f.parentTypeName(), f.name());
-            case no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField f ->
-                units.loadMethod(f.parentTypeName(), f.name());
-            case no.sikt.graphitron.rewrite.model.MutationField.DmlTableField f ->
-                switch (f.returnExpression()) {
-                    case no.sikt.graphitron.rewrite.model.DmlReturnExpression.EncodedSingle ignored -> null;
-                    case no.sikt.graphitron.rewrite.model.DmlReturnExpression.EncodedList ignored -> null;
-                    default -> units.reentryRowsMethod(f.parentTypeName(), f.name());
-                };
-            default -> null;
+            case ChildField.BatchedTableField f -> units.rowsMethod(f.parentTypeName(), f.name());
+            case ChildField.BatchedLookupTableField f -> units.rowsMethod(f.parentTypeName(), f.name());
+            case ChildField.BatchedPivotField f -> units.rowsMethod(f.parentTypeName(), f.name());
+            case ChildField.ServiceTableField f -> units.loadMethod(f.parentTypeName(), f.name());
+            case ChildField.ServiceRecordField f -> units.loadMethod(f.parentTypeName(), f.name());
+            case MutationField.DmlTableField f -> units.reentryRowsMethod(f.parentTypeName(), f.name());
+            default -> throw new IllegalStateException(
+                "Graphitron generator bug (launcher method census): field '" + field.qualifiedName()
+                + "' is declared minting but has no naming-scheme arm here; the declared"
+                + " membership and this census restatement have drifted");
         };
     }
 

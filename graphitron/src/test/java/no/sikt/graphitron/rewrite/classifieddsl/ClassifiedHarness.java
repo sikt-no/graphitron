@@ -27,6 +27,8 @@ import no.sikt.graphitron.rewrite.model.Target;
 import no.sikt.graphitron.rewrite.model.TargetShape;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -80,9 +82,28 @@ public final class ClassifiedHarness {
     public record SynthesisCase(String parentType, String fieldName,
                                 Set<Mint> declared, Set<Mint> produced) {}
 
+    /**
+     * One {@code @commits} declaration as authored: the coordinate and its declared launcher
+     * arm tokens. The produced side joins in through {@link #commitCases}, which reads the
+     * example's launcher production outcome.
+     */
+    public record CommitDeclaration(String parentType, String fieldName,
+                                    String source, String result) {}
+
+    /**
+     * One {@code @commits} coordinate joined against the produced launcher relation: the
+     * declared {@code LaunchSource} / {@code ResultShape} arm tokens vs. the produced row's arm
+     * simple names at the same coordinate ({@code null} produced side when the relation has no
+     * row there, or when the example's production failed).
+     */
+    public record CommitCase(String parentType, String fieldName,
+                             String declaredSource, String declaredResult,
+                             String producedSource, String producedResult) {}
+
     /** The full outcome of classifying one fixture: every annotated coordinate, plus the schema. */
     public record Result(List<FieldCase> fields, List<TypeCase> types,
-                         List<SynthesisCase> synthesises, GraphitronSchema schema) {}
+                         List<SynthesisCase> synthesises, List<CommitDeclaration> commits,
+                         GraphitronSchema schema) {}
 
     /**
      * Classifies {@code fixtureSdl} (the {@link ClassifiedDsl#PRELUDE} prepended automatically) and
@@ -96,6 +117,7 @@ public final class ClassifiedHarness {
         var fields = new ArrayList<FieldCase>();
         var types = new ArrayList<TypeCase>();
         var synthesises = new ArrayList<SynthesisCase>();
+        var commits = new ArrayList<CommitDeclaration>();
 
         for (TypeDefinition<?> def : registry.types().values()) {
             List<FieldDefinition> fieldDefs = switch (def) {
@@ -112,6 +134,11 @@ public final class ClassifiedHarness {
                 if (ds != null) {
                     synthesises.add(synthesisCase(schema, def.getName(), fd.getName(), ds));
                 }
+                Directive dc = directive(fd.getDirectives(), ClassifiedDsl.COMMITS);
+                if (dc != null) {
+                    commits.add(new CommitDeclaration(def.getName(), fd.getName(),
+                        enumArg(dc, "source"), enumArg(dc, "result")));
+                }
             }
             Directive dt = directive(def.getDirectives(), ClassifiedDsl.CLASSIFIED_TYPE);
             if (dt != null) {
@@ -126,7 +153,81 @@ public final class ClassifiedHarness {
                 types.add(typeCase(schema, scalarDef.getName(), dt));
             }
         }
-        return new Result(fields, types, synthesises, schema);
+        return new Result(fields, types, synthesises, commits, schema);
+    }
+
+    // ----- launcher production: the corpus's canonical run, and the @commits join -----
+
+    /**
+     * The outcome of producing the launcher relation for one corpus example under the canonical
+     * run configuration: the relation, or the loud production failure's reason. Typed so the
+     * per-example sweep never throws through its loop and a roster test can bind the failing
+     * id set by equality.
+     */
+    public sealed interface LauncherProduction {
+
+        /** Production succeeded; the relation carries the example's rows. */
+        record Produced(no.sikt.graphitron.plan.LauncherRelation relation) implements LauncherProduction {}
+
+        /** Production failed loudly on a recorded validator-mirror-gap invariant. */
+        record Failed(String reason) implements LauncherProduction {}
+    }
+
+    private static Map<String, LauncherProduction> launcherProductions;
+
+    /**
+     * The launcher relation of every corpus example, produced once per JVM under the one
+     * canonical run configuration the corpus fixes: the
+     * {@code TestConfiguration.testContext()} schema build and
+     * {@code TestConfiguration.DEFAULT_OUTPUT_PACKAGE}, with no federation link, no oneOf
+     * strictness, no session state and no tenant configuration. Run-grain facts (the relation's
+     * {@code carrierDsl}, the federation and oneOf gates) are deliberately outside the
+     * coordinate directive's reach; a fixture needing a different configuration is a
+     * pipeline-tier test, not a corpus example. Only the production guards'
+     * {@link IllegalStateException}s are caught (never assertion errors), so a classifier or
+     * schema-assembly failure still fails the sweep loudly.
+     */
+    public static synchronized Map<String, LauncherProduction> launcherProductions() {
+        if (launcherProductions == null) {
+            var map = new LinkedHashMap<String, LauncherProduction>();
+            for (var example : ClassifiedCorpus.examples()) {
+                var schema = classify(example.sdl()).schema();
+                LauncherProduction outcome;
+                try {
+                    var conditions = no.sikt.graphitron.plan.ConditionCommands.produce(
+                        schema, TestConfiguration.DEFAULT_OUTPUT_PACKAGE);
+                    outcome = new LauncherProduction.Produced(
+                        no.sikt.graphitron.plan.LauncherCommands.produce(
+                            schema, conditions, TestConfiguration.DEFAULT_OUTPUT_PACKAGE));
+                } catch (IllegalStateException e) {
+                    outcome = new LauncherProduction.Failed(e.getMessage());
+                }
+                map.put(example.id(), outcome);
+            }
+            launcherProductions = Collections.unmodifiableMap(map);
+        }
+        return launcherProductions;
+    }
+
+    /**
+     * Joins one example's {@code @commits} declarations against its launcher production
+     * outcome: the produced side is the relation row's arm simple names at the declared
+     * coordinate, or {@code null} when no row exists there (including the whole-example
+     * {@link LauncherProduction.Failed} case, where no relation exists at all).
+     */
+    public static List<CommitCase> commitCases(Result result, LauncherProduction production) {
+        var relation = production instanceof LauncherProduction.Produced p ? p.relation() : null;
+        var cases = new ArrayList<CommitCase>();
+        for (var declaration : result.commits()) {
+            var row = relation == null
+                ? java.util.Optional.<no.sikt.graphitron.command.LauncherCommand>empty()
+                : relation.rowFor(declaration.parentType(), declaration.fieldName());
+            cases.add(new CommitCase(declaration.parentType(), declaration.fieldName(),
+                declaration.source(), declaration.result(),
+                row.map(r -> r.source().getClass().getSimpleName()).orElse(null),
+                row.map(r -> r.result().getClass().getSimpleName()).orElse(null)));
+        }
+        return cases;
     }
 
     /**
@@ -363,6 +464,34 @@ public final class ClassifiedHarness {
     /** The {@code SynthesisedType} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */
     public static Set<String> synthesisedTypeEnumConstants() {
         return preludeEnumConstants("SynthesisedType");
+    }
+
+    /** The {@code LauncherSource} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */
+    public static Set<String> launcherSourceEnumConstants() {
+        return preludeEnumConstants("LauncherSource");
+    }
+
+    /**
+     * The simple names of the concrete sealed {@link no.sikt.graphitron.command.LaunchSource}
+     * arms (the live launcher-source set the {@code LauncherSource} SDL enum must mirror). The
+     * recursive walker flattens the {@code Correlated} / {@code Reentry} capability seals to
+     * their concrete arms.
+     */
+    public static List<String> launchSourceArmSimpleNames() {
+        return sealedLeafSimpleNames(no.sikt.graphitron.command.LaunchSource.class);
+    }
+
+    /** The {@code LauncherResult} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */
+    public static Set<String> launcherResultEnumConstants() {
+        return preludeEnumConstants("LauncherResult");
+    }
+
+    /**
+     * The simple names of the sealed {@link no.sikt.graphitron.command.ResultShape} arms (the
+     * live result-shape set the {@code LauncherResult} SDL enum must mirror).
+     */
+    public static List<String> resultShapeArmSimpleNames() {
+        return sealedLeafSimpleNames(no.sikt.graphitron.command.ResultShape.class);
     }
 
     /**

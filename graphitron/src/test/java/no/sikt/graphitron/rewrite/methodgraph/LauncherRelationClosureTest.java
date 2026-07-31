@@ -4,6 +4,8 @@ import no.sikt.graphitron.command.Invocation;
 import no.sikt.graphitron.command.LaunchSource;
 import no.sikt.graphitron.command.LauncherCommand;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
+import no.sikt.graphitron.plan.LauncherAxisPins;
+import no.sikt.graphitron.plan.LauncherCommands;
 import no.sikt.graphitron.plan.LauncherRelation;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
@@ -11,10 +13,8 @@ import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
-import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.OutputField;
-import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.BeforeAll;
@@ -49,14 +49,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       relation constructor's case-folded census; pinned here at the run level).</li>
  * </ul>
  *
- * <p>The covered families are the producer's minting arms: the migrated roots, the batched and
- * service children, and the projected / discriminated DML reentry companions. The batched
- * polymorphic pair is the one decided emitted-and-uncommitted population (its rows methods are
- * named through the same {@code GeneratedUnits} scheme with no row behind them), so the
- * model-derived expected set deliberately excludes it; a producer that started minting rows for
- * it would fail the model → row equality here. The root {@code @service} passthrough pin keeps
- * the other deliberate absence visible: value-level re-fetch without a site-level re-query gets
- * no row, by the fact, not by omission.
+ * <p>The covered families are the producer's minting arms, read off the producer's declared
+ * membership data ({@link LauncherCommands#covers}), never a hand-maintained restatement. The
+ * batched polymorphic pair is the one decided emitted-and-uncommitted population (its rows
+ * methods are named through the same {@code GeneratedUnits} scheme with no row behind them);
+ * the fixture instantiates its interface half, so a producer that started minting rows for it
+ * fails both the model → row equality and the explicit negative pin here. The root
+ * {@code @service} passthrough pin and the Encoded-DML pin keep the other deliberate absences
+ * visible: value-level re-fetch without a site-level re-query gets no row, and an encoded
+ * return arm carries no reentry, by the fact, not by omission.
  */
 @PipelineTier
 class LauncherRelationClosureTest {
@@ -66,11 +67,14 @@ class LauncherRelationClosureTest {
     private static final String SCHEMA = """
         type Query {
           film: Film
+          city: City
           externalFilm: Film
             @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
         }
 
-        type Film @table(name: "film") {
+        interface Node { id: ID! }
+        type Film implements Node @table(name: "film") @node {
+          id: ID! @nodeId
           title: String
           language: Language @reference(path: [{key: "film_language_id_fkey"}])
           actors: [Actor!]! @splitQuery
@@ -85,11 +89,19 @@ class LauncherRelationClosureTest {
           )
         }
 
+        interface Named { name: String }
+        type Address implements Named @table(name: "address") { name: String @field(name: "ADDRESS") }
+        type City @table(name: "city") {
+          namedPlaces: [Named!]!
+        }
+
         type FilmPayload { film: Film }
         input FilmInput { title: String }
+        input FilmKeyInput { filmId: Int! @field(name: "film_id") }
 
         type Mutation {
           createFilm(in: FilmInput!): Film @mutation(typeName: INSERT)
+          deleteFilm(in: FilmKeyInput!): ID @mutation(typeName: DELETE, table: "film")
           runFilm: FilmPayload
             @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runFilm"})
         }
@@ -119,37 +131,17 @@ class LauncherRelationClosureTest {
     }
 
     /**
-     * The covered-family boundary, restated per-family from the model's leaf kinds (relation
-     * membership is per-family production, not a single cross-cutting predicate): the migrated
-     * root kinds, the batched and service child kinds, and the DML leaves whose return arm
-     * carries a reentry. The batched polymorphic pair is deliberately absent, the one decided
-     * emitted-and-uncommitted population.
+     * The covered-family boundary, read off the producer's declared minting membership
+     * ({@link LauncherCommands#covers}, the one accessor over
+     * {@link LauncherCommands#MINTING_KINDS}), so this leg and the producer cannot drift: the
+     * membership census test binds the declaration to observed minting, and this test binds the
+     * generator run's relation to the same declaration.
      */
     private static Set<String> coveredCoordinates() {
         return model.fields().values().stream()
-            .filter(LauncherRelationClosureTest::isCoveredFamilyMember)
+            .filter(LauncherCommands::covers)
             .map(f -> ((OutputField) f).qualifiedName())
             .collect(Collectors.toCollection(LinkedHashSet::new));
-    }
-
-    private static boolean isCoveredFamilyMember(GraphitronField f) {
-        return switch (f) {
-            case QueryField.QueryTableField ignored -> true;
-            case QueryField.QueryRoutineTableField ignored -> true;
-            case QueryField.QueryTableInterfaceField ignored -> true;
-            case QueryField.QueryLookupTableField ignored -> true;
-            case ChildField.BatchedTableField ignored -> true;
-            case ChildField.BatchedLookupTableField ignored -> true;
-            case ChildField.BatchedPivotField ignored -> true;
-            case ChildField.ServiceTableField ignored -> true;
-            case ChildField.ServiceRecordField ignored -> true;
-            case MutationField.DmlTableField dml -> switch (dml.returnExpression()) {
-                case DmlReturnExpression.EncodedSingle ignored -> false;
-                case DmlReturnExpression.EncodedList ignored -> false;
-                default -> true;
-            };
-            default -> false;
-        };
     }
 
     private static String coordinateOf(LauncherCommand row) {
@@ -181,6 +173,16 @@ class LauncherRelationClosureTest {
                 .isNotNull()
                 .contains(row.unit().methodName());
         }
+    }
+
+    /**
+     * The invocation determination, pinned at the generator-run relation: every produced row's
+     * delivery arm equals the arm {@link LauncherCommands#INVOCATION_BY_SOURCE} declares for its
+     * source arm.
+     */
+    @Test
+    void everyRowsInvocationMatchesTheDeclaredDetermination() {
+        LauncherAxisPins.assertInvocationMatchesDeclaredDetermination(launchers);
     }
 
     /** Exactly-one: no two rows claim the same emitted method (run-level pin of the relation census). */
@@ -252,6 +254,29 @@ class LauncherRelationClosureTest {
             .as("root service passthrough re-projects downstream, not at its own site")
             .isFalse();
         assertThat(launchers.rowFor("Query", "externalFilm")).isEmpty();
+
+        // The batched polymorphic pair's interface half: emitted-and-uncommitted by decision.
+        // Model fact first (the fixture really instantiates the leaf), then the absence.
+        assertThat(model.field("City", "namedPlaces"))
+            .as("an interface-typed list child with a table-bound participant classifies to the"
+                + " batched interface leaf")
+            .isInstanceOf(ChildField.BatchedInterfaceField.class);
+        assertThat(launchers.rowFor("City", "namedPlaces"))
+            .as("the batched polymorphic pair is emitted-and-uncommitted: rows methods are named"
+                + " through the GeneratedUnits scheme with no launcher row behind them")
+            .isEmpty();
+
+        // Encoded DML: the return arm carries no reentry, so the coordinate mints no row. The
+        // model leg is the return-arm fact, deliberately not emitsKeyedReQuery(), which is true
+        // for an Encoded DELETE while the relation still mints nothing.
+        var deleteFilm = (MutationField.DmlTableField) model.field("Mutation", "deleteFilm");
+        assertThat(deleteFilm.returnExpression())
+            .as("a DELETE returning ID carries the encoded-single return arm")
+            .isInstanceOf(DmlReturnExpression.EncodedSingle.class);
+        assertThat(LauncherCommands.covers(deleteFilm))
+            .as("the declared membership excludes the encoded return arms")
+            .isFalse();
+        assertThat(launchers.rowFor("Mutation", "deleteFilm")).isEmpty();
 
         // Projected DML: the reentry companion's name rides the row's UnitMethodRef (the one
         // minting locus), the source arm carries the correlation, and the delivery is the

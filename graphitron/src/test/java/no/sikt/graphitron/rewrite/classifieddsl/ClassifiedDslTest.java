@@ -18,6 +18,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -82,6 +83,140 @@ class ClassifiedDslTest {
                 .as("%s.%s mints exactly its declared synthesis set (declared vs the "
                     + "connection-synthesis relation's produced row)", sc.parentType(), sc.fieldName())
                 .isEqualTo(sc.declared());
+        }
+        // @commits agreement: declared arm tokens equal the produced launcher row's arm simple
+        // names per coordinate. A declaration on a coordinate with no produced row fails (the
+        // null produced side mismatches); a produced row with no declaration is fine, since the
+        // directive makes no membership claim.
+        var production = ClassifiedHarness.launcherProductions().get(example.id());
+        for (var cc : ClassifiedHarness.commitCases(result, production)) {
+            assertThat(cc.producedSource())
+                .as("%s.%s declares @commits but the canonical run produced no launcher row at "
+                    + "the coordinate", cc.parentType(), cc.fieldName())
+                .isNotNull();
+            assertThat(cc.producedSource())
+                .as("%s.%s: declared launcher source arm vs the produced row's",
+                    cc.parentType(), cc.fieldName())
+                .isEqualTo(cc.declaredSource());
+            assertThat(cc.producedResult())
+                .as("%s.%s: declared launcher result arm vs the produced row's",
+                    cc.parentType(), cc.fieldName())
+                .isEqualTo(cc.declaredResult());
+        }
+    }
+
+    /**
+     * The launcher production sweep's failure roster, bound by equality in both directions: a
+     * landed validator rejection (or emission) for a recorded gap shows up as a roster
+     * mismatch, and a third example acquiring a gap is loud. Each entry's reason is grounded on
+     * the recorded validator-mirror gap it rides.
+     */
+    @Test
+    void launcherProductionFailureRosterIsExact() {
+        var productions = ClassifiedHarness.launcherProductions();
+        var failed = productions.entrySet().stream()
+            .filter(e -> e.getValue() instanceof ClassifiedHarness.LauncherProduction.Failed)
+            .map(Map.Entry::getKey)
+            .collect(Collectors.toSet());
+        assertThat(failed)
+            .as("exactly the two recorded validator-mirror-gap examples fail launcher production;"
+                + " an entry leaving means its gap closed (celebrate and shrink the roster), an"
+                + " entry joining means a new example rides an unrecorded gap")
+            .containsExactlyInAnyOrder("record-method", "service");
+        assertThat(((ClassifiedHarness.LauncherProduction.Failed) productions.get("record-method")).reason())
+            .as("record-method rides the batched-lookup single-record-per-key guard: the"
+                + " validator accepts the shape, no batched-lookup emission exists for the cell")
+            .contains("batched lookup child");
+        assertThat(((ClassifiedHarness.LauncherProduction.Failed) productions.get("service")).reason())
+            .as("service rides the service-record no-Sources guard: a record child without a"
+                + " Sources parameter classifies with null key facts, the validator accepts it")
+            .contains("no Sources parameter");
+    }
+
+    /**
+     * The invocation-determination pin over the corpus production sweep: every produced row's
+     * delivery arm equals the arm the producer's declared determination map carries for its
+     * source arm (the third relation the shared pin covers, beside the membership fixture and
+     * the closure test's generator run).
+     */
+    @Test
+    void producedInvocationMatchesTheDeclaredDeterminationAcrossTheCorpus() {
+        for (var production : ClassifiedHarness.launcherProductions().values()) {
+            if (production instanceof ClassifiedHarness.LauncherProduction.Produced p) {
+                no.sikt.graphitron.plan.LauncherAxisPins
+                    .assertInvocationMatchesDeclaredDetermination(p.relation());
+            }
+        }
+    }
+
+    /**
+     * The launcher-arm occupancy census, the classification axis-pair census's launcher
+     * sibling: sourced off the canonical per-example production sweep, it prints per-axis
+     * occupancy and pairwise co-variation over the four launcher axes
+     * ({@code source} / {@code invocation} / {@code tenancy} / {@code result}) so the next
+     * re-measurement is a test run rather than a scratch file. The assertion is non-vacuity
+     * (rows exist, every pair observable); the functional-determination claim lives in
+     * {@link #producedInvocationMatchesTheDeclaredDeterminationAcrossTheCorpus()}, not here.
+     */
+    @Test
+    void launcherAxisCensusIsDerivable() {
+        record RowAxes(String source, String invocation, String tenancy, String result) {}
+        var rows = new ArrayList<RowAxes>();
+        for (var production : ClassifiedHarness.launcherProductions().values()) {
+            if (production instanceof ClassifiedHarness.LauncherProduction.Produced p) {
+                for (var row : p.relation().rows()) {
+                    rows.add(new RowAxes(
+                        row.source().getClass().getSimpleName(),
+                        row.invocation().getClass().getSimpleName(),
+                        row.tenancy().getClass().getSimpleName(),
+                        row.result().getClass().getSimpleName()));
+                }
+            }
+        }
+        assertThat(rows).as("launcher rows measured (census must not be vacuous)").isNotEmpty();
+
+        Map<String, Function<RowAxes, String>> axes = new LinkedHashMap<>();
+        axes.put("source", RowAxes::source);
+        axes.put("invocation", RowAxes::invocation);
+        axes.put("tenancy", RowAxes::tenancy);
+        axes.put("result", RowAxes::result);
+
+        for (var axis : axes.entrySet()) {
+            var counts = new TreeMap<String, Integer>();
+            for (var row : rows) {
+                counts.merge(axis.getValue().apply(row), 1, Integer::sum);
+            }
+            System.out.printf("LAUNCHER-AXIS %s: %s%n", axis.getKey(), counts);
+        }
+
+        List<String> names = List.copyOf(axes.keySet());
+        for (int i = 0; i < names.size(); i++) {
+            for (int j = i + 1; j < names.size(); j++) {
+                var first = axes.get(names.get(i));
+                var second = axes.get(names.get(j));
+                var firstValues = new TreeSet<String>();
+                var secondValues = new TreeSet<String>();
+                var observedPairs = new TreeSet<String>();
+                for (var row : rows) {
+                    firstValues.add(first.apply(row));
+                    secondValues.add(second.apply(row));
+                    observedPairs.add(first.apply(row) + "*" + second.apply(row));
+                }
+                assertThat(observedPairs)
+                    .as("launcher axis pair %s x %s must be observable over the corpus",
+                        names.get(i), names.get(j))
+                    .isNotEmpty();
+                var missing = new TreeSet<String>();
+                for (String a : firstValues) {
+                    for (String b : secondValues) {
+                        if (!observedPairs.contains(a + "*" + b)) missing.add(a + "*" + b);
+                    }
+                }
+                System.out.printf("LAUNCHER-PAIR %s x %s: observed %d of %d (%d x %d), missing %s%n",
+                    names.get(i), names.get(j), observedPairs.size(),
+                    firstValues.size() * secondValues.size(),
+                    firstValues.size(), secondValues.size(), missing);
+            }
         }
     }
 
@@ -300,6 +435,22 @@ class ClassifiedDslTest {
     }
 
     @Test
+    void launcherSourceMirrorsTheLaunchSourceArms() {
+        assertThat(ClassifiedHarness.launcherSourceEnumConstants())
+            .as("the SDL LauncherSource enum must mirror the concrete sealed LaunchSource arms; "
+                + "adding an arm to one side without the other fails here")
+            .containsExactlyInAnyOrderElementsOf(ClassifiedHarness.launchSourceArmSimpleNames());
+    }
+
+    @Test
+    void launcherResultMirrorsTheResultShapeArms() {
+        assertThat(ClassifiedHarness.launcherResultEnumConstants())
+            .as("the SDL LauncherResult enum must mirror the sealed ResultShape arms; "
+                + "adding an arm to one side without the other fails here")
+            .containsExactlyInAnyOrderElementsOf(ClassifiedHarness.resultShapeArmSimpleNames());
+    }
+
+    @Test
     void typeVerdictMirrorsGraphitronTypeLeaves() {
         assertThat(ClassifiedHarness.typeVerdictEnumConstants())
             .as("the SDL TypeVerdict enum must mirror GraphitronType's non-failure sealed leaves; "
@@ -317,6 +468,8 @@ class ClassifiedDslTest {
         assertThat(ClassifiedHarness.operationArmSimpleNames()).as("Operation arm names").doesNotHaveDuplicates();
         assertThat(ClassifiedHarness.targetWrapperArmSimpleNames()).as("Target wrapper arm names").doesNotHaveDuplicates();
         assertThat(ClassifiedHarness.targetShapeArmSimpleNames()).as("TargetShape arm names").doesNotHaveDuplicates();
+        assertThat(ClassifiedHarness.launchSourceArmSimpleNames()).as("LaunchSource arm names").doesNotHaveDuplicates();
+        assertThat(ClassifiedHarness.resultShapeArmSimpleNames()).as("ResultShape arm names").doesNotHaveDuplicates();
         assertThat(ClassifiedHarness.graphitronTypeNonFailureLeafSimpleNames())
             .as("GraphitronType's sealed leaves must have unique simple names: the TypeVerdict mirror "
                 + "compares by simple name, so a future nested leaf reusing a name would silently conflate two")

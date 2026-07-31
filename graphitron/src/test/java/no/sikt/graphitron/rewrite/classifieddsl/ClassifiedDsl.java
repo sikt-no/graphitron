@@ -27,6 +27,14 @@ package no.sikt.graphitron.rewrite.classifieddsl;
  *       the declaration with the connection-synthesis relation's produced rows, never from the
  *       producer's output alone. {@code SynthesisedType} mirrors the relation's declared
  *       minted-arm vocabulary.</li>
+ *   <li>{@code @commits(source:, result:)} on an output field asserts the arm tokens of the
+ *       coordinate's launcher command row (the {@code LaunchSource} and {@code ResultShape}
+ *       arms), checked against the relation the harness produces under its one canonical run
+ *       configuration on declared-equals-produced agreement. It makes no membership claim
+ *       (membership is producer-declared leaf-grain data, census-bound beside the dispatch);
+ *       the invocation axis is not an argument because the source arm determines it (declared
+ *       as producer data), and tenancy is a run-configuration fact outside the coordinate's
+ *       reach. {@code LauncherSource} / {@code LauncherResult} mirror the sealed arm sets.</li>
  * </ul>
  */
 public final class ClassifiedDsl {
@@ -39,6 +47,8 @@ public final class ClassifiedDsl {
     public static final String CLASSIFIED_TYPE = "classifiedType";
     /** The {@code @synthesises} directive name (read off the field-definition AST by the harness). */
     public static final String SYNTHESISES = "synthesises";
+    /** The {@code @commits} directive name (read off the field-definition AST by the harness). */
+    public static final String COMMITS = "commits";
 
     /**
      * The test-only directive and enum declarations, prepended to every corpus fixture before the
@@ -74,6 +84,14 @@ public final class ClassifiedDsl {
 
         enum SynthesisedType { ConnectionType EdgeType PageInfoType FacetsType FacetValueType }
 
+        enum LauncherSource {
+          AnchorTable RoutineChain CorrelatedChain CorrelatedLookupChain
+          ServiceCall ServiceTableLift PivotAggregate KeyedLookup
+          ProjectedReentry DiscriminatedReentry DiscriminatedTable
+        }
+
+        enum LauncherResult { SingleRecord LoaderDelegated RecordList Connection }
+
         input Mint { name: String!, as: SynthesisedType! }
 
         directive @classified(
@@ -85,5 +103,7 @@ public final class ClassifiedDsl {
           OBJECT | INTERFACE | UNION | INPUT_OBJECT | ENUM | SCALAR
 
         directive @synthesises(mints: [Mint!]!) on FIELD_DEFINITION
+
+        directive @commits(source: LauncherSource!, result: LauncherResult!) on FIELD_DEFINITION
         """;
 }

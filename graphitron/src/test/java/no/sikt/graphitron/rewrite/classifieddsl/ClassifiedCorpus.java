@@ -17,6 +17,11 @@ import java.util.Set;
  * populated {@link no.sikt.graphitron.rewrite.model.Operation} arm, with the modeled-but-unpopulated
  * arms tracked as known gaps in {@link ClassifiedDslTest}. The set grows example by example as the
  * {@code code-generation-triggers} documentation pulls each one in (see {@link #coveredLeaves()}).
+ *
+ * <p>Each coordinate whose example produces a launcher command row also carries a
+ * {@code @commits(source:, result:)} declaration, agreement-checked against the produced row;
+ * between them those declarations reach every {@code LaunchSource} and {@code ResultShape} arm
+ * (the launcher-commitment obligation in {@code ExemptionRegistry}).
  */
 public final class ClassifiedCorpus {
 
@@ -44,7 +49,9 @@ public final class ClassifiedCorpus {
         new Example("catalog", """
             type Query @classifiedType(as: RootType) {
               film: Film @classified(source: Query, operation: Fetch, target: Single, targetShape: Table)
+                @commits(source: AnchorTable, result: SingleRecord)
               films: [Film!]! @asConnection @classified(source: Query, operation: Paginate, target: Single, targetShape: Connection)
+                @commits(source: AnchorTable, result: Connection)
             }
 
             type Film @table(name: "film") @classifiedType(as: TableType) {
@@ -73,7 +80,7 @@ public final class ClassifiedCorpus {
             type Film @table(name: "film") {
               rating: Rating @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Column)
             }
-            type Query { film: Film }
+            type Query { film: Film @commits(source: AnchorTable, result: SingleRecord) }
             """),
 
         /*
@@ -91,10 +98,12 @@ public final class ClassifiedCorpus {
             type City @table(name: "city") @classifiedType(as: TableType) {
               country: Country @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Table)
               countrySplit: Country @splitQuery @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Table)
+                @commits(source: CorrelatedChain, result: SingleRecord)
             }
 
             type Query {
               city: City @classified(source: Query, operation: Fetch, target: Single, targetShape: Table)
+                @commits(source: AnchorTable, result: SingleRecord)
             }
             """,
             "{ city { country { name } countrySplit { name } } }"),
@@ -111,8 +120,9 @@ public final class ClassifiedCorpus {
             type Store @table(name: "store") {
               customers(customer_id: ID! @lookupKey): [Customer!]! @splitQuery
                 @classified(source: OnlyChild, operation: Lookup, target: List, targetShape: Table)
+                @commits(source: CorrelatedLookupChain, result: RecordList)
             }
-            type Query { store: Store }
+            type Query { store: Store @commits(source: AnchorTable, result: SingleRecord) }
             """),
 
         /*
@@ -141,7 +151,7 @@ public final class ClassifiedCorpus {
             }
 
             type Query {
-              film: Film
+              film: Film @commits(source: AnchorTable, result: SingleRecord)
               prodFilmDetails: FilmDetails
                 @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmDetailsRecord"})
               prodFilmStats: FilmStats
@@ -167,6 +177,7 @@ public final class ClassifiedCorpus {
             type FilmDetails {
               language: Language @reference(path: [{key: "film_language_id_fkey"}])
                 @classified(source: Child, operation: Fetch, target: Single, targetShape: Table, sourceShape: Record)
+                @commits(source: CorrelatedChain, result: SingleRecord)
             }
 
             type Film @table(name: "film") {
@@ -176,7 +187,7 @@ public final class ClassifiedCorpus {
             }
 
             type Query {
-              film: Film
+              film: Film @commits(source: AnchorTable, result: SingleRecord)
               prodFilmDetails: FilmDetails
                 @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
             }
@@ -226,6 +237,46 @@ public final class ClassifiedCorpus {
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getDetails"})
                 @classified(source: Query, operation: ServiceCall, target: Single, targetShape: Record)
             }
+            """),
+
+        /*
+         * A table-returning @service child (ServiceTableField): the developer's DataLoader-shaped
+         * method (a Map from parent key rows to lists of FilmRecord) produces real table records,
+         * and the emitted rows method lifts them back through a by-PK re-projection so multiset
+         * sub-fields resolve off the projected row. The verdict is Child-side ServiceCall over a
+         * @table target at list cardinality; the launcher row it commits is the service table
+         * lift with the loader-delegated payload (the service arms' result slot is typed vacuity,
+         * pinned to the source arm by the command's biconditional).
+         */
+        new Example("service-table-child", """
+            type Film @table(name: "film") { title: String }
+            type Language @table(name: "language") {
+              name: String
+              filmsViaService: [Film!]! @service(
+                service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getFilmsMapped"})
+                @classified(source: OnlyChild, operation: ServiceCall, target: List, targetShape: Table)
+                @commits(source: ServiceTableLift, result: LoaderDelegated)
+            }
+            type Query { language: Language @commits(source: AnchorTable, result: SingleRecord) }
+            """),
+
+        /*
+         * A scalar @service child (ServiceRecordField): pure delegation, the developer method's
+         * declared return shape IS the rows method's return shape (here a Map from parent key
+         * rows to Int, so the loader passes both service-record production guards: a Sources key
+         * exists and the scalar return skips no equality check). The verdict is Child-side
+         * ServiceCall with the record-shaped target; the launcher row it commits is the outright
+         * service call with the loader-delegated payload.
+         */
+        new Example("service-scalar-child", """
+            type Language @table(name: "language") {
+              name: String
+              rank: Int @service(
+                service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getRankMapped"})
+                @classified(source: OnlyChild, operation: ServiceCall, target: Single, targetShape: Record)
+                @commits(source: ServiceCall, result: LoaderDelegated)
+            }
+            type Query { language: Language @commits(source: AnchorTable, result: SingleRecord) }
             """),
 
         /*
@@ -303,7 +354,7 @@ public final class ClassifiedCorpus {
             type Film @table(name: "film") {
               details: FilmDetails @classified(source: OnlyChild, operation: Nest, target: Single, targetShape: Table)
             }
-            type Query { film: Film }
+            type Query { film: Film @commits(source: AnchorTable, result: SingleRecord) }
             """),
 
         /*
@@ -340,8 +391,9 @@ public final class ClassifiedCorpus {
                 @reference(path: [{table: "film_translation"}])
                 @pivot(on: "lang_code", value: "title_txt", vocabulary: "Sprak")
                 @classified(source: OnlyChild, operation: Pivot, target: Single, targetShape: Record)
+                @commits(source: PivotAggregate, result: SingleRecord)
             }
-            type Query { film: Film }
+            type Query { film: Film @commits(source: AnchorTable, result: SingleRecord) }
             """),
 
         // The mixed-source reach (a type projected as a NestingField off a @table parent and also read
@@ -383,8 +435,8 @@ public final class ClassifiedCorpus {
               namedPlaces: [Named!]! @classified(source: OnlyChild, operation: Fetch, target: List, targetShape: Interface)
             }
             type Query {
-              customer: Customer
-              city: City
+              customer: Customer @commits(source: AnchorTable, result: SingleRecord)
+              city: City @commits(source: AnchorTable, result: SingleRecord)
               anyNamed: Named @classified(source: Query, operation: Fetch, target: Single, targetShape: Interface)
             }
             """,
@@ -399,7 +451,7 @@ public final class ClassifiedCorpus {
               relatedList: [FilmOrActor!]! @classified(source: OnlyChild, operation: Fetch, target: List, targetShape: Union)
             }
             type Query {
-              filmActor: FilmActor
+              filmActor: FilmActor @commits(source: AnchorTable, result: SingleRecord)
               search: FilmOrActor @classified(source: Query, operation: Fetch, target: Single, targetShape: Union)
             }
             """,
@@ -436,7 +488,7 @@ public final class ClassifiedCorpus {
             interface Searchable @classifiedType(as: InterfaceType) { name: String }
             type Film implements Searchable @table(name: "film") { name: String @field(name: "TITLE") }
             type Actor implements Searchable @table(name: "actor") { name: String @field(name: "FIRST_NAME") }
-            type Query { film: Film }
+            type Query { film: Film @commits(source: AnchorTable, result: SingleRecord) }
             type Mutation {
               doSearch: [Searchable]
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilms"})
@@ -471,7 +523,7 @@ public final class ClassifiedCorpus {
         new Example("mutation-service-table-interface", """
             interface MediaItem @table(name: "film") @discriminate(on: "kind") @classifiedType(as: TableInterfaceType) { title: String }
             type FilmItem implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
-            type Query { film: FilmItem }
+            type Query { film: FilmItem @commits(source: AnchorTable, result: SingleRecord) }
             type Mutation {
               mediaSearch: [MediaItem]
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilms"})
@@ -486,8 +538,9 @@ public final class ClassifiedCorpus {
               media: MediaItem @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Table)
             }
             type Query {
-              inventory: Inventory
+              inventory: Inventory @commits(source: AnchorTable, result: SingleRecord)
               topMedia: MediaItem @classified(source: Query, operation: Fetch, target: Single, targetShape: Table)
+                @commits(source: DiscriminatedTable, result: SingleRecord)
             }
             """),
 
@@ -508,6 +561,7 @@ public final class ClassifiedCorpus {
             }
             type Query {
               allParties: [Party!]! @classified(source: Query, operation: Fetch, target: List, targetShape: Table)
+                @commits(source: DiscriminatedTable, result: RecordList)
             }
             """),
 
@@ -542,7 +596,7 @@ public final class ClassifiedCorpus {
                 @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "rating"})
                 @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Column)
             }
-            type Query { film: Film }
+            type Query { film: Film @commits(source: AnchorTable, result: SingleRecord) }
             """),
 
         /*
@@ -559,9 +613,10 @@ public final class ClassifiedCorpus {
                 @classified(source: OnlyChild, operation: Lookup, target: List, targetShape: Table)
             }
             type Query {
-              filmActor: FilmActor
+              filmActor: FilmActor @commits(source: AnchorTable, result: SingleRecord)
               filmById(film_id: [ID] @lookupKey): [Film!]!
                 @classified(source: Query, operation: Lookup, target: List, targetShape: Table)
+                @commits(source: KeyedLookup, result: RecordList)
             }
             """),
 
@@ -581,6 +636,7 @@ public final class ClassifiedCorpus {
               tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
                 @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
                 @classified(source: Query, operation: Fetch, target: List, targetShape: Table)
+                @commits(source: RoutineChain, result: RecordList)
             }
             """),
 
@@ -597,7 +653,7 @@ public final class ClassifiedCorpus {
             type Rental @table(name: "rental") {
               rentalId: Int! @field(name: "rental_id")
             }
-            type Query { rental: Rental }
+            type Query { rental: Rental @commits(source: AnchorTable, result: SingleRecord) }
             type Mutation {
               rentFilm(inventoryId: Int!, customerId: Int!): [Rental!]!
                 @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
@@ -645,7 +701,7 @@ public final class ClassifiedCorpus {
             type ShortContent implements Content @table(name: "content") @discriminator(value: "SHORT") {
               contentId: Int! @field(name: "CONTENT_ID")
             }
-            type Query { content: Content }
+            type Query { content: Content @commits(source: DiscriminatedTable, result: SingleRecord) }
             """),
 
         /*
@@ -674,7 +730,7 @@ public final class ClassifiedCorpus {
             type PageInfo @classifiedType(as: PageInfoType) {
               hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String
             }
-            type Query { films: FilmsConnection }
+            type Query { films: FilmsConnection @commits(source: AnchorTable, result: Connection) }
             """),
 
         /*
@@ -696,6 +752,7 @@ public final class ClassifiedCorpus {
             type Query {
                 films(filter: FilmFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
                     @classified(source: Query, operation: Paginate, target: Single, targetShape: Connection)
+                    @commits(source: AnchorTable, result: Connection)
                     @synthesises(mints: [
                         {name: "QueryFilmsConnection", as: ConnectionType},
                         {name: "QueryFilmsEdge", as: EdgeType},
@@ -755,7 +812,7 @@ public final class ClassifiedCorpus {
                 @classifiedType(as: NodeType) {
               id: ID! @nodeId
             }
-            type Query { film: Film }
+            type Query { film: Film @commits(source: AnchorTable, result: SingleRecord) }
             """),
 
         /*
@@ -811,8 +868,10 @@ public final class ClassifiedCorpus {
             type CreateFilmsResult @classifiedType(as: JavaRecordType) {
               film: Film! @field(name: "filmRecord")
                 @classified(source: Child, operation: Fetch, target: Single, targetShape: Table, sourceShape: Record)
+                @commits(source: CorrelatedChain, result: SingleRecord)
               actors: [Actor] @field(name: "actorRecords")
                 @classified(source: Child, operation: Fetch, target: List, targetShape: Table, sourceShape: Record)
+                @commits(source: CorrelatedChain, result: SingleRecord)
             }
             type CreateFilmsPayload @classifiedType(as: JavaRecordType) {
               results: [CreateFilmsResult]
@@ -841,9 +900,9 @@ public final class ClassifiedCorpus {
          */
         new Example("dml-payloads", """
             type Film @table(name: "film") { title: String }
-            type FilmInsertBulkPayload { films: [Film!] }
-            type FilmUpdatePayload { film: Film }
-            type FilmUpdateBulkPayload { films: [Film!] }
+            type FilmInsertBulkPayload { films: [Film!] @commits(source: CorrelatedChain, result: SingleRecord) }
+            type FilmUpdatePayload { film: Film @commits(source: CorrelatedChain, result: SingleRecord) }
+            type FilmUpdateBulkPayload { films: [Film!] @commits(source: CorrelatedChain, result: SingleRecord) }
             input FilmCreateInput { title: String }
             input FilmUpdateInput { filmId: Int! @field(name: "film_id") title: String }
             type Query { x: String }
@@ -875,9 +934,47 @@ public final class ClassifiedCorpus {
               createFilm(in: FilmInput!): Film
                 @mutation(typeName: INSERT)
                 @classified(source: Mutation, operation: Insert, target: Single, targetShape: Table)
+                @commits(source: ProjectedReentry, result: SingleRecord)
             }
             """,
             "mutation { createFilm { title } }"),
+
+        /*
+         * DML returning a single-table discriminated interface: the INSERT writes the shared
+         * @table+@discriminate base table, then the follow-up SELECT is the participant-driven
+         * discriminated composition restricted to the RETURNING-captured keys. The mutation
+         * classifies exactly like the plain projected INSERT (Mutation / Insert / Table; the
+         * interface-ness rides the return type, not the verdict), but the launcher row it
+         * commits is the discriminated reentry companion rather than the projected one: the
+         * return-expression arm decides the source arm, which is why launcher membership is
+         * return-arm-conditioned on the DML leaf. The root read over the same interface commits
+         * the discriminated table launcher, the reentry arm's borrowed-whole payload.
+         */
+        new Example("dml-discriminated", """
+            interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") @classifiedType(as: TableInterfaceType) {
+              contentId: Int! @field(name: "CONTENT_ID")
+              title: String! @field(name: "TITLE")
+            }
+            type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
+              contentId: Int! @field(name: "CONTENT_ID")
+              title: String! @field(name: "TITLE")
+            }
+            type ShortContent implements Content @table(name: "content") @discriminator(value: "SHORT") {
+              contentId: Int! @field(name: "CONTENT_ID")
+              title: String! @field(name: "TITLE")
+            }
+            input ContentInput {
+              title: String! @field(name: "TITLE")
+              contentType: String! @field(name: "CONTENT_TYPE")
+            }
+            type Query { content: Content @commits(source: DiscriminatedTable, result: SingleRecord) }
+            type Mutation {
+              createContent(in: ContentInput!): Content
+                @mutation(typeName: INSERT, table: "content")
+                @classified(source: Mutation, operation: Insert, target: Single, targetShape: Table)
+                @commits(source: DiscriminatedReentry, result: SingleRecord)
+            }
+            """),
 
         /*
          * The remaining root mutation forms (INSERT is the `dml` example above). UPDATE is a DML write
@@ -900,7 +997,8 @@ public final class ClassifiedCorpus {
             interface Node { id: ID! }
             type Film implements Node @table(name: "film") @node { id: ID! @nodeId title: String }
             type FilmDetails { title: String }
-            type FilmPayload { film: Film @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Table, sourceShape: Record) }
+            type FilmPayload { film: Film @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Table, sourceShape: Record)
+                @commits(source: CorrelatedChain, result: SingleRecord) }
             input FilmKeyInput { filmId: Int! @field(name: "film_id") }
             input FilmUpdateInput { filmId: Int! @field(name: "film_id") title: String }
             input FilmTitleInput { title: String @field(name: "title") }
@@ -910,6 +1008,7 @@ public final class ClassifiedCorpus {
               updateFilm(in: FilmUpdateInput!): Film
                 @mutation(typeName: UPDATE)
                 @classified(source: Mutation, operation: Update, target: Single, targetShape: Table)
+                @commits(source: ProjectedReentry, result: SingleRecord)
               deleteFilm(in: FilmKeyInput!): ID
                 @mutation(typeName: DELETE, table: "film")
                 @classified(source: Mutation, operation: Delete, target: Single, targetShape: Column)
@@ -950,8 +1049,8 @@ public final class ClassifiedCorpus {
               filmActorId: ID @nodeId(typeName: "FilmActor") @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Column)
             }
             type Query {
-              filmActor: FilmActor
-              filmActorNote: FilmActorNote
+              filmActor: FilmActor @commits(source: AnchorTable, result: SingleRecord)
+              filmActorNote: FilmActorNote @commits(source: AnchorTable, result: SingleRecord)
             }
             """),
 
@@ -1008,6 +1107,7 @@ public final class ClassifiedCorpus {
             }
             type Query {
               film: Film @classified(source: Query, operation: Fetch, target: Single, targetShape: Table)
+                @commits(source: AnchorTable, result: SingleRecord)
             }
             """),
 
@@ -1027,6 +1127,7 @@ public final class ClassifiedCorpus {
             }
             type Query {
               films: [Film!]! @classified(source: Query, operation: Fetch, target: List, targetShape: Table)
+                @commits(source: AnchorTable, result: RecordList)
             }
             """),
 
@@ -1049,6 +1150,7 @@ public final class ClassifiedCorpus {
             }
             type Query {
               film: Film @classified(source: Query, operation: Fetch, target: Single, targetShape: Table)
+                @commits(source: AnchorTable, result: SingleRecord)
             }
             """),
 
@@ -1069,6 +1171,7 @@ public final class ClassifiedCorpus {
             }
             type Query {
               store: Store @classified(source: Query, operation: Fetch, target: Single, targetShape: Table)
+                @commits(source: AnchorTable, result: SingleRecord)
             }
             """),
 
@@ -1087,6 +1190,7 @@ public final class ClassifiedCorpus {
             }
             type Query {
               film: Film @classified(source: Query, operation: Fetch, target: Single, targetShape: Table)
+                @commits(source: AnchorTable, result: SingleRecord)
             }
             """),
 
@@ -1108,7 +1212,7 @@ public final class ClassifiedCorpus {
             type PageInfo {
               hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String
             }
-            type Query { films: FilmsConnection }
+            type Query { films: FilmsConnection @commits(source: AnchorTable, result: Connection) }
             """),
 
         /*
@@ -1122,6 +1226,7 @@ public final class ClassifiedCorpus {
             type FilmPayload {
               film: Film
                 @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Table, sourceShape: Record)
+                @commits(source: CorrelatedChain, result: SingleRecord)
             }
             type Query { x: String }
             type Mutation {

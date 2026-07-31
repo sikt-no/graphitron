@@ -108,13 +108,17 @@ public final class ExemptionRegistry {
         + "classifier does not mint the leaf until the rejection sites lift.");
 
     /**
-     * The connection launcher's {@code ConnectionResult} carrier fork: {@code totalCount}'s
-     * {@code (table, condition)} binding and the facet condition fragments have no slot in the
-     * launcher's result shape yet, so no classified coordinate produces the Count / Facet
-     * operation arms. Shared by both rows; the fork's landing retires them together.
+     * The live ground shared by the Count / Facet rows: a synthesised connection type's
+     * {@code totalCount} and {@code facets} fields are not classified coordinates in the fact
+     * base at all (the connection-synthesis relation mints the types, but their fields never
+     * enter the classified field map), so no coordinate can carry either operation arm. The
+     * launcher's result shape is not the blocker any more: {@code ResultShape.Connection}
+     * carries the helper, carrier and facet plan today. The blocker string names the owner of
+     * the synthesised-fields-as-coordinates model question; a model change landing those
+     * coordinates retires both rows together.
      */
-    private static final String CONNECTION_RESULT_CARRIER_FORK =
-        "the connection launcher's ConnectionResult carrier fork";
+    private static final String SYNTHESISED_CONNECTION_FIELDS_NOT_COORDINATES =
+        "synthesised connection fields (totalCount, facets) as classified coordinates (R562)";
 
     /** The instrument the LSP-projection obligation reads; shared by its walker-gap rows. */
     private static final String PROJECTION_WALKER =
@@ -149,15 +153,15 @@ public final class ExemptionRegistry {
             "Federation _entities resolution is not a classified leaf yet, so no fixture can "
             + "produce the arm."),
         Operation.Count.class, new Exemption.Unimplemented(
-            CONNECTION_RESULT_CARRIER_FORK,
-            "Connection totalCount is generator-only emit behind the ConnectionType quarantine; "
-            + "the classifier mints no Count coordinate until the launcher's carrier fork gives "
-            + "totalCount a slot of its own."),
+            SYNTHESISED_CONNECTION_FIELDS_NOT_COORDINATES,
+            "A synthesised connection type's totalCount field is not a classified coordinate in "
+            + "the fact base, so no fixture can land a coordinate on the Count arm; R562 owns "
+            + "the synthesised-fields-as-coordinates model question."),
         Operation.Facet.class, new Exemption.Unimplemented(
-            CONNECTION_RESULT_CARRIER_FORK,
-            "Connection facets are generator-only emit behind the ConnectionType quarantine; "
-            + "the classifier mints no Facet coordinate until the launcher's carrier fork gives "
-            + "the facet aggregate a slot of its own."),
+            SYNTHESISED_CONNECTION_FIELDS_NOT_COORDINATES,
+            "A synthesised connection type's facets field is not a classified coordinate in "
+            + "the fact base, so no fixture can land a coordinate on the Facet arm; R562 owns "
+            + "the synthesised-fields-as-coordinates model question."),
         Operation.UpdateMatching.class, new Exemption.Unimplemented(
             "condition-matched UPDATE",
             "The condition-matched write verbs are declared ahead of implementation; the "
@@ -174,6 +178,14 @@ public final class ExemptionRegistry {
      * does not observe. Empty: the walk currently reaches every leaf.
      */
     public static final Map<Class<?>, Exemption> NOT_CORPUS_COVERED = Map.of();
+
+    /**
+     * Launcher command arms ({@code LaunchSource} / {@code ResultShape}) no declared-and-agreeing
+     * {@code @commits} corpus row reaches. Empty: the corpus's covered coordinates currently
+     * reach every arm; the ratchet in {@link #assertHonoured} forces a newly reached arm off
+     * this map the moment its declaration lands.
+     */
+    public static final Map<Class<?>, Exemption> LAUNCHER_COMMITMENT_GAPS = Map.of();
 
     /** The plain-jOOQ-record backing pair shares one row story, declared once for both keys. */
     private static final Exemption PLAIN_JOOQ_RECORD_PROJECTION_UNASSERTED =
@@ -291,6 +303,34 @@ public final class ExemptionRegistry {
         return covered;
     }
 
+    /**
+     * The launcher command arms the corpus demonstrates: every {@code LaunchSource} and
+     * {@code ResultShape} arm reached by a {@code @commits} declaration that agrees with the
+     * produced relation row at its coordinate (the {@code coveredLeaves()} agreement-gate
+     * shape: declaration alone claims nothing, production alone claims nothing).
+     */
+    private static Set<Class<?>> corpusCommittedLauncherArms() {
+        var sourceArms = new java.util.HashMap<String, Class<?>>();
+        GeneratorCoverageTest.sealedLeaves(no.sikt.graphitron.command.LaunchSource.class)
+            .forEach(c -> sourceArms.put(c.getSimpleName(), c));
+        var resultArms = new java.util.HashMap<String, Class<?>>();
+        GeneratorCoverageTest.sealedLeaves(no.sikt.graphitron.command.ResultShape.class)
+            .forEach(c -> resultArms.put(c.getSimpleName(), c));
+        var covered = new HashSet<Class<?>>();
+        for (var example : ClassifiedCorpus.examples()) {
+            var result = ClassifiedHarness.classify(example.sdl());
+            var production = ClassifiedHarness.launcherProductions().get(example.id());
+            for (var cc : ClassifiedHarness.commitCases(result, production)) {
+                if (cc.declaredSource().equals(cc.producedSource())
+                        && cc.declaredResult().equals(cc.producedResult())) {
+                    covered.add(sourceArms.get(cc.declaredSource()));
+                    covered.add(resultArms.get(cc.declaredResult()));
+                }
+            }
+        }
+        return covered;
+    }
+
     /** All sealed-leaf classes named by any {@code @ProjectionFor} annotation in the truth table. */
     private static Set<Class<?>> projectionForCoveredLeaves() {
         var covered = new HashSet<Class<?>>();
@@ -335,6 +375,26 @@ public final class ExemptionRegistry {
         memo(ExemptionRegistry::corpusObservedChildFieldLeaves),
         NOT_CORPUS_COVERED);
 
+    /**
+     * The launcher commitment obligation: every {@code LaunchSource} and {@code ResultShape}
+     * arm must be reached by a declared-and-agreeing {@code @commits} corpus row or carry a
+     * typed exemption. {@code ResultShape.LoaderDelegated}'s coverage is entailed by the
+     * service source arms through the {@code LauncherCommand} compact constructor's
+     * biconditional (service source iff {@code LoaderDelegated}), so that cell is not an
+     * independent witness: it arrives with {@code ServiceCall} / {@code ServiceTableLift} and
+     * cannot be reached without them.
+     */
+    public static final Obligation LAUNCHER_COMMITMENT = new Obligation(
+        "launcher-commitment: LaunchSource and ResultShape arms vs declared-and-agreeing @commits rows",
+        memo(() -> {
+            var domain = new HashSet<Class<?>>(
+                GeneratorCoverageTest.sealedLeaves(no.sikt.graphitron.command.LaunchSource.class));
+            domain.addAll(GeneratorCoverageTest.sealedLeaves(no.sikt.graphitron.command.ResultShape.class));
+            return domain;
+        }),
+        memo(ExemptionRegistry::corpusCommittedLauncherArms),
+        LAUNCHER_COMMITMENT_GAPS);
+
     public static final Obligation LSP_PROJECTION = new Obligation(
         "lsp-projection: sealed leaves vs @ProjectionFor assertions",
         memo(ExemptionRegistry::allModelLeaves),
@@ -349,13 +409,13 @@ public final class ExemptionRegistry {
      */
     public static List<Obligation> corpusObligations() {
         return List.of(VARIANT_COVERAGE_OUTPUT, VARIANT_COVERAGE_INPUT, OPERATION_ARMS,
-            SOURCE_SHAPE_CORPUS);
+            SOURCE_SHAPE_CORPUS, LAUNCHER_COMMITMENT);
     }
 
     /** All rows, the discovery guard's registration authority. */
     public static List<Obligation> obligations() {
         return List.of(VARIANT_COVERAGE_OUTPUT, VARIANT_COVERAGE_INPUT, OPERATION_ARMS,
-            SOURCE_SHAPE_CORPUS, LSP_PROJECTION);
+            SOURCE_SHAPE_CORPUS, LAUNCHER_COMMITMENT, LSP_PROJECTION);
     }
 
     private static <T> Supplier<T> memo(Supplier<T> s) {

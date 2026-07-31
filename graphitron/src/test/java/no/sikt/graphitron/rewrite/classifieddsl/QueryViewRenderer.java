@@ -98,8 +98,16 @@ public final class QueryViewRenderer {
 
     private QueryViewRenderer() {}
 
-    private static final Set<String> INTERNAL_DIRECTIVES =
-        Set.of(ClassifiedDsl.CLASSIFIED, ClassifiedDsl.CLASSIFIED_TYPE);
+    /**
+     * The test-only directive names to strip from rendered excerpts, derived from the parsed
+     * {@link ClassifiedDsl#PRELUDE}'s directive definitions (the
+     * {@link no.sikt.graphitron.rewrite.schema.DeclaredDirectives} derivation shape) rather
+     * than hand-maintained, so a new corpus directive cannot leak into the published triggers
+     * page by construction.
+     */
+    private static final Set<String> INTERNAL_DIRECTIVES = Set.copyOf(
+        new graphql.schema.idl.SchemaParser().parse(ClassifiedDsl.PRELUDE)
+            .getDirectiveDefinitions().keySet());
 
     /** Renders the SDL closure the {@code selection} (a query/mutation or fragment document) touches over {@code fixtureSdl}. */
     public static String render(String fixtureSdl, String selection) {

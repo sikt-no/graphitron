@@ -6,7 +6,8 @@ import java.util.Objects;
  * The launcher's tenancy axis: whether the composition runs once against one resolved
  * {@code DSLContext} or once per tenant in the request's fan-out domain. Independent of the
  * delivery axis ({@link Invocation}) by measurement, not aesthetics: the fanned batched child
- * is a populated corpus cell, so fusing the two axes into one permit set would make it
+ * is a populated cell in the pipeline fixtures ({@code TenantFanOutFetcherPipelineTest}'s
+ * batched-form fanned child), so fusing the two axes into one permit set would make it
  * unrepresentable or mint the cross-product arm.
  *
  * <p>Sealed rather than an enum because the fanned arm carries a payload from its first row:

@@ -4,7 +4,10 @@ package no.sikt.graphitron.command;
  * The launcher's delivery axis: how the entry point hands work to the composition, as data on
  * the command rather than emitter control flow. Tenancy is deliberately not here: it is its own
  * axis ({@link TenantStrategy}), independent by measurement (the fanned batched child is a
- * populated corpus cell), so a delivery arm never encodes an acquisition decision.
+ * populated cell in the pipeline fixtures: {@code TenantFanOutFetcherPipelineTest}'s
+ * batched-form fanned child, with {@code LauncherCommandsPipelineTest} pinning the fanned
+ * root's row; the corpus's canonical run configures no tenants, so the cell does not live
+ * there), so a delivery arm never encodes an acquisition decision.
  *
  * <p>The delivery and tenancy pair decide the launcher unit's <em>interface</em>, not only its
  * body: the parameter list is a derived view over the two (a direct single-tenant launcher

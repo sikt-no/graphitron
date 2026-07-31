@@ -149,8 +149,14 @@ class CommandSeamRatchetTest {
      * ({@link no.sikt.graphitron.plan.ConditionCommands}) cut over from a
      * name-recomputing registry probe (an {@code instanceof} on the ConnectionType leaf) to the
      * relation's typed accessor on {@link no.sikt.graphitron.rewrite.GraphitronSchema#connectionSynthesis()}.
+     * Raised to 156 when the launcher producer declared its minting membership as data
+     * ({@link no.sikt.graphitron.plan.LauncherCommands#MINTING_KINDS} with the {@code covers}
+     * accessor's DML-leaf probe), and {@code mintedMethodOf} plus the schema-free walk
+     * re-sourced onto it: the two consumers' arms now name their leaves in import-short form
+     * this counting rule chases, where the previous fully-qualified spellings sat outside it;
+     * same dispatch, now visible to the count.
      */
-    private static final int PLAN_LEAF_REFERENCES = 144;
+    private static final int PLAN_LEAF_REFERENCES = 156;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide

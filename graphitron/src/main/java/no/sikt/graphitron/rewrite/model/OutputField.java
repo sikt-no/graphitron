@@ -160,12 +160,15 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
      * re-query is emitted at the root site. The child {@code @service} arm, the record-sourced
      * batched arms, and the projected DML arms all emit the re-query at their own site.
      *
-     * <p>Every site-level consumer (the reentry emit dispatch, the launcher relation's
-     * per-family membership switches in {@code no.sikt.graphitron.plan.LauncherCommands},
-     * the validate-time reentry guard) reads this predicate rather than recomputing
+     * <p>Every site-level consumer (the reentry emit dispatch, the validate-time reentry guard)
+     * reads this predicate rather than recomputing
      * {@code requiresReFetch() && !rootServicePassthrough} per site (two consumers evaluating
      * the same compound predicate over model fields is the drift {@code requiresReFetch}'s own
-     * single-homing exists to prevent).
+     * single-homing exists to prevent). The launcher relation's membership is deliberately not
+     * a consumer: {@link no.sikt.graphitron.plan.LauncherCommands} switches on leaf kind and
+     * return-expression arm, never on this predicate, which is true for an Encoded DELETE (its
+     * {@code Delete} operation arm produces a record) while the relation deliberately mints no
+     * row for the encoded return arms.
      */
     default boolean emitsKeyedReQuery() {
         if (!requiresReFetch()) {

@@ -2366,6 +2366,50 @@ R541's single-operation launchers never need it, and a general launcher cannot d
       `CommandSeamRatchetTest` counts may move where the declaration data adds leaf references
       in `plan/`; any movement gets a history line, per the ratchet's own rules.
 
+  - **Slice 8 landed (2026-07-31).** The corpus has its command voice: `@commits(source:,
+    result:)` in the prelude with `LauncherSource`/`LauncherResult` enums mirror-tested against
+    the sealed arm sets, agreement-checked per coordinate against the relation the harness
+    produces for every example under its one stated canonical run configuration (outcome typed
+    produced-or-failed, never thrown; the failed-example roster {`record-method`, `service`}
+    bound by set equality in both directions to the recorded validator-mirror gaps). A
+    declaration on a coordinate with no produced row fails; a produced row without a
+    declaration does not (no membership claim). Membership is producer-declared data:
+    `LauncherCommands.MINTING_KINDS`, a set of a small sealed key (`Leaf` for the nine non-DML
+    minting leaves, `DmlReturn` for the four reentry-carrying return arms) with the single
+    `covers` accessor owning the conjunction; `mintedMethodOf` and `produceWithoutSchema`
+    re-sourced onto it (the schema-free walk filters through the declared non-DML view and
+    throws on declared-but-unserved drift), and the membership census binds declared to
+    observed in both directions, with the declared-minus-observed residue empty rather than
+    enumerated (the fixture reaches all thirteen kinds, a delta from the record's expectation).
+    `INVOCATION_BY_SOURCE` landed as the total producer-declared determination map, pinned at
+    the membership fixture, the closure run and the corpus sweep. The closure test's covered
+    set reads `covers` and its hand-maintained twelve-arm switch retired; the passthrough
+    negative pin stays and two were added: the batched polymorphic pair (the fixture now
+    instantiates its interface half; the Spec's premise that a pin existed was confirmed false)
+    and the Encoded DML arm, grounded on the return-arm fact and `covers`, deliberately not
+    `emitsKeyedReQuery()` (true for an Encoded DELETE while no row mints; that predicate's
+    javadoc consumer list corrected). Coverage: all 15 obligation arms
+    (`LaunchSource` + `ResultShape`) covered by declared-and-agreeing rows, zero exemptions; 53
+    rows, 53 declarations, a bijection; three new examples reached the previously unreached
+    arms (table service child, scalar service child, discriminated-return mutation).
+    `LAUNCHER_COMMITMENT` registered in both `obligations()` and `corpusObligations()`, with
+    `LoaderDelegated`'s biconditional entailment stated on the row.
+    `QueryViewRenderer.INTERNAL_DIRECTIVES` is now derived from the parsed prelude's directive
+    definitions (the latent `@synthesises` leak closed by construction). The Count/Facet
+    exemptions re-anchored on the live ground (synthesised connection fields are not classified
+    coordinates), owner named in the reason strings. Findings: post-slice the corpus produces
+    53 launcher rows (the design record's 47 predates the new examples); list-shaped payload
+    children commit `SingleRecord` (their `emitsSingleRecordPerKey` fact is true), so the
+    corpus's `CorrelatedChain`-with-`RecordList` cell is populated only by the membership
+    fixture; an Encoded DELETE fixture needs `@node` on the table's type to pass validation;
+    `TenantStrategy`'s javadoc carried the same false "populated corpus cell" sentence as
+    `Invocation`'s and both were re-grounded on the live pipeline fixtures. Ratchet:
+    `PLAN_LEAF_REFERENCES` 144 to 156 with a history line (the re-sourced consumers spell
+    their leaves import-short where the previous fully-qualified spellings sat outside the
+    counting rule; same dispatch, now visible); generators counts flat. Emit-neutral: sakila
+    expectations byte-identical, SQL pins untouched. Verified: full reactor green, 13 modules,
+    3087 graphitron module tests.
+
 ## The exemption lists are the grain worklist
 
 The exemption lists (counting rule: the maps on `ExemptionRegistry`'s obligation rows; the registry's
@@ -2504,6 +2548,7 @@ than re-deriving at the gate.
 | `BatchKeyField.rowsMethodName`, `DmlTableField.reentryRowsMethodName`, the `rowsDeclarationName` / `dmlRowsDeclarationName` context seams | 5e (landed) | the row's `UnitMethodRef` (`GeneratedUnits` mints; call sites read the ref) |
 | `CompileDependencyGraphBuilder`, `UnitNames`, `UtilSingleton` | 7a (landed) | `PlanCompileGraph`, the recompile graph as a projection over the plan's relations; the frozen/growing split as `FROZEN_SCAFFOLD_KINDS` |
 | `CarrierRewrite`, the synthesised-names set, `Exemption.SynthesisedNoSdlOrigin` (the test vocabulary) | 7b (landed) | `ConnectionSynthesis` rows on `ConnectionSynthesisRelation` (a `GraphitronSchema` sidecar); the surviving Count/Facet exemptions re-armed as `Unimplemented` |
+| `LauncherRelationClosureTest.isCoveredFamilyMember` (the launcher copy; `FetcherEdgeRelationTest` keeps its own same-named switch), `CONNECTION_RESULT_CARRIER_FORK` | 8 (landed) | `LauncherCommands.MINTING_KINDS` read through the `covers` accessor; the synthesised-fields-not-coordinates ground on the Count/Facet rows |
 | the `no.sikt.graphitron.rewrite` package | end state | `command` / `plan` / `render` and the shared pure-data floor |
 
 The sibling items declare their own: R541's launcher terms and R552's condition terms are swept at their
