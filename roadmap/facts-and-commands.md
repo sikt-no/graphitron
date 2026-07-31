@@ -1,7 +1,7 @@
 ---
 id: R549
 title: "Facts and commands: grain-first hierarchies and the three command relations"
-status: In Progress
+status: In Review
 bucket: architecture
 theme: classification-model
 depends-on: []
@@ -2509,6 +2509,18 @@ rule attached is a number the next reader re-derives differently, which is how i
 count came to carry a seven-hierarchy figure under a three-hierarchy definition. Small drift against the
 measurement date is expected and fine (branches and LOC have both moved by well under a percent, and the
 core's largest file by five lines); a figure nobody can reproduce is not.
+
+**Re-run 2026-07-31, all eight slices landed (same script block, run from the audit).** Direction is
+what the instrument asks for, and the primary ratchets all moved the claimed way: 1,255 branches in
+`generators/` (was 1,641, down 24%), 71 leaf-naming `instanceof` sites plus 76 `case` patterns under
+the seven-hierarchy grep (was 104 plus 89), 23,383 generator LOC (was 29,837, down 22%), 18
+model-holding entry points (was 24), `TypeFetcherGenerator` at 5,998 lines (was 7,102), and the
+`methodgraph` package retired outright. The honest counterpoints, recorded rather than smoothed:
+`FieldBuilder` grew to 7,879 lines (was 7,754; slice 4's engine moved decision weight out of it, not
+text mass), top-five concentration in `generators/` rose to 50 percent (was 46) because the
+denominator shrank faster than the head, and the truth table's `ClassificationCase` count rose to 374
+(was 366) with coverage; its shrink is the later generalisation that slice 8's landed directive shape
+now makes possible, not work this programme claimed.
 
 Re-run after slices 1 to 5. What matters is direction, not a threshold. The one risk the numbers guard
 against is stalling mid-migration, since a partly-converted shell is worse than either endpoint: R333 says
