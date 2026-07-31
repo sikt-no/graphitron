@@ -1,12 +1,12 @@
 ---
 id: R543
 title: "Corpus asserts a coordinate's facts and commands, not one verdict triple"
-status: Spec
+status: Ready
 bucket: testing
 theme: testing
 depends-on: []
 created: 2026-07-26
-last-updated: 2026-07-30
+last-updated: 2026-07-31
 ---
 
 # Corpus asserts a coordinate's facts and commands, not one verdict triple
@@ -133,9 +133,10 @@ obligation's business, never any single coordinate's.
   Files as its own item once the launcher sibling has proven the shape.
 - **A fetcher-edge sibling.** Not planned: its content would be a list of generated unit names,
   a derived-name restatement with no author-visible content.
-- **R387's migration** is NOT gated on this item: its destination is the per-family pipeline-tier
-  row assertions (two already landed and populated); this item later generalises those into
-  author-declared form. R387 proceeds family by family today.
+- **The per-family pipeline-tier row assertions** (landed and populated for the launcher and
+  condition families) are not gated on this item; this item later generalises them into
+  author-declared form. The code-string-migration item this bullet used to name (R387) completed
+  with R552 when its subject, `TypeConditionsGeneratorTest`, retired; nothing of it remains open.
 - **The coverage-obligation re-typing** (obligations keyed by `Class<?>` leaves) bites only when
   the leaf zoo dissolves, a model change this item does not make; the slice-6 obligation-keyed
   registry is the shape that absorbs it then.

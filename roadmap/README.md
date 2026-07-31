@@ -24,13 +24,13 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-07-15 | [plan](catalog-check-constraint-validation.md) |
 | `R427` | Type-ahead search backed by native database indexes | Ready | 2026-07-17 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
 | `R25` | Measure the test pyramid: JaCoCo coverage instrumentation | Ready | 2026-07-31 | [plan](rebalance-test-pyramid.md) |
-| `R543` | Corpus asserts a coordinate's facts and commands, not one verdict triple | Spec | 2026-07-30 <sub>created 2026-07-26</sub> | [plan](corpus-asserts-fact-set.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-07-15 <sub>created 2026-05-26</sub> | [plan](dml-payload-positional-alignment.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec | 2026-07-14 | [plan](capability-catalog.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec | 2026-07-14 | [plan](list-valued-external-field-multiset.md) |
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-07-14 <sub>created 2026-05-21</sub> | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec | 2026-07-14 | [plan](operation-driven-test-corpus.md) |
 | `R180` | Resolved accessors for record-parent column reads (recordColumnReadArgs) | Spec | 2026-07-15 <sub>created 2026-05-19</sub> | [plan](record-parent-column-read-helper.md) |
+| `R543` | Corpus asserts a coordinate's facts and commands, not one verdict triple | Ready | 2026-07-31 <sub>created 2026-07-26</sub> | [plan](corpus-asserts-fact-set.md) |
 | `R549` | Facts and commands: grain-first hierarchies and the three command relations | In Progress | 2026-07-30 <sub>created 2026-07-27</sub> | [plan](facts-and-commands.md) |
 
 ---
@@ -398,7 +398,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R560` [**Un-skip graphitron-javapoet test suite**](unskip-javapoet-tests.md) — Backlog, cleanup
 - `R116` [**Cover composite-key Row2 path-keyed @sourceRow classification**](composite-key-row2-source-row-coverage.md) — Backlog, cleanup
 - `R25` [**Measure the test pyramid: JaCoCo coverage instrumentation**](rebalance-test-pyramid.md) — Ready, architecture
-- `R543` [**Corpus asserts a coordinate's facts and commands, not one verdict triple**](corpus-asserts-fact-set.md) — Spec, testing
+- `R543` [**Corpus asserts a coordinate's facts and commands, not one verdict triple**](corpus-asserts-fact-set.md) — Ready, testing
 - `R544` [**Declarative mechanism for the rejection rows the classified corpus cannot hold**](rejection-spec-by-example.md) — Backlog, testing
 - `R252` [**Multi-file federation fixture coverage for schema.graphqls emission**](multi-file-federation-fixture-coverage.md) — Backlog
 
