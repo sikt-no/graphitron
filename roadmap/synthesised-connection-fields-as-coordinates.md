@@ -17,10 +17,10 @@ classifier mints no coordinate for them, so nothing in the fact base says a cove
 carries a count or a facet aggregate. The observable gap is the `Operation.Count` and
 `Operation.Facet` arms of the `OPERATION_ARMS` obligation (`ExemptionRegistry.OPERATION_KNOWN_GAPS`),
 which no corpus fixture can reach because no classified coordinate ever carries either arm. The
-exemption reasons still cite the connection launcher's `ConnectionResult` carrier fork, but that
-blocker is discharged (`ResultShape.Connection` carries the helper, carrier and facet plan today);
-the live blocker is this model question, and the corpus-command item (R543, whose in-scope
-correction re-anchors both exemption reasons) names this item as its owner.
+exemption reasons used to cite the connection launcher's `ConnectionResult` carrier fork; the
+corpus-command item (R543) re-anchored them on the live ground, since that fork is discharged
+(`ResultShape.Connection` carries the helper, carrier and facet plan today). The blocker is this
+model question, and both reason strings name this item as its owner.
 
 The question to answer at Spec: should the synthesis step register the minted connection type's
 `totalCount`/`facets` fields as classified coordinates in the fact base, each carrying its
