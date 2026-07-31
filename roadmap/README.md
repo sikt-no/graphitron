@@ -23,7 +23,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-07-15 | [plan](catalog-check-constraint-validation.md) |
 | `R427` | Type-ahead search backed by native database indexes | Ready | 2026-07-17 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
-| `R25` | Measure the test pyramid: JaCoCo coverage instrumentation | In Progress | 2026-07-31 | [plan](rebalance-test-pyramid.md) |
+| `R25` | Measure the test pyramid: JaCoCo coverage instrumentation | In Review | 2026-07-31 | [plan](rebalance-test-pyramid.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-07-15 <sub>created 2026-05-26</sub> | [plan](dml-payload-positional-alignment.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec | 2026-07-14 | [plan](capability-catalog.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec | 2026-07-14 | [plan](list-valued-external-field-multiset.md) |
@@ -399,7 +399,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R170` [**Sakila execute-tier fixture for the Jakarta ValidationHandler channel (R98-blocked)**](validator-integration-execute-coverage.md) — Backlog, testing, blocked by [multi-source-input-validation](multi-source-input-validation.md)
 - `R560` [**Un-skip graphitron-javapoet test suite**](unskip-javapoet-tests.md) — Backlog, cleanup
 - `R116` [**Cover composite-key Row2 path-keyed @sourceRow classification**](composite-key-row2-source-row-coverage.md) — Backlog, cleanup
-- `R25` [**Measure the test pyramid: JaCoCo coverage instrumentation**](rebalance-test-pyramid.md) — In Progress, architecture
+- `R25` [**Measure the test pyramid: JaCoCo coverage instrumentation**](rebalance-test-pyramid.md) — In Review, architecture
 - `R543` [**Corpus asserts a coordinate's facts and commands, not one verdict triple**](corpus-asserts-fact-set.md) — In Progress, testing
 - `R544` [**Declarative mechanism for the rejection rows the classified corpus cannot hold**](rejection-spec-by-example.md) — Backlog, testing
 - `R252` [**Multi-file federation fixture coverage for schema.graphqls emission**](multi-file-federation-fixture-coverage.md) — Backlog

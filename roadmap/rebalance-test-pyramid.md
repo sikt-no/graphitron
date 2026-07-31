@@ -1,7 +1,7 @@
 ---
 id: R25
 title: "Measure the test pyramid: JaCoCo coverage instrumentation"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 9
 theme: testing
