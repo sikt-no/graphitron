@@ -1,7 +1,7 @@
 ---
 id: R543
 title: "Corpus asserts a coordinate's facts and commands, not one verdict triple"
-status: Ready
+status: In Progress
 bucket: testing
 theme: testing
 depends-on: []
