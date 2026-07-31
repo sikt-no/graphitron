@@ -6,7 +6,7 @@ bucket: architecture
 priority: 9
 theme: testing
 depends-on: []
-last-updated: 2026-07-30
+last-updated: 2026-07-31
 ---
 
 # Measure the test pyramid: JaCoCo coverage instrumentation
@@ -48,7 +48,7 @@ This honours R117's programme principle that every measurement dimension is opt-
 
 JaCoCo's `append` defaults to `true`, so a rerun on an uncleaned `target/` accumulates exec data across runs and reports coverage from code the current run never executed. This is the same footgun class the `leaf-coverage` profile spends an antrun `truncate-leaf-coverage-trace` execution on, and JaCoCo has a parameter for it, so no antrun is needed.
 
-Constraint this imposes: it is safe only while each module runs exactly one test-executing plugin execution. No module binds failsafe today (it appears in `<pluginManagement>` for version pinning only) and no module configures `forkCount`, so the reactor satisfies this. A module that later adds failsafe needs its own `prepare-agent-integration` execution with a distinct `destFile`.
+Constraint this imposes: it is safe only while each module runs exactly one test-executing plugin execution. No module binds failsafe today (it appears in the root pom only, in `<pluginManagement>` and in the leaf-coverage profile's configuration block, with no execution binding its goals anywhere) and no module configures `forkCount`, so the reactor satisfies this. A module that later adds failsafe needs its own `prepare-agent-integration` execution with a distinct `destFile`.
 
 That constraint gets an enforcer, not a comment. Its failure mode is strictly worse than the one decision 8 gates: a dropped agent yields a suspicious `0%`, while a second execution overwriting the first yields a plausible partial figure with no tell at all. Both rules live in one pom walker (see `CoverageAgentWiringCheck` in Implementation), so the invariant is unrepresentable rather than documented.
 
@@ -68,7 +68,7 @@ Verified on `roadmap-tool` in this session: `jacoco.csv` carries `GROUP,PACKAGE,
 
 ### 5. CI activation folds into the existing build step
 
-`-Pcoverage` is added to the `build` job's existing `mvn verify -Plocal-db --batch-mode -T 1C`, so coverage costs agent overhead on the build CI already runs, not a second reactor build on top of it. The regen, upload and download steps are trunk-gated, mirroring the leaf-coverage chain exactly.
+`-Pcoverage` is added to the `build` job's existing `mvn verify -Plocal-db --batch-mode -T 1C` (whose `verify` the Implementation flips to `install` so the tier steps in decision 6 can resolve this run's reactor artifacts), so coverage costs agent overhead on the build CI already runs, not a second reactor build on top of it. The regen, upload and download steps are trunk-gated, mirroring the leaf-coverage chain exactly.
 
 PR builds therefore pay agent overhead without publishing anything, and that is the point rather than a cost to apologise for: the coverage wiring is continuously exercised by the gate. An `argLine` regression, an agent incompatibility, or a module that starts binding failsafe fails on the PR that introduced it instead of on trunk. This is the same reasoning the workflow's existing comment gives for CI using the same `-Plocal-db` code path so no second profile drifts, and it is why the obvious third option, conditioning `-Pcoverage` on the trunk-push expression, is wrong: conditioning is exactly what would let the coverage path rot unnoticed.
 
@@ -88,7 +88,7 @@ What remains is the comparison the pyramid question actually needs, `unit` versu
 ```bash
 # unit tier only
 mvn test -pl :graphitron -Plocal-db -Pcoverage -Dgroups=unit \
-    -Djacoco.destFile=target/jacoco-unit.exec
+    -Dleaf-coverage.skip -Djacoco.destFile=target/jacoco-unit.exec
 mvn -pl :graphitron org.jacoco:jacoco-maven-plugin:0.8.15:report \
     -Djacoco.dataFile=target/jacoco-unit.exec \
     -Djacoco.outputDirectory=target/site/jacoco-unit
@@ -98,9 +98,11 @@ mvn -pl :graphitron org.jacoco:jacoco-maven-plugin:0.8.15:report \
 
 Relative `-D` paths resolve against the built module's basedir, so `target/...` lands under `graphitron/`. Both halves of that were checked in this session against the reactor as it stands: `-Dgroups=unit` selects 1631 tests in `graphitron`, and `-Djacoco.destFile=target/jacoco-unit.exec` produced a distinct 266 KB exec file at `graphitron/target/jacoco-unit.exec`. The recipe is transcribed from a run, not composed from documentation.
 
+`-Dleaf-coverage.skip` is not optional. The leaf-coverage profile is active by default, and every tier run without the flag pays its `truncate-leaf-coverage-trace` execution at `process-test-resources` and then re-emits traces from only that tier's tests, leaving `graphitron/target/leaf-coverage.jsonl` holding a strict subset of what the full suite wrote. In CI that file feeds the trunk-gated `Regenerate leaf-coverage report` step, so a tier run without the flag silently strips every leaf the last-run tier does not exercise out of the published inference-axis report. The baseline command at the top of this item carries the same flag for the same reason. The flag deactivates the profile entirely (no truncation, no trace emission), which makes the tier runs trace-inert and their ordering relative to the leaf-coverage regen a non-issue; the CI ordering below still places them after it as belt and braces.
+
 **This runs in CI, trunk-gated.** The first draft of this decision left it as an on-demand recipe on the assumption that two extra `graphitron` suite runs per trunk push were expensive. Measured in this session on a warm reactor: `-Dgroups=unit` is 35 s, `-Dgroups=pipeline` is 39 s, against 55 s for the module's whole suite. Both are `graphitron`-only, `test`-phase, with no Postgres, no jOOQ codegen and no example-module compile. So the two extra runs add about 74 s to a trunk push, roughly 1.3x the module's own test time and a small fraction of a reactor build that provisions Postgres and builds libtree-sitter from source. For that, the item's title stops being a promise the published page cannot keep: the tier balance is the one figure this item exists to produce, and leaving it out of the artefact while calling the item "Measure the test pyramid" is the incoherence a reviewer would rightly land on first.
 
-Two trunk-gated steps in the `build` job then, after the combined report and before the regen step, each running its tier and its `report` invocation. `source-coverage` still renders tier columns conditionally on the `target/site/jacoco-<tier>/jacoco.csv` directories existing, so a contributor running one tier locally gets the same page shape with no extra flag, and a PR build (which skips the tier steps) renders the combined tables alone.
+Two trunk-gated steps in the `build` job then, after the `Regenerate leaf-coverage report` step and before the `Regenerate source-coverage report` step, each running its tier and its `report` invocation. `source-coverage` still renders tier columns conditionally on the `target/site/jacoco-<tier>/jacoco.csv` directories existing, so a contributor running one tier locally gets the same page shape with no extra flag, and a PR build (which skips the tier steps) renders the combined tables alone.
 
 ### 7. No `--verify` drift mode
 
@@ -168,7 +170,9 @@ Named for the invariant rather than either symptom, so the second rule has an ob
 
 **No committed `roadmap/source-coverage.adoc`.** Per decision 7 the absent-file case is handled by the stub `runRenderAdoc` synthesizes, so nothing known-wrong is committed. The generated page's own header prose carries: what the page measures, that CI regenerates it on trunk pushes, the regeneration command, the tier-column caveats from decision 9 (the columns are slices that do not sum, and renderer arm tests land in the `unit` column by design), and both measurement blind spots from decision 6 stated separately, since one is uncollected and the other is collected then discarded at report time.
 
-**`.github/workflows/rewrite-build.yml`.** Add `-Pcoverage` to the `build` job's existing verify step. Add trunk-gated steps for the two tier runs and their `report` invocations, then `Regenerate source-coverage report` and `Upload source-coverage artifact` after the leaf-coverage pair, and a `Download source-coverage artifact` step in `docs-build`, each mirroring its leaf-coverage sibling including `if-no-files-found: error`.
+**`.github/workflows/rewrite-build.yml`.** Add `-Pcoverage` to the `build` job's existing reactor build step, and flip that step's `verify` to `install`. The flip is what makes the tier steps resolvable: `verify` installs nothing, and the tier runs are separate `-pl :graphitron` invocations that resolve `graphitron`'s reactor dependencies (`graphitron-javapoet` compile-scope, `graphitron-sakila-service` test-scope) from the local repository, exactly like the inner-loop command `CLAUDE.md` documents as "assumes a prior full install". Without the flip they fail on the first trunk push while every PR build stays green, since the tier steps are trunk-gated; or worse, they resolve a stale snapshot if the `setup-java` maven cache ever carries one. `install` over `verify` changes nothing else about the build, and PR builds pay only the install phase itself.
+
+Then, after the leaf-coverage pair: the two trunk-gated tier steps (each its tier run and its `report` invocation, both commands exactly as in decision 6 including `-Dleaf-coverage.skip`), then `Regenerate source-coverage report` and `Upload source-coverage artifact`, and a `Download source-coverage artifact` step in `docs-build`, each mirroring its leaf-coverage sibling including `if-no-files-found: error`.
 
 ## Contributor documentation (first-client check)
 
@@ -207,7 +211,7 @@ The published page reads as: title, one paragraph on what is and is not measured
 
 That last one is worth stating plainly rather than letting it emerge as a blank row: `graphitron-jakarta-rest` has zero test classes, and it is the one module in the reactor that is hand-written runtime code on a *consumer's* classpath (hence its Java 17 compile floor). The instrument's first reading will say so. Reporting it is in scope, fixing it is not.
 4. `mvn verify -Plocal-db -Pcoverage -T 1C`, matching CI, to confirm module parallelism and the agent coexist. Record the wall-clock delta against the same command without `-Pcoverage`: decision 5 accepts an agent cost on every PR build and this item should not be the one asserting an unmeasured number.
-5. The two tier recipes produce distinct exec files and distinct report directories, and `source-coverage` picks up the tier columns. Confirm the slices do not sum to the combined figure, which is decision 9's claim and the thing the page prose promises.
+5. The two tier recipes produce distinct exec files and distinct report directories, and `source-coverage` picks up the tier columns. Confirm the slices do not sum to the combined figure, which is decision 9's claim and the thing the page prose promises. Confirm also that `graphitron/target/leaf-coverage.jsonl` is left byte-identical by both tier runs (`-Dleaf-coverage.skip` doing its job), so the inference-axis regen still reads full-suite traces.
 6. `check-coverage-agent-wiring` fails on a deliberately reverted `@{argLine}` in one of the three modules, and on a synthetic second test-executing execution. A guard that has never been seen to fail is not a guard.
 7. `mvn -pl :graphitron-docs -am package` renders the page from real data, and again with no coverage data on disk to exercise the synthesized stub from decision 7. The status-board link resolves in both.
 8. Record the first full reading in the landing commit message so the ad-hoc baseline above and the first instrumented run can be compared.

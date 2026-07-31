@@ -23,7 +23,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-07-15 | [plan](catalog-check-constraint-validation.md) |
 | `R427` | Type-ahead search backed by native database indexes | Ready | 2026-07-17 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
-| `R25` | Measure the test pyramid: JaCoCo coverage instrumentation | Spec | 2026-07-30 | [plan](rebalance-test-pyramid.md) |
+| `R25` | Measure the test pyramid: JaCoCo coverage instrumentation | Spec | 2026-07-31 | [plan](rebalance-test-pyramid.md) |
 | `R543` | Corpus asserts a coordinate's facts and commands, not one verdict triple | Spec | 2026-07-30 <sub>created 2026-07-26</sub> | [plan](corpus-asserts-fact-set.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-07-15 <sub>created 2026-05-26</sub> | [plan](dml-payload-positional-alignment.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec | 2026-07-14 | [plan](capability-catalog.md) |
