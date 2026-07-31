@@ -10,10 +10,6 @@
     <name>${project.groupId}:${project.artifactId}</name>
     <url>https://github.com/sikt-no/graphitron</url>
 
-    <properties>
-        <argLine/>
-    </properties>
-
     <dependencies>
         <dependency>
             <groupId>org.assertj</groupId>

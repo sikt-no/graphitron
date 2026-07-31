@@ -60,6 +60,21 @@
         <version.jakarta.json.bind>3.0.1</version.jakarta.json.bind>
 
         <jooqPackage>no.sikt.graphitron.rewrite.test.jooq</jooqPackage>
+
+        <version.org.jacoco>0.8.15</version.org.jacoco>
+        <!-- Deliberately empty, unconditionally. Surefire replaces @{argLine} late, so a module
+             whose <argLine> leads with the placeholder needs an argLine property in scope on
+             every build or the literal token reaches the JVM and kills the fork. The coverage
+             profile's prepare-agent overwrites this property at initialize; default builds get
+             an empty expansion. -->
+        <argLine/>
+        <!-- The report mojo's outputDirectory has no property binding of its own (unlike
+             jacoco.destFile / jacoco.dataFile), so without this indirection a
+             -Djacoco.outputDirectory on the per-tier report recipe is silently ignored and the
+             tier report overwrites the combined one. The default reproduces the mojo's own
+             default; the pluginManagement configuration below routes the parameter through this
+             property so the command line can override it. -->
+        <jacoco.outputDirectory>${project.reporting.outputDirectory}/jacoco</jacoco.outputDirectory>
     </properties>
 
     <dependencyManagement>
@@ -300,6 +315,17 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-gpg-plugin</artifactId>
                     <version>3.2.8</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.jacoco</groupId>
+                    <artifactId>jacoco-maven-plugin</artifactId>
+                    <version>${version.org.jacoco}</version>
+                    <configuration>
+                        <!-- Property indirection for the report goal; see the
+                             jacoco.outputDirectory property in <properties>. Goals without an
+                             outputDirectory parameter ignore this. -->
+                        <outputDirectory>${jacoco.outputDirectory}</outputDirectory>
+                    </configuration>
                 </plugin>
             </plugins>
         </pluginManagement>
@@ -613,6 +639,57 @@
                                         <delete file="${project.build.directory}/leaf-coverage.jsonl" quiet="true"/>
                                     </target>
                                 </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <!-- JaCoCo line/branch coverage, opt-in (no <activation> block): the agent instruments
+                 bytecode in every test fork, so it must never cost the default
+                 `mvn install -Plocal-db` path. Contrast with leaf-coverage above, whose traces are
+                 a cheap JSONL append and therefore default-on. prepare-agent writes the agent flags
+                 into the `argLine` project property (empty by default, declared in <properties>);
+                 modules that hard-set a surefire <argLine> must lead with @{argLine} or they drop
+                 the agent and report a false 0%; check-coverage-agent-wiring (roadmap-tool)
+                 enforces that shape on every build.
+
+                 append=false so a rerun on an uncleaned target/ never accumulates exec data from
+                 code the current run did not execute; safe while each module runs exactly one
+                 test-executing plugin execution (also enforced by check-coverage-agent-wiring).
+
+                 destFile and dataFile stay at their defaults on purpose: pom-level configuration
+                 beats -D, and the per-tier recipes in docs/architecture/how-to/testing.adoc
+                 drive them from the command line (-Djacoco.destFile etc.). outputDirectory is
+                 the one parameter the mojo does not bind to a property itself, so
+                 pluginManagement routes it through the jacoco.outputDirectory property to give
+                 the recipes the same -D override.
+
+                 The report goal emits target/site/jacoco/jacoco.csv, which
+                 `roadmap-tool source-coverage` aggregates into roadmap/source-coverage.adoc. -->
+            <id>coverage</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.jacoco</groupId>
+                        <artifactId>jacoco-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>prepare-agent</id>
+                                <goals>
+                                    <goal>prepare-agent</goal>
+                                </goals>
+                                <configuration>
+                                    <append>false</append>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>report</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>report</goal>
+                                </goals>
                             </execution>
                         </executions>
                     </plugin>

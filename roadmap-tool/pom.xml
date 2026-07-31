@@ -154,6 +154,21 @@
                             <commandlineArgs>check-module-enumeration ${project.basedir}/..</commandlineArgs>
                         </configuration>
                     </execution>
+                    <execution>
+                        <!-- Fail the build if a pom breaks the JaCoCo agent wiring the opt-in
+                             coverage profile depends on: an <argLine> without a leading @{argLine}
+                             drops the agent and reports a false 0%, and a second test-executing
+                             execution without a distinct destFile overwrites exec data into a
+                             plausible partial figure. Both are silent under -Pcoverage and invisible
+                             without it, so the check runs on every build. Rules and rationale:
+                             CoverageAgentWiringCheck. -->
+                        <id>check-coverage-agent-wiring</id>
+                        <phase>verify</phase>
+                        <goals><goal>java</goal></goals>
+                        <configuration>
+                            <commandlineArgs>check-coverage-agent-wiring ${project.basedir}/..</commandlineArgs>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
         </plugins>

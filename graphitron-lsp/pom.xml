@@ -81,9 +81,10 @@
                     <!--
                       jtreesitter calls SymbolLookup.libraryLookup, a restricted FFM API.
                       Without this flag JDK 25 only warns, but a future release will block
-                      the call; declare the access up-front.
+                      the call; declare the access up-front. @{argLine} leads so the JaCoCo
+                      agent flags from -Pcoverage survive this override.
                     -->
-                    <argLine>--enable-native-access=ALL-UNNAMED</argLine>
+                    <argLine>@{argLine} --enable-native-access=ALL-UNNAMED</argLine>
                 </configuration>
             </plugin>
         </plugins>

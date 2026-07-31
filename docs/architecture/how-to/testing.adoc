@@ -150,3 +150,39 @@ mvn test -pl :graphitron -Plocal-db -DexcludedGroups=execution
 ----
 
 See `.claude/web-environment.md` for database setup prerequisites and the fixtures-jar footgun recovery.
+
+== Coverage measurement
+
+Coverage is off by default. `-Pcoverage` attaches the JaCoCo agent to every module's test fork and writes a per-module report at `verify`.
+
+[source,bash]
+----
+# Whole reactor, combined across tiers
+mvn verify -Plocal-db -Pcoverage
+
+# Regenerate the published page from whatever CSVs are on disk
+mvn -pl roadmap-tool exec:java -q -Dexec.args='source-coverage .'
+----
+
+A module's report attributes only that module's own classes. `graphitron`'s figure is generator-source coverage from its unit and pipeline tiers; `graphitron-sakila-example`'s figure is coverage of _generated_ code from the compilation and execution tiers. Two kinds of generator code are missing from both. Code that ran in the Maven process during `graphitron:generate` was never instrumented, because the agent is attached to test forks. Code that ran in another module's test JVM (`GeneratorDeterminismTest` invokes the generator in-process) _was_ recorded there, but a module's report analyses only its own classes, so it is dropped when the report is written.
+
+CI publishes the per-tier split for `graphitron` on trunk pushes. To reproduce it locally, run each tier into its own exec file:
+
+[source,bash]
+----
+# unit tier only
+mvn test -pl :graphitron -Plocal-db -Pcoverage -Dgroups=unit \
+    -Dleaf-coverage.skip -Djacoco.destFile=target/jacoco-unit.exec
+mvn -pl :graphitron org.jacoco:jacoco-maven-plugin:0.8.15:report \
+    -Djacoco.dataFile=target/jacoco-unit.exec \
+    -Djacoco.outputDirectory=target/site/jacoco-unit
+
+# pipeline tier only (same shape)
+mvn test -pl :graphitron -Plocal-db -Pcoverage -Dgroups=pipeline \
+    -Dleaf-coverage.skip -Djacoco.destFile=target/jacoco-pipeline.exec
+mvn -pl :graphitron org.jacoco:jacoco-maven-plugin:0.8.15:report \
+    -Djacoco.dataFile=target/jacoco-pipeline.exec \
+    -Djacoco.outputDirectory=target/site/jacoco-pipeline
+----
+
+`-Dleaf-coverage.skip` is not optional in the tier runs: without it each run re-emits `graphitron/target/leaf-coverage.jsonl` from only that tier's tests, leaving the inference-axis report a strict subset of what the full suite wrote. The page grows per-tier columns when it finds those directories. Read the columns as slices, not as a decomposition: `cross-cutting` classes are in neither, so the two do not sum to the combined figure, and the renderer arm tests this guide blesses as a unit-tier family land in the `unit` column by design.

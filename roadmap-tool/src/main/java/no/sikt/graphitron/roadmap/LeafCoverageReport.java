@@ -57,12 +57,8 @@ import java.util.regex.Pattern;
 final class LeafCoverageReport {
 
     /** Hierarchies whose sealed leaves the report enumerates. */
-    private static final List<String> HIERARCHIES =
+    static final List<String> HIERARCHIES =
         List.of("GraphitronField", "RootField", "ChildField", "InputField", "GraphitronType");
-
-    /** Tier ordering for the "highest tier observed" aggregation. */
-    private static final List<String> TIER_ORDER =
-        List.of("unit", "pipeline", "compilation", "execution");
 
     private LeafCoverageReport() {}
 
@@ -166,7 +162,8 @@ final class LeafCoverageReport {
         return 0;
     }
 
-    private static List<Path> findTraceFiles(Path root) throws IOException {
+    /** Shared with {@link SourceCoverageReport}, which joins the same traces beside line coverage. */
+    static List<Path> findTraceFiles(Path root) throws IOException {
         List<Path> out = new ArrayList<>();
         if (!Files.isDirectory(root)) return out;
         Files.walkFileTree(root, new SimpleFileVisitor<>() {
@@ -326,7 +323,7 @@ final class LeafCoverageReport {
         }
     }
 
-    private static void stageLeaves(Connection conn, List<Leaf> leaves) throws SQLException {
+    static void stageLeaves(Connection conn, List<Leaf> leaves) throws SQLException {
         try (Statement s = conn.createStatement()) {
             s.execute("CREATE TABLE leaves (hierarchy VARCHAR, leaf VARCHAR, fqn VARCHAR, intent VARCHAR)");
         }
@@ -356,7 +353,7 @@ final class LeafCoverageReport {
         }
     }
 
-    private static void stageTrace(Connection conn, List<Path> traceFiles) throws SQLException {
+    static void stageTrace(Connection conn, List<Path> traceFiles) throws SQLException {
         // DuckDB read_json_auto accepts a list literal; pass an explicit array of paths to keep
         // the glob behaviour predictable on platforms where path globbing differs.
         StringBuilder paths = new StringBuilder("[");
@@ -385,6 +382,8 @@ final class LeafCoverageReport {
           .append("that depends on this one; this table is the regenerable data the triage reads from.\n\n");
 
         for (String hierarchy : HIERARCHIES) {
+            // The tier aggregation reads the hoisted vocabulary so this report and
+            // SourceCoverageReport cannot disagree about the tier set.
             String sql = """
                 SELECT
                     l.leaf,
@@ -402,20 +401,8 @@ final class LeafCoverageReport {
                         leaf,
                         COUNT(*) AS classify_count,
                         COUNT(DISTINCT NULLIF(source, '')) AS fixtures,
-                        CASE MAX(CASE tier
-                            WHEN 'unit'        THEN 1
-                            WHEN 'pipeline'    THEN 2
-                            WHEN 'compilation' THEN 3
-                            WHEN 'execution'   THEN 4
-                            ELSE NULL
-                        END)
-                            WHEN 1 THEN 'unit'
-                            WHEN 2 THEN 'pipeline'
-                            WHEN 3 THEN 'compilation'
-                            WHEN 4 THEN 'execution'
-                            ELSE NULL
-                        END AS tier,
-                        BOOL_OR(tier = 'cross-cutting') AS cross_cutting,
+                        HIGHEST_TIER AS tier,
+                        BOOL_OR(tier = 'CROSS_CUTTING') AS cross_cutting,
                         STRING_AGG(DISTINCT NULLIF(test, ''), ', ' ORDER BY NULLIF(test, '')) AS test_classes
                     FROM trace
                     WHERE op = 'classify'
@@ -427,7 +414,9 @@ final class LeafCoverageReport {
                 ) m ON m.leaf = l.leaf
                 WHERE l.hierarchy = ?
                 ORDER BY l.leaf
-                """;
+                """
+                .replace("HIGHEST_TIER", TierVocabulary.highestTierSql("tier"))
+                .replace("CROSS_CUTTING", TierVocabulary.CROSS_CUTTING);
 
             sb.append("== ").append(hierarchy).append("\n\n");
             sb.append("[cols=\"2,4,1,1,1,1,3,2\", options=\"header\"]\n");

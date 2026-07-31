@@ -126,12 +126,15 @@
               excludedGroups, so nothing turns off the `slow` group the ONNX test carries; CI's
               default `mvn verify -Plocal-db` runs everything. The `-DexcludedGroups=slow` opt-out is
               a developer inner-loop affordance supplied on the command line, never a build default.
+
+              @{argLine} leads so the JaCoCo agent flags the coverage profile writes into the
+              argLine property survive this override; without it -Pcoverage reports a false 0%.
             -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <argLine>--enable-native-access=ALL-UNNAMED</argLine>
+                    <argLine>@{argLine} --enable-native-access=ALL-UNNAMED</argLine>
                 </configuration>
             </plugin>
 
