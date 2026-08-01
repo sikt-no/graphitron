@@ -34,7 +34,8 @@ output fields (the Fetch-vs-Lookup pairs, the DML verb leaves, the pivot and rou
 halves; R563's dissolution slices own those rows of the Stage 5 list). Staying this umbrella's own:
 input-side classification, including Stage 5's non-operation retirements (the `InputType` four-arm
 permit, `TableInputArg` / `PlainInputArg`, the `InputField` family, `HasInputRecordShape`,
-`RootField`, the `findReturnTablesForInput` back-scan), failure-at-the-wrapper (Stage 4), Stage 6's
+`RootField`; the `findReturnTablesForInput` back-scan the Stage 5 list carried is already absent
+from the tree, its row discharged by deletion), failure-at-the-wrapper (Stage 4), Stage 6's
 namespace collapse, the unified diagnostics stream, and Stage 7's directive narrowing.
 
 **Status re-baseline (2026-07-20).** The current-state inventory below mixes vintages; passages
@@ -56,7 +57,7 @@ The model sketched in this umbrella is the *target direction* — where the rewr
 
 Three cross-product encodings, three sets of permit-identity-driven discriminations.
 
-**Input-side classification.** `GraphitronType.InputType` permits four backing-class variants (`JavaRecordInputType`, `PojoInputType`, `JooqRecordInputType`, `JooqTableRecordInputType`); `GraphitronType.TableInputType` is a separate sibling root for table-bound inputs. Nine consumer sites discriminate by permit identity: `GraphitronSchemaValidator`, `MutationInputResolver`, `EnumMappingResolver`, `CatalogBuilder` (four sites), `FieldBuilder`, `TypeBuilder`. `TypeBuilder.findReturnTablesForInput` already proves "table-bound" is a property of the consumer, not the input — derived by O(N) back-scan over schema fields. R215's lift admitted `InputField.UnboundField` into `TableInputType.inputFields()`, collapsing the eager-classification axis ahead of this pivot.
+**Input-side classification.** `GraphitronType.InputType` permits four backing-class variants (`JavaRecordInputType`, `PojoInputType`, `JooqRecordInputType`, `JooqTableRecordInputType`); `GraphitronType.TableInputType` is a separate sibling root for table-bound inputs. Nine consumer sites discriminate by permit identity: `GraphitronSchemaValidator`, `MutationInputResolver`, `EnumMappingResolver`, `CatalogBuilder` (four sites), `FieldBuilder`, `TypeBuilder`. `TypeBuilder.findReturnTablesForInput` proved "table-bound" is a property of the consumer, not the input, by deriving it as an O(N) back-scan over schema fields; that method has since left the tree entirely (2026-08-01 reading: zero hits, with `TypeBuilder` surviving without it and input reachability computed consumer-side in post-walk folds such as `ArgumentReachableInputs`), so the proof stands as executed rather than pending. R215's lift admitted `InputField.UnboundField` into `TableInputType.inputFields()`, collapsing the eager-classification axis ahead of this pivot.
 
 **Field-side classification.** 51 leaf permits across `QueryField` (13), `MutationField` (15), `ChildField` (23) at the 2026-07-20 count (re-measured 2026-08-01: still 51, now 12 / 15 / 24; R563's baseline section carries the current census); the set grew as source/operation/target slices landed, then shrank as the R431/R432/R314 batched merge retired leaves, so re-measure at pickup. `TypeFetcherGenerator` dispatches per-leaf with one arm per permit. A mixin-interface overlay (`BatchKeyField`, `SqlGeneratingField`, `MethodBackedField`, `LookupField`, and `TableTargetField`, the last now nested as `ChildField.TableTargetField`) carries cross-cutting traits. Each permit name packs several decisions: where source comes from (root, parent-keyed, list-parent), what the fetcher does (no I/O, `@service` invocation, generated jOOQ), the field's output shape (single, list, connection), the jOOQ contribution (none, inlined column, own SELECT, UNION ALL, DML), modifiers (lookup mapping, error channel, splitQuery). `QueryServiceRecordField` collapses three of these onto one identifier; the former `RecordLookupTableField` collapsed four, and its merge into the source-gated `BatchedLookupTableField` (R432, Done) is the first executed proof that storing an axis as a fact beats splitting a permit on it. The cross product is the permit set; adding a value to any axis multiplies the permits below it.
 
@@ -444,7 +445,7 @@ Sync point on Stages 2 + 3 (every consumer reads via slots; every cross-product 
 - `HasInputRecordShape` capability marker
 - `RootField` intermediate sub-seal between `OutputField` and `QueryField` / `MutationField`
 - Cross-product field permits per R164's consolidation (`RecordLookupTableField`, `QueryServiceRecordField`, etc.)
-- `TypeBuilder.findReturnTablesForInput` back-scan
+- `TypeBuilder.findReturnTablesForInput` back-scan *(already discharged: absent from the tree at the 2026-08-01 reading, deleted ahead of this sync point)*
 
 ### Stage 6 — Namespace collapse
 
