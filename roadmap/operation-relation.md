@@ -1,7 +1,7 @@
 ---
 id: R563
 title: "Operations as a relation: the leaf cross-product dissolves additively"
-status: Backlog
+status: Spec
 bucket: architecture
 priority: 2
 theme: classification-model
@@ -14,7 +14,8 @@ last-updated: 2026-08-01
 
 This item is a **programme** in the sense R549 (Done 2026-08-01; see `roadmap/changelog.md`) used the
 word: it frames a direction, states the invariants that make it falsifiable, and lists slices that
-each ship to trunk on their own. R549 built the back half of the model: the emit as coordinate-keyed
+each ship to trunk on their own. Consult-checked (principles-architect, 2026-08-01); the findings
+are folded into this body. R549 built the back half of the model: the emit as coordinate-keyed
 command relations (launcher, condition, projection, fetcher-edge) the shell folds over, with
 membership declared as producer data. This programme executes the front half R333 resolved and left
 waiting: `coordinate -> operation` is a 0..N relation, "the one genuinely multi-valued relation in
@@ -63,11 +64,12 @@ programme's falsifiable motivation; each names main-source code that exists toda
 - **`Paginate` is three verbs in one record.** `Operation.Paginate(filters, orderBy, pagination)`
   fuses what R333's crosswalk separates into `condition`, `orderBy` and `paginate` members composed
   into the same launch.
-- **A DML reentry coordinate already has two rows.** `LauncherCommands.dmlRowOf` mints a reentry
-  companion launcher row per projected/discriminated mutation coordinate: the write stays with the
-  mutation entry point, the re-select is a second operation on the same coordinate.
-  `LauncherRelation`'s javadoc still claims the family is single-operation; the claim is already
-  strained and retires with this programme.
+- **A DML coordinate performs two operations, one of which the launcher relation materializes.**
+  `LauncherCommands.dmlRowOf` mints exactly one launcher row per projected/discriminated mutation
+  coordinate, the reentry re-select; the write itself is deliberately not a launcher row (it stays
+  with the mutation entry point). The coordinate's operation set has two members and today's model
+  can name only the materialized one. `LauncherRelation`'s javadoc still claims the family is
+  single-operation; the claim is already strained and retires with this programme.
 - **Count and facets ride another coordinate's result shape.** `ResultShape.Connection` carries the
   totalCount helper, carrier and facet plan on the *paginating* coordinate's launcher row because
   the synthesised connection fields are not classified coordinates (R562 owns that model question).
@@ -81,9 +83,14 @@ programme's falsifiable motivation; each names main-source code that exists toda
 
 - `Operation`: 17 arms, 144 LOC, labelled COMMAND in the hierarchy-kind registry. Single-valued via
   `OutputField.operation()`, computed by three leaf-identity switches (`QueryField` 12 arms,
-  `MutationField` 15, `ChildField` 24). Structural readers: 2 (`TenantBindingIndex`,
-  `TenantDslEmitter`); display readers: 2 (LSP hover, MCP schema view); prose: 1 (validator
-  diagnostic). The plan package reads `.operation()` zero times.
+  `MutationField` 15, `ChildField` 24). Structural readers: two external consumers
+  (`TenantBindingIndex`, roughly eight sites including the `fanOutArmOf` rejection ladder, and
+  `TenantDslEmitter.slotReads`) plus two model-internal derived predicates
+  (`OutputField.requiresReFetch()` and `emitsKeyedReQuery()`, single-homed switches over the arm
+  with many downstream readers); prose: 1 (a validator diagnostic interpolates the arm). The plan
+  package reads `.operation()` zero times. The LSP hover and MCP schema view read
+  `TypeClassification.Root.operation()`, an unrelated field (the root type name), so there are no
+  display readers of the model arm at all.
 - The leaf zoo: `OutputField` 51 leaves (`QueryField` 12, `MutationField` 15, `ChildField` 24),
   `InputField` 4, `GraphitronField` 56 total. Operation-grain distinctions that dissolve here: the
   Fetch-vs-Lookup pairs (three of them), the pivot pair's operation half, `DmlTableField`'s four-verb
@@ -92,11 +99,24 @@ programme's falsifiable motivation; each names main-source code that exists toda
   distinctions that survive: root vs child placement, inline vs DataLoader delivery
   (`BatchKeyField`), sourceShape Table vs Record (already a component, the R432 precedent), target
   shapes (Table/Record/Column/Field/Interface/Union), the service call-carrier split, transport.
-- Dispatch surface (the counting rules are `CommandSeamRatchetTest`'s): `generators/` 71 instanceof
-  + 76 case; `plan/` 156 (of which `LauncherCommands` 59, `FetcherEdgeCommands` 54,
-  `ProjectionCommands` 34, `TypeUnitCommands` 31, `ConditionCommands` **4**); validator 114; lint 0;
-  LSP 0. `ConditionCommands`' 4 is the shape this programme drives toward: its membership is one
+- Dispatch surface: `generators/` 71 instanceof + 76 case and `plan/` 156 under
+  `CommandSeamRatchetTest`'s pinned counting rules (of which `LauncherCommands` 59,
+  `FetcherEdgeCommands` 54, `ProjectionCommands` 34, `TypeUnitCommands` 31, `ConditionCommands`
+  **4**); validator 114, lint 0, LSP 0 hand-measured under the same pattern with no pinned rule.
+  `ConditionCommands`' 4 is the shape this programme drives toward: its membership is one
   capability read (`SqlGeneratingField` with non-empty filters), not a leaf enumeration.
+- The trigger substrate already exists: the `no.sikt.graphitron.facts` package (`GatheredFacts`,
+  `FactVisitor`, `FactSubjectKind`) with its import-direction rule stating "facts sit below
+  commands; the corpus will read facts without a plan", and `PaginationFacts` is already the
+  paginate member's trigger fact, population-pinned, with a compile-total slot-fill switch.
+  `CommandSeamRatchetTest`'s tertiary-pin javadoc names the fact-visitor engine as the mechanism
+  that drives `PLAN_LEAF_REFERENCES` to zero.
+- The leaf-set enforcer this programme edits most: the four-way dispatch partition
+  (`GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` over
+  `TypeFetcherGenerator.IMPLEMENTED_LEAVES` / `STUBBED_VARIANTS` / `NOT_DISPATCHED_LEAVES` and the
+  `CONTRIBUTION_MINTING_LEAVES`-derived bucket, with a hand-pinned dual-arm list naming the batched
+  leaves), gated at build time by `ValidateMojo` on stubbed variants. It is the named enforcer of
+  validator-mirrors-classifier at leaf grain.
 - The classifier: `FieldBuilder` 7,879 LOC, ~49 qualified leaf minting sites plus ~24 import-short.
   The operation decision points: the `@splitQuery` x `@lookupKey` 2x2 at
   `classifyObjectReturnChildField`, the per-verb `classify<Verb>*Field` router split, and
@@ -118,40 +138,74 @@ programme's falsifiable motivation; each names main-source code that exists toda
   per coordinate and typed accessors instead of restated facts; `EmitPlan` aggregates six back-half
   relations with conditions produced first.
 
-## The relation
+## The two relations
 
-**One model-side relation, homed on `GraphitronSchema` beside `connectionSynthesis()`,** populated
-during the classify walk, following `ConnectionSynthesisRelation`'s homing precedent and
-`ConditionRelation`'s multi-row key discipline. It is a front-half fact relation: the back-half
-command relations in `plan/` are its realizing views (R333: the seam worklist is the back-half view
-of the operation relation) and keep their own keys and payloads; what they stop doing is deriving
-*membership* from leaf identity.
+The consult's sharpest correction: trigger *presence* is a walked fact, but the member payloads
+(`OrderBySpec`, filter surfaces, `LookupMapping`) are labelled COMMAND in the hierarchy-kind
+registry, and one relation asked to be simultaneously the walked fact base and the resolved view
+over it can answer neither its label question nor its homing question. So the design names two
+things, each with the label and home its kind already prescribes.
 
-- **Row grain.** One row per `(coordinate, member)`. A member is one arm of a sealed
-  `OperationMember` family whose vocabulary is fixed at slice 1 by writing the missing crosswalk
-  (see the design debt below): the shipped 17-arm summary vocabulary and R333's seven-kind seam
-  vocabulary (`select`, `join`, `paginate`, `condition`, `orderBy`, `serviceCall`, DML) have no
-  written mapping today, and this programme owes it as code, since slice 1's derivation *is* the
-  mapping.
-- **Payload homed once.** Each member arm carries the payload its trigger fact produces: the
-  condition member carries the filter surface (participant-expanded where the coordinate is
-  polymorphic), the orderBy member the `OrderBySpec`, the paginate member the window, the lookup
-  member the `LookupMapping`, the serviceCall member the call carrier, the write member the verb
-  and its input payload. The leaf records shed those components as their families migrate
-  (`TableTargetField` slims; the lookup leaves stop carrying facts their arm drops).
+**The trigger relation: walked, in `facts/`.** Per-trigger populations as `GatheredFacts` slots
+filled by per-trigger `FactVisitor`s, exactly the substrate the tree already built for this:
+`PaginationFacts` is the paginate trigger today, population-pinned, with the compile-total slot-fill
+switch; `condition`, `orderBy`, `lookup`, `service`, `write` and `reference` visitors join it. Each
+slot is WALKED_FACT grain (or rides an existing walked fact: the reference fact already exists),
+carries per-trigger population pins, and the corpus can read it without a plan, per the package's
+own import rule. This is also the mechanism `CommandSeamRatchetTest`'s tertiary pin names for
+driving `PLAN_LEAF_REFERENCES` down, so the programme uses the tree's declared engine rather than
+substituting a new one.
+
+**The member view: resolved, on `GraphitronSchema` beside `connectionSynthesis()`.** The
+per-coordinate join of the trigger slots: rows keyed `(coordinate, member)`, a sealed
+`OperationMember` family whose arms carry typed references to the trigger facts they realize,
+labelled RESOLVED_VIEW (now citing `ConnectionSynthesisRelation`'s precedent for the right kind of
+thing: a classify-walk product coalescing walked facts, with typed accessors instead of restated
+facts). The back-half command relations in `plan/` are its realizing views (R333: the seam worklist
+is the back-half view of the operation relation) and keep their own keys and payloads; what they
+stop doing is deriving *membership* from leaf identity.
+
+- **Row grain.** One row per `(coordinate, member)`. The member vocabulary is fixed at slice 1 by
+  writing the missing crosswalk as code (see the design debt below): the shipped 17-arm summary
+  vocabulary and R333's seven-kind seam vocabulary (`select`, `join`, `paginate`, `condition`,
+  `orderBy`, `serviceCall`, DML) have no written mapping today. The crosswalk is **many-to-many**:
+  one summary arm expands to a member *set* (`Fetch` to select plus condition plus orderBy), so the
+  slice-1 derivation's return type is a set of members, bound here; the mapping's content is bound
+  by the slice's total switch.
+- **Payload homed once.** Each member arm carries (or references) the payload its trigger fact
+  produces: the condition member the filter surface (participant-expanded where the coordinate is
+  polymorphic, preserving the sealed generated-versus-authored `WhereFilter` split), the orderBy
+  member the `OrderBySpec`, the paginate member the window, the lookup member the `LookupMapping`,
+  the serviceCall member the call carrier. The **write member is itself a sealed family**
+  (`Insert(TableInputArg)`, `Update(inputArg, updateRows)`, `Delete(inputArg, deleteRows)`,
+  `Upsert(TableInputArg)`) so the per-verb payloads and the per-verb compact-constructor invariants
+  (DELETE rejects projected return arms; the dialect requirements differ per verb) keep structural
+  homes; a verb-as-component row would re-introduce single-table inheritance, and the live
+  `MutationField.dmlOperation` throw on the wrong `DmlKind` is the proof that shape is too weak,
+  not a precedent for it. The leaf records shed their payload components as their families migrate
+  (`TableTargetField` slims; the lookup leaves stop carrying facts their arm drops), with the
+  borrow dial mostly untouched: `OrderBySpec` and `LookupMapping` already sit on
+  `BORROWED_MODEL_REFS`, so `command`/`render` keep borrowing payload refs rather than importing a
+  member seal.
 - **0..N, honestly.** A record-read or nesting coordinate has an empty member set; the DataFetcher's
   existence is the fact (R333). Empty is a value; no `NoOperation` arm.
-- **Anchor address.** R333's address column (`address in {self, enclosing anchor}`) joins the
-  relation when the first member that needs it migrates (the split key-projection member); the
+- **Anchor address.** R333's address column (`address in {self, enclosing anchor}`) joins the view
+  when the first member that needs it migrates (the split key-projection member); the
   grandchild-through-inline-ancestor threading residue R333 names stays open until that slice and
   is decided there, not here.
-- **Membership is trigger-fact presence.** A member row exists because its independent walkable
-  trigger fact exists (a table-bound return mints select, pagination args mint paginate, `@condition`
-  or filter inputs mint condition, `@orderBy` mints orderBy, `@service` mints serviceCall, the
+- **Membership is trigger-fact presence.** A member row exists because its trigger slot is
+  populated (a table-bound return mints select, pagination args mint paginate, `@condition` or
+  filter inputs mint condition, `@orderBy` mints orderBy, `@service` mints serviceCall, the
   reference fact mints join, `@mutation` mints the write verb). The union is the set. Membership
   censuses become fact-grain, the `ConditionCommands` shape, and the per-leaf declared sets the
   R549 window landed (`MINTING_KINDS`, `CONTRIBUTION_MINTING_LEAVES`) are the transitional form
   this replaces family by family.
+- **`SqlGeneratingField` survives as a derived view over the members.** The capability is the
+  principles doc's named exemplar and the single home of the `conditionsReadRequestContext` fold
+  every converged condition call site reads; slice 3 preserves its accessor contract as a view over
+  the condition, orderBy and paginate members rather than gutting a live exemplar as a side effect.
+  If a later slice retires it after its readers migrate, the principles doc repoints in the same
+  commit.
 
 ## Production path and coexistence
 
@@ -161,10 +215,12 @@ The same discipline as R549's cutovers: additive, equality-pinned, then destruct
    from the 51-leaf model to member sets, in the `PlanCompileGraph` precedent (a projection built
    beside the thing it replaces, population-pinned, zero emit change). The switch is compile-total
    with no default, so a new leaf fails compilation until the projection covers it.
-2. **The keystone flips minting to trigger facts** (slice 3): the classifier's component resolver
-   produces member rows directly; a derived-equals-minted equality pin holds over the corpus and the
-   pipeline fixtures for the window; the leaf-to-member projection then retires. From this point the
-   relation is the source and the leaves' operation content is derived or gone.
+2. **The keystone lands the trigger slots and re-sources the view onto their join** (slice 3):
+   per-trigger `FactVisitor`s populate `GatheredFacts` slots (`PaginationFacts` is the live
+   precedent), the member view derives from the joined slots, a derived-equals-minted equality pin
+   holds over the corpus and the pipeline fixtures for the window, and the leaf-to-member
+   projection then retires. From this point the trigger relation is the source and the leaves'
+   operation content is derived or gone.
 3. **Consumers re-source, then leaves dissolve, family by family.** Each dissolution slice retires
    leaf names through `RetiredVocabularyGuardTest`'s registry (the R432 entries are the precedent),
    updates the coverage obligations whose domains are leaf sets, and keeps `sourceShape` arms the
@@ -174,32 +230,40 @@ Emit-neutrality is the default for every slice: this is model-side work, the lan
 (`ConditionSqlBaselineTest`, `RootLauncherSqlBaselineTest`) and the sakila expectations stay
 byte-identical, and a slice that cannot hold that names the exception in its design record before
 any code (none is currently foreseen). Dissolving a leaf constraint does not silently enable
-unimplemented emit: where a leaf's absence was doing rejection work (the filtered-lookup guard),
-the rejection moves to the fact grain (a condition member co-present with a lookup member on one
-coordinate) and stays a build error until an emit slice deliberately implements the combination,
-per validator-mirrors-classifier.
+unimplemented emit, and equally does not silently remove a shipped capability: the filtered-lookup
+guard rejects only **generated** filter terms (authored `@condition` entries on a lookup coordinate
+are supported today and mint ordinary condition rows), so its re-grain is a payload predicate over
+the sealed `WhereFilter` split (a condition member carrying a generated term, co-present with a
+lookup member), never blanket member co-presence. Rejections move to that fact grain and stay build
+errors until an emit slice deliberately implements the combination, per
+validator-mirrors-classifier; the four-way dispatch partition and its `ValidateMojo` gate are the
+enforcer, edited at each dissolution slice (see the design debt on its re-grain).
 
 ## Invariants
 
 1. **The equality pin during the keystone window**: derived-from-leaves equals minted-from-triggers,
    per coordinate, over the corpus and the pipeline fixtures; deleted with the projection when the
    window closes, like R549's migration dials.
-2. **Population censuses per member family**, in the `ConditionMembershipTest` shape: the member
-   rows for a family equal an independently derived covered set from the trigger facts.
+2. **Population censuses per trigger slot**, in the `PaginationFacts` and `ConditionMembershipTest`
+   shapes: each slot's population equals an independently derived covered set, and the member view's
+   rows equal the joined slots.
 3. **The leaf ratchet**: a per-hierarchy leaf count (`GeneratorCoverageTest.sealedLeaves` is the
    counting rule) pinned in `CommandSeamRatchetTest`'s style, moving only downward, one dissolution
    slice at a time, with a history line per move. Installed at 12/15/24/4 (query/mutation/child/input).
-4. **No silent payload drops**: the member arms make the lookup-drop class unrepresentable; the
-   compact constructors reject a member whose payload is empty when its trigger fact fired (the
-   non-vacuity direction) so a trigger that stops producing is loud.
+4. **No silent payload drops**: the member arms make the lookup-drop class unrepresentable. The
+   non-vacuity direction (a member whose payload is empty while its trigger fact fired is rejected
+   at construction) applies to the **payload-bearing arms only**: condition, orderBy, paginate,
+   lookup, serviceCall and the write verbs. The select and join members legitimately carry nothing
+   beyond their trigger reference (a table-bound return, the reference fact) and are exempt by
+   arm, stated here so the invariant has an enforcer for exactly the arms that can fail it.
 5. **The existing dispatch ratchets keep holding**: `PLAN_LEAF_REFERENCES` and the two generator
    pins fall as membership re-sources, pinned in the same commits; the borrowed-model dial
    (`BORROWED_MODEL_REFS`) is edited deliberately or not at all (member payloads reaching
    `command`/`render` cross that boundary only by the dial's own rules).
-6. **The hierarchy-kind label**: the relation and the member seal get registry entries at slice 1
-   (the registry's own note reserves a "derived view at emit grain" kind for when it is needed;
-   whether `OperationMember` is WALKED_FACT or joins a new kind is decided at the label, with the
-   registrar's reasoning recorded).
+6. **The hierarchy-kind labels answer themselves under the two-relation split**: the trigger slots
+   are WALKED_FACT (or ride existing walked facts), the member view is RESOLVED_VIEW on
+   `ConnectionSynthesisRelation`'s precedent, and the write-member seal's label is recorded with
+   the registrar's reasoning at slice 1.
 
 ## Slices
 
@@ -209,13 +273,13 @@ migration payment**: each ships a simplification, a deletion, or a capability, n
 
 | # | slice | why here | cost |
 |---|---|---|---|
-| 1 | **The relation skeleton.** `OperationRelation` + sealed `OperationMember` on `GraphitronSchema`, derived from the current leaves by one compile-total switch; the vocabulary crosswalk written as that code; population pin; hierarchy-kind labels; the two display consumers (LSP hover, MCP view) re-read from rows as the first honest readers | cheapest complete vertical; the vocabulary exists in trunk before anything expensive rests on it, and the crosswalk debt (17 summary arms vs 7 seam kinds, no written mapping) is paid where it is enforceable | low |
+| 1 | **The skeleton: member view + first honest readers.** The sealed `OperationMember` family and the member view on `GraphitronSchema`, derived from the current leaves by one compile-total switch returning member *sets* (the vocabulary crosswalk written as that code); population pin; hierarchy-kind labels; and the first honest readers re-sourced: `OutputField.requiresReFetch()` and `emitsKeyedReQuery()` become member-presence reads ("has a serviceCall or write member"; "has a reentry member"), retiring their `default ->` arms | cheapest complete vertical with real readers (the consult falsified the display-reader claim: LSP hover and MCP view read the root type name, not the model arm); the two derived predicates are the exact "compound predicate over one slot" smell the programme cures, and the crosswalk debt is paid where it is enforceable | low |
 | 2 | **Instruments.** The leaf ratchet installed at current counts; the axis-pair census gains a member-grain extraction beside the coordinate-grain one (both print; the coordinate-grain rows stay valid as the empty-or-one projection); baseline measurement rows recorded in this file | the ratchet must precede the migration it measures, and the census must exist before slice 3 commits to the member vocabulary it would falsify | low |
-| 3 | **The keystone: trigger-fact minting.** The classifier's component resolver (`resolveTableFieldComponents` and the per-verb router) produces member rows; equality pin over the window; the leaf-to-member projection retires; payloads single-home (leaf records shed `filters`/`orderBy`/`pagination`/`lookupMapping` components as their readers move); `OutputField.operation()` narrows to a derived summary over the member set for the two structural consumers until slice 4 retires it | designing this validates or breaks the model: production from triggers is the whole thesis, and it lands against the frozen emit with no SQL change | medium |
-| 4 | **The two structural consumers re-source.** `TenantBindingIndex.directSlots` and `TenantDslEmitter.slotReads` read member rows; their `participantFilters()` fallbacks dissolve (participant filters are condition-member payload); `OutputField.operation()` and the three leaf-identity `operation()` switches retire; `Operation`'s summary arms narrow to whatever the corpus still names (decided at slice 7) | the smallest honest beachhead: the two places the one-arm assumption already visibly fails, and the retirement of the summary column's last structural readers | low |
+| 3 | **The keystone: trigger slots and their join.** The trigger relation lands as `GatheredFacts` slots filled by per-trigger `FactVisitor`s (`PaginationFacts` is the precedent and the paginate slot already); the member view re-sources from the leaf-derived projection onto the joined slots under an equality pin; the projection then retires; payloads single-home (leaf records shed `filters`/`orderBy`/`pagination`/`lookupMapping` components as their readers move, with `SqlGeneratingField` preserved as a derived view per the design above); `OutputField.operation()` narrows to a derived summary over the member set until slice 4 retires it | designing this validates or breaks the model: production from triggers is the whole thesis, it uses the fact-visitor engine the ratchet's own javadoc names as the mechanism, and it lands against the frozen emit with no SQL change | medium |
+| 4 | **The remaining `operation()` readers re-source and the accessor retires.** `TenantBindingIndex`'s roughly eight sites (the `fanOutArmOf` rejection ladder and `directSlots`) and `TenantDslEmitter.slotReads` read member rows; their `participantFilters()` fallbacks dissolve (participant filters are condition-member payload); the validator diagnostic re-words off members; `OutputField.operation()` and the three leaf-identity `operation()` switches retire; `Operation`'s summary arms narrow to whatever the corpus still names (decided at slice 7) | the places the one-arm assumption already visibly fails, and the retirement of the summary column's last readers; sized medium because the fan-out ladder and the reentry guard are behavioral dispatch, not display | medium |
 | 5 | **Back-half membership re-sources.** The plan producers derive membership from member presence instead of leaf identity: `LauncherCommands.MINTING_KINDS` becomes "has a launching select member" plus source facts; `ProjectionCommands.contributionOf`'s operation-grain arms (the Multiset-vs-LookupMultiset fork, the Nest/Pivot walk) read members; `ConditionCommands` re-keys its membership onto the condition member (it is already fact-grain; this aligns the fact's home). `PLAN_LEAF_REFERENCES` falls and is re-pinned | this is where the R549 relations become views over the front half, which is the programme's architectural claim; doing it before dissolution means the leaves die with no readers left | medium |
-| 6a | **Dissolution: the lookup triplet.** `LookupTableField`, `BatchedLookupTableField`, `QueryLookupTableField` fold into their Fetch siblings plus a lookup member; the dropped-facts class becomes unrepresentable; the filtered-lookup rejection re-grains onto member co-presence (capability payload: the rejection stops being a leaf accident and states its real ground) | first dissolution because the census evidence is sharpest here and the surviving siblings already carry every component | medium |
-| 6b | **Dissolution: the DML verb split.** `DmlTableField`'s four verb leaves and the payload arms' verb half fold onto write members carrying the verb; the `MutationDml*RecordField` pair's `DmlKind` component is the precedent (verb as data landed once already); bulk-ness stays the target wrapper | the mutation router's per-verb classify methods collapse to one path plus a verb fact; the largest single leaf-count drop (15 mutation leaves shrink) | medium |
+| 6a | **Dissolution: the lookup triplet.** `LookupTableField`, `BatchedLookupTableField`, `QueryLookupTableField` fold into their Fetch siblings plus a lookup member; the dropped-facts class becomes unrepresentable; the generated-filter-on-lookup rejection re-grains onto its real predicate (a condition member carrying a generated `WhereFilter` term co-present with a lookup member; authored `@condition` on lookup stays supported exactly as today); the dispatch partition's dual-arm list and stub sets update with the fold | first dissolution because the census evidence is sharpest here and the surviving siblings already carry every component | medium |
+| 6b | **Dissolution: the DML verb split.** `DmlTableField`'s four verb leaves and the payload arms' verb half fold onto the sealed write-member family, whose arms keep the per-verb payloads and compact-constructor invariants (DELETE rejects projected returns; per-verb dialect requirements); bulk-ness stays the target wrapper; the dispatch partition and `ValidateMojo` stub gate update with the fold | the mutation router's per-verb classify methods collapse to one path plus a sealed verb member; the largest single leaf-count drop (15 mutation leaves shrink) | medium |
 | 6c | **Dissolution: the pivot pair's operation half and the routine leaves' operation half** | closes the read-family dissolution; what survives of the leaves is source/delivery/target grain only | medium |
 | 7 | **The corpus voice.** `@classified(operation:)` becomes the member-set assertion (`operations: [Op!]!` or the sibling-directive shape, decided at the slice against the R543-landed `@commits` precedent); `DimensionTuple` re-grains; the axis-pair census re-keys; `OPERATION_ARMS` re-sources (domain = the member vocabulary, covered = declared-and-agreeing member rows); the launcher `@commits` vocabulary aligns. R543's Spec parked exactly this as "one coherent edit owned by whichever item makes operations a relation": this slice is that edit | the payoff that justifies the relation, and it wants minted rows to assert against, so it runs after the keystone | medium |
 | 8 | **Obligation re-typing where the leaf zoo dissolution bites.** The coverage obligations whose domains are leaf `Class<?>` sets re-source onto the surviving leaf sets plus the member vocabulary; the `@ProjectionFor`/`FieldClassification` projection surfaces update per dissolved leaf (started in the 6x slices, closed here) | parked by R543 for this programme by name; closing it here keeps the discovery guard honest at the end state | low |
@@ -241,10 +305,19 @@ that are still a projection); 6x slices are independent of each other and of 7; 
   table mirrors that key. Default: mirror `ConditionRelation`'s key so the join is 1:1; the slice
   record states the decision. Composite select stays one member with arity as payload (R508 pinned
   the one-carrier form; this programme does not reopen it).
-- **The reentry member (slice 3).** The DML companion row is the live proof of two operations on one
-  coordinate; the write member and the reentry re-select member land as distinct members, and
-  `LauncherRelation`'s single-operation javadoc sentence retires with a successor stating the real
-  key.
+- **The reentry member and the launcher key (slice 3).** The write member and the reentry re-select
+  member land as distinct members, making the coordinate's two operations expressible. That opens a
+  named fork the slice record must close: either `LauncherRelation` re-keys to
+  `(coordinate, member)` (contradicting "back-half relations keep their own keys", so it must be
+  argued, not assumed), or it stays coordinate-keyed with the write member deliberately
+  unmaterialized there (the write staying with the mutation entry point, as its javadoc already
+  states). The single-operation javadoc sentence retires with a successor stating whichever key
+  wins.
+- **The dispatch partition's shape (first 6x slice).** `STUBBED_VARIANTS` keyed by leaf class is
+  what makes `ValidateMojo`'s build gate possible; once unimplementedness is a member combination
+  rather than a leaf identity, the partition either stays leaf-keyed with a member-grain stub set
+  beside it or re-grains outright. Decided at the first dissolution slice's design record, with the
+  gate's strength preserved either way.
 - **`Operation`'s end state (slice 7).** Whether the 17-arm seal survives as the corpus's summary
   vocabulary, narrows, or retires outright is decided when the corpus re-grains; until then it stays
   the derived summary column slice 3 makes it.
@@ -254,7 +327,7 @@ that are still a projection); 6x slices are independent of each other and of 7; 
 | item | relationship |
 |---|---|
 | R333 (Ready) | governs. This programme is the "emit re-platforming's front-half successor" its scope section anticipates; its normalized schema, trigger rule, crosswalk and corpus resolution are consumed verbatim. Two stale spots to fold through at slice 1, not re-derive: seam-worklist row 5 predates R552's landing (its own topology table is current), and the worklist vocabulary has no written mapping to the shipped seal (the crosswalk debt above). This programme's landing plausibly discharges R333's stay-Ready condition; that call belongs to R333's own gate |
-| R222 (Spec) | the umbrella this programme partially absorbs, the R546 precedent. Its field-side content (Stage 3's dimensional slots for output fields, Stage 5's cross-product permit deletion) is superseded by this programme where operations are concerned; its input-side classification, failure-at-the-wrapper (Stage 4), diagnostics unification and directive narrowing (Stage 7) are genuinely separate work and stay its own. At this item's Spec gate, R222 gets a governance note re-scoping it to the surviving halves; whether it then re-specs or splits is its own business |
+| R222 (Spec) | the umbrella this programme partially absorbs. The precedent is R333's 2026-07-04 governance note on R222 itself (re-scoped in place, stage-tracking role kept), applied a second time, not R546's wholesale discard: discarding would orphan R222's absorption ledger (R97, R144, R98, R215, R213, R209, R221) which nothing else carries. Superseded here: Stage 3's operation-axis content and Stage 5's operation-encoding permit rows for output fields. Staying R222's own: input-side classification (including Stage 5's non-operation retirements: the `InputType` four-arm permit, `TableInputArg`/`PlainInputArg`, the `InputField` family, `HasInputRecordShape`, `RootField`, the `findReturnTablesForInput` back-scan), failure-at-the-wrapper (Stage 4), Stage 6's namespace collapse, diagnostics unification, and Stage 7's directive narrowing. At this item's Spec gate, R222 gets that governance note with this enumeration |
 | R543 (Done) | the launcher corpus voice whose Spec parked the set-capable operations vocabulary, the census re-grain and the `OPERATION_ARMS` re-source "as one coherent edit, owned by whichever item makes operations a relation", and the obligation re-typing for "whichever item dissolves the leaf zoo". Slices 7 and 8 are those edits, honored as specified |
 | R562 (Backlog) | owns the synthesised-connection-fields-as-coordinates question. The `Count`/`Facet` members' coordinate home depends on its answer: if the synthesised fields become coordinates, the members land there and the exemptions retire; if not, they stay members on the paginating coordinate. Slice 7 consumes whatever R562 has decided by then, or keeps the two exemptions with re-anchored reasons; this programme does not decide R562's question for it |
 | R558 (root-family-validator-mirror-gaps) | keeps the per-arm verdicts for the condition-matched writes (`UpdateMatching`, `DeleteMatching`); they enter the member vocabulary as modeled-but-unpopulated exactly as they sit in the seal today |
@@ -295,7 +368,7 @@ retires it, and the sweep at each gate runs against what has actually shipped.
 | `LookupTableField`, `BatchedLookupTableField`, `QueryLookupTableField` | 6a | the Fetch-sibling leaves plus the lookup member row |
 | `MutationField.DmlTableField`'s four verb leaves; the payload arms' verb halves | 6b | write members carrying the verb; source/target grain leaves |
 | `LauncherRelation`'s "this family is single-operation" javadoc claim | 3 | the reentry and write members; the real key stated |
-| `requireNoGeneratedFilterOnLookup` (the producer backstop) | 6a | the member co-presence rejection at fact grain |
+| `requireNoGeneratedFilterOnLookup` (the producer backstop) | 6a | the fact-grain rejection: a condition member carrying a generated `WhereFilter` term co-present with a lookup member |
 | `DimensionTuple`'s single `Class<? extends Operation>` component | 7 | the member-set assertion |
 
 ## Non-goals
@@ -306,10 +379,12 @@ retires it, and the sweep at each gate runs against what has actually shipped.
   programme does not touch the arrival or output facts beyond what payload single-homing requires.
 - **Byte-identical output is not the acceptance**; the existing tiers are (compilation, execution,
   the closure oracles, the corpus). Emit-neutrality is the per-slice default all the same.
-- **No emit capability changes.** Dissolving a leaf does not enable what its absence rejected;
-  rejections re-grain onto facts and stay build errors until an emit item implements the
-  combination. The filtered-lookup combination in particular stays rejected at 6a, with its real
-  ground stated; implementing it is its own future item.
+- **No emit capability changes, in either direction.** Dissolving a leaf does not enable what its
+  absence rejected, and does not remove what shipped: rejections re-grain onto facts at their real
+  predicate and stay build errors until an emit item implements the combination. The
+  generated-filter-on-lookup combination in particular stays rejected at 6a at exactly today's
+  grain (authored `@condition` on lookup stays supported); implementing the generated combination
+  is its own future item.
 - **Not R222's other halves**: input-side classification, failure-at-the-wrapper, the diagnostics
   stream, directive narrowing, and the `ChildField`-to-`SourceField` namespace collapse all stay
   where they are.
