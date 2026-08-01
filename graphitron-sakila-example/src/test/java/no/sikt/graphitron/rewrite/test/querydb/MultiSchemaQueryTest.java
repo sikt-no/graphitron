@@ -38,7 +38,7 @@ import static org.assertj.core.api.InstanceOfAssertFactories.list;
  * {@code gadgets { id widget { id } }} that drills from {@code multischema_b.gadget}
  * through the {@code gadget_widget_id_fkey} reference to {@code multischema_a.widget}.
  * If a regression rewires the emitted code to look up the FK constraint or table class
- * under the wrong schema, the generated {@code Gadget.$fields} method emits source
+ * under the wrong schema, the generated {@code Gadget.$project} method emits source
  * that does not compile (see the compile-tier execution {@code rewrite-generate-multischema}
  * for that path); if it compiles but selects the wrong rows, this execution-tier test
  * catches the behaviour at runtime.

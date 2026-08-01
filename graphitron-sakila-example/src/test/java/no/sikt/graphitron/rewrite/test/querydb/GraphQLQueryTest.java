@@ -491,7 +491,7 @@ class GraphQLQueryTest {
         // ONLY the service child (no `title`, no `id`), so nothing in the client selection
         // projects either the key or the column the service needs. Two things have to hold for
         // this to come back non-null, and each is a live claim in handle-services.adoc: the
-        // framework force-includes FILM_ID in Film.$fields whenever a keyed child is selected, so
+        // framework projects FILM_ID in Film.$project (the gated correlation-key arm) whenever a keyed child is selected, so
         // the key record is populated; and the service issues its own batched fetch for `title`
         // rather than expecting it on the key. Regress either and the field resolves to a
         // titlecased null, so this test is the behaviour behind the manual's claim rather than
@@ -596,7 +596,7 @@ class GraphQLQueryTest {
     @Test
     void films_languageName_resolvesViaScalarReference() {
         // ColumnReferenceField execution-tier fixture: Direct + FK-only single-hop scalar
-        // @reference. TypeClassGenerator.$fields() projects an aliased correlated subquery
+        // @reference. The projection unit's $project() projects an aliased correlated subquery
         // (SELECT language.NAME FROM language WHERE language.LANGUAGE_ID = film.LANGUAGE_ID LIMIT 1)
         // aliased by the runtime result key (__rk_languageName here, unaliased); FetcherEmitter wires
         // an env-dependent read that picks the value off the result Record by
@@ -611,7 +611,7 @@ class GraphQLQueryTest {
     @Test
     void films_isEnglish_resolvesViaExternalFieldExpression() {
         // ComputedField execution-tier fixture: @externalField(reference: ...) inlines
-        // FilmExtensions.isEnglish(table) (Field<Boolean>(LANGUAGE_ID = 1)) into Film.$fields(),
+        // FilmExtensions.isEnglish(table) (Field<Boolean>(LANGUAGE_ID = 1)) into Film.$project(),
         // aliased by the runtime result key. The env-dependent read picks the projected alias off
         // the result Record by "__rk_" + env.getField().getResultKey() at request time.
         // All seeded films have language_id=1, so the expression resolves to true for each.
@@ -726,7 +726,7 @@ class GraphQLQueryTest {
         // Lift-back execution-tier primary net. Film.castMembers is a list-cardinality child
         // @service (mapped container) returning film_actor rows; FilmActor.actor is a @reference
         // (correlated multiset, not a stored column). The lift re-projects each returned PK through
-        // FilmActor.$fields so the multiset is present; a verbatim service return carries no
+        // FilmActor.$project so the multiset is present; a verbatim service return carries no
         // `actor` column and the reference fetcher throws
         // 'Field "actor" is not contained in row type'. The execute() helper asserts zero GraphQL
         // errors, so reaching the assertions already proves the reference does not throw.
@@ -2996,7 +2996,7 @@ class GraphQLQueryTest {
     @Test
     void nestingField_onlyRequestedColumnsSelected() {
         // Requesting only summary.title must project FILM.TITLE — not releaseYear —
-        // since $fields is selection-aware. One round-trip; correct value returned.
+        // since $project is selection-aware. One round-trip; correct value returned.
         QUERY_COUNT.set(0);
         Map<String, Object> data = execute(
             "{ filmById(film_id: [\"1\"]) { summary { title } } }");
@@ -3022,7 +3022,7 @@ class GraphQLQueryTest {
 
     @Test
     void nestingField_siblingOfTableFields_doesNotDisrupt() {
-        // Nesting field projects via $fields on the same outer row as sibling column
+        // Nesting field projects via $project on the same outer row as sibling column
         // fields; both must come back correctly on the same query.
         Map<String, Object> data = execute(
             "{ filmById(film_id: [\"1\"]) { filmId title summary { releaseYear } } }");
@@ -3787,7 +3787,7 @@ class GraphQLQueryTest {
     @Test
     void nodes_idAndOtherFieldsTogether_resolvesBothFromSingleProjection() {
         // Locks down the duplicate-projection invariant: when the GraphQL selection includes
-        // `id`, $fields adds the nodeKey columns, and rowsNodes also needs them for the
+        // `id`, $project adds the nodeKey columns, and rowsNodes also needs them for the
         // result-scatter encode. The generator dedups so each key column is projected once;
         // both the generated `id` resolver (NodeIdEncoder.encode(typeId, r.get(t.<col>))) and
         // the encode call inside rowsNodes read the same column. Asserting the encoded id
@@ -4075,8 +4075,8 @@ class GraphQLQueryTest {
     @SuppressWarnings("unchecked")
     void allContent_filmContentOnly_isolatesLengthFromShortDescription() {
         // FilmContent.length lives on the content table; ShortContent.description also lives on
-        // the content table but in a different column. Per-participant projection (FilmContent.$fields
-        // vs ShortContent.$fields) plus the type-routing TypeResolver guarantee FILM rows expose
+        // the content table but in a different column. Per-participant projection (FilmContent.$project
+        // vs ShortContent.$project) plus the type-routing TypeResolver guarantee FILM rows expose
         // length only and SHORT rows expose description only — even though both sit on the same row.
         Map<String, Object> data = execute("""
             { allContent {
@@ -4195,7 +4195,7 @@ class GraphQLQueryTest {
     @SuppressWarnings("unchecked")
     void search_interfaceFieldName_resolvesPerParticipantColumn() {
         // Searchable.name remaps to FILM.TITLE on Film and ACTOR.FIRST_NAME on Actor.
-        // Stage 2's per-typename SELECT projects each participant's $fields(env, t, env)
+        // Stage 2's per-typename SELECT projects each participant's $project(sel, t, env)
         // contribution, so the typed Record carries the right column under the interface
         // alias on each row.
         Map<String, Object> data = execute("{ search { __typename name } }");
@@ -5584,7 +5584,7 @@ class GraphQLQueryTest {
     void upsertFilm_updateBranch_writesAndReturnsProjectedFilm() {
         // UPSERT-on-existing-row: emitter runs `dsl.insertInto(film, ...).values(...)
         // .onConflict(film_id).doUpdate().set(title, ...).set(language_id, ...)
-        // .returningResult($fields).fetchOne(r -> r)`. The pre-inserted row triggers the
+        // .returningResult($project).fetchOne(r -> r)`. The pre-inserted row triggers the
         // ON CONFLICT branch; verifies the SET clause writes and RETURNING projects.
         String originalMarker = "R22-PHASE-5-UPSERT-" + java.util.UUID.randomUUID();
         String upsertedMarker = "R22-PHASE-5-UPSERTED-" + java.util.UUID.randomUUID();
@@ -6647,7 +6647,7 @@ class GraphQLQueryTest {
     void allSubjects_discriminatorFieldInsideFragment_routesViaSyntheticAlias() {
         // Regression: the discriminator field (subjectKind) selected INSIDE an inline fragment,
         // alongside a cross-table detail field. The interface exposes subjectKind as a queryable field,
-        // so the participant $fields projects the real subject_kind column; without a synthetic routing
+        // so the participant $project projects the real subject_kind column; without a synthetic routing
         // alias the discriminated TypeResolver's bare read of "subject_kind" matches both that projection
         // and the routing copy ("Ambiguous match found", resolved by luck). The routing copy is
         // projected as "__discriminator__" and the TypeResolver reads that alias, so routing is
@@ -6675,7 +6675,7 @@ class GraphQLQueryTest {
         assertThat(persons).allSatisfy(i -> assertThat(i.get("subjectKind")).isEqualTo("PERSON"));
 
         // Mechanical guard: the routing discriminator is projected under the synthetic alias, distinct
-        // from the real subject_kind column the $fields projection also emits. (SQL_LOG is lowercased.)
+        // from the real subject_kind column the $project projection also emits. (SQL_LOG is lowercased.)
         assertThat(SQL_LOG)
             .as("the discriminated interface fetcher must project the routing discriminator under the __discriminator__ alias")
             .anyMatch(s -> s.contains("as \"__discriminator__\""));

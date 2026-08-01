@@ -1190,7 +1190,7 @@ public class GraphitronSchemaValidator {
             } else if (rf instanceof ChildField.TableField rtf && of instanceof ChildField.TableField otf) {
                 // TableField's join topology is safe to share across parents: each parent's $project
                 // emits its own DSL.multiset arm (per-parent joinPath / orderBy / pagination are
-                // intentionally not compared), and the reified projected read (PROJECTED_LEAVES) reads
+                // intentionally not compared), and the reified projected read (the plan-derived projected dispatch) reads
                 // by field name from the source Record without consulting the outer parent table;
                 // returnType() derives from the single SDL declaration on the shared nested type and
                 // is identical by construction. The FILTERS are not per-parent any more: one condition

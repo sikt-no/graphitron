@@ -20,7 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the same result key is selected under both {@code edges { node { ... } }} and {@code nodes}.
  *
  * <p>graphql-java's {@code getFieldsGroupedByResultKey()} flattens the whole subtree, so the two
- * paths collapse into one bucket per result key. The generated {@code <Node>.$fields} loop used to
+ * paths collapse into one bucket per result key. The generated {@code <Node>.$project} loop used to
  * descend into only the first occurrence's sub-selection; any reference sub-field requested under
  * only the other path was missing from the SELECT, and its reader failed per row with a jOOQ
  * "Field ... is not contained in row type" error (surfacing as field errors + silent {@code null}
@@ -155,7 +155,7 @@ class ConnectionSharedResultKeyProjectionTest {
         // The diverging bucket is Film's `summary` NestingField inside the restrictTo-filtered
         // selection: edges asks for summary.title, nodes for summary.releaseYear (all seed films
         // are 2006). The restrictTo view preserves full occurrence lists per key, so one fix at
-        // the $fields loop covers this path too.
+        // the $project loop covers this path too.
         Map<String, Object> data = execute("""
             { searchConnection(first: 8) {
                 edges { node { __typename ... on Film { summary { title } } } }

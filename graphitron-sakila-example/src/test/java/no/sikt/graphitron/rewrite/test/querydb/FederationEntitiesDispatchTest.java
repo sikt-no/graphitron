@@ -242,7 +242,7 @@ class FederationEntitiesDispatchTest {
      * fragments produces per-type SELECTs whose projection lists exclude the other type's
      * fields. Locks the load-bearing claim that graphql-java's
      * {@code DataFetchingFieldSelectionSet} is type-scoped at the {@code _entities} DFE
-     * call site, so {@code <TypeName>.$fields} walking it picks up only the inline
+     * call site, so {@code <TypeName>.$project} walking it picks up only the inline
      * fragment scoped to that __typename.
      */
     @Test
@@ -466,7 +466,7 @@ class FederationEntitiesDispatchTest {
     /**
      * A federated {@code _entities} query that selects both {@code id} (the NodeId-encoded
      * primary key) and a sibling SDL field whose {@code @field(name:)} resolves to the same
-     * underlying column. {@code Customer.$fields} accumulates projected columns in a
+     * underlying column. {@code Customer.$project} accumulates projected columns in a
      * {@link java.util.LinkedHashSet}, deduping by jOOQ {@code Field} identity, so the column
      * appears exactly once in the SELECT; a duplicate projection makes jOOQ's
      * {@code FieldsImpl.indexOf} log an INFO "Ambiguous match" on every fetched row.
@@ -497,7 +497,7 @@ class FederationEntitiesDispatchTest {
         long customerIdCount = projection.split("\"customer_id\"", -1).length - 1;
         assertThat(customerIdCount)
             .as("Customer SELECT projection must reference customer_id exactly once "
-                + "(id @nodeId and customerId @field both target customer_id; dedupe lives in $fields())\n"
+                + "(id @nodeId and customerId @field both target customer_id; dedupe lives in $project())\n"
                 + "projection was: " + projection)
             .isEqualTo(1);
     }
@@ -507,7 +507,7 @@ class FederationEntitiesDispatchTest {
      * {@code @service} child: the key arrives via the representation ({@code cityId}) and is
      * deliberately not re-selected in the sub-selection (the Apollo Router shape: the router
      * selects just the fields it needs and supplies key columns through the representation).
-     * The entity dispatch SELECT goes through {@code City.$fields}, which must force-project
+     * The entity dispatch SELECT goes through {@code City.$project}, which must force-project
      * {@code CITY_ID} (the service child's SourceKey column) so the DataLoader key extraction
      * finds it on the row; without it the extraction's {@code source.get(Tables.CITY.CITY_ID)}
      * reads a field the SELECT omitted, which jOOQ rejects, and the request fails before the

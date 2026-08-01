@@ -146,7 +146,7 @@ class SingleRecordPayloadDmlTest {
     }
 
     /**
-     * The follow-up SELECT's {@code $fields(env.getSelectionSet(), <table>, env)} projection
+     * The follow-up SELECT's {@code $project(sel, <table>, env)} projection
      * must include any {@code @reference} the selection set requests. Querying
      * {@code languageName} (a {@code @reference} from {@code Film.languageName} to
      * {@code Language.name} via the {@code film_language_id_fkey} FK) exercises the
@@ -277,7 +277,7 @@ class SingleRecordPayloadDmlTest {
     /**
      * Durability pin replayed on the direct-{@code @table}-return path. The
      * {@code createFilm: Film} (etc.) emit changed from single-statement
-     * {@code INSERT ... RETURNING $fields(...)} to the two-step shape (PK-only RETURNING inside
+     * {@code INSERT ... RETURNING $project(...)} to the two-step shape (PK-only RETURNING inside
      * {@code transactionResult}, follow-up SELECT outside it); the same durability invariant
      * must hold here. Field error during traversal of the Film record's children must not undo
      * the DML.

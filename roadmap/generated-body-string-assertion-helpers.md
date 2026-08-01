@@ -30,3 +30,13 @@ lands first, some of the family goes away on its own and only the survivors need
 
 Raised by the independent Done-gate reviewer on the PK-only service key contract item, which net
 removed one member of the family and was explicitly not asked to fix the rest.
+
+Scope extension from the facts-and-commands Done-gate review (2026-08-01): the renderer arm tests
+(`ProjectionUnitRendererTest`, `RootLauncherRendererTest`) open-code the same rendered-string scan
+(`code().toString()` + `contains(...)`) at their call sites, outside the `TypeSpecAssertions`
+containment this item was filed against, and `armProjectsColumn` /
+`armGuardsArgumentConsistency` joined the contained family as successors of the retired
+`appendsRequiredColumn`. The testing.adoc renderer-arm rubric row blesses "per-arm structural
+assertions" but is silent on assertion mechanics; when this item lands the structural
+`CodeBlock`/`MethodSpec` form, the renderer arm tests are in scope, and the rubric row should
+state the mechanics so the ambiguity closes with the migration.

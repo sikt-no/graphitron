@@ -159,7 +159,7 @@ class ConnectionPromoterTest {
     }
 
     @Test
-    void structuralConnectionTypedReturn_enrichesPlainObjectEntries_noCarrierRewrite() {
+    void structuralConnectionTypedReturn_enrichesPlainObjectEntries_noRewriteFacts() {
         // SDL declares the Connection / Edge object types itself; the carrier field returns
         // CustomerConnection without @asConnection. Promotion should enrich the
         // NestingType entries to typed ConnectionType / EdgeType and produce a Structural row,
@@ -257,7 +257,7 @@ class ConnectionPromoterTest {
     }
 
     @Test
-    void asConnectionOnAlreadyConnectionTypedReturn_emitsNoCarrierRewrite() {
+    void asConnectionOnAlreadyConnectionTypedReturn_emitsNoRewriteFacts() {
         // When the SDL return type already names the Connection (here "CustomerConnection"),
         // @asConnection alongside routes through the structural arm: no rewrite facts exist,
         // there is no return-type swap to make. The synthesised type entries still get
