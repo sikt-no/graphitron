@@ -7,7 +7,7 @@ priority: 3
 theme: classification-model
 depends-on: []
 created: 2026-05-21
-last-updated: 2026-07-20
+last-updated: 2026-08-01
 ---
 
 # Dimensional model pivot: slots over cross-product permits
@@ -23,6 +23,19 @@ table, several of whose planned carriers R333 redistributes onto coordinate fact
 conditions become operation rows minted from input coordinates; ordering is `operation: orderBy`
 payload; the lookup partition is the `Lookup` operation) — R333 governs. This file is being aligned
 incrementally rather than rewritten wholesale.
+
+**Governance (2026-08-01): R563 (`operation-relation`) executes the output-field operation axis.**
+The same move as the 2026-07-04 note, applied a second time: the umbrella keeps its stage-tracking
+role and the absorption ledger below, and R333 stays the model statement. Superseded by R563, which
+owns them from Spec onward: Stage 3's operation-axis content (the `operation` slot of the
+`(source, operation, target)` triple, per R333 a 0..N member relation, materialized by R563 as walked
+trigger facts joined into a member view), and Stage 5's operation-encoding permit retirements for
+output fields (the Fetch-vs-Lookup pairs, the DML verb leaves, the pivot and routine operation
+halves; R563's dissolution slices own those rows of the Stage 5 list). Staying this umbrella's own:
+input-side classification, including Stage 5's non-operation retirements (the `InputType` four-arm
+permit, `TableInputArg` / `PlainInputArg`, the `InputField` family, `HasInputRecordShape`,
+`RootField`, the `findReturnTablesForInput` back-scan), failure-at-the-wrapper (Stage 4), Stage 6's
+namespace collapse, the unified diagnostics stream, and Stage 7's directive narrowing.
 
 **Status re-baseline (2026-07-20).** The current-state inventory below mixes vintages; passages
 researched 2026-06-16 predate three items that have since executed against this umbrella's direction
@@ -45,7 +58,7 @@ Three cross-product encodings, three sets of permit-identity-driven discriminati
 
 **Input-side classification.** `GraphitronType.InputType` permits four backing-class variants (`JavaRecordInputType`, `PojoInputType`, `JooqRecordInputType`, `JooqTableRecordInputType`); `GraphitronType.TableInputType` is a separate sibling root for table-bound inputs. Nine consumer sites discriminate by permit identity: `GraphitronSchemaValidator`, `MutationInputResolver`, `EnumMappingResolver`, `CatalogBuilder` (four sites), `FieldBuilder`, `TypeBuilder`. `TypeBuilder.findReturnTablesForInput` already proves "table-bound" is a property of the consumer, not the input — derived by O(N) back-scan over schema fields. R215's lift admitted `InputField.UnboundField` into `TableInputType.inputFields()`, collapsing the eager-classification axis ahead of this pivot.
 
-**Field-side classification.** 51 leaf permits across `QueryField` (13), `MutationField` (15), `ChildField` (23) at the 2026-07-20 count; the set grew as source/operation/target slices landed, then shrank as the R431/R432/R314 batched merge retired leaves, so re-measure at pickup. `TypeFetcherGenerator` dispatches per-leaf with one arm per permit. A mixin-interface overlay (`BatchKeyField`, `SqlGeneratingField`, `MethodBackedField`, `LookupField`, and `TableTargetField`, the last now nested as `ChildField.TableTargetField`) carries cross-cutting traits. Each permit name packs several decisions: where source comes from (root, parent-keyed, list-parent), what the fetcher does (no I/O, `@service` invocation, generated jOOQ), the field's output shape (single, list, connection), the jOOQ contribution (none, inlined column, own SELECT, UNION ALL, DML), modifiers (lookup mapping, error channel, splitQuery). `QueryServiceRecordField` collapses three of these onto one identifier; the former `RecordLookupTableField` collapsed four, and its merge into the source-gated `BatchedLookupTableField` (R432, Done) is the first executed proof that storing an axis as a fact beats splitting a permit on it. The cross product is the permit set; adding a value to any axis multiplies the permits below it.
+**Field-side classification.** 51 leaf permits across `QueryField` (13), `MutationField` (15), `ChildField` (23) at the 2026-07-20 count (re-measured 2026-08-01: still 51, now 12 / 15 / 24; R563's baseline section carries the current census); the set grew as source/operation/target slices landed, then shrank as the R431/R432/R314 batched merge retired leaves, so re-measure at pickup. `TypeFetcherGenerator` dispatches per-leaf with one arm per permit. A mixin-interface overlay (`BatchKeyField`, `SqlGeneratingField`, `MethodBackedField`, `LookupField`, and `TableTargetField`, the last now nested as `ChildField.TableTargetField`) carries cross-cutting traits. Each permit name packs several decisions: where source comes from (root, parent-keyed, list-parent), what the fetcher does (no I/O, `@service` invocation, generated jOOQ), the field's output shape (single, list, connection), the jOOQ contribution (none, inlined column, own SELECT, UNION ALL, DML), modifiers (lookup mapping, error channel, splitQuery). `QueryServiceRecordField` collapses three of these onto one identifier; the former `RecordLookupTableField` collapsed four, and its merge into the source-gated `BatchedLookupTableField` (R432, Done) is the first executed proof that storing an axis as a fact beats splitting a permit on it. The cross product is the permit set; adding a value to any axis multiplies the permits below it.
 
 **Classification-failure encoding.** `GraphitronType.UnclassifiedType` and `GraphitronField.UnclassifiedField` ride as permits alongside legitimate types and fields, carrying typed `Rejection` payloads. `GraphitronSchemaValidator.validateUnclassifiedType` / `validateUnclassifiedField` translate-then-project — the validator does a half-job (walk Unclassified carriers; project payloads to ValidationError) on top of its real job (cross-type invariants).
 

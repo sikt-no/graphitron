@@ -7,7 +7,7 @@ priority: 3
 theme: classification-model
 depends-on: []
 created: 2026-06-18
-last-updated: 2026-07-20
+last-updated: 2026-08-01
 ---
 
 # The Graphitron data model
@@ -37,9 +37,11 @@ reached by a foreign key); together those trigger a `join` and a `select`. No le
 table field reached by a reference"; the facts do, and they add rather than multiply.
 
 This item is the **model**: the facts, the method graph, and the integrity check that ties them
-together. Re-platforming the generator's emit onto the model is owned by the **R549**
-(`facts-and-commands`) programme, which consumes this model slice by slice; **R314** (Done) shipped its
-reentry beachhead. Suggested
+together. Re-platforming the generator's emit onto the model was executed by the **R549**
+(`facts-and-commands`) programme (Done 2026-08-01; see `roadmap/changelog.md`), which consumed this
+model slice by slice after **R314** (Done) shipped its reentry beachhead; the front half (the
+`operation` relation materialized as walked facts, dissolving the classifier's operation-encoding
+leaves) is owned by the **R563** (`operation-relation`) programme. Suggested
 reading order is this orientation, then *The model* (the ER diagram and the fact catalog) and *What the
 model enables*, then the detail: the front half (*The normalized schema: the coordinate and its facts*)
 and the back half (*Operations are realized by seams*). The lettered **Discovery** threads (A-K) at the
@@ -321,7 +323,7 @@ it runs. It does not select the columns the other two live on: the authored form
 the description text, the source position. Those columns are in the base regardless; code generation simply
 does not project them. Calling code generation "the model" was the original error; it is the projection that
 selects the fewest columns and imposes the strictest precondition, no more privileged than the others.
-Re-platforming the emit onto the facts is the R549 programme; R314 (Done) was its reentry beachhead.
+Re-platforming the emit onto the facts was the R549 programme (Done 2026-08-01); R314 (Done) was its reentry beachhead.
 
 **The invariant that keeps it one model: the projection seam re-sources from the facts.** Today
 `CatalogBuilder.projectFieldClassification` switches over the classifier's leaf permits to build
@@ -507,8 +509,8 @@ this spec, and it is neither the field nor either library type. It is the **emit
 > name. The leaf zoo, the per-field "graphitron field", and the two library types (`DataFetcher`,
 > `QueryPart`) are all denormalized or partial views of that one graph.
 
-This spec is the **model**; consuming it (re-platforming the generator onto the lowering) is the R549
-programme's job, of which R314 (Done) shipped the reentry slice. The graph framing was reached by walking the actual emitters; the **Discovery** section
+This spec is the **model**; consuming it (re-platforming the generator onto the lowering) was the R549
+programme's job (Done 2026-08-01), of which R314 (Done) shipped the reentry slice. The graph framing was reached by walking the actual emitters; the **Discovery** section
 below records that chain, each step pinned to a current emitter with line numbers. It superseded an
 earlier, narrower headline ("a coordinate lowers to one `DataFetcher` plus one or more `org.jooq.QueryPart`s")
 that named the SQL-side unit a level too fine. That earlier framing is kept in Discovery as the path in,
@@ -1446,24 +1448,25 @@ node of its own (thread K's pair partition). The acceptance test for the finishe
 bidirectional closure invariant.
 
 Rows 1 to 9 are the seams the generator already cuts (the migration baseline; full detail in *Current seam
-topology* below). Rows 10 to 11 are the decided new seams (the 2026-06-19 target topology of thread K). Rows
-12 to 16 are the open surface: fragments inlined today whose promotion-or-inline verdict is what we iterate.
+topology* below). Rows 10 to 11 are the decided new seams (the 2026-06-19 target topology of thread K; both
+landed in the R549 window). Rows 12 to 16 were the open surface: rows 12 to 14 closed as command data, rows
+15 to 16 remain the fragments whose promotion-or-inline verdict is still open.
 This table is the back-half view of the coordinate's `operation` relation; *Operations are realized by seams*
 below draws the member-to-seam crosswalk that wires the two together.
 
 | # | Candidate node | Today's emitter | Granularity | Regime (J) | Seam verdict (rule a/b/c) | Naming target / open issue |
 |---|---|---|---|---|---|---|
-| 1 | `<Type>Fetchers.<field>(env)` | `FetcherEmitter`, `DataLoaderFetcherEmitter` | field, 1:1, total | class R2, method R1 | seam (a): picks root / child / service strategy | lift class name to R1 |
+| 1 | `<Type>Fetchers.<field>(env)` | `FetcherEmitter`, `DataLoaderFetcherEmitter` | field, 1:1, total | R1 (the class suffix single-homed at `GeneratedUnits.FETCHERS_SUFFIX`, 2026-08-01 reading) | seam (a): picks root / child / service strategy | landed; the cross-class edges the fetcher bodies reference are rows of the fetcher-edge relation (`FetcherEdgeCommands`) |
 | 2 | `<Type>.$project(grouped, table, env)` | `ProjectionUnitRenderer` (command-driven; landed 2026-07-29, R549 slice 3.1) | one method per projection unit: anchors, `(anchor, typeName)` nesting units, per-coordinate pivot units | R1 (unit addresses minted by `GeneratedUnits`, the call composed by `render/ProjectionCall` at every host) | seam (b, c): reused + assertable | landed; unmigrated launcher hosts read the same call emitter, so the literal has one home |
 | 3 | `rows<X>` / `load<X>` | `SplitRowsMethodEmitter`, `MultiTablePolymorphicEmitter` | anchor (SELECT launcher) | R1 | seam (a, b): batched/direct dispatch + reuse | settled (`rowsMethodName`) |
 | 4 | `scatter*ByIdx` | `SplitRowsMethodEmitter` | dedup-by-class | R2 | seam (b): class-level reuse | lift to R1 |
 | 5 | `<field>Condition(...)` | `ConditionGlueRenderer` (command-driven; landed 2026-07-29, R552) | one glue method per `(coordinate, table)` row, classes grouped per parent type | R1 (class and method refs minted by `GeneratedUnits`; every consumer emits the shared `ConditionGlueCall`) | seam (c): assertable | landed; the lift closed on both ends (the entity layer, its `className()`/`methodName()` naming facts, and the shim's `+ "Condition"` formula all retired) |
 | 6 | join-path helper | `JoinPathEmitter` | per join path | R1 | seam (b): reused | settled (`MethodRef`) |
-| 7 | `<field>InputRows` | `LookupRows` (render core; legacy root hosts delegate) | per lookup field | R1 on the migrated side (`GeneratedUnits.inputRowsMethod` minted onto the lookup wrap), R2 at the unmigrated root hosts (same formula, one spelling) | seam (c): assertable | half-lifted 2026-07-29; the root-host end lifts with R541 (slice 3c) |
+| 7 | `<field>InputRows` | `LookupRows` (render core) | per lookup field | R1 (`GeneratedUnits.inputRowsMethod` is the single mint) | seam (c): assertable | landed; the root-host end lifted with R541 (Done) |
 | 8 | `create<Bean>` / `create<Record>` / `decode<Record>` | `InputBeanInstantiationEmitter`, `JooqRecordInstantiationEmitter` | dedup-by-class | R2 | seam (b): class-level reuse | lift to R1 |
-| 9 | `<field>OrderBy` | `OrderByResultClassGenerator` | per orderable field | R2 | seam (c): assertable | lift to R1 |
-| 10 | Root Query unit (the root `rows<X>`-equivalent) | inlined in `TypeFetcherGenerator`'s root builders today (corrected 2026-07-26; `SelectMethodBody` is the already-named entity-dispatch unit) | anchor | new | seam (c): assertable; one unit *kind* across root and child, instances stay per-coordinate (verdict letter corrected 2026-07-26: root and child WHERE clauses differ, no literal sharing) | new R1 edge; the decided 2026-06-19 target (closes the root/child asymmetry); owned by R541, which lands it as a coordinate-keyed launcher command (R549 slice 3c) rather than as a named unit an emitter reads facts for |
-| 11 | Service-call unit | inlined via `ServiceMethodCallEmitter` today | per service-backed field | new | seam (a): service vs query strategy | new R1 edge; the service-backed arm of the same delegation |
+| 9 | `<field>OrderBy` | `TypeFetcherGenerator` (helper emit) + `OrderByFragments` (render core); the standalone generator retired in the R549 window | per orderable field | R1 (`GeneratedUnits.orderByHelperMethod` is the single mint, read at the launcher row's `Ordering.Helper` arm and at the helper emit; the only `+ "OrderBy"` in main source, 2026-08-01 reading) | seam (c): assertable | landed |
+| 10 | Root Query unit (the root `rows<X>`-equivalent) | `RootLauncherRenderer` (command-driven; landed with R541, Done) | anchor | R1 (the launcher relation's minted unit addresses) | seam (c): assertable; one unit *kind* across root and child, instances stay per-coordinate (verdict letter corrected 2026-07-26: root and child WHERE clauses differ, no literal sharing) | landed by R541 as a coordinate-keyed launcher command rather than as a named unit an emitter reads facts for; the root/child asymmetry is closed |
+| 11 | Service-call unit | the launcher relation's `LaunchSource.ServiceCall` / `ServiceTableLift` arms (render core `ServiceRowsFragments`; `ServiceMethodCallEmitter` renders the call fragment inside the unit) | per service-backed field | R1 (with the launcher family) | seam (a): service vs query strategy | landed in the R549 window as the service-backed arm of the same delegation |
 | 12 | Inline column-reference arm | `SelectTerm.ScalarSubselect` / `SelectTerm.Column` (command data; emitter retired 2026-07-29) | term of a `Contribution.Project` | n/a | resolved: stays inline as a term, but assertable as data (the pipeline tier reads the produced term, no promotion needed) | closed |
 | 13 | Inline table-field arm | `CallWrap.Multiset` (command data; emitter retired 2026-07-29) | wrap of a `Contribution.Call` | n/a | resolved: folds into Projection as data; the `Y.$project` edge is a typed `UnitRef` on the call | closed with row 2 |
 | 14 | Inline lookup table-field arm | `CallWrap.LookupMultiset` (command data; emitter retired 2026-07-29) | wrap of a `Contribution.Call` | n/a | resolved: folds into Projection as data, its rows helper a minted `UnitMethodRef` (row 7) | closed with row 13 |
@@ -1495,14 +1498,20 @@ The member-to-seam crosswalk (the column the worklist deferred to here):
 
 | `operation` member | Trigger fact (front half) | Realizing seam (worklist row) | Naming regime |
 |---|---|---|---|
-| `select` (projection) | table-bound `target` | Projection `$fields` (2) | R2, lift to R1 |
-| `select` (launch / FROM) | a `source` anchor | Query unit / rows-method (3; root 10) | R1 child, new for root |
+| `select` (projection) | table-bound `target` | Projection `$project` (2) | R1 (landed 2026-07-29) |
+| `select` (launch / FROM) | a `source` anchor | Query unit / rows-method (3; root 10) | R1 (root landed with R541) |
 | `paginate` | pagination args / `Connection` | applied within the Query unit (3, 10) | with the query unit |
-| `join` | the `reference` fact | join-path helper (6); lookup `InputRows` (7) | R1 (6), R2 (7) |
-| `condition` | `@condition` / filter inputs | Condition (5) | R1 + R2 (half-migrated) |
-| `orderBy` | `@orderBy` | OrderBy (9) | R2, lift to R1 |
-| `serviceCall` | `@service` | Service-call unit (11) | new |
+| `join` | the `reference` fact | join-path helper (6); lookup `InputRows` (7) | R1 (6, 7) |
+| `condition` | `@condition` / filter inputs | Condition (5) | R1 (closed 2026-07-29, R552) |
+| `orderBy` | `@orderBy` | OrderBy (9) | R1 (`GeneratedUnits.orderByHelperMethod`) |
+| `serviceCall` | `@service` | Service-call unit (11) | R1 (the launcher family's service arms) |
 | `nest` (empty set) | non-table nesting | no seam; DataFetcher (1) regroups | n/a |
+
+(The naming-regime column was refreshed 2026-08-01 against the landed R549 state; every operation seam is
+now regime 1.) One debt this crosswalk still owes: its member vocabulary has no written mapping to the
+shipped 17-arm `Operation` seal the classifier computes today. Writing that mapping as code, a
+compile-total switch from the leaf model to member *sets*, is R563's slice-1 deliverable; it is reviewed
+there rather than derived here, and this table stays the vocabulary it maps onto.
 
 Two things the crosswalk makes visible. First, `select` lands on **two** seams (the projected column list in
 `$fields`, and the FROM/launch in the Query unit), the back-half echo of `target` being read by two views in
@@ -1823,12 +1832,20 @@ contribution.
   Acceptance across the run-up is **execution-tier equivalence** (same rows, same order, error paths
   intact), not byte-for-byte generated-output equality: the goal is gradual improvement toward this
   model, and slices may normalize generated-code shape as they go.
-- **R549** (facts-and-commands): the emit-re-platforming programme, and the successor to the wholesale
-  reading of R314 above. It consumes this model without re-litigating it, labels the sealed hierarchies by
-  provenance and grain, and executes the back half as three command relations (global, type-keyed,
-  coordinate-keyed), with the projection command as its keystone. The seam worklist below stays this
-  document's living table: R549's per-family recipe updates the corresponding rows as each family's
-  verdict lands, so the two items cannot drift on seam decisions.
+- **R549** (facts-and-commands, Done 2026-08-01; see `roadmap/changelog.md`): the emit-re-platforming
+  programme, and the successor to the wholesale reading of R314 above. It consumed this model without
+  re-litigating it, labelled the sealed hierarchies by provenance and grain, and executed the back half
+  as coordinate-keyed command relations (launcher, condition, projection, fetcher-edge) the shell folds
+  over, with the projection command as its keystone. The seam worklist above was this document's living
+  table through that window: the rows were updated as each family's verdict landed, and the table plus
+  the member-to-seam crosswalk were refreshed against the shipped state 2026-08-01.
+- **R563** (operation-relation, Spec): the front-half successor programme. It consumes this model's
+  normalized schema, trigger rule, member-to-seam crosswalk and corpus resolution verbatim, and
+  materializes `coordinate -> operation` as walked trigger facts joined into a member view on the
+  schema, dissolving the classifier's operation-encoding leaves additively. Its slice 1 owes the one
+  crosswalk debt named above (the written mapping from the member vocabulary to the shipped seal, as
+  code). Its landing plausibly discharges this item's stay-Ready condition (the emit re-platforming no
+  longer consuming the document); that call belongs to this item's own gate.
 - **R222** (dimensional-model-pivot): the umbrella this model grew out of, and it keeps the
   umbrella/stage-tracking role; slices keep filing under its stages. Where its sketches lag this
   document (notably the Stage 3 destination sketch and the carrier table), **this document governs
@@ -2033,9 +2050,12 @@ TypeSpecs, collects declared method names and intra-generated call references, a
 callee resolves to an emitted method (R410's `TypeSpecReferenceWalk` is the same walking pattern at
 file granularity). Level 1 is valid before any re-platforming and survives it as the harness. The
 **bidirectional** form (every emitted method is exactly one command's output; every callee name
-resolves to a committed command) needed the command/name registry; R314 (Done) landed the registry in
-main source and populated it for the whole reentry family (`ReentryCommandClosureTest`), and later
-emit slices extend it family by family.
+resolves to a committed command) needed committed names in main source. R314 (Done) first landed them
+as a dedicated command/name registry (the main-source `methodgraph` package); the R549 programme then
+re-sourced the closure onto the command relations themselves and retired that registry (2026-07-30):
+the relations' minted unit addresses (`GeneratedUnits`) are the committed names, and the closure joins
+bidirectionally through the re-sourced tests (`LauncherRelationClosureTest` and the level-1
+`MethodClosureOracleTest`, both still in the test-side `methodgraph` package).
 
 **Landed (2026-07-14):** `EmittedMethodClosure` (the walk: node relation = declared methods keyed by
 unit + nested-type path; edge relation = statically-qualified generated-to-generated callee
