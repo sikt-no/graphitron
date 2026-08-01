@@ -240,6 +240,50 @@ stop doing is deriving *membership* from leaf identity.
   If a later slice retires it after its readers migrate, the principles doc repoints in the same
   commit.
 
+## The co-occurrence grammar
+
+The 17-arm seal made a novel operation combination unrepresentable (one arm per coordinate); the
+open member set needs that legality structure stated, and the review pass asked for it bound here
+rather than deferred to the implementer. The grammar is layered because the combinations carry
+three different kinds of structure, each with a home the tree already uses for that kind of fact:
+
+1. **Constitutive dependencies are typed edges.** A member whose meaning refines another carries a
+   typed reference to it (the paginate member windows the select it pages; the lookup member keys
+   the select it refines), the same shape as the `LaunchSource` arms holding a `UnitRef` to their
+   projection unit. The illegal combination is unrepresentable at construction, never rejected
+   downstream; this is the sealed-hierarchies-over-enums discipline covering the strongest rules
+   for free.
+2. **Multiplicity is the member key.** Per-kind cardinality (one write, one paginate; condition
+   rows per `resolvedTable`; join 0..N because input-side references mint joins too) is stated
+   once, in the `(coordinate, member)` key's per-kind discriminant (the member-key design debt),
+   never restated as rules beside the key.
+3. **The fence during the additive window is a derived image.** Slice 1's compile-total switch
+   carries a declared shape per leaf arm: the required member kinds plus the payload-gated optional
+   ones (a Fetch arm yields `{select}` required with `condition`, `orderBy`, `join` optional). The
+   admitted combination set is the *image* of that switch, mechanically enumerable, so the fence
+   cannot drift from the projection that defines it; a hand-maintained allow-list (which drifts
+   silently) is unconstructible by design. A combination outside the image is rejected. The
+   per-arm shape declarations are the grammar's statement, reviewed as code with the crosswalk.
+4. **At dissolution the image graduates to a declared, ratcheted relation.** Each 6x slice seeds
+   the dissolving family's admitted combinations from the final leaf-derived image into the
+   dispatch partition's member-grain successor; thereafter a newly legal combination is a
+   deliberate, visible row edit gated by `ValidateMojo`. This is the reject-by-default rule of
+   *Production path and coexistence* given its mechanism, and the seeding guarantees the declared
+   set starts equal to what the emit actually implements rather than being reconstructed from
+   memory.
+5. **Structural implications are theorems, not fences.** Statements like "every paginate co-occurs
+   with a select" and "write never co-occurs with lookup" are asserted as tests over the admitted
+   set: layers 1 and 3 gate, these document, and an edit that breaks structure nobody intended to
+   break fails loudly.
+
+One shape is refused by name so review does not re-propose it: a sealed enumeration of combination
+profiles (`FetchProfile`, `PaginatedLookupProfile`, ...) is the leaf zoo reborn at combination
+grain and dies by the same argument as the 17-arm seal, since an independent new trigger would
+multiply profiles instead of adding a row. And one generosity is deliberate: the image over
+independent optionals is a per-arm powerset, admitting combinations no fixture exercises yet. That
+is the additive thesis working as intended, and slice 2's member-grain census makes the
+admissible-versus-observed gap visible data rather than a surprise.
+
 ## Production path and coexistence
 
 The same discipline as R549's cutovers: additive, equality-pinned, then destructive.
@@ -283,8 +327,8 @@ generalizes into the member set's **co-occurrence default**, adopted from the Sp
 member set does not, so a member combination no current leaf produces is **rejected by default**
 and becomes legal only through a deliberate edit to the dispatch partition's member-grain
 successor. Legal-by-default with the rejection list as the only fence would contradict the
-no-silent-enablement rule above; the compatibility invariant's exact shape (a small co-occurrence
-check versus the partition edit alone) is bound at slice 1's design record.
+no-silent-enablement rule above; the full layered statement is *The co-occurrence grammar* above,
+and slice 1 owes only its mechanical encoding.
 
 ## Invariants
 
@@ -332,7 +376,7 @@ migration payment**: each ships a simplification, a deletion, or a capability, n
 
 | # | slice | why here | cost |
 |---|---|---|---|
-| 1 | **The skeleton: member view + first honest readers.** The sealed `OperationMember` family and the member view on `GraphitronSchema`, derived from the current leaves by one compile-total switch returning member *sets* (the vocabulary crosswalk written as that code); population pin; hierarchy-kind labels; and the first honest readers re-sourced: `OutputField.requiresReFetch()` and `emitsKeyedReQuery()` become member-presence reads ("has a serviceCall or write member"; "has a reentry member"), retiring their `default ->` arms | cheapest complete vertical with real readers (the consult falsified the display-reader claim: LSP hover and MCP view read the root type name, not the model arm); the two derived predicates are the exact "compound predicate over one slot" smell the programme cures, and the crosswalk debt is paid where it is enforceable | low |
+| 1 | **The skeleton: member view + first honest readers.** The sealed `OperationMember` family and the member view on `GraphitronSchema`, derived from the current leaves by one compile-total switch returning member *sets* (the vocabulary crosswalk written as that code), whose arms carry the per-arm shape declarations (required plus payload-gated optional kinds) the co-occurrence grammar's admitted image derives from; population pin; hierarchy-kind labels; and the first honest readers re-sourced: `OutputField.requiresReFetch()` and `emitsKeyedReQuery()` become member-presence reads ("has a serviceCall or write member"; "has a reentry member"), retiring their `default ->` arms | cheapest complete vertical with real readers (the consult falsified the display-reader claim: LSP hover and MCP view read the root type name, not the model arm); the two derived predicates are the exact "compound predicate over one slot" smell the programme cures, and the crosswalk debt is paid where it is enforceable | low |
 | 2 | **Instruments.** The leaf ratchet installed at current counts; the axis-pair census gains a member-grain extraction beside the coordinate-grain one (both print; the coordinate-grain rows stay valid as the empty-or-one projection); baseline measurement rows recorded in this file | the ratchet must precede the migration it measures, and the census must exist before slice 3 commits to the member vocabulary it would falsify | low |
 | 3 | **The keystone: trigger slots and their join.** The trigger relation lands as `GatheredFacts` slots filled by per-trigger `FactVisitor`s (`PaginationFacts` is the precedent and the paginate slot already); the member view re-sources from the leaf-derived projection onto the joined slots under an equality pin; the projection then retires; payloads single-home (leaf records shed `filters`/`orderBy`/`pagination`/`lookupMapping` components as their readers move, with `SqlGeneratingField` preserved as a derived view per the design above); `OutputField.operation()` narrows to a derived summary over the member set until slice 4 retires it | designing this validates or breaks the model: production from triggers is the whole thesis, it uses the fact-visitor engine the ratchet's own javadoc names as the mechanism, and it lands against the frozen emit with no SQL change | medium |
 | 4 | **The remaining `operation()` readers re-source and the accessor retires.** `TenantBindingIndex`'s roughly eight sites (the `fanOutArmOf` rejection ladder and `directSlots`) and `TenantDslEmitter.slotReads` read member rows; their `participantFilters()` fallbacks dissolve (participant filters are condition-member payload); the validator diagnostic re-words off members; `OutputField.operation()` and the three leaf-identity `operation()` switches retire; `Operation`'s summary arms narrow to whatever the corpus still names (decided at slice 7) | the places the one-arm assumption already visibly fails, and the retirement of the summary column's last readers; sized medium because the fan-out ladder and the reentry guard are behavioral dispatch, not display. Review attention concentrates here (Spec-review emphasis): the `fanOutArmOf` re-source is where the member vocabulary's sufficiency is actually tested, and a vocabulary gap surfaces at this slice before any other | medium |
@@ -471,10 +515,11 @@ retires it, and the sweep at each gate runs against what has actually shipped.
 Three non-blocking suggestions from the review pass, all adopted, each folded into the section it
 belongs to rather than living here as a side channel:
 
-- **State a member co-occurrence grammar.** Adopted as reject-by-default: a member combination no
-  current leaf produces is rejected until the dispatch partition's member-grain successor
-  deliberately admits it. Bound in *Production path and coexistence* (the co-occurrence default
-  paragraph); the invariant's exact shape lands at slice 1's design record.
+- **State a member co-occurrence grammar.** Adopted as reject-by-default, then promoted to a full
+  Spec-bound statement so the gate reviews the design rather than deferring it: *The co-occurrence
+  grammar* section carries the layered form (typed dependency edges, key-borne multiplicity, the
+  derived admitted image, the seeded declared relation, theorem tests). Slice 1 owes only the
+  mechanical encoding.
 - **Date the coexistence window.** Adopted: slice 3's landing commit opens the window with a
   `roadmap/changelog.md` line, the last 6x slice's landing commit closes it. Bound in *Progress
   measurement*.
