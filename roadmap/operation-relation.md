@@ -277,7 +277,14 @@ the sealed `WhereFilter` split (a condition member carrying a generated term, co
 lookup member), never blanket member co-presence. Rejections move to that fact grain and stay build
 errors until an emit slice deliberately implements the combination, per
 validator-mirrors-classifier; the four-way dispatch partition and its `ValidateMojo` gate are the
-enforcer, edited at each dissolution slice (see the design debt on its re-grain).
+enforcer, edited at each dissolution slice (see the design debt on its re-grain). The same rule
+generalizes into the member set's **co-occurrence default**, adopted from the Spec review: the
+17-arm seal made a novel operation combination unrepresentable (one arm per coordinate), the open
+member set does not, so a member combination no current leaf produces is **rejected by default**
+and becomes legal only through a deliberate edit to the dispatch partition's member-grain
+successor. Legal-by-default with the rejection list as the only fence would contradict the
+no-silent-enablement rule above; the compatibility invariant's exact shape (a small co-occurrence
+check versus the partition edit alone) is bound at slice 1's design record.
 
 ## Invariants
 
@@ -328,7 +335,7 @@ migration payment**: each ships a simplification, a deletion, or a capability, n
 | 1 | **The skeleton: member view + first honest readers.** The sealed `OperationMember` family and the member view on `GraphitronSchema`, derived from the current leaves by one compile-total switch returning member *sets* (the vocabulary crosswalk written as that code); population pin; hierarchy-kind labels; and the first honest readers re-sourced: `OutputField.requiresReFetch()` and `emitsKeyedReQuery()` become member-presence reads ("has a serviceCall or write member"; "has a reentry member"), retiring their `default ->` arms | cheapest complete vertical with real readers (the consult falsified the display-reader claim: LSP hover and MCP view read the root type name, not the model arm); the two derived predicates are the exact "compound predicate over one slot" smell the programme cures, and the crosswalk debt is paid where it is enforceable | low |
 | 2 | **Instruments.** The leaf ratchet installed at current counts; the axis-pair census gains a member-grain extraction beside the coordinate-grain one (both print; the coordinate-grain rows stay valid as the empty-or-one projection); baseline measurement rows recorded in this file | the ratchet must precede the migration it measures, and the census must exist before slice 3 commits to the member vocabulary it would falsify | low |
 | 3 | **The keystone: trigger slots and their join.** The trigger relation lands as `GatheredFacts` slots filled by per-trigger `FactVisitor`s (`PaginationFacts` is the precedent and the paginate slot already); the member view re-sources from the leaf-derived projection onto the joined slots under an equality pin; the projection then retires; payloads single-home (leaf records shed `filters`/`orderBy`/`pagination`/`lookupMapping` components as their readers move, with `SqlGeneratingField` preserved as a derived view per the design above); `OutputField.operation()` narrows to a derived summary over the member set until slice 4 retires it | designing this validates or breaks the model: production from triggers is the whole thesis, it uses the fact-visitor engine the ratchet's own javadoc names as the mechanism, and it lands against the frozen emit with no SQL change | medium |
-| 4 | **The remaining `operation()` readers re-source and the accessor retires.** `TenantBindingIndex`'s roughly eight sites (the `fanOutArmOf` rejection ladder and `directSlots`) and `TenantDslEmitter.slotReads` read member rows; their `participantFilters()` fallbacks dissolve (participant filters are condition-member payload); the validator diagnostic re-words off members; `OutputField.operation()` and the three leaf-identity `operation()` switches retire; `Operation`'s summary arms narrow to whatever the corpus still names (decided at slice 7) | the places the one-arm assumption already visibly fails, and the retirement of the summary column's last readers; sized medium because the fan-out ladder and the reentry guard are behavioral dispatch, not display | medium |
+| 4 | **The remaining `operation()` readers re-source and the accessor retires.** `TenantBindingIndex`'s roughly eight sites (the `fanOutArmOf` rejection ladder and `directSlots`) and `TenantDslEmitter.slotReads` read member rows; their `participantFilters()` fallbacks dissolve (participant filters are condition-member payload); the validator diagnostic re-words off members; `OutputField.operation()` and the three leaf-identity `operation()` switches retire; `Operation`'s summary arms narrow to whatever the corpus still names (decided at slice 7) | the places the one-arm assumption already visibly fails, and the retirement of the summary column's last readers; sized medium because the fan-out ladder and the reentry guard are behavioral dispatch, not display. Review attention concentrates here (Spec-review emphasis): the `fanOutArmOf` re-source is where the member vocabulary's sufficiency is actually tested, and a vocabulary gap surfaces at this slice before any other | medium |
 | 5 | **Back-half membership re-sources.** The plan producers derive membership from member presence instead of leaf identity: `LauncherCommands.MINTING_KINDS` becomes anchor-hood (a view over the delivery fact) joined with the members the launch hosts; `ProjectionCommands.contributionFor`'s operation-grain arms (the Multiset-vs-LookupMultiset fork, the Nest/Pivot walk) read members; `ConditionCommands` re-keys its membership onto the condition member (it is already fact-grain; this aligns the fact's home). `PLAN_LEAF_REFERENCES` falls and is re-pinned. One property must survive the re-source: the three total minting switches' compile error for an undecided new leaf (their javadoc names the totality as the enforcer) is not traded for a bare boolean predicate; the slice's design record names the replacement enforcer (the delivery fact's own total classification plus the member-population census) | this is where the R549 relations become views over the front half, which is the programme's architectural claim; doing it before dissolution means the leaves die with no readers left | medium |
 | 6a | **Dissolution: the lookup triplet.** `LookupTableField`, `BatchedLookupTableField`, `QueryLookupTableField` fold into their Fetch siblings plus a lookup member; the dropped-facts class becomes unrepresentable; the generated-filter-on-lookup rejection re-grains onto its real predicate (a condition member carrying a generated `WhereFilter` term co-present with a lookup member; authored `@condition` on lookup stays supported exactly as today); the dispatch partition's dual-arm list and stub sets update with the fold | first dissolution because the census evidence is sharpest here and the surviving siblings already carry every component | medium |
 | 6b | **Dissolution: the DML verb split.** `DmlTableField`'s four verb leaves and the payload arms' verb half fold onto the sealed write-member family, whose arms keep the per-verb payloads and compact-constructor invariants (DELETE rejects projected returns; per-verb dialect requirements); bulk-ness stays the target wrapper; the dispatch partition and `ValidateMojo` stub gate update with the fold | the mutation router's per-verb classify methods collapse to one path plus a sealed verb member; the largest single leaf-count drop (15 mutation leaves shrink) | medium |
@@ -421,7 +428,10 @@ re-examining. The stall risk R549 named applies with the same mitigation: ratche
 conversion once it lands, so an interruption leaves a smaller model rather than two half-models; the
 widest window (between slice 3 and the last 6x slice, when leaves and members coexist with the
 leaves read-only on the operation axis) is measured by the leaf ratchet staying flat, and the
-programme's answer is the serial-delivery intent, stated plainly.
+programme's answer is the serial-delivery intent, stated plainly. The window is a dated fact, not a
+feeling (adopted from the Spec review): slice 3's landing commit appends a one-line
+`roadmap/changelog.md` entry opening it, and the last 6x slice's landing commit appends the closing
+line, so a stalled window is visible as an old date.
 
 ## Retired vocabulary
 
@@ -456,26 +466,20 @@ retires it, and the sweep at each gate runs against what has actually shipped.
   where they are.
 - **Not R562's decision**: the synthesised-fields coordinate question keeps its owner.
 
-## Reviewer suggestions (Spec review pass, 2026-08-01)
+## Reviewer suggestions (Spec review pass, 2026-08-01; dispositions recorded same day)
 
-Non-blocking, the author's call; recorded here so the next revision can adopt or decline them
-explicitly rather than lose them in a review transcript.
+Three non-blocking suggestions from the review pass, all adopted, each folded into the section it
+belongs to rather than living here as a side channel:
 
-- **State a member co-occurrence grammar.** The 17-arm seal implicitly enumerates which operation
-  combinations can exist, because a coordinate has exactly one arm; the member set is open. The
-  rejection re-grains cover the known-illegal combinations one by one, but the spec states no
-  default for a novel combination. Bind, in slice 1's or slice 3's design record, either a small
-  compatibility invariant over the member set or an explicit legal-by-default decision with the
-  rejection list as the only fence, so a surprising combination fails loudly instead of flowing
-  into emit untested.
-- **Date the coexistence window.** The widest window (slice 3 to the last 6x slice) is the
-  programme's real schedule risk and is currently measured only by the leaf ratchet staying flat.
-  Record the window's opening in `roadmap/changelog.md` when slice 3 lands, so a stall is a dated
-  fact rather than a feeling.
-- **Budget review attention on slice 4.** The `fanOutArmOf` rejection ladder is behavioral dispatch
-  over the arm, and re-sourcing it is where the member vocabulary's sufficiency actually gets
-  tested; if any slice forces vocabulary growth, it is that one. Not a design change, a review
-  emphasis.
+- **State a member co-occurrence grammar.** Adopted as reject-by-default: a member combination no
+  current leaf produces is rejected until the dispatch partition's member-grain successor
+  deliberately admits it. Bound in *Production path and coexistence* (the co-occurrence default
+  paragraph); the invariant's exact shape lands at slice 1's design record.
+- **Date the coexistence window.** Adopted: slice 3's landing commit opens the window with a
+  `roadmap/changelog.md` line, the last 6x slice's landing commit closes it. Bound in *Progress
+  measurement*.
+- **Budget review attention on slice 4.** Adopted as a review emphasis in slice 4's row: the
+  `fanOutArmOf` re-source is where the member vocabulary's sufficiency is actually tested.
 
 ## Acceptance
 
