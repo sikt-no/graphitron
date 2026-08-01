@@ -18,9 +18,11 @@ each ship to trunk on their own. Consult-checked (principles-architect, two roun
 findings are folded into this body. R549 built the back half of the model: the emit as coordinate-keyed
 command relations (launcher, condition, projection, fetcher-edge) the shell folds over, with
 membership declared as producer data. This programme executes the front half R333 resolved and left
-waiting: `coordinate -> operation` is a 0..N relation, "the one genuinely multi-valued relation in
-the model", and storing it as a single-valued arm plus leaf identity is "the 1NF fault that
-multiplies the leaf cross-product in the first place" (R333, the normalized schema). The deliverable
+waiting: `coordinate -> operation` is a 0..N relation, the one genuinely multi-valued relation in
+the model, and storing it as a single-valued arm plus leaf identity is the 1NF fault that
+multiplies the leaf cross-product in the first place (paraphrasing R333's normalized schema, whose
+own words are "`operation` *had* to split out: it is multi-valued, so one slot was a genuine 1NF /
+repeating-group fault"). The deliverable
 is that relation materialized in the fact base, every operation payload homed on its member row
 exactly once, the classifier's operation-encoding leaf distinctions dissolved additively, and the
 corpus asserting a coordinate's operation set on declared-equals-produced agreement.
@@ -460,7 +462,7 @@ Baseline, census-measured 2026-08-01 (counting rules: `GeneratorCoverageTest.sea
 counts, `CommandSeamRatchetTest`'s patterns for dispatch, plain `wc -l` for LOC):
 
 - Leaves: `OutputField` 51 (12 query / 15 mutation / 24 child), `InputField` 4, `Operation` 17 arms.
-- Dispatch: `generators/` 71 + 76, `plan/` 156, validator 114.
+- Dispatch: `generators/` 71 + 76, `plan/` 156, validator 31.
 - `FieldBuilder` 7,879 LOC, ~49 qualified minting sites.
 - Truth table: 374 constants / 35 enums. Corpus: 51 examples.
 - `Operation` structural consumers: 2.
