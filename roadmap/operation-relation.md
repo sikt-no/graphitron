@@ -456,6 +456,27 @@ retires it, and the sweep at each gate runs against what has actually shipped.
   where they are.
 - **Not R562's decision**: the synthesised-fields coordinate question keeps its owner.
 
+## Reviewer suggestions (Spec review pass, 2026-08-01)
+
+Non-blocking, the author's call; recorded here so the next revision can adopt or decline them
+explicitly rather than lose them in a review transcript.
+
+- **State a member co-occurrence grammar.** The 17-arm seal implicitly enumerates which operation
+  combinations can exist, because a coordinate has exactly one arm; the member set is open. The
+  rejection re-grains cover the known-illegal combinations one by one, but the spec states no
+  default for a novel combination. Bind, in slice 1's or slice 3's design record, either a small
+  compatibility invariant over the member set or an explicit legal-by-default decision with the
+  rejection list as the only fence, so a surprising combination fails loudly instead of flowing
+  into emit untested.
+- **Date the coexistence window.** The widest window (slice 3 to the last 6x slice) is the
+  programme's real schedule risk and is currently measured only by the leaf ratchet staying flat.
+  Record the window's opening in `roadmap/changelog.md` when slice 3 lands, so a stall is a dated
+  fact rather than a feeling.
+- **Budget review attention on slice 4.** The `fanOutArmOf` rejection ladder is behavioral dispatch
+  over the arm, and re-sourcing it is where the member vocabulary's sufficiency actually gets
+  tested; if any slice forces vocabulary growth, it is that one. Not a design change, a review
+  emphasis.
+
 ## Acceptance
 
 The programme is not "done"; individual slices are. What signals it worked: the classifier mints no
