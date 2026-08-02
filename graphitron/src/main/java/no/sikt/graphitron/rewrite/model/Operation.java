@@ -65,7 +65,7 @@ public sealed interface Operation {
          * Holder for the two {@code @service} call carriers (see {@link ServiceCall}); the arm
          * names describe the carrier type held, not an operation distinction.
          */
-        sealed interface Call {
+        public sealed interface Call {
             /** Root {@code @service} leaf: the {@link ServiceMethodCall} structured invocation. */
             record StructuredCall(ServiceMethodCall call) implements Call {}
             /** Child {@code @service} leaf: a reflected {@link MethodRef}. */

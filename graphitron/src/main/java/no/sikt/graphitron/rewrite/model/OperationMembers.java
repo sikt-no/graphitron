@@ -21,10 +21,12 @@ import java.util.Set;
 /**
  * The leaf-to-member crosswalk: derives a coordinate's {@link OperationMember} set from its
  * classified leaf by one compile-total switch, the vocabulary mapping between the summary
- * {@link Operation} column and the member relation written as code. A projection built beside
- * the thing it replaces: the per-trigger walked production supersedes this switch when the
- * trigger slots land, and until then a new leaf fails compilation here until the crosswalk
- * covers it.
+ * {@link Operation} column and the member relation written as code. Since the keystone the
+ * schema view reads the minted trigger-fact production instead of this switch; the projection
+ * survives the coexistence window as the membership-agreement pin's comparison side, as the
+ * fallback for schemas built without the classify walk, and as the leaf-local derivation
+ * behind {@link OutputField#requiresReFetch()} / {@link OutputField#emitsKeyedReQuery()}, and
+ * a new leaf still fails compilation here until the crosswalk covers it.
  *
  * <p>{@link #DECLARED_SHAPES} is the per-leaf co-occurrence declaration: the required member
  * kinds plus the payload-gated optional ones. The admitted combination set is the <em>image</em>
@@ -420,16 +422,25 @@ public final class OperationMembers {
     }
 
     /**
-     * Appends the centrally minted reentry member and validates the finished set: the declared
-     * required kinds are all present, every produced kind sits inside the declared image, and
-     * the {@code (coordinate, member)} key holds (one member per kind, conditions distinct per
-     * table).
+     * Appends the centrally minted reentry member and validates the finished set through
+     * {@link #validateAgainstDeclaredShape}.
      */
     private static List<OperationMember> finish(OutputField leaf, List<OperationMember> base) {
         var members = new ArrayList<>(base);
         if (mintsReentry(leaf, members)) {
             members.add(new Reentry());
         }
+        return validateAgainstDeclaredShape(leaf, members);
+    }
+
+    /**
+     * Validates a finished member set against the leaf's declared shape: the declared required
+     * kinds are all present, every produced kind sits inside the declared image, and the
+     * {@code (coordinate, member)} key holds (one member per kind, conditions distinct per
+     * table). Shared by this projection and the trigger-fact production, so the co-occurrence
+     * fence has one statement regardless of which production ran.
+     */
+    public static List<OperationMember> validateAgainstDeclaredShape(OutputField leaf, List<OperationMember> members) {
         DeclaredShape declared = declaredShapeOf(leaf.getClass());
         for (Kind required : declared.required()) {
             if (members.stream().noneMatch(m -> m.kind() == required)) {

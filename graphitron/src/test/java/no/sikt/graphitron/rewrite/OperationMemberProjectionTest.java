@@ -27,13 +27,14 @@ import java.util.stream.Collectors;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The population pin for the leaf-to-member projection ({@link OperationMembers}): over every
- * classified output coordinate the corpus fixtures produce, the projected member set must equal
- * a member set derived <em>independently</em> here, from the summary {@link Operation} arm plus
- * the coordinate's other facts (target shape, source shape, the leaf's capability slots), never
- * from the projection's own leaf switch. The two derivations share no code, so a crosswalk arm
- * that drifts from what the summary column and the facts say fails per coordinate with both
- * sides printed.
+ * The population pin for the member view against the summary column: over every classified
+ * output coordinate the corpus fixtures produce, the member set the schema view serves (the
+ * minted trigger-fact production since the keystone) must equal a member set derived
+ * <em>independently</em> here, from the summary {@link Operation} arm plus the coordinate's
+ * other facts (target shape, source shape, the leaf's capability slots), never from either
+ * production's own dispatch. Together with the membership-agreement pin
+ * ({@link OperationMemberMintPinTest}, minted equals leaf-projected) this closes a three-way
+ * agreement: summary derivation, leaf projection and trigger mint cannot drift pairwise.
  *
  * <p>Alongside the per-coordinate agreement, this pins the declaration's totality (every sealed
  * {@link OutputField} leaf carries exactly one {@link OperationMembers#DECLARED_SHAPES} entry)

@@ -484,6 +484,19 @@ Slice-2 baseline (measured 2026-08-02, instruments installed):
   `emitsKeyedReQuery()` re-sourced onto member reads at slice 1, their summary-arm switches
   retired.
 
+Slice-3 baseline (measured 2026-08-02, keystone landed):
+
+- Trigger slots: 6 (`pagination`, `condition`, `orderBy`, `lookup`, `service`, `write`), each
+  population-pinned; `INPUT_OBJECT_FIELD` left the `NOT_GATHERED` waiver set.
+- The view serves the minted relation over the flat classified index; the
+  membership-agreement pin holds over the corpus plus the per-kind coverage fixtures with
+  floors where the corpus was thin (CONDITION >= 7 observations against the corpus's 1,
+  PAGINATE >= 4 against 2).
+- Leaf ratchet unchanged at 12/15/24/4 and dispatch pins unchanged at 18 / 71 + 76 / 156: the
+  coexistence window opens flat by design (model-side production landed; no generator or plan
+  membership moved yet). `Operation` structural consumers unchanged at 2; its registry label
+  is now RESOLVED_VIEW.
+
 Re-run after the keystone and after the last 6x slice. What matters is direction: leaf counts and
 the minting-site count fall with each dissolution; `FieldBuilder` sheds its per-verb router weight;
 the dispatch pins fall as membership re-sources. A slice that moves none of them is a slice worth
@@ -555,6 +568,92 @@ row, printing the kind histogram, the per-leaf admissible-versus-observed combin
 derived from `DECLARED_SHAPES`' image, and the member-kind-by-source / member-kind-by-target
 pairs; the coordinate-grain rows stay valid as the empty-or-one projection); and the baseline
 measurement rows in *Progress measurement* below.
+
+### Slice 3 (landed 2026-08-02): the keystone
+
+Landed: five per-trigger `FactVisitor`s beside the pagination precedent (`ConditionFactVisitor`,
+`OrderByFactVisitor`, `LookupFactVisitor`, `ServiceFactVisitor`, `WriteFactVisitor`), each the
+single lexical home of its directive name (`BuildContext` delegates, the `DIR_AS_CONNECTION`
+precedent), with `GatheredFacts` grown to six slots, `INPUT_OBJECT_FIELD` leaving the
+`NOT_GATHERED` waiver set (the condition and lookup gathers subscribe it), and per-slot
+population pins (`TriggerFactPopulationPinTest`); the minted member relation
+(`OperationMemberRelation`, a post-walk fold on the `TenantBindingIndex.compute` precedent)
+stored on `GraphitronSchema`, with `operationMembersOf` re-sourced onto it and the leaf-derived
+projection kept as the walk-less-schema fallback; the membership-agreement pin
+(`OperationMemberMintPinTest`: minted equals leaf-projected per coordinate over the corpus plus
+per-kind coverage fixtures, compared through a canonical `RecordComponent` rendering with a
+justified exclusion set for minted alias addresses); the slot theorems and the reentry-launcher
+agreement pin; `Operation`'s registry entry re-labelled COMMAND to RESOLVED_VIEW with the
+registrar's reasoning, and `OutputField.operation()`'s contract narrowed to the derived summary
+column; `LauncherRelation`'s single-operation javadoc sentence retired for the successor
+stating the host relationship.
+
+Decisions bound here:
+
+- **The delivery fact** (the Spec's slice-3 design debt, bound as design; materialization is
+  slice 5's, where anchor-hood becomes its first view). Two arms, `Batched(trigger)` and
+  `Inline`, with the trigger sealed as `Authored` (the `@splitQuery` / `@tenantFanOut` marker
+  set, single-homed today in `FieldBuilder.forcesSplitDelivery`) or `RecordHandedParent` (the
+  classifier's record-backed-parent arrival rule). An authored marker and a record-handed
+  parent both name the batched delivery, so they are provenances of one arm, never two arms;
+  `Inline` is the complement, and the falsifiable content is the trigger disjunction, not a
+  catch-all third arm. The service and reentry launches are derived, not arms. The arm
+  predicate's homes (`forcesSplitDelivery` plus the record-parent classification arms) migrate
+  onto the materialized fact at slice 5; the address column joins the member view when the
+  split key-projection member migrates; the trigger never reads `Source.OnlyChild`.
+- **The reentry member and the launcher key.** `LauncherRelation` stays coordinate-keyed: the
+  launch is the dispatch target a coordinate's member set renders into (one query unit hosting
+  select, condition, orderBy and paginate members in one SELECT), so a member is never a second
+  key column, and a `(coordinate, member)` re-key would hang host strategy on members that
+  never launch. The write member is deliberately unmaterialized in the launcher relation (the
+  write stays with the mutation entry point); its reentry companion launches through the
+  relation's reentry-sourced rows. The enforcer is the reentry-launcher agreement pin: over the
+  corpus's producible examples, the minted reentry-member coordinate set at DML grain equals
+  the launcher relation's reentry-sourced row set, so the two independently produced encodings
+  stay one fact.
+- **The minting discipline and the window's edges.** The production splits structurally:
+  `memberKindsOf` decides membership from facts alone (no leaf-class switch; trigger slots for
+  serviceCall and the DML write verbs, the routine chain and `@pivot` SDL facts, the Node
+  signature joined with the type verdict, target/source shape facts and the table-bound type
+  verdicts for select, the reference fact for join, capability reads for the payload-gated
+  kinds), while `payloadsFor` extracts payloads from leaf-carried resolutions, the identity
+  half the additive window sanctions. Its enumerated identity reads and their dissolution
+  owners: the write verb records (slice 6b), the pivot spec (6c), the reference-path accessor
+  arms (the walked reference home). The service payloads read the existing `ServiceField` /
+  `MethodBackedField` capabilities; the polymorphic-root filter surface gained the two-record
+  `ParticipantFilterField` capability rather than identity arms. Per-kind current edges, each
+  flipped at its family's dissolution slice: condition, orderBy, paginate and lookup membership
+  read the leaf-resolved payload presence (the resolver-reads-leaf-derived edge; for paginate
+  the walked slot already produces the carried window through `PaginationResolver`, and the
+  slice-1 carried-window gate stays, so the batched polymorphic connection still mints no
+  paginate member). The kinds whose membership inputs are shared across both productions at
+  this slice are named: select, join and reentry read the same shape/reference/record facts on
+  both sides, pinned for regression rather than independence until the delivery fact and the
+  walked reference home separate them; the reentry production reads the write and service
+  trigger slots, never a sibling member's presence.
+- **The domain boundary.** The minted relation covers the flat classified index, exactly the
+  coordinates the view served before the keystone. A nesting type's fields mint no
+  coordinate-keyed rows: the record-handoff corpus example reaches one nested coordinate
+  through two source shapes whose reentry truths differ, so a coordinate-keyed row would
+  collapse two truths; nested leaf instances keep the leaf-local derivation until the
+  mixed-reach question is taken up with the delivery fact. Synthesised coordinates carry no
+  pre-rewrite definition node, so their slot joins are empty and membership rides the shape
+  facts, matching the projection.
+- **What "source" means during the window** (stating the gap rather than leaving it to slice
+  5's reviewer): the trigger relation is the source for the slot-gathered kinds and the view's
+  production; the leaf projection remains the emit-side producer behind
+  `OutputField.requiresReFetch()` / `emitsKeyedReQuery()` (leaf-local reads with no schema in
+  reach) until the delivery fact materializes, and survives besides only as the
+  membership-agreement pin's comparison side and the walk-less-schema fallback. Payload
+  single-homing is correspondingly partial by design: the member rows are the view's single
+  production home, while the leaf payload components stay for their remaining readers (the
+  slice-4 and slice-5 re-sources), which is the "leaves read-only on the operation axis"
+  window arriving reader by reader.
+- **The summary column's status.** `Operation` re-labelled RESOLVED_VIEW (the derived summary
+  over the member rows; the payload-mirroring pin holds the column's slots equal to the member
+  payloads), `OutputField.operation()`'s javadoc narrowed to say so, and the three leaf-identity
+  `operation()` switches stay the materialisation until slice 4 retires the accessor, per the
+  retired-vocabulary table.
 
 ## Retired vocabulary
 

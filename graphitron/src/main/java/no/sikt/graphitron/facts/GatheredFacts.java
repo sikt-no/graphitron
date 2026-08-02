@@ -31,15 +31,30 @@ import java.util.function.BiConsumer;
  * classification-time read, which is what makes the relations' definition-identity keying
  * sound.
  */
-public record GatheredFacts(PaginationFacts pagination) {
+public record GatheredFacts(PaginationFacts pagination,
+                            ConditionFacts condition,
+                            OrderByFacts orderBy,
+                            LookupFacts lookup,
+                            ServiceFacts service,
+                            WriteFacts write) {
 
     public GatheredFacts {
         Objects.requireNonNull(pagination, "pagination");
+        Objects.requireNonNull(condition, "condition");
+        Objects.requireNonNull(orderBy, "orderBy");
+        Objects.requireNonNull(lookup, "lookup");
+        Objects.requireNonNull(service, "service");
+        Objects.requireNonNull(write, "write");
     }
 
     /** For harnesses that build no schema; every relation is empty. */
     public static GatheredFacts empty() {
-        return new GatheredFacts(new PaginationFacts(Map.of()));
+        return new GatheredFacts(new PaginationFacts(Map.of()),
+            new ConditionFacts(Map.of(), Map.of()),
+            new OrderByFacts(Map.of()),
+            new LookupFacts(Map.of(), Map.of()),
+            new ServiceFacts(Map.of()),
+            new WriteFacts(Map.of()));
     }
 
     /**
@@ -53,12 +68,22 @@ public record GatheredFacts(PaginationFacts pagination) {
         var visitors = FactVisitors.builtIn();
         traversal.accept(schema, new Dispatcher(visitors));
         PaginationFacts pagination = null;
+        ConditionFacts condition = null;
+        OrderByFacts orderBy = null;
+        LookupFacts lookup = null;
+        ServiceFacts service = null;
+        WriteFacts write = null;
         for (var visitor : visitors) {
             switch (visitor) {
                 case PaginationFactVisitor p -> pagination = p.relation();
+                case ConditionFactVisitor c -> condition = c.relation();
+                case OrderByFactVisitor o -> orderBy = o.relation();
+                case LookupFactVisitor l -> lookup = l.relation();
+                case ServiceFactVisitor s -> service = s.relation();
+                case WriteFactVisitor w -> write = w.relation();
             }
         }
-        return new GatheredFacts(pagination);
+        return new GatheredFacts(pagination, condition, orderBy, lookup, service, write);
     }
 
     /**

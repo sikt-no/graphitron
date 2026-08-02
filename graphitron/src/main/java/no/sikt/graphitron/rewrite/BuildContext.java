@@ -90,15 +90,16 @@ class BuildContext {
     static final String DIR_REFERENCE_FOR       = "referenceFor";
     static final String DIR_ERROR               = "error";
     static final String DIR_ROUTINE             = "routine";
-    static final String DIR_DEFAULT_ORDER       = "defaultOrder";
+    // Trigger-fact gathers own these directives' reads; each name has one home on its visitor.
+    static final String DIR_DEFAULT_ORDER       = no.sikt.graphitron.facts.OrderByFactVisitor.DIR_DEFAULT_ORDER;
     static final String DIR_SPLIT_QUERY         = "splitQuery";
-    static final String DIR_SERVICE             = "service";
+    static final String DIR_SERVICE             = no.sikt.graphitron.facts.ServiceFactVisitor.DIR_SERVICE;
     static final String DIR_EXTERNAL_FIELD      = "externalField";
-    static final String DIR_LOOKUP_KEY          = "lookupKey";
+    static final String DIR_LOOKUP_KEY          = no.sikt.graphitron.facts.LookupFactVisitor.DIR_LOOKUP_KEY;
     static final String DIR_TENANT_FAN_OUT      = "tenantFanOut";
-    static final String DIR_ORDER_BY            = "orderBy";
-    static final String DIR_CONDITION           = "condition";
-    static final String DIR_MUTATION            = "mutation";
+    static final String DIR_ORDER_BY            = no.sikt.graphitron.facts.OrderByFactVisitor.DIR_ORDER_BY;
+    static final String DIR_CONDITION           = no.sikt.graphitron.facts.ConditionFactVisitor.DIR_CONDITION;
+    static final String DIR_MUTATION            = no.sikt.graphitron.facts.WriteFactVisitor.DIR_MUTATION;
     static final String DIR_DISCRIMINATOR       = "discriminator";
     // The pagination fact's gather owns this directive's read; the name has one home there.
     static final String DIR_AS_CONNECTION       = no.sikt.graphitron.facts.PaginationFactVisitor.DIR_AS_CONNECTION;
@@ -142,7 +143,7 @@ class BuildContext {
     static final String ARG_DESCRIPTION        = "description";
     static final String ARG_DEFAULT_FIRST_VALUE = no.sikt.graphitron.facts.PaginationFactVisitor.ARG_DEFAULT_FIRST_VALUE;
     static final String ARG_CONNECTION_NAME     = "connectionName";
-    static final String ARG_OVERRIDE            = "override";
+    static final String ARG_OVERRIDE            = no.sikt.graphitron.facts.ConditionFactVisitor.ARG_OVERRIDE;
     static final String ARG_MULTI_ROW           = "multiRow";
 
     // ===== Shared state =====

@@ -211,7 +211,12 @@ class HierarchyKindRegistryTest {
         Map.entry(no.sikt.graphitron.command.LaunchSource.class, HierarchyKind.COMMAND),
         Map.entry(no.sikt.graphitron.command.TypeUnitCommand.class, HierarchyKind.COMMAND),
         Map.entry(no.sikt.graphitron.command.GlobalCommand.class, HierarchyKind.COMMAND),
-        Map.entry(Operation.class, HierarchyKind.COMMAND),
+        // Re-labelled COMMAND -> RESOLVED_VIEW at the keystone: the summary column is a derived
+        // view over the coordinate's member rows (the payload-mirroring pin holds them equal),
+        // not an emit-grain mint; its arm payloads are the same trigger-fact references the
+        // member arms carry. The COMMAND label predated the member relation and encoded the
+        // one-arm-per-coordinate reading the operation relation dissolves.
+        Map.entry(Operation.class, HierarchyKind.RESOLVED_VIEW),
         Map.entry(BodyParam.class, HierarchyKind.COMMAND),
         Map.entry(DmlReturnExpression.class, HierarchyKind.COMMAND),
         Map.entry(CallSiteExtraction.class, HierarchyKind.COMMAND),

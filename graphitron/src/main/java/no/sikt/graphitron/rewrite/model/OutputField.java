@@ -55,9 +55,16 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
     Source source(Arrival parentArrival);
 
     /**
-     * The {@code operation} dimension: the verb this field <em>performs</em>, a sealed
-     * {@link Operation} arm carrying its own payload. Built by the leaf producers from the slots
-     * they already carry; the verb-axis primitive.
+     * The operation <em>summary column</em>: one sealed {@link Operation} arm naming the
+     * coordinate's primary verb. Since the keystone this is a derived view over the
+     * coordinate's operation member rows
+     * ({@link no.sikt.graphitron.rewrite.GraphitronSchema#operationMembersOf}), not the
+     * relation itself: the member set is the {@code coordinate -> operation} fact, the
+     * payload-mirroring pin holds this column's payload slots equal to the member payloads, and
+     * a coordinate's secondary operations (the gated table-read surface beside a service call,
+     * the reentry re-select beside a write) are visible only on the member rows. The remaining
+     * readers re-source onto member reads and this accessor retires with them; until then the
+     * leaf switches behind it stay the materialisation.
      */
     Operation operation();
 

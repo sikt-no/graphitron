@@ -14,10 +14,12 @@ import java.util.Optional;
  * The launcher command relation of one generation run: one row per migrated root SELECT
  * coordinate, keyed by the coordinate alone. "Exactly one launcher per covered coordinate" is
  * the relation's key rather than a property a test hunts for; a producer minting two rows for
- * one coordinate fails here. The programme names the coordinate-keyed relation's key as
- * {@code (coordinate, operation)}; this family is single-operation (every row launches the query
- * operation's SELECT), so the operation column is deliberately absent and arrives with the
- * general launcher when a second operation kind needs it.
+ * one coordinate fails here. The key is the coordinate because the launch is the dispatch
+ * target a coordinate's operation member set renders into (one query unit hosting select,
+ * condition, orderBy and paginate members composed into one SELECT; the reentry rows host the
+ * member set's keyed re-select), so a member is never a second key column here. The write
+ * member is deliberately unmaterialized in this relation: the write stays with the mutation
+ * entry point, and only its reentry companion launches through these rows.
  *
  * <p>The covered family widens slice by slice as {@code LauncherCommands}' migration dial
  * shrinks; the derived-fact-equals-key-set membership enforcer lands with the closing slice,

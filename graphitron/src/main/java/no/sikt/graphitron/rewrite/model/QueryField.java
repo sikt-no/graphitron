@@ -210,7 +210,7 @@ public sealed interface QueryField extends RootField
         ReturnTypeRef.PolymorphicReturnType returnType,
         List<ParticipantRef> participants,
         List<ParticipantFilters> participantFilters
-    ) implements QueryField {
+    ) implements QueryField, ParticipantFilterField {
         public QueryInterfaceField {
             participants = List.copyOf(participants);
             participantFilters = List.copyOf(participantFilters);
@@ -232,7 +232,7 @@ public sealed interface QueryField extends RootField
         ReturnTypeRef.PolymorphicReturnType returnType,
         List<ParticipantRef> participants,
         List<ParticipantFilters> participantFilters
-    ) implements QueryField {
+    ) implements QueryField, ParticipantFilterField {
         public QueryUnionField {
             participants = List.copyOf(participants);
             participantFilters = List.copyOf(participantFilters);

@@ -73,7 +73,8 @@ public record GraphitronSchema(
     TenantScopes tenantScopes,
     TenantBindingIndex tenantBindings,
     Set<String> argumentReachableInputs,
-    ConnectionSynthesisRelation connectionSynthesis
+    ConnectionSynthesisRelation connectionSynthesis,
+    OperationMemberRelation operationMembers
 ) {
 
     public GraphitronSchema {
@@ -83,6 +84,7 @@ public record GraphitronSchema(
         tenantBindings = tenantBindings == null ? TenantBindingIndex.EMPTY : tenantBindings;
         argumentReachableInputs = argumentReachableInputs == null ? Set.of() : argumentReachableInputs;
         connectionSynthesis = connectionSynthesis == null ? ConnectionSynthesisRelation.EMPTY : connectionSynthesis;
+        operationMembers = operationMembers == null ? OperationMemberRelation.EMPTY : operationMembers;
     }
 
     /**
@@ -121,7 +123,7 @@ public record GraphitronSchema(
         this(types, fields, groupByType(fields), Map.of(), List.of(),
             ContextArgumentClassifier.classify(fields.values()), List.of(), Map.of(), Map.of(),
             TenantScopes.None.INSTANCE, TenantBindingIndex.EMPTY, Set.of(),
-            ConnectionSynthesisRelation.EMPTY);
+            ConnectionSynthesisRelation.EMPTY, OperationMemberRelation.EMPTY);
     }
 
     /**
@@ -178,6 +180,7 @@ public record GraphitronSchema(
     /**
      * The {@link GraphitronSchemaBuilder} constructor with the connection-synthesis relation
      * ({@link ConnectionSynthesisRelation}), the classify walk's coordinate-keyed sidecar.
+     * Defaults the minted operation member relation to its not-computed sentinel.
      */
     public GraphitronSchema(Map<String, GraphitronType> types,
                             Map<FieldCoordinates, GraphitronField> fields,
@@ -190,10 +193,31 @@ public record GraphitronSchema(
                             TenantBindingIndex tenantBindings,
                             Set<String> argumentReachableInputs,
                             ConnectionSynthesisRelation connectionSynthesis) {
+        this(types, fields, entitiesByType, warnings, diagnostics, arrivals, reachableSourceShapes,
+            tenantScopes, tenantBindings, argumentReachableInputs, connectionSynthesis,
+            OperationMemberRelation.EMPTY);
+    }
+
+    /**
+     * The {@link GraphitronSchemaBuilder} constructor with the minted operation member relation
+     * ({@link OperationMemberRelation}), the post-walk trigger-fact fold.
+     */
+    public GraphitronSchema(Map<String, GraphitronType> types,
+                            Map<FieldCoordinates, GraphitronField> fields,
+                            Map<String, EntityResolution> entitiesByType,
+                            List<BuildWarning> warnings,
+                            List<ValidationError> diagnostics,
+                            Map<String, Arrival> arrivals,
+                            Map<FieldCoordinates, Set<ReachableSourceShape>> reachableSourceShapes,
+                            TenantScopes tenantScopes,
+                            TenantBindingIndex tenantBindings,
+                            Set<String> argumentReachableInputs,
+                            ConnectionSynthesisRelation connectionSynthesis,
+                            OperationMemberRelation operationMembers) {
         this(types, fields, groupByType(fields), Map.copyOf(entitiesByType), List.copyOf(warnings),
             ContextArgumentClassifier.classify(fields.values()), List.copyOf(diagnostics), Map.copyOf(arrivals),
             Map.copyOf(reachableSourceShapes), tenantScopes, tenantBindings, argumentReachableInputs,
-            connectionSynthesis);
+            connectionSynthesis, operationMembers);
     }
 
     /**
@@ -220,7 +244,8 @@ public record GraphitronSchema(
                             ContextArgumentClassifier.Classification contextArguments,
                             List<ValidationError> diagnostics) {
         this(types, fields, fieldsByType, entitiesByType, warnings, contextArguments, diagnostics, Map.of(), Map.of(),
-            TenantScopes.None.INSTANCE, TenantBindingIndex.EMPTY, Set.of(), ConnectionSynthesisRelation.EMPTY);
+            TenantScopes.None.INSTANCE, TenantBindingIndex.EMPTY, Set.of(), ConnectionSynthesisRelation.EMPTY,
+            OperationMemberRelation.EMPTY);
     }
 
     private static Map<String, List<GraphitronField>> groupByType(Map<FieldCoordinates, GraphitronField> fields) {
@@ -268,14 +293,20 @@ public record GraphitronSchema(
      * The coordinate's operation member set: the 0..N relation
      * {@code coordinate -> operation}, one {@link no.sikt.graphitron.rewrite.model.OperationMember}
      * row per operation the coordinate triggers, keyed {@code (coordinate, member)}. The member
-     * view beside {@link #connectionSynthesis()}; currently a pure derivation from the classified
-     * leaf ({@link no.sikt.graphitron.rewrite.model.OperationMembers}'s compile-total crosswalk,
-     * the {@link #nestingReach()} no-stored-index precedent), re-sourced onto per-trigger walked
-     * facts when those land, with this read surface unchanged. Empty for a coordinate that is
-     * absent, does not classify to an {@link OutputField}, or triggers no operation (a
-     * record-read or nesting coordinate: the DataFetcher's existence is the fact).
+     * view beside {@link #connectionSynthesis()}, reading the minted trigger-fact relation
+     * ({@link OperationMemberRelation}, the post-walk fold over the gathered trigger slots and
+     * the shape facts); a schema built without the classify walk carries the not-computed
+     * sentinel and falls back to the leaf-derived projection
+     * ({@link no.sikt.graphitron.rewrite.model.OperationMembers}'s compile-total crosswalk), so
+     * the read surface is uniform across harnesses. The membership-agreement pin holds the two
+     * productions equal over the classified corpus for the coexistence window. Empty for a
+     * coordinate that is absent, does not classify to an {@link OutputField}, or triggers no
+     * operation (a record-read or nesting coordinate: the DataFetcher's existence is the fact).
      */
     public List<no.sikt.graphitron.rewrite.model.OperationMember> operationMembersOf(FieldCoordinates coord) {
+        if (operationMembers != OperationMemberRelation.EMPTY) {
+            return operationMembers.membersOf(coord);
+        }
         if (!(fields.get(coord) instanceof OutputField out)) {
             return List.of();
         }

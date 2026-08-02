@@ -23,7 +23,8 @@ import java.util.Set;
  * <p>Callbacks default to no-ops so a visitor implements exactly the kinds it subscribes; the
  * dispatcher consults {@link #kinds()} and never calls an unsubscribed callback.
  */
-public sealed interface FactVisitor permits PaginationFactVisitor {
+public sealed interface FactVisitor permits PaginationFactVisitor, ConditionFactVisitor,
+        OrderByFactVisitor, LookupFactVisitor, ServiceFactVisitor, WriteFactVisitor {
 
     /** The subject kinds this visitor gathers from. */
     Set<FactSubjectKind> kinds();

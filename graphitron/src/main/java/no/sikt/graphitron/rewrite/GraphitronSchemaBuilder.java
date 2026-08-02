@@ -314,10 +314,16 @@ public class GraphitronSchemaBuilder {
         // one consumer (the input-record emit membership today, the compile graph's inputRecord
         // nodes at the graph's migration), computed once here so no emit-side site re-derives it.
         var argumentReachableInputs = ArgumentReachableInputs.compute(ctx.types, rebuiltAssembled);
+        // The minted operation member relation: the post-walk join of the gathered trigger
+        // slots with the shape facts, the production GraphitronSchema.operationMembersOf reads.
+        // Computed over the pre-rewrite schema's definition nodes, the same artifact the
+        // trigger gather keyed.
+        var operationMembers = OperationMemberRelation.compute(
+            ctx.schema, dedupedFields, ctx.types, ctx.facts);
         var model = new GraphitronSchema(
             ctx.types, Collections.unmodifiableMap(dedupedFields), entitiesByType, ctx.warnings(),
             ctx.diagnostics(), arrivals, reachableSourceShapes, ctx.tenantScopes, tenantBindings,
-            argumentReachableInputs, connectionSynthesis);
+            argumentReachableInputs, connectionSynthesis, operationMembers);
         return new BuildResult(model, rebuiltAssembled);
     }
 
