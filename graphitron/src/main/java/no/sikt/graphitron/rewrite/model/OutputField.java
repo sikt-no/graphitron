@@ -138,15 +138,11 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
         // need the ancestor arrival that source() depends on. A RootField has no source shape and
         // never received a record.
         boolean receivedRecord = this instanceof ChildField cf && cf.sourceShape() == SourceShape.Record;
-        boolean producedRecord = switch (operation()) {
-            case Operation.ServiceCall ignored -> true;
-            case Operation.Insert ignored -> true;
-            case Operation.Update ignored -> true;
-            case Operation.Upsert ignored -> true;
-            case Operation.Delete ignored -> true;
-            default -> false;
-        };
-        return receivedRecord || producedRecord;
+        // The produced-record half is a member-presence read: each member arm answers
+        // OperationMember#producesRecord totally, so no summary-arm switch (and no default arm)
+        // re-derives which operations hand a record back.
+        return receivedRecord
+            || OperationMembers.membersOf(this).stream().anyMatch(OperationMember::producesRecord);
     }
 
     /**
@@ -171,13 +167,12 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
      * row for the encoded return arms.
      */
     default boolean emitsKeyedReQuery() {
-        if (!requiresReFetch()) {
-            return false;
-        }
-        // The root service passthrough: ServiceCall on a RootField re-projects downstream,
-        // never at its own site. Every other re-fetching coordinate (child ServiceCall,
-        // record-sourced child, DML write) owns its keyed re-query.
-        return !(operation() instanceof Operation.ServiceCall) || this instanceof ChildField;
+        // A member-presence read: the reentry member is minted centrally in
+        // OperationMembers from the same facts this predicate always encoded (a bare
+        // catalog table target, a received or produced record, minus the root service
+        // passthrough), so the compound predicate is stated once, at the mint.
+        return OperationMembers.membersOf(this).stream()
+            .anyMatch(m -> m instanceof OperationMember.Reentry);
     }
 
     /**

@@ -36,6 +36,7 @@ import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.MutationTableArgError;
 import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.Operation;
+import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.OutputField;
 import no.sikt.graphitron.rewrite.model.ParamSource;
@@ -190,6 +191,12 @@ class HierarchyKindRegistryTest {
         // resolution and the assembled schema's name presence into one resolved per-coordinate
         // product, with no walk of its own (it rides the classify walk's visits).
         Map.entry(ConnectionSynthesis.class, HierarchyKind.RESOLVED_VIEW),
+        // The operation member view: the per-coordinate join of the operation-trigger facts
+        // (today a projection over the classified leaves, ConnectionSynthesisRelation's
+        // precedent for a resolved per-coordinate product), with no walk of its own. The
+        // nested Write seal inherits this kind: the verb payloads it carries are trigger-fact
+        // references the view realizes, not emit-grain mints.
+        Map.entry(OperationMember.class, HierarchyKind.RESOLVED_VIEW),
 
         // Minted at emit grain: these describe what the emit does. The commands-in-waiting.
         Map.entry(no.sikt.graphitron.command.Predicate.class, HierarchyKind.COMMAND),

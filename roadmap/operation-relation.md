@@ -479,6 +479,55 @@ feeling (adopted from the Spec review): slice 3's landing commit appends a one-l
 `roadmap/changelog.md` entry opening it, and the last 6x slice's landing commit appends the closing
 line, so a stalled window is visible as an old date.
 
+## Slice records
+
+### Slice 1 (landed 2026-08-02): the skeleton
+
+Landed: the sealed `OperationMember` family (thirteen top-level kinds plus the sealed `Write`
+sub-family; the modeled-but-unpopulated arms `EntityResolve`, `Count`, `Facet`,
+`Write.UpdateMatching`, `Write.DeleteMatching` construct but nothing mints them); the
+compile-total 51-leaf crosswalk `OperationMembers.membersOf` with the per-leaf co-occurrence
+declaration `OperationMembers.DECLARED_SHAPES` (the grammar's admitted image is that
+declaration's per-leaf powerset over optionals, validated at construction); the member view
+`GraphitronSchema.operationMembersOf` (a pure derivation at this slice, the `nestingReach()`
+no-stored-index precedent, re-sourced onto trigger slots at the keystone with the read surface
+unchanged); the population pin `OperationMemberProjectionTest` (an independent derivation from
+the summary arm plus target/source facts, compared per coordinate over the corpus, with payload
+mirroring and a declaration-totality check against the sealed leaves); and the honest-reader
+re-source (`OutputField.requiresReFetch()`'s produced-record half reads
+`OperationMember.producesRecord()`, a total per-arm property; `emitsKeyedReQuery()` reads
+reentry-member presence; both `default ->` arms retired).
+
+Decisions bound here:
+
+- **The crosswalk vocabulary.** `Fetch` maps to `select` plus gated `condition` / `orderBy`
+  (plus `join` off the reference path); `Paginate` to those plus `paginate` gated on the
+  *carried* window payload, so a connection-shaped coordinate whose leaf carries no window (the
+  batched polymorphic connection) mints no paginate member until the walked pagination facts
+  take over production, the connection-ness staying readable on the target fact meanwhile;
+  `Lookup` to `select` plus `lookup` plus the gated slots the summary arm dropped (the census
+  fault made visible); `ServiceCall` to `serviceCall` plus the gated table-read surface on the
+  child service-table leaf; `Pivot` to `pivot` plus `join`; the DML verbs to sealed write
+  members carrying the verb payloads; `RoutineWrite` to `Write.RoutineWrite`, whose
+  `producesRecord()` is false so the shipped re-fetch truth (a routine write's response is the
+  post-commit chain re-read, not a record handed back) is preserved as an arm property rather
+  than a default arm; `NodeResolve` to the protocol member; `Nest` and every record-read leaf to
+  the empty set (the DataFetcher's existence is the fact).
+- **The member key.** The condition member is keyed `(coordinate, table)`, mirroring
+  `ConditionRelation`'s key so the front/back join is 1:1; a polymorphic root mints one
+  condition member per table-bound participant carrying filters. Every other kind admits one
+  member per coordinate; the write verb is the sealed arm of one write member, never a second
+  key column.
+- **The reentry mint.** Minted centrally in the projection from the facts the site-level
+  predicate always encoded (bare catalog table target, received or produced record, minus the
+  root service passthrough), so the compound predicate is stated once at the mint and
+  `emitsKeyedReQuery()` is a presence read.
+- **Labels.** `OperationMember` is RESOLVED_VIEW on `ConnectionSynthesisRelation`'s precedent;
+  the nested `Write` seal inherits that kind (the verb payloads are trigger-fact references the
+  view realizes, not emit-grain mints), recorded with the registrar's reasoning in the registry.
+  `Operation`'s own COMMAND entry is untouched until the slice that makes the seal a derived
+  summary.
+
 ## Retired vocabulary
 
 Declared per the item-file conventions in `roadmap/workflow.adoc`; each term names the slice that

@@ -265,6 +265,29 @@ public record GraphitronSchema(
     }
 
     /**
+     * The coordinate's operation member set: the 0..N relation
+     * {@code coordinate -> operation}, one {@link no.sikt.graphitron.rewrite.model.OperationMember}
+     * row per operation the coordinate triggers, keyed {@code (coordinate, member)}. The member
+     * view beside {@link #connectionSynthesis()}; currently a pure derivation from the classified
+     * leaf ({@link no.sikt.graphitron.rewrite.model.OperationMembers}'s compile-total crosswalk,
+     * the {@link #nestingReach()} no-stored-index precedent), re-sourced onto per-trigger walked
+     * facts when those land, with this read surface unchanged. Empty for a coordinate that is
+     * absent, does not classify to an {@link OutputField}, or triggers no operation (a
+     * record-read or nesting coordinate: the DataFetcher's existence is the fact).
+     */
+    public List<no.sikt.graphitron.rewrite.model.OperationMember> operationMembersOf(FieldCoordinates coord) {
+        if (!(fields.get(coord) instanceof OutputField out)) {
+            return List.of();
+        }
+        return no.sikt.graphitron.rewrite.model.OperationMembers.membersOf(out);
+    }
+
+    /** {@link #operationMembersOf(FieldCoordinates)} keyed by type/field name. */
+    public List<no.sikt.graphitron.rewrite.model.OperationMember> operationMembersOf(String typeName, String fieldName) {
+        return operationMembersOf(FieldCoordinates.coordinates(typeName, fieldName));
+    }
+
+    /**
      * The set of source shapes proven to reach {@code coord}. Returns the reified union for a
      * coordinate reached through more than one shape; for a single-reach coordinate (absent from the
      * stored index) derives the singleton from the parent type's classification. Returns an empty set
