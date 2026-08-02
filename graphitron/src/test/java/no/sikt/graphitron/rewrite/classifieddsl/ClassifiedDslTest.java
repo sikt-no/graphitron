@@ -3,6 +3,9 @@ package no.sikt.graphitron.rewrite.classifieddsl;
 import no.sikt.graphitron.rewrite.ExemptionRegistry;
 import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedCorpus.Example;
 import no.sikt.graphitron.rewrite.model.Operation;
+import no.sikt.graphitron.rewrite.model.OperationMember;
+import no.sikt.graphitron.rewrite.model.OperationMembers;
+import no.sikt.graphitron.rewrite.model.OutputField;
 import no.sikt.graphitron.rewrite.model.Source;
 import no.sikt.graphitron.rewrite.model.SourceShape;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
@@ -376,6 +379,81 @@ class ClassifiedDslTest {
                     firstValues.size() * secondValues.size(),
                     firstValues.size(), secondValues.size(), missing);
             }
+        }
+    }
+
+    /**
+     * The member-grain census, beside the coordinate-grain axis-pair census above (whose rows
+     * stay valid as the empty-or-one projection of the member set): one observation per
+     * {@code (coordinate, member)} row of
+     * {@link no.sikt.graphitron.rewrite.GraphitronSchema#operationMembersOf}, printing the
+     * member-kind occupancy histogram, the per-leaf admissible-versus-observed combination gap
+     * (admissible is the image of the leaf's declared shape, the required kinds plus the
+     * powerset of the payload-gated optionals; observed is the distinct member-kind sets corpus
+     * coordinates actually produce), and the member-kind-by-source and member-kind-by-target
+     * pairs in the axis-pair census's print form. The assertion is non-vacuity; the measured
+     * figures print as the re-derivable data the dissolution slices consume.
+     */
+    @Test
+    void memberGrainCensusIsDerivable() {
+        record MemberRow(Class<?> leaf, Set<OperationMember.Kind> kinds, String source, String targetShape) {}
+        var rows = new ArrayList<MemberRow>();
+        for (var example : ClassifiedCorpus.examples()) {
+            var schema = ClassifiedHarness.classify(example.sdl()).schema();
+            for (var entry : schema.fields().entrySet()) {
+                if (!(entry.getValue() instanceof OutputField leaf)) {
+                    continue;
+                }
+                var kinds = schema.operationMembersOf(entry.getKey()).stream()
+                    .map(OperationMember::kind)
+                    .collect(Collectors.toCollection(() -> EnumSet.noneOf(OperationMember.Kind.class)));
+                var source = schema.sourceOf(entry.getKey());
+                rows.add(new MemberRow(leaf.getClass(), kinds,
+                    source == null ? "?" : source.getClass().getSimpleName(),
+                    leaf.target().shape().getClass().getSimpleName()));
+            }
+        }
+        assertThat(rows.size()).as("corpus coordinates measured (census must not be vacuous)")
+            .isGreaterThan(50);
+
+        var histogram = new TreeMap<OperationMember.Kind, Integer>();
+        for (var row : rows) {
+            row.kinds().forEach(k -> histogram.merge(k, 1, Integer::sum));
+        }
+        long emptySets = rows.stream().filter(r -> r.kinds().isEmpty()).count();
+        System.out.printf("MEMBERS histogram over %d coordinates (%d empty sets): %s%n",
+            rows.size(), emptySets, histogram);
+        assertThat(histogram).as("the member census must observe populated kinds").isNotEmpty();
+
+        // Per-leaf admissible-versus-observed combination gap.
+        var observedByLeaf = new TreeMap<String, Set<Set<OperationMember.Kind>>>();
+        for (var row : rows) {
+            observedByLeaf.computeIfAbsent(row.leaf().getSimpleName(), k -> new HashSet<>())
+                .add(row.kinds());
+        }
+        for (var e : OperationMembers.DECLARED_SHAPES.entrySet()) {
+            long admissible = 1L << e.getValue().optional().size();
+            var observed = observedByLeaf.getOrDefault(e.getKey().getSimpleName(), Set.of());
+            System.out.printf("SHAPE %s: observed %d of %d admissible combinations "
+                    + "(required %s, optional %s)%n",
+                e.getKey().getSimpleName(), observed.size(), admissible,
+                new TreeSet<>(e.getValue().required()), new TreeSet<>(e.getValue().optional()));
+        }
+
+        // Member-kind pairs against the coordinate axes, one observation per member row.
+        for (var axis : List.of("source", "targetShape")) {
+            var observedPairs = new TreeSet<String>();
+            for (var row : rows) {
+                String b = axis.equals("source") ? row.source() : row.targetShape();
+                for (var kind : row.kinds()) {
+                    observedPairs.add(kind + "*" + b);
+                }
+            }
+            System.out.printf("PAIR memberKind x %s: observed %d pairs: %s%n",
+                axis, observedPairs.size(), observedPairs);
+            assertThat(observedPairs)
+                .as("member-kind pair census over %s must be observable", axis)
+                .isNotEmpty();
         }
     }
 

@@ -467,6 +467,23 @@ counts, `CommandSeamRatchetTest`'s patterns for dispatch, plain `wc -l` for LOC)
 - Truth table: 374 constants / 35 enums. Corpus: 51 examples.
 - `Operation` structural consumers: 2.
 
+Slice-2 baseline (measured 2026-08-02, instruments installed):
+
+- Leaf ratchet installed at 12/15/24/4 (query/mutation/child/input), `LeafRatchetTest`,
+  counting rule `GeneratorCoverageTest.sealedLeaves`.
+- Member-grain census (`ClassifiedDslTest.memberGrainCensusIsDerivable`, over the corpus): 195
+  output coordinates, 26 empty member sets; kind histogram SELECT=128, JOIN=20, SERVICE_CALL=24,
+  REENTRY=14, WRITE=12, ORDER_BY=10, LOOKUP=4, NODE_RESOLVE=3, PAGINATE=2, PIVOT=2, CONDITION=1.
+  Admissible-versus-observed prints per leaf; the widest gaps are the batched table families
+  (4 of 32 and 2 of 32 combinations observed) and the lookup family (1 of 16), the additive
+  image working as intended. Zero-observation shapes: `MutationUpsertTableField` (the corpus's
+  Upsert exemption) and `PivotSlotField` (empty-set leaf, no annotated corpus coordinate yet).
+- Dispatch pins unchanged by slices 1-2: `generators/` 18 entry points, 71 instanceof + 76 case;
+  `plan/` 156 (`CommandSeamRatchetTest`).
+- `Operation` structural consumers: 2 (unchanged); `OutputField.requiresReFetch()` /
+  `emitsKeyedReQuery()` re-sourced onto member reads at slice 1, their summary-arm switches
+  retired.
+
 Re-run after the keystone and after the last 6x slice. What matters is direction: leaf counts and
 the minting-site count fall with each dissolution; `FieldBuilder` sheds its per-verb router weight;
 the dispatch pins fall as membership re-sources. A slice that moves none of them is a slice worth
@@ -527,6 +544,17 @@ Decisions bound here:
   view realizes, not emit-grain mints), recorded with the registrar's reasoning in the registry.
   `Operation`'s own COMMAND entry is untouched until the slice that makes the seal a derived
   summary.
+
+### Slice 2 (landed 2026-08-02): instruments
+
+Landed: the leaf ratchet (`LeafRatchetTest`, pinned 12/15/24/4 on the
+`GeneratorCoverageTest.sealedLeaves` counting rule, downward-only with a history line per move);
+the member-grain census beside the coordinate-grain axis-pair census
+(`ClassifiedDslTest.memberGrainCensusIsDerivable`: one observation per `(coordinate, member)`
+row, printing the kind histogram, the per-leaf admissible-versus-observed combination gap
+derived from `DECLARED_SHAPES`' image, and the member-kind-by-source / member-kind-by-target
+pairs; the coordinate-grain rows stay valid as the empty-or-one projection); and the baseline
+measurement rows in *Progress measurement* below.
 
 ## Retired vocabulary
 
