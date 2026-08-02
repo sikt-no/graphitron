@@ -1,13 +1,13 @@
 ---
 id: R563
 title: "Operations as a relation: the leaf cross-product dissolves additively"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 2
 theme: classification-model
 depends-on: []
 created: 2026-08-01
-last-updated: 2026-08-01
+last-updated: 2026-08-02
 ---
 
 # Operations as a relation: the leaf cross-product dissolves additively
