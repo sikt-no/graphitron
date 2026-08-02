@@ -5,20 +5,22 @@ import no.sikt.graphitron.rewrite.ArgumentRef;
 import java.util.List;
 
 /**
- * The {@code operation} axis: the verb a field <em>performs</em>, spanning the edge from its
- * {@link Source} arrival to its {@link Target} projection. A sealed interface with {@code record}
- * arms: each arm carries exactly the slots its kind needs, which a flat enum cannot hold without
- * a kitchen-sink of optionals (the cross-product disease the dimensional model exists to cure).
- * All three axes ({@link Source}, {@link Target}, this) are sealed hierarchies.
+ * The summary-verb <em>vocabulary</em>: one sealed arm per verb the spec-by-example corpus
+ * still names in its {@code @classified(operation:)} rows. The model fact behind it is the
+ * operation member relation ({@link OperationMember}, read per coordinate through
+ * {@link no.sikt.graphitron.rewrite.GraphitronSchema#operationMembersOf}); the single-valued
+ * summary accessor and the leaf-identity switches that materialised it are retired, so no main
+ * code constructs these arms any more. The corpus derives its arm token by a precedence fold
+ * over the member rows (test-side, in the classified DSL), and this seal survives as that
+ * fold's codomain plus the arm-name mirror for the corpus SDL enum until the corpus voice
+ * re-grains to member-set assertions, which decides the family's end state.
  *
- * <p>Built populated by the leaf producers ({@code QueryField} / {@code MutationField} /
- * {@code ChildField} compute {@link OutputField#operation()} by switching on leaf identity and
- * pulling the arm payload from the slots the leaf already carries). The classifier populates only
- * the arms the current leaf set reaches, so several arms are <em>modeled-but-unpopulated</em>
- * (declared gaps, never silently absent): the connection operations {@link Count} / {@link Facet}
- * sit behind the ConnectionType quarantine, the Federation {@link EntityResolve} has no classified
- * leaf, and the condition-matched writes {@link UpdateMatching} / {@link DeleteMatching} are
- * unimplemented.
+ * <p>Several arms were <em>modeled-but-unpopulated</em> already (declared gaps, never silently
+ * absent): the connection operations {@link Count} / {@link Facet} sit behind the
+ * ConnectionType quarantine, the Federation {@link EntityResolve} has no classified leaf, and
+ * the condition-matched writes {@link UpdateMatching} / {@link DeleteMatching} are
+ * unimplemented. The arm payloads (filter lists, input args) are historical shape: their live
+ * homes are the member rows' payload slots and the leaves' capability components.
  */
 public sealed interface Operation {
 

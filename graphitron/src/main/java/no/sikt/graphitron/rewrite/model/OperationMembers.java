@@ -43,8 +43,8 @@ import java.util.Set;
  *       back-half condition relation's key so the join between the two relations is 1:1; a
  *       polymorphic root mints one condition member per table-bound participant carrying
  *       filters.</li>
- *   <li><b>Record-read and nesting coordinates map to the empty set</b> even though their
- *       summary arm reads {@code Fetch} / {@code Nest}: a Java-side target
+ *   <li><b>Record-read and nesting coordinates map to the empty set</b> even though the corpus
+ *       summarises them {@code Fetch} / {@code Nest}: a Java-side target
  *       ({@link TargetShape.Record} / {@link TargetShape.Field}, or a catalog column read off an
  *       in-memory producer record) triggers no query-composing operation, and the DataFetcher's
  *       existence is the fact.</li>

@@ -28,28 +28,6 @@ public sealed interface MutationField extends RootField, WithErrorChannel
     /** The root is the empty product; {@code parentArrival} is ignored. */
     @Override default Source source(Arrival parentArrival) { return new Source.Root.Mutation(); }
 
-    @Override default Operation operation() {
-        return switch (this) {
-            case MutationInsertTableField f -> new Operation.Insert(f.tableInputArg());
-            case MutationUpsertTableField f -> new Operation.Upsert(f.tableInputArg());
-            case MutationUpdateTableField f -> new Operation.Update(f.inputArg(), f.updateRows());
-            case MutationDeleteTableField f -> new Operation.Delete(f.inputArg(), f.deleteRows());
-            // The routine's call surface lives on the leaf's RoutineChain (read via
-            // RoutineChainField), not as arm payload.
-            case MutationRoutineWriteField f -> new Operation.RoutineWrite();
-            case MutationServiceTableField f -> OutputField.serviceCall(f.serviceMethodCall());
-            case MutationServiceRecordField f -> OutputField.serviceCall(f.serviceMethodCall());
-            case MutationServicePolymorphicField f -> OutputField.serviceCall(f.serviceMethodCall());
-            case MutationServiceTableInterfaceField f -> OutputField.serviceCall(f.serviceMethodCall());
-            case MutationDmlRecordField f -> dmlOperation(f.kind(), f.tableInputArg());
-            case MutationBulkDmlRecordField f -> dmlOperation(f.kind(), f.tableInputArg());
-            case MutationUpdatePayloadField f -> new Operation.Update(f.inputArg(), f.updateRows());
-            case MutationBulkUpdatePayloadField f -> new Operation.Update(f.inputArg(), f.updateRows());
-            case MutationDeletePayloadField f -> new Operation.Delete(f.inputArg(), f.deleteRows());
-            case MutationBulkDeletePayloadField f -> new Operation.Delete(f.inputArg(), f.deleteRows());
-        };
-    }
-
     @Override default Target target() {
         return switch (this) {
             // The return-shape slot (DmlReturnExpression) encodes both wrapper and shape: Column
@@ -76,22 +54,6 @@ public sealed interface MutationField extends RootField, WithErrorChannel
             case MutationBulkUpdatePayloadField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
             case MutationDeletePayloadField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
             case MutationBulkDeletePayloadField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
-        };
-    }
-
-    /**
-     * Maps the record-backed DML carrier's {@link DmlKind} discriminator to its write
-     * {@link Operation} arm. UPDATE / DELETE live on the walker-carrier payload leaves and are
-     * rejected by the carriers' compact constructors, so the live range is
-     * {@code {INSERT, UPSERT}}; the UPDATE / DELETE arms here are unreachable backstops keeping
-     * the switch exhaustive.
-     */
-    private static Operation dmlOperation(DmlKind kind, ArgumentRef.InputTypeArg.TableInputArg input) {
-        return switch (kind) {
-            case INSERT -> new Operation.Insert(input);
-            case UPSERT -> new Operation.Upsert(input);
-            case UPDATE, DELETE -> throw new IllegalStateException(
-                "record-backed DML carrier rejects DmlKind." + kind + " in its compact constructor");
         };
     }
 

@@ -5,7 +5,7 @@ import java.util.List;
 /**
  * The per-field tenant-binding axis: where a field's divined tenant key comes from, decided
  * once at the parse boundary from the column mappings the schema already carries. An optional
- * overlay sibling to the {@code source()} / {@code operation()} / {@code target()} axes,
+ * overlay beside the {@code source()} / {@code target()} axes and the operation member rows,
  * computed only when {@code <tenantColumn>} is configured; in single-tenant builds the axis is
  * absent (an empty index), not "everything {@link Untenanted}".
  *

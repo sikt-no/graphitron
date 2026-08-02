@@ -37,26 +37,6 @@ public sealed interface QueryField extends RootField
      */
     @Override default Source source(Arrival parentArrival) { return new Source.Root.Query(); }
 
-    @Override default Operation operation() {
-        return switch (this) {
-            // Catalog reads: Paginate when the return wrapper is a connection, else Fetch.
-            case QueryTableField f -> OutputField.readOperation(f.returnType(), f.filters(), f.orderBy(), f.pagination());
-            case QueryTableInterfaceField f -> OutputField.readOperation(f.returnType(), f.filters(), f.orderBy(), f.pagination());
-            // Table-method / polymorphic roots carry no field-level filter surface.
-            // Routine reads are Fetch over the routine-result table; no field-level filter surface.
-            case QueryRoutineTableField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
-            case QueryInterfaceField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
-            case QueryUnionField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
-            case QueryLookupTableField f -> new Operation.Lookup(f.lookupMapping());
-            case QueryNodeField ignored -> new Operation.NodeResolve();
-            case QueryNodesField ignored -> new Operation.NodeResolve();
-            case QueryServiceTableField f -> OutputField.serviceCall(f.serviceMethodCall());
-            case QueryServiceRecordField f -> OutputField.serviceCall(f.serviceMethodCall());
-            case QueryServicePolymorphicField f -> OutputField.serviceCall(f.serviceMethodCall());
-            case QueryServiceTableInterfaceField f -> OutputField.serviceCall(f.serviceMethodCall());
-        };
-    }
-
     @Override default Target target() {
         return switch (this) {
             // Catalog table reads: wrap(...) keeps the Connection -> Single(Connection) decomposition.

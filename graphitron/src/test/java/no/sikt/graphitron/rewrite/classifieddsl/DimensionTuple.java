@@ -14,7 +14,8 @@ import java.util.List;
  * The three-axis classification verdict the corpus asserts: a {@link Source} (arrival endpoint),
  * an {@link Operation} arm (verb), and a {@link Target} (projection endpoint), the dimensional
  * fingerprint the {@code @classified} directive carries, exposed by the field model through
- * {@code GraphitronSchema.sourceOf} / {@link OutputField#operation()} / {@link OutputField#target()}.
+ * {@code GraphitronSchema.sourceOf} / the member rows behind {@link #summaryArmOf} /
+ * {@link OutputField#target()}.
  *
  * <p>Each axis is compared at the altitude the {@code @classified} directive can express, the
  * <em>classification coordinate</em> (arm identity), not the payload:
@@ -51,11 +52,12 @@ public record DimensionTuple(Source source, Class<? extends Operation> operation
     /**
      * The verdict the field model produces for {@code field}, the {@code actual} side of a corpus
      * assertion. The {@code source} arm is a parent-grain fact the leaf cannot compute alone, so
-     * the caller supplies it (via {@code GraphitronSchema.sourceOf}); the {@code operation} /
-     * {@code target} arms are leaf-derived.
+     * the caller supplies it (via {@code GraphitronSchema.sourceOf}); the {@code operation} arm
+     * is {@link #summaryArmOf the summary fold over the member rows}; the {@code target} arm is
+     * leaf-derived.
      */
     public static DimensionTuple of(OutputField field, Source source) {
-        return new DimensionTuple(source, field.operation().getClass(), TargetVerdict.of(field.target()));
+        return new DimensionTuple(source, summaryArmOf(field), TargetVerdict.of(field.target()));
     }
 
     /**

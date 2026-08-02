@@ -4,8 +4,6 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 
-import java.util.List;
-
 /**
  * A classified field that emits a Java value (i.e. has a runtime resolver) and is therefore a
  * producer of its return type for its return type's child datafetchers. Sealed between
@@ -41,8 +39,9 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
      * {@link Source.Root.Query}, {@link MutationField} → {@link Source.Root.Mutation}, both ignoring the
      * argument since a root is the empty product; {@link ChildField} → {@link Source.OnlyChild} when the
      * parent's arrival is {@link Arrival#ONE}, else {@link Source.Child}). The {@code Query} /
-     * {@code Mutation} split under {@link Source.Root} is the legality gate over {@link #operation()}
-     * (write operations only on {@code Mutation}, {@link Operation.NodeResolve} only on {@code Query}).
+     * {@code Mutation} split under {@link Source.Root} is the legality gate over the coordinate's
+     * operation member rows (write members only on {@code Mutation},
+     * {@link OperationMember.NodeResolve} only on {@code Query}).
      * The arm is the emit-strategy dispatch ({@link Source.Child} → DataLoader,
      * {@link Source.Root} / {@link Source.OnlyChild} → direct).
      *
@@ -53,53 +52,6 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
      * own arm.
      */
     Source source(Arrival parentArrival);
-
-    /**
-     * The operation <em>summary column</em>: one sealed {@link Operation} arm naming the
-     * coordinate's primary verb. Since the keystone this is a derived view over the
-     * coordinate's operation member rows
-     * ({@link no.sikt.graphitron.rewrite.GraphitronSchema#operationMembersOf}), not the
-     * relation itself: the member set is the {@code coordinate -> operation} fact, the
-     * payload-mirroring pin holds this column's payload slots equal to the member payloads, and
-     * a coordinate's secondary operations (the gated table-read surface beside a service call,
-     * the reentry re-select beside a write) are visible only on the member rows. The remaining
-     * readers re-source onto member reads and this accessor retires with them; until then the
-     * leaf switches behind it stay the materialisation.
-     */
-    Operation operation();
-
-    /**
-     * Builds the read-family {@link Operation} for a leaf with a resolved return wrapper:
-     * {@link Operation.Paginate} (carrying the pagination window) when the wrapper is a Relay
-     * connection, else {@link Operation.Fetch}. The "paginated" verb thus lives on the operation axis
-     * (this {@code Paginate} vs {@code Fetch} split) while the connection <em>shape</em> lives on the
-     * target axis.
-     */
-    static Operation readOperation(ReturnTypeRef returnType, List<WhereFilter> filters,
-                                   OrderBySpec orderBy, PaginationSpec pagination) {
-        if (returnType.wrapper() instanceof FieldWrapper.Connection) {
-            return new Operation.Paginate(filters, orderBy, pagination);
-        }
-        return new Operation.Fetch(filters, orderBy);
-    }
-
-    /**
-     * A bare {@link Operation.Fetch} with no filter surface: a column / scalar projection off an
-     * already-arrived source. Its column-ness is a {@link Target} shape fact, not an operation fact.
-     */
-    static Operation bareFetch() {
-        return new Operation.Fetch(List.of(), new OrderBySpec.None());
-    }
-
-    /** The {@link Operation.ServiceCall} for a child {@code @service} leaf (reflected {@link MethodRef}). */
-    static Operation serviceCall(MethodRef method) {
-        return new Operation.ServiceCall(new ServiceCallCarrier.ReflectedMethod(method));
-    }
-
-    /** The {@link Operation.ServiceCall} for a root {@code @service} leaf (a {@link ServiceMethodCall}). */
-    static Operation serviceCall(ServiceMethodCall call) {
-        return new Operation.ServiceCall(new ServiceCallCarrier.StructuredCall(call));
-    }
 
     /**
      * The {@code target} dimension: the field's <em>projection endpoint</em>, a
@@ -116,14 +68,14 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
      * <em>holds-records</em>, not switched on leaf identity. "Holds records" is two cases on the
      * catalog-vs-domain split: the source <em>received</em> a record (a {@link ChildField} whose
      * {@link ChildField#sourceShape()} is {@link SourceShape#Record}, which the {@link Source.OnlyChild} /
-     * {@link Source.Child} arm wraps regardless of arrival), or a service / DML-write
-     * {@link Operation} <em>produced</em> one mid-field. Either way the field re-projects the table by
+     * {@link Source.Child} arm wraps regardless of arrival), or a service-call / DML-write
+     * member <em>produced</em> one mid-field. Either way the field re-projects the table by
      * correlating the record's keys to the catalog rows (mechanically a {@code VALUES(idx, key...)} join
      * with {@code ORDER BY idx}).
      *
-     * <p>Re-fetch is orthogonal to the {@link #operation()} verb: a field that re-fetches keeps
-     * its own operation. A record-sourced {@code BatchedTableField} carrier keys off a producer
-     * record while its operation stays {@link Operation.Fetch}. The predicate is single-homed
+     * <p>Re-fetch is orthogonal to the coordinate's other operation members: a field that
+     * re-fetches keeps its member set. A record-sourced {@code BatchedTableField} carrier keys
+     * off a producer record while its select member stays. The predicate is single-homed
      * here so the service/DML fetcher arms do not each re-derive it from their own leaf type;
      * {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} mirrors it against the
      * generator's actual re-fetch dispatch so the derivation and the emitter cannot drift.
@@ -131,7 +83,7 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
      * <p>The guard is the bare {@link TargetShape.Table} shape, not the {@link TargetShape.Connection}
      * container that wraps it when paginated: a connection-shaped table field paginates rather than
      * re-projecting in this derivation's sense. A
-     * catalog {@link Operation.Fetch} off a {@link SourceShape#Table} source reads the table directly
+     * catalog select member off a {@link SourceShape#Table} source reads the table directly
      * (no producer round-trip); producers whose target is a {@link TargetShape.Record} /
      * {@link TargetShape.Field} / {@link TargetShape.Column} hand back the consumed shape directly.
      * Neither re-fetches.

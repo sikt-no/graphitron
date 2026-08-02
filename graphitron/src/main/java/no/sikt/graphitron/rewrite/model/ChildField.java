@@ -46,7 +46,7 @@ public sealed interface ChildField extends OutputField
      * ({@link SourceShape#Table}); a {@code @service} / DML payload or DTO parent hands back a
      * domain record ({@link SourceShape#Record}). The classifier already projected the parent's
      * backing into this leaf's identity, so the leaf-exhaustive switch is that projection; a new
-     * leaf forces a source-shape decision the same way {@link #operation()} / {@link #target()} do.
+     * leaf forces a source-shape decision the same way {@link #target()} does.
      *
      * <p>Pinned by {@code SourceShapeProjectionTest}: every classified {@code ChildField} is
      * cross-checked against the parent type's independently-classified backing, so a leaf wired
@@ -89,47 +89,6 @@ public sealed interface ChildField extends OutputField
             case SingleRecordIdField ignored -> SourceShape.Record;
             case SingleRecordIdFieldFromReturning ignored -> SourceShape.Record;
             case ErrorsField ignored -> SourceShape.Record;
-        };
-    }
-
-    @Override default Operation operation() {
-        return switch (this) {
-            // Catalog column / scalar projections off an already-arrived source: bare reads, no
-            // filter surface. The column-ness is a target shape fact, not an operation fact.
-            case ColumnBackedField ignored -> OutputField.bareFetch();
-            case ColumnBackedReferenceField ignored -> OutputField.bareFetch();
-            case ParticipantColumnReferenceField ignored -> OutputField.bareFetch();
-            // Table targets carrying a filter surface: Paginate when the wrapper is a connection, else Fetch.
-            case TableField f -> OutputField.readOperation(f.returnType(), f.filters(), f.orderBy(), f.pagination());
-            case BatchedTableField f -> OutputField.readOperation(f.returnType(), f.filters(), f.orderBy(), f.pagination());
-            case TableInterfaceField f -> OutputField.readOperation(f.returnType(), f.filters(), f.orderBy(), f.pagination());
-            // Method-backed / polymorphic table reads carry no field-level filter surface.
-            case InterfaceField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
-            case UnionField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
-            case BatchedInterfaceField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
-            case BatchedUnionField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
-            // Lookup-keyed reads.
-            case LookupTableField f -> new Operation.Lookup(f.lookupMapping());
-            case BatchedLookupTableField f -> new Operation.Lookup(f.lookupMapping());
-            // Developer @service calls (reflected MethodRef carrier).
-            case ServiceTableField f -> OutputField.serviceCall(f.method());
-            case ServiceRecordField f -> OutputField.serviceCall(f.method());
-            // Record / passthrough scalar reads.
-            case RecordReadField ignored -> OutputField.bareFetch();
-            // The composite carrier's data field: a bare source passthrough, no filter surface.
-            case RecordCompositeField ignored -> OutputField.bareFetch();
-            case ComputedField ignored -> OutputField.bareFetch();
-            // Structural nesting (asserted, not derived from an absent join-path).
-            case NestingField ignored -> new Operation.Nest();
-            // The row-to-column pivot verb; the pivot facts live on the leaf's PivotSpec.
-            case PivotField ignored -> new Operation.Pivot();
-            case BatchedPivotField ignored -> new Operation.Pivot();
-            // A slot is a bare read of one projected aggregate off the pivot record.
-            case PivotSlotField ignored -> OutputField.bareFetch();
-            // Encoded-PK scalar carriers and the errors field: bare reads off the source record.
-            case SingleRecordIdFieldFromReturning ignored -> OutputField.bareFetch();
-            case SingleRecordIdField ignored -> OutputField.bareFetch();
-            case ErrorsField ignored -> OutputField.bareFetch();
         };
     }
 

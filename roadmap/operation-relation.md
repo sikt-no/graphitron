@@ -497,6 +497,15 @@ Slice-3 baseline (measured 2026-08-02, keystone landed):
   membership moved yet). `Operation` structural consumers unchanged at 2; its registry label
   is now RESOLVED_VIEW.
 
+Slice-4 baseline (measured 2026-08-02, accessor retired):
+
+- `Operation` structural consumers in main: 0 (was 2); `OutputField.operation()`, the three
+  leaf-identity switches and the four arm-building statics deleted; the seal survives as the
+  corpus's verb vocabulary (test-side fold plus SDL enum mirror).
+- Leaf ratchet unchanged at 12/15/24/4; dispatch pins unchanged at 18 / 71 + 76 / 156 (the
+  deleted tenant-emitter traversal was carrier-payload dispatch, outside the ratchet's
+  patterns). Emit byte-identical through both of the slice's commits.
+
 Re-run after the keystone and after the last 6x slice. What matters is direction: leaf counts and
 the minting-site count fall with each dissolution; `FieldBuilder` sheds its per-verb router weight;
 the dispatch pins fall as membership re-sources. A slice that moves none of them is a slice worth
@@ -654,6 +663,94 @@ Decisions bound here:
   payloads), `OutputField.operation()`'s javadoc narrowed to say so, and the three leaf-identity
   `operation()` switches stay the materialisation until slice 4 retires the accessor, per the
   retired-vocabulary table.
+
+### Slice 4 (landed 2026-08-02): the remaining readers re-source and the accessor retires
+
+Landed in two commits, applying the programme's additive-then-destructive discipline one level
+down: the first commit ships the member-derived replacements pinned equal to the summary column
+they replace, the second deletes the column, so the equality is demonstrated in history rather
+than asserted after the fact.
+
+First commit (the tenant re-source):
+
+- `TenantBindingIndex` reads the coordinate's minted member rows: the builder computes the
+  member relation ahead of the tenant fold and threads it in, and the fold rejects the `EMPTY`
+  sentinel at entry, so the classifier and the routing emitter provably read one walk-minted
+  production. `directSlots` walks the whole member surface (every condition member's filters,
+  which subsumes the per-participant polymorphic fallback; the lookup member's key mapping; an
+  INSERT / UPSERT write member's `@table` input), deduped by slot name across members; the
+  `participantFilters()` fallbacks dissolved in both the classifier and the emitter.
+- `TenantBinding.BoundSlot` gained a sealed `SlotRead` component (`TopLevelArg` /
+  `NestedInput` / `ContextArg`) minted where the slot is discovered, so `TenantDslEmitter`
+  renders already-resolved reads instead of re-walking the operation carriers; the duplicated
+  traversal and its classification-versus-emission `IllegalStateException` guard are deleted
+  (the consult's "decide once, carry the decision as a type" finding, taken at the cheap
+  moment when both traversals were being rewritten anyway).
+- The `@tenantFanOut` ladder re-keyed: the lookup and node rungs read member kinds, the
+  `@asConnection` rung deliberately reads the target axis (see the decisions below), and the
+  fan-out "already binds" rung reads the same member-derived slots as the direct-binding fold.
+- The reentry-guard validator diagnostic re-worded off member kinds.
+- `Operation.ServiceCall.Call` moved out to top-level `ServiceCallCarrier` (the service-call
+  member row is its primary holder; registry label RESOLVED_VIEW), unblocking the seal's
+  end-state decision at the corpus re-grain.
+- The bridge pin: `DimensionTuple.summaryArmOf` (the member-derived precedence fold) held
+  equal to `operation().getClass()` arm-for-arm over every corpus coordinate, ridden fields
+  included, while both existed.
+
+Second commit (the retirement):
+
+- `OutputField.operation()`, the three leaf-identity `operation()` switches
+  (`QueryField` / `MutationField` / `ChildField`) and the four `Operation`-building statics
+  (`readOperation`, `bareFetch`, both `serviceCall` overloads) deleted; javadocs re-pointed at
+  the member rows (the `Source.Root` legality gate, the re-fetch orthogonality note).
+- `DimensionTuple.of` reads the fold; the bridge pin retired with the accessor (its
+  demonstration lives in the first commit's history).
+- `OperationMemberProjectionTest` narrowed to the declaration fence (shape totality,
+  well-formedness, declared-not-accidental unpopulated kinds); population agreement is
+  `OperationMemberMintPinTest`'s alone.
+- `Operation` re-documented as the corpus's verb vocabulary: arms construction-dead in main,
+  the family surviving as the fold's codomain and the corpus SDL enum mirror until the corpus
+  voice re-grains and decides its end state.
+
+Decisions bound here:
+
+- **The widening is structural; its new surface is unreachable today.** Reading the whole
+  member surface exposes what the one-arm summary hid: a lookup coordinate's condition
+  filters, and a service-table child's. Both are unconstructible in the current tree (a
+  generated filter on a lookup coordinate is a build error, validator plus
+  `ConditionCommands.requireNoGeneratedFilterOnLookup`; both `ServiceTableField` builder sites
+  construct empty filter / ordering / pagination slots), so the re-source is
+  behavior-preserving over every constructible schema, option (a) of the consult with the
+  delta named rather than silent. When either gate opens (the lookup dissolution's re-grain,
+  or a populated service filter surface), the widened read makes those shapes' tenant
+  classification a decision to take with a pinned fixture, and the consequence to weigh then
+  is that the fold prefers `ArgumentBound` over `Inherited`: a newly bound coordinate moves
+  its database-per-tenant routing from ancestor-derived to client-argument-derived, a
+  security-adjacent flip that must not fall out of a refactor.
+- **Connection-ness stays a target-axis fact.** The paginate member is minted from the
+  carried window payload and is strictly narrower than the retired `Paginate` summary arm
+  (the batched polymorphic connection is connection-shaped with no window). The
+  `@asConnection` fan-out rung and the fold's `Paginate` arm both read
+  `TargetShape.Connection`, not member presence: the first vocabulary gap the Spec predicted
+  this slice would surface, answered by reading the axis that actually carries the fact.
+- **The empty-set summary arm is a named fiction.** The fold derives `Nest` versus `Fetch`
+  for empty member sets from the target shape (the nesting embed is the unique empty-set leaf
+  with a bare table target). That is the summary column's fiction for coordinates the member
+  relation deliberately says nothing about; it lives only in the test-side fold, documented
+  as such, and retires with the corpus re-grain.
+- **The slot read single-homed on the slot.** The tenant-routing agreement between
+  classification and emission is now structural (one traversal mints both the verdict and the
+  read) instead of guarded by a generation-time throw.
+
+Slice-4 baseline (measured 2026-08-02):
+
+- `Operation` structural consumers in main: 0 (baseline 2; both tenant readers re-sourced).
+  The seal's arms are constructed nowhere in main; `ServiceCallCarrier` holds the live
+  service-call payload.
+- Leaf ratchet unchanged at 12/15/24/4 (dissolution belongs to the 6x slices); dispatch pins
+  unchanged at 18 / 71 + 76 / 156 (the deleted emitter traversal was carrier-payload dispatch,
+  not leaf dispatch, so `CommandSeamRatchetTest`'s patterns never counted it).
+- Generator suite 3100 tests green; emit byte-identical through both commits.
 
 ## Retired vocabulary
 

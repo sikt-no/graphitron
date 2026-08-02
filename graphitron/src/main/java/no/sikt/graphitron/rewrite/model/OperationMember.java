@@ -8,8 +8,8 @@ import java.util.Objects;
 /**
  * One member of a coordinate's <em>operation set</em>: the 0..N relation
  * {@code coordinate -> operation}, read per coordinate through
- * {@link no.sikt.graphitron.rewrite.GraphitronSchema#operationMembersOf}. Where the summary
- * {@link Operation} column holds one arm per coordinate, a coordinate carries a <em>set</em> of
+ * {@link no.sikt.graphitron.rewrite.GraphitronSchema#operationMembersOf}. Where the retired
+ * summary column held one arm per coordinate, a coordinate carries a <em>set</em> of
  * member rows, each minted by its own trigger fact (a table-bound return mints {@link Select},
  * pagination args mint {@link Paginate}, {@code @condition} or filter inputs mint
  * {@link Condition}, {@code @orderBy} mints {@link OrderBy}, {@code @service} mints

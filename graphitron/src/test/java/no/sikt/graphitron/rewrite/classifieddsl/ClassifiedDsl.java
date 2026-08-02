@@ -15,7 +15,8 @@ package no.sikt.graphitron.rewrite.classifieddsl;
  *   <li>{@code @classified} on output field definitions asserts the three-axis
  *       {@link DimensionTuple} the field classifies to; each endpoint is a wrapper plus a shape,
  *       and the enums mirror the field model's sealed-arm sets ({@code GraphitronSchema.sourceOf} /
- *       {@code OutputField.operation()} / {@code OutputField.target()}).</li>
+ *       the member-derived summary fold {@code DimensionTuple.summaryArmOf} /
+ *       {@code OutputField.target()}).</li>
  *   <li>{@code @classifiedType(as:)} asserts the {@code GraphitronType} sealed leaf a type
  *       classifies to; {@code TypeVerdict} enumerates those leaves minus the failure leaf
  *       {@code UnclassifiedType}, and {@link ClassifiedHarness} mirrors the enum against the live
