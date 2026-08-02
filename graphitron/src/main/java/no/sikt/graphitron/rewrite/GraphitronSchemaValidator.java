@@ -265,10 +265,16 @@ public class GraphitronSchemaValidator {
                 && out.emitsKeyedReQuery()
                 && !(field instanceof no.sikt.graphitron.rewrite.model.BatchKeyField)
                 && !(field instanceof no.sikt.graphitron.rewrite.model.MutationField.DmlTableField)) {
+            var memberKinds = schema
+                .operationMembersOf(graphql.schema.FieldCoordinates.coordinates(
+                    out.parentTypeName(), out.name()))
+                .stream()
+                .map(m -> m.kind().name())
+                .toList();
             errors.add(new ValidationError(
                 out.qualifiedName(),
                 Rejection.invalidSchema("Field '" + out.qualifiedName() + "': site-level reentry "
-                    + "(emitsKeyedReQuery, operation " + out.operation() + " x target " + out.target()
+                    + "(a reentry member among " + memberKinds + " x target " + out.target()
                     + ") on " + out.getClass().getSimpleName() + ", which carries no reentry emit — "
                     + "the keyed re-query is emitted only for DataLoader-backed leaves and "
                     + "projected/discriminated DML arms"),

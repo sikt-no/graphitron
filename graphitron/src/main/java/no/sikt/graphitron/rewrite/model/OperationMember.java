@@ -141,12 +141,12 @@ public sealed interface OperationMember {
     }
 
     /**
-     * A developer {@code @service} invocation. Holds the same two-shape call carrier the summary
-     * arm holds ({@link Operation.ServiceCall.Call}): root leaves carry the structured
+     * A developer {@code @service} invocation. Holds the two-shape call carrier
+     * ({@link ServiceCallCarrier}): root leaves carry the structured
      * {@link ServiceMethodCall}, child leaves a reflected {@link MethodRef}; the difference
      * tracks arrival position, not an operation-axis distinction.
      */
-    record ServiceCall(Operation.ServiceCall.Call call) implements OperationMember {
+    record ServiceCall(ServiceCallCarrier call) implements OperationMember {
         public ServiceCall {
             Objects.requireNonNull(call, "call");
         }

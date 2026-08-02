@@ -13,13 +13,13 @@ import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.LookupField;
 import no.sikt.graphitron.rewrite.model.MethodBackedField;
 import no.sikt.graphitron.rewrite.model.MutationField;
-import no.sikt.graphitron.rewrite.model.Operation;
 import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.model.OperationMembers;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.OutputField;
 import no.sikt.graphitron.rewrite.model.ParticipantFilterField;
 import no.sikt.graphitron.rewrite.model.RootField;
+import no.sikt.graphitron.rewrite.model.ServiceCallCarrier;
 import no.sikt.graphitron.rewrite.model.ServiceField;
 import no.sikt.graphitron.rewrite.model.SourceShape;
 import no.sikt.graphitron.rewrite.model.SqlGeneratingField;
@@ -266,9 +266,9 @@ public record OperationMemberRelation(Map<FieldCoordinates, List<OperationMember
         if (kinds.contains(OperationMember.Kind.SERVICE_CALL)) {
             members.add(switch (leaf) {
                 case ServiceField sf ->
-                    new OperationMember.ServiceCall(new Operation.ServiceCall.Call.StructuredCall(sf.serviceMethodCall()));
+                    new OperationMember.ServiceCall(new ServiceCallCarrier.StructuredCall(sf.serviceMethodCall()));
                 case MethodBackedField mbf ->
-                    new OperationMember.ServiceCall(new Operation.ServiceCall.Call.ReflectedMethod(mbf.method()));
+                    new OperationMember.ServiceCall(new ServiceCallCarrier.ReflectedMethod(mbf.method()));
                 default -> throw new IllegalStateException(
                     "serviceCall membership on a leaf with no call carrier capability: "
                     + leaf.getClass().getSimpleName());

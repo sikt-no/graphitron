@@ -197,6 +197,12 @@ class HierarchyKindRegistryTest {
         // nested Write seal inherits this kind: the verb payloads it carries are trigger-fact
         // references the view realizes, not emit-grain mints.
         Map.entry(OperationMember.class, HierarchyKind.RESOLVED_VIEW),
+        // The @service call carrier held by the service-call member (and the summary arm's
+        // vocabulary): its rows exist when the service directive resolves to a structured
+        // invocation or a reflected method, the same resolution provenance as MethodRef.
+        // Previously nested inside Operation.ServiceCall and outside the scan; homed top-level
+        // because the member row is the carrier's primary holder.
+        Map.entry(no.sikt.graphitron.rewrite.model.ServiceCallCarrier.class, HierarchyKind.RESOLVED_VIEW),
 
         // Minted at emit grain: these describe what the emit does. The commands-in-waiting.
         Map.entry(no.sikt.graphitron.command.Predicate.class, HierarchyKind.COMMAND),

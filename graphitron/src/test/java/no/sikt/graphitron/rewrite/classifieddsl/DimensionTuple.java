@@ -1,10 +1,14 @@
 package no.sikt.graphitron.rewrite.classifieddsl;
 
+import no.sikt.graphitron.rewrite.model.OperationMember;
+import no.sikt.graphitron.rewrite.model.OperationMembers;
 import no.sikt.graphitron.rewrite.model.OutputField;
 import no.sikt.graphitron.rewrite.model.Operation;
 import no.sikt.graphitron.rewrite.model.Source;
 import no.sikt.graphitron.rewrite.model.Target;
 import no.sikt.graphitron.rewrite.model.TargetShape;
+
+import java.util.List;
 
 /**
  * The three-axis classification verdict the corpus asserts: a {@link Source} (arrival endpoint),
@@ -52,5 +56,65 @@ public record DimensionTuple(Source source, Class<? extends Operation> operation
      */
     public static DimensionTuple of(OutputField field, Source source) {
         return new DimensionTuple(source, field.operation().getClass(), TargetVerdict.of(field.target()));
+    }
+
+    /**
+     * The summary verdict as a precedence fold over the coordinate's operation member rows:
+     * the corpus's {@code operation:} vocabulary, derived from the member relation instead of
+     * the retiring summary column. Reads the leaf projection
+     * ({@link OperationMembers#membersOf}, pinned equal to the minted production), so ridden
+     * fields outside the minted relation's flat domain fold the same way. Transient window
+     * artifact: the corpus voice re-grains to member-set assertions and this fold retires with
+     * it.
+     *
+     * <p>Two arms are deliberately not member-keyed. {@code Paginate} reads connection-ness
+     * off the target axis (the paginate member is gated on a carried window payload, and a
+     * connection-shaped coordinate without one, the batched polymorphic connection, still
+     * summarised {@code Paginate}). The empty-set arm is the summary column's fiction for the
+     * no-operation coordinates: {@code Nest} for the structural nesting embed (the unique
+     * empty-set shape with a bare table target), {@code Fetch} for the record / passthrough
+     * reads, distinguished by target shape because the member relation deliberately says
+     * nothing about them.
+     */
+    public static Class<? extends Operation> summaryArmOf(OutputField field) {
+        List<OperationMember> members = OperationMembers.membersOf(field);
+        for (OperationMember m : members) {
+            if (m instanceof OperationMember.Write w) {
+                return switch (w) {
+                    case OperationMember.Write.Insert ignored -> Operation.Insert.class;
+                    case OperationMember.Write.Upsert ignored -> Operation.Upsert.class;
+                    case OperationMember.Write.Update ignored -> Operation.Update.class;
+                    case OperationMember.Write.Delete ignored -> Operation.Delete.class;
+                    case OperationMember.Write.RoutineWrite ignored -> Operation.RoutineWrite.class;
+                    case OperationMember.Write.UpdateMatching ignored -> Operation.UpdateMatching.class;
+                    case OperationMember.Write.DeleteMatching ignored -> Operation.DeleteMatching.class;
+                };
+            }
+        }
+        if (hasKind(members, OperationMember.Kind.NODE_RESOLVE)) {
+            return Operation.NodeResolve.class;
+        }
+        if (hasKind(members, OperationMember.Kind.SERVICE_CALL)) {
+            return Operation.ServiceCall.class;
+        }
+        if (hasKind(members, OperationMember.Kind.LOOKUP)) {
+            return Operation.Lookup.class;
+        }
+        if (hasKind(members, OperationMember.Kind.PIVOT)) {
+            return Operation.Pivot.class;
+        }
+        if (field.target().shape() instanceof TargetShape.Connection) {
+            return Operation.Paginate.class;
+        }
+        if (hasKind(members, OperationMember.Kind.SELECT)) {
+            return Operation.Fetch.class;
+        }
+        return field.target().shape() instanceof TargetShape.Table
+            ? Operation.Nest.class
+            : Operation.Fetch.class;
+    }
+
+    private static boolean hasKind(List<OperationMember> members, OperationMember.Kind kind) {
+        return members.stream().anyMatch(m -> m.kind() == kind);
     }
 }

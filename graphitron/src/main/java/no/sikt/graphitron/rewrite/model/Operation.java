@@ -58,20 +58,10 @@ public sealed interface Operation {
      * {@link ServiceMethodCall} structured-invocation carrier, child {@code @service} leaves carry a
      * reflected {@link MethodRef}. That difference tracks arrival position ({@link Source.Root} vs
      * {@link Source.Child}), <em>not</em> an operation-axis distinction; this arm holds whichever
-     * the producing leaf built, under {@link Call}.
+     * the producing leaf built, under {@link ServiceCallCarrier} (homed top-level because the
+     * service-call member row carries the same holder).
      */
-    record ServiceCall(Call call) implements Operation {
-        /**
-         * Holder for the two {@code @service} call carriers (see {@link ServiceCall}); the arm
-         * names describe the carrier type held, not an operation distinction.
-         */
-        public sealed interface Call {
-            /** Root {@code @service} leaf: the {@link ServiceMethodCall} structured invocation. */
-            record StructuredCall(ServiceMethodCall call) implements Call {}
-            /** Child {@code @service} leaf: a reflected {@link MethodRef}. */
-            record ReflectedMethod(MethodRef method) implements Call {}
-        }
-    }
+    record ServiceCall(ServiceCallCarrier call) implements Operation {}
 
     /** Connection {@code totalCount}. Modeled-but-unpopulated: behind the ConnectionType quarantine. */
     record Count() implements Operation {}

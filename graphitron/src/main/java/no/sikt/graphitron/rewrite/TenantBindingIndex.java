@@ -9,6 +9,7 @@ import graphql.schema.GraphQLSchema;
 import graphql.schema.GraphQLTypeUtil;
 import graphql.schema.GraphQLUnionType;
 import no.sikt.graphitron.rewrite.model.BodyParam;
+import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.DomainReturnType;
 import no.sikt.graphitron.rewrite.model.EntityResolution;
@@ -20,14 +21,14 @@ import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.MutationField;
-import no.sikt.graphitron.rewrite.model.Operation;
+import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.model.OutputField;
-import no.sikt.graphitron.rewrite.model.ParticipantFilters;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.rewrite.model.TargetShape;
 import no.sikt.graphitron.rewrite.model.TenantBinding;
 import no.sikt.graphitron.rewrite.model.TenantScopes;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
@@ -74,14 +75,18 @@ public record TenantBindingIndex(
 
     /**
      * Computes the axis over the classified schema. Returns {@link #EMPTY} when no
-     * {@code <tenantColumn>} is configured.
+     * {@code <tenantColumn>} is configured. The direct-binding surface is read off the minted
+     * {@link OperationMemberRelation} rows (the coordinate's condition, lookup and write
+     * members), so the fold sees the coordinate's whole operation set rather than one summary
+     * arm's payload.
      */
     public static TenantBindingIndex compute(
             GraphQLSchema sdl,
             Map<FieldCoordinates, GraphitronField> fields,
             Map<String, EntityResolution> entitiesByType,
             Map<String, GraphitronType> types,
-            TenantScopes scopes) {
+            TenantScopes scopes,
+            OperationMemberRelation operationMembers) {
         if (sdl == null) {
             return EMPTY;
         }
@@ -93,7 +98,7 @@ public record TenantBindingIndex(
                 ? EMPTY
                 : new TenantBindingIndex(Map.of(), Map.of(), markerRejections);
         }
-        return new Fold(sdl, fields, entitiesByType, types, configured).run();
+        return new Fold(sdl, fields, entitiesByType, types, configured, operationMembers).run();
     }
 
     /**
@@ -136,6 +141,7 @@ public record TenantBindingIndex(
         private final Map<String, EntityResolution> entitiesByType;
         private final Map<String, GraphitronType> types;
         private final TenantScopes.Configured scopes;
+        private final OperationMemberRelation operationMembers;
 
         private final Set<String> roots = new HashSet<>();
         private final String mutationRootName;
@@ -163,12 +169,23 @@ public record TenantBindingIndex(
              Map<FieldCoordinates, GraphitronField> fields,
              Map<String, EntityResolution> entitiesByType,
              Map<String, GraphitronType> types,
-             TenantScopes.Configured scopes) {
+             TenantScopes.Configured scopes,
+             OperationMemberRelation operationMembers) {
             this.sdl = sdl;
             this.fields = fields;
             this.entitiesByType = entitiesByType;
             this.types = types;
             this.scopes = scopes;
+            if (operationMembers == OperationMemberRelation.EMPTY) {
+                // The fold and the routing emitter must read one production. The emitter reads
+                // GraphitronSchema.operationMembersOf, whose EMPTY sentinel falls back to the
+                // leaf projection; rejecting the sentinel here keeps the two surfaces provably
+                // the same walk-minted rows (hand-built schemas configure no tenant scopes and
+                // never reach this fold).
+                throw new IllegalArgumentException(
+                    "tenant-binding fold requires the walk-minted operation member relation");
+            }
+            this.operationMembers = operationMembers;
             this.mutationRootName = sdl.getMutationType() == null ? null : sdl.getMutationType().getName();
             recordRoot(sdl.getQueryType());
             recordRoot(sdl.getMutationType());
@@ -260,14 +277,12 @@ public record TenantBindingIndex(
                     graphql.language.SourceLocation.EMPTY));
                 return null;
             }
-            var slots = directSlots(out.operation());
-            if (slots.isEmpty()) {
-                slots = polymorphicFilterSlots(out);
-            }
+            var members = operationMembers.membersOf(coord);
+            var slots = directSlots(members);
             if (!slots.isEmpty()) {
                 return new TenantBinding.ArgumentBound(slots);
             }
-            if (out.operation() instanceof Operation.NodeResolve) {
+            if (hasKind(members, OperationMember.Kind.NODE_RESOLVE)) {
                 // Node dispatch spans types; the arm exists iff every tenant-scoped node
                 // type's key embeds the tenant column (rejections fired once in
                 // classifyNodeDispatch). No tenant-scoped node types at all means node
@@ -337,14 +352,18 @@ public record TenantBindingIndex(
                         + " the field's SQL itself, and a database routine's SQL is not"
                         + " graphitron's to run per tenant. Remove one of the directives.");
             }
-            if (out.operation() instanceof Operation.Lookup) {
+            var members = operationMembers.membersOf(coord);
+            if (hasKind(members, OperationMember.Kind.LOOKUP)) {
                 return rejectFanOut(coordinate,
                     List.of(BuildContext.DIR_TENANT_FAN_OUT, BuildContext.DIR_LOOKUP_KEY),
                     "'" + coordinate + "' combines @tenantFanOut with @lookupKey: lookup enforces"
                         + " one row per input key, and fanning yields up to one row per tenant per"
                         + " key, silently breaking that invariant.");
             }
-            if (out.operation() instanceof Operation.Paginate) {
+            // Connection-ness is a target-axis fact, deliberately not the paginate member: the
+            // member is gated on a carried window payload, and a connection-shaped coordinate
+            // without one (the batched polymorphic connection) must still reject on this rung.
+            if (out.target().shape() instanceof TargetShape.Connection) {
                 return rejectFanOut(coordinate,
                     List.of(BuildContext.DIR_TENANT_FAN_OUT, BuildContext.DIR_AS_CONNECTION),
                     "'" + coordinate + "' combines @tenantFanOut with @asConnection: pagination"
@@ -390,10 +409,7 @@ public record TenantBindingIndex(
                     "'" + coordinate + "' reaches no tenant-scoped table: its data is global,"
                         + " so there is nothing to fan out over.");
             }
-            var slots = directSlots(out.operation());
-            if (slots.isEmpty()) {
-                slots = polymorphicFilterSlots(out);
-            }
+            var slots = directSlots(members);
             if (!slots.isEmpty()) {
                 return rejectFanOut(coordinate, List.of(BuildContext.DIR_TENANT_FAN_OUT),
                     "'" + coordinate + "' already binds the tenant column through "
@@ -447,11 +463,12 @@ public record TenantBindingIndex(
          * transitive fold (the caller walks paths itself).
          */
         private boolean edgeDivinesTenant(FieldCoordinates edge) {
-            if (fields.get(edge) instanceof OutputField out) {
-                if (!directSlots(out.operation()).isEmpty()) {
+            if (fields.get(edge) instanceof OutputField) {
+                var members = operationMembers.membersOf(edge);
+                if (!directSlots(members).isEmpty()) {
                     return true;
                 }
-                if (out.operation() instanceof Operation.NodeResolve) {
+                if (hasKind(members, OperationMember.Kind.NODE_RESOLVE)) {
                     return nodeDispatchRoutable && !nodePositions.isEmpty();
                 }
             }
@@ -526,30 +543,6 @@ public record TenantBindingIndex(
             }
         }
 
-        /**
-         * Direct slots for the multi-table polymorphic roots, whose filter surface lives per
-         * participant ({@code participantFilters}) rather than on the operation: a filter
-         * binding the tenant column on any participant divines the whole dispatch. Deduped by
-         * slot name (the same argument typically binds on every participant).
-         */
-        private List<TenantBinding.BoundSlot> polymorphicFilterSlots(OutputField out) {
-            List<ParticipantFilters> filters = switch (out) {
-                case QueryField.QueryInterfaceField f -> f.participantFilters();
-                case QueryField.QueryUnionField f -> f.participantFilters();
-                default -> List.of();
-            };
-            var slots = new ArrayList<TenantBinding.BoundSlot>();
-            var seenNames = new HashSet<String>();
-            for (ParticipantFilters pf : filters) {
-                for (TenantBinding.BoundSlot slot : slotsFromFilters(pf.filters())) {
-                    if (seenNames.add(slot.slotName())) {
-                        slots.add(slot);
-                    }
-                }
-            }
-            return slots;
-        }
-
         private boolean tenantScoped(TableRef table) {
             // Membership is decided by column presence, the same fact the catalog-load
             // classification keyed on, so the two views cannot disagree.
@@ -561,17 +554,38 @@ public record TenantBindingIndex(
                 || scopes.columnName().equalsIgnoreCase(column.sqlName());
         }
 
-        // ===== Direct bindings off the operation's own carriers =====
+        // ===== Direct bindings off the coordinate's operation member rows =====
 
-        private List<TenantBinding.BoundSlot> directSlots(Operation op) {
-            return switch (op) {
-                case Operation.Fetch f -> slotsFromFilters(f.filters());
-                case Operation.Paginate p -> slotsFromFilters(p.filters());
-                case Operation.Lookup l -> slotsFromLookup(l.lookupMapping());
-                case Operation.Insert i -> slotsFromTableInput(i.input());
-                case Operation.Upsert u -> slotsFromTableInput(u.input());
-                default -> List.of();
-            };
+        /**
+         * The tenant-divining slots across the coordinate's whole member set: every condition
+         * member's filter surface (a polymorphic root carries one condition member per
+         * participant, so the per-participant filters need no fallback), the lookup member's
+         * key mapping, and an INSERT / UPSERT write member's {@code @table} input. Deduped by
+         * slot name across members (the same argument typically binds on every polymorphic
+         * participant, and one slot per name suffices for the agreement fold).
+         */
+        private List<TenantBinding.BoundSlot> directSlots(List<OperationMember> members) {
+            var slots = new ArrayList<TenantBinding.BoundSlot>();
+            var seenNames = new HashSet<String>();
+            for (OperationMember member : members) {
+                List<TenantBinding.BoundSlot> found = switch (member) {
+                    case OperationMember.Condition c -> slotsFromFilters(c.filters());
+                    case OperationMember.Lookup l -> slotsFromLookup(l.lookupMapping());
+                    case OperationMember.Write.Insert i -> slotsFromTableInput(i.input());
+                    case OperationMember.Write.Upsert u -> slotsFromTableInput(u.input());
+                    default -> List.of();
+                };
+                for (TenantBinding.BoundSlot slot : found) {
+                    if (seenNames.add(slot.slotName())) {
+                        slots.add(slot);
+                    }
+                }
+            }
+            return slots;
+        }
+
+        private static boolean hasKind(List<OperationMember> members, OperationMember.Kind kind) {
+            return members.stream().anyMatch(m -> m.kind() == kind);
         }
 
         private List<TenantBinding.BoundSlot> slotsFromFilters(List<WhereFilter> filters) {
@@ -589,25 +603,25 @@ public record TenantBindingIndex(
             switch (param) {
                 case BodyParam.Eq eq -> {
                     if (matchesTenantColumn(eq.column())) {
-                        slots.add(new TenantBinding.BoundSlot(eq.name(), eq.column()));
+                        slots.add(new TenantBinding.BoundSlot(eq.name(), eq.column(), readOf(eq.extraction())));
                     }
                 }
                 case BodyParam.In in -> {
                     if (matchesTenantColumn(in.column())) {
-                        slots.add(new TenantBinding.BoundSlot(in.name(), in.column()));
+                        slots.add(new TenantBinding.BoundSlot(in.name(), in.column(), readOf(in.extraction())));
                     }
                 }
                 case BodyParam.RowEq rowEq -> {
                     for (ColumnRef col : rowEq.columns()) {
                         if (matchesTenantColumn(col)) {
-                            slots.add(new TenantBinding.BoundSlot(rowEq.name(), col));
+                            slots.add(new TenantBinding.BoundSlot(rowEq.name(), col, readOf(rowEq.extraction())));
                         }
                     }
                 }
                 case BodyParam.RowIn rowIn -> {
                     for (ColumnRef col : rowIn.columns()) {
                         if (matchesTenantColumn(col)) {
-                            slots.add(new TenantBinding.BoundSlot(rowIn.name(), col));
+                            slots.add(new TenantBinding.BoundSlot(rowIn.name(), col, readOf(rowIn.extraction())));
                         }
                     }
                 }
@@ -616,6 +630,24 @@ public record TenantBindingIndex(
                     // through a @reference path still divines the operation's tenant.
                     collectFromBodyParam(remote.inner(), slots);
             }
+        }
+
+        /**
+         * The slot's runtime read, resolved from the filter parameter's
+         * {@link CallSiteExtraction} at mint time so the routing emitter renders it rather
+         * than re-walking the carrier.
+         */
+        private static TenantBinding.SlotRead readOf(CallSiteExtraction extraction) {
+            return switch (extraction) {
+                case CallSiteExtraction.NestedInputField nested ->
+                    new TenantBinding.SlotRead.NestedInput(nested.outerArgName(), nested.path());
+                case CallSiteExtraction.ContextArg ignored -> TenantBinding.SlotRead.ContextArg.INSTANCE;
+                // Direct and the coercing leaves (JooqConvert, EnumValueOf, ...) all read the
+                // raw top-level argument: the divined key equality/lookup runs on the wire
+                // value, whose Java type the generated divinedTenant guard checks against the
+                // tenant column type.
+                default -> TenantBinding.SlotRead.TopLevelArg.INSTANCE;
+            };
         }
 
         private List<TenantBinding.BoundSlot> slotsFromLookup(LookupMapping mapping) {
@@ -627,13 +659,15 @@ public record TenantBindingIndex(
                 switch (arg) {
                     case LookupMapping.ColumnMapping.LookupArg.ScalarLookupArg s -> {
                         if (matchesTenantColumn(s.targetColumn())) {
-                            slots.add(new TenantBinding.BoundSlot(s.argName(), s.targetColumn()));
+                            slots.add(new TenantBinding.BoundSlot(s.argName(), s.targetColumn(),
+                                TenantBinding.SlotRead.TopLevelArg.INSTANCE));
                         }
                     }
                     case LookupMapping.ColumnMapping.LookupArg.MapInput mi -> {
                         for (InputColumnBinding.MapBinding b : mi.bindings()) {
                             if (matchesTenantColumn(b.targetColumn())) {
-                                slots.add(new TenantBinding.BoundSlot(b.fieldName(), b.targetColumn()));
+                                slots.add(new TenantBinding.BoundSlot(b.fieldName(), b.targetColumn(),
+                                    new TenantBinding.SlotRead.NestedInput(mi.argName(), List.of(b.fieldName()))));
                             }
                         }
                     }
@@ -654,29 +688,40 @@ public record TenantBindingIndex(
                 if (!(group instanceof InputColumnBindingGroup.MapGroup mg)) continue;
                 for (InputColumnBinding.MapBinding b : mg.bindings()) {
                     if (matchesTenantColumn(b.targetColumn()) && seenNames.add(b.fieldName())) {
-                        slots.add(new TenantBinding.BoundSlot(b.fieldName(), b.targetColumn()));
+                        slots.add(new TenantBinding.BoundSlot(b.fieldName(), b.targetColumn(),
+                            new TenantBinding.SlotRead.NestedInput(input.name(), List.of(b.fieldName()))));
                     }
                 }
             }
             // INSERT / UPSERT: fieldBindings is structurally empty (the VALUES emission walks
             // fields() directly), so the divining slots come from the same envelope: a plain
             // input field whose column mapping lands on the tenant column routes the mutation.
-            collectFromInputFields(input.fields(), slots, seenNames);
+            collectFromInputFields(input.fields(), new ArrayDeque<>(), input.name(), slots, seenNames);
             return slots;
         }
 
         private void collectFromInputFields(List<InputField> fields,
+                                            ArrayDeque<String> path,
+                                            String argName,
                                             List<TenantBinding.BoundSlot> slots,
                                             HashSet<String> seenNames) {
             for (InputField field : fields) {
                 switch (field) {
                     case InputField.ColumnBackedField cf when !cf.isComposite() -> {
                         if (matchesTenantColumn(cf.columns().get(0)) && seenNames.add(cf.name())) {
-                            slots.add(new TenantBinding.BoundSlot(cf.name(), cf.columns().get(0)));
+                            var keys = new ArrayList<>(path);
+                            keys.add(cf.name());
+                            slots.add(new TenantBinding.BoundSlot(cf.name(), cf.columns().get(0),
+                                new TenantBinding.SlotRead.NestedInput(argName, keys)));
                         }
                     }
-                    // A nested grouping input flattens onto the same table; descend.
-                    case InputField.NestingField nf -> collectFromInputFields(nf.fields(), slots, seenNames);
+                    // A nested grouping input flattens onto the same table; descend with the
+                    // grouping's key on the read path.
+                    case InputField.NestingField nf -> {
+                        path.addLast(nf.name());
+                        collectFromInputFields(nf.fields(), path, argName, slots, seenNames);
+                        path.removeLast();
+                    }
                     // Composite NodeId tuples and non-column fields never divine a single
                     // argument value; those shapes belong to the per-row family and the
                     // deliberate fan-out arm.
@@ -838,12 +883,12 @@ public record TenantBindingIndex(
                 // tenant through the loader-name seam, exactly as under an ArgumentBound root).
                 return true;
             }
-            if (fields.get(edge) instanceof OutputField out) {
-                var slots = directSlots(out.operation());
-                if (!slots.isEmpty()) {
+            if (fields.get(edge) instanceof OutputField) {
+                var members = operationMembers.membersOf(edge);
+                if (!directSlots(members).isEmpty()) {
                     return true;
                 }
-                if (out.operation() instanceof Operation.NodeResolve) {
+                if (hasKind(members, OperationMember.Kind.NODE_RESOLVE)) {
                     return nodeDispatchRoutable;
                 }
             }

@@ -3,22 +3,12 @@ package no.sikt.graphitron.rewrite.generators;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator;
-import no.sikt.graphitron.rewrite.model.BodyParam;
-import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
-import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
-import no.sikt.graphitron.rewrite.model.InputColumnBinding;
-import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
-import no.sikt.graphitron.rewrite.model.LookupMapping;
-import no.sikt.graphitron.rewrite.model.Operation;
 import no.sikt.graphitron.rewrite.model.OutputField;
 import no.sikt.graphitron.rewrite.model.TenantBinding;
 import no.sikt.graphitron.rewrite.model.TenantScopes;
-import no.sikt.graphitron.rewrite.model.WhereFilter;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 /**
  * Emits the per-field {@code DSLContext dsl = ...} declaration at every fetcher site, forked on
@@ -102,7 +92,7 @@ final class TenantDslEmitter {
                     .addStatement("$T dsl = $T.dslDefault(env)", DSL_CONTEXT, tenantConnections)
                     .build(),
                 false);
-            case TenantBinding.ArgumentBound bound -> argumentBound(ctx, field, bound, tenantConnections);
+            case TenantBinding.ArgumentBound bound -> argumentBound(ctx, bound, tenantConnections);
             case TenantBinding.FanOut ignored -> throw new IllegalStateException(
                 "Field '" + ctx.parentTypeName() + "." + field.name() + "' classified as tenant "
                     + "FanOut reached the generic DSL-declaration site; the fanned-fetcher emission "
@@ -207,7 +197,7 @@ final class TenantDslEmitter {
         var none = new Resolution(CodeBlock.of(""), false);
         return switch (binding) {
             case TenantBinding.ArgumentBound bound -> new Resolution(
-                divinedKeyDeclaration(ctx, field, bound, tenantConnectionsClass(outputPackage)), true);
+                divinedKeyDeclaration(ctx, bound, tenantConnectionsClass(outputPackage)), true);
             // A fanned field hands tenants down per element (each unioned row's DataFetcherResult
             // carries its own localContext), never as one divined-key local; the fanned-fetcher
             // emission owns that stamping.
@@ -295,11 +285,11 @@ final class TenantDslEmitter {
             false);
     }
 
-    private static Resolution argumentBound(TypeFetcherEmissionContext ctx, OutputField field,
+    private static Resolution argumentBound(TypeFetcherEmissionContext ctx,
                                             TenantBinding.ArgumentBound bound, ClassName tenantConnections) {
         return new Resolution(
             CodeBlock.builder()
-                .add(divinedKeyDeclaration(ctx, field, bound, tenantConnections))
+                .add(divinedKeyDeclaration(ctx, bound, tenantConnections))
                 .addStatement("$T dsl = $T.dslFor(env, $L)", DSL_CONTEXT, tenantConnections, TENANT_KEY_LOCAL)
                 .build(),
             true);
@@ -309,11 +299,11 @@ final class TenantDslEmitter {
      * The {@code <T> _divinedTenant = TenantConnections.divinedTenant(<slot reads>);} statement,
      * declared with the catalog-read tenant key type (generated sources never use {@code var}).
      */
-    private static CodeBlock divinedKeyDeclaration(TypeFetcherEmissionContext ctx, OutputField field,
+    private static CodeBlock divinedKeyDeclaration(TypeFetcherEmissionContext ctx,
                                                    TenantBinding.ArgumentBound bound, ClassName tenantConnections) {
         var scopes = (TenantScopes.Configured) ctx.graphitronSchema().tenantScopes();
         var keyType = scopes.tenantType().isPrimitive() ? scopes.tenantType().box() : scopes.tenantType();
-        var reads = slotReads(ctx, field, bound, tenantConnections);
+        var reads = slotReads(ctx, bound, tenantConnections);
         var divined = CodeBlock.builder()
             .add("$T $L = $T.divinedTenant(", keyType, TENANT_KEY_LOCAL, tenantConnections);
         for (int i = 0; i < reads.size(); i++) {
@@ -326,170 +316,31 @@ final class TenantDslEmitter {
     }
 
     /**
-     * The runtime read for every bound slot, re-derived from the same operation carriers the
-     * classifier folded the arm from: the arm decides <em>which</em> slots route, the carriers'
-     * {@link CallSiteExtraction}s decide <em>how</em> each value is read (a top-level argument
-     * or a build-time-computed nested path). A slot the carriers cannot produce a read for is a
-     * generation-time failure: classification and emission disagreeing is a graphitron bug, and
-     * failing the build beats emitting a fetcher that cannot route.
+     * The runtime read for every bound slot: a render over the {@link TenantBinding.SlotRead}
+     * arm the classifier resolved when it minted the slot. The classifier's single traversal
+     * decides <em>which</em> slots route and <em>how</em> each value is read; nothing here
+     * re-walks the operation carriers, so classification and emission cannot disagree.
      */
-    private static List<CodeBlock> slotReads(TypeFetcherEmissionContext ctx, OutputField field,
+    private static List<CodeBlock> slotReads(TypeFetcherEmissionContext ctx,
                                              TenantBinding.ArgumentBound bound, ClassName tenantConnections) {
-        Set<String> slotNames = new HashSet<>();
-        for (TenantBinding.BoundSlot slot : bound.bindings()) {
-            slotNames.add(slot.slotName());
-        }
         var reads = new ArrayList<CodeBlock>();
-        switch (field.operation()) {
-            case Operation.Fetch f -> collectFromFilters(ctx, f.filters(), slotNames, tenantConnections, reads);
-            case Operation.Paginate p -> collectFromFilters(ctx, p.filters(), slotNames, tenantConnections, reads);
-            case Operation.Lookup l -> collectFromLookup(l.lookupMapping(), slotNames, tenantConnections, reads);
-            case Operation.Insert i -> collectFromTableInput(i.input(), slotNames, tenantConnections, reads);
-            case Operation.Upsert u -> collectFromTableInput(u.input(), slotNames, tenantConnections, reads);
-            default -> { }
-        }
-        // Multi-table polymorphic roots carry their filter surface per participant, not on the
-        // operation; mirror the classifier's participantFilters walk. Deduped: the same argument
-        // typically binds on every participant, and one read per slot name suffices for the
-        // agreement fold.
-        var polymorphicFilters = switch (field) {
-            case no.sikt.graphitron.rewrite.model.QueryField.QueryInterfaceField f -> f.participantFilters();
-            case no.sikt.graphitron.rewrite.model.QueryField.QueryUnionField f -> f.participantFilters();
-            default -> List.<no.sikt.graphitron.rewrite.model.ParticipantFilters>of();
-        };
-        if (reads.isEmpty() && !polymorphicFilters.isEmpty()) {
-            var remaining = new HashSet<>(slotNames);
-            for (var pf : polymorphicFilters) {
-                var partReads = new ArrayList<CodeBlock>();
-                collectFromFilters(ctx, pf.filters(), remaining, tenantConnections, partReads);
-                for (var read : partReads) {
-                    reads.add(read);
-                }
-                // One read per slot name across participants; drop names already read.
-                for (var filter : pf.filters()) {
-                    if (filter instanceof GeneratedConditionFilter gcf) {
-                        for (BodyParam param : gcf.bodyParams()) {
-                            remaining.remove(param.name());
-                        }
-                    }
-                }
-            }
-        }
-        if (reads.isEmpty()) {
-            throw new IllegalStateException(
-                "Field '" + ctx.parentTypeName() + "." + field.name() + "' classified as tenant "
-                    + "ArgumentBound on slots " + slotNames + ", but its operation carriers yield no "
-                    + "matching runtime read; classification and emission disagree.");
-        }
-        return reads;
-    }
-
-    private static void collectFromFilters(TypeFetcherEmissionContext ctx, List<WhereFilter> filters,
-                                           Set<String> slotNames, ClassName tenantConnections,
-                                           List<CodeBlock> reads) {
-        for (WhereFilter filter : filters) {
-            if (!(filter instanceof GeneratedConditionFilter gcf)) {
-                continue;
-            }
-            for (BodyParam param : gcf.bodyParams()) {
-                if (!slotNames.contains(param.name())) {
-                    continue;
-                }
-                reads.add(extractionRead(ctx, param.name(), param.extraction(), tenantConnections));
-            }
-        }
-    }
-
-    private static void collectFromLookup(LookupMapping mapping, Set<String> slotNames,
-                                          ClassName tenantConnections, List<CodeBlock> reads) {
-        if (!(mapping instanceof LookupMapping.ColumnMapping cm)) {
-            return;
-        }
-        for (var arg : cm.args()) {
-            switch (arg) {
-                case LookupMapping.ColumnMapping.LookupArg.ScalarLookupArg s -> {
-                    if (slotNames.contains(s.argName())) {
-                        reads.add(CodeBlock.of("env.<Object>getArgument($S)", s.argName()));
-                    }
-                }
-                case LookupMapping.ColumnMapping.LookupArg.MapInput mi -> {
-                    for (InputColumnBinding.MapBinding b : mi.bindings()) {
-                        if (slotNames.contains(b.fieldName())) {
-                            reads.add(CodeBlock.of("$T.tenantSlot(env.getArgument($S), $S)",
-                                tenantConnections, mi.argName(), b.fieldName()));
-                        }
-                    }
-                }
-                case LookupMapping.ColumnMapping.LookupArg.DecodedRecord ignored -> { }
-            }
-        }
-    }
-
-    private static void collectFromTableInput(no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg input,
-                                              Set<String> slotNames, ClassName tenantConnections,
-                                              List<CodeBlock> reads) {
-        for (InputColumnBindingGroup group : input.fieldBindings()) {
-            if (!(group instanceof InputColumnBindingGroup.MapGroup mg)) {
-                continue;
-            }
-            for (InputColumnBinding.MapBinding b : mg.bindings()) {
-                if (slotNames.contains(b.fieldName())) {
-                    reads.add(CodeBlock.of("$T.tenantSlot(env.getArgument($S), $S)",
-                        tenantConnections, input.name(), b.fieldName()));
-                }
-            }
-        }
-        // The VALUES envelope (INSERT / UPSERT, whose fieldBindings is structurally empty):
-        // mirror the classifier's fields() walk, accumulating the nested key path for the read.
-        collectFromInputFields(input.fields(), new java.util.ArrayDeque<>(), input.name(),
-            slotNames, tenantConnections, reads);
-    }
-
-    private static void collectFromInputFields(List<no.sikt.graphitron.rewrite.model.InputField> fields,
-                                               java.util.Deque<String> path, String argName,
-                                               Set<String> slotNames, ClassName tenantConnections,
-                                               List<CodeBlock> reads) {
-        for (var field : fields) {
-            switch (field) {
-                case no.sikt.graphitron.rewrite.model.InputField.ColumnBackedField cf when !cf.isComposite() -> {
-                    if (!slotNames.contains(cf.name())) {
-                        continue;
-                    }
+        for (TenantBinding.BoundSlot slot : bound.bindings()) {
+            reads.add(switch (slot.read()) {
+                case TenantBinding.SlotRead.TopLevelArg ignored ->
+                    CodeBlock.of("env.<Object>getArgument($S)", slot.slotName());
+                case TenantBinding.SlotRead.NestedInput nested -> {
                     var read = CodeBlock.builder()
-                        .add("$T.tenantSlot(env.getArgument($S)", tenantConnections, argName);
-                    for (String key : path) {
+                        .add("$T.tenantSlot(env.getArgument($S)", tenantConnections, nested.outerArgName());
+                    for (String key : nested.path()) {
                         read.add(", $S", key);
                     }
-                    reads.add(read.add(", $S)", cf.name()).build());
+                    yield read.add(")").build();
                 }
-                case no.sikt.graphitron.rewrite.model.InputField.NestingField nf -> {
-                    path.addLast(nf.name());
-                    collectFromInputFields(nf.fields(), path, argName, slotNames, tenantConnections, reads);
-                    path.removeLast();
-                }
-                default -> { }
-            }
+                case TenantBinding.SlotRead.ContextArg ignored ->
+                    CodeBlock.of("$L.getContextArgument(env, $S)",
+                        ctx.graphitronContextCall(), slot.slotName());
+            });
         }
-    }
-
-    /** One slot's runtime read from its carrier's {@link CallSiteExtraction}. */
-    private static CodeBlock extractionRead(TypeFetcherEmissionContext ctx, String name,
-                                            CallSiteExtraction extraction, ClassName tenantConnections) {
-        return switch (extraction) {
-            case CallSiteExtraction.NestedInputField nested -> {
-                var read = CodeBlock.builder()
-                    .add("$T.tenantSlot(env.getArgument($S)", tenantConnections, nested.outerArgName());
-                for (String key : nested.path()) {
-                    read.add(", $S", key);
-                }
-                yield read.add(")").build();
-            }
-            case CallSiteExtraction.ContextArg ignored ->
-                CodeBlock.of("$L.getContextArgument(env, $S)", ctx.graphitronContextCall(), name);
-            // Direct and the coercing leaves (JooqConvert, EnumValueOf, ...) all read the raw
-            // top-level argument: the divined key equality/lookup runs on the wire value, whose
-            // Java type the generated divinedTenant guard checks against the tenant column type.
-            default -> CodeBlock.of("env.<Object>getArgument($S)", name);
-        };
+        return reads;
     }
 }

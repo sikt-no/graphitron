@@ -26,9 +26,43 @@ public sealed interface TenantBinding {
     /**
      * One argument or input-object slot whose column mapping lands on the tenant column.
      * {@code slotName} is the GraphQL argument or input-field name; {@code column} is the
-     * resolved tenant column the slot binds.
+     * resolved tenant column the slot binds; {@code read} is the resolved runtime read for the
+     * slot's value, minted where the slot is discovered so the routing emitter renders it
+     * instead of re-walking the classifier's carriers (one traversal, one home, no
+     * classification-versus-emission drift).
      */
-    record BoundSlot(String slotName, ColumnRef column) {}
+    record BoundSlot(String slotName, ColumnRef column, SlotRead read) {}
+
+    /**
+     * How a bound slot's runtime value is read at the fetcher site. Sealed and resolved at
+     * classification time; the emitter is a render over these arms.
+     */
+    sealed interface SlotRead {
+
+        /** A top-level GraphQL argument: {@code env.<Object>getArgument("name")}. */
+        record TopLevelArg() implements SlotRead {
+            public static final TopLevelArg INSTANCE = new TopLevelArg();
+        }
+
+        /**
+         * A field inside an input-object argument: the generated
+         * {@code TenantConnections.tenantSlot(env.getArgument(outerArgName), path...)} walk,
+         * where {@code path} is the build-time-computed key path down the argument map.
+         */
+        record NestedInput(String outerArgName, List<String> path) implements SlotRead {
+            public NestedInput {
+                if (path.isEmpty()) {
+                    throw new IllegalArgumentException("NestedInput path must be non-empty");
+                }
+                path = List.copyOf(path);
+            }
+        }
+
+        /** A context argument: {@code graphitronContext(env).getContextArgument(env, "name")}. */
+        record ContextArg() implements SlotRead {
+            public static final ContextArg INSTANCE = new ContextArg();
+        }
+    }
 
     /**
      * Argument / input-object fields whose column mappings resolve to tenant columns. Carries

@@ -429,7 +429,7 @@ public final class ClassifiedHarness {
     /**
      * The simple names of the sealed {@link Operation} arms (the live verb set). The {@code Operation}
      * arms are all direct records, so the recursive walker stops at them; the per-arm transitional holders
-     * (e.g. {@code ServiceCall.Call}) are payload components, not permitted subclasses, so they never enter
+     * (e.g. {@code ServiceCallCarrier}) are payload components, not permitted subclasses, so they never enter
      * this set.
      */
     public static List<String> operationArmSimpleNames() {

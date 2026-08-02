@@ -305,21 +305,22 @@ public class GraphitronSchemaBuilder {
         // nesting projection and as a producer-backed result). Pure fold over the classified
         // types and fields; the dispatch emitter and the validator's shape-set rule read one fact.
         var reachableSourceShapes = MixedSourceReachIndex.compute(ctx.types, dedupedFields);
+        // The minted operation member relation: the post-walk join of the gathered trigger
+        // slots with the shape facts, the production GraphitronSchema.operationMembersOf reads.
+        // Computed over the pre-rewrite schema's definition nodes, the same artifact the
+        // trigger gather keyed. Computed ahead of the tenant fold, whose direct-binding
+        // surface reads these rows.
+        var operationMembers = OperationMemberRelation.compute(
+            ctx.schema, dedupedFields, ctx.types, ctx.facts);
         // The per-field tenant-binding fold. Ancestor-context fact (Inherited needs every
         // reaching path bound), so it is computed post-walk; read by the validator's tenant
         // mirror and the routing emitters.
         var tenantBindings = TenantBindingIndex.compute(
-            ctx.schema, dedupedFields, entitiesByType, ctx.types, ctx.tenantScopes);
+            ctx.schema, dedupedFields, entitiesByType, ctx.types, ctx.tenantScopes, operationMembers);
         // The argument-reachability closure over input types: a type-grain fact with more than
         // one consumer (the input-record emit membership today, the compile graph's inputRecord
         // nodes at the graph's migration), computed once here so no emit-side site re-derives it.
         var argumentReachableInputs = ArgumentReachableInputs.compute(ctx.types, rebuiltAssembled);
-        // The minted operation member relation: the post-walk join of the gathered trigger
-        // slots with the shape facts, the production GraphitronSchema.operationMembersOf reads.
-        // Computed over the pre-rewrite schema's definition nodes, the same artifact the
-        // trigger gather keyed.
-        var operationMembers = OperationMemberRelation.compute(
-            ctx.schema, dedupedFields, ctx.types, ctx.facts);
         var model = new GraphitronSchema(
             ctx.types, Collections.unmodifiableMap(dedupedFields), entitiesByType, ctx.warnings(),
             ctx.diagnostics(), arrivals, reachableSourceShapes, ctx.tenantScopes, tenantBindings,

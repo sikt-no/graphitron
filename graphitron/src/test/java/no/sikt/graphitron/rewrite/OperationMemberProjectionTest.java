@@ -283,6 +283,36 @@ class OperationMemberProjectionTest {
         };
     }
 
+    /**
+     * Transient bridge pin for the summary accessor's retirement: the member-derived summary
+     * fold ({@link no.sikt.graphitron.rewrite.classifieddsl.DimensionTuple#summaryArmOf}) equals
+     * the retiring summary column arm-for-arm over every corpus coordinate, ridden fields
+     * included, so the fold's equality to the column it replaces is demonstrated while both
+     * exist. Deleted together with the accessor.
+     */
+    @Test
+    void summaryFoldAgreesWithTheRetiringColumnOverTheCorpus() {
+        var coordinates = new java.util.concurrent.atomic.AtomicInteger();
+        for (var example : ClassifiedCorpus.examples()) {
+            GraphitronSchema schema = ClassifiedHarness.classify(example.sdl()).schema();
+            for (var entry : schema.fields().entrySet()) {
+                ClassifiedHarness.forEachWithRiddenFields(entry.getValue(), field -> {
+                    if (!(field instanceof OutputField leaf)) {
+                        return;
+                    }
+                    coordinates.incrementAndGet();
+                    assertThat(no.sikt.graphitron.rewrite.classifieddsl.DimensionTuple.summaryArmOf(leaf))
+                        .as("summary fold at %s.%s (%s in %s)", leaf.parentTypeName(), leaf.name(),
+                            leaf.getClass().getSimpleName(), example.id())
+                        .isEqualTo(leaf.operation().getClass());
+                });
+            }
+        }
+        assertThat(coordinates.get())
+            .as("the corpus scan must not be vacuous")
+            .isGreaterThan(50);
+    }
+
     /** The modeled-but-unpopulated member kinds, kept distinct from a silently empty vocabulary. */
     @Test
     void unpopulatedKindsAreDeclaredNotAccidental() {

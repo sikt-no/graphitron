@@ -298,7 +298,7 @@ public final class OperationMembers {
             // --- Child fields: service calls (reflected carrier) ---
             case ChildField.ServiceTableField f -> serviceTableRead(f);
             case ChildField.ServiceRecordField f -> List.of(new ServiceCall(
-                new Operation.ServiceCall.Call.ReflectedMethod(f.method())));
+                new ServiceCallCarrier.ReflectedMethod(f.method())));
 
             // --- Child fields: record reads, regroups and pass-throughs: the empty set.
             // The DataFetcher's existence is the fact; empty is a value. ---
@@ -371,7 +371,7 @@ public final class OperationMembers {
      */
     private static List<OperationMember> serviceTableRead(ChildField.ServiceTableField f) {
         var members = new ArrayList<OperationMember>();
-        members.add(new ServiceCall(new Operation.ServiceCall.Call.ReflectedMethod(f.method())));
+        members.add(new ServiceCall(new ServiceCallCarrier.ReflectedMethod(f.method())));
         if (!f.joinPath().isEmpty()) {
             members.add(new Join());
         }
@@ -388,7 +388,7 @@ public final class OperationMembers {
     }
 
     private static ServiceCall structuredServiceCall(ServiceMethodCall call) {
-        return new ServiceCall(new Operation.ServiceCall.Call.StructuredCall(call));
+        return new ServiceCall(new ServiceCallCarrier.StructuredCall(call));
     }
 
     /** The record-carrier DML verbs; UPDATE / DELETE route to the payload leaves upstream. */

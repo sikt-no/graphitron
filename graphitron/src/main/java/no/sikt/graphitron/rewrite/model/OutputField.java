@@ -93,12 +93,12 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
 
     /** The {@link Operation.ServiceCall} for a child {@code @service} leaf (reflected {@link MethodRef}). */
     static Operation serviceCall(MethodRef method) {
-        return new Operation.ServiceCall(new Operation.ServiceCall.Call.ReflectedMethod(method));
+        return new Operation.ServiceCall(new ServiceCallCarrier.ReflectedMethod(method));
     }
 
     /** The {@link Operation.ServiceCall} for a root {@code @service} leaf (a {@link ServiceMethodCall}). */
     static Operation serviceCall(ServiceMethodCall call) {
-        return new Operation.ServiceCall(new Operation.ServiceCall.Call.StructuredCall(call));
+        return new Operation.ServiceCall(new ServiceCallCarrier.StructuredCall(call));
     }
 
     /**
