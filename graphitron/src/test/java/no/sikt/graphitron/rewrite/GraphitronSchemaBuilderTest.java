@@ -5127,19 +5127,19 @@ class GraphitronSchemaBuilderTest {
     }
 
     enum InputFieldResolutionCase implements ClassificationCase {
-        TABLE_ON_INPUT_RETIRED(
-            "input type with @table → UnclassifiedType with the migration message (the directive "
-                + "is retired on inputs; fields resolve against each consuming field's table)",
+        TABLE_ON_INPUT_IGNORED(
+            "input type with @table → the same plain verdict as without it (the directive is "
+                + "deprecated and ignored on inputs; fields resolve against each consuming field's "
+                + "table). The deprecation surfaces as a build warning, not a verdict",
             """
             input CustomerInput @table(name: "customer") { customerId: Int! @field(name: "customer_id") }
             type Query { x: String leafReach1(in: CustomerInput): String }
             """,
             schema -> {
-                var t = (UnclassifiedType) schema.type("CustomerInput");
-                assertThat(t.reason())
-                    .contains("`@table` on input type")
-                    .contains("'CustomerInput'")
-                    .contains("no longer supported");
+                assertThat(schema.type("CustomerInput")).isNotInstanceOf(UnclassifiedType.class);
+                assertThat(schema.warnings())
+                    .anyMatch(w -> w.message().contains("CustomerInput")
+                        && w.message().contains("was ignored"));
             }),
 
         PLAIN_INPUT_ON_LOOKUP_FIELD_STAYS_PLAIN(

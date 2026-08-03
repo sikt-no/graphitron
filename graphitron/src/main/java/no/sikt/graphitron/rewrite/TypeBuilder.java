@@ -634,8 +634,9 @@ class TypeBuilder {
 
         // Shadowed by @table. A @table + @record combination is not a hard conflict
         // (detectTypeDirectiveConflict ignores @record), so OBJECT carriers reach this site;
-        // @table wins and @record is ignored. An input carrying @table is rejected at
-        // classification (retired location), which supersedes this warning.
+        // @table wins and @record is ignored. The arm is OBJECT-only because @table on an input
+        // contributes nothing to binding: it shadows nothing there, so an input carrying both
+        // falls through to the Matches / Disagrees arms on the reflected class alone.
         if (!isInput && container.hasAppliedDirective(DIR_TABLE)) {
             String message = "Type '" + name + "' carries both @table and "
                 + formatRecordRef(declaredClassName)
@@ -1586,20 +1587,14 @@ class TypeBuilder {
     private GraphitronType buildInputType(GraphQLInputObjectType inputType) {
         String name = inputType.getName();
         SourceLocation location = locationOf(inputType);
-        // Retired location: the SDL declaration keeps INPUT_OBJECT so the parser does not fail
-        // with a generic "unknown directive location", and classification rejects the
-        // application here with the migration message (same convention as @notGenerated).
-        if (inputType.hasAppliedDirective(DIR_TABLE)) {
-            return new UnclassifiedType(name, location, Rejection.structural(
-                "`@table` on input type '" + name + "' is no longer supported; remove the "
-                + "directive. An input's fields resolve against each consuming field's table, so "
-                + "filters and lookup args need no directive. For a consuming "
-                + "`@mutation(typeName: DELETE)` field, name the write target with "
-                + "`@mutation(table: \"…\")` on the field; for INSERT/UPDATE the write target is "
-                + "derived from the field's return type (a `@table` return, or a payload's "
-                + "`@table`-element data field), with `@mutation(table: \"…\")` for encoded-ID / "
-                + "scalar returns."));
-        }
+        // @table on an input is deprecated and inert: an input carrying it gets the same verdict
+        // it would get without it. The name: argument is never read, so the directive cannot
+        // decide a backing class, a write target, or a nesting boundary. The deprecation is
+        // announced per usage by
+        // {@code GraphitronSchemaBuilder.emitTableOnInputDeprecationWarnings}, which runs
+        // post-classification because the per-verb replacement wording needs the classified field
+        // registry; emitting from here would make warning multiplicity a function of
+        // {@link #lookAheadVerdict} memo timing.
         // The input is not itself a modeled relation, so it has no table to decide here; its
         // fields resolve against the consuming field's return table at each call site
         // (FieldBuilder.classifyArgument's plain-input path via InputFieldResolver, or the

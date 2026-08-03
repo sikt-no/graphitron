@@ -380,10 +380,15 @@ class JooqRecordServiceParamPipelineTest {
     }
 
     @Test
-    void tablePresentOnServiceRecordParamInput_rejectsAtTheType() {
-        // @table on an input is a retired location: the type-level rejection carries the
-        // migration message, superseding the old service-param-specific "drop @table" arm. The
-        // same input WITHOUT @table (PURE_FK_SDL above) classifies to the JooqRecord carrier.
+    void tablePresentOnServiceRecordParamInput_bindsIdenticallyToItsDirectivelessTwin() {
+        // @table on an input is deprecated and inert, so this input must bind exactly as
+        // PURE_FK_SDL's directiveless twin above: same record carrier, same keyDecodes, same
+        // generated create<Record> helper. The equivalence is the regression home for the deleted
+        // RecordBindingResolver input-axis arm, which would otherwise ground an input observation
+        // off @table(name: "film_actor") and fold against the @service param's own observation into
+        // a RecordBindingMultiProducer rejection. It also re-pins the deleted InputBeanResolver
+        // type-identity arm, whose removal was justified on the @table-plus-jOOQ-record-param
+        // conjunction being unauthorable; it is authorable again.
         var sdl = """
             type Film implements Node @table(name: "film") @node { id: ID! }
             type Actor implements Node @table(name: "actor") @node { id: ID! }
@@ -397,11 +402,32 @@ class JooqRecordServiceParamPipelineTest {
             }
             """;
         var schema = TestSchemaHelper.buildSchema(sdl);
-        var type = (no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType)
-            schema.type("AssignFilmActorTableInput");
-        assertThat(type.reason())
-            .contains("`@table` on input type 'AssignFilmActorTableInput'")
-            .contains("no longer supported");
+        assertThat(schema.type("AssignFilmActorTableInput"))
+            .as("the directive decides no verdict; the input classifies off its consumer alone")
+            .isNotInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType.class);
+        assertThat(schema.diagnostics())
+            .as("no producer-disagreement rejection: @table grounds nothing on the input axis")
+            .isEmpty();
+
+        var withTable = carrier(sdl, "assignFilmActorTable", false);
+        var twin = carrier(PURE_FK_SDL, "assignFilmActor", false);
+        assertThat(withTable.table().recordClass()).isEqualTo(twin.table().recordClass());
+        assertThat(withTable.keyDecodes())
+            .extracting(kd -> kd.leaf() + "->" + kd.targetColumns().get(0).sqlName())
+            .as("identical key decodes to the twin's")
+            .containsExactlyInAnyOrderElementsOf(twin.keyDecodes().stream()
+                .map(kd -> kd.leaf() + "->" + kd.targetColumns().get(0).sqlName()).toList());
+        assertThat(withTable.columnBindings())
+            .extracting(cb -> cb.leaf() + "->" + cb.column().sqlName())
+            .containsExactlyInAnyOrderElementsOf(twin.columnBindings().stream()
+                .map(cb -> cb.leaf() + "->" + cb.column().sqlName()).toList());
+        assertThat(findSpec("QueryFetchers", sdl).methodSpecs())
+            .extracting(MethodSpec::name).contains("createFilmActorRecord");
+
+        assertThat(schema.warnings())
+            .as("the deprecation advisory still fires; inertness is not silence")
+            .anyMatch(w -> w.message().contains("AssignFilmActorTableInput")
+                && w.message().contains("was ignored"));
     }
 
     private static final String MIXED_SDL = """
@@ -732,28 +758,54 @@ class JooqRecordServiceParamPipelineTest {
     }
 
     @Test
-    void nestedTableInput_rejectsAsSecondDmlTarget() {
-        // A nested input carrying @table is a second DML target, not a column group to flatten — reject
-        // rather than silently erase the authored directive (compound multi-table mutations are out of scope).
-        var sdl = """
+    void nestedTableInput_flattensLikeItsDirectivelessTwin() {
+        // A nested input carrying @table is not a second DML target: the directive is deprecated and
+        // inert, so the type is an ordinary grouping input whose columns flatten onto the param
+        // record's table exactly as a directiveless group's do. The regression home for the deleted
+        // InputBeanResolver nested-@table rejection. Its columns must resolve on the *parent's*
+        // table (film) — the nested type's own @table(name: "language") names nothing that is read,
+        // which is the whole point.
+        var withTable = """
             type Film implements Node @table(name: "film") @node { id: ID! title: String }
             type Language implements Node @table(name: "language") @node { id: ID! }
             input ModifyWithTableInput {
                 filmId: ID! @nodeId(typeName: "Film")
                 nested: NestedTableInput!
             }
-            input NestedTableInput @table(name: "language") { name: String @field(name: "name") }
+            input NestedTableInput @table(name: "language") { title: String @field(name: "title") }
             type Query {
                 modifyWithTable(in: ModifyWithTableInput!): String
                     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord"})
             }
             """;
-        var field = TestSchemaHelper.buildSchema(sdl).field("Query", "modifyWithTable");
-        assertThat(field).isInstanceOf(UnclassifiedField.class);
-        assertThat(((UnclassifiedField) field).reason())
-            .contains("@table")
-            .contains("second DML target")
-            .contains("compound multi-table mutations are not supported");
+        var twin = """
+            type Film implements Node @table(name: "film") @node { id: ID! title: String }
+            input ModifyPlainInput {
+                filmId: ID! @nodeId(typeName: "Film")
+                nested: NestedPlainInput!
+            }
+            input NestedPlainInput { title: String @field(name: "title") }
+            type Query {
+                modifyPlain(in: ModifyPlainInput!): String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord"})
+            }
+            """;
+        var schema = TestSchemaHelper.buildSchema(withTable);
+        assertThat(schema.field("Query", "modifyWithTable"))
+            .as("the nested directive rejects nothing")
+            .isNotInstanceOf(UnclassifiedField.class);
+
+        var nested = carrier(withTable, "modifyWithTable", false);
+        var plain = carrier(twin, "modifyPlain", false);
+        assertThat(nested.table().recordClass()).isEqualTo(plain.table().recordClass());
+        assertThat(nested.columnBindings())
+            .extracting(cb -> cb.leaf() + "->" + cb.column().sqlName())
+            .as("the nested group's column flattens onto film.title, as in the twin")
+            .containsExactlyInAnyOrderElementsOf(plain.columnBindings().stream()
+                .map(cb -> cb.leaf() + "->" + cb.column().sqlName()).toList());
+        assertThat(schema.warnings())
+            .as("the nested type earns its own deprecation advisory")
+            .anyMatch(w -> w.message().contains("NestedTableInput") && w.message().contains("was ignored"));
     }
 
     @Test

@@ -39,6 +39,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
+import no.sikt.graphitron.rewrite.model.DmlKind;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.Rejection.InvalidSchema.CaseFoldCollision.Origin;
 import no.sikt.graphitron.rewrite.model.SourceKey;
@@ -286,6 +287,7 @@ public class GraphitronSchemaBuilder {
         // does not entail the ordering (the reduction reads the registry, not the relation). See
         // rejectCaseInsensitiveTypeCollisions.
         rejectCaseInsensitiveTypeCollisions(ctx);
+        emitTableOnInputDeprecationWarnings(ctx);
         rejectNonIdNodeId(ctx);
         rejectFacetMisuse(ctx, connectionSynthesis);
         // Apply the collision-suffix rule to ErrorChannel.mappingsConstantName on every
@@ -823,6 +825,146 @@ public class GraphitronSchemaBuilder {
                     Rejection.caseFoldCollision(group, origin), existing.location()));
             }
         }
+    }
+
+    /**
+     * The actionable tier of the {@code @table}-on-input deprecation signal. Walks every
+     * {@code INPUT_OBJECT} that declares {@code @table} (read off {@code ctx.schema} applied
+     * directives, like {@link #rejectNonIdNodeId}) and emits a non-fatal
+     * {@link BuildWarning.NoRule} advisory per usage. No input is carved out: DELETE, INSERT, and
+     * UPDATE all have field-relative write-target paths, so the warning fires on every
+     * author-written {@code @table} input and names the per-verb replacement explicitly.
+     *
+     * <p>The message states that the directive <em>had no effect</em>, not only that it is
+     * deprecated. Accept-and-ignore is behaviour-preserving against the schema but not against the
+     * author's intent in one case: an input whose {@code @table} named a different table than the
+     * consuming field resolves. Nothing else catches that, so the message is the whole mitigation
+     * and has to say the directive was ignored alongside the replacement clause.
+     *
+     * <p>Runs post-classification rather than from {@link TypeBuilder#buildInputType}: the
+     * per-verb wording needs the classified field registry to know who consumes the input, and
+     * {@code buildInputType} is reached through a memoizing look-ahead, so emitting there would
+     * make warning multiplicity a function of memo timing.
+     *
+     * <p>The plain {@link BuildWarning.NoRule} arm (not {@link BuildWarning.LintFinding}) is
+     * deliberate: this is a deprecation announcement, not a lint-engine finding. The live
+     * precedent for {@code NoRule} is the federation compound-key advisory in
+     * {@link EntityResolutionBuilder}. It carries no fix: {@code NoRule} has no fix field, and
+     * {@link no.sikt.graphitron.rewrite.lint.LintFix#deleteBareAppliedDirective} gates on the
+     * directive definition declaring no arguments, which {@code @table} does not satisfy.
+     * The advisory still reaches the LSP as a warning squiggle, which projects every located
+     * {@link BuildWarning} regardless of arm.
+     */
+    private static void emitTableOnInputDeprecationWarnings(BuildContext ctx) {
+        Set<String> deleteConsumed = deleteConsumedInputTypes(ctx);
+        Set<String> insertConsumed = insertConsumedInputTypes(ctx);
+        Set<String> updateConsumed = updateConsumedInputTypes(ctx);
+        for (var type : ctx.schema.getAllTypesAsList()) {
+            if (!(type instanceof GraphQLInputObjectType input)) continue;
+            if (!input.hasAppliedDirective(DIR_TABLE)) continue;
+            String replacement;
+            if (deleteConsumed.contains(input.getName())) {
+                replacement = " For the consuming `@mutation(typeName: DELETE)` field, set the write "
+                    + "target with `@mutation(table: \"…\")` on the field, not with `@table` on the "
+                    + "input type.";
+            } else if (insertConsumed.contains(input.getName())) {
+                replacement = " For the consuming `@mutation(typeName: INSERT)` field, the write target "
+                    + "is derived from the field's return type (a `@table` return, or a payload's "
+                    + "`@table`-element data field); for an encoded-ID / scalar return, name it with "
+                    + "`@mutation(table: \"…\")` on the field.";
+            } else if (updateConsumed.contains(input.getName())) {
+                replacement = " For the consuming `@mutation(typeName: UPDATE)` field, the write target "
+                    + "is derived from the field's return type (a `@table` return, or a payload's "
+                    + "`@table`-element data field); for an encoded-ID / scalar return, name it with "
+                    + "`@mutation(table: \"…\")` on the field.";
+            } else {
+                replacement = " This input's fields resolve against each consuming field's table, so "
+                    + "filters and lookup args need no directive.";
+            }
+            ctx.addWarning(new BuildWarning.NoRule(
+                "`@table` on input type '" + input.getName() + "' was ignored: an input's backing "
+                + "table is derived from each consuming field, and the directive's `name:` argument "
+                + "is never read. It is deprecated and will be rejected in a future release; remove "
+                + "it now." + replacement,
+                locationOf(input)));
+        }
+    }
+
+    /**
+     * The SDL input-type names consumed by a {@code @mutation(typeName: INSERT)} field. Drives the
+     * INSERT-specific replacement clause on the {@code @table}-on-input deprecation warning (the write
+     * target is derived from the return type, or named with {@code @mutation(table:)} for an encoded
+     * return); the set selects wording only, it suppresses nothing. Every INSERT leaf carries an
+     * {@link ArgumentRef.InputTypeArg.TableInputArg} whose {@code typeName()} is the input type; the
+     * record-carrier DML leaves are gated on {@code kind() == INSERT} (UPSERT is refused upstream,
+     * but the leaf type structurally permits it).
+     */
+    private static Set<String> insertConsumedInputTypes(BuildContext ctx) {
+        Set<String> consumed = new LinkedHashSet<>();
+        for (var field : ctx.fieldRegistry.entries().values()) {
+            switch (field) {
+                case MutationField.MutationInsertTableField f -> consumed.add(f.tableInputArg().typeName());
+                case MutationField.MutationDmlRecordField f -> {
+                    if (f.kind() == DmlKind.INSERT) consumed.add(f.tableInputArg().typeName());
+                }
+                case MutationField.MutationBulkDmlRecordField f -> {
+                    if (f.kind() == DmlKind.INSERT) consumed.add(f.tableInputArg().typeName());
+                }
+                default -> { /* only the INSERT leaves carry a TableInputArg write target */ }
+            }
+        }
+        return consumed;
+    }
+
+    /**
+     * The SDL input-type names consumed by a {@code @mutation(typeName: DELETE)} field. Drives
+     * the DELETE-specific replacement clause on the {@code @table}-on-input deprecation warning (name
+     * the write target with {@code @mutation(table:)} on the field).
+     *
+     * <p>The three DELETE leaves carry an {@link no.sikt.graphitron.rewrite.model.InputArgRef} whose
+     * accessor is {@code inputTypeName()} (not the {@code tableInputArg().typeName()} the INSERT set
+     * reads); the record-carrier DML leaves are INSERT/UPSERT-only by compact constructor, so these
+     * three arms are exhaustive over DELETE.
+     */
+    private static Set<String> deleteConsumedInputTypes(BuildContext ctx) {
+        Set<String> consumed = new LinkedHashSet<>();
+        for (var field : ctx.fieldRegistry.entries().values()) {
+            switch (field) {
+                case MutationField.MutationDeleteTableField f -> consumed.add(f.inputArg().inputTypeName());
+                case MutationField.MutationDeletePayloadField f -> consumed.add(f.inputArg().inputTypeName());
+                case MutationField.MutationBulkDeletePayloadField f -> consumed.add(f.inputArg().inputTypeName());
+                default -> { /* only the three DELETE leaves carry an InputArgRef write target */ }
+            }
+        }
+        return consumed;
+    }
+
+    /**
+     * The SDL input-type names consumed by a {@code @mutation(typeName: UPDATE)} field. Drives the
+     * UPDATE-specific replacement clause on the {@code @table}-on-input deprecation warning (the write
+     * target is derived from the return type, or named with {@code @mutation(table:)} for an encoded /
+     * scalar return). The three UPDATE walker-carrier leaves
+     * ({@link MutationField.MutationUpdateTableField}, {@link MutationField.MutationUpdatePayloadField},
+     * {@link MutationField.MutationBulkUpdatePayloadField}) each carry an
+     * {@link no.sikt.graphitron.rewrite.model.InputArgRef} whose accessor is {@code inputTypeName()},
+     * mirroring the DELETE leaves.
+     *
+     * <p>{@link MutationField.MutationUpsertTableField} and
+     * {@link MutationField.MutationRoutineWriteField} sit in none of the three sets, which is
+     * correct: UPSERT is refused at the {@code @mutation} classifier dispatch, so an
+     * UPSERT-consumed input is unauthorable, and a routine write names no input table.
+     */
+    private static Set<String> updateConsumedInputTypes(BuildContext ctx) {
+        Set<String> consumed = new LinkedHashSet<>();
+        for (var field : ctx.fieldRegistry.entries().values()) {
+            switch (field) {
+                case MutationField.MutationUpdateTableField f -> consumed.add(f.inputArg().inputTypeName());
+                case MutationField.MutationUpdatePayloadField f -> consumed.add(f.inputArg().inputTypeName());
+                case MutationField.MutationBulkUpdatePayloadField f -> consumed.add(f.inputArg().inputTypeName());
+                default -> { /* only the three UPDATE leaves carry an InputArgRef write target */ }
+            }
+        }
+        return consumed;
     }
 
     /**

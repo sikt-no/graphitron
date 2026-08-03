@@ -401,10 +401,12 @@ final class MutationInputResolver {
                         + "(mutations write values; only @condition(override: true) is admitted)");
                 }
             }
-            // A nested @table input is compound-mutation territory and is not descended here.
+            // Descends into every nested input. @table on one is deprecated and inert, so it does
+            // not gate the scan: without this a @lookupKey / @condition buried inside a nested
+            // @table grouping input would escape the admission rules its directiveless twin is
+            // held to, failing open.
             var base = GraphQLTypeUtil.unwrapAll(sdlField.getType());
-            if (base instanceof graphql.schema.GraphQLInputObjectType nested
-                    && !nested.hasAppliedDirective(DIR_TABLE)) {
+            if (base instanceof graphql.schema.GraphQLInputObjectType nested) {
                 var nestedRejection = rejectInputFieldDirectives(nested, argTypeName);
                 if (nestedRejection != null) {
                     return nestedRejection;

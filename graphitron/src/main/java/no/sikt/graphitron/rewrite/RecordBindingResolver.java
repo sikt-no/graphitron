@@ -231,18 +231,12 @@ final class RecordBindingResolver {
                     }
                 });
             }
-            if (named instanceof GraphQLInputObjectType inp && inp.hasAppliedDirective(DIR_TABLE)) {
-                String tableSqlName = argString(inp, DIR_TABLE, ARG_NAME).orElse(inp.getName().toLowerCase());
-                Optional<TableRef> tableOpt = svc.resolveTable(tableSqlName);
-                tableOpt.ifPresent(table -> {
-                    try {
-                        Class<?> recordClass = Class.forName(
-                            table.recordClass().reflectionName(), false, ctx.codegenLoader());
-                        addInputObservation(inp.getName(), new ProducerBinding.RootTable(
-                            recordClass, inp.getName(), tableSqlName, locationOf(inp)));
-                    } catch (ClassNotFoundException ignored) {}
-                });
-            }
+            // No input-axis sibling arm: @table on an INPUT_OBJECT is deprecated and inert, so it
+            // grounds nothing. Registering an input observation off it would honor the directive
+            // rather than ignore it (the declared table's record class would decide the input's
+            // backing carrier), and a second observation from a @service param would fold into a
+            // RecordBindingMultiProducer rejection. An input's backing class comes from its
+            // consumers alone.
         });
 
         // @service, @externalField (ComputedField), and @mutation (DmlEmitted)

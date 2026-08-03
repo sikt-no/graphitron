@@ -58,9 +58,11 @@ class TypeClassificationProjectionTest {
     }
 
     @Test
-    void tableDirectiveOnInputProjectsUnclassifiedWithMigrationReason() {
-        // `@table` on an input type is no longer supported; the type classifies as
-        // UnclassifiedType and the projection surfaces the migration message.
+    void tableDirectiveOnInputProjectsThePlainInputClassification() {
+        // `@table` on an input type is deprecated and ignored, so the projection carries the same
+        // classification it would without the directive: no Unclassified arm, no migration reason
+        // in the snapshot. The deprecation is announced as a build warning instead, which the
+        // catalog projection does not carry.
         var snapshot = snapshotOf("""
             input FilmKey @table(name: "film") { filmId: Int @field(name: "film_id") }
             type Film @table(name: "film") { title: String }
@@ -68,9 +70,8 @@ class TypeClassificationProjectionTest {
               film(key: FilmKey!): Film
             }
             """);
-        var unclassified = (TypeClassification.Unclassified) snapshot.typeClassificationsByName().get("FilmKey");
-        assertThat(unclassified.reason()).contains(
-            "`@table` on input type 'FilmKey' is no longer supported", "remove the directive");
+        assertThat(snapshot.typeClassificationsByName().get("FilmKey"))
+            .isNotInstanceOf(TypeClassification.Unclassified.class);
     }
 
     @Test

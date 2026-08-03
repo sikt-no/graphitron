@@ -62,32 +62,51 @@ class RecordDirectiveIgnoredWarningTest {
     }
 
     @Test
-    void tableWithRecordOnInput_rejectsAtTheType_noShadowedWarning() {
-        // @table on an input is a retired location: the classify-time rejection supersedes the
-        // "Shadowed by @table" warning, which is now OBJECT-only.
+    void tableWithRecordOnInput_reachesTheReflectedClassArm_notTheShadowedOne() {
+        // The "Shadowed by @table" arm is OBJECT-only, and this pins why that stays correct now
+        // that an input carrying @table classifies rather than rejecting: @table contributes
+        // nothing to an input's binding, so it shadows nothing, and the input must fall through to
+        // the reflected-class arms on its producer alone.
+        //
+        // The input needs a producer to get there. A filter-only input has no input binding at all
+        // (RecordBindingResolver grounds no observation off @table on an input), so
+        // emitDirectiveIgnoredWarning would return at its !reachable guard before the !isInput arm
+        // was ever consulted, and the assertion below would pass for the wrong reason. A @service
+        // record param supplies one.
         var schema = TestSchemaHelper.buildSchema("""
-            type Film @table(name: "film") { title: String }
+            type Film implements Node @table(name: "film") @node { id: ID! }
             input FilmInput
                 @table(name: "film")
                 @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"})
-            { id: ID }
-            type Query { films(filter: FilmInput): [Film!]! }
+            { filmId: ID! @nodeId(typeName: "Film") }
+            type Query {
+                modifyFilm(in: FilmInput!): String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord"})
+            }
             """);
 
-        assertThat(schema.type("FilmInput")).isInstanceOf(GraphitronType.UnclassifiedType.class);
+        assertThat(schema.type("FilmInput"))
+            .as("the type classifies; @table decides nothing on an input")
+            .isNotInstanceOf(GraphitronType.UnclassifiedType.class);
         assertThat(schema.warnings())
             .extracting(BuildWarning::message)
+            .as("not the shadowed-by-@table wording, which is OBJECT-only")
             .noneMatch(m -> m.contains("FilmInput") && m.contains("carries both @table and"));
+        assertThat(schema.warnings())
+            .extracting(BuildWarning::message)
+            .as("but the reflected-class arm is reached: @record agrees with the param's own "
+                + "FilmRecord, so the redundant-directive advisory fires")
+            .anyMatch(m -> m.contains("FilmInput") && m.contains("redundant"));
     }
 
     @Test
     void tableObjectWithRecord_recordIgnored_staysTableBackedNotConflict() {
         // Precedence: @record co-located with @table is not a DirectiveConflict; @table wins and
         // @record is ignored, so the type classifies table-backed rather than demoting to
-        // UnclassifiedType. (The input variant rejects at the type instead — retired location —
-        // pinned above; this object carrier pins the no-conflict classification. Reached via
-        // Query.c so the field-first walk classifies it; an unreachable type is pruned, not
-        // classified.)
+        // UnclassifiedType. (The input variant takes the reflected-class arms instead, since
+        // @table shadows nothing on an input; pinned above. This object carrier pins the
+        // no-conflict classification. Reached via Query.c so the field-first walk classifies it;
+        // an unreachable type is pruned, not classified.)
         var schema = TestSchemaHelper.buildSchema("""
             type Query { c: Conflicted }
             type Conflicted @table(name: "film") @record(record: {className: "no.sikt.graphitron.rewrite.TestDtoStub"}) {

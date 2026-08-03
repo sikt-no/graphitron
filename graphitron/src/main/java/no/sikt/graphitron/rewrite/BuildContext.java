@@ -2545,10 +2545,12 @@ class BuildContext {
                 .orElseGet(() -> new InputFieldResolution.Unresolved(name, columnName,
                     "no column '" + columnName + "' reachable via @reference path"));
         }
-        // Nesting: field type is a plain input object (no @table).
+        // Nesting: field type is an input object. @table on it is deprecated and inert, so it does
+        // not gate the descent; a nested @table grouping input flattens exactly as its
+        // directiveless twin does rather than falling through to the column-lookup path below and
+        // resolving as a column named after the nested type.
         var baseType = GraphQLTypeUtil.unwrapAll(type);
-        if (baseType instanceof GraphQLInputObjectType nestedInputType
-                && !nestedInputType.hasAppliedDirective(DIR_TABLE)) {
+        if (baseType instanceof GraphQLInputObjectType nestedInputType) {
             if (ctx.isExpanding(typeName)) {
                 return new InputFieldResolution.Unresolved(name, null,
                     "circular input type reference detected while expanding '" + typeName + "'");

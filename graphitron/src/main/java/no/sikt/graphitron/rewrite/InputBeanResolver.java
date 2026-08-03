@@ -305,14 +305,9 @@ final class InputBeanResolver {
                         + " — a list of column-groups cannot flatten onto one record. Make the field"
                         + " singular, or model the repetition as a separate list-valued mutation");
                 }
-                if (nestedIot.hasAppliedDirective(DIR_TABLE)) {
-                    return Rejection.structural(where
-                        + ": nested input field '" + dottedPath(path) + "' is typed '" + nestedIot.getName()
-                        + "' which carries @table — a nested @table input is a second DML target, not a"
-                        + " column group to flatten onto the param record's table (compound multi-table"
-                        + " mutations are not supported). Drop @table to flatten this group's columns onto"
-                        + " the parent, or model it as a separate mutation");
-                }
+                // A nested @table input is not a second DML target: @table on an input is
+                // deprecated and inert, so the type is an ordinary grouping input and flattens
+                // onto the parent record exactly as its directiveless twin does.
                 if (classifyCtx.isExpanding(nestedIot.getName())) {
                     return Rejection.structural(where
                         + ": nested input field '" + dottedPath(path) + "' reaches input type '"
