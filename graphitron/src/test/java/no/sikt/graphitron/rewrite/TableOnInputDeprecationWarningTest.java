@@ -1,6 +1,8 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.rewrite.model.DmlWriteField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
@@ -95,9 +97,9 @@ class TableOnInputDeprecationWarningTest {
             type Mutation { createBar(in: BarInput!): ID @mutation(typeName: INSERT, table: "bar") }
             """, NODEID_CTX);
 
-        assertThat(schema.field("Mutation", "createBar"))
-            .as("sanity: the encoded-ID INSERT still classifies as a MutationInsertTableField")
-            .isInstanceOf(no.sikt.graphitron.rewrite.model.MutationField.MutationInsertTableField.class);
+        assertThat(writeArmOf(schema, "createBar"))
+            .as("sanity: the encoded-ID INSERT still classifies as a DML insert write")
+            .isInstanceOf(OperationMember.Write.Insert.class);
         assertThat(schema.warnings())
             .filteredOn(w -> w.message().contains("BarInput") && w.message().contains(IGNORED_FRAGMENT))
             .as("encoded-ID INSERT input warns, naming @mutation(table:)")
@@ -118,9 +120,9 @@ class TableOnInputDeprecationWarningTest {
             type Mutation { deleteFilm(in: FilmDeleteInput!): ID @mutation(typeName: DELETE, table: "film") }
             """);
 
-        assertThat(schema.field("Mutation", "deleteFilm"))
-            .as("sanity: the ID-return DELETE classifies as a MutationDeleteTableField")
-            .isInstanceOf(no.sikt.graphitron.rewrite.model.MutationField.MutationDeleteTableField.class);
+        assertThat(writeArmOf(schema, "deleteFilm"))
+            .as("sanity: the ID-return DELETE classifies as a DML delete write")
+            .isInstanceOf(OperationMember.Write.Delete.class);
         assertThat(schema.warnings())
             .filteredOn(w -> w.message().contains("FilmDeleteInput") && w.message().contains(IGNORED_FRAGMENT))
             .as("DELETE-consumed input warns, naming @mutation(table:) as the replacement")
@@ -144,9 +146,9 @@ class TableOnInputDeprecationWarningTest {
             type Mutation { updateFilm(in: FilmUpdateInput!): Film @mutation(typeName: UPDATE) }
             """);
 
-        assertThat(schema.field("Mutation", "updateFilm"))
-            .as("sanity: the return-derived UPDATE classifies as a MutationUpdateTableField")
-            .isInstanceOf(no.sikt.graphitron.rewrite.model.MutationField.MutationUpdateTableField.class);
+        assertThat(writeArmOf(schema, "updateFilm"))
+            .as("sanity: the return-derived UPDATE classifies as a DML update write")
+            .isInstanceOf(OperationMember.Write.Update.class);
         assertThat(schema.warnings())
             .filteredOn(w -> w.message().contains("FilmUpdateInput") && w.message().contains(IGNORED_FRAGMENT))
             .as("UPDATE-consumed input warns, naming the return-derived replacement")
@@ -301,5 +303,12 @@ class TableOnInputDeprecationWarningTest {
             && w.message().contains("@mutation(typeName: UPDATE)"));
         assertThat(schema.warnings()).anyMatch(w -> w.message().contains("NestedGroupInput")
             && w.message().contains("resolve against each consuming field's table"));
+    }
+
+    /** The DML write arm the named Mutation field carries, so a verb assertion names the verb. */
+    private static OperationMember.Write.Dml writeArmOf(GraphitronSchema schema, String fieldName) {
+        var field = schema.field("Mutation", fieldName);
+        assertThat(field).isInstanceOf(DmlWriteField.class);
+        return ((DmlWriteField) field).write();
     }
 }
