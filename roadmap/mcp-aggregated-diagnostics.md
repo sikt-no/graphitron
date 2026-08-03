@@ -72,13 +72,65 @@ currently make:
 - `CompileDiagnostic` carries its own severity and file, so the `compile` source aggregates on
   the same axes as `schema`.
 
-That leaves exactly one dimension untyped: the shape of the message *within* the
-`AuthorError.Structural(String reason)` and `InvalidSchema.Structural(String reason)`
-catch-alls. Those are where the retired-directive rejections live (`@table` on an input type,
-`@notGenerated`, both constructed through `Rejection.structural`, so both classify as
-`AUTHOR_ERROR`), along with the mutation-argument-shape and payload-classification rows.
-Substantial, but a minority of the total and a much smaller surface for a heuristic than the
-first draft of this item assumed.
+- **`InvalidSchema.DirectiveConflict` carries `List<String> directives`**, which is a typed
+  cluster key over exactly the retired-directive family the observed report's rows 2 and 12
+  describe.
+- **Forty-two `lspCode()` sites already exist**, declared independently by nine sub-seals of
+  `AuthorError` (`ServiceMethodCallError`, `ReflectionError`, `UpdateRowsError`,
+  `DeleteRowsError`, `MutationTableArgError`, `ErrorChannelWalkerError`, `WireCoercionError`,
+  `ServiceCarrierShapeError`, `PivotError`; `PivotError` alone has fourteen). These are stable
+  machine-readable ids of the exact kind this item wants, and the first draft of this item
+  missed them entirely.
+
+That leaves the message *within* the `AuthorError.Structural(String reason)` and
+`InvalidSchema.Structural(String reason)` catch-alls as the only genuinely untyped axis. Some
+retired-directive rejections live there (`@table` on an input type via `Rejection.structural`),
+alongside the mutation-argument-shape and payload-classification rows.
+
+## What the model owns but does not yet expose
+
+Drafting this Spec against the principles surfaced four places where the model already knows a
+fact and discards it, so a read-side projection would have to re-derive it. Each is small, each
+independently improves the LSP and the watch formatter, and each removes a dimension from the
+heuristic's domain:
+
+1. **`lspCode()` is a capability declared nine times over.** The only way to reach it is
+   `Diagnostics.lspCodeOf`, a nine-arm `instanceof` chain returning `null` for everything else.
+   The MCP aggregate would have to copy that chain or forgo 42 stable codes and prose-cluster
+   them instead. Lift it to one capability interface (`CodedRejection extends Rejection` with
+   `String lspCode()`), implemented by the nine sub-seals; `lspCodeOf` collapses to a single
+   `instanceof CodedRejection`, and the aggregate gets a typed cluster key for free. Pin
+   membership with a partition meta-test so every `Rejection` leaf is declared coded or
+   deliberately codeless, rather than defaulting silently into the prose bucket.
+2. **`StubKey` is a one-permit sealed interface with a nullable component, and the producer
+   already discriminates.** `Rejection.deferred(summary, fieldClass)` and
+   `Rejection.deferred(summary)` are two factories, and the second explicitly constructs
+   `new StubKey.VariantClass(null)`. So the producer knows which arm it is and throws the
+   knowledge away, and the read side pays with a prose fallback on the deferred half, which the
+   evidence says clusters *best*. Split `StubKey` into two permits (a non-null `VariantClass`
+   plus an arm for inline-defer sites) and the deferred cluster key becomes an exhaustive
+   two-arm switch with no fallback. The only production reference to `VariantClass` outside
+   `Rejection` is a javadoc pointer in `TypeFetcherGenerator`.
+3. **The actionable / deferred binary would be its third site.** `RejectionKind`'s javadoc
+   declares itself the projection layer, yet `Diagnostics.severityOf` already had to answer
+   "deferred versus the rest" and recorded the answer in a comment ("Deferred is Error rather
+   than Warning: the actionable hint is the rejection's message") rather than in the model.
+   Inventing the binary in the MCP layer makes "can the author fix this in the schema?" a prose
+   comment in one view and code in another. It belongs next to `messageLabel()` as an exhaustive
+   switch, pinned by the existing `RejectionKindProjectionTest`. Pick one word for it and use
+   the same word on the wire and in the model, or the drift reopens at the vocabulary level.
+4. **`coordinate` is a nullable `String` that consumers re-derive by dot-splitting.**
+   `ValidationError.forType` / `forField` know the grain at construction and collapse it to a
+   string plus `null` for schema-wide; `WatchErrorFormatter` re-derives it with `isTypeLevel` /
+   `typeOf` dot-splits, and this item's `type` dimension would be the second site of the same
+   predicate. `DiagnosticsTool`'s "warnings carry no coordinate, so a coordinate filter excludes
+   them by construction" is a third fact about the same slot living only in a comment. A sealed
+   `Coordinate { SchemaWide | TypeLevel | FieldLevel }` component makes two dimensions read slots
+   instead of parsing, deletes the formatter's predicates, and turns the warnings invariant into
+   a type fact.
+
+Doing these first is what keeps the aggregate a projection rather than a shadow taxonomy. It
+also reorders the work: see Phasing.
 
 ## Direction
 
@@ -148,13 +200,30 @@ diagnostics.aggregate(
 )
 ```
 
-Every dimension name comes from a closed enum, each value backed by one extractor function over
-a diagnostic row: `severity`, `source`, `actionable`, `kind`, `variant`, `attemptKind`,
-`attempt`, `stubKey`, `lintRule`, `coordinate`, `type`, `file`, `directory`, `messageTemplate`.
-`where` filters on the same extractors that `groupBy` groups on, which collapses this item's
-part 3 (drill-down filters) and part 1 (the aggregate) into a single mechanism instead of two
-parallel filter implementations. A preset report is then literally a named `(groupBy, where)`
-tuple, so a report and an ad-hoc pivot cannot drift in behaviour.
+Every dimension name comes from a closed enum, each value backed by one extractor over a
+diagnostic row: `severity`, `source`, `actionable`, `kind`, `variant`, `lspCode`, `attemptKind`,
+`attempt`, `stubKey`, `directives`, `lintRule`, `coordinate`, `type`, `file`, `directory`,
+`messageTemplate`. `where` filters on the same extractors that `groupBy` groups on, which
+collapses this item's part 3 (drill-down filters) and part 1 (the aggregate) into a single
+mechanism instead of two parallel filter implementations. A preset report is then literally a
+named `(groupBy, where)` tuple, so a report and an ad-hoc pivot cannot drift in behaviour.
+
+**An enum of labels is the right shape here, and the sealed switch belongs in the extractor
+bodies.** This module already settled the question: `EdgeKind`'s javadoc calls itself
+"legitimately an `enum` (a label), not a sealed hierarchy" because the varying-shape part lives
+in `NodeRef`, so the enum "carries no kind-dependent nullability", and names that as the
+resolution of the sealed-over-enum tension. A pivot dimension is the same: every value has the
+identical shape `DiagnosticRow -> group key`, no value carries different data, so a sealed
+hierarchy buys nothing. Two constraints keep it from smuggling in a stringly side-channel:
+
+- Every extractor that reads a rejection is an **exhaustive sealed switch with no `default` and
+  no `instanceof` chain**, so a new `Rejection` arm forces a decision in the aggregate the way
+  `RejectionKind.of` and `Diagnostics.severityOf` already do.
+- Extractors return a **uniform `Optional<String>`** for "not applicable on this row", never
+  `null`, so `where` and `groupBy` cannot disagree about absence.
+- The enum gets the coverage pin the module already established with `EdgeCoverageTest`: every
+  dimension declared in exactly one bucket (typed-key / location-derived / prose-derived), which
+  makes the wire contract's "which clusters are typed" claim a live partition instead of prose.
 
 **Why not a real query language.** A SQL-ish or CEL / JMESPath surface costs a grammar or a new
 pinned dependency, unbounded semantics to validate, error messages good enough to recover from,
@@ -170,8 +239,23 @@ case, and a single optional `messageMatches` regex covers the rest if it proves 
 three sources (validator errors, build warnings, compile diagnostics) with no intermediate typed
 row, so there is nothing for an extractor to read. Faceting wants a package-private
 `DiagnosticRow` record unioning the three channels, with the existing per-entry wire mapping
-projected off it. That is a small refactor and it improves the existing tool independent of
-aggregation.
+projected off it. It improves the existing tool independent of aggregation, but it must land
+*after* the model lifts, not before: a row built with `String coordinate` / `String message`
+components bakes in the wide shapes, and then narrowing them is a change to the row and to every
+extractor at once.
+
+**The prose fallback needs an enforcer, not a hedge.** Saying on the wire "these clusters are
+prose-derived" is honest but nothing fails when a message reword silently re-partitions the
+aggregate. Worse, the `@notGenerated` retirement sentence is currently emitted from three sites
+with three *different* rejection identities: `Rejection.directiveConflict(...)` in `FieldBuilder`
+(typed, carrying the directive list), `Rejection.structural(...)` elsewhere in `FieldBuilder`
+(prose only), and a bare-string `InputFieldResolution.Unresolved` in `BuildContext`. A message
+template fuses those three only *because the sentence is duplicated*, and splits them the day one
+is reworded. So: add the `directives` dimension, route the stray retired-directive sites through
+`Rejection.directiveConflict` so the cause has one identity, then measure what residue is left.
+Whatever prose clustering survives gets a partition test over `Rejection` leaves, so no coded or
+typed-key arm can reach the prose path and the heuristic's domain is a declared, shrinking set
+rather than the default bucket new arms fall into.
 
 **The one genuine cost to design around: group cardinality.** A composite `groupBy` over
 high-cardinality dimensions (`type` crossed with `attempt`, say) can produce nearly as many
@@ -180,7 +264,71 @@ replaces. `limit` plus `minCount` handle it, but the response has to state how m
 elided and their combined count, so the aggregate never reads as complete when it is truncated.
 Worth pinning as a test, because it is the failure mode that would quietly defeat the purpose.
 
-## Forks for Spec
+## Phasing
+
+Ordered by dependency, not by module. The model lifts come first because building the row or the
+extractors on today's wide shapes means doing them twice.
+
+| # | What | Where | Size |
+|---|---|---|---|
+| 1 | `RejectionKind` gains the author-fixable projection; `Diagnostics.severityOf`'s comment becomes a read of it | `graphitron`, `graphitron-lsp` | small |
+| 2 | `StubKey` splits into two permits, non-null `VariantClass` plus an inline-defer arm; the two `deferred` factories map to their own arm | `graphitron` | small |
+| 3 | `CodedRejection` capability lift; `Diagnostics.lspCodeOf` collapses to one `instanceof`; membership partition meta-test | `graphitron`, `graphitron-lsp` | small-medium (42 sites, mechanical) |
+| 4 | Sealed `Coordinate` component on `ValidationError`; `WatchErrorFormatter`'s `isTypeLevel` / `typeOf` delete | `graphitron`, `graphitron-maven-plugin` | medium |
+| 5 | Retired-directive rejection identities converge on `Rejection.directiveConflict` | `graphitron` | small |
+| 6 | `DiagnosticRow` union over the three channels; existing per-entry wire mapping projects off it | `graphitron-mcp` | small |
+| 7 | Dimension enum + extractors + grouping + tail rule; the new counts-only tool; `where` shared with the widened `diagnostics` filters | `graphitron-mcp` | medium |
+
+Steps 1 to 5 are each independently defensible and each improve the LSP or the watch formatter on
+their own, so they can be carved into separate items if parallelism is wanted. Steps 6 and 7 must
+not be split from each other: the shared `where` mechanism is the whole point, and splitting it is
+how the two parallel filter implementations this design exists to prevent get built.
+
+## Tests
+
+Unit tier in `graphitron-mcp`, following `DiagnosticsToolCompileSourceTest`, which calls
+`DiagnosticsTool.diagnosticsResult` directly with a hand-built `ValidationReport` and no live
+server. The tests that carry weight are the invariant pins, not per-dimension unit tests:
+
+- **Aggregate / drill-down parity.** Filtering `diagnostics` to a group's key returns exactly that
+  group's count. This is the pin that makes the per-cluster examples a sample rather than a lossy
+  summary, and it is the one test that would catch the two-filter-implementation drift.
+  `LintSuppressionDiagnosticsParityTest` is the module's precedent for this cross-view shape.
+- **Truncation honesty.** `minCount` / `limit` elision reports the elided group count and their
+  combined count; a truncated aggregate never reads as complete.
+- **Cardinality guard.** A high-cardinality composite `groupBy` over a large fixture does not
+  return more groups than a stated cap. This is the failure mode that would quietly defeat the
+  item's purpose by making the aggregate bigger than the entry list.
+- **Dimension partition.** Every dimension declared in exactly one bucket (typed-key /
+  location-derived / prose-derived), in the `EdgeCoverageTest` mould.
+- **Rejection-leaf partition.** Every `Rejection` leaf declared coded or deliberately codeless
+  (step 3), and no typed-key arm reachable from the prose path (step 5).
+- **Rows with no coordinate are not silently lost.** Warnings and compile diagnostics carry no
+  coordinate, so coordinate-reading dimensions yield a stated absent bucket rather than dropping
+  rows out of the totals.
+- Live-server tier: the `GraphitronMcpServerTest` tool-list assertion gains the new name, plus one
+  end-to-end call asserting the structured shape and the snapshot axes.
+
+Steps 1 to 4 pin at their own layers: `RejectionKindProjectionTest` for the actionable projection,
+and the existing LSP and watch-formatter tests for the collapsed `lspCodeOf` and the deleted
+coordinate predicates.
+
+## Implementation sites
+
+- `DiagnosticsTool.java`: the `DiagnosticRow` extraction; the three inline `LinkedHashMap`
+  builders plus `addLocation` / `addCompileLocation` project off the row.
+- A new class in `graphitron-mcp` for the dimension enum, extractors, grouping, and wire mapping.
+- `GraphitronMcpServer.diagnosticsTool(...)`: widen the input schema with the shared filter axes.
+- `GraphitronMcpServer`'s `tools` list: register the new tool. The `GraphitronMcpServerTest`
+  tool-name assertion pins the list, so it fails until updated.
+- Both tool descriptions: the dimension vocabulary has to be enumerated somewhere for discovery.
+- `mcp/instructions.txt`: point at the aggregate when the diagnostic count is large.
+- `ValidationReport.canonicalUri` is declared the single canonical URI site, but
+  `addCompileLocation` puts `CompileDiagnostic.file()` into the `uri` slot raw. A `file` dimension
+  spanning both channels would group two spellings of one path apart, so the compile channel has
+  to pass through the same normalisation, and `directory` chops the normalised form.
+
+## Open questions for the reviewer
 
 - **Separate tool versus a mode on `diagnostics`.** A separate tool gets its own description,
   which is how an agent discovers the capability at all, and keeps the counts-not-entries wire
@@ -195,23 +343,32 @@ Worth pinning as a test, because it is the failure mode that would quietly defea
   agent having to know what to ask for), but the set should stay small; every preset is
   vocabulary an agent has to read past. Leaning one default preset plus faceting, rather than a
   catalogue of reports.
-- **Whether the residual prose-normalising fallback is acceptable, or whether the group identity
-  belongs in the model.** Now that `UnknownName` and `Deferred` are known to cluster off
-  `attemptKind` and `stubKey`, the fallback covers only the two `Structural` arms, so the
-  principled alternative (a typed reason code at the producing site) is a targeted change to one
-  arm pair rather than a sweep. It still lands in the generator rather than the MCP module and
-  touches every `Rejection.structural` call site, so it is plausibly its own item; the read-side
-  fallback can ship first without foreclosing it, as long as the wire contract does not promise
-  the prose-derived keys are stable. Spec should decide whether to carve the typed-reason-code
-  half out now or leave it to follow-up evidence about how well the fallback clusters.
+- **Whether steps 1 to 5 belong in this item or in their own.** They are model lifts in
+  `graphitron` and `graphitron-lsp` serving a read tool in `graphitron-mcp`, which is a wide blast
+  radius for one item, and each stands on its own merits. Against splitting: the aggregate is what
+  motivated finding them, and an item that ships step 7 on today's shapes ships the shadow taxonomy
+  this Spec exists to avoid. Leaning one item with the phasing above, and carving out step 4
+  (the `Coordinate` sub-taxonomy, the largest and the one with reach outside the diagnostics path)
+  if the reviewer wants the blast radius smaller.
+- **Whether a prose-derived `messageTemplate` dimension should ship at all.** After steps 3 and 5
+  its domain is whatever `Structural` residue remains. If that residue turns out small, the
+  honest move may be to omit the dimension entirely and let those rows cluster only on `variant`,
+  rather than ship a heuristic whose group identity has no owner. Worth deciding on measured
+  residue rather than up front, but the reviewer should say whether "measure then decide" is an
+  acceptable thing for a Spec to defer.
 - **Pure counts versus ranked guidance.** Ordering clusters by count already surfaces the
   leverage. Anything further ("this cluster is a bulk directive removal") would be the server
   asserting a fix strategy, which reads as the wrong layer. Leaning pure counts.
 
 ## Out of scope
 
-- Any new validate-time arm or change to the rejection taxonomy. This is a read projection
-  over already-classified data, matching how `diagnostics` is scoped today.
+- **No new rejection cause, and no change to what the build accepts or rejects.** This replaces
+  the Backlog body's "no change to the rejection taxonomy", which was wrong as written: held
+  strictly it *forces* the prose heuristic and ships an untyped side-channel with a hedge instead
+  of an enforcer. Typed-key exposure, capability lifts, and sub-taxonomy splits over existing arms
+  are in scope precisely so the aggregate can stay a projection; what stays out is inventing new
+  causes or moving the accept / reject line. Step 5 converges the identity of an existing
+  rejection, it does not add one.
 - LSP-side bulk application of fixes. The workspace-scoped bulk-quick-fix tier is
   `nodeid-migration-quickfix`'s to decide.
 - Aggregation over anything but the two channels `diagnostics` already unions (validator
