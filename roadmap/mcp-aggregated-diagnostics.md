@@ -1,7 +1,7 @@
 ---
 id: R569
 title: "Aggregated diagnostics commands for the MCP server"
-status: Backlog
+status: Spec
 bucket: feature
 priority: 5
 theme: diagnostics
