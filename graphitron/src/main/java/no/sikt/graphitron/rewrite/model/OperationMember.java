@@ -73,7 +73,7 @@ public sealed interface OperationMember {
     default boolean producesRecord() {
         return switch (this) {
             case ServiceCall _ -> true;
-            case Write.Insert _, Write.Upsert _, Write.Update _, Write.Delete _ -> true;
+            case Write.Dml _ -> true;
             case Write.RoutineWrite _, Write.UpdateMatching _, Write.DeleteMatching _ -> false;
             case Select _, Join _, Condition _, OrderBy _, Paginate _, Lookup _,
                  NodeResolve _, EntityResolve _, Count _, Facet _, Pivot _, Reentry _ -> false;
@@ -232,22 +232,54 @@ public sealed interface OperationMember {
      */
     sealed interface Write extends OperationMember {
 
+        /**
+         * The four SQL DML statement verbs, an intermediate seal so a leaf carrying the write
+         * payload can type it narrowly: the routine and condition-matched arms are
+         * unrepresentable on a DML coordinate ({@link DmlWriteField} is the carrying
+         * capability). The two facts every DML reader needs are exposed uniformly here, once,
+         * over the arms' structurally different input surfaces: the resolved write-target
+         * table and the input cardinality (the bulk-versus-single fork the emitter and the
+         * bulk carrier's construction invariant both read).
+         */
+        sealed interface Dml extends Write permits Insert, Upsert, Update, Delete {
+
+            /** The resolved write-target table the statement runs against. */
+            default TableRef table() {
+                return switch (this) {
+                    case Insert i -> i.input().inputTable();
+                    case Upsert u -> u.input().inputTable();
+                    case Update u -> u.inputArg().table();
+                    case Delete d -> d.inputArg().table();
+                };
+            }
+
+            /** Whether the input surface is list-shaped: the bulk per-row emit fork. */
+            default boolean listInput() {
+                return switch (this) {
+                    case Insert i -> i.input().list();
+                    case Upsert u -> u.input().list();
+                    case Update u -> u.inputArg().list();
+                    case Delete d -> d.inputArg().list();
+                };
+            }
+        }
+
         /** A DML INSERT write. */
-        record Insert(ArgumentRef.InputTypeArg.TableInputArg input) implements Write {
+        record Insert(ArgumentRef.InputTypeArg.TableInputArg input) implements Dml {
             public Insert {
                 Objects.requireNonNull(input, "input");
             }
         }
 
         /** A DML UPSERT write. */
-        record Upsert(ArgumentRef.InputTypeArg.TableInputArg input) implements Write {
+        record Upsert(ArgumentRef.InputTypeArg.TableInputArg input) implements Dml {
             public Upsert {
                 Objects.requireNonNull(input, "input");
             }
         }
 
         /** A DML UPDATE write (PK/UK-identified), carrying the SET / WHERE partition. */
-        record Update(InputArgRef inputArg, UpdateRows updateRows) implements Write {
+        record Update(InputArgRef inputArg, UpdateRows updateRows) implements Dml {
             public Update {
                 Objects.requireNonNull(inputArg, "inputArg");
                 Objects.requireNonNull(updateRows, "updateRows");
@@ -255,7 +287,7 @@ public sealed interface OperationMember {
         }
 
         /** A DML DELETE write (PK/UK-identified or broadcast), carrying the WHERE columns. */
-        record Delete(InputArgRef inputArg, DeleteRows deleteRows) implements Write {
+        record Delete(InputArgRef inputArg, DeleteRows deleteRows) implements Dml {
             public Delete {
                 Objects.requireNonNull(inputArg, "inputArg");
                 Objects.requireNonNull(deleteRows, "deleteRows");

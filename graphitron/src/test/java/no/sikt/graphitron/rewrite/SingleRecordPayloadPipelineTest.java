@@ -8,6 +8,7 @@ import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.MutationField;
+import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.Arity;
 import no.sikt.graphitron.rewrite.model.KeyLift;
@@ -69,11 +70,11 @@ class SingleRecordPayloadPipelineTest {
         } else {
             assertThat(mutField).isInstanceOf(MutationField.MutationBulkDmlRecordField.class);
             var dmlField = (MutationField.MutationBulkDmlRecordField) mutField;
-            assertThat(dmlField.kind()).isEqualTo(kind);
+            assertThat(dmlField.write()).isInstanceOf(OperationMember.Write.Insert.class);
             assertThat(dmlField.returnType()).isInstanceOf(ReturnTypeRef.ResultReturnType.class);
             assertThat(dmlField.returnType().returnTypeName()).isEqualTo("FilmPayload");
-            assertThat(dmlField.tableInputArg().inputTable().tableName()).isEqualTo("film");
-            assertThat(dmlField.tableInputArg().list()).isTrue();
+            assertThat(dmlField.write().table().tableName()).isEqualTo("film");
+            assertThat(dmlField.write().listInput()).isTrue();
         }
     }
 
@@ -308,7 +309,7 @@ class SingleRecordPayloadPipelineTest {
         var leaf = (MutationField.MutationBulkDmlRecordField) schema.field("Mutation", "createFilms");
         assertThat(((GraphitronType.JooqTableRecordType) carrierType).table())
             .as("the grounded carrier table equals the classified leaf's write target (no divergence)")
-            .isEqualTo(leaf.tableInputArg().inputTable());
+            .isEqualTo(leaf.write().table());
     }
 
     @Test
@@ -327,7 +328,7 @@ class SingleRecordPayloadPipelineTest {
         assertThat(carrierType).isInstanceOf(GraphitronType.JooqTableRecordType.class);
         var leaf = (MutationField.MutationBulkDmlRecordField) schema.field("Mutation", "createFilms");
         assertThat(((GraphitronType.JooqTableRecordType) carrierType).table())
-            .isEqualTo(leaf.tableInputArg().inputTable());
+            .isEqualTo(leaf.write().table());
     }
 
     @Test

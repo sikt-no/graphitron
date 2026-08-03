@@ -407,45 +407,43 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * "payload wrap" shape ({@code createFilm: CreateFilmPayload}). The carrier's data field is
      * classified as a record-sourced {@link ChildField.BatchedTableField}.
      *
-     * <p>The {@code kind} discriminator drives per-DML-kind emit variation (INSERT and UPSERT
-     * have distinct SQL shapes); the model is one permit because the components are identical
-     * across those kinds. The payload-returning UPDATE lives on {@link MutationUpdatePayloadField}
-     * and DELETE on {@link MutationDeletePayloadField}, each sourcing its SET/WHERE partition from
-     * a walker carrier ({@link UpdateRows} / {@link DeleteRows}); the compact constructor rejects
-     * both here, so the live range is {@code {INSERT, UPSERT}}.
+     * <p>The write payload ({@link #write()}, the {@link DmlWriteField} capability) carries the
+     * verb identity and the per-verb input surface in one sealed home; the emitter forks on the
+     * arm (INSERT and UPSERT have distinct SQL shapes) and reads
+     * {@code write.table().primaryKeyColumns()} for the PK-only {@code RETURNING} clause of the
+     * two-step DML. The payload-returning UPDATE lives on {@link MutationUpdatePayloadField}
+     * and DELETE on {@link MutationDeletePayloadField}, each sourcing its SET/WHERE partition
+     * from a walker carrier ({@link UpdateRows} / {@link DeleteRows}); the compact constructor
+     * rejects both arms here, so the live range is {@code {Insert, Upsert}}.
      *
      * <p>{@link #returnType()} is the carrier's {@link ReturnTypeRef.ResultReturnType} with no
-     * unwrap: the SDL's structural truth. {@link #tableInputArg()} carries the input
-     * {@code @table} exactly like the {@link DmlTableField} permits; the emitter reads
-     * {@code tableInputArg.inputTable().primaryKeyColumns()} for the PK-only {@code RETURNING}
-     * clause of the two-step DML.
+     * unwrap: the SDL's structural truth.
      */
     record MutationDmlRecordField(
         String parentTypeName,
         String name,
         SourceLocation location,
         ReturnTypeRef.ResultReturnType returnType,
-        ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
-        DmlKind kind,
+        OperationMember.Write.Dml write,
         Optional<ErrorChannel.RouterDispatched> errorChannel
-    ) implements MutationField {
+    ) implements MutationField, DmlWriteField {
 
         public MutationDmlRecordField {
-            if (kind == DmlKind.UPDATE) {
+            if (write instanceof OperationMember.Write.Update) {
                 throw new IllegalArgumentException(
-                    "MutationDmlRecordField cannot carry DmlKind.UPDATE — the UpdateRows walker "
-                    + "routes the payload-returning UPDATE onto MutationUpdatePayloadField; this "
-                    + "leaf carries {INSERT, UPSERT}.");
+                    "MutationDmlRecordField cannot carry an Update write arm; the UpdateRows "
+                    + "walker routes the payload-returning UPDATE onto "
+                    + "MutationUpdatePayloadField, so this leaf carries {Insert, Upsert}.");
             }
-            if (kind == DmlKind.DELETE) {
+            if (write instanceof OperationMember.Write.Delete) {
                 throw new IllegalArgumentException(
-                    "MutationDmlRecordField cannot carry DmlKind.DELETE — the DeleteRows walker "
-                    + "routes the payload-returning DELETE onto MutationDeletePayloadField; this "
-                    + "leaf carries {INSERT, UPSERT}.");
+                    "MutationDmlRecordField cannot carry a Delete write arm; the DeleteRows "
+                    + "walker routes the payload-returning DELETE onto "
+                    + "MutationDeletePayloadField, so this leaf carries {Insert, Upsert}.");
             }
         }
         @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Record(tableInputArg.inputTable());
+            return new DomainReturnType.Record(write.table());
         }
     }
 
@@ -458,11 +456,11 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * record-sourced {@link ChildField.BatchedTableField} with a many-arity source.
      *
      * <p>The classifier admits exactly
-     * {@code (tableInputArg.list() == true, dataField.wrapper().isList() == true,
-     * kind == INSERT)} and pairs the input cardinality to the data field's element type. The
-     * payload-returning bulk UPDATE lives on {@link MutationBulkUpdatePayloadField} and bulk
-     * DELETE on {@link MutationBulkDeletePayloadField}; UPSERT is structurally compatible with
-     * this leaf but refused upstream by {@code MutationInputResolver} under the
+     * {@code (write.listInput() == true, dataField.wrapper().isList() == true,
+     * write instanceof Insert)} and pairs the input cardinality to the data field's element
+     * type. The payload-returning bulk UPDATE lives on {@link MutationBulkUpdatePayloadField}
+     * and bulk DELETE on {@link MutationBulkDeletePayloadField}; UPSERT is structurally
+     * compatible with this leaf but refused at the classifier's verb dispatch under the
      * cardinality-safety regime. The data table / input table agreement is structurally pinned by
      * the {@link ProducerBinding.DmlEmitted} compact constructor's
      * {@code reflectedClass.getName().equals(tableRef.recordClass().reflectionName())}
@@ -483,8 +481,8 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * {@link no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator}'s
      * {@code buildMutationBulkDmlRecordFetcher}.
      *
-     * <p>The {@link DmlKind} field encodes the per-emit-shape dispatch and the parameterised
-     * emitter switches on it; the live range here is {@code {INSERT}}.
+     * <p>The write payload ({@link #write()}, the {@link DmlWriteField} capability) encodes the
+     * per-emit-shape dispatch; the live range here is {@code {Insert}}.
      *
      * @see no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator
      */
@@ -493,39 +491,38 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         String name,
         SourceLocation location,
         ReturnTypeRef.ResultReturnType returnType,
-        ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
-        DmlKind kind,
+        OperationMember.Write.Dml write,
         Optional<ErrorChannel.RouterDispatched> errorChannel
-    ) implements MutationField {
+    ) implements MutationField, DmlWriteField {
 
         public MutationBulkDmlRecordField {
-            if (kind == DmlKind.UPSERT) {
+            if (write instanceof OperationMember.Write.Upsert) {
                 throw new IllegalArgumentException(
-                    "MutationBulkDmlRecordField cannot carry DmlKind.UPSERT under the "
-                    + "cardinality-safety regime — UPSERT is refused at the upstream "
-                    + "MutationInputResolver pending a designed cardinality story.");
+                    "MutationBulkDmlRecordField cannot carry an Upsert write arm under the "
+                    + "cardinality-safety regime; UPSERT is refused at the classifier pending "
+                    + "a designed cardinality story.");
             }
-            if (kind == DmlKind.UPDATE) {
+            if (write instanceof OperationMember.Write.Update) {
                 throw new IllegalArgumentException(
-                    "MutationBulkDmlRecordField cannot carry DmlKind.UPDATE — the UpdateRows walker "
-                    + "routes the payload-returning bulk UPDATE onto MutationBulkUpdatePayloadField; "
-                    + "this leaf carries {INSERT}.");
+                    "MutationBulkDmlRecordField cannot carry an Update write arm; the "
+                    + "UpdateRows walker routes the payload-returning bulk UPDATE onto "
+                    + "MutationBulkUpdatePayloadField, so this leaf carries {Insert}.");
             }
-            if (kind == DmlKind.DELETE) {
+            if (write instanceof OperationMember.Write.Delete) {
                 throw new IllegalArgumentException(
-                    "MutationBulkDmlRecordField cannot carry DmlKind.DELETE — the DeleteRows walker "
-                    + "routes the payload-returning bulk DELETE onto MutationBulkDeletePayloadField; "
-                    + "this leaf carries {INSERT}.");
+                    "MutationBulkDmlRecordField cannot carry a Delete write arm; the "
+                    + "DeleteRows walker routes the payload-returning bulk DELETE onto "
+                    + "MutationBulkDeletePayloadField, so this leaf carries {Insert}.");
             }
-            if (!tableInputArg.list()) {
+            if (!write.listInput()) {
                 throw new IllegalArgumentException(
-                    "MutationBulkDmlRecordField requires a bulk (list) input "
-                    + "(tableInputArg.list() == true); single-input belongs on "
+                    "MutationBulkDmlRecordField requires a bulk (list) input surface "
+                    + "(write.listInput() == true); single-input belongs on "
                     + "MutationDmlRecordField.");
             }
         }
         @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Record(tableInputArg.inputTable());
+            return new DomainReturnType.Record(write.table());
         }
     }
 

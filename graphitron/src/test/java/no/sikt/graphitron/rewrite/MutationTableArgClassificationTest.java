@@ -275,11 +275,11 @@ class MutationTableArgClassificationTest {
             """);
 
         var mut = (MutationBulkDmlRecordField) schema.field("Mutation", "createFilms");
-        assertThat(mut.tableInputArg().inputTable().tableName())
+        assertThat(mut.write()).isInstanceOf(no.sikt.graphitron.rewrite.model.OperationMember.Write.Insert.class);
+        assertThat(mut.write().table().tableName())
             .as("the write target derives from the payload's @table-element data field")
             .isEqualTo("film");
-        assertThat(mut.tableInputArg().list()).isTrue();
-        assertThat(mut.kind()).isEqualTo(no.sikt.graphitron.rewrite.model.DmlKind.INSERT);
+        assertThat(mut.write().listInput()).isTrue();
         assertThat(schema.diagnostics()).isEmpty();
     }
 
@@ -296,10 +296,10 @@ class MutationTableArgClassificationTest {
             """);
 
         var mut = (MutationDmlRecordField) schema.field("Mutation", "createFilm");
-        assertThat(mut.tableInputArg().inputTable().tableName())
+        assertThat(mut.write()).isInstanceOf(no.sikt.graphitron.rewrite.model.OperationMember.Write.Insert.class);
+        assertThat(mut.write().table().tableName())
             .as("the write target derives from the payload's @table data field")
             .isEqualTo("film");
-        assertThat(mut.kind()).isEqualTo(no.sikt.graphitron.rewrite.model.DmlKind.INSERT);
         assertThat(schema.diagnostics()).isEmpty();
     }
 

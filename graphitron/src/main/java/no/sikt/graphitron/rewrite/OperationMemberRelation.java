@@ -8,6 +8,7 @@ import graphql.schema.GraphQLSchema;
 import graphql.schema.GraphQLTypeUtil;
 import no.sikt.graphitron.facts.GatheredFacts;
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.DmlWriteField;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.LookupResolution;
@@ -331,8 +332,8 @@ public record OperationMemberRelation(Map<FieldCoordinates, List<OperationMember
             case MutationField.MutationUpdateTableField f -> new OperationMember.Write.Update(f.inputArg(), f.updateRows());
             case MutationField.MutationDeleteTableField f -> new OperationMember.Write.Delete(f.inputArg(), f.deleteRows());
             case MutationField.MutationRoutineWriteField _ -> new OperationMember.Write.RoutineWrite();
-            case MutationField.MutationDmlRecordField f -> recordCarrierWrite(f.kind().name(), f.tableInputArg());
-            case MutationField.MutationBulkDmlRecordField f -> recordCarrierWrite(f.kind().name(), f.tableInputArg());
+            // The write payload is the leaf's carried component, by identity (DmlWriteField).
+            case DmlWriteField f -> f.write();
             case MutationField.MutationUpdatePayloadField f -> new OperationMember.Write.Update(f.inputArg(), f.updateRows());
             case MutationField.MutationBulkUpdatePayloadField f -> new OperationMember.Write.Update(f.inputArg(), f.updateRows());
             case MutationField.MutationDeletePayloadField f -> new OperationMember.Write.Delete(f.inputArg(), f.deleteRows());
@@ -340,16 +341,6 @@ public record OperationMemberRelation(Map<FieldCoordinates, List<OperationMember
             default -> throw new IllegalStateException(
                 "write membership on a leaf with no write payload components: "
                 + leaf.getClass().getSimpleName());
-        };
-    }
-
-    private static OperationMember.Write recordCarrierWrite(String verb,
-            ArgumentRef.InputTypeArg.TableInputArg input) {
-        return switch (verb) {
-            case "INSERT" -> new OperationMember.Write.Insert(input);
-            case "UPSERT" -> new OperationMember.Write.Upsert(input);
-            default -> throw new IllegalStateException(
-                "record-backed DML carrier rejects verb " + verb + " in its compact constructor");
         };
     }
 

@@ -262,8 +262,8 @@ public final class OperationMembers {
             case MutationField.MutationServiceRecordField f -> List.of(structuredServiceCall(f.serviceMethodCall()));
             case MutationField.MutationServicePolymorphicField f -> List.of(structuredServiceCall(f.serviceMethodCall()));
             case MutationField.MutationServiceTableInterfaceField f -> List.of(structuredServiceCall(f.serviceMethodCall()));
-            case MutationField.MutationDmlRecordField f -> List.of(recordCarrierWrite(f.kind(), f.tableInputArg()));
-            case MutationField.MutationBulkDmlRecordField f -> List.of(recordCarrierWrite(f.kind(), f.tableInputArg()));
+            // The write payload is the leaf's carried component, by identity (DmlWriteField).
+            case DmlWriteField f -> List.of(f.write());
             case MutationField.MutationUpdatePayloadField f -> List.of(new Write.Update(f.inputArg(), f.updateRows()));
             case MutationField.MutationBulkUpdatePayloadField f -> List.of(new Write.Update(f.inputArg(), f.updateRows()));
             case MutationField.MutationDeletePayloadField f -> List.of(new Write.Delete(f.inputArg(), f.deleteRows()));
@@ -406,16 +406,6 @@ public final class OperationMembers {
 
     private static ServiceCall structuredServiceCall(ServiceMethodCall call) {
         return new ServiceCall(new ServiceCallCarrier.StructuredCall(call));
-    }
-
-    /** The record-carrier DML verbs; UPDATE / DELETE route to the payload leaves upstream. */
-    private static Write recordCarrierWrite(DmlKind kind, no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg input) {
-        return switch (kind) {
-            case INSERT -> new Write.Insert(input);
-            case UPSERT -> new Write.Upsert(input);
-            case UPDATE, DELETE -> throw new IllegalStateException(
-                "record-backed DML carrier rejects DmlKind." + kind + " in its compact constructor");
-        };
     }
 
     /**

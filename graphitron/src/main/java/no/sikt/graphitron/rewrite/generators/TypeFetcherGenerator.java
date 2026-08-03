@@ -46,6 +46,7 @@ import no.sikt.graphitron.rewrite.model.UpdateRows;
 import no.sikt.graphitron.rewrite.model.MethodBackedField;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.MutationField;
+import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.ParentCorrelation;
@@ -4770,13 +4771,30 @@ public class TypeFetcherGenerator {
      */
     private static MethodSpec buildMutationDmlRecordFetcher(
             TypeFetcherEmissionContext ctx, MutationField.MutationDmlRecordField f, String outputPackage) {
-        var tia = f.tableInputArg();
-        // DML chain per kind. Each branch produces a CodeBlock starting with `.<verb>(...)`
+        var input = recordCarrierInput(f.write());
+        // DML chain per write arm. Each branch produces a CodeBlock starting with `.<verb>(...)`
         // suitable for chaining off `DSL.using(tx)` inside transactionResult.
         return buildSingleRecordTwoStepFetcher(
-            ctx, f, tia.name(), tia.inputTable(), f.errorChannel(), f.qualifiedName(),
-            (tablesOnly, tableLocal) -> buildDmlChainForRecord(f, tia, tia.inputTable(), tablesOnly, tableLocal),
+            ctx, f, input.name(), input.inputTable(), f.errorChannel(), f.qualifiedName(),
+            (tablesOnly, tableLocal) -> buildDmlChainForRecord(f.write(), input.inputTable(), tablesOnly, tableLocal),
             outputPackage);
+    }
+
+    /**
+     * The record carriers' {@code @table} input surface: the Insert / Upsert arms carry it; an
+     * Update or Delete arm on a record carrier is rejected by the leaf's compact constructor,
+     * so those arms are drift guards, not dispatch.
+     */
+    private static no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg recordCarrierInput(
+            OperationMember.Write.Dml write) {
+        return switch (write) {
+            case OperationMember.Write.Insert i -> i.input();
+            case OperationMember.Write.Upsert u -> u.input();
+            case OperationMember.Write.Update _, OperationMember.Write.Delete _ ->
+                throw new IllegalStateException(
+                    "record-backed DML carrier holds a write arm its constructor rejects: "
+                    + write.getClass().getSimpleName());
+        };
     }
 
     /**
@@ -4959,19 +4977,19 @@ public class TypeFetcherGenerator {
     private record DmlChainAndGuards(CodeBlock chain, CodeBlock preGuard) {}
 
     private static DmlChainAndGuards buildDmlChainForRecord(
-            MutationField.MutationDmlRecordField f,
-            no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
+            OperationMember.Write.Dml write,
             TableRef tableRef,
             GeneratorUtils.ResolvedTableNames tablesOnly,
             String tableLocal) {
-        return switch (f.kind()) {
-            case INSERT -> buildRecordInsertChain(tia, tableRef, tablesOnly, tableLocal);
-            case UPDATE -> buildRecordUpdateChain(tia, tableRef, tablesOnly, tableLocal);
-            case UPSERT -> buildRecordUpsertChain(tia, tableRef, tablesOnly, tableLocal);
-            // Unreachable: MutationDmlRecordField's compact constructor rejects DELETE.
-            case DELETE -> throw new IllegalStateException(
-                "MutationDmlRecordField cannot carry DmlKind.DELETE — the DeleteRows walker routes the "
-                + "payload-returning DELETE onto MutationDeletePayloadField; this leaf carries {INSERT, UPSERT}");
+        return switch (write) {
+            case OperationMember.Write.Insert i -> buildRecordInsertChain(i.input(), tableRef, tablesOnly, tableLocal);
+            case OperationMember.Write.Upsert u -> buildRecordUpsertChain(u.input(), tableRef, tablesOnly, tableLocal);
+            // Unreachable: MutationDmlRecordField's compact constructor rejects these arms; the
+            // payload-returning UPDATE / DELETE ride their walker-carrier leaves.
+            case OperationMember.Write.Update _, OperationMember.Write.Delete _ ->
+                throw new IllegalStateException(
+                    "record-backed DML carrier holds a write arm its constructor rejects: "
+                    + write.getClass().getSimpleName());
         };
     }
 
@@ -5032,35 +5050,6 @@ public class TypeFetcherGenerator {
                 .add(")\n");
         }
         return new DmlChainAndGuards(chain.build(), preGuard.build());
-    }
-
-    private static DmlChainAndGuards buildRecordUpdateChain(
-            no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
-            TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly, String tableLocal) {
-        if (tia.list()) {
-            throw new UnsupportedOperationException(
-                "Bulk UPDATE on MutationDmlRecordField is not yet implemented; use single-input "
-                    + "UPDATE or open a follow-up for the VALUES-join shape");
-        }
-        var fieldClass = ClassName.get("org.jooq", "Field");
-        var linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
-        var preGuard = CodeBlock.builder();
-        preGuard.addStatement("$T<$T<?>, Object> sets = new $T<>()", MAP, fieldClass, linkedHashMap);
-        emitSetMapPuts(preGuard, setGroupsOfFields(tia.setFields()), "sets", "in", "in",
-            "setKey", tablesOnly, tableRef);
-        preGuard.beginControlFlow("if (sets.isEmpty())")
-            .addStatement("throw new $T($S)", IllegalArgumentException.class,
-                "@mutation(typeName: UPDATE) call has no settable fields present; "
-                    + "only @lookupKey fields were provided")
-            .endControlFlow();
-        var whereChunk = buildLookupWhereSingleRow(tia, tablesOnly, tableRef);
-        preGuard.add(whereChunk.decodeLocals());
-        var chain = CodeBlock.builder()
-            .add(".update($L)\n", tableLocal)
-            .add(".set(sets)\n")
-            .add(".where(").add(whereChunk.whereExpr()).add(")\n")
-            .build();
-        return new DmlChainAndGuards(chain, preGuard.build());
     }
 
     private static DmlChainAndGuards buildRecordUpsertChain(
@@ -5150,11 +5139,11 @@ public class TypeFetcherGenerator {
      */
     private static MethodSpec buildMutationBulkDmlRecordFetcher(
             TypeFetcherEmissionContext ctx, MutationField.MutationBulkDmlRecordField f, String outputPackage) {
-        var tia = f.tableInputArg();
+        var input = recordCarrierInput(f.write());
         return buildBulkRecordTwoStepFetcher(
-            ctx, f, tia.name(), tia.inputTable(), f.errorChannel(), f.qualifiedName(),
+            ctx, f, input.name(), input.inputTable(), f.errorChannel(), f.qualifiedName(),
             (tablesOnly, tableLocal, pkCols, recordRowType) ->
-                buildBulkRecordPerRowBody(f, tia, tia.inputTable(), tablesOnly, tableLocal, pkCols, recordRowType),
+                buildBulkRecordPerRowBody(f.write(), input.inputTable(), tablesOnly, tableLocal, pkCols, recordRowType),
             outputPackage);
     }
 
@@ -5245,7 +5234,7 @@ public class TypeFetcherGenerator {
      * payload-returning bulk UPDATE. Reuses {@link #buildBulkRecordTwoStepFetcher}'s skeleton; the
      * per-row SET / WHERE partition is sourced from the {@link UpdateRows} carrier (not
      * {@code tia.setFields()} / {@code tia.fieldBindings()}), so the bulk payload UPDATE does not
-     * depend on {@code @value}, unlike {@link #buildBulkRecordPerRowUpdateBody}.
+     * depend on {@code @value}.
      */
     private static MethodSpec buildMutationBulkUpdatePayloadFetcher(
             TypeFetcherEmissionContext ctx, MutationField.MutationBulkUpdatePayloadField f, String outputPackage) {
@@ -5280,11 +5269,10 @@ public class TypeFetcherGenerator {
     }
 
     /**
- * The carrier-driven per-row UPDATE body for the bulk payload-returning UPDATE. Mirrors
-     * {@link #buildBulkRecordPerRowUpdateBody} but sources the SET map from the carrier's
-     * {@code setColumns()} ({@link #setGroupsOf}) and the WHERE from the carrier's {@code keyColumns()}
-     * ({@link #keyGroupsOf}) rather than the {@code @value}-derived {@code tia.setFields()} /
-     * {@code tia.fieldBindings()}. The no-match throw preserves the order-preservation invariant.
+ * The carrier-driven per-row UPDATE body for the bulk payload-returning UPDATE: a dynamic
+     * SET map from the carrier's {@code setColumns()} ({@link #setGroupsOf}) and the WHERE from
+     * the carrier's {@code keyColumns()} ({@link #keyGroupsOf}); no {@code @value}-derived
+     * {@code tia} read. The no-match throw preserves the order-preservation invariant.
      */
     private static CodeBlock buildCarrierBulkPerRowUpdateBody(
             List<SetGroup> setGroups, List<InputColumnBindingGroup> keyGroups,
@@ -5320,44 +5308,30 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Builds the per-row DML body for {@link #buildMutationBulkDmlRecordFetcher} — the code that
-     * runs once per input row inside the transactionResult loop. Dispatches on
-     * {@link MutationField.MutationBulkDmlRecordField#kind()}:
-     *
-     * <ul>
-     *   <li>{@code INSERT}: per-row {@code insertInto(table, cols).values(perCell).returningResult(PK).fetchOne()}.</li>
-     *   <li>{@code UPDATE}: per-row dynamic SET-map (contains-key dispatch), lookup-WHERE
-     *       via {@link #buildLookupWhereSingleRow}'s {@code mapLocal="row"} overload, then
-     *       {@code update(table).set(sets).where(...).returningResult(PK).fetchOne()}.</li>
-     * </ul>
-     *
-     * <p>{@code UPDATE} no-match (zero rows updated) throws {@link IllegalStateException} to
-     * preserve the order-preservation invariant: a silent no-match would skew {@code output.data[i]}
-     * away from {@code input[i]}. Authors get a typed exception that flows through the catch arm.
-     * The {@code UPSERT} / {@code DELETE} cases are rejected at the compact-constructor and never
-     * reach this dispatch (the DeleteRows walker routes payload-returning bulk DELETE onto
-     * {@link MutationField.MutationBulkDeletePayloadField});
-     * both arms throw to guard against a future widening accident.
+     * Builds the per-row DML body for {@link #buildMutationBulkDmlRecordFetcher}, the code that
+     * runs once per input row inside the transactionResult loop, dispatching on the carried
+     * write arm. The live arm is Insert: per-row
+     * {@code insertInto(table, cols).values(perCell).returningResult(PK).fetchOne()}. The other
+     * arms are rejected at the leaf's compact constructor and never reach this dispatch; they
+     * throw to guard against a future widening accident.
      */
     private static CodeBlock buildBulkRecordPerRowBody(
-            MutationField.MutationBulkDmlRecordField f,
-            no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
+            OperationMember.Write.Dml write,
             TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly,
             String tableLocal,
             List<no.sikt.graphitron.rewrite.model.ColumnRef> pkCols,
             TypeName recordRowType) {
-        return switch (f.kind()) {
-            case INSERT -> buildBulkRecordPerRowInsertBody(
-                tia, tableRef, tablesOnly, tableLocal, pkCols, recordRowType);
-            case UPDATE -> buildBulkRecordPerRowUpdateBody(
-                tia, tableRef, tablesOnly, tableLocal, pkCols, recordRowType);
-            case UPSERT -> throw new IllegalStateException(
-                "MutationBulkDmlRecordField with DmlKind.UPSERT — compact-constructor should "
-                + "have rejected this; UPSERT is deferred under the cardinality-safety regime");
-            // Unreachable: MutationBulkDmlRecordField's compact constructor rejects DELETE.
-            case DELETE -> throw new IllegalStateException(
-                "MutationBulkDmlRecordField cannot carry DmlKind.DELETE — the DeleteRows walker routes the "
-                + "payload-returning bulk DELETE onto MutationBulkDeletePayloadField; this leaf carries {INSERT}");
+        return switch (write) {
+            case OperationMember.Write.Insert i -> buildBulkRecordPerRowInsertBody(
+                i.input(), tableRef, tablesOnly, tableLocal, pkCols, recordRowType);
+            // Unreachable: MutationBulkDmlRecordField's compact constructor rejects these arms
+            // (UPSERT under the cardinality-safety regime; UPDATE / DELETE ride their
+            // walker-carrier leaves). Drift guards, not dispatch.
+            case OperationMember.Write.Upsert _, OperationMember.Write.Update _,
+                 OperationMember.Write.Delete _ ->
+                throw new IllegalStateException(
+                    "bulk record-backed DML carrier holds a write arm its constructor rejects: "
+                    + write.getClass().getSimpleName());
         };
     }
 
@@ -5411,42 +5385,6 @@ public class TypeFetcherGenerator {
             .add("    .returningResult(").add(buildPkFieldList(pkCols, tablesOnly, tableRef)).add(")\n")
             .add("    .fetchOne();\n")
             .add("acc.add(rec);\n");
-        return body.build();
-    }
-
-    private static CodeBlock buildBulkRecordPerRowUpdateBody(
-            no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
-            TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly,
-            String tableLocal,
-            List<no.sikt.graphitron.rewrite.model.ColumnRef> pkCols,
-            TypeName recordRowType) {
-        var fieldClass = ClassName.get("org.jooq", "Field");
-        var linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
-        var body = CodeBlock.builder();
-        body.addStatement("$T<$T<?>, Object> sets = new $T<>()", MAP, fieldClass, linkedHashMap);
-        emitSetMapPuts(body, setGroupsOfFields(tia.setFields()), "sets", "row", "row",
-            "setKey", tablesOnly, tableRef);
-        body.beginControlFlow("if (sets.isEmpty())")
-            .addStatement("throw new $T($S)", IllegalArgumentException.class,
-                "@mutation(typeName: UPDATE) call has no settable fields present; "
-                    + "only @lookupKey fields were provided")
-            .endControlFlow();
-        var whereChunk = buildLookupWhereSingleRow(tia, tablesOnly, tableRef, "row");
-        body.add(whereChunk.decodeLocals());
-        body.add("$T rec = txd.update($L)\n", recordRowType, tableLocal)
-            .add("    .set(sets)\n")
-            .add("    .where(").add(whereChunk.whereExpr()).add(")\n")
-            .add("    .returningResult(").add(buildPkFieldList(pkCols, tablesOnly, tableRef)).add(")\n")
-            .add("    .fetchOne();\n");
-        // UPDATE no-match preserves the order-preservation invariant by failing fast rather
-        // than skewing acc.size() against in.size() with a silent skip; the catch arm routes
-        // the exception through the carrier's error channel.
-        body.beginControlFlow("if (rec == null)")
-            .addStatement("throw new $T($S + row)", IllegalStateException.class,
-                "@mutation(typeName: UPDATE) bulk row matched zero rows; @lookupKey filter "
-                    + "found no target for input row: ")
-            .endControlFlow();
-        body.add("acc.add(rec);\n");
         return body.build();
     }
 

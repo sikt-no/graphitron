@@ -166,6 +166,13 @@ class HierarchyKindRegistryTest {
         Map.entry(MatchedKey.class, HierarchyKind.WALKED_FACT),
         // Capability seals over walked leaves.
         Map.entry(HasInputRecordShape.class, HierarchyKind.WALKED_FACT),
+        // The DML write payload carried on the mutation leaves: the classify-time realization
+        // of the walked @mutation verb (the classifier resolves the write target, the walkers
+        // produce the carriers), exposed uniformly so the member view reads it by identity.
+        // The component's type is the member family's nested Write.Dml seal; storage on a
+        // walked leaf is routine (leaves already carry resolved and command components), and
+        // the label follows the capability's provenance, not the component's declaring type.
+        Map.entry(no.sikt.graphitron.rewrite.model.DmlWriteField.class, HierarchyKind.WALKED_FACT),
         // The resolved lookup trigger carried on the table-target leaves: the classify-time
         // realization of the walked @lookupKey application, total beside filters/orderBy/
         // pagination, gating the lookup member the way the carried window gates paginate.

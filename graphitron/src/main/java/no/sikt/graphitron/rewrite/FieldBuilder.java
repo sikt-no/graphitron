@@ -39,6 +39,7 @@ import no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField;
 import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
 import no.sikt.graphitron.rewrite.model.AccessorRef;
 import no.sikt.graphitron.rewrite.model.Arity;
+import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.DialectRequirement;
 import no.sikt.graphitron.rewrite.model.DmlKind;
@@ -5692,10 +5693,12 @@ class FieldBuilder {
 
         if (tia.list()) {
             return new MutationField.MutationBulkDmlRecordField(
-                parentTypeName, name, location, returnType, tia, DmlKind.INSERT, dmlChannel);
+                parentTypeName, name, location, returnType,
+                new OperationMember.Write.Insert(tia), dmlChannel);
         }
         return new MutationField.MutationDmlRecordField(
-            parentTypeName, name, location, returnType, tia, DmlKind.INSERT, dmlChannel);
+            parentTypeName, name, location, returnType,
+            new OperationMember.Write.Insert(tia), dmlChannel);
     }
 
     /**

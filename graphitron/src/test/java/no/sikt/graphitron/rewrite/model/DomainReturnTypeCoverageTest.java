@@ -121,7 +121,7 @@ class DomainReturnTypeCoverageTest {
         return new MutationField.MutationDmlRecordField(
             "Mutation", "createFilm", null,
             new ReturnTypeRef.ResultReturnType("FilmPayload", new FieldWrapper.Single(true), null),
-            tableInputArg, DmlKind.INSERT, java.util.Optional.empty());
+            new OperationMember.Write.Insert(tableInputArg), java.util.Optional.empty());
     }
 
     private static List<Class<?>> collectLeaves(Class<?> sealed) {

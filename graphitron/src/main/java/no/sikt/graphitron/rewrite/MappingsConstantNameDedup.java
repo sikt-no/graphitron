@@ -214,11 +214,11 @@ public final class MappingsConstantNameDedup {
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.joinPath(), f.method(),
                 f.sourceKey(), f.loaderRegistration(), f.errorChannel().map(c -> renameRouted(c, newName)));
             case MutationField.MutationDmlRecordField f -> new MutationField.MutationDmlRecordField(
-                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.tableInputArg(),
-                f.kind(), f.errorChannel().map(c -> renameRouted(c, newName)));
+                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.write(),
+                f.errorChannel().map(c -> renameRouted(c, newName)));
             case MutationField.MutationBulkDmlRecordField f -> new MutationField.MutationBulkDmlRecordField(
-                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.tableInputArg(),
-                f.kind(), f.errorChannel().map(c -> renameRouted(c, newName)));
+                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.write(),
+                f.errorChannel().map(c -> renameRouted(c, newName)));
             case MutationField.MutationUpdatePayloadField f -> new MutationField.MutationUpdatePayloadField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.inputArg(), f.updateRows(),
                 f.errorChannel().map(c -> renameRouted(c, newName)));

@@ -292,8 +292,7 @@ class ErrorMappingsClassGeneratorTest {
                 fieldName,
                 null,
                 new ReturnTypeRef.ResultReturnType("FilmPayload", new FieldWrapper.Single(true), null),
-                tableInputArg,
-                no.sikt.graphitron.rewrite.model.DmlKind.INSERT,
+                new no.sikt.graphitron.rewrite.model.OperationMember.Write.Insert(tableInputArg),
                 Optional.of(channels.get(i)));
             fields.put(FieldCoordinates.coordinates("Query", fieldName), field);
         }

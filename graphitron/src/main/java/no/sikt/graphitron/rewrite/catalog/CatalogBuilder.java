@@ -428,18 +428,16 @@ public final class CatalogBuilder {
                     errorChannelName(f.errorChannel()));
             case MutationField.MutationDmlRecordField f ->
                 new FieldClassification.DmlRecord(
-                    f.tableInputArg() != null && f.tableInputArg().inputTable() != null
-                        ? f.tableInputArg().inputTable().tableName() : null,
-                    f.tableInputArg() != null ? f.tableInputArg().typeName() : null,
-                    f.kind(),
+                    dmlWriteTableName(f.write()),
+                    dmlWriteInputTypeName(f.write()),
+                    dmlKindOf(f.write()),
                     false,
                     errorChannelName(f.errorChannel()));
             case MutationField.MutationBulkDmlRecordField f ->
                 new FieldClassification.DmlRecord(
-                    f.tableInputArg() != null && f.tableInputArg().inputTable() != null
-                        ? f.tableInputArg().inputTable().tableName() : null,
-                    f.tableInputArg() != null ? f.tableInputArg().typeName() : null,
-                    f.kind(),
+                    dmlWriteTableName(f.write()),
+                    dmlWriteInputTypeName(f.write()),
+                    dmlKindOf(f.write()),
                     true,
                     errorChannelName(f.errorChannel()));
             // Payload-returning UPDATE carries InputArgRef (not TableInputArg); the table /
@@ -503,6 +501,39 @@ public final class CatalogBuilder {
             // --- Unclassified ---
             case GraphitronField.UnclassifiedField f ->
                 new FieldClassification.Unclassified(f.reason());
+        };
+    }
+
+    /** The catalog's verb column, projected off the write payload's sealed arm. */
+    private static no.sikt.graphitron.rewrite.model.DmlKind dmlKindOf(
+        no.sikt.graphitron.rewrite.model.OperationMember.Write.Dml write
+    ) {
+        return switch (write) {
+            case no.sikt.graphitron.rewrite.model.OperationMember.Write.Insert ignored ->
+                no.sikt.graphitron.rewrite.model.DmlKind.INSERT;
+            case no.sikt.graphitron.rewrite.model.OperationMember.Write.Upsert ignored ->
+                no.sikt.graphitron.rewrite.model.DmlKind.UPSERT;
+            case no.sikt.graphitron.rewrite.model.OperationMember.Write.Update ignored ->
+                no.sikt.graphitron.rewrite.model.DmlKind.UPDATE;
+            case no.sikt.graphitron.rewrite.model.OperationMember.Write.Delete ignored ->
+                no.sikt.graphitron.rewrite.model.DmlKind.DELETE;
+        };
+    }
+
+    private static String dmlWriteTableName(
+        no.sikt.graphitron.rewrite.model.OperationMember.Write.Dml write
+    ) {
+        return write.table() != null ? write.table().tableName() : null;
+    }
+
+    private static String dmlWriteInputTypeName(
+        no.sikt.graphitron.rewrite.model.OperationMember.Write.Dml write
+    ) {
+        return switch (write) {
+            case no.sikt.graphitron.rewrite.model.OperationMember.Write.Insert i -> i.input().typeName();
+            case no.sikt.graphitron.rewrite.model.OperationMember.Write.Upsert u -> u.input().typeName();
+            case no.sikt.graphitron.rewrite.model.OperationMember.Write.Update u -> u.inputArg().inputTypeName();
+            case no.sikt.graphitron.rewrite.model.OperationMember.Write.Delete d -> d.inputArg().inputTypeName();
         };
     }
 

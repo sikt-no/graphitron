@@ -6852,8 +6852,8 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (MutationField.MutationBulkDmlRecordField)
                     schema.field("Mutation", "createFilmsPayload");
-                assertThat(f.kind()).isEqualTo(no.sikt.graphitron.rewrite.model.DmlKind.INSERT);
-                assertThat(f.tableInputArg().list()).isTrue();
+                assertThat(f.write()).isInstanceOf(no.sikt.graphitron.rewrite.model.OperationMember.Write.Insert.class);
+                assertThat(f.write().listInput()).isTrue();
                 assertThat(f.returnType().returnTypeName()).isEqualTo("FilmsPayload");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationBulkDmlRecordField.class); }
