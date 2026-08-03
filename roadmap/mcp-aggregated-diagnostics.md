@@ -78,7 +78,7 @@ currently make:
 - **Forty-two `lspCode()` sites already exist**, declared independently by nine sub-seals of
   `AuthorError` (`ServiceMethodCallError`, `ReflectionError`, `UpdateRowsError`,
   `DeleteRowsError`, `MutationTableArgError`, `ErrorChannelWalkerError`, `WireCoercionError`,
-  `ServiceCarrierShapeError`, `PivotError`; `PivotError` alone has fourteen). These are stable
+  `ServiceCarrierShapeError`, `PivotError`; `PivotError` alone has twelve). These are stable
   machine-readable ids of the exact kind this item wants, and the first draft of this item
   missed them entirely.
 
@@ -119,7 +119,9 @@ heuristic's domain:
    comment in one view and code in another. It belongs next to `messageLabel()` as an exhaustive
    switch, pinned by the existing `RejectionKindProjectionTest`. Pick one word for it and use
    the same word on the wire and in the model, or the drift reopens at the vocabulary level.
-4. **`coordinate` is a nullable `String` that consumers re-derive by dot-splitting.**
+4. **`coordinate` is a nullable `String` that consumers re-derive by dot-splitting.** (Carved out at
+   review into `validation-error-coordinate-sealed`; the reasoning below stands but this item does not
+   depend on it. See Phasing.)
    `ValidationError.forType` / `forField` know the grain at construction and collapse it to a
    string plus `null` for schema-wide; `WatchErrorFormatter` re-derives it with `isTypeLevel` /
    `typeOf` dot-splits, and this item's `type` dimension would be the second site of the same
@@ -251,8 +253,29 @@ with three *different* rejection identities: `Rejection.directiveConflict(...)` 
 (typed, carrying the directive list), `Rejection.structural(...)` elsewhere in `FieldBuilder`
 (prose only), and a bare-string `InputFieldResolution.Unresolved` in `BuildContext`. A message
 template fuses those three only *because the sentence is duplicated*, and splits them the day one
-is reworded. So: add the `directives` dimension, route the stray retired-directive sites through
-`Rejection.directiveConflict` so the cause has one identity, then measure what residue is left.
+is reworded.
+
+Reviewer re-measurement closed the inventory, and it is one directive wider than the above. The
+divergence set is exactly two retired directives:
+
+- **`@notGenerated`**: the three identities described above
+  (`FieldBuilder.classifyField`'s `DIR_NOT_GENERATED` guard via `directiveConflict`, the
+  input-like arm's `Rejection.structural`, and `BuildContext.classifyInputFieldInternal`'s
+  `InputFieldResolution.Unresolved`).
+- **`@lookupKey` on a mutation input field**: the same three-way split, across *three* files.
+  `FieldBuilder`'s `retiredLookupKey` arm and `BuildContext.classifyInputFieldInternal` mirror the
+  `@notGenerated` shape, and a third site,
+  `MutationInputResolver.rejectInputFieldDirectives`, emits a fourth `Rejection.structural`. That
+  third site's prose is *differently worded* from the other two ("remove it (the field is a filter
+  by default)" against the longer sentence the other two share), so for `@lookupKey` a message
+  template does not fuse the sites even today. This is the spec's own argument in its strongest
+  form, and it is why step 5's scope has to be the closed set rather than one worked example.
+
+`@multitableReference` needs no work: its retirement already routes through
+`Rejection.directiveConflict` from a single site, which is the target shape.
+
+So: add the `directives` dimension, route both directives' stray sites through
+`Rejection.directiveConflict` so each cause has one identity, then measure what residue is left.
 Whatever prose clustering survives gets a partition test over `Rejection` leaves, so no coded or
 typed-key arm can reach the prose path and the heuristic's domain is a declared, shrinking set
 rather than the default bucket new arms fall into.
@@ -274,15 +297,38 @@ extractors on today's wide shapes means doing them twice.
 | 1 | `RejectionKind` gains the author-fixable projection; `Diagnostics.severityOf`'s comment becomes a read of it | `graphitron`, `graphitron-lsp` | small |
 | 2 | `StubKey` splits into two permits, non-null `VariantClass` plus an inline-defer arm; the two `deferred` factories map to their own arm | `graphitron` | small |
 | 3 | `CodedRejection` capability lift; `Diagnostics.lspCodeOf` collapses to one `instanceof`; membership partition meta-test | `graphitron`, `graphitron-lsp` | small-medium (42 sites, mechanical) |
-| 4 | Sealed `Coordinate` component on `ValidationError`; `WatchErrorFormatter`'s `isTypeLevel` / `typeOf` delete | `graphitron`, `graphitron-maven-plugin` | medium |
-| 5 | Retired-directive rejection identities converge on `Rejection.directiveConflict` | `graphitron` | small |
-| 6 | `DiagnosticRow` union over the three channels; existing per-entry wire mapping projects off it | `graphitron-mcp` | small |
-| 7 | Dimension enum + extractors + grouping + tail rule; the new counts-only tool; `where` shared with the widened `diagnostics` filters | `graphitron-mcp` | medium |
+| 4 | Retired-directive rejection identities converge on `Rejection.directiveConflict`, over the closed two-directive set above | `graphitron` | small |
+| 5 | `DiagnosticRow` union over the three channels; existing per-entry wire mapping projects off it | `graphitron-mcp` | small |
+| 6 | Dimension enum + extractors + grouping + tail rule; the new counts-only tool; `where` shared with the widened `diagnostics` filters | `graphitron-mcp` | medium |
 
-Steps 1 to 5 are each independently defensible and each improve the LSP or the watch formatter on
-their own, so they can be carved into separate items if parallelism is wanted. Steps 6 and 7 must
+Steps 1 to 4 are each independently defensible and each improve the LSP or the watch formatter on
+their own, so they can be carved into separate items if parallelism is wanted. Steps 5 and 6 must
 not be split from each other: the shared `where` mechanism is the whole point, and splitting it is
 how the two parallel filter implementations this design exists to prevent get built.
+
+**Carved out at review: the sealed `Coordinate` component.** The draft's step 4 (a sealed
+`Coordinate { SchemaWide | TypeLevel | FieldLevel }` on `ValidationError`, deleting
+`WatchErrorFormatter`'s `isTypeLevel` / `typeOf`) now lives in its own item,
+`validation-error-coordinate-sealed`. It is the right lift and the reasoning in "What the model owns"
+stands, but it is not a prerequisite here, and it was the only step reaching outside the diagnostics
+path. Two reasons it separates cleanly:
+
+- The aggregate does not need it. With `coordinate` still a nullable `String`, the `coordinate` /
+  `type` / `directory` extractors do the dot-split in *one* place, inside the dimension enum. The
+  spec's objection in "What the model owns" is to *duplicating* the predicate, and one extractor is
+  not a duplicate until the `Coordinate` lift exists. The absent case is already uniform under the
+  `Optional<String>` extractor contract, so "rows with no coordinate are not silently lost" pins
+  identically either way.
+- Its blast radius is the widest and the least related. Beyond `WatchErrorFormatter` it reaches
+  `DiagnosticsTool`'s filter comparison and wire `putIfNotNull`, and six `graphitron` test files
+  assert on coordinate strings (`GraphitronSchemaBuilderTest`, `ConditionCommandsPipelineTest`,
+  `ConnectionTypeValidationTest`, `TenantScopeValidationTest`, `NodeIdPipelineTest`, and the typed-
+  rejection pipeline test). Carrying that into this item would also pull in
+  `graphitron-maven-plugin`, which nothing else here touches.
+
+Dropping it leaves this item spanning `graphitron`, `graphitron-lsp`, and `graphitron-mcp`, which is
+a defensible blast radius for one item given steps 1 to 4 all exist to keep the aggregate a
+projection.
 
 ## Tests
 
@@ -302,16 +348,17 @@ server. The tests that carry weight are the invariant pins, not per-dimension un
 - **Dimension partition.** Every dimension declared in exactly one bucket (typed-key /
   location-derived / prose-derived), in the `EdgeCoverageTest` mould.
 - **Rejection-leaf partition.** Every `Rejection` leaf declared coded or deliberately codeless
-  (step 3), and no typed-key arm reachable from the prose path (step 5).
+  (step 3), and no typed-key arm reachable from the prose path (step 4).
 - **Rows with no coordinate are not silently lost.** Warnings and compile diagnostics carry no
   coordinate, so coordinate-reading dimensions yield a stated absent bucket rather than dropping
   rows out of the totals.
-- Live-server tier: the `GraphitronMcpServerTest` tool-list assertion gains the new name, plus one
-  end-to-end call asserting the structured shape and the snapshot axes.
+- Live-server tier: the `GraphitronMcpServerTest` tool-list assertion gains
+  `diagnostics.aggregate` (it pins the list with `containsExactlyInAnyOrder`, so it fails until
+  updated), plus one end-to-end call asserting the structured shape and the snapshot axes.
 
 Steps 1 to 4 pin at their own layers: `RejectionKindProjectionTest` for the actionable projection,
-and the existing LSP and watch-formatter tests for the collapsed `lspCodeOf` and the deleted
-coordinate predicates.
+and the existing LSP tests (`RejectionSeverityCoverageTest` reads each arm's stable code today) for
+the collapsed `lspCodeOf`.
 
 ## Implementation sites
 
@@ -323,42 +370,68 @@ coordinate predicates.
   tool-name assertion pins the list, so it fails until updated.
 - Both tool descriptions: the dimension vocabulary has to be enumerated somewhere for discovery.
 - `mcp/instructions.txt`: point at the aggregate when the diagnostic count is large.
+- `docs/manual/how-to/mcp-agent-context.adoc`: the per-tool table gains a `diagnostics.aggregate`
+  row beside the existing `diagnostics` one. This is the user-facing surface the shipped
+  `docs.search` / `catalog.search` tools landed prose on, and the draft omitted it.
+- `FieldBuilder`, `BuildContext.classifyInputFieldInternal`, and
+  `MutationInputResolver.rejectInputFieldDirectives`: the retired-directive identity convergence
+  (step 4) spans all three, over `@notGenerated` and `@lookupKey`. The draft named only the first
+  two files.
 - `ValidationReport.canonicalUri` is declared the single canonical URI site, but
   `addCompileLocation` puts `CompileDiagnostic.file()` into the `uri` slot raw. A `file` dimension
   spanning both channels would group two spellings of one path apart, so the compile channel has
   to pass through the same normalisation, and `directory` chops the normalised form.
 
-## Open questions for the reviewer
+## Reviewer decisions
 
-- **Separate tool versus a mode on `diagnostics`.** A separate tool gets its own description,
-  which is how an agent discovers the capability at all, and keeps the counts-not-entries wire
-  shape from being a conditional branch in one result schema. A mode keeps the polling surface
-  singular. Leaning separate tool, on the discovery argument, and faceting strengthens that: the
-  dimension enum has to be enumerated in a tool description somewhere, and it reads better as
-  one tool's own vocabulary than as half of a two-mode tool's schema.
-- **Whether the named presets are server-side or left to the agent.** Once faceting exists, a
-  preset is just a `(groupBy, where)` tuple, and an agent that has read the dimension list can
-  compose the triage view itself. Server-side presets still earn their place as the discoverable
-  default (the zero-argument call should return the actionable / deferred headline without the
-  agent having to know what to ask for), but the set should stay small; every preset is
-  vocabulary an agent has to read past. Leaning one default preset plus faceting, rather than a
-  catalogue of reports.
-- **Whether steps 1 to 5 belong in this item or in their own.** They are model lifts in
-  `graphitron` and `graphitron-lsp` serving a read tool in `graphitron-mcp`, which is a wide blast
-  radius for one item, and each stands on its own merits. Against splitting: the aggregate is what
-  motivated finding them, and an item that ships step 7 on today's shapes ships the shadow taxonomy
-  this Spec exists to avoid. Leaning one item with the phasing above, and carving out step 4
-  (the `Coordinate` sub-taxonomy, the largest and the one with reach outside the diagnostics path)
-  if the reviewer wants the blast radius smaller.
-- **Whether a prose-derived `messageTemplate` dimension should ship at all.** After steps 3 and 5
-  its domain is whatever `Structural` residue remains. If that residue turns out small, the
-  honest move may be to omit the dimension entirely and let those rows cluster only on `variant`,
-  rather than ship a heuristic whose group identity has no owner. Worth deciding on measured
-  residue rather than up front, but the reviewer should say whether "measure then decide" is an
-  acceptable thing for a Spec to defer.
-- **Pure counts versus ranked guidance.** Ordering clusters by count already surfaces the
-  leverage. Anything further ("this cluster is a bulk directive removal") would be the server
-  asserting a fix strategy, which reads as the wrong layer. Leaning pure counts.
+The draft's five open questions, settled at Spec review so the implementer inherits decisions rather
+than leanings. Each takes the draft's leaning except where noted.
+
+- **Separate tool, named `diagnostics.aggregate`.** The discovery argument carries: an agent finds
+  the capability through the tool's own description, and the counts-not-entries result schema should
+  not be a conditional branch inside `diagnostics`. The name follows the registered dotted
+  convention (`catalog.tables`, `catalog.describe`, `catalog.search`, `docs.search`), and settling it
+  here makes the `GraphitronMcpServerTest` tool-name assertion and the manual's tool table
+  mechanical edits rather than open choices. `diagnostics` keeps its singular polling role and gains
+  only the shared `where` filter axes.
+- **One default preset plus faceting.** The zero-argument call returns the actionable / deferred
+  headline, so an agent that has read nothing still gets the triage view; everything else is composed
+  from the dimension list. No catalogue of named reports.
+- **Steps 1 to 4 stay in this item; the `Coordinate` lift is carved out.** This is the reviewer
+  taking the draft's own offered carve-out, for the reasons recorded under Phasing: steps 1 to 4 each
+  directly remove a prose fallback or an `instanceof` copy from the aggregate, so they genuinely
+  precede the tool, whereas the `Coordinate` lift is separable at a single extractor and is the only
+  step reaching outside the diagnostics path. Blast radius lands at three modules instead of four.
+- **"Measure then decide" is acceptable for `messageTemplate`, with the rule stated up front.**
+  Deferring is legitimate here because the measurement is cheap and the fallback is strictly smaller
+  and safe. What a Spec may not defer is *who decides and on what basis*, so: after step 4, measure
+  the surviving `AuthorError.Structural` / `InvalidSchema.Structural` residue over the reactor's own
+  fixture corpus. Ship `messageTemplate` only if that residue does not read usefully off `variant`
+  alone; otherwise omit the dimension and let those rows cluster on `variant`. Either way the
+  implementer records the measurement in the In Review note, so the Done reviewer can check the call
+  rather than re-derive it. Omitting is the default, not the exception.
+- **Pure counts.** Ordering by count already surfaces the leverage; naming a fix strategy would be
+  the server asserting the wrong layer.
+
+## Remaining author work before Ready
+
+One item from `roadmap/workflow.adoc` § Item file conventions is outstanding: a plan with a
+user-visible surface includes a draft of the user docs as the first client of the design, and the
+convention exists precisely so that "if the docs do not read simply, the design is wrong and must
+change before implementation". This item adds a tool whose vocabulary is sixteen dimensions plus six
+request parameters, and the design's central bet against a query language is that a closed enum
+"is discoverable from the tool's input schema in one shot". That bet is only testable by writing the
+description and reading it back. Draft, inside this plan:
+
+- The `diagnostics.aggregate` tool description, including how the sixteen dimensions get enumerated
+  without the description becoming the thing an agent has to page through.
+- The `mcp/instructions.txt` sentence pointing at the aggregate when the diagnostic count is large.
+- The new row for `docs/manual/how-to/mcp-agent-context.adoc`'s per-tool table, which already
+  carries a `diagnostics` row and is the surface the shipped `docs.search` and `catalog.search`
+  tools both landed prose on.
+
+If enumerating the vocabulary does not read simply, that is the signal to shrink the dimension set
+before implementation, which is exactly what this check is for.
 
 ## Out of scope
 
@@ -367,7 +440,7 @@ coordinate predicates.
   strictly it *forces* the prose heuristic and ships an untyped side-channel with a hedge instead
   of an enforcer. Typed-key exposure, capability lifts, and sub-taxonomy splits over existing arms
   are in scope precisely so the aggregate can stay a projection; what stays out is inventing new
-  causes or moving the accept / reject line. Step 5 converges the identity of an existing
+  causes or moving the accept / reject line. Step 4 converges the identity of an existing
   rejection, it does not add one.
 - LSP-side bulk application of fixes. The workspace-scoped bulk-quick-fix tier is
   `nodeid-migration-quickfix`'s to decide.
