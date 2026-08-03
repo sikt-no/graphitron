@@ -1,7 +1,7 @@
 ---
 id: R566
 title: "Reopen the @table-on-input deprecation window: accept, ignore, and warn instead of reject"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 2
 theme: classification-model
