@@ -80,7 +80,7 @@ public class GeneratorCoverageTest {
                 + " so a new dual-arm leaf is a deliberate edit here, not a silent derivation"
                 + " change")
             .containsExactlyInAnyOrder("ColumnBackedField", "ComputedField", "BatchedPivotField",
-                "BatchedTableField", "BatchedLookupTableField", "ServiceTableField",
+                "BatchedTableField", "ServiceTableField",
                 "ServiceRecordField", "TableInterfaceField", "InterfaceField", "UnionField",
                 "BatchedInterfaceField", "BatchedUnionField");
 

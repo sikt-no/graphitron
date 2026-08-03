@@ -10,12 +10,12 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | Leaf | Intent | Traces | Tier | X-cut | Fixtures | Tests | Roadmap
 | `UnclassifiedField`
 | A field that could not be classified. A schema containing unclassified fields is invalid —
-| 1015
+| 1045
 | pipeline
 | no
-| 4
-| CheckedExceptionClassificationTest, ConnectionFederationTagPipelineTest, DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, LookupTableFieldPipelineTest, MultiTableChildReferenceForPipelineTest, MultiTableChildReferencePathRejectionPipelineTest, MutationDmlNodeIdClassificationTest, NestingFieldPipelineTest, ReFetchDerivationTest, RecordParentMultiTablePolymorphicPipelineTest, ReferencePathTerminalTargetTest, RejectNonIdNodeIdPipelineTest, SchemaEmissionChainDepthPipelineTest, SourceShapeProjectionTest, TableOnInputDeprecationWarningTest, VariantCoverageTest, WireCoercionCastGuardPipelineTest, catalog.CatalogBuilderSourceTest, catalog.CatalogBuilderTest, catalog.FieldClassificationProjectionTest, catalog.LspColumnDispatchProjectionTest, catalog.TypeClassificationProjectionTest, generators.FetcherPipelineTest, generators.JooqRecordServiceParamPipelineTest, generators.NodeIdRecordInputBeanPipelineTest, generators.ReferenceFilterRemoteColumnPipelineTest, generators.TablePipelineTest, generators.TenantRoutedFetcherPipelineTest, generators.schema.AppliedDirectiveEmitterTest, generators.schema.ConnectionRegistrationsTest, generators.schema.DefaultValueEmissionTest, generators.schema.DirectiveDefinitionEmitterTest, generators.schema.EnumTypeGeneratorTest, generators.schema.FetcherRegistrationsEmitterTest, generators.schema.GraphitronSchemaClassGeneratorTest, generators.schema.InputRecordGeneratorTest, generators.schema.InputTypeGeneratorTest, generators.schema.SchemaSdlEmitterTest, model.ParentCorrelationFirstHopInvariantTest, schema.federation.EntityResolutionBuilderTest
-| R213, R222, R245, R519, R66, R92
+| 2
+| no.sikt.graphitron.plan.EmitPlanTest, no.sikt.graphitron.plan.LauncherMembershipTest, CheckedExceptionClassificationTest, ConnectionFederationTagPipelineTest, DeliveryFactPinTest, DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, LookupPipelineTest, MultiTableChildReferenceForPipelineTest, MultiTableChildReferencePathRejectionPipelineTest, MutationDmlNodeIdClassificationTest, NestingFieldPipelineTest, PkLessParentServiceSourcesRejectionTest, ReFetchDerivationTest, RecordParentMultiTablePolymorphicPipelineTest, ReferencePathTerminalTargetTest, RejectNonIdNodeIdPipelineTest, SchemaEmissionChainDepthPipelineTest, SourceShapeProjectionTest, TriggerFactPopulationPinTest, VariantCoverageTest, WireCoercionCastGuardPipelineTest, catalog.CatalogBuilderSourceTest, catalog.CatalogBuilderTest, catalog.FieldClassificationProjectionTest, catalog.LspColumnDispatchProjectionTest, catalog.TypeClassificationProjectionTest, generators.FetcherPipelineTest, generators.JooqRecordServiceParamPipelineTest, generators.NodeIdRecordInputBeanPipelineTest, generators.ReferenceFilterRemoteColumnPipelineTest, generators.TablePipelineTest, generators.TenantRoutedFetcherPipelineTest, generators.schema.AppliedDirectiveEmitterTest, generators.schema.ConnectionRegistrationsTest, generators.schema.DefaultValueEmissionTest, generators.schema.DirectiveDefinitionEmitterTest, generators.schema.EnumTypeGeneratorTest, generators.schema.FetcherRegistrationsEmitterTest, generators.schema.GraphitronSchemaClassGeneratorTest, generators.schema.InputRecordGeneratorTest, generators.schema.InputTypeGeneratorTest, generators.schema.SchemaSdlEmitterTest, model.ParentCorrelationFirstHopInvariantTest, schema.federation.EntityResolutionBuilderTest
+| R213, R222, R245, R544, R66, R92
 |===
 
 == RootField
@@ -25,115 +25,115 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | Leaf | Intent | Traces | Tier | X-cut | Fixtures | Tests | Roadmap
 | `MutationBulkDeletePayloadField`
 | The payload-returning `@mutation(typeName: DELETE)` field with bulk
-| 9
-| pipeline
-| yes
-| 1
-| MutationDmlNodeIdClassificationTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| -
-| `MutationBulkDmlRecordField`
-| A record-returning DML mutation with bulk `@table` input and a list-shaped
-| 19
-| pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| R145, R509
-| `MutationBulkUpdatePayloadField`
-| The payload-returning `@mutation(typeName: UPDATE)` field with bulk
-| 19
-| pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| -
-| `MutationDeletePayloadField`
-| The payload-returning `@mutation(typeName: DELETE)` field with single
 | 8
-| pipeline
-| yes
-| 1
-| MutationDmlNodeIdClassificationTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| -
-| `MutationDeleteTableField`
-| The `@mutation(typeName: DELETE)` field that returns an encoded ID. Unlike its
-| 56
-| pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, MutationDmlNodeIdClassificationTest, SourceShapeProjectionTest, TableOnInputDeprecationWarningTest, VariantCoverageTest, generators.FetcherPipelineTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| R245
-| `MutationDmlRecordField`
-| A record-returning DML mutation: the schema field carries
-| 18
-| pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| R245
-| `MutationInsertTableField`
-| _(no javadoc)_
-| 79
-| pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, MutationDmlNodeIdClassificationTest, SourceShapeProjectionTest, TableOnInputDeprecationWarningTest, VariantCoverageTest, generators.FetcherPipelineTest, generators.TenantRoutedFetcherPipelineTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| -
-| `MutationRoutineWriteField`
-| A mutation field whose table chain starts with a database routine: the routine call
-| 12
-| pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| -
-| `MutationServicePolymorphicField`
-| A mutation field backed by a developer-provided service method that returns a multitable
-| 11
-| pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| R536
-| `MutationServiceRecordField`
-| A mutation field backed by a developer-provided service method, returning a non-table type
-| 206
-| pipeline
-| yes
-| 1
-| DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, ReFetchDerivationTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| -
-| `MutationServiceTableField`
-| A mutation field backed by a developer-provided service method, returning a table-mapped type
-| 5
 | pipeline
 | no
 | 0
-| GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest
+| DeliveryFactPinTest, MutationDmlNodeIdClassificationTest, SourceShapeProjectionTest, VariantCoverageTest
+| -
+| `MutationBulkDmlRecordField`
+| A record-returning DML mutation with bulk DML input and a list-shaped
+| 8
+| pipeline
+| no
+| 0
+| DeliveryFactPinTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest
+| R145, R509
+| `MutationBulkUpdatePayloadField`
+| The payload-returning `@mutation(typeName: UPDATE)` field with bulk
+| 8
+| pipeline
+| no
+| 0
+| DeliveryFactPinTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest
+| -
+| `MutationDeletePayloadField`
+| The payload-returning `@mutation(typeName: DELETE)` field with single
+| 7
+| pipeline
+| no
+| 0
+| DeliveryFactPinTest, MutationDmlNodeIdClassificationTest, SourceShapeProjectionTest, VariantCoverageTest
+| R563
+| `MutationDeleteTableField`
+| The `@mutation(typeName: DELETE)` field that returns an encoded ID. Unlike its
+| 21
+| pipeline
+| no
+| 0
+| DeliveryFactPinTest, GraphitronSchemaBuilderTest, MutationDmlNodeIdClassificationTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest
+| R245
+| `MutationDmlRecordField`
+| A record-returning DML mutation: the schema field carries
+| 7
+| pipeline
+| no
+| 0
+| DeliveryFactPinTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest
+| R245
+| `MutationInsertTableField`
+| _(no javadoc)_
+| 46
+| pipeline
+| no
+| 0
+| no.sikt.graphitron.plan.FetcherEdgeRelationTest, no.sikt.graphitron.plan.LauncherMembershipTest, DeliveryFactPinTest, GraphitronSchemaBuilderTest, MutationDmlNodeIdClassificationTest, SourceShapeProjectionTest, TriggerFactPopulationPinTest, VariantCoverageTest, generators.FetcherPipelineTest, generators.TenantRoutedFetcherPipelineTest
+| -
+| `MutationRoutineWriteField`
+| A mutation field whose table chain starts with a database routine: the routine call
+| 7
+| pipeline
+| no
+| 0
+| DeliveryFactPinTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest
+| -
+| `MutationServicePolymorphicField`
+| A mutation field backed by a developer-provided service method that returns a multitable
+| 6
+| pipeline
+| no
+| 0
+| DeliveryFactPinTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest
+| R536
+| `MutationServiceRecordField`
+| A mutation field backed by a developer-provided service method, returning a non-table type
+| 42
+| pipeline
+| no
+| 0
+| DeliveryFactPinTest, DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, ReFetchDerivationTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest
+| -
+| `MutationServiceTableField`
+| A mutation field backed by a developer-provided service method, returning a table-mapped type
+| 6
+| pipeline
+| no
+| 0
+| DeliveryFactPinTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest
 | -
 | `MutationServiceTableInterfaceField`
 | The mutation analogue of `QueryField.QueryServiceTableInterfaceField`: a root
-| 14
+| 9
 | pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, generators.ServiceTableInterfaceReturnPipelineTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
+| no
+| 0
+| DeliveryFactPinTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, generators.ServiceTableInterfaceReturnPipelineTest
 | R536
 | `MutationUpdatePayloadField`
 | The payload-returning `@mutation(typeName: UPDATE)` field with single
-| 18
+| 7
 | pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| -
+| no
+| 0
+| DeliveryFactPinTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest
+| R563
 | `MutationUpdateTableField`
 | The `@mutation(typeName: UPDATE)` field that returns its `@table` type
-| 80
+| 21
 | pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, MutationDmlNodeIdClassificationTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
+| no
+| 0
+| DeliveryFactPinTest, GraphitronSchemaBuilderTest, MutationDmlNodeIdClassificationTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest
 | R245
 | `MutationUpsertTableField`
 | _(no javadoc)_
@@ -142,102 +142,94 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | no
 | -
 | -
-| R145, R245
+| R145, R245, R563
 | `QueryInterfaceField`
 | A root query field returning a multi-table `GraphitronType.InterfaceType`
-| 29
+| 12
 | pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, generators.schema.GraphitronSchemaClassGeneratorTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
+| no
+| 0
+| no.sikt.graphitron.plan.FetcherEdgeRelationTest, no.sikt.graphitron.plan.LauncherCommandsPipelineTest, DeliveryFactPinTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, generators.schema.GraphitronSchemaClassGeneratorTest
 | R382
-| `QueryLookupTableField`
-| _(no javadoc)_
-| 65
-| pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| -
 | `QueryNodeField`
 | _(no javadoc)_
-| 18
+| 15
 | pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, generators.TenantRoutedFetcherPipelineTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
+| no
+| 0
+| no.sikt.graphitron.plan.FetcherEdgeRelationTest, DeliveryFactPinTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, generators.TenantRoutedFetcherPipelineTest
 | -
 | `QueryNodesField`
 | _(no javadoc)_
-| 11
+| 6
 | pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
+| no
+| 0
+| DeliveryFactPinTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest
 | -
 | `QueryRoutineTableField`
 | A root query field whose table chain starts with a jOOQ database routine (`@routine`)
-| 19
+| 12
 | pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
+| no
+| 0
+| no.sikt.graphitron.plan.LauncherCommandsPipelineTest, no.sikt.graphitron.plan.LauncherMembershipTest, DeliveryFactPinTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest
 | R448
 | `QueryServicePolymorphicField`
 | A root query field backed by a developer-provided service method that returns a multitable
-| 17
+| 6
 | pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
+| no
+| 0
+| DeliveryFactPinTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest
 | R397, R536
 | `QueryServiceRecordField`
 | A root query field backed by a developer-provided service method, returning a non-table type
-| 305
+| 226
 | pipeline
-| yes
-| 4
-| CheckedExceptionClassificationTest, ClassifierAdvisoryFixPipelineTest, ContextArgumentTypeAgreementTest, GraphitronSchemaBuilderTest, LintSuppressionPipelineTest, MixedSourceNestedTypeReadsTest, MultiTableChildReferenceForPipelineTest, MultiTableChildReferencePathRejectionPipelineTest, PolymorphicNestingFilterTest, RecordParentMultiTablePolymorphicPipelineTest, SourceShapeProjectionTest, VariantCoverageTest, WireCoercionCastGuardPipelineTest, generators.FetcherPipelineTest, generators.FetchersHelperNameCollisionPipelineTest, generators.JooqRecordServiceParamPipelineTest, generators.NodeIdRecordInputBeanPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, schema.federation.EntityResolutionBuilderTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
+| no
+| 3
+| CheckedExceptionClassificationTest, ClassifierAdvisoryFixPipelineTest, ContextArgumentTypeAgreementTest, DeliveryFactPinTest, GraphitronSchemaBuilderTest, LintSuppressionPipelineTest, MixedSourceNestedTypeReadsTest, MultiTableChildReferenceForPipelineTest, MultiTableChildReferencePathRejectionPipelineTest, PolymorphicNestingFilterTest, RecordParentMultiTablePolymorphicPipelineTest, SourceShapeProjectionTest, TriggerFactPopulationPinTest, VariantCoverageTest, WireCoercionCastGuardPipelineTest, generators.FetcherPipelineTest, generators.FetchersHelperNameCollisionPipelineTest, generators.JooqRecordServiceParamPipelineTest, generators.NodeIdRecordInputBeanPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, schema.federation.EntityResolutionBuilderTest
 | R222, R397
 | `QueryServiceTableField`
 | A root query field backed by a developer-provided service method, returning a table-mapped type
-| 40
+| 11
 | pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, ReFetchDerivationTest, SourceShapeProjectionTest, VariantCoverageTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| R397
+| no
+| 0
+| DeliveryFactPinTest, GraphitronSchemaBuilderTest, ReFetchDerivationTest, SourceShapeProjectionTest, VariantCoverageTest
+| R397, R427
 | `QueryServiceTableInterfaceField`
 | A root `@service` field returning a single-table discriminated interface
-| 20
+| 9
 | pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, generators.ServiceTableInterfaceReturnPipelineTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
+| no
+| 0
+| DeliveryFactPinTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, generators.ServiceTableInterfaceReturnPipelineTest
 | R536
 | `QueryTableField`
 | _(no javadoc)_
-| 901
+| 781
 | pipeline
-| yes
-| 16
-| ArrayColumnCodegenPipelineTest, ClassifierAdvisoryFixPipelineTest, ConnectionFederationTagPipelineTest, ContextArgumentTypeAgreementTest, DedupeReferenceProjectionPipelineTest, DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, LintSuppressionPipelineTest, LookupTableFieldPipelineTest, MixedSourceNestedTypeReadsTest, MultiSchemaPipelineTest, MultiTableChildReferenceForPipelineTest, MultiTableChildReferencePathRejectionPipelineTest, MutationDmlNodeIdClassificationTest, NestingFieldPipelineTest, ReFetchDerivationTest, RecordParentMultiTablePolymorphicPipelineTest, ReferencePathTerminalTargetTest, ReferenceProjectionAliasNamespaceTest, RejectNonIdNodeIdPipelineTest, SelfFkNodeIdReferenceReadSidePipelineTest, SourceShapeProjectionTest, VariantCoverageTest, catalog.FieldClassificationProjectionTest, catalog.LspColumnDispatchProjectionTest, catalog.TypeClassificationProjectionTest, generators.FacetEmitterTest, generators.FetcherPipelineTest, generators.InlineFilterArgumentSourcePipelineTest, generators.JooqRecordServiceParamPipelineTest, generators.NodeIdOverrideConditionFkTargetPipelineTest, generators.NodeIdReferenceFilterPipelineTest, generators.OccurrenceArgumentGuardPipelineTest, generators.QueryConditionsPipelineTest, generators.ReferenceFilterRemoteColumnPipelineTest, generators.TablePipelineTest, generators.TenantFanOutFetcherPipelineTest, generators.TenantRoutedFetcherPipelineTest, generators.schema.AppliedDirectiveEmitterTest, generators.schema.ConnectionRegistrationsTest, generators.schema.FetcherRegistrationsEmitterTest, generators.schema.GraphitronDevExecutorGeneratorPipelineTest, generators.schema.GraphitronFacadeGeneratorPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, generators.schema.SchemaSdlEmitterTest, model.ParentCorrelationFirstHopInvariantTest, schema.federation.EntityResolutionBuilderTest, test.internal.GeneratorDeterminismTest, test.internal.IdempotentWriterTest, test.querydb.FixtureWarningsGateTest
+| no
+| 6
+| no.sikt.graphitron.plan.ConditionCommandsPipelineTest, no.sikt.graphitron.plan.ConditionMembershipTest, no.sikt.graphitron.plan.EmitPlanTest, no.sikt.graphitron.plan.FetcherEdgeRelationTest, no.sikt.graphitron.plan.LauncherCommandsPipelineTest, no.sikt.graphitron.plan.LauncherMembershipTest, no.sikt.graphitron.plan.ProjectionMembershipTest, no.sikt.graphitron.plan.TypeUnitMembershipTest, ArrayColumnCodegenPipelineTest, ClassifierAdvisoryFixPipelineTest, ConnectionFederationTagPipelineTest, ContextArgumentTypeAgreementTest, CorrelationKeyArmPipelineTest, DedupeReferenceProjectionPipelineTest, DeliveryFactPinTest, DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, LintSuppressionPipelineTest, LookupPipelineTest, MixedSourceNestedTypeReadsTest, MultiSchemaPipelineTest, MultiTableChildReferenceForPipelineTest, MultiTableChildReferencePathRejectionPipelineTest, MutationDmlNodeIdClassificationTest, NestingFieldPipelineTest, PaginationFactPipelineTest, PkLessParentServiceSourcesRejectionTest, ReFetchDerivationTest, RecordParentMultiTablePolymorphicPipelineTest, ReferencePathTerminalTargetTest, ReferenceProjectionAliasNamespaceTest, RejectNonIdNodeIdPipelineTest, SelfFkNodeIdReferenceReadSidePipelineTest, SourceShapeProjectionTest, TriggerFactPopulationPinTest, VariantCoverageTest, catalog.FieldClassificationProjectionTest, catalog.LspColumnDispatchProjectionTest, catalog.TypeClassificationProjectionTest, generators.ConditionGluePipelineTest, generators.FacetEmitterTest, generators.FetcherPipelineTest, generators.InlineFilterArgumentSourcePipelineTest, generators.JooqRecordServiceParamPipelineTest, generators.NodeIdOverrideConditionFkTargetPipelineTest, generators.NodeIdReferenceFilterPipelineTest, generators.OccurrenceArgumentGuardPipelineTest, generators.ReferenceFilterRemoteColumnPipelineTest, generators.TablePipelineTest, generators.TenantFanOutFetcherPipelineTest, generators.TenantRoutedFetcherPipelineTest, generators.schema.AppliedDirectiveEmitterTest, generators.schema.ConnectionRegistrationsTest, generators.schema.FetcherRegistrationsEmitterTest, generators.schema.GraphitronDevExecutorGeneratorPipelineTest, generators.schema.GraphitronFacadeGeneratorPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, generators.schema.SchemaSdlEmitterTest, model.ParentCorrelationFirstHopInvariantTest, schema.federation.EntityResolutionBuilderTest
 | R427, R462
 | `QueryTableInterfaceField`
 | _(no javadoc)_
-| 46
+| 41
 | pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
+| no
+| 0
+| no.sikt.graphitron.plan.LauncherCommandsPipelineTest, no.sikt.graphitron.plan.LauncherMembershipTest, DeliveryFactPinTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest
 | R382, R462
 | `QueryUnionField`
 | A root query field returning a multi-table `GraphitronType.UnionType`
-| 61
+| 11
 | pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, generators.schema.GraphitronSchemaClassGeneratorTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
+| no
+| 0
+| no.sikt.graphitron.plan.ConditionCommandsPipelineTest, no.sikt.graphitron.plan.ConditionMembershipTest, no.sikt.graphitron.plan.FetcherEdgeRelationTest, DeliveryFactPinTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, generators.schema.GraphitronSchemaClassGeneratorTest
 | R382
 |===
 
@@ -246,101 +238,101 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 [cols="2,4,1,1,1,1,3,2", options="header"]
 |===
 | Leaf | Intent | Traces | Tier | X-cut | Fixtures | Tests | Roadmap
-| `BatchedLookupTableField`
-| The `@lookupKey` twin of `BatchedTableField`: a DataLoader-batched keyed
-| 31
+| `BatchedInterfaceField`
+| A list- or connection-cardinality child field returning a multi-table
+| 15
 | pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| R222, R333, R533
+| no
+| 0
+| no.sikt.graphitron.plan.FetcherEdgeRelationTest, DeliveryFactPinTest, DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, MultiTableChildReferenceForPipelineTest, MultiTableChildReferencePathRejectionPipelineTest, RecordParentMultiTablePolymorphicPipelineTest, SourceShapeProjectionTest, VariantCoverageTest
+| -
 | `BatchedPivotField`
 | The batched (`@splitQuery`) `@pivot` leaf: the same projection as
-| 17
+| 12
 | pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| -
+| no
+| 0
+| no.sikt.graphitron.plan.LauncherMembershipTest, no.sikt.graphitron.plan.ProjectionMembershipTest, CorrelationKeyArmPipelineTest, DeliveryFactPinTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest
+| R557
 | `BatchedTableField`
 | A DataLoader-batched keyed re-query anchor: the field launches its own SELECT keyed on a
-| 327
+| 155
 | pipeline
-| yes
-| 4
-| ClassifierAdvisoryFixPipelineTest, GraphitronSchemaBuilderTest, LintSuppressionPipelineTest, ReFetchDerivationTest, ReferenceProjectionAliasNamespaceTest, SourceShapeProjectionTest, VariantCoverageTest, catalog.LspColumnDispatchProjectionTest, generators.FetcherPipelineTest, generators.NodeIdReferenceFilterPipelineTest, generators.TenantFanOutFetcherPipelineTest, generators.TenantRoutedFetcherPipelineTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| R222, R333
+| no
+| 3
+| no.sikt.graphitron.plan.ConditionMembershipTest, no.sikt.graphitron.plan.LauncherMembershipTest, no.sikt.graphitron.plan.ProjectionMembershipTest, ClassifierAdvisoryFixPipelineTest, CorrelationKeyArmPipelineTest, DeliveryFactPinTest, GraphitronSchemaBuilderTest, LintSuppressionPipelineTest, ReFetchDerivationTest, ReferenceProjectionAliasNamespaceTest, SourceShapeProjectionTest, TriggerFactPopulationPinTest, VariantCoverageTest, catalog.LspColumnDispatchProjectionTest, generators.FetcherPipelineTest, generators.NodeIdReferenceFilterPipelineTest, generators.TenantFanOutFetcherPipelineTest, generators.TenantRoutedFetcherPipelineTest
+| R222, R333, R403, R557
+| `BatchedUnionField`
+| A list- or connection-cardinality child field returning a multi-table
+| 10
+| pipeline
+| no
+| 0
+| DeliveryFactPinTest, GraphitronSchemaBuilderTest, PolymorphicNestingFilterTest, RecordParentMultiTablePolymorphicPipelineTest, SourceShapeProjectionTest, VariantCoverageTest
+| -
 | `ColumnBackedField`
 | A column-backed output carrier on a table-backed parent: the field's value is produced
-| 1834
+| 1296
 | pipeline
-| yes
-| 17
-| ArrayColumnCodegenPipelineTest, ClassifierAdvisoryFixPipelineTest, ContextArgumentTypeAgreementTest, DedupeReferenceProjectionPipelineTest, DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, LintSuppressionPipelineTest, LookupTableFieldPipelineTest, MultiSchemaPipelineTest, MultiTableChildReferenceForPipelineTest, MultiTableChildReferencePathRejectionPipelineTest, MutationDmlNodeIdClassificationTest, NestingFieldPipelineTest, PolymorphicNestingFilterTest, ReFetchDerivationTest, RecordParentMultiTablePolymorphicPipelineTest, ReferencePathTerminalTargetTest, ReferenceProjectionAliasNamespaceTest, RejectNonIdNodeIdPipelineTest, SelfFkNodeIdReferenceReadSidePipelineTest, SourceShapeProjectionTest, TableOnInputDeprecationWarningTest, VariantCoverageTest, catalog.CatalogBuilderTest, catalog.FieldClassificationProjectionTest, catalog.LspColumnDispatchProjectionTest, catalog.TypeClassificationProjectionTest, generators.FacetEmitterTest, generators.FetcherPipelineTest, generators.FetchersHelperNameCollisionPipelineTest, generators.InlineFilterArgumentSourcePipelineTest, generators.JooqRecordServiceParamPipelineTest, generators.NodeIdOverrideConditionFkTargetPipelineTest, generators.NodeIdRecordInputBeanPipelineTest, generators.NodeIdReferenceFilterPipelineTest, generators.OccurrenceArgumentGuardPipelineTest, generators.QueryConditionsPipelineTest, generators.ReferenceFilterRemoteColumnPipelineTest, generators.ServiceTableInterfaceReturnPipelineTest, generators.TablePipelineTest, generators.TenantFanOutFetcherPipelineTest, generators.TenantRoutedFetcherPipelineTest, generators.schema.ConnectionRegistrationsTest, generators.schema.GraphitronSchemaClassGeneratorTest, model.ParentCorrelationFirstHopInvariantTest, schema.federation.EntityResolutionBuilderTest, test.internal.GeneratorDeterminismTest, test.internal.IdempotentWriterTest, test.querydb.FixtureWarningsGateTest
-| R222, R239, R240, R257, R302, R333, R462, R92
+| no
+| 7
+| no.sikt.graphitron.plan.ConditionCommandsPipelineTest, no.sikt.graphitron.plan.ConditionMembershipTest, no.sikt.graphitron.plan.EmitPlanTest, no.sikt.graphitron.plan.FetcherEdgeRelationTest, no.sikt.graphitron.plan.LauncherCommandsPipelineTest, no.sikt.graphitron.plan.LauncherMembershipTest, no.sikt.graphitron.plan.ProjectionMembershipTest, no.sikt.graphitron.plan.TypeUnitMembershipTest, ArrayColumnCodegenPipelineTest, ClassifierAdvisoryFixPipelineTest, ContextArgumentTypeAgreementTest, CorrelationKeyArmPipelineTest, DedupeReferenceProjectionPipelineTest, DeliveryFactPinTest, DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, LintSuppressionPipelineTest, LookupPipelineTest, MultiSchemaPipelineTest, MultiTableChildReferenceForPipelineTest, MultiTableChildReferencePathRejectionPipelineTest, MutationDmlNodeIdClassificationTest, NestingFieldPipelineTest, PaginationFactPipelineTest, PkLessParentServiceSourcesRejectionTest, PolymorphicNestingFilterTest, ReFetchDerivationTest, RecordParentMultiTablePolymorphicPipelineTest, ReferencePathTerminalTargetTest, ReferenceProjectionAliasNamespaceTest, RejectNonIdNodeIdPipelineTest, SelfFkNodeIdReferenceReadSidePipelineTest, SourceShapeProjectionTest, TriggerFactPopulationPinTest, VariantCoverageTest, catalog.CatalogBuilderTest, catalog.FieldClassificationProjectionTest, catalog.LspColumnDispatchProjectionTest, catalog.TypeClassificationProjectionTest, generators.ConditionGluePipelineTest, generators.FacetEmitterTest, generators.FetcherPipelineTest, generators.FetchersHelperNameCollisionPipelineTest, generators.InlineFilterArgumentSourcePipelineTest, generators.JooqRecordServiceParamPipelineTest, generators.NodeIdOverrideConditionFkTargetPipelineTest, generators.NodeIdRecordInputBeanPipelineTest, generators.NodeIdReferenceFilterPipelineTest, generators.OccurrenceArgumentGuardPipelineTest, generators.ReferenceFilterRemoteColumnPipelineTest, generators.ServiceTableInterfaceReturnPipelineTest, generators.TablePipelineTest, generators.TenantFanOutFetcherPipelineTest, generators.TenantRoutedFetcherPipelineTest, generators.schema.ConnectionRegistrationsTest, generators.schema.GraphitronSchemaClassGeneratorTest, model.ParentCorrelationFirstHopInvariantTest, schema.federation.EntityResolutionBuilderTest
+| R222, R239, R240, R257, R302, R333, R462, R556, R92
 | `ColumnBackedReferenceField`
 | A column-backed output carrier on a table-backed parent reached through a
-| 53
+| 30
 | pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, RejectNonIdNodeIdPipelineTest, SourceShapeProjectionTest, VariantCoverageTest, catalog.FieldClassificationProjectionTest, catalog.LspColumnDispatchProjectionTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
+| no
+| 0
+| no.sikt.graphitron.plan.LauncherCommandsPipelineTest, no.sikt.graphitron.plan.ProjectionMembershipTest, DeliveryFactPinTest, GraphitronSchemaBuilderTest, RejectNonIdNodeIdPipelineTest, SourceShapeProjectionTest, VariantCoverageTest, catalog.FieldClassificationProjectionTest, catalog.LspColumnDispatchProjectionTest
 | R135, R222, R24, R257, R27, R333, R419, R473
 | `ComputedField`
 | A child field using `@externalField`: the developer provides a static method
-| 31
+| 8
 | pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| R109, R333, R54
+| no
+| 0
+| DeliveryFactPinTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest
+| R109, R333, R54, R555
 | `ErrorsField`
 | The `errors` field on a payload type. Lift target for the payload-side of a
-| 102
+| 32
 | pipeline
-| yes
-| 1
-| DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| R304, R333, R537
+| no
+| 0
+| DeliveryFactPinTest, DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest
+| R304, R333, R537, R563
 | `InterfaceField`
-| A child field on a `GraphitronType.TableBackedType` parent returning a multi-table
-| 73
+| A single-cardinality child field returning a multi-table
+| 13
 | pipeline
-| yes
-| 1
-| DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, MultiTableChildReferenceForPipelineTest, MultiTableChildReferencePathRejectionPipelineTest, RecordParentMultiTablePolymorphicPipelineTest, SourceShapeProjectionTest, VariantCoverageTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
+| no
+| 0
+| CorrelationKeyArmPipelineTest, DeliveryFactPinTest, GraphitronSchemaBuilderTest, MultiTableChildReferenceForPipelineTest, RecordParentMultiTablePolymorphicPipelineTest, SourceShapeProjectionTest, VariantCoverageTest
 | R222, R447
-| `LookupTableField`
-| _(no javadoc)_
-| 19
-| pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, LookupTableFieldPipelineTest, SourceShapeProjectionTest, VariantCoverageTest, generators.OccurrenceArgumentGuardPipelineTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| R222, R288, R323, R462, R472
 | `NestingField`
 | A nesting child field whose value is a fragment of the parent's table-bound projection
-| 109
+| 71
 | pipeline
-| yes
-| 1
-| ClassifierAdvisoryFixPipelineTest, GraphitronSchemaBuilderTest, MixedSourceNestedTypeReadsTest, NestingFieldPipelineTest, RecordParentMultiTablePolymorphicPipelineTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| R122, R221, R222, R302, R323, R333, R419, R462, R472
+| no
+| 0
+| no.sikt.graphitron.plan.ConditionCommandsPipelineTest, no.sikt.graphitron.plan.ConditionMembershipTest, no.sikt.graphitron.plan.ProjectionMembershipTest, no.sikt.graphitron.plan.TypeUnitMembershipTest, ClassifierAdvisoryFixPipelineTest, DeliveryFactPinTest, GraphitronSchemaBuilderTest, MixedSourceNestedTypeReadsTest, NestingFieldPipelineTest, RecordParentMultiTablePolymorphicPipelineTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest
+| R122, R221, R222, R302, R323, R333, R419, R462, R556, R557
 | `ParticipantColumnReferenceField`
 | A scalar field on a `GraphitronType.TableInterfaceType` participant that
-| 18
+| 14
 | pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest, generators.ServiceTableInterfaceReturnPipelineTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
+| no
+| 0
+| no.sikt.graphitron.plan.LauncherCommandsPipelineTest, DeliveryFactPinTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest, generators.ServiceTableInterfaceReturnPipelineTest
 | R109
 | `PivotField`
 | The inline `@pivot` leaf: a discriminator-keyed aggregate projection folded into the
-| 29
+| 8
 | pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
+| no
+| 0
+| no.sikt.graphitron.plan.ProjectionMembershipTest, DeliveryFactPinTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest
 | -
 | `PivotSlotField`
 | One projection slot of a `@pivot` field's return type, carrying exactly one fact: its
@@ -349,78 +341,78 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | no
 | -
 | -
-| -
+| R556, R563
 | `RecordCompositeField`
 | The single data field on an `@service` record-composite carrier payload. The
-| 11
+| 6
 | pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
+| no
+| 0
+| DeliveryFactPinTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest
 | -
 | `RecordReadField`
 | A value read off a record-backed parent's in-memory source object: the scalar / enum /
-| 426
+| 241
 | pipeline
-| yes
-| 1
-| ClassifierAdvisoryFixPipelineTest, DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, MixedSourceNestedTypeReadsTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
+| no
+| 0
+| ClassifierAdvisoryFixPipelineTest, DeliveryFactPinTest, DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, MixedSourceNestedTypeReadsTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest
 | R222, R304, R333, R537
 | `ServiceRecordField`
 | A child field backed by a developer-provided service method (`@service`), where the
-| 57
-| pipeline
-| yes
-| 1
-| ArrayColumnCodegenPipelineTest, GraphitronSchemaBuilderTest, ReFetchDerivationTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest, generators.schema.GraphitronDevExecutorGeneratorPipelineTest, generators.schema.GraphitronFacadeGeneratorPipelineTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| -
-| `ServiceTableField`
-| A child field backed by a developer-provided service method (`@service`), where the
 | 34
 | pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, ReFetchDerivationTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest, generators.JooqRecordServiceParamPipelineTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| R222, R462
+| no
+| 0
+| no.sikt.graphitron.plan.LauncherMembershipTest, no.sikt.graphitron.plan.ProjectionMembershipTest, ArrayColumnCodegenPipelineTest, DeliveryFactPinTest, GraphitronSchemaBuilderTest, PkLessParentServiceSourcesRejectionTest, ReFetchDerivationTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest, generators.schema.GraphitronDevExecutorGeneratorPipelineTest, generators.schema.GraphitronFacadeGeneratorPipelineTest
+| R555
+| `ServiceTableField`
+| A child field backed by a developer-provided service method (`@service`), where the
+| 27
+| pipeline
+| no
+| 0
+| no.sikt.graphitron.plan.LauncherMembershipTest, no.sikt.graphitron.plan.ProjectionMembershipTest, DeliveryFactPinTest, GraphitronSchemaBuilderTest, ReFetchDerivationTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest, generators.JooqRecordServiceParamPipelineTest
+| R222, R462, R563
 | `SingleRecordIdField`
 | The single data field on an `@service` source-record carrier: an ID-typed scalar
-| 18
+| 7
 | pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| R516
+| no
+| 0
+| DeliveryFactPinTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest
+| -
 | `SingleRecordIdFieldFromReturning`
 | The single data field on a payload-returning DELETE carrier: an ID-typed scalar encoding
-| 17
+| 15
 | pipeline
-| yes
-| 1
-| MutationDmlNodeIdClassificationTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
+| no
+| 0
+| DeliveryFactPinTest, MutationDmlNodeIdClassificationTest, SourceShapeProjectionTest, VariantCoverageTest
 | R242
 | `TableField`
 | _(no javadoc)_
-| 216
+| 137
 | pipeline
-| yes
-| 1
-| DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, MultiSchemaPipelineTest, ReferencePathTerminalTargetTest, ReferenceProjectionAliasNamespaceTest, SourceShapeProjectionTest, VariantCoverageTest, catalog.LspColumnDispatchProjectionTest, generators.InlineFilterArgumentSourcePipelineTest, generators.NodeIdReferenceFilterPipelineTest, generators.OccurrenceArgumentGuardPipelineTest, model.ParentCorrelationFirstHopInvariantTest, schema.federation.EntityResolutionBuilderTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| R222, R288, R302, R323, R333, R427, R462, R472
+| no
+| 0
+| no.sikt.graphitron.plan.ConditionMembershipTest, no.sikt.graphitron.plan.ProjectionMembershipTest, DeliveryFactPinTest, DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, LookupPipelineTest, MultiSchemaPipelineTest, ReferencePathTerminalTargetTest, ReferenceProjectionAliasNamespaceTest, SourceShapeProjectionTest, TriggerFactPopulationPinTest, VariantCoverageTest, catalog.LspColumnDispatchProjectionTest, generators.InlineFilterArgumentSourcePipelineTest, generators.NodeIdReferenceFilterPipelineTest, generators.OccurrenceArgumentGuardPipelineTest, model.ParentCorrelationFirstHopInvariantTest, schema.federation.EntityResolutionBuilderTest
+| R222, R288, R302, R323, R333, R427, R462
 | `TableInterfaceField`
 | _(no javadoc)_
-| 11
+| 7
 | pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
+| no
+| 0
+| CorrelationKeyArmPipelineTest, DeliveryFactPinTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest
 | R288
 | `UnionField`
-| A child field on a `GraphitronType.TableBackedType` parent returning a multi-table
-| 41
+| A single-cardinality child field returning a multi-table
+| 9
 | pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, MultiTableChildReferenceForPipelineTest, PolymorphicNestingFilterTest, RecordParentMultiTablePolymorphicPipelineTest, SourceShapeProjectionTest, VariantCoverageTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
+| no
+| 0
+| CorrelationKeyArmPipelineTest, DeliveryFactPinTest, GraphitronSchemaBuilderTest, MultiTableChildReferenceForPipelineTest, RecordParentMultiTablePolymorphicPipelineTest, SourceShapeProjectionTest, VariantCoverageTest
 | R222
 |===
 
@@ -430,36 +422,36 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 |===
 | Leaf | Intent | Traces | Tier | X-cut | Fixtures | Tests | Roadmap
 | `ColumnBackedField`
-| A field in a `@table`-annotated input type, successfully resolved to one or more SQL
-| 741
+| An input field successfully resolved to one or more SQL columns on the consuming
+| 339
 | pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, LookupTableFieldPipelineTest, MutationDmlNodeIdClassificationTest, SourceShapeProjectionTest, TableOnInputDeprecationWarningTest, VariantCoverageTest, catalog.FieldClassificationProjectionTest, catalog.LspColumnDispatchProjectionTest, catalog.TypeClassificationProjectionTest, generators.FacetEmitterTest, generators.FetcherPipelineTest, generators.InlineFilterArgumentSourcePipelineTest, generators.JooqRecordServiceParamPipelineTest, generators.NodeIdReferenceFilterPipelineTest, generators.QueryConditionsPipelineTest, generators.TenantRoutedFetcherPipelineTest, generators.schema.ConnectionRegistrationsTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| R222, R239, R240, R257, R302, R333, R462, R92
+| no
+| 0
+| no.sikt.graphitron.plan.ConditionCommandsPipelineTest, no.sikt.graphitron.plan.FetcherEdgeRelationTest, no.sikt.graphitron.plan.LauncherCommandsPipelineTest, no.sikt.graphitron.plan.LauncherMembershipTest, no.sikt.graphitron.plan.TypeUnitMembershipTest, DeliveryFactPinTest, GraphitronSchemaBuilderTest, LookupPipelineTest, MutationDmlNodeIdClassificationTest, RejectNonIdNodeIdPipelineTest, SourceShapeProjectionTest, TriggerFactPopulationPinTest, VariantCoverageTest, catalog.FieldClassificationProjectionTest, catalog.LspColumnDispatchProjectionTest, catalog.TypeClassificationProjectionTest, generators.ConditionGluePipelineTest, generators.FacetEmitterTest, generators.FetcherPipelineTest, generators.InlineFilterArgumentSourcePipelineTest, generators.NodeIdReferenceFilterPipelineTest, generators.TenantRoutedFetcherPipelineTest, generators.schema.ConnectionRegistrationsTest
+| R222, R239, R240, R257, R302, R333, R462, R556, R92
 | `ColumnBackedReferenceField`
-| A field in a `@table`-annotated input type that uses `@reference` (or an
-| 94
+| An input field that uses `@reference` (or an
+| 25
 | pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, MutationDmlNodeIdClassificationTest, generators.JooqRecordServiceParamPipelineTest, generators.NodeIdOverrideConditionFkTargetPipelineTest, generators.ReferenceFilterRemoteColumnPipelineTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
+| no
+| 0
+| GraphitronSchemaBuilderTest, MutationDmlNodeIdClassificationTest, generators.NodeIdOverrideConditionFkTargetPipelineTest, generators.ReferenceFilterRemoteColumnPipelineTest
 | R135, R222, R24, R257, R27, R333, R419, R473
 | `NestingField`
-| A field in a `@table`-annotated input type whose GraphQL type is itself an input
-| 61
+| An input field whose GraphQL type is itself an input
+| 19
 | pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| R122, R221, R222, R302, R323, R333, R419, R462, R472
+| no
+| 0
+| no.sikt.graphitron.plan.TypeUnitMembershipTest, GraphitronSchemaBuilderTest
+| R122, R221, R222, R302, R323, R333, R419, R462, R556, R557
 | `UnboundField`
 | Input field that does not bind to a SQL column. The defining property is the absence of a
-| 91
+| 41
 | pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, generators.NodeIdReferenceFilterPipelineTest, generators.schema.SchemaSdlEmitterTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
+| no
+| 0
+| GraphitronSchemaBuilderTest, generators.NodeIdReferenceFilterPipelineTest, generators.schema.SchemaSdlEmitterTest
 | R122, R218, R221, R222, R245
 |===
 
@@ -470,203 +462,195 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | Leaf | Intent | Traces | Tier | X-cut | Fixtures | Tests | Roadmap
 | `Backed`
 | A payload carrier whose backing class was reflected from its
-| 67
+| 55
 | pipeline
-| yes
-| 4
-| ClassifierAdvisoryFixPipelineTest, GraphitronSchemaBuilderTest, LintSuppressionPipelineTest, RecordParentMultiTablePolymorphicPipelineTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest, schema.federation.EntityResolutionBuilderTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
+| no
+| 3
+| ClassifierAdvisoryFixPipelineTest, DeliveryFactPinTest, GraphitronSchemaBuilderTest, LintSuppressionPipelineTest, RecordParentMultiTablePolymorphicPipelineTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest, schema.federation.EntityResolutionBuilderTest
 | R180, R427, R528
 | `ConnectionType`
 | A Relay connection object type — the outer wrapper whose fields are
-| 160
+| 95
 | pipeline
-| yes
-| 3
-| ConnectionFederationTagPipelineTest, ConnectionPromoterTest, GraphitronSchemaBuilderTest, LookupTableFieldPipelineTest, SelfFkNodeIdReferenceReadSidePipelineTest, SourceShapeProjectionTest, VariantCoverageTest, catalog.LspColumnDispatchProjectionTest, generators.FacetEmitterTest, generators.schema.ConnectionRegistrationsTest, generators.schema.FetcherRegistrationsEmitterTest, generators.schema.GraphitronSchemaClassGeneratorTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
+| no
+| 2
+| no.sikt.graphitron.plan.ConditionCommandsPipelineTest, no.sikt.graphitron.plan.LauncherCommandsPipelineTest, no.sikt.graphitron.plan.TypeUnitMembershipTest, ConnectionFederationTagPipelineTest, ConnectionPromoterTest, DeliveryFactPinTest, GraphitronSchemaBuilderTest, LookupPipelineTest, PaginationFactPipelineTest, SelfFkNodeIdReferenceReadSidePipelineTest, SourceShapeProjectionTest, VariantCoverageTest, catalog.LspColumnDispatchProjectionTest, generators.FacetEmitterTest, generators.schema.ConnectionRegistrationsTest, generators.schema.FetcherRegistrationsEmitterTest, generators.schema.GraphitronSchemaClassGeneratorTest
 | R208, R222, R297, R333, R427
 | `EdgeType`
 | A Relay edge object type — the inner wrapper whose fields are `cursor: String!` and
-| 160
+| 95
 | pipeline
-| yes
-| 3
-| ConnectionFederationTagPipelineTest, ConnectionPromoterTest, GraphitronSchemaBuilderTest, LookupTableFieldPipelineTest, SelfFkNodeIdReferenceReadSidePipelineTest, SourceShapeProjectionTest, VariantCoverageTest, catalog.LspColumnDispatchProjectionTest, generators.FacetEmitterTest, generators.schema.ConnectionRegistrationsTest, generators.schema.FetcherRegistrationsEmitterTest, generators.schema.GraphitronSchemaClassGeneratorTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
+| no
+| 2
+| no.sikt.graphitron.plan.ConditionCommandsPipelineTest, no.sikt.graphitron.plan.LauncherCommandsPipelineTest, no.sikt.graphitron.plan.TypeUnitMembershipTest, ConnectionFederationTagPipelineTest, ConnectionPromoterTest, DeliveryFactPinTest, GraphitronSchemaBuilderTest, LookupPipelineTest, PaginationFactPipelineTest, SelfFkNodeIdReferenceReadSidePipelineTest, SourceShapeProjectionTest, VariantCoverageTest, catalog.LspColumnDispatchProjectionTest, generators.FacetEmitterTest, generators.schema.ConnectionRegistrationsTest, generators.schema.FetcherRegistrationsEmitterTest, generators.schema.GraphitronSchemaClassGeneratorTest
 | R208, R297
 | `EnumType`
 | A GraphQL enum type, recorded so `schema.types()` is complete for emission
-| 1146
+| 2372
 | pipeline
-| yes
+| no
 | 0
-| ConnectionFederationTagPipelineTest, ConnectionPromoterTest, DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, SchemaEmissionChainDepthPipelineTest, SourceShapeProjectionTest, VariantCoverageTest, WireCoercionCastGuardPipelineTest, generators.FetcherPipelineTest, generators.schema.EnumTypeGeneratorTest, generators.schema.GraphitronSchemaClassGeneratorTest, generators.schema.SchemaSdlEmitterTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
+| no.sikt.graphitron.plan.LauncherCommandsPipelineTest, no.sikt.graphitron.plan.TypeUnitMembershipTest, ConnectionFederationTagPipelineTest, ConnectionPromoterTest, DeliveryFactPinTest, DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, SchemaEmissionChainDepthPipelineTest, SourceShapeProjectionTest, TriggerFactPopulationPinTest, VariantCoverageTest, WireCoercionCastGuardPipelineTest, generators.FetcherPipelineTest, generators.schema.EnumTypeGeneratorTest, generators.schema.GraphitronSchemaClassGeneratorTest, generators.schema.SchemaSdlEmitterTest
 | R333
 | `ErrorType`
 | An object type annotated with `@error`. Maps Java exceptions to GraphQL error responses
-| 104
+| 72
 | pipeline
-| yes
-| 1
-| DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
+| no
+| 0
+| DeliveryFactPinTest, DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest
 | R278
 | `FacetValueType`
 | A synthesised, cross-schema-reusable facet value type, e.g
-| 30
+| 20
 | pipeline
-| yes
-| 1
-| ConnectionPromoterTest, GraphitronSchemaBuilderTest, generators.FacetEmitterTest, generators.schema.ConnectionRegistrationsTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
+| no
+| 0
+| no.sikt.graphitron.plan.ConditionCommandsPipelineTest, no.sikt.graphitron.plan.LauncherCommandsPipelineTest, ConnectionPromoterTest, DeliveryFactPinTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FacetEmitterTest, generators.schema.ConnectionRegistrationsTest
 | R427
 | `FacetsType`
 | The synthesised per-connection facets container, e.g
-| 13
+| 14
 | pipeline
-| yes
-| 1
-| ConnectionPromoterTest, GraphitronSchemaBuilderTest, generators.FacetEmitterTest, generators.schema.ConnectionRegistrationsTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
+| no
+| 0
+| no.sikt.graphitron.plan.ConditionCommandsPipelineTest, no.sikt.graphitron.plan.LauncherCommandsPipelineTest, ConnectionPromoterTest, DeliveryFactPinTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FacetEmitterTest, generators.schema.ConnectionRegistrationsTest
 | R427
 | `InterfaceType`
 | An interface with no directives. Participating types may be table-bound (`ParticipantRef.TableBound`)
-| 279
+| 256
 | pipeline
-| yes
-| 1
-| DedupeReferenceProjectionPipelineTest, DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, MultiTableChildReferenceForPipelineTest, MultiTableChildReferencePathRejectionPipelineTest, MutationDmlNodeIdClassificationTest, NodeIdLeafResolverTest, RecordParentMultiTablePolymorphicPipelineTest, RejectNonIdNodeIdPipelineTest, SelfFkNodeIdReferenceReadSidePipelineTest, SourceShapeProjectionTest, TableOnInputDeprecationWarningTest, VariantCoverageTest, catalog.CatalogBuilderTest, generators.FetcherPipelineTest, generators.FetchersHelperNameCollisionPipelineTest, generators.InlineFilterArgumentSourcePipelineTest, generators.JooqRecordServiceParamPipelineTest, generators.NodeIdOverrideConditionFkTargetPipelineTest, generators.NodeIdRecordInputBeanPipelineTest, generators.NodeIdReferenceFilterPipelineTest, generators.QueryConditionsPipelineTest, generators.TenantRoutedFetcherPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, schema.federation.EntityResolutionBuilderTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
+| no
+| 0
+| no.sikt.graphitron.plan.EmitPlanTest, no.sikt.graphitron.plan.FetcherEdgeRelationTest, no.sikt.graphitron.plan.LauncherCommandsPipelineTest, CorrelationKeyArmPipelineTest, DedupeReferenceProjectionPipelineTest, DeliveryFactPinTest, DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, MultiTableChildReferenceForPipelineTest, MultiTableChildReferencePathRejectionPipelineTest, MutationDmlNodeIdClassificationTest, NodeIdLeafResolverTest, RecordParentMultiTablePolymorphicPipelineTest, RejectNonIdNodeIdPipelineTest, SelfFkNodeIdReferenceReadSidePipelineTest, SourceShapeProjectionTest, VariantCoverageTest, catalog.CatalogBuilderTest, generators.ConditionGluePipelineTest, generators.FetcherPipelineTest, generators.FetchersHelperNameCollisionPipelineTest, generators.InlineFilterArgumentSourcePipelineTest, generators.JooqRecordServiceParamPipelineTest, generators.NodeIdOverrideConditionFkTargetPipelineTest, generators.NodeIdRecordInputBeanPipelineTest, generators.NodeIdReferenceFilterPipelineTest, generators.TenantRoutedFetcherPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, schema.federation.EntityResolutionBuilderTest
 | R278
 | `JavaRecordInputType`
 | A non-table input type backed by a Java `record` class
-| 79
+| 38
 | pipeline
-| yes
-| 1
-| DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, WireCoercionCastGuardPipelineTest, generators.FetcherPipelineTest, generators.NodeIdRecordInputBeanPipelineTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
+| no
+| 0
+| DeliveryFactPinTest, DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, WireCoercionCastGuardPipelineTest, generators.FetcherPipelineTest, generators.NodeIdRecordInputBeanPipelineTest
 | R221, R222
 | `JavaRecordType`
 | A result type whose producer's reflected return is a Java `record` class
-| 208
+| 101
 | pipeline
-| yes
-| 1
-| DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, MixedSourceNestedTypeReadsTest, RecordParentMultiTablePolymorphicPipelineTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
+| no
+| 0
+| DeliveryFactPinTest, DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, MixedSourceNestedTypeReadsTest, RecordParentMultiTablePolymorphicPipelineTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest
 | R180
 | `JooqRecordInputType`
 | A non-table input type backed by a jOOQ `Record<?>` (not table-bound)
-| 0
-| -
+| 5
+| pipeline
 | no
-| -
-| -
+| 0
+| DeliveryFactPinTest, SourceShapeProjectionTest, VariantCoverageTest
 | R221, R222, R234
 | `JooqRecordType`
 | A result type whose producer's reflected return is a jOOQ `Record<?>` (not table-bound)
-| 0
-| -
+| 5
+| pipeline
 | no
-| -
-| -
+| 0
+| DeliveryFactPinTest, SourceShapeProjectionTest, VariantCoverageTest
 | -
 | `JooqTableRecordInputType`
 | A non-table input type backed by a jOOQ `TableRecord<?>`
-| 98
-| pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetchersHelperNameCollisionPipelineTest, generators.JooqRecordServiceParamPipelineTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| R221, R222, R234
-| `JooqTableRecordType`
-| A result type whose runtime carrier is a jOOQ record of a resolved table
-| 182
-| pipeline
-| yes
-| 1
-| ClassifierAdvisoryFixPipelineTest, GraphitronSchemaBuilderTest, MultiTableChildReferenceForPipelineTest, MultiTableChildReferencePathRejectionPipelineTest, MutationDmlNodeIdClassificationTest, PolymorphicNestingFilterTest, ReFetchDerivationTest, RecordParentMultiTablePolymorphicPipelineTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| R528
-| `NestingType`
-| A nesting projection: a directiveless SDL object type embedded under a `@table`-bound
-| 86
-| pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, MixedSourceNestedTypeReadsTest, NestingFieldPipelineTest, SourceShapeProjectionTest, TypeRegistryTest, VariantCoverageTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| R333, R337
-| `NodeType`
-| A GraphQL object type annotated with both `@table` and `@node`
-| 270
-| pipeline
-| yes
-| 1
-| DedupeReferenceProjectionPipelineTest, GraphitronSchemaBuilderTest, MutationDmlNodeIdClassificationTest, NodeIdLeafResolverTest, RejectNonIdNodeIdPipelineTest, SelfFkNodeIdReferenceReadSidePipelineTest, SourceShapeProjectionTest, TableOnInputDeprecationWarningTest, VariantCoverageTest, catalog.CatalogBuilderTest, generators.FetcherPipelineTest, generators.FetchersHelperNameCollisionPipelineTest, generators.InlineFilterArgumentSourcePipelineTest, generators.JooqRecordServiceParamPipelineTest, generators.NodeIdOverrideConditionFkTargetPipelineTest, generators.NodeIdRecordInputBeanPipelineTest, generators.NodeIdReferenceFilterPipelineTest, generators.QueryConditionsPipelineTest, generators.TenantRoutedFetcherPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, schema.federation.EntityResolutionBuilderTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| R135, R136, R24, R267, R27, R333, R34, R473, R57
-| `PageInfoType`
-| The Relay `PageInfo` object type. Exactly one instance per schema; the classifier
-| 81
-| pipeline
-| yes
-| 0
-| ConnectionFederationTagPipelineTest, ConnectionPromoterTest, GraphitronSchemaBuilderTest, LookupTableFieldPipelineTest, SelfFkNodeIdReferenceReadSidePipelineTest, SourceShapeProjectionTest, TypeRegistryTest, VariantCoverageTest, catalog.LspColumnDispatchProjectionTest, generators.FacetEmitterTest, generators.schema.ConnectionRegistrationsTest, generators.schema.FetcherRegistrationsEmitterTest, generators.schema.GraphitronSchemaClassGeneratorTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| R297
-| `PojoInputType`
-| A non-table input type backed by a plain Java class (POJO), or one for which no producer
-| 246
-| pipeline
-| yes
-| 1
-| ConnectionPromoterTest, GraphitronSchemaBuilderTest, RejectNonIdNodeIdPipelineTest, SchemaEmissionChainDepthPipelineTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest, generators.JooqRecordServiceParamPipelineTest, generators.schema.DefaultValueEmissionTest, generators.schema.GraphitronSchemaClassGeneratorTest, generators.schema.InputRecordGeneratorTest, generators.schema.InputTypeGeneratorTest, generators.schema.SchemaSdlEmitterTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| R221, R222, R337, R519, R528
-| `RootType`
-| A root operation type (Query or Mutation). Unmapped — no source context, no SQL until
-| 1470
-| pipeline
-| yes
-| 21
-| ArrayColumnCodegenPipelineTest, CheckedExceptionClassificationTest, ClassifierAdvisoryFixPipelineTest, ConnectionFederationTagPipelineTest, ConnectionPromoterTest, ContextArgumentTypeAgreementTest, DedupeReferenceProjectionPipelineTest, DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, LintSuppressionPipelineTest, LookupTableFieldPipelineTest, MixedSourceNestedTypeReadsTest, MultiSchemaPipelineTest, MultiTableChildReferenceForPipelineTest, MultiTableChildReferencePathRejectionPipelineTest, MutationDmlNodeIdClassificationTest, NestingFieldPipelineTest, NodeIdLeafResolverTest, PolymorphicNestingFilterTest, ReFetchDerivationTest, RecordParentMultiTablePolymorphicPipelineTest, ReferencePathTerminalTargetTest, ReferenceProjectionAliasNamespaceTest, RejectNonIdNodeIdPipelineTest, SchemaEmissionChainDepthPipelineTest, SelfFkNodeIdReferenceReadSidePipelineTest, SourceShapeProjectionTest, TableOnInputDeprecationWarningTest, VariantCoverageTest, WireCoercionCastGuardPipelineTest, catalog.CatalogBuilderSourceTest, catalog.CatalogBuilderTest, catalog.FieldClassificationProjectionTest, catalog.LspColumnDispatchProjectionTest, catalog.TypeClassificationProjectionTest, generators.FacetEmitterTest, generators.FetcherPipelineTest, generators.FetchersHelperNameCollisionPipelineTest, generators.InlineFilterArgumentSourcePipelineTest, generators.JooqRecordServiceParamPipelineTest, generators.NodeIdOverrideConditionFkTargetPipelineTest, generators.NodeIdRecordInputBeanPipelineTest, generators.NodeIdReferenceFilterPipelineTest, generators.OccurrenceArgumentGuardPipelineTest, generators.QueryConditionsPipelineTest, generators.ReferenceFilterRemoteColumnPipelineTest, generators.ServiceTableInterfaceReturnPipelineTest, generators.TablePipelineTest, generators.TenantFanOutFetcherPipelineTest, generators.TenantRoutedFetcherPipelineTest, generators.schema.AppliedDirectiveEmitterTest, generators.schema.ConnectionRegistrationsTest, generators.schema.DefaultValueEmissionTest, generators.schema.DirectiveDefinitionEmitterTest, generators.schema.EnumTypeGeneratorTest, generators.schema.FetcherRegistrationsEmitterTest, generators.schema.GraphitronDevExecutorGeneratorPipelineTest, generators.schema.GraphitronFacadeGeneratorPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, generators.schema.InputRecordGeneratorTest, generators.schema.InputTypeGeneratorTest, generators.schema.SchemaSdlEmitterTest, model.ParentCorrelationFirstHopInvariantTest, schema.federation.EntityResolutionBuilderTest, test.internal.GeneratorDeterminismTest, test.internal.IdempotentWriterTest, test.querydb.FixtureWarningsGateTest
-| R85
-| `ScalarType`
-| A GraphQL scalar type whose Java type and `GraphQLScalarType` constant (or inline
-| 3285
-| pipeline
-| yes
-| 1
-| ArrayColumnCodegenPipelineTest, CheckedExceptionClassificationTest, ClassifierAdvisoryFixPipelineTest, ConnectionFederationTagPipelineTest, ConnectionPromoterTest, ContextArgumentTypeAgreementTest, DedupeReferenceProjectionPipelineTest, DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, LintSuppressionPipelineTest, LookupTableFieldPipelineTest, MixedSourceNestedTypeReadsTest, MultiSchemaPipelineTest, MultiTableChildReferenceForPipelineTest, MultiTableChildReferencePathRejectionPipelineTest, MutationDmlNodeIdClassificationTest, NestingFieldPipelineTest, NodeIdLeafResolverTest, PolymorphicNestingFilterTest, ReFetchDerivationTest, RecordParentMultiTablePolymorphicPipelineTest, ReferencePathTerminalTargetTest, ReferenceProjectionAliasNamespaceTest, RejectNonIdNodeIdPipelineTest, SchemaEmissionChainDepthPipelineTest, SelfFkNodeIdReferenceReadSidePipelineTest, SourceShapeProjectionTest, TableOnInputDeprecationWarningTest, VariantCoverageTest, WireCoercionCastGuardPipelineTest, catalog.CatalogBuilderSourceTest, catalog.CatalogBuilderTest, catalog.FieldClassificationProjectionTest, catalog.LspColumnDispatchProjectionTest, catalog.TypeClassificationProjectionTest, generators.FacetEmitterTest, generators.FetcherPipelineTest, generators.FetchersHelperNameCollisionPipelineTest, generators.InlineFilterArgumentSourcePipelineTest, generators.JooqRecordServiceParamPipelineTest, generators.NodeIdOverrideConditionFkTargetPipelineTest, generators.NodeIdRecordInputBeanPipelineTest, generators.NodeIdReferenceFilterPipelineTest, generators.OccurrenceArgumentGuardPipelineTest, generators.QueryConditionsPipelineTest, generators.ReferenceFilterRemoteColumnPipelineTest, generators.ServiceTableInterfaceReturnPipelineTest, generators.TablePipelineTest, generators.TenantFanOutFetcherPipelineTest, generators.TenantRoutedFetcherPipelineTest, generators.schema.AppliedDirectiveEmitterTest, generators.schema.ConnectionRegistrationsTest, generators.schema.DefaultValueEmissionTest, generators.schema.DirectiveDefinitionEmitterTest, generators.schema.EnumTypeGeneratorTest, generators.schema.FetcherRegistrationsEmitterTest, generators.schema.GraphitronDevExecutorGeneratorPipelineTest, generators.schema.GraphitronFacadeGeneratorPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, generators.schema.InputRecordGeneratorTest, generators.schema.InputTypeGeneratorTest, generators.schema.SchemaSdlEmitterTest, model.ParentCorrelationFirstHopInvariantTest, schema.federation.EntityResolutionBuilderTest, test.internal.GeneratorDeterminismTest, test.internal.IdempotentWriterTest, test.querydb.FixtureWarningsGateTest
-| -
-| `TableInputType`
-| A GraphQL input object type annotated with `@table`
-| 446
-| pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, LookupTableFieldPipelineTest, MutationDmlNodeIdClassificationTest, SourceShapeProjectionTest, TableOnInputDeprecationWarningTest, VariantCoverageTest, catalog.FieldClassificationProjectionTest, catalog.LspColumnDispatchProjectionTest, catalog.TypeClassificationProjectionTest, generators.FacetEmitterTest, generators.FetcherPipelineTest, generators.InlineFilterArgumentSourcePipelineTest, generators.JooqRecordServiceParamPipelineTest, generators.NodeIdOverrideConditionFkTargetPipelineTest, generators.NodeIdReferenceFilterPipelineTest, generators.QueryConditionsPipelineTest, generators.ReferenceFilterRemoteColumnPipelineTest, generators.TenantRoutedFetcherPipelineTest, generators.schema.ConnectionRegistrationsTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| R213, R221, R222, R257, R519
-| `TableInterfaceType`
-| An interface annotated with `@table` and `@discriminate`, where implementing
-| 61
-| pipeline
-| yes
-| 1
-| GraphitronSchemaBuilderTest, MultiTableChildReferenceForPipelineTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest, generators.ServiceTableInterfaceReturnPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| R278, R447, R519
-| `TableType`
-| A GraphQL object type annotated with `@table`, without `@node`
-| 1359
-| pipeline
-| yes
-| 19
-| ArrayColumnCodegenPipelineTest, ClassifierAdvisoryFixPipelineTest, ConnectionFederationTagPipelineTest, ContextArgumentTypeAgreementTest, DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, LintSuppressionPipelineTest, LookupTableFieldPipelineTest, MixedSourceNestedTypeReadsTest, MultiSchemaPipelineTest, MultiTableChildReferenceForPipelineTest, MultiTableChildReferencePathRejectionPipelineTest, MutationDmlNodeIdClassificationTest, NestingFieldPipelineTest, NodeIdLeafResolverTest, PolymorphicNestingFilterTest, ReFetchDerivationTest, RecordParentMultiTablePolymorphicPipelineTest, ReferencePathTerminalTargetTest, ReferenceProjectionAliasNamespaceTest, RejectNonIdNodeIdPipelineTest, SourceShapeProjectionTest, TableOnInputDeprecationWarningTest, VariantCoverageTest, catalog.FieldClassificationProjectionTest, catalog.LspColumnDispatchProjectionTest, catalog.TypeClassificationProjectionTest, generators.FacetEmitterTest, generators.FetcherPipelineTest, generators.InlineFilterArgumentSourcePipelineTest, generators.OccurrenceArgumentGuardPipelineTest, generators.QueryConditionsPipelineTest, generators.ReferenceFilterRemoteColumnPipelineTest, generators.ServiceTableInterfaceReturnPipelineTest, generators.TablePipelineTest, generators.TenantFanOutFetcherPipelineTest, generators.TenantRoutedFetcherPipelineTest, generators.schema.AppliedDirectiveEmitterTest, generators.schema.ConnectionRegistrationsTest, generators.schema.FetcherRegistrationsEmitterTest, generators.schema.GraphitronDevExecutorGeneratorPipelineTest, generators.schema.GraphitronFacadeGeneratorPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, generators.schema.SchemaSdlEmitterTest, model.ParentCorrelationFirstHopInvariantTest, schema.federation.EntityResolutionBuilderTest, test.internal.GeneratorDeterminismTest, test.internal.IdempotentWriterTest, test.querydb.FixtureWarningsGateTest
-| R27, R519, R92
-| `UnclassifiedType`
-| A type that could not be classified — examples include an unresolvable `@table`
-| 48
+| 63
 | pipeline
 | no
 | 0
-| GraphitronSchemaBuilderTest, catalog.CatalogBuilderTest, catalog.TypeClassificationProjectionTest, generators.schema.GraphitronSchemaClassGeneratorTest, schema.federation.EntityResolutionBuilderTest
-| R213, R222, R27, R532, R66, R92
+| DeliveryFactPinTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetchersHelperNameCollisionPipelineTest, generators.JooqRecordServiceParamPipelineTest
+| R221, R222, R234
+| `JooqTableRecordType`
+| A result type whose runtime carrier is a jOOQ record of a resolved table
+| 109
+| pipeline
+| no
+| 0
+| ClassifierAdvisoryFixPipelineTest, DeliveryFactPinTest, GraphitronSchemaBuilderTest, MultiTableChildReferenceForPipelineTest, MultiTableChildReferencePathRejectionPipelineTest, MutationDmlNodeIdClassificationTest, PolymorphicNestingFilterTest, ReFetchDerivationTest, RecordParentMultiTablePolymorphicPipelineTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest
+| R528
+| `NestingType`
+| A nesting projection: a directiveless SDL object type embedded under a `@table`-bound
+| 58
+| pipeline
+| no
+| 0
+| no.sikt.graphitron.plan.ConditionCommandsPipelineTest, no.sikt.graphitron.plan.ConditionMembershipTest, no.sikt.graphitron.plan.LauncherMembershipTest, no.sikt.graphitron.plan.ProjectionMembershipTest, no.sikt.graphitron.plan.TypeUnitMembershipTest, CorrelationKeyArmPipelineTest, DeliveryFactPinTest, GraphitronSchemaBuilderTest, MixedSourceNestedTypeReadsTest, NestingFieldPipelineTest, SourceShapeProjectionTest, TypeRegistryTest, VariantCoverageTest
+| R333, R337
+| `NodeType`
+| A GraphQL object type annotated with both `@table` and `@node`
+| 230
+| pipeline
+| no
+| 0
+| no.sikt.graphitron.plan.EmitPlanTest, no.sikt.graphitron.plan.FetcherEdgeRelationTest, DedupeReferenceProjectionPipelineTest, DeliveryFactPinTest, GraphitronSchemaBuilderTest, MutationDmlNodeIdClassificationTest, NodeIdLeafResolverTest, RejectNonIdNodeIdPipelineTest, SelfFkNodeIdReferenceReadSidePipelineTest, SourceShapeProjectionTest, VariantCoverageTest, catalog.CatalogBuilderTest, generators.ConditionGluePipelineTest, generators.FetcherPipelineTest, generators.FetchersHelperNameCollisionPipelineTest, generators.InlineFilterArgumentSourcePipelineTest, generators.JooqRecordServiceParamPipelineTest, generators.NodeIdOverrideConditionFkTargetPipelineTest, generators.NodeIdRecordInputBeanPipelineTest, generators.NodeIdReferenceFilterPipelineTest, generators.TenantRoutedFetcherPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, schema.federation.EntityResolutionBuilderTest
+| R135, R136, R24, R267, R27, R333, R34, R473, R57
+| `PageInfoType`
+| The Relay `PageInfo` object type. Exactly one instance per schema; the classifier
+| 93
+| pipeline
+| no
+| 0
+| no.sikt.graphitron.plan.ConditionCommandsPipelineTest, no.sikt.graphitron.plan.LauncherCommandsPipelineTest, no.sikt.graphitron.plan.TypeUnitMembershipTest, ConnectionFederationTagPipelineTest, ConnectionPromoterTest, DeliveryFactPinTest, GraphitronSchemaBuilderTest, LookupPipelineTest, PaginationFactPipelineTest, SelfFkNodeIdReferenceReadSidePipelineTest, SourceShapeProjectionTest, TypeRegistryTest, VariantCoverageTest, catalog.LspColumnDispatchProjectionTest, generators.FacetEmitterTest, generators.schema.ConnectionRegistrationsTest, generators.schema.FetcherRegistrationsEmitterTest, generators.schema.GraphitronSchemaClassGeneratorTest
+| R297
+| `PojoInputType`
+| A non-table input type backed by a plain Java class (POJO), or one for which no producer
+| 653
+| pipeline
+| no
+| 0
+| no.sikt.graphitron.plan.ConditionCommandsPipelineTest, no.sikt.graphitron.plan.EmitPlanTest, no.sikt.graphitron.plan.FetcherEdgeRelationTest, no.sikt.graphitron.plan.LauncherCommandsPipelineTest, no.sikt.graphitron.plan.LauncherMembershipTest, no.sikt.graphitron.plan.TypeUnitMembershipTest, ConnectionPromoterTest, DeliveryFactPinTest, GraphitronSchemaBuilderTest, LookupPipelineTest, MutationDmlNodeIdClassificationTest, RejectNonIdNodeIdPipelineTest, SchemaEmissionChainDepthPipelineTest, SourceShapeProjectionTest, TriggerFactPopulationPinTest, VariantCoverageTest, catalog.FieldClassificationProjectionTest, catalog.LspColumnDispatchProjectionTest, catalog.TypeClassificationProjectionTest, generators.ConditionGluePipelineTest, generators.FacetEmitterTest, generators.FetcherPipelineTest, generators.InlineFilterArgumentSourcePipelineTest, generators.JooqRecordServiceParamPipelineTest, generators.NodeIdOverrideConditionFkTargetPipelineTest, generators.NodeIdReferenceFilterPipelineTest, generators.ReferenceFilterRemoteColumnPipelineTest, generators.TenantRoutedFetcherPipelineTest, generators.schema.ConnectionRegistrationsTest, generators.schema.DefaultValueEmissionTest, generators.schema.GraphitronSchemaClassGeneratorTest, generators.schema.InputRecordGeneratorTest, generators.schema.InputTypeGeneratorTest, generators.schema.SchemaSdlEmitterTest
+| R221, R222, R528
+| `RootType`
+| A root operation type (Query or Mutation). Unmapped — no source context, no SQL until
+| 1597
+| pipeline
+| no
+| 9
+| no.sikt.graphitron.plan.ConditionCommandsPipelineTest, no.sikt.graphitron.plan.ConditionMembershipTest, no.sikt.graphitron.plan.EmitPlanTest, no.sikt.graphitron.plan.FetcherEdgeRelationTest, no.sikt.graphitron.plan.LauncherCommandsPipelineTest, no.sikt.graphitron.plan.LauncherMembershipTest, no.sikt.graphitron.plan.ProjectionMembershipTest, no.sikt.graphitron.plan.TypeUnitMembershipTest, ArrayColumnCodegenPipelineTest, CheckedExceptionClassificationTest, ClassifierAdvisoryFixPipelineTest, ConnectionFederationTagPipelineTest, ConnectionPromoterTest, ContextArgumentTypeAgreementTest, CorrelationKeyArmPipelineTest, DedupeReferenceProjectionPipelineTest, DeliveryFactPinTest, DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, LintSuppressionPipelineTest, LookupPipelineTest, MixedSourceNestedTypeReadsTest, MultiSchemaPipelineTest, MultiTableChildReferenceForPipelineTest, MultiTableChildReferencePathRejectionPipelineTest, MutationDmlNodeIdClassificationTest, NestingFieldPipelineTest, NodeIdLeafResolverTest, PaginationFactPipelineTest, PkLessParentServiceSourcesRejectionTest, PolymorphicNestingFilterTest, ReFetchDerivationTest, RecordParentMultiTablePolymorphicPipelineTest, ReferencePathTerminalTargetTest, ReferenceProjectionAliasNamespaceTest, RejectNonIdNodeIdPipelineTest, SchemaEmissionChainDepthPipelineTest, SelfFkNodeIdReferenceReadSidePipelineTest, SourceShapeProjectionTest, TriggerFactPopulationPinTest, VariantCoverageTest, WireCoercionCastGuardPipelineTest, catalog.CatalogBuilderSourceTest, catalog.CatalogBuilderTest, catalog.FieldClassificationProjectionTest, catalog.LspColumnDispatchProjectionTest, catalog.TypeClassificationProjectionTest, generators.ConditionGluePipelineTest, generators.FacetEmitterTest, generators.FetcherPipelineTest, generators.FetchersHelperNameCollisionPipelineTest, generators.InlineFilterArgumentSourcePipelineTest, generators.JooqRecordServiceParamPipelineTest, generators.NodeIdOverrideConditionFkTargetPipelineTest, generators.NodeIdRecordInputBeanPipelineTest, generators.NodeIdReferenceFilterPipelineTest, generators.OccurrenceArgumentGuardPipelineTest, generators.ReferenceFilterRemoteColumnPipelineTest, generators.ServiceTableInterfaceReturnPipelineTest, generators.TablePipelineTest, generators.TenantFanOutFetcherPipelineTest, generators.TenantRoutedFetcherPipelineTest, generators.schema.AppliedDirectiveEmitterTest, generators.schema.ConnectionRegistrationsTest, generators.schema.DefaultValueEmissionTest, generators.schema.DirectiveDefinitionEmitterTest, generators.schema.EnumTypeGeneratorTest, generators.schema.FetcherRegistrationsEmitterTest, generators.schema.GraphitronDevExecutorGeneratorPipelineTest, generators.schema.GraphitronFacadeGeneratorPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, generators.schema.InputRecordGeneratorTest, generators.schema.InputTypeGeneratorTest, generators.schema.SchemaSdlEmitterTest, model.ParentCorrelationFirstHopInvariantTest, schema.federation.EntityResolutionBuilderTest
+| R85
+| `ScalarType`
+| A GraphQL scalar type whose Java type and `GraphQLScalarType` constant (or inline
+| 3534
+| pipeline
+| no
+| 0
+| no.sikt.graphitron.plan.ConditionCommandsPipelineTest, no.sikt.graphitron.plan.ConditionMembershipTest, no.sikt.graphitron.plan.EmitPlanTest, no.sikt.graphitron.plan.FetcherEdgeRelationTest, no.sikt.graphitron.plan.LauncherCommandsPipelineTest, no.sikt.graphitron.plan.LauncherMembershipTest, no.sikt.graphitron.plan.ProjectionMembershipTest, no.sikt.graphitron.plan.TypeUnitMembershipTest, ArrayColumnCodegenPipelineTest, CheckedExceptionClassificationTest, ClassifierAdvisoryFixPipelineTest, ConnectionFederationTagPipelineTest, ConnectionPromoterTest, ContextArgumentTypeAgreementTest, CorrelationKeyArmPipelineTest, DedupeReferenceProjectionPipelineTest, DeliveryFactPinTest, DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, LintSuppressionPipelineTest, LookupPipelineTest, MixedSourceNestedTypeReadsTest, MultiSchemaPipelineTest, MultiTableChildReferenceForPipelineTest, MultiTableChildReferencePathRejectionPipelineTest, MutationDmlNodeIdClassificationTest, NestingFieldPipelineTest, NodeIdLeafResolverTest, PaginationFactPipelineTest, PkLessParentServiceSourcesRejectionTest, PolymorphicNestingFilterTest, ReFetchDerivationTest, RecordParentMultiTablePolymorphicPipelineTest, ReferencePathTerminalTargetTest, ReferenceProjectionAliasNamespaceTest, RejectNonIdNodeIdPipelineTest, SchemaEmissionChainDepthPipelineTest, SelfFkNodeIdReferenceReadSidePipelineTest, SourceShapeProjectionTest, TriggerFactPopulationPinTest, VariantCoverageTest, WireCoercionCastGuardPipelineTest, catalog.CatalogBuilderSourceTest, catalog.CatalogBuilderTest, catalog.FieldClassificationProjectionTest, catalog.LspColumnDispatchProjectionTest, catalog.TypeClassificationProjectionTest, generators.ConditionGluePipelineTest, generators.FacetEmitterTest, generators.FetcherPipelineTest, generators.FetchersHelperNameCollisionPipelineTest, generators.InlineFilterArgumentSourcePipelineTest, generators.JooqRecordServiceParamPipelineTest, generators.NodeIdOverrideConditionFkTargetPipelineTest, generators.NodeIdRecordInputBeanPipelineTest, generators.NodeIdReferenceFilterPipelineTest, generators.OccurrenceArgumentGuardPipelineTest, generators.ReferenceFilterRemoteColumnPipelineTest, generators.ServiceTableInterfaceReturnPipelineTest, generators.TablePipelineTest, generators.TenantFanOutFetcherPipelineTest, generators.TenantRoutedFetcherPipelineTest, generators.schema.AppliedDirectiveEmitterTest, generators.schema.ConnectionRegistrationsTest, generators.schema.DefaultValueEmissionTest, generators.schema.DirectiveDefinitionEmitterTest, generators.schema.EnumTypeGeneratorTest, generators.schema.FetcherRegistrationsEmitterTest, generators.schema.GraphitronDevExecutorGeneratorPipelineTest, generators.schema.GraphitronFacadeGeneratorPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, generators.schema.InputRecordGeneratorTest, generators.schema.InputTypeGeneratorTest, generators.schema.SchemaSdlEmitterTest, model.ParentCorrelationFirstHopInvariantTest, schema.federation.EntityResolutionBuilderTest
+| -
+| `TableInterfaceType`
+| An interface annotated with `@table` and `@discriminate`, where implementing
+| 60
+| pipeline
+| no
+| 0
+| no.sikt.graphitron.plan.LauncherCommandsPipelineTest, no.sikt.graphitron.plan.LauncherMembershipTest, CorrelationKeyArmPipelineTest, DeliveryFactPinTest, GraphitronSchemaBuilderTest, MultiTableChildReferenceForPipelineTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest, generators.ServiceTableInterfaceReturnPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest
+| R278, R447, R558
+| `TableType`
+| A GraphQL object type annotated with `@table`, without `@node`
+| 1338
+| pipeline
+| no
+| 9
+| no.sikt.graphitron.plan.ConditionCommandsPipelineTest, no.sikt.graphitron.plan.ConditionMembershipTest, no.sikt.graphitron.plan.FetcherEdgeRelationTest, no.sikt.graphitron.plan.LauncherCommandsPipelineTest, no.sikt.graphitron.plan.LauncherMembershipTest, no.sikt.graphitron.plan.ProjectionMembershipTest, no.sikt.graphitron.plan.TypeUnitMembershipTest, ArrayColumnCodegenPipelineTest, ClassifierAdvisoryFixPipelineTest, ConnectionFederationTagPipelineTest, ContextArgumentTypeAgreementTest, CorrelationKeyArmPipelineTest, DeliveryFactPinTest, DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, LintSuppressionPipelineTest, LookupPipelineTest, MixedSourceNestedTypeReadsTest, MultiSchemaPipelineTest, MultiTableChildReferenceForPipelineTest, MultiTableChildReferencePathRejectionPipelineTest, MutationDmlNodeIdClassificationTest, NestingFieldPipelineTest, NodeIdLeafResolverTest, PaginationFactPipelineTest, PkLessParentServiceSourcesRejectionTest, PolymorphicNestingFilterTest, ReFetchDerivationTest, RecordParentMultiTablePolymorphicPipelineTest, ReferencePathTerminalTargetTest, ReferenceProjectionAliasNamespaceTest, RejectNonIdNodeIdPipelineTest, SourceShapeProjectionTest, TriggerFactPopulationPinTest, VariantCoverageTest, catalog.FieldClassificationProjectionTest, catalog.LspColumnDispatchProjectionTest, catalog.TypeClassificationProjectionTest, generators.ConditionGluePipelineTest, generators.FacetEmitterTest, generators.FetcherPipelineTest, generators.InlineFilterArgumentSourcePipelineTest, generators.NodeIdOverrideConditionFkTargetPipelineTest, generators.OccurrenceArgumentGuardPipelineTest, generators.ReferenceFilterRemoteColumnPipelineTest, generators.ServiceTableInterfaceReturnPipelineTest, generators.TablePipelineTest, generators.TenantFanOutFetcherPipelineTest, generators.TenantRoutedFetcherPipelineTest, generators.schema.AppliedDirectiveEmitterTest, generators.schema.ConnectionRegistrationsTest, generators.schema.FetcherRegistrationsEmitterTest, generators.schema.GraphitronDevExecutorGeneratorPipelineTest, generators.schema.GraphitronFacadeGeneratorPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, generators.schema.SchemaSdlEmitterTest, model.ParentCorrelationFirstHopInvariantTest, schema.federation.EntityResolutionBuilderTest
+| R27, R92
+| `UnclassifiedType`
+| A type that could not be classified — examples include an unresolvable `@table`
+| 43
+| pipeline
+| no
+| 0
+| GraphitronSchemaBuilderTest, catalog.CatalogBuilderTest, catalog.TypeClassificationProjectionTest, generators.JooqRecordServiceParamPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, schema.federation.EntityResolutionBuilderTest
+| R213, R222, R27, R532, R544, R66, R92
 | `UnionType`
 | A union type whose member types all have `@table`
-| 85
+| 57
 | pipeline
-| yes
-| 1
-| DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, MultiTableChildReferenceForPipelineTest, MultiTableChildReferencePathRejectionPipelineTest, PolymorphicNestingFilterTest, RecordParentMultiTablePolymorphicPipelineTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
+| no
+| 0
+| no.sikt.graphitron.plan.ConditionCommandsPipelineTest, no.sikt.graphitron.plan.ConditionMembershipTest, no.sikt.graphitron.plan.FetcherEdgeRelationTest, CorrelationKeyArmPipelineTest, DeliveryFactPinTest, DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, MultiTableChildReferenceForPipelineTest, MultiTableChildReferencePathRejectionPipelineTest, PolymorphicNestingFilterTest, RecordParentMultiTablePolymorphicPipelineTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest
 | R278
 |===
 

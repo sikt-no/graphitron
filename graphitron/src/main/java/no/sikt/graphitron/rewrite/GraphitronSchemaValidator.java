@@ -84,8 +84,9 @@ public class GraphitronSchemaValidator {
      *
      * <ul>
      *   <li><b>Generated column filters on lookup coordinates.</b> Lookup keys ride the VALUES
-     *       join and no emitter renders a generated column predicate for a
-     *       {@link no.sikt.graphitron.rewrite.model.LookupField} coordinate; authored
+     *       join and no emitter renders a generated column predicate beside a lookup member;
+     *       the rejection is the fact-grain co-presence read (a condition surface carrying a
+     *       generated term on a coordinate whose member set has the lookup member). Authored
      *       {@code @condition} entries on lookup coordinates stay accepted (ordinary condition
      *       rows, composed beside the VALUES join).</li>
      *   <li><b>Any filter on a single-table interface child coordinate.</b>
@@ -97,8 +98,12 @@ public class GraphitronSchemaValidator {
      * </ul>
      */
     private void validateConditionEmitImplemented(GraphitronSchema schema, List<ValidationError> errors) {
-        for (var field : schema.fields().values()) {
-            if (field instanceof no.sikt.graphitron.rewrite.model.LookupField
+        for (var entry : schema.fields().entrySet()) {
+            var field = entry.getValue();
+            var members = schema.operationMembersOf(entry.getKey());
+            boolean lookupMember = members.stream()
+                .anyMatch(m -> m.kind() == no.sikt.graphitron.rewrite.model.OperationMember.Kind.LOOKUP);
+            if (lookupMember
                     && field instanceof no.sikt.graphitron.rewrite.model.SqlGeneratingField sgf
                     && sgf.filters().stream().anyMatch(f -> f instanceof no.sikt.graphitron.rewrite.model.GeneratedConditionFilter)) {
                 emitDeferredError(field, (Rejection.Deferred) Rejection.deferred(
@@ -298,7 +303,6 @@ public class GraphitronSchemaValidator {
             }
         }
         switch (field) {
-            case no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField f        -> validateQueryLookupTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.QueryField.QueryTableField f         -> validateQueryTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.QueryField.QueryRoutineTableField f       -> {} // RoutineDirectiveResolver pins the routine resolution + arg-binding invariants at classify time
 
@@ -331,8 +335,6 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.ChildField.ParticipantColumnReferenceField f -> {} // structural; the interface fetcher's LEFT JOIN materialises and aliases the value
             case no.sikt.graphitron.rewrite.model.ChildField.TableField f              -> validateTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField f      -> validateBatchedTableField(f, types, errors);
-            case no.sikt.graphitron.rewrite.model.ChildField.LookupTableField f       -> validateLookupTableField(f, types, errors);
-            case no.sikt.graphitron.rewrite.model.ChildField.BatchedLookupTableField f -> validateBatchedLookupTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField f     -> validateTableInterfaceField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.InterfaceField f          -> validateInterfaceField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.UnionField f              -> validateUnionField(f, types, errors);
@@ -691,7 +693,17 @@ public class GraphitronSchemaValidator {
 
     // --- Field validators ---
 
-    private void validateQueryLookupTableField(no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
+    private void validateQueryTableField(no.sikt.graphitron.rewrite.model.QueryField.QueryTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
+        if (field.lookup() instanceof no.sikt.graphitron.rewrite.model.LookupResolution.Keyed keyed) {
+            validateRootLookup(field, keyed, errors);
+            return;
+        }
+        validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
+    }
+
+    /** The lookup-gated rules of the root table read; reached only on a keyed resolution. */
+    private void validateRootLookup(no.sikt.graphitron.rewrite.model.QueryField.QueryTableField field,
+            no.sikt.graphitron.rewrite.model.LookupResolution.Keyed keyed, List<ValidationError> errors) {
         if (field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
             errors.add(new ValidationError(
                 field.qualifiedName(),
@@ -702,7 +714,7 @@ public class GraphitronSchemaValidator {
             // Lookup cardinality is determined by whether any @lookupKey arg is a list.
             // The validator is input-shape-agnostic: list-ness may come from LookupMapping
             // or from a filter-carried list arg, and both paths are covered.
-            boolean anyKeyIsList = switch (field.lookupMapping()) {
+            boolean anyKeyIsList = switch (keyed.mapping()) {
                     case no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping cm ->
                         cm.hasListArg();
                 }
@@ -728,9 +740,6 @@ public class GraphitronSchemaValidator {
                 field.location()
             ));
         }
-    }
-    private void validateQueryTableField(no.sikt.graphitron.rewrite.model.QueryField.QueryTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateQueryNodeField(no.sikt.graphitron.rewrite.model.QueryField.QueryNodeField field, List<ValidationError> errors) {}
     private void validateQueryTableInterfaceField(no.sikt.graphitron.rewrite.model.QueryField.QueryTableInterfaceField field, List<ValidationError> errors) {
@@ -895,16 +904,26 @@ public class GraphitronSchemaValidator {
     }
     private void validateTableField(no.sikt.graphitron.rewrite.model.ChildField.TableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
+        if (field.lookup() instanceof no.sikt.graphitron.rewrite.model.LookupResolution.Keyed) {
+            rejectLookupConnection(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
+        }
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateBatchedTableField(no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
+        if (field.lookup() instanceof no.sikt.graphitron.rewrite.model.LookupResolution.Keyed) {
+            // The lookup-gated branch owns the Connection verdict outright: one located
+            // rejection, not the ORDER-BY guard stacked on top of it.
+            rejectLookupConnection(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
+            return;
+        }
         // Split+Connection partitions rows by parent key; without a total order, ROW_NUMBER() produces
         // silently non-deterministic slicing. Require an explicit ordering (@defaultOrder, @orderBy,
         // or a fixed list) at build time rather than letting the cursor encoder hash an empty tuple.
-        // Reachable only from the Table-sourced arm: the leaf's ctor rejects Record + Connection,
-        // so this guard needs no sourceShape gate.
+        // Reachable only from the Table-sourced no-lookup arm: the leaf's ctor rejects the plain
+        // Record + Connection mint and the lookup branch above returns, so this guard needs no
+        // sourceShape gate.
         if (field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
             var orderBy = field.orderBy();
             boolean empty = orderBy instanceof no.sikt.graphitron.rewrite.model.OrderBySpec.None
@@ -919,27 +938,17 @@ public class GraphitronSchemaValidator {
             }
         }
     }
-    private void validateLookupTableField(no.sikt.graphitron.rewrite.model.ChildField.LookupTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
-        if (field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
+
+    /** The shared "lookup fields must not return a connection" verdict, on all lookup-keyed reads. */
+    private static void rejectLookupConnection(String qualifiedName, graphql.language.SourceLocation location,
+            FieldWrapper wrapper, List<ValidationError> errors) {
+        if (wrapper instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
             errors.add(new ValidationError(
-                field.qualifiedName(),
-            Rejection.invalidSchema("Field '" + field.qualifiedName() + "': lookup fields must not return a connection"),
-                field.location()
+                qualifiedName,
+            Rejection.invalidSchema("Field '" + qualifiedName + "': lookup fields must not return a connection"),
+                location
             ));
         }
-        validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
-    }
-    private void validateBatchedLookupTableField(no.sikt.graphitron.rewrite.model.ChildField.BatchedLookupTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
-        if (field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
-            errors.add(new ValidationError(
-                field.qualifiedName(),
-            Rejection.invalidSchema("Field '" + field.qualifiedName() + "': lookup fields must not return a connection"),
-                field.location()
-            ));
-        }
-        validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateTableInterfaceField(no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField field, List<ValidationError> errors) {
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
@@ -1027,11 +1036,11 @@ public class GraphitronSchemaValidator {
 
     /**
      * Variants wireable at nested depth. Every leaf here is wired through the nested
-     * type's own {@code <NestedTypeName>Fetchers} class: the column/table reads ({@code ColumnBackedField},
-     * {@code TableField}, {@code LookupTableField},
-     * {@code NestingField}) are reified onto it by {@code FetcherEmitter.bind}, and the class-backed
-     * leaves (the Table-sourced {@code BatchedTableField} / {@code BatchedLookupTableField} arms) carry their
-     * heavy methods there. {@code TypeFetcherGenerator} emits that class for any nested type owning
+     * type's own {@code <NestedTypeName>Fetchers} class: the column/table reads
+     * ({@code ColumnBackedField}, {@code TableField} with or without a keyed lookup,
+     * {@code NestingField}) are reified onto it by {@code FetcherEmitter.bind}, and the
+     * class-backed leaves (the Table-sourced {@code BatchedTableField} arms, lookup-keyed or
+     * not) carry their heavy methods there. {@code TypeFetcherGenerator} emits that class for any nested type owning
      * a fetcher (the {@code FetcherEmitter.nestedTypeOwnsFetchers} gate shared with
      * {@code FetcherRegistrationsEmitter.nestedBody}, via a separate walk over
      * {@code NestingField.nestedFields()}). Expanding this predicate requires the corresponding
@@ -1046,10 +1055,8 @@ public class GraphitronSchemaValidator {
         return switch (field) {
             case ChildField.ColumnBackedField ignored -> true;
             case ChildField.TableField ignored -> true;
-            case ChildField.LookupTableField ignored -> true;
             case ChildField.NestingField ignored -> true;
             case ChildField.BatchedTableField f -> f.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Table;
-            case ChildField.BatchedLookupTableField f -> f.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Table;
             default -> false;
         };
     }
@@ -1500,12 +1507,19 @@ public class GraphitronSchemaValidator {
                 if (sib == ef) continue;
                 if (sib instanceof ChildField.ErrorsField) continue;
                 if (!isLocalContextGuardedDataChannel(sib)) {
+                    // Name the disqualifying fact, not just the class: a lookup-keyed batched
+                    // read shares its class with an admitted plain read and differs only on
+                    // the resolution axis.
+                    String siblingShape = sib instanceof ChildField.TableTargetField ttf
+                            && ttf.lookup() instanceof no.sikt.graphitron.rewrite.model.LookupResolution.Keyed
+                        ? sib.getClass().getSimpleName() + " with a keyed lookup"
+                        : sib.getClass().getSimpleName();
                     errors.add(new ValidationError(
                         ef.qualifiedName(),
                         Rejection.structural("Field '" + ef.qualifiedName()
                             + "': LocalContext errors transport requires the carrier's data-channel "
                             + "fetcher to short-circuit on a null source, but sibling field '"
-                            + sib.qualifiedName() + "' classifies as " + sib.getClass().getSimpleName()
+                            + sib.qualifiedName() + "' classifies as " + siblingShape
                             + " which is not on the LocalContext-safe allow-list"),
                         ef.location()
                     ));
@@ -1531,17 +1545,20 @@ public class GraphitronSchemaValidator {
      *       {@code if (source == null) return null;} guard before encoder dispatch).</li>
      * </ul>
      *
-     * <p>The lookup leaf ({@code BatchedLookupTableField}) is not admitted, although it now
-     * routes through the same source-shape-gated builder arms as {@code BatchedTableField};
-     * widening the allow-list is a validator behavior change that needs its own
-     * validation-coverage decision, not a rename.
+     * <p>The lookup-keyed shape is not admitted, although it routes through the same
+     * source-shape-gated builder arms as the plain read; widening the allow-list is a
+     * validator behavior change that needs its own validation-coverage decision, so the
+     * lookup fold preserved the exclusion as the resolution gate below rather than widening
+     * it by rename.
      *
      * <p>Admitting a variant here requires the matching emitter site to honor the guard;
      * removing the guard from an existing emitter arm must remove the variant here.
      */
     private static boolean isLocalContextGuardedDataChannel(GraphitronField field) {
         return switch (field) {
-            case ChildField.BatchedTableField f -> f.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Record;
+            case ChildField.BatchedTableField f ->
+                f.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Record
+                    && f.lookup() instanceof no.sikt.graphitron.rewrite.model.LookupResolution.None;
             case ChildField.SingleRecordIdFieldFromReturning ignored -> true;
             default -> false;
         };

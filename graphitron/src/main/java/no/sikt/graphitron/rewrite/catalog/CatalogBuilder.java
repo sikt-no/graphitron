@@ -237,22 +237,13 @@ public final class CatalogBuilder {
                 new FieldClassification.SingleRecordId(f.table().tableName());
             case ChildField.TableField f ->
                 new FieldClassification.TableTarget(
-                    targetTableName(f.returnType()), fkSteps(f.joinPath()), false, false);
+                    targetTableName(f.returnType()), fkSteps(f.joinPath()), false, isKeyed(f.lookup()));
             case ChildField.BatchedTableField f ->
                 f.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Table
                     ? new FieldClassification.TableTarget(
-                        targetTableName(f.returnType()), fkSteps(f.joinPath()), true, false)
+                        targetTableName(f.returnType()), fkSteps(f.joinPath()), true, isKeyed(f.lookup()))
                     : new FieldClassification.RecordTableTarget(
-                        targetTableName(f.returnType()), fkSteps(f.joinPath()), false);
-            case ChildField.LookupTableField f ->
-                new FieldClassification.TableTarget(
-                    targetTableName(f.returnType()), fkSteps(f.joinPath()), false, true);
-            case ChildField.BatchedLookupTableField f ->
-                f.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Table
-                    ? new FieldClassification.TableTarget(
-                        targetTableName(f.returnType()), fkSteps(f.joinPath()), true, true)
-                    : new FieldClassification.RecordTableTarget(
-                        targetTableName(f.returnType()), fkSteps(f.joinPath()), true);
+                        targetTableName(f.returnType()), fkSteps(f.joinPath()), isKeyed(f.lookup()));
             case ChildField.TableInterfaceField f ->
                 new FieldClassification.TableInterface(
                     targetTableName(f.returnType()),
@@ -319,9 +310,7 @@ public final class CatalogBuilder {
 
             // --- QueryField permits ---
             case QueryField.QueryTableField f ->
-                new FieldClassification.QueryTable(targetTableName(f.returnType()), false);
-            case QueryField.QueryLookupTableField f ->
-                new FieldClassification.QueryTable(targetTableName(f.returnType()), true);
+                new FieldClassification.QueryTable(targetTableName(f.returnType()), isKeyed(f.lookup()));
             // A @routine read is a root table sourced from a generated Routines-class
             // method call, so it projects onto the method-backed RoutineBacked classification
             // (className = the generated Routines class).
@@ -534,6 +523,11 @@ public final class CatalogBuilder {
         no.sikt.graphitron.rewrite.model.ReturnTypeRef.TableBoundReturnType ret
     ) {
         return ret != null && ret.table() != null ? ret.table().tableName() : null;
+    }
+
+    /** The lookup axis as the classification boolean the LSP projection carries. */
+    private static boolean isKeyed(no.sikt.graphitron.rewrite.model.LookupResolution lookup) {
+        return lookup instanceof no.sikt.graphitron.rewrite.model.LookupResolution.Keyed;
     }
 
     private static String terminalTableName(List<JoinStep> joinPath) {

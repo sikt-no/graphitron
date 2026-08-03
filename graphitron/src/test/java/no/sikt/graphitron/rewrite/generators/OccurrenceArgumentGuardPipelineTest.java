@@ -115,9 +115,11 @@ class OccurrenceArgumentGuardPipelineTest {
     void lookupTableFieldArm_alwaysEmitsGuard() {
         var film = typeClass(schema(), "Film");
 
-        assertThat(schema().field("Film", "actors"))
-            .as("fixture must classify as the lookup shape the unconditional guard covers")
-            .isInstanceOf(ChildField.LookupTableField.class);
+        var actors = (ChildField.TableField) schema().field("Film", "actors");
+        assertThat(actors.lookup())
+            .as("fixture must resolve the keyed lookup the unconditional guard covers; a plain"
+                + " TableField would satisfy a class check without reaching the guarded arm")
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.LookupResolution.Keyed.class);
         assertThat(TypeSpecAssertions.armGuardsArgumentConsistency(film, "actors"))
             .as("the input-rows helper always reads the @lookupKey argument off the SelectedField")
             .isTrue();

@@ -111,7 +111,7 @@ public final class ClassifiedCorpus {
         /*
          * Keyed split lookup: a list child whose @lookupKey argument establishes a positional
          * input-list <-> output-list correspondence, fetched by a @splitQuery keyed batch
-         * (BatchedLookupTableField). The @lookupKey makes its operation Lookup; it lands on participant @table
+         * (a lookup-keyed batched read). The @lookupKey makes its operation Lookup; it lands on participant @table
          * rows (target Table); the new-query batch shape is derived, not a tuple axis. Corpus-only: it
          * is another Child / Lookup / Table leaf.
          */
@@ -601,8 +601,8 @@ public final class ClassifiedCorpus {
 
         /*
          * @lookupKey without @splitQuery, on a child and on a root. The child `FilmActor.actors` stays
-         * an inline correlated subquery keyed by the lookup args (LookupTableField, Child / Lookup /
-         * Table); the root `Query.filmById` is a new query keyed by the lookup args (QueryLookupTableField,
+         * an inline correlated subquery keyed by the lookup args (Child / Lookup /
+         * Table); the root `Query.filmById` is a new query keyed by the lookup args (Root / Lookup /
          * Query / Lookup / Table). @lookupKey makes the operation Lookup; the batch-key shape is a slot.
          */
         new Example("lookup", """
@@ -665,7 +665,7 @@ public final class ClassifiedCorpus {
         /*
          * A @table child under a jOOQ-TableRecord-backed parent, reached by @lookupKey. The record
          * handoff has already opened a new keyed scope, so the child re-queries (the new-query is
-         * derived): `FilmDetails.language` is a BatchedLookupTableField (its @lookupKey makes the
+         * derived): `FilmDetails.language` is a lookup-keyed batched read (its @lookupKey makes the
          * operation Lookup, target Table). FilmDetails is record-bound as getFilm's jOOQ-TableRecord
          * return type, which supplies the FK source key.
          */

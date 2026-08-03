@@ -24,9 +24,7 @@ import no.sikt.graphitron.rewrite.model.ChildField.InterfaceField;
 import no.sikt.graphitron.rewrite.model.ChildField.NestingField;
 import no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField;
 import no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField;
-import no.sikt.graphitron.rewrite.model.ChildField.LookupTableField;
 import no.sikt.graphitron.rewrite.model.ChildField.RecordReadField;
-import no.sikt.graphitron.rewrite.model.ChildField.BatchedLookupTableField;
 import no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField;
@@ -745,7 +743,7 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
-    // ===== TableField / BatchedTableField / BatchedLookupTableField / LookupTableField =====
+    // ===== TableField / BatchedTableField / BatchedTableField / TableField =====
 
     /**
      * Child field on a {@code @table} parent returning a {@code @table}-mapped type. One case per
@@ -850,7 +848,7 @@ class GraphitronSchemaBuilderTest {
         // (`child-table` ClassifiedCorpus example, the minimal pair against the inline TableField).
         // This enum keeps the slot-asserting split cases below.
 
-        // The bare `@splitQuery + @lookupKey -> BatchedLookupTableField` verdict lives in the
+        // The bare `@splitQuery + @lookupKey -> BatchedTableField` verdict lives in the
         // spec-by-example corpus (`split-lookup` ClassifiedCorpus example). This enum keeps the
         // slot-asserting / rejection cases below (IMPLICIT_REFERENCE_SPLIT_LOOKUP_TABLE,
         // SPLIT_LOOKUP_TABLE_SINGLE_CARDINALITY_REJECTED).
@@ -906,7 +904,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(((UnclassifiedField) schema.field("Store", "customer")).reason())
                     .contains("Single-cardinality @splitQuery @lookupKey is not supported");
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(BatchedLookupTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(BatchedTableField.class); }
         },
 
         SPLIT_TABLE_MULTI_HOP_SINGLE_CARDINALITY(
@@ -962,7 +960,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         IMPLICIT_REFERENCE_SPLIT_LOOKUP_TABLE(
-            "no @reference on @splitQuery + @lookupKey with single FK → BatchedLookupTableField with one inferred FK hop",
+            "no @reference on @splitQuery + @lookupKey with single FK → BatchedTableField with one inferred FK hop",
             """
             type Customer @table(name: "customer") { firstName: String }
             type Store @table(name: "store") {
@@ -971,7 +969,7 @@ class GraphitronSchemaBuilderTest {
             type Query { store: Store }
             """,
             schema -> {
-                var f = (BatchedLookupTableField) schema.field("Store", "customers");
+                var f = (BatchedTableField) schema.field("Store", "customers");
                 assertThat(f.joinPath()).hasSize(1);
                 assertThat(f.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
             }),
@@ -1401,7 +1399,7 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    @ProjectionFor({TableField.class, BatchedTableField.class, LookupTableField.class, BatchedLookupTableField.class})
+    @ProjectionFor({TableField.class, BatchedTableField.class})
     void tableFieldProjectionCarriesTargetTableAndAxisFlags() {
         // Plain TableField: list of @table-bound child rows from a parent @table.
         var s1 = buildSnapshot("""
@@ -1424,7 +1422,7 @@ class GraphitronSchemaBuilderTest {
         assertThat(split.splitBatched()).isTrue();
         assertThat(split.hasLookupKey()).isFalse();
 
-        // LookupTableField: @lookupKey on a child arg sets hasLookupKey.
+        // TableField: @lookupKey on a child arg sets hasLookupKey.
         var s3 = buildSnapshot("""
             type Customer @table(name: "customer") { firstName: String }
             type Store @table(name: "store") {
@@ -1436,7 +1434,7 @@ class GraphitronSchemaBuilderTest {
         assertThat(lookup.splitBatched()).isFalse();
         assertThat(lookup.hasLookupKey()).isTrue();
 
-        // BatchedLookupTableField: both axes.
+        // BatchedTableField: both axes.
         var s4 = buildSnapshot("""
             type Customer @table(name: "customer") { firstName: String }
             type Store @table(name: "store") {
@@ -2347,7 +2345,7 @@ class GraphitronSchemaBuilderTest {
         // (FK inference, single cardinality, @splitQuery warning, @sourceRow lifters).
 
         RECORD_LOOKUP_TABLE_FIELD(
-            "record-backed parent (typed POJO) + @table return type + @lookupKey → BatchedLookupTableField with populated SourceKey",
+            "record-backed parent (typed POJO) + @table return type + @lookupKey → BatchedTableField with populated SourceKey",
             """
             type Language @table(name: "language") { name: String }
             type FilmDetails {
@@ -2360,11 +2358,11 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var f = (BatchedLookupTableField) schema.field("FilmDetails", "language");
+                var f = (BatchedTableField) schema.field("FilmDetails", "language");
                 assertThat(f.lift()).isInstanceOf(KeyLift.FkColumns.class);
                 assertThat(f.sourceKey().columns()).isNotEmpty();
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(BatchedLookupTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(BatchedTableField.class); }
         },
 
         IMPLICIT_REFERENCE_RECORD_TABLE(
@@ -2389,7 +2387,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         IMPLICIT_REFERENCE_RECORD_LOOKUP_TABLE(
-            "JooqTableRecordType record-backed parent + @table return + @lookupKey with single FK → BatchedLookupTableField with one inferred FK hop",
+            "JooqTableRecordType record-backed parent + @table return + @lookupKey with single FK → BatchedTableField with one inferred FK hop",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
             type FilmDetails {
@@ -2402,12 +2400,12 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var f = (BatchedLookupTableField) schema.field("FilmDetails", "inventories");
+                var f = (BatchedTableField) schema.field("FilmDetails", "inventories");
                 assertThat(f.joinPath()).hasSize(1);
                 assertThat(f.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
                 assertThat(f.lift()).isInstanceOf(KeyLift.FkColumns.class);
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(BatchedLookupTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(BatchedTableField.class); }
         },
 
         // The bare `record-backed parent + non-table object return -> RecordReadField` verdict
@@ -2478,7 +2476,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         SPLIT_QUERY_ON_RECORD_PARENT_WARNS_LOOKUP_FIELD(
-            "@splitQuery on record-backed parent + @lookupKey + @table return → BatchedLookupTableField + build warning",
+            "@splitQuery on record-backed parent + @lookupKey + @table return → BatchedTableField + build warning",
             """
             type Language @table(name: "language") { name: String }
             type FilmDetails {
@@ -2493,13 +2491,13 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                assertThat(schema.field("FilmDetails", "language")).isInstanceOf(BatchedLookupTableField.class);
+                assertThat(schema.field("FilmDetails", "language")).isInstanceOf(BatchedTableField.class);
                 assertThat(schema.warnings())
                     .extracting(BuildWarning::message)
                     .anyMatch(m -> m.contains("FilmDetails.language")
                         && m.contains("@splitQuery is redundant on a record-backed parent field"));
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(BatchedLookupTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(BatchedTableField.class); }
         },
 
         // Holistic-surfacing rule. An unrelated rejection on the same field (here, an
@@ -2608,7 +2606,7 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    @ProjectionFor({RecordReadField.class, BatchedTableField.class, BatchedLookupTableField.class})
+    @ProjectionFor({RecordReadField.class, BatchedTableField.class})
     void recordParentChildProjectionsCarryColumnAccessorAndTableTargetPayloads() {
         // RecordReadField — projection collapses to RecordOrProperty; the JavaAccessor locator
         // carries the accessor member name (no column).
@@ -2640,7 +2638,7 @@ class GraphitronSchemaBuilderTest {
         assertThat(rt.tableName()).isEqualToIgnoringCase("language");
         assertThat(rt.hasLookupKey()).isFalse();
 
-        // BatchedLookupTableField — hasLookupKey = true.
+        // BatchedTableField — hasLookupKey = true.
         var s3 = buildSnapshot("""
             type Language @table(name: "language") { name: String }
             type FilmDetails {
@@ -2737,7 +2735,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         POJO_PARENT_VALID_PLUS_LOOKUPKEY(
-            "Pojo parent + valid Row1 lifter + @reference + @lookupKey arg → BatchedLookupTableField with KeyLift.Lifter and lookupMapping populated",
+            "Pojo parent + valid Row1 lifter + @reference + @lookupKey arg → BatchedTableField with KeyLift.Lifter and lookupMapping populated",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
             type FilmDetails {
@@ -2752,11 +2750,11 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var f = (BatchedLookupTableField) schema.field("FilmDetails", "inventories");
+                var f = (BatchedTableField) schema.field("FilmDetails", "inventories");
                 assertThat(f.lift()).isInstanceOf(KeyLift.Lifter.class);
-                assertThat(f.lookupMapping()).isNotNull();
+                assertThat(keyedMappingOf(f.lookup())).isNotNull();
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(BatchedLookupTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(BatchedTableField.class); }
         },
 
         // No case for "record-backed parent with no backing class + @sourceRow": under
@@ -3195,7 +3193,7 @@ class GraphitronSchemaBuilderTest {
 
         // @splitQuery on a @sourceRow record-backed parent field is just as silently no-op as on
         // the regular record-backed parent path — the lifter-keyed DataLoader already opens a new
-        // scope. One fixture is enough since both arms (BatchedTableField, BatchedLookupTableField)
+        // scope. One fixture is enough since both arms (BatchedTableField, BatchedTableField)
         // share the same emit-warning seam.
         SPLIT_QUERY_WARNS_ON_SOURCE_ROW(
             "@splitQuery on @sourceRow record-backed parent field → BatchedTableField + build warning naming the field coordinate",
@@ -3590,7 +3588,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         TABLE_FIELD_LOOKUP_KEY_ARG(
-            "@lookupKey on a child-field argument (no @splitQuery) — field classified as LookupTableField; key flows through LookupMapping",
+            "@lookupKey on a child-field argument (no @splitQuery) — field classified as TableField; key flows through LookupMapping",
             """
             type Actor @table(name: "actor") { name: String }
             type FilmActor @table(name: "film_actor") {
@@ -3599,13 +3597,13 @@ class GraphitronSchemaBuilderTest {
             type Query { filmActor: FilmActor }
             """,
             schema -> {
-                var f = (no.sikt.graphitron.rewrite.model.ChildField.LookupTableField) schema.field("FilmActor", "actors");
+                var f = (no.sikt.graphitron.rewrite.model.ChildField.TableField) schema.field("FilmActor", "actors");
                 // @lookupKey args are emitted via VALUES+JOIN from LookupMapping, not as filters.
                 assertThat(f.filters()).isEmpty();
-                assertThat(((no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping()).args()).hasSize(1);
-                assertThat(((no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping()).args().get(0).argName()).isEqualTo("actor_id");
+                assertThat(((no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) keyedMappingOf(f.lookup())).args()).hasSize(1);
+                assertThat(((no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) keyedMappingOf(f.lookup())).args().get(0).argName()).isEqualTo("actor_id");
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(LookupTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(TableField.class); }
         },
 
         TABLE_FIELD_ORDER_BY_ARG(
@@ -3758,7 +3756,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         QUERY_LOOKUP_TABLE_FIELD_MAPPING(
-            "QueryLookupTableField populates LookupMapping with one ScalarLookupArg per @lookupKey arg",
+            "QueryTableField populates LookupMapping with one ScalarLookupArg per @lookupKey arg",
             """
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Query {
@@ -3766,9 +3764,9 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmById");
-                assertThat(f.lookupMapping().targetTable().tableName()).isEqualTo("film");
-                var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping();
+                var f = (QueryField.QueryTableField) schema.field("Query", "filmById");
+                assertThat(keyedMappingOf(f.lookup()).targetTable().tableName()).isEqualTo("film");
+                var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) keyedMappingOf(f.lookup());
                 assertThat(cm.args())
                     .hasSize(1)
                     .extracting(no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg::argName)
@@ -3925,10 +3923,10 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField)
+                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryTableField)
                     schema.field("Query", "filmByKey");
                 var mapping = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping)
-                    f.lookupMapping();
+                    keyedMappingOf(f.lookup());
                 assertThat(mapping.args()).hasSize(1);
                 var arg = mapping.args().get(0);
                 assertThat(arg).isInstanceOf(
@@ -4140,7 +4138,7 @@ class GraphitronSchemaBuilderTest {
             type Query { films(filter: FilmInput @lookupKey): [Film!]! }
             """,
             schema -> {
-                // Arg-level @lookupKey on a plain input promotes this to QueryLookupTableField,
+                // Arg-level @lookupKey on a plain input promotes this to QueryTableField,
                 // resolving the input's fields against the consumer's return table (film).
                 // Every admissible input field becomes a binding under the filter-by-default
                 // rule; bound fields are consumed by LookupValuesJoinEmitter and must not appear
@@ -4463,9 +4461,9 @@ class GraphitronSchemaBuilderTest {
             """);
         // No @table on PlainFilmActorKey: it is a plain input, resolved per-consumer.
         assertThat(schema.type("PlainFilmActorKey")).isInstanceOf(PojoInputType.class);
-        var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField)
+        var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryTableField)
             schema.field("Query", "filmActorByKey");
-        var mapping = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping();
+        var mapping = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) keyedMappingOf(f.lookup());
         assertThat(mapping.args()).hasSize(1);
         var dr = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.DecodedRecord)
             mapping.args().get(0);
@@ -6394,23 +6392,23 @@ class GraphitronSchemaBuilderTest {
     enum RootFieldCase implements ClassificationCase {
 
         LOOKUP_QUERY_FIELD(
-            "field with @lookupKey list arg → QueryLookupTableField with list return; key flows through LookupMapping, not filters",
+            "field with @lookupKey list arg → QueryTableField with list return; key flows through LookupMapping, not filters",
             """
             type Film @table(name: "film") { title: String }
             type Query { filmById(film_id: [ID] @lookupKey): [Film!]! }
             """,
             schema -> {
-                assertThat(schema.field("Query", "filmById")).isInstanceOf(QueryField.QueryLookupTableField.class);
-                var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmById");
+                assertThat(schema.field("Query", "filmById")).isInstanceOf(QueryField.QueryTableField.class);
+                var f = (QueryField.QueryTableField) schema.field("Query", "filmById");
                 // @lookupKey args do not populate filters(); they are emitted via VALUES+JOIN from
                 // LookupMapping.args() (see docs/architecture/reference/argument-resolution.adoc).
                 assertThat(f.filters()).isEmpty();
-                var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping();
+                var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) keyedMappingOf(f.lookup());
                 assertThat(cm.args()).hasSize(1);
                 assertThat(cm.args().get(0).argName()).isEqualTo("film_id");
                 assertThat(f.returnType().wrapper()).isInstanceOf(FieldWrapper.List.class);
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryLookupTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryTableField.class); }
         },
 
         LOOKUP_NESTED_IN_INPUT(
@@ -6434,9 +6432,9 @@ class GraphitronSchemaBuilderTest {
             type Query { filmById(film_id: [ID] @lookupKey): [Film!]! }
             """,
             schema -> {
-                var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmById");
+                var f = (QueryField.QueryTableField) schema.field("Query", "filmById");
                 assertThat(f.filters()).isEmpty();
-                var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping();
+                var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) keyedMappingOf(f.lookup());
                 assertThat(cm.args()).hasSize(1);
                 var arg = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.ScalarLookupArg) cm.args().get(0);
                 assertThat(arg.argName()).isEqualTo("film_id");
@@ -6458,26 +6456,26 @@ class GraphitronSchemaBuilderTest {
             }),
 
         LOOKUP_FIELD_PLAIN_INPUT_TYPE_ARG_ADMITS_EVERY_FIELD(
-            "R144: lookup field whose plain input type has admissible carriers and arg-level @lookupKey → QueryLookupTableField; the input stays a plain PojoInputType and every admissible input field becomes a binding against the consumer's table (filter-by-default)",
+            "R144: lookup field whose plain input type has admissible carriers and arg-level @lookupKey → QueryTableField; the input stays a plain PojoInputType and every admissible input field becomes a binding against the consumer's table (filter-by-default)",
             """
             input FilmKey { filmId: Int @field(name: "film_id") }
             type Film @table(name: "film") { title: String }
             type Query { filmByKey(key: [FilmKey] @lookupKey): [Film!]! }
             """,
             schema -> {
-                var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmByKey");
-                var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping();
+                var f = (QueryField.QueryTableField) schema.field("Query", "filmByKey");
+                var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) keyedMappingOf(f.lookup());
                 assertThat(cm.args()).hasSize(1);
                 var arg = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.MapInput) cm.args().get(0);
                 assertThat(arg.bindings()).hasSize(1);
                 assertThat(arg.bindings().get(0).fieldName()).isEqualTo("filmId");
                 assertThat(schema.type("FilmKey")).isInstanceOf(PojoInputType.class);
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryLookupTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryTableField.class); }
         },
 
         LOOKUP_FIELD_COMPOSITE_KEY_INPUT_TYPE_ARG(
-            "lookup field whose plain input type carries two scalar fields with arg-level @lookupKey → QueryLookupTableField with one MapInput LookupArg carrying two MapBindings (R144: every admissible input field becomes a binding when the arg carries @lookupKey)",
+            "lookup field whose plain input type carries two scalar fields with arg-level @lookupKey → QueryTableField with one MapInput LookupArg carrying two MapBindings (R144: every admissible input field becomes a binding when the arg carries @lookupKey)",
             """
             input FilmActorKey {
                 filmId: Int @field(name: "film_id")
@@ -6487,9 +6485,9 @@ class GraphitronSchemaBuilderTest {
             type Query { filmActorByKey(key: [FilmActorKey] @lookupKey): [FilmActor!]! }
             """,
             schema -> {
-                var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmActorByKey");
+                var f = (QueryField.QueryTableField) schema.field("Query", "filmActorByKey");
                 assertThat(f.filters()).isEmpty();
-                var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping();
+                var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) keyedMappingOf(f.lookup());
                 assertThat(cm.args()).hasSize(1);
                 var arg = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.MapInput) cm.args().get(0);
                 assertThat(arg.argName()).isEqualTo("key");
@@ -6500,7 +6498,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(arg.bindings()).extracting(b -> b.targetColumn().javaName())
                     .containsExactly("FILM_ID", "ACTOR_ID");
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryLookupTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryTableField.class); }
         },
 
         LOOKUP_FIELD_ORDERBY_ARG(
@@ -6513,7 +6511,7 @@ class GraphitronSchemaBuilderTest {
             type Query { filmById(film_id: [ID] @lookupKey, order: FilmOrder @orderBy): [Film!]! }
             """,
             schema -> {
-                var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmById");
+                var f = (QueryField.QueryTableField) schema.field("Query", "filmById");
                 assertThat(f.orderBy()).isInstanceOf(OrderBySpec.Argument.class);
                 var orderBy = (OrderBySpec.Argument) f.orderBy();
                 assertThat(orderBy.sortFieldName()).isEqualTo("sortField");
@@ -6521,7 +6519,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(orderBy.namedOrders()).hasSize(1);
                 assertThat(orderBy.namedOrders().get(0).name()).isEqualTo("TITLE");
                 assertThat(f.filters()).isEmpty();
-                var cm2 = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping();
+                var cm2 = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) keyedMappingOf(f.lookup());
                 assertThat(cm2.args()).hasSize(1);
                 assertThat(cm2.args().get(0).argName()).isEqualTo("film_id");
             }),
@@ -7212,7 +7210,7 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    @ProjectionFor({QueryField.QueryTableField.class, QueryField.QueryLookupTableField.class})
+    @ProjectionFor({QueryField.QueryTableField.class})
     void queryTableProjectionCarriesTableNameAndLookupFlag() {
         // QueryTableField — isLookup false on a plain list query.
         var s1 = buildSnapshot("""
@@ -7223,7 +7221,7 @@ class GraphitronSchemaBuilderTest {
         assertThat(plain.tableName()).isEqualToIgnoringCase("film");
         assertThat(plain.isLookup()).isFalse();
 
-        // QueryLookupTableField — @lookupKey on the arg flips the flag.
+        // QueryTableField — @lookupKey on the arg flips the flag.
         var s2 = buildSnapshot("""
             type Film @table(name: "film") { title: String }
             type Query { filmById(film_id: ID! @lookupKey): Film }
@@ -11214,4 +11212,18 @@ class GraphitronSchemaBuilderTest {
         var catalog = CatalogBuilder.build(jooq, bundle.assembled(), ctx);
         return CatalogBuilder.buildSnapshot(registry, bundle.model(), catalog);
     }
+
+    /**
+     * The keyed lookup payload off a fetch leaf's resolution; asserts the keyed arm first so a
+     * fixture that silently stopped resolving its lookup fails with the discriminating message
+     * rather than a class cast.
+     */
+    private static no.sikt.graphitron.rewrite.model.LookupMapping keyedMappingOf(
+            no.sikt.graphitron.rewrite.model.LookupResolution lookup) {
+        assertThat(lookup)
+            .as("the coordinate must resolve a keyed lookup")
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.LookupResolution.Keyed.class);
+        return ((no.sikt.graphitron.rewrite.model.LookupResolution.Keyed) lookup).mapping();
+    }
+
 }

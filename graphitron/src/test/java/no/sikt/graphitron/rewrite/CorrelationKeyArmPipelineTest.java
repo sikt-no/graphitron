@@ -44,7 +44,7 @@ class CorrelationKeyArmPipelineTest {
     }
 
     @Test
-    void batchedLookupTableField_armProjectsTheSourceKeyColumn() {
+    void batchedLookup_armProjectsTheSourceKeyColumn() {
         var film = findType("Film", """
             type Actor @table(name: "actor") { actorId: Int @field(name: "actor_id") }
             type Film @table(name: "film") {

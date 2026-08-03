@@ -3,7 +3,8 @@ package no.sikt.graphitron.rewrite.validation;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
-import no.sikt.graphitron.rewrite.model.ChildField.LookupTableField;
+import no.sikt.graphitron.rewrite.model.ChildField.TableField;
+import no.sikt.graphitron.rewrite.model.LookupResolution;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
@@ -24,7 +25,7 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import no.sikt.graphitron.rewrite.TestFixtures;
 
 @UnitTier
-class LookupTableFieldValidationTest {
+class InlineLookupValidationTest {
 
     private static final TableRef FILM_TABLE = TestFixtures.tableRef("film", "FILM", "Film", List.of());
     // A minimal one-arg mapping: these cases pin wrapper/ordering verdicts, not the key
@@ -35,6 +36,7 @@ class LookupTableFieldValidationTest {
             "film_id", new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"),
             new CallSiteExtraction.Direct(), false)),
         FILM_TABLE);
+    private static final LookupResolution KEYED_LOOKUP = new LookupResolution.Keyed(SCALAR_LOOKUP);
     private static final OrderBySpec.Fixed PK_ORDER = new OrderBySpec.Fixed(
         List.of(new OrderBySpec.ColumnOrderEntry(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"), null, OrderBySpec.SortDirection.ASC)), true);
 
@@ -42,7 +44,7 @@ class LookupTableFieldValidationTest {
         return new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE, wrapper);
     }
 
-    // The inline LookupTableField + condition-join shape now classifies and emits a real
+    // The inline lookup-keyed TableField + condition-join shape now classifies and emits a real
     // correlated subquery via the renderer's lookup multiset arm; the validator no longer
     // surfaces a deferred-rejection for it.
 
@@ -57,27 +59,27 @@ class LookupTableFieldValidationTest {
         // it cannot reach the validator. Kept as a structural-validator smoke test: the model
         // record itself is constructible, and the validator has no extra errors to add.
         SINGLE_NOW_PROJECTED("single return — no validator errors; classifier rejection prevents reaching this state",
-            new LookupTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null,
-                SCALAR_LOOKUP,
+            new TableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null,
+                KEYED_LOOKUP,
                 /* parentCorrelation */ null),
             List.of()),
 
         LIST_PROJECTED("list return — inline-projected, no validator errors",
-            new LookupTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)), List.of(), List.of(), PK_ORDER, null,
-                SCALAR_LOOKUP,
+            new TableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)), List.of(), List.of(), PK_ORDER, null,
+                KEYED_LOOKUP,
                 /* parentCorrelation */ null),
             List.of()),
 
         LIST_WITH_CONDITION_ONLY("list cardinality with condition-only join step — classifies and emits a correlated subquery (R232)",
-            new LookupTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)),
+            new TableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)),
                 CONDITION_PATH,
-                List.of(), PK_ORDER, null, SCALAR_LOOKUP,
+                List.of(), PK_ORDER, null, KEYED_LOOKUP,
                 TestFixtures.pcFor(CONDITION_PATH, TestFixtures.filmTable())),
             List.of()),
 
         CONNECTION_BLOCKED("connection return — not valid on lookup field (validator mirror of classifier rejection)",
-            new LookupTableField("Language", "films", null, filmReturn(new FieldWrapper.Connection(true, 100)), List.of(), List.of(), new OrderBySpec.None(), null,
-                SCALAR_LOOKUP,
+            new TableField("Language", "films", null, filmReturn(new FieldWrapper.Connection(true, 100)), List.of(), List.of(), new OrderBySpec.None(), null,
+                KEYED_LOOKUP,
                 /* parentCorrelation */ null),
             List.of("Field 'Language.films': lookup fields must not return a connection"));
 

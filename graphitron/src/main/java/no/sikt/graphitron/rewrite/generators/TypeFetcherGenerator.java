@@ -83,10 +83,11 @@ import java.util.Set;
  *   <li>{@link QueryField.QueryTableField} — {@code public static} method taking
  *       {@code DataFetchingEnvironment}, returning {@code Result<Record>} or {@code Record},
  *       wired by method reference.</li>
- *   <li>{@link QueryField.QueryLookupTableField} — two methods: a thin data fetcher (named after
- *       the field, e.g. {@code filmById}) that delegates to a rows method (e.g.
- *       {@code lookupFilmById}) which performs the actual SQL. The rows method is callable
- *       independently (e.g. by Apollo Federation {@code _entities} resolution).</li>
+ *   <li>a lookup-keyed {@link QueryField.QueryTableField} additionally splits into a thin
+ *       data fetcher (named after the field, e.g. {@code filmById}) delegating to a rows
+ *       method (e.g. {@code lookupFilmById}) which performs the actual SQL. The rows method
+ *       is callable independently (e.g. by Apollo Federation {@code _entities}
+ *       resolution).</li>
  *   <li>All other field types — stub throwing {@link UnsupportedOperationException}.</li>
  * </ul>
  *
@@ -277,7 +278,6 @@ public class TypeFetcherGenerator {
         ChildField.ComputedField.class,
         QueryField.QueryNodeField.class,
         QueryField.QueryNodesField.class,
-        QueryField.QueryLookupTableField.class,
         QueryField.QueryTableField.class,
         QueryField.QueryRoutineTableField.class,
         QueryField.QueryServiceTableField.class,
@@ -302,7 +302,6 @@ public class TypeFetcherGenerator {
         ChildField.ServiceTableField.class,
         ChildField.ServiceRecordField.class,
         ChildField.BatchedTableField.class,
-        ChildField.BatchedLookupTableField.class,
         ChildField.BatchedPivotField.class,
         ChildField.RecordReadField.class,
         ChildField.RecordCompositeField.class,
@@ -436,7 +435,7 @@ public class TypeFetcherGenerator {
 
         // When this type is a flipped Outcome payload (it owns a WrapperArm errors field), its
         // children receive a non-null Outcome as env.getSource(). DataLoader-backed data fields
-        // (the record-sourced BatchedTableField / BatchedLookupTableField arms)
+        // (the record-sourced BatchedTableField arms, lookup-keyed or not)
         // arm-switch inside
         // their generated fetcher method: narrow Success, read the key off success.value(), and
         // return completedFuture(null) on the ErrorList arm. The same predicate drives the
@@ -485,22 +484,6 @@ public class TypeFetcherGenerator {
                     // encode) is collected below via FetcherEmitter.bind (registered wrapped in
                     // LightFetcher); this arm emits no method itself.
                 }
-                case QueryField.QueryLookupTableField qlf -> {
-                    var lookupRow = launchers.rowFor(qlf.parentTypeName(), qlf.name())
-                        .orElseThrow(() -> new IllegalStateException(
-                            "Graphitron generator bug (root launcher dispatch): lookup root coordinate '"
-                            + qlf.qualifiedName() + "' has no launcher row;"
-                            + " the producer's membership and this dispatch have drifted"));
-                    var lookupTableRef = qlf.returnType().table();
-                    var lookupTableClass = GeneratorUtils.ResolvedTableNames
-                        .of(lookupTableRef, qlf.returnType().returnTypeName(), outputPackage).jooqTableClass();
-                    var keyedLookup = (no.sikt.graphitron.command.LaunchSource.KeyedLookup) lookupRow.source();
-                    builder.addMethod(buildQueryTableFetcher(ctx, qlf, lookupRow, outputPackage));
-                    builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
-                        .render(lookupRow, launchers.carrierDsl()));
-                    builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(qlf, lookupTableClass,
-                        keyedLookup.inputRows().methodName()));
-                }
                 case QueryField.QueryTableField qtf -> {
                     // Row-presence dispatch: the launcher producer's membership is the one
                     // predicate deciding which coordinates launch through the seam; every
@@ -514,6 +497,19 @@ public class TypeFetcherGenerator {
                     builder.addMethod(buildQueryTableFetcher(ctx, qtf, launcherRow, outputPackage));
                     builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
                         .render(launcherRow, launchers.carrierDsl()));
+                    // The keyed-lookup row additionally owns a VALUES-building input-rows
+                    // helper; the row's source arm is the fork, the same shape the batched
+                    // rows renderer reads, so no leaf identity and no schema participate.
+                    if (launcherRow.source()
+                            instanceof no.sikt.graphitron.command.LaunchSource.KeyedLookup keyedLookup) {
+                        var lookupTableClass = GeneratorUtils.ResolvedTableNames
+                            .of(qtf.returnType().table(), qtf.returnType().returnTypeName(), outputPackage)
+                            .jooqTableClass();
+                        builder.addMethod(no.sikt.graphitron.render.LookupRows.buildInputRowsMethod(
+                            keyedLookup.mapping(), keyedLookup.inputRows().methodName(),
+                            lookupTableClass, no.sikt.graphitron.render.LookupRows.ArgSource.ENV,
+                            qtf.name()));
+                    }
                 }
                 case ChildField.ServiceTableField stf -> {
                     // Lift-back projection. The loader value is the projected Record (carrying
@@ -571,29 +567,23 @@ public class TypeFetcherGenerator {
                         : no.sikt.graphitron.javapoet.CodeBlock.of("");
                     builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
                         .render(batchedRow, launchers.carrierDsl(), dslDeclaration));
-                }
-                case ChildField.BatchedLookupTableField blf -> {
-                    var lookupChainRow = launchers.rowFor(blf.parentTypeName(), blf.name())
-                        .orElseThrow(() -> new IllegalStateException(
-                            "Graphitron generator bug (batched lookup child dispatch): coordinate '"
-                            + blf.qualifiedName() + "' has no launcher row;"
-                            + " the producer's membership and this dispatch have drifted"));
-                    builder.addMethod(buildBatchedDataFetcher(ctx, blf, blf.returnType(), blf.sourceKey(), blf.lift(), parentTable, resultType, sourceIsOutcome, outputPackage, lookupChainRow));
-                    builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
-                        .render(lookupChainRow, launchers.carrierDsl(),
-                            TenantDslEmitter.resolve(ctx, blf, outputPackage).declaration()));
-                    // Emit the VALUES-building input-rows helper alongside the rows method,
-                    // named by the row's minted ref (one derivation with the body's call). The
-                    // env-based variant reads args from env.getArgument(name) — correct for a
-                    // batched fetcher whose @lookupKey args live on the field itself (vs. the
-                    // inline child-lookup path where args live on a parent's SelectedField).
-                    // Identical for both source shapes.
-                    var lookupTableRef = blf.returnType().table();
-                    var lookupTableClass = GeneratorUtils.ResolvedTableNames
-                        .of(lookupTableRef, blf.returnType().returnTypeName(), outputPackage).jooqTableClass();
-                    var lookupChain = (no.sikt.graphitron.command.LaunchSource.CorrelatedLookupChain) lookupChainRow.source();
-                    builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(blf, lookupTableClass,
-                        lookupChain.inputRows().methodName()));
+                    // The correlated-lookup row additionally owns the VALUES-building
+                    // input-rows helper, named by the row's minted ref (one derivation with
+                    // the body's call). The env-based variant reads args from
+                    // env.getArgument(name): correct for a batched fetcher whose @lookupKey
+                    // args live on the field itself (vs. the inline child-lookup path where
+                    // args live on a parent's SelectedField). Identical for both source
+                    // shapes; the row's source arm is the fork.
+                    if (batchedRow.source()
+                            instanceof no.sikt.graphitron.command.LaunchSource.CorrelatedLookupChain lookupChain) {
+                        var lookupTableClass = GeneratorUtils.ResolvedTableNames
+                            .of(btf.returnType().table(), btf.returnType().returnTypeName(), outputPackage)
+                            .jooqTableClass();
+                        builder.addMethod(no.sikt.graphitron.render.LookupRows.buildInputRowsMethod(
+                            lookupChain.mapping(), lookupChain.inputRows().methodName(),
+                            lookupTableClass, no.sikt.graphitron.render.LookupRows.ArgSource.ENV,
+                            btf.name()));
+                    }
                 }
                 case QueryField.QueryNodeField f              -> builder.addMethod(buildQueryNodeFetcher(ctx, f, outputPackage));
                 case QueryField.QueryNodesField f             -> builder.addMethod(buildQueryNodesFetcher(ctx, f, outputPackage));
@@ -690,11 +680,10 @@ public class TypeFetcherGenerator {
                 // NodeIdEncodeKeys (every arity) and condition-join shapes ahead of generation;
                 // no per-shape carve-out is needed here.
                 case ChildField.ColumnBackedReferenceField ignored -> { }
-                // ChildField.TableField / LookupTableField: inline projection via
+                // ChildField.TableField (lookup-keyed or not): inline projection via
                 // the type's $project unit; the alias-pickup read is reified by
                 // FetcherEmitter.bind and collected below.
                 case ChildField.TableField ignored              -> { }
-                case ChildField.LookupTableField ignored        -> { }
                 case ChildField.TableInterfaceField f           -> builder.addMethod(buildTableInterfaceFieldFetcher(ctx, f, outputPackage));
                 // ParticipantColumnReferenceField: the value is materialised in the parent record by
                 // the enclosing TableInterfaceField fetcher's conditional LEFT JOIN; the read of it
@@ -911,12 +900,10 @@ public class TypeFetcherGenerator {
         // record-backed batched field is present. Single-cardinality fields use
         // scatterSingleByIdx; Connection-cardinality fields use scatterConnectionByIdx.
         boolean hasListSplitField = fields.stream().anyMatch(f ->
-            (f instanceof ChildField.BatchedTableField btf
-                && btf.returnType().wrapper() instanceof FieldWrapper.List)
-            || (f instanceof ChildField.BatchedLookupTableField blf
-                && (blf.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Record
-                    || blf.returnType().wrapper() instanceof FieldWrapper.List))
-);
+            f instanceof ChildField.BatchedTableField btf
+                && (btf.returnType().wrapper() instanceof FieldWrapper.List
+                    || (btf.lookup() instanceof no.sikt.graphitron.rewrite.model.LookupResolution.Keyed
+                        && btf.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Record)));
         if (hasListSplitField) {
             builder.addMethod(SplitRowsMethodEmitter.buildScatterByIdxHelper());
         }
@@ -944,11 +931,12 @@ public class TypeFetcherGenerator {
                 TenantDslEmitter.isMultiTenant(ctx)));
         }
 
-        // emptyScatter is needed whenever @lookupKey input can be empty at request time — that is,
-        // for BatchedLookupTableField. Plain batched fields
-        // never use the empty-input short-circuit.
+        // emptyScatter is needed whenever @lookupKey input can be empty at request time, which
+        // is exactly the keyed-lookup batched reads; plain batched fields never use the
+        // empty-input short-circuit.
         boolean hasSplitLookupField = fields.stream().anyMatch(f ->
-            f instanceof ChildField.BatchedLookupTableField);
+            f instanceof ChildField.BatchedTableField btf
+                && btf.lookup() instanceof no.sikt.graphitron.rewrite.model.LookupResolution.Keyed);
         if (hasSplitLookupField) {
             builder.addMethod(SplitRowsMethodEmitter.buildEmptyScatterHelper());
         }
@@ -1006,7 +994,6 @@ public class TypeFetcherGenerator {
     private static boolean emitsRowKeyedParentInputRowsMethod(GraphitronField field) {
         return switch (field) {
             case ChildField.BatchedTableField f -> f.sourceKey().wrap() instanceof SourceKey.Wrap.Row;
-            case ChildField.BatchedLookupTableField f -> f.sourceKey().wrap() instanceof SourceKey.Wrap.Row;
             case ChildField.BatchedPivotField f -> f.sourceKey().wrap() instanceof SourceKey.Wrap.Row;
             // Batched delivery and a table-bound participant are both leaf identity after the
             // polymorphic delivery split, so only the key wrap is left to read.
@@ -5553,7 +5540,7 @@ public class TypeFetcherGenerator {
     }
 
     // -----------------------------------------------------------------------
-    // Batched leaves (BatchedTableField / BatchedLookupTableField) — one DataLoader-registering
+    // The batched leaf (BatchedTableField, lookup-keyed or not): one DataLoader-registering
     // fetcher builder for both source shapes; flat correlated-batch rows methods in
     // SplitRowsMethodEmitter.
     // -----------------------------------------------------------------------

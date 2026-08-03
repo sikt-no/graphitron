@@ -517,6 +517,19 @@ Slice-5 baseline (measured 2026-08-03, back-half membership re-sourced):
 - Leaf ratchet unchanged at 12/15/24/4; generator pins unchanged at 18 / 71 + 76. Emit
   byte-identical through both of the slice's commits.
 
+Slice-6a baseline (measured 2026-08-03, first dissolution landed):
+
+- Leaf ratchet fell 12/15/24/4 to 11/15/22/4: the lookup triplet is the first fold, and the
+  reconstruction key `leaf = f(source, delivery, target)` now holds for the three retired
+  leaves (each differed from its fetch sibling on the operation axis alone).
+- Plan leaf references fell 140 to 132 (the edge producer's three vacuous lookup arms, the
+  launcher's four lookup payload arms, the projection's inline-correlation lookup read);
+  generator pins fell 71 + 76 to 69 + 69 (the two dedicated fetcher arms, the deleted
+  input-rows adapter's name switch, the scatter and parent-input gates' lookup twins); the
+  launcher render-site pin fell 10 to 8 with the two arm merges. Entry points unchanged
+  at 18.
+- Emit byte-identical through both of the slice's commits.
+
 Re-run after the keystone and after the last 6x slice. What matters is direction: leaf counts and
 the minting-site count fall with each dissolution; `FieldBuilder` sheds its per-verb router weight;
 the dispatch pins fall as membership re-sources. A slice that moves none of them is a slice worth
@@ -851,6 +864,102 @@ Decisions bound here (the consult's findings, adopted):
 
 Slice-5 baseline: recorded under Progress measurement above.
 
+### Slice 6a (landed 2026-08-03): the lookup triplet dissolves
+
+Landed in two commits on the additive-then-destructive discipline: the first materializes the
+sealed resolution and single-homes the detection with no consumer moved, the second folds the
+three leaves onto their fetch siblings and retires the capability.
+
+First commit (the resolution):
+
+- `LookupResolution` (model, WALKED_FACT): `None` | `Keyed(mapping)`, declared total on the
+  `TableTargetField` seal beside `filters()` / `orderBy()` / `pagination()` and carried as a
+  component by the three fetch siblings; the polymorphic and service variants answer `None`
+  structurally with no storage. The consult redirected the payload home from a nullable
+  component to this seal: the vacuous mapping became unrepresentable
+  (`ColumnMapping` now rejects an empty arg list; the resolver returns `None` instead), the
+  "non-null implies non-empty" invariant got a type instead of prose, and the relation's
+  payload arm lost a throwing default.
+- The `@lookupKey` detection single-homed on the gathered trigger: `LookupFacts` grew a
+  type-grain closure (input type names transitively carrying the directive, a fixpoint over
+  the visitor's reference edges, per the consult's grain finding), `triggersFor` is the
+  field-level predicate's one home, and the classifier's recursive walk retired with its
+  depth-10 cap (a silent false negative, named as the one behavior delta: applications below
+  depth 10 were invisible, now seen).
+- Membership did not flip onto the raw trigger row (the consult's hazard finding: an
+  application-site row on a coordinate the classifier routes elsewhere, a `@service` or
+  `@routine` bearer, would desynchronize kind from payload). The LOOKUP kind stays a
+  payload-presence read beside condition, orderBy and paginate, with kind and payload reading
+  one axis through `OperationMembers.lookupResolutionOf`.
+
+Second commit (the fold):
+
+- The three leaves, the `LookupField` capability and the `LookupValuesJoinEmitter` adapter
+  deleted; the classifier's lookup gates survive as routing and rejection (the root
+  promotion gate keeps the `@lookupKey`-claims-a-table-read verdicts, `resolveAtChild` keeps
+  the connection and split-cardinality rejections), minting the same fetch siblings the plain
+  paths mint with the resolution riding as payload.
+- Producers fork on the lookup member: the launcher's root-catalog and batched-child arms
+  read the member's mapping payload (`lookupRow` / `batchedLookupRow` survive as payload
+  builders re-signed onto the siblings), and the schema-free walk reads the same fork through
+  the leaf projection. The producer fork is four slots wide and deliberately so (the
+  consult's slot audit): the lookup row differs from the plain row in method-name scheme
+  (`lookup<Field>` vs `launch<Field>`), source arm (`KeyedLookup` / `CorrelatedLookupChain`),
+  tenant strategy (structurally `Single`; the fan-out pair is classifier-rejected) and result
+  shape (`RecordList` with the ordering slot empty, the "a lookup entails input ordering"
+  statement), so the payload builders were kept distinct rather than merged onto
+  `resultShapeOf`, preserving emit exactly.
+- The generators fork on the launcher row's source arm (`KeyedLookup` /
+  `CorrelatedLookupChain`), needing neither schema nor member relation on the paths where the
+  schema is legitimately null; the two type-level scatter gates and the parent-input gate
+  read the sibling leaf plus its resolution; the reified-read arm's lookup twin deleted
+  outright (single-cardinality inline lookups are classifier-rejected, so the folded
+  instances always took the same branch).
+- The validator's per-leaf lookup arms folded into the sibling arms gated on the resolution;
+  the merged batched arm's lookup branch owns the Connection verdict outright (one located
+  rejection, not the ORDER-BY guard stacked on top, the consult's double-error hazard) and
+  the falsified "ctor rejects Record + Connection" comment was rewritten with the gate. The
+  merged constructor invariant gates on the resolution axis (`Record` + `Connection` stays
+  unrepresentable for the plain read, author-reachable and validator-rejected for the keyed
+  read, exactly today's grain); the local-context allow-list keeps its lookup exclusion as a
+  resolution gate and its rejection message now names the disqualifying fact.
+- The generated-filter-on-lookup rejection re-grained onto the fact-level predicate on both
+  sides: the validator mirror reads member co-presence (a condition surface carrying a
+  generated term beside the lookup member; the EMPTY-relation fallback serves the hand-built
+  fixtures), and the producer backstop was already member-sourced since slice 5.
+- Instruments: leaf ratchet 12/15/24/4 to 11/15/22/4 with history lines;
+  `PLAN_LEAF_REFERENCES` 140 to 132; generator pins 71 + 76 to 69 + 69; the launcher
+  render-site pin 10 to 8; the dual-arm list dropped its lookup entry; `DECLARED_SHAPES`
+  moved LOOKUP from required-on-lookup-leaves to optional-on-siblings (the single
+  load-bearing fence edit, gating both productions).
+
+Decisions bound here:
+
+- **The dispatch partition stays leaf-keyed** (the design debt owed at the first 6x slice).
+  `STUBBED_VARIANTS` is empty; the leaf-keyed partition shrinks with each fold, and
+  unimplemented member combinations are guarded by fact-grain rejections (the
+  generated-filter-on-lookup pattern) and producer drift guards, so no member-grain stub set
+  is minted while the stub set is empty. The gate's strength is unchanged: the partition
+  census still fails loudly on an unplaced leaf.
+- **Realization of member kinds co-present with lookup**, stated per kind (the consult's
+  census finding): select and join realize through the lookup SELECT and its reference path;
+  condition realizes for authored `@condition` rows (generated terms stay rejected at
+  exactly today's grain); orderBy and paginate members can mint beside a lookup member at
+  child grain but no seam realizes them (the ordering slot is deliberately empty, the
+  `@orderBy` rejection exists at root only), and the batched single-record-per-key lookup
+  still fails loud at production rather than validating; these deliberately-unrealized
+  combinations are owned by the Backlog item filed with this slice
+  (roadmap/lookup-unrealized-co-members.md) rather than silently documented here.
+- **Test fixtures follow the sibling constructors**: the three per-leaf validation test
+  files became the lookup-gated cases on the siblings (`InlineLookupValidationTest`,
+  `BatchedLookupValidationTest`, `RootLookupValidationTest`), the class-assert rows assert
+  the keyed resolution so a fixture that silently stopped resolving fails with the
+  discriminating message, and the retired-vocabulary registry gained no entries (its bar is
+  demonstrated recurrence, not rename); the two successor strings naming the retired batched
+  leaf were rewritten.
+
+Slice-6a baseline: recorded under Progress measurement above.
+
 ## Retired vocabulary
 
 Declared per the item-file conventions in `roadmap/workflow.adoc`; each term names the slice that
@@ -860,6 +969,8 @@ retires it, and the sweep at each gate runs against what has actually shipped.
 |---|---|---|
 | `OutputField.operation()` as the single-valued accessor, and the three leaf-identity `operation()` switches | 4 | the coordinate's member rows on `GraphitronSchema`; the summary column, if the corpus keeps one, is a derived view named at slice 7 |
 | `LookupTableField`, `BatchedLookupTableField`, `QueryLookupTableField` | 6a | the Fetch-sibling leaves plus the lookup member row |
+| `LookupField` (the capability seal) | 6a | the sealed `LookupResolution` carried total on the table-target leaves |
+| `LookupValuesJoinEmitter` (the input-rows adapter) | 6a | `render/LookupRows`, called with the launcher row's mapping payload |
 | `MutationField.DmlTableField`'s four verb leaves; the payload arms' verb halves | 6b | write members carrying the verb; source/target grain leaves |
 | `LauncherRelation`'s "this family is single-operation" javadoc claim | 3 | the reentry and write members; the real key stated |
 | `requireNoGeneratedFilterOnLookup` (the producer backstop) | 6a | the fact-grain rejection: a condition member carrying a generated `WhereFilter` term co-present with a lookup member |

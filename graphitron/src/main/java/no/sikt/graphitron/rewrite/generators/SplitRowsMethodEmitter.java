@@ -91,7 +91,7 @@ public final class SplitRowsMethodEmitter {
 
     /**
      * Builds the private static {@code emptyScatter(int keyCount)} helper returning a
-     * pre-populated list of empty sublists. Used by the BatchedLookupTableField rows method's
+     * pre-populated list of empty sublists. Used by the correlated-lookup rows method's
      * empty-lookup-input short-circuit (when {@code @lookupKey} args are null/empty, every
      * parent gets an empty result without touching the database).
      */

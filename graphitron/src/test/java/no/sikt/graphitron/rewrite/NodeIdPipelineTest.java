@@ -930,9 +930,9 @@ class NodeIdPipelineTest {
             type Query { barById(id: ID @lookupKey): Bar }
             """,
             schema -> {
-                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField)
+                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryTableField)
                     schema.field("Query", "barById");
-                var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping();
+                var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) ((no.sikt.graphitron.rewrite.model.LookupResolution.Keyed) f.lookup()).mapping();
                 assertThat(cm.args()).hasSize(1);
                 var arg = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.DecodedRecord)
                     cm.args().get(0);
@@ -955,9 +955,9 @@ class NodeIdPipelineTest {
             type Query { barsByIds(ids: [ID!] @lookupKey): [Bar!]! }
             """,
             schema -> {
-                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField)
+                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryTableField)
                     schema.field("Query", "barsByIds");
-                var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping();
+                var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) ((no.sikt.graphitron.rewrite.model.LookupResolution.Keyed) f.lookup()).mapping();
                 var arg = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.DecodedRecord)
                     cm.args().get(0);
                 assertThat(arg.list()).isTrue();
@@ -1273,7 +1273,7 @@ class NodeIdPipelineTest {
 
         SAME_TABLE_WITH_EXPLICIT_LOOKUP_KEY(
             "explicit `@lookupKey` on a same-table `@nodeId` arg re-enables the N×M derived-table "
-                + "lookup shape: classifies as QueryLookupTableField with ScalarLookupArg over baz.id "
+                + "lookup shape: classifies as a lookup-keyed QueryTableField with ScalarLookupArg over baz.id "
                 + "(R106: same-table @nodeId now defaults to filter; @lookupKey is the deliberate "
                 + "opt-in for the lookup shape)",
             """
@@ -1281,9 +1281,9 @@ class NodeIdPipelineTest {
             type Query { bazByIds(ids: [ID!]! @nodeId(typeName: "Baz") @lookupKey): [Baz!]! }
             """,
             schema -> {
-                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField)
+                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryTableField)
                     schema.field("Query", "bazByIds");
-                var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping();
+                var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) ((no.sikt.graphitron.rewrite.model.LookupResolution.Keyed) f.lookup()).mapping();
                 var arg = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.ScalarLookupArg)
                     cm.args().get(0);
                 assertThat(arg.list()).isTrue();

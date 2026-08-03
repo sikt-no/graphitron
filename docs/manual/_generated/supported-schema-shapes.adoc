@@ -25,7 +25,6 @@ Supported schema shapes are enumerated below by output sealed-leaf class. Each s
 * *MutationUpdateTableField*: The `@mutation(typeName: UPDATE)` field that returns its `@table` type
 * _(not yet supported)_ *MutationUpsertTableField*
 * *QueryInterfaceField*: A root query field returning a multi-table `GraphitronType.InterfaceType`
-* *QueryLookupTableField*
 * *QueryNodeField*
 * *QueryNodesField*
 * *QueryRoutineTableField*: A root query field whose table chain starts with a jOOQ database routine (`@routine`)
@@ -39,15 +38,15 @@ Supported schema shapes are enumerated below by output sealed-leaf class. Each s
 
 === ChildField
 
-* *BatchedLookupTableField*: The `@lookupKey` twin of `BatchedTableField`: a DataLoader-batched keyed
+* *BatchedInterfaceField*: A list- or connection-cardinality child field returning a multi-table
 * *BatchedPivotField*: The batched (`@splitQuery`) `@pivot` leaf: the same projection as
 * *BatchedTableField*: A DataLoader-batched keyed re-query anchor: the field launches its own SELECT keyed on a
+* *BatchedUnionField*: A list- or connection-cardinality child field returning a multi-table
 * *ColumnBackedField*: A column-backed output carrier on a table-backed parent: the field's value is produced
 * *ColumnBackedReferenceField*: A column-backed output carrier on a table-backed parent reached through a
 * *ComputedField*: A child field using `@externalField`: the developer provides a static method
 * *ErrorsField*: The `errors` field on a payload type. Lift target for the payload-side of a
-* *InterfaceField*: A child field on a `GraphitronType.TableBackedType` parent returning a multi-table
-* *LookupTableField*
+* *InterfaceField*: A single-cardinality child field returning a multi-table
 * *NestingField*: A nesting child field whose value is a fragment of the parent's table-bound projection
 * *ParticipantColumnReferenceField*: A scalar field on a `GraphitronType.TableInterfaceType` participant that
 * *PivotField*: The inline `@pivot` leaf: a discriminator-keyed aggregate projection folded into the
@@ -60,7 +59,7 @@ Supported schema shapes are enumerated below by output sealed-leaf class. Each s
 * *SingleRecordIdFieldFromReturning*: The single data field on a payload-returning DELETE carrier: an ID-typed scalar encoding
 * *TableField*
 * *TableInterfaceField*
-* *UnionField*: A child field on a `GraphitronType.TableBackedType` parent returning a multi-table
+* *UnionField*: A single-cardinality child field returning a multi-table
 
 === InputField
 
@@ -81,8 +80,8 @@ Supported schema shapes are enumerated below by output sealed-leaf class. Each s
 * *InterfaceType*: An interface with no directives. Participating types may be table-bound (`ParticipantRef.TableBound`)
 * *JavaRecordInputType*: A non-table input type backed by a Java `record` class
 * *JavaRecordType*: A result type whose producer's reflected return is a Java `record` class
-* _(not yet supported)_ *JooqRecordInputType*: A non-table input type backed by a jOOQ `Record<?>` (not table-bound)
-* _(not yet supported)_ *JooqRecordType*: A result type whose producer's reflected return is a jOOQ `Record<?>` (not table-bound)
+* *JooqRecordInputType*: A non-table input type backed by a jOOQ `Record<?>` (not table-bound)
+* *JooqRecordType*: A result type whose producer's reflected return is a jOOQ `Record<?>` (not table-bound)
 * *JooqTableRecordInputType*: A non-table input type backed by a jOOQ `TableRecord<?>`
 * *JooqTableRecordType*: A result type whose runtime carrier is a jOOQ record of a resolved table
 * *NestingType*: A nesting projection: a directiveless SDL object type embedded under a `@table`-bound

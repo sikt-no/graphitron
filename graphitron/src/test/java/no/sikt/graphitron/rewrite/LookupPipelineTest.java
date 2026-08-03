@@ -13,7 +13,7 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
 /**
  * SDL → classified schema → generated {@code TypeSpec} pipeline tests for inline
- * {@link no.sikt.graphitron.rewrite.model.ChildField.LookupTableField} emission (argres Phase 2a).
+ * Inline lookup-keyed table-child emission (argres Phase 2a).
  *
  * <p>Verifies C1's structural contract: the {@code the type's $project unit} method contains
  * a switch arm for each child-lookup field; the input-rows helper is emitted on the type class;
@@ -21,7 +21,7 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
  * or single cardinality on an inline {@code @lookupKey} field produces {@code UnclassifiedField}.
  */
 @PipelineTier
-class LookupTableFieldPipelineTest {
+class LookupPipelineTest {
 
     @Test
     void listLookupKey_producesSwitchArmAndInputRowsHelper() {
@@ -63,7 +63,7 @@ class LookupTableFieldPipelineTest {
 
         var methodNames = filmFetchers.methodSpecs().stream().map(m -> m.name()).toList();
         assertThat(methodNames)
-            .as("R303: LookupTableField projects inline via the type's $project unit; the read of "
+            .as("R303: the lookup-keyed TableField projects inline via the type's $project unit; the read of "
                 + "that result-key-aliased projection is reified as a named env-dependent method")
             .contains("actors");
     }
@@ -105,8 +105,9 @@ class LookupTableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var filmActors = (ChildField.LookupTableField) schema.field("Film", "filmActors");
-        var mapping = (LookupMapping.ColumnMapping) filmActors.lookupMapping();
+        var filmActors = (ChildField.TableField) schema.field("Film", "filmActors");
+        var mapping = (LookupMapping.ColumnMapping)
+            ((no.sikt.graphitron.rewrite.model.LookupResolution.Keyed) filmActors.lookup()).mapping();
         assertThat(mapping.args()).hasSize(1);
         var only = mapping.args().get(0);
         assertThat(only).isInstanceOfSatisfying(

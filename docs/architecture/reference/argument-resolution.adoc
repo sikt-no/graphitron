@@ -26,8 +26,8 @@ override-propagation semantics that tie them together.
   input-field).
 - `TableInputArg.fieldBindings: List<InputColumnBinding>` carries the
   `@lookupKey`-only bindings; composite-key lookups are wired end-to-end
-  via `LookupValuesJoinEmitter`.
-- `LookupField` capability with non-`Optional` `LookupMapping lookupMapping()`
+  via the `LookupRows` input-rows helper.
+- the sealed `LookupResolution` (`None` | `Keyed`) carried total on the table-read leaves
   pairs with `@lookupKey`.
 - `TypeBuilder.buildInputType` rejects any input carrying `@table` (a retired
   directive location; the rejection message carries the per-verb migration
@@ -297,7 +297,7 @@ downstream emitters (the lookup rows core `LookupRows`,
 knowing its provenance. Input-field conditions land alongside field-level
 and arg-level conditions in the same filter list.
 
-*List-typed inputs (composite-key lookups).* `LookupValuesJoinEmitter` emits
+*List-typed inputs (composite-key lookups).* The `LookupRows` input-rows helper emits
 VALUES+JOIN rows; per-row condition evaluation already reads fields via
 `input.get(i).get<FieldName>()`. Input-field conditions piggyback on the same
 loop; projection just hands them as additional filters. Verify round-trip

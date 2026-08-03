@@ -27,7 +27,7 @@ import java.util.List;
  * <p>Downstream facts not visible here: a {@link ColumnMapping.LookupArg.DecodedRecord} decodes
  * once per row at the arg layer, with positional {@link InputColumnBinding.RecordBinding}s
  * indexing the resulting {@code Record<N>}; a null decode surfaces as
- * {@code GraphqlErrorException} via {@code LookupValuesJoinEmitter}'s per-row throw
+ * {@code GraphqlErrorException} via the emitted input-rows helper's per-row throw
  * ({@link CallSiteExtraction.ThrowOnMismatch}). For a
  * {@link ColumnMapping.LookupArg.MapInput}, list cardinality lives on the outer arg and
  * individual input fields are guaranteed scalar by {@code FieldBuilder#buildLookupBindings}.

@@ -210,15 +210,19 @@ public final class LauncherCommands {
     private static LauncherCommand rootCatalogRow(GraphitronSchema schema, GraphitronField field,
             ConditionRelation conditions, GeneratedUnits units) {
         return switch (field) {
-            case QueryField.QueryTableField qtf -> row(qtf, whereOf(qtf, conditions), units,
-                facetPlanOf(schema, qtf, conditions, units),
-                tenancyOf(schema, qtf, units));
+            case QueryField.QueryTableField qtf -> {
+                var mapping = keyedLookupOf(
+                    schema.operationMembersOf(qtf.parentTypeName(), qtf.name()));
+                yield mapping != null
+                    ? lookupRow(qtf, mapping, whereOf(qtf.parentTypeName(), qtf.name(), conditions), units)
+                    : row(qtf, whereOf(qtf, conditions), units,
+                        facetPlanOf(schema, qtf, conditions, units),
+                        tenancyOf(schema, qtf, units));
+            }
             case QueryField.QueryRoutineTableField qrtf -> routineRow(qrtf, units);
             case QueryField.QueryTableInterfaceField qtif -> interfaceRow(qtif,
                 schema.joinedTableReprojectionOf(qtif.returnType().returnTypeName()),
                 whereOf(qtif.parentTypeName(), qtif.name(), conditions), units);
-            case QueryField.QueryLookupTableField qlf -> lookupRow(qlf,
-                whereOf(qlf.parentTypeName(), qlf.name(), conditions), units);
             default -> throw new IllegalStateException(
                 "Graphitron generator bug (launcher production): coordinate '"
                 + field.qualifiedName() + "' (" + field.getClass().getSimpleName()
@@ -235,10 +239,15 @@ public final class LauncherCommands {
     private static LauncherCommand batchedChildRow(GraphitronSchema schema, GraphitronField field,
             ConditionRelation conditions, GeneratedUnits units) {
         return switch (field) {
-            case ChildField.BatchedTableField btf -> batchedRow(btf, schema, conditions, units);
-            case ChildField.BatchedLookupTableField blf -> batchedLookupRow(blf,
-                whereOf(blf.parentTypeName(), blf.name(), conditions),
-                tenancyOf(schema, blf.parentTypeName(), blf.name(), units), units);
+            case ChildField.BatchedTableField btf -> {
+                var mapping = keyedLookupOf(
+                    schema.operationMembersOf(btf.parentTypeName(), btf.name()));
+                yield mapping != null
+                    ? batchedLookupRow(btf, mapping,
+                        whereOf(btf.parentTypeName(), btf.name(), conditions),
+                        tenancyOf(schema, btf.parentTypeName(), btf.name(), units), units)
+                    : batchedRow(btf, schema, conditions, units);
+            }
             case ChildField.BatchedPivotField bpf -> batchedPivotRow(bpf, units);
             default -> throw new IllegalStateException(
                 "Graphitron generator bug (launcher production): coordinate '"
@@ -405,8 +414,12 @@ public final class LauncherCommands {
                 continue;
             }
             rows.add(switch (field) {
-                case QueryField.QueryTableField qtf ->
-                    row(qtf, glueFromFilters(qtf, units), units, null, new TenantStrategy.Single());
+                case QueryField.QueryTableField qtf -> {
+                    var mapping = keyedLookupOf(OperationMembers.membersOf(qtf));
+                    yield mapping != null
+                        ? lookupRow(qtf, mapping, glueFromFilters(qtf, units), units)
+                        : row(qtf, glueFromFilters(qtf, units), units, null, new TenantStrategy.Single());
+                }
                 case QueryField.QueryRoutineTableField qrtf -> routineRow(qrtf, units);
                 // The residence split is a classified-schema fact; a schema-free assembly's
                 // joined participants carry no base slice and no detail fields, the same
@@ -414,14 +427,13 @@ public final class LauncherCommands {
                 case QueryField.QueryTableInterfaceField qtif ->
                     interfaceRow(qtif, no.sikt.graphitron.rewrite.JoinedTableReprojection.EMPTY,
                         glueFromInterfaceFilters(qtif, units), units);
-                case QueryField.QueryLookupTableField qlf -> lookupRow(qlf,
-                    glueFromFilters(qlf.parentTypeName(), qlf.name(), qlf.filters(), units), units);
-                case ChildField.BatchedTableField btf -> batchedRow(btf,
-                    glueFromFilters(btf.parentTypeName(), btf.name(), btf.filters(), units),
-                    new TenantStrategy.Single(), units);
-                case ChildField.BatchedLookupTableField blf -> batchedLookupRow(blf,
-                    glueFromFilters(blf.parentTypeName(), blf.name(), blf.filters(), units),
-                    new TenantStrategy.Single(), units);
+                case ChildField.BatchedTableField btf -> {
+                    var mapping = keyedLookupOf(OperationMembers.membersOf(btf));
+                    var glue = glueFromFilters(btf.parentTypeName(), btf.name(), btf.filters(), units);
+                    yield mapping != null
+                        ? batchedLookupRow(btf, mapping, glue, new TenantStrategy.Single(), units)
+                        : batchedRow(btf, glue, new TenantStrategy.Single(), units);
+                }
                 case ChildField.BatchedPivotField bpf -> batchedPivotRow(bpf, units);
                 case ChildField.ServiceTableField stf -> serviceTableRow(stf, units);
                 case ChildField.ServiceRecordField srf -> serviceRecordRow(srf, units);
@@ -433,6 +445,23 @@ public final class LauncherCommands {
             });
         }
         return new LauncherRelation(rows, CarrierDsl.ENV_ACQUIRED);
+    }
+
+    /**
+     * The lookup member's mapping payload, or null when the coordinate's member set carries no
+     * lookup member. The payload dispatch's fork input: the verdict decides that a row exists,
+     * the member decides which payload builder shapes it.
+     */
+    private static no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping keyedLookupOf(
+            List<OperationMember> members) {
+        for (var m : members) {
+            if (m instanceof OperationMember.Lookup lookup) {
+                return switch (lookup.lookupMapping()) {
+                    case no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping cm -> cm;
+                };
+            }
+        }
+        return null;
     }
 
     private static GlueCall glueFromFilters(QueryField.QueryTableField qtf, GeneratedUnits units) {
@@ -461,16 +490,17 @@ public final class LauncherCommands {
      * pre-seam {@code lookup<Field>} name through its own minting scheme. Always direct; never
      * a connection (both classifier-rejected pairs, backstopped on the command).
      */
-    private static LauncherCommand lookupRow(QueryField.QueryLookupTableField qlf, GlueCall where,
+    private static LauncherCommand lookupRow(QueryField.QueryTableField qtf,
+            no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping mapping, GlueCall where,
             GeneratedUnits units) {
-        var owner = units.fetchers(qlf.parentTypeName());
+        var owner = units.fetchers(qtf.parentTypeName());
         return new LauncherCommand(
-            units.lookupMethod(qlf.parentTypeName(), qlf.name()),
-            FieldCoordinates.coordinates(qlf.parentTypeName(), qlf.name()),
-            new LaunchSource.KeyedLookup(qlf.returnType().table(),
-                units.typeClass(qlf.returnType().returnTypeName()),
-                (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) qlf.lookupMapping(),
-                units.inputRowsMethod(owner, qlf.name())),
+            units.lookupMethod(qtf.parentTypeName(), qtf.name()),
+            FieldCoordinates.coordinates(qtf.parentTypeName(), qtf.name()),
+            new LaunchSource.KeyedLookup(qtf.returnType().table(),
+                units.typeClass(qtf.returnType().returnTypeName()),
+                mapping,
+                units.inputRowsMethod(owner, qtf.name())),
             where,
             new Invocation.Direct(),
             new TenantStrategy.Single(),
@@ -629,7 +659,8 @@ public final class LauncherCommands {
      * schema today, a recorded mirror gap.
      */
     private static LauncherCommand batchedLookupRow(
-            no.sikt.graphitron.rewrite.model.ChildField.BatchedLookupTableField blf,
+            no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField blf,
+            no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping mapping,
             GlueCall where, TenantStrategy tenancy, GeneratedUnits units) {
         if (blf.emitsSingleRecordPerKey()) {
             throw new IllegalStateException(
@@ -647,7 +678,7 @@ public final class LauncherCommands {
             new LaunchSource.CorrelatedLookupChain(blf.returnType().table(),
                 units.typeClass(blf.returnType().returnTypeName()),
                 blf.joinPath(), blf.parentCorrelation(),
-                (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) blf.lookupMapping(),
+                mapping,
                 units.inputRowsMethod(units.fetchers(blf.parentTypeName()), blf.name())),
             where,
             new Invocation.Batched(blf.sourceKey(), blf.loaderRegistration()),

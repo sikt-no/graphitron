@@ -9,20 +9,22 @@ import java.util.Optional;
 /**
  * A field on the {@code Query} type. Read-only. All create a new scope or enter service scope.
  *
- * <p>The three primary SQL-generating query field types ({@link QueryTableField},
- * {@link QueryLookupTableField}, {@link QueryTableInterfaceField}) carry the same three
- * SQL-generation components as their child-field counterparts:
+ * <p>The two primary SQL-generating query field types ({@link QueryTableField},
+ * {@link QueryTableInterfaceField}) carry the same SQL-generation components as their
+ * child-field counterparts:
  * <ul>
  *   <li>{@code filters} — WHERE-clause contributions; may be empty.</li>
  *   <li>{@code orderBy} — authoritative ordering; always non-null.</li>
  *   <li>{@code pagination} — Relay pagination args; {@code null} when absent.</li>
+ *   <li>{@code lookup}: the resolved {@code @lookupKey} correspondence on
+ *       {@link QueryTableField}; {@link LookupResolution.None} when absent.</li>
  * </ul>
  *
  * <p>Service fields ({@link QueryServiceTableField}, {@link QueryServiceRecordField})
  * do not carry these components — the developer-controlled method replaces SQL generation entirely.
  */
 public sealed interface QueryField extends RootField
-    permits QueryField.QueryLookupTableField, QueryField.QueryTableField,
+    permits QueryField.QueryTableField,
             QueryField.QueryRoutineTableField,
             QueryField.QueryNodeField, QueryField.QueryNodesField,
             QueryField.QueryTableInterfaceField, QueryField.QueryInterfaceField,
@@ -41,7 +43,6 @@ public sealed interface QueryField extends RootField
         return switch (this) {
             // Catalog table reads: wrap(...) keeps the Connection -> Single(Connection) decomposition.
             case QueryTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
-            case QueryLookupTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case QueryRoutineTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case QueryTableInterfaceField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case QueryServiceTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
@@ -61,25 +62,6 @@ public sealed interface QueryField extends RootField
             case QueryNodeField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Interface());
             case QueryNodesField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Interface());
         };
-    }
-
-    record QueryLookupTableField(
-        String parentTypeName,
-        String name,
-        SourceLocation location,
-        ReturnTypeRef.TableBoundReturnType returnType,
-        List<WhereFilter> filters,
-        OrderBySpec orderBy,
-        PaginationSpec pagination,
-        LookupMapping lookupMapping
-    ) implements QueryField, SqlGeneratingField, LookupField {
-        /** The resolved lookup correspondence; always keyed on this leaf. */
-        public LookupResolution lookup() {
-            return new LookupResolution.Keyed(lookupMapping);
-        }
-        @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Record(returnType.table());
-        }
     }
 
     record QueryTableField(

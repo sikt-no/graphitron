@@ -222,7 +222,7 @@ public sealed interface FieldClassification
     /**
      * A child field that navigates to (or stays at) a table scope and generates SQL.
      * Covers the four {@code ChildField.TableField} family permits ({@code TableField},
-     * the Table-sourced {@code BatchedTableField} / {@code BatchedLookupTableField} arms, {@code LookupTableField})
+     * the Table-sourced {@code BatchedTableField} arms and the lookup-keyed reads)
      * plus {@code TableInterfaceField} which adds the polymorphic axes (see
      * {@link TableInterface} for the polymorphic-only payload). The {@code splitBatched}
      * and {@code hasLookupKey} booleans encode the per-permit axes; the label switch
@@ -240,7 +240,7 @@ public sealed interface FieldClassification
     /**
      * A child field on a class-backed parent that resolves to a table-bound target
      * via a DataLoader. Covers the record-sourced {@code ChildField.BatchedTableField} arm and
-     * the record-sourced {@code ChildField.BatchedLookupTableField} arm.
+     * the record-sourced lookup-keyed {@code ChildField.BatchedTableField} arm.
      */
     record RecordTableTarget(
         String tableName, List<FkStep> joinPath, boolean hasLookupKey
@@ -362,7 +362,7 @@ public sealed interface FieldClassification
 
     /**
      * A root query field returning a {@code @table}-bound type. Covers
-     * {@code QueryField.QueryTableField} and {@code QueryField.QueryLookupTableField};
+     * {@code QueryField.QueryTableField}, lookup-keyed or not;
      * the lookup-helper axis is encoded by {@code isLookup}.
      */
     record QueryTable(String tableName, boolean isLookup) implements FieldClassification {}

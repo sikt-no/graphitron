@@ -29,14 +29,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 @UnitTier
 class LeafRatchetTest {
 
-    /** Installed at 12 (census 2026-08-02, unchanged from the 2026-08-01 baseline). */
-    private static final int QUERY_FIELD_LEAVES = 12;
+    /**
+     * Installed at 12 (census 2026-08-02, unchanged from the 2026-08-01 baseline).
+     * 12 to 11 (2026-08-03): QueryLookupTableField folded onto QueryTableField plus the
+     * lookup member; the leaf's information became the {@code LookupResolution} payload.
+     */
+    private static final int QUERY_FIELD_LEAVES = 11;
 
     /** Installed at 15 (census 2026-08-02, unchanged from the 2026-08-01 baseline). */
     private static final int MUTATION_FIELD_LEAVES = 15;
 
-    /** Installed at 24 (census 2026-08-02, unchanged from the 2026-08-01 baseline). */
-    private static final int CHILD_FIELD_LEAVES = 24;
+    /**
+     * Installed at 24 (census 2026-08-02, unchanged from the 2026-08-01 baseline).
+     * 24 to 22 (2026-08-03): LookupTableField and BatchedLookupTableField folded onto their
+     * fetch siblings plus the lookup member, the first dissolution slice.
+     */
+    private static final int CHILD_FIELD_LEAVES = 22;
 
     /** Installed at 4 (census 2026-08-02, unchanged from the 2026-08-01 baseline). */
     private static final int INPUT_FIELD_LEAVES = 4;

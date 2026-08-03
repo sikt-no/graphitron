@@ -80,8 +80,6 @@ public sealed interface DeliveryFact {
         return switch (leaf) {
             case ChildField.BatchedTableField f -> new Batched(f.sourceShape() == SourceShape.Record
                 ? Trigger.RecordHandedParent.INSTANCE : Trigger.Authored.INSTANCE);
-            case ChildField.BatchedLookupTableField f -> new Batched(f.sourceShape() == SourceShape.Record
-                ? Trigger.RecordHandedParent.INSTANCE : Trigger.Authored.INSTANCE);
             // The batched pivot's only mint gate is the authored marker; @pivot rejects
             // record-backed parents, so the record-handed trigger cannot arise.
             case ChildField.BatchedPivotField _ -> new Batched(Trigger.Authored.INSTANCE);
@@ -92,7 +90,7 @@ public sealed interface DeliveryFact {
                 new Batched(Trigger.PolymorphicFanIn.INSTANCE);
             case ChildField.ColumnBackedField _, ChildField.ColumnBackedReferenceField _,
                  ChildField.ParticipantColumnReferenceField _, ChildField.TableField _,
-                 ChildField.LookupTableField _, ChildField.TableInterfaceField _,
+                 ChildField.TableInterfaceField _,
                  ChildField.InterfaceField _, ChildField.UnionField _, ChildField.NestingField _,
                  ChildField.PivotField _, ChildField.PivotSlotField _,
                  ChildField.ServiceTableField _, ChildField.ServiceRecordField _,

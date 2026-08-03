@@ -27,7 +27,6 @@ import no.sikt.graphitron.rewrite.model.JoinSlot;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.KeyAlternative;
 import no.sikt.graphitron.rewrite.model.KeyLift;
-import no.sikt.graphitron.rewrite.model.LookupField;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.LookupResolution;
 import no.sikt.graphitron.rewrite.model.MappingEntry;
@@ -166,7 +165,6 @@ class HierarchyKindRegistryTest {
         Map.entry(UpdateRows.class, HierarchyKind.WALKED_FACT),
         Map.entry(MatchedKey.class, HierarchyKind.WALKED_FACT),
         // Capability seals over walked leaves.
-        Map.entry(LookupField.class, HierarchyKind.WALKED_FACT),
         Map.entry(HasInputRecordShape.class, HierarchyKind.WALKED_FACT),
         // The resolved lookup trigger carried on the table-target leaves: the classify-time
         // realization of the walked @lookupKey application, total beside filters/orderBy/

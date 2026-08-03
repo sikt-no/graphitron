@@ -149,7 +149,7 @@ class TypeFetcherGeneratorTest {
     // GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus's four-way partition
     // guarantees any leaf in IMPLEMENTED_LEAVES or the producer-derived projected bucket does not route through stub(f).
 
-    // ===== QueryLookupTableField =====
+    // ===== the lookup-keyed QueryTableField =====
 
     private static GraphitronField lookupQueryField(String name, List<BodyParam> bodyParams) {
         var returnType = tableBoundFilm(nonNullList());
@@ -168,9 +168,10 @@ class TypeFetcherGeneratorTest {
                 throw new IllegalStateException("Unsupported BodyParam shape in test fixture: " + bp.getClass());
             })
             .toList();
-        return new QueryField.QueryLookupTableField("Query", name, null, returnType,
+        return new QueryField.QueryTableField("Query", name, null, returnType,
             List.of(), new OrderBySpec.None(), null,
-            new LookupMapping.ColumnMapping(args, FILM_TABLE));
+            new no.sikt.graphitron.rewrite.model.LookupResolution.Keyed(
+                new LookupMapping.ColumnMapping(args, FILM_TABLE)));
     }
 
     private static BodyParam listKeyParam(String name, String javaName, String javaType) {

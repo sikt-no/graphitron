@@ -85,7 +85,7 @@ type Query {
     }, contextArguments: ["userId"])
     # Producer for FilmDetailsCarrier: returns the film records as a list, binding the carrier to
     # FilmRecord (JooqTableRecordType) by reflection. Drives the record-sourced BatchedTableField /
-    # BatchedLookupTableField multi-parent DataLoader-batching tests.
+    # Lookup-keyed batched-read multi-parent DataLoader-batching tests.
     filmDetailsBatch(ids: [Int!]!): [FilmDetailsCarrier!]! @service(service: {
         className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
         method: "filmsByIds"
@@ -291,7 +291,7 @@ type Query {
     # arg lift to a `WHERE film_id IN (...)` filter on QueryTableField. Each opaque ID
     # decodes once via SkipMismatchedElement (malformed ids drop silently) and feeds the
     # PK-IN predicate alongside any sibling filters. Pre-R106 this path implicitly promoted
-    # to QueryLookupTableField (N×M derived-table); the lift puts same-table @nodeId on the
+    # to the keyed root lookup (N×M derived-table); the lift puts same-table @nodeId on the
     # same rail as ordinary scalar filter args. Add `@lookupKey` to opt back into the lookup
     # shape (see filmsByNodeIdArgWithLookupKey below if exercised).
     filmsByNodeIdArg(ids: [ID!]! @nodeId(typeName: "Film")): [Film!]!
@@ -1407,7 +1407,7 @@ type FilmDetails {
     title:    String!     @field(name: "title")
     language: [Language!]! @reference(path: [{key: "film_language_id_fkey"}])
     # Record-backed parent + @lookupKey. Classifies as a record-sourced
-    # BatchedLookupTableField — DataLoader-batches actor lookups keyed by the Film record's
+    # Lookup-keyed batched read — DataLoader-batches actor lookups keyed by the Film record's
     # film_id, with the lookup-input VALUES join narrowing by the caller-provided actor_id list.
     # @splitQuery is not needed on record-parent fields; classifyChildFieldOnResultType never
     # inspects it (record-parent table-bound fields are DataLoader-batched unconditionally).
@@ -1419,7 +1419,7 @@ type FilmDetails {
 
 # Record-backed sibling of FilmDetails, produced by the @service Query.filmDetailsBatch (which
 # returns List<FilmRecord>), so it binds to FilmRecord (JooqTableRecordType) by reflection. Its
-# language / actorsByLookup children classify as record-sourced BatchedTableField / BatchedLookupTableField and
+# language / actorsByLookup children classify as record-sourced batched reads (plain and lookup-keyed) and
 # DataLoader-batch across the producer's list elements. This carries the multi-parent batching
 # coverage that FilmDetails lost when R276 reclassified it (reached only via the Film.filmDetails
 # passthrough, no producer) into a same-table NestingField. Kept a distinct type from FilmDetails
@@ -1570,7 +1570,7 @@ type Film implements Node & Searchable @table(name: "film") @node {
     # NestingField multi-level fixture: FilmInfo carries a further NestingField (meta)
     # whose own scalars resolve against the same outer Film table.
     info:        FilmInfo
-    # NestingField + inline TableField/LookupTableField fixture: exercises the sfName
+    # NestingField + inline table/lookup-keyed child fixture: exercises the sfName
     # parameter threaded into the inline emitters. Nested field arms resolve against the
     # outer Film table alias via $project recursion at depth 1, so they reference sf1
     # rather than a literal sf. Without the parameterisation, the generated code for
@@ -1585,7 +1585,7 @@ type Film implements Node & Searchable @table(name: "film") @node {
         {key: "film_actor_film_id_fkey"},
         {key: "film_actor_actor_id_fkey"}
     ])
-    # BatchedLookupTableField fixture (@splitQuery + @lookupKey). Same junction-path shape as actors
+    # Lookup-keyed batched fixture (@splitQuery + @lookupKey). Same junction-path shape as actors
     # above, but DataLoader-batched — each Film gets its own filtered actor list via the
     # flat-SELECT + VALUES+ON keyset + per-parent scatter shape.
     actorsBySplitLookup(actor_id: [Int!] @lookupKey): [Actor!]! @splitQuery @reference(path: [
@@ -1808,7 +1808,7 @@ type FilmInfo {
         {key: "film_actor_film_id_fkey"},
         {key: "film_actor_actor_id_fkey"}
     ])
-    # Nested-depth @splitQuery + @lookupKey: BatchedLookupTableField inside a
+    # Nested-depth @splitQuery + @lookupKey: a lookup-keyed batched read inside a
     # plain-object NestingField. Classifier, emitter, and wiring paths all
     # treat the batched and batched-lookup leaves uniformly via BatchKeyField;
     # this fixture verifies the lookup arm ships too.
@@ -1823,10 +1823,10 @@ type FilmMeta {
     length: Int    @field(name: "LENGTH")
 }
 
-# NestingField parent for inline TableField + LookupTableField. Resolves against the
+# NestingField parent for inline table children, plain and lookup-keyed. Resolves against the
 # outer Film table alias, so each nested inline arm is emitted via the sfName-threaded
 # emitter path. `language` is a single-hop inline TableField (Film.language_id →
-# Language.language_id); `actorsByKey` is an inline LookupTableField traversing the
+# Language.language_id); `actorsByKey` is an inline lookup-keyed table child traversing the
 # film_actor junction with an @lookupKey VALUES+ON keyset.
 type FilmInlineBundle {
     language: Language @reference(path: [{key: "film_language_id_fkey"}])
@@ -1843,9 +1843,9 @@ type FilmInlineBundle {
         {key: "film_actor_film_id_fkey"},
         {key: "film_actor_actor_id_fkey"}
     ])
-    # R284 bridging-hop ConditionJoin regression for the inline LookupTableField path. Mirrors
+    # R284 bridging-hop ConditionJoin regression for the inline lookup-keyed path. Mirrors
     # Film.actorsViaJunctionCondition (FK first hop to film_actor, terminal @condition hop to
-    # actor) but as an inline @lookupKey field, so it routes through InlineLookupTableFieldEmitter
+    # actor) but as an inline @lookupKey field, so it renders through the projection unit's LookupMultiset arm
     # rather than the split-rows emitter. The terminal hop emits
     # .join(film_actor_alias).on(filmActorJunctionToActor(film_actor_alias, actor_alias)); the
     # fixture's parameters are the concrete, incompatible jOOQ types FilmActor and Actor, so

@@ -94,6 +94,18 @@ public final class OperationMembers {
         Set.of(Kind.JOIN, Kind.CONDITION, Kind.ORDER_BY, Kind.PAGINATE, Kind.REENTRY);
 
     /**
+     * The given optionals plus the lookup member: the three fetch leaves that carry a
+     * {@link LookupResolution} gate it as an optional kind, exactly as the carried window
+     * gates paginate. The polymorphic and service leaves sharing the base sets resolve no
+     * lookup, so their declared shapes stay narrower.
+     */
+    private static Set<Kind> withLookupOptional(Set<Kind> base) {
+        var out = java.util.EnumSet.copyOf(base);
+        out.add(Kind.LOOKUP);
+        return Set.copyOf(out);
+    }
+
+    /**
      * The per-leaf co-occurrence declaration (see the class javadoc). One entry per sealed
      * {@link OutputField} leaf; totality against the sealed hierarchy is pinned by the
      * projection's coverage test, and {@link #membersOf}'s switch is compile-total
@@ -102,9 +114,7 @@ public final class OperationMembers {
     public static final Map<Class<? extends OutputField>, DeclaredShape> DECLARED_SHAPES = Map.ofEntries(
         // Query roots.
         Map.entry(QueryField.QueryTableField.class,
-            shape(Set.of(Kind.SELECT), TABLE_READ_OPTIONALS)),
-        Map.entry(QueryField.QueryLookupTableField.class,
-            shape(Set.of(Kind.SELECT, Kind.LOOKUP), TABLE_READ_OPTIONALS)),
+            shape(Set.of(Kind.SELECT), withLookupOptional(TABLE_READ_OPTIONALS))),
         Map.entry(QueryField.QueryRoutineTableField.class,
             shape(Set.of(Kind.SELECT), Set.of())),
         Map.entry(QueryField.QueryTableInterfaceField.class,
@@ -169,13 +179,9 @@ public final class OperationMembers {
         Map.entry(ChildField.ParticipantColumnReferenceField.class,
             shape(Set.of(Kind.SELECT, Kind.JOIN), Set.of())),
         Map.entry(ChildField.TableField.class,
-            shape(Set.of(Kind.SELECT), CHILD_TABLE_READ_OPTIONALS)),
+            shape(Set.of(Kind.SELECT), withLookupOptional(CHILD_TABLE_READ_OPTIONALS))),
         Map.entry(ChildField.BatchedTableField.class,
-            shape(Set.of(Kind.SELECT), BATCHED_TABLE_READ_OPTIONALS)),
-        Map.entry(ChildField.LookupTableField.class,
-            shape(Set.of(Kind.SELECT, Kind.LOOKUP), CHILD_TABLE_READ_OPTIONALS)),
-        Map.entry(ChildField.BatchedLookupTableField.class,
-            shape(Set.of(Kind.SELECT, Kind.LOOKUP), BATCHED_TABLE_READ_OPTIONALS)),
+            shape(Set.of(Kind.SELECT), withLookupOptional(BATCHED_TABLE_READ_OPTIONALS))),
         Map.entry(ChildField.TableInterfaceField.class,
             shape(Set.of(Kind.SELECT), CHILD_TABLE_READ_OPTIONALS)),
         Map.entry(ChildField.InterfaceField.class,
@@ -232,10 +238,8 @@ public final class OperationMembers {
         List<OperationMember> base = switch (leaf) {
             // --- Query roots ---
             case QueryField.QueryTableField f ->
-                tableRead(f.returnType().table(), List.of(), f.filters(), f.orderBy(), f.pagination());
-            case QueryField.QueryLookupTableField f ->
-                withLookup(tableRead(f.returnType().table(), List.of(), f.filters(), f.orderBy(), f.pagination()),
-                    f.lookupMapping());
+                withResolvedLookup(tableRead(f.returnType().table(), List.of(), f.filters(), f.orderBy(), f.pagination()),
+                    f.lookup());
             case QueryField.QueryRoutineTableField _ -> List.of(new Select());
             case QueryField.QueryTableInterfaceField f ->
                 tableRead(f.returnType().table(), List.of(), f.filters(), f.orderBy(), f.pagination());
@@ -273,15 +277,11 @@ public final class OperationMembers {
 
             // --- Child fields: table-bound reads ---
             case ChildField.TableField f ->
-                tableRead(f.returnType().table(), f.joinPath(), f.filters(), f.orderBy(), f.pagination());
+                withResolvedLookup(tableRead(f.returnType().table(), f.joinPath(), f.filters(), f.orderBy(), f.pagination()),
+                    f.lookup());
             case ChildField.BatchedTableField f ->
-                tableRead(f.returnType().table(), f.joinPath(), f.filters(), f.orderBy(), f.pagination());
-            case ChildField.LookupTableField f ->
-                withLookup(tableRead(f.returnType().table(), f.joinPath(), f.filters(), f.orderBy(), f.pagination()),
-                    f.lookupMapping());
-            case ChildField.BatchedLookupTableField f ->
-                withLookup(tableRead(f.returnType().table(), f.joinPath(), f.filters(), f.orderBy(), f.pagination()),
-                    f.lookupMapping());
+                withResolvedLookup(tableRead(f.returnType().table(), f.joinPath(), f.filters(), f.orderBy(), f.pagination()),
+                    f.lookup());
             case ChildField.TableInterfaceField f ->
                 tableRead(f.returnType().table(), f.joinPath(), f.filters(), f.orderBy(), f.pagination());
 
@@ -333,8 +333,11 @@ public final class OperationMembers {
         return members;
     }
 
-    private static List<OperationMember> withLookup(List<OperationMember> members, LookupMapping mapping) {
-        members.add(new Lookup(mapping));
+    private static List<OperationMember> withResolvedLookup(List<OperationMember> members,
+            LookupResolution lookup) {
+        if (lookup instanceof LookupResolution.Keyed keyed) {
+            members.add(new Lookup(keyed.mapping()));
+        }
         return members;
     }
 
@@ -347,7 +350,6 @@ public final class OperationMembers {
     public static LookupResolution lookupResolutionOf(OutputField leaf) {
         return switch (leaf) {
             case QueryField.QueryTableField f -> f.lookup();
-            case QueryField.QueryLookupTableField f -> f.lookup();
             case ChildField.TableTargetField ttf -> ttf.lookup();
             default -> LookupResolution.None.INSTANCE;
         };

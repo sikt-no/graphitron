@@ -118,7 +118,6 @@ public final class FetcherEdgeCommands {
             case QueryField.QueryTableField ignored -> null;
             case QueryField.QueryRoutineTableField ignored -> null;
             case QueryField.QueryTableInterfaceField ignored -> null;
-            case QueryField.QueryLookupTableField ignored -> null;
             case QueryField.QueryInterfaceField f ->
                 row(f.parentTypeName(), f.name(), units, targets -> {
                     addParticipantTypeClasses(targets, f.participants(), units);
@@ -202,14 +201,12 @@ public final class FetcherEdgeCommands {
             // Launcher rows carry these coordinates' references (source projection, WHERE glue,
             // connection runtime refs).
             case ChildField.BatchedTableField ignored -> null;
-            case ChildField.BatchedLookupTableField ignored -> null;
             case ChildField.BatchedPivotField ignored -> null;
             case ChildField.ServiceTableField ignored -> null;
             case ChildField.ServiceRecordField ignored -> null;
             // Inline SQL children compose inside their hosting projection unit; the projection
             // relation carries the callee and glue references.
             case ChildField.TableField ignored -> null;
-            case ChildField.LookupTableField ignored -> null;
             case ChildField.NestingField ignored -> null;
             case ChildField.PivotField ignored -> null;
             case ChildField.PivotSlotField ignored -> null;

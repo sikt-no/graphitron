@@ -12,7 +12,7 @@ import java.util.Objects;
  * same mechanism a record-backed result parent uses.
  *
  * <p>Carried by {@link ChildField.BatchedTableField} (the Table-sourced arm always carries
- * {@link FkColumns}), {@link ChildField.BatchedLookupTableField}, and (as
+ * {@link FkColumns}, lookup-keyed or not), and (as
  * {@code parentKeyLift}) the polymorphic {@link ChildField.InterfaceField} /
  * {@link ChildField.UnionField}. Dispatched exhaustively by
  * {@code GeneratorUtils.buildRecordParentKeyExtraction} on the record-sourced paths. The

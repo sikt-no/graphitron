@@ -74,9 +74,12 @@ class CommandSeamRatchetTest {
      * producer, and the nesting-reach recursion into the schema's reach fold), then 72 to 71
      * when the schema-shape kind folded (the enum generator's membership probe moved into the
      * type-unit producer's total form switch; the registrations emitter's dispatch count is
-     * unchanged, its hosting filter having become per-row routing).
+     * unchanged, its hosting filter having become per-row routing), then 71 to 69 when the
+     * lookup triplet dissolved (the reified-read arm's lookup twin deleted outright; the
+     * list-scatter gate's two-leaf disjunction became one leaf read forking on the
+     * {@code LookupResolution}).
      */
-    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 71;
+    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 69;
 
     /**
      * {@code case} patterns in {@code generators/} naming a leaf of the seven hierarchies.
@@ -90,9 +93,13 @@ class CommandSeamRatchetTest {
      * (the input generator's InputType membership case moved into the type-unit producer's
      * total form switch), then 74 to 76 when the polymorphic delivery split doubled the child
      * leaf pair (the fetcher dispatch gained the two batched arms; the parent-input rows-method
-     * gate swapped its two wrapper-derived arms for two identity reads).
+     * gate swapped its two wrapper-derived arms for two identity reads), then 76 to 69 when
+     * the lookup triplet dissolved (the two dedicated fetcher arms merged into their siblings
+     * behind the launcher row's source-arm fork, the deleted input-rows adapter's three-arm
+     * name switch went with its file, and the parent-input rows-method gate's lookup twin
+     * collapsed onto the sibling arm).
      */
-    private static final int GENERATOR_LEAF_CASE_PATTERNS = 76;
+    private static final int GENERATOR_LEAF_CASE_PATTERNS = 69;
 
     /**
      * Leaf references ({@code instanceof} plus {@code case}) inside {@code plan/}: the relocation
@@ -163,9 +170,13 @@ class CommandSeamRatchetTest {
      * the projection producer's six table-target leaf arms merged into one
      * {@code TableTargetField} arm whose forks read members and delivery; the surviving
      * references are payload dispatch behind verdict guards plus the sealed nest, pivot and
-     * record arms, each named for a dissolution slice.
+     * record arms, each named for a dissolution slice. Lowered to 132 when the lookup triplet
+     * dissolved: the edge producer's three vacuous lookup arms deleted, the launcher's four
+     * lookup payload arms folded into their sibling arms behind the lookup-member fork, and
+     * the projection's inline-correlation lookup read collapsed onto the surviving inline
+     * leaf.
      */
-    private static final int PLAN_LEAF_REFERENCES = 140;
+    private static final int PLAN_LEAF_REFERENCES = 132;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide

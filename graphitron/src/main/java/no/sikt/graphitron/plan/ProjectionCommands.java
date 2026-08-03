@@ -19,7 +19,6 @@ import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
-import no.sikt.graphitron.rewrite.model.LookupField;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.model.OperationMembers;
@@ -85,14 +84,12 @@ public final class ProjectionCommands {
         ChildField.ColumnBackedField.class,
         ChildField.ColumnBackedReferenceField.class,
         ChildField.TableField.class,
-        ChildField.LookupTableField.class,
         ChildField.NestingField.class,
         ChildField.ComputedField.class,
         ChildField.PivotField.class,
         ChildField.BatchedPivotField.class,
         ChildField.PivotSlotField.class,
         ChildField.BatchedTableField.class,
-        ChildField.BatchedLookupTableField.class,
         ChildField.ServiceTableField.class,
         ChildField.ServiceRecordField.class,
         ChildField.TableInterfaceField.class,
@@ -243,11 +240,10 @@ public final class ProjectionCommands {
      * through its loader and projects the key columns; a batched delivery re-queries and
      * projects the key columns; the parent-row-demanding twin (the single-table interface
      * child) projects its demand columns; the inline remainder composes into the parent
-     * statement, with the Multiset-vs-LookupMultiset fork read off the lookup member. Members come from the minted
-     * view for flat coordinates and the leaf projection for nested instances (the member
-     * relation's domain boundary); delivery reads the same split. The casts inside are the
-     * additive window's sanctioned payload reads (the correlation component and the lookup
-     * mapping have no capability home yet), dissolving with the lookup triplet's fold.
+     * statement, with the Multiset-vs-LookupMultiset fork read off the lookup member and the
+     * mapping taken from that member's payload. Members come from the minted view for flat
+     * coordinates and the leaf projection for nested instances (the member relation's domain
+     * boundary); delivery reads the same split.
      */
     private static Optional<Contribution> tableTargetContribution(GraphitronSchema schema,
             ChildField.TableTargetField ttf, UnitRef owner, GeneratedUnits units,
@@ -270,14 +266,21 @@ public final class ProjectionCommands {
         if (ttf instanceof ParentRowDemand demand) {
             return correlationKeyArm(ttf, demand.parentRowColumns());
         }
-        if (hasKind(members, OperationMember.Kind.LOOKUP)) {
+        var lookupMember = members.stream()
+            .filter(m -> m instanceof OperationMember.Lookup)
+            .map(m -> (OperationMember.Lookup) m)
+            .findFirst();
+        if (lookupMember.isPresent()) {
+            var mapping = switch (lookupMember.get().lookupMapping()) {
+                case LookupMapping.ColumnMapping cm -> cm;
+            };
             return Optional.of(new Contribution.Call(ttf.name(),
                 units.typeClass(ttf.returnType().returnTypeName()),
                 new CallWrap.LookupMultiset(
                     ttf.joinPath(),
                     inlineParentCorrelationOf(ttf),
                     ttf.returnType().table(),
-                    (LookupMapping.ColumnMapping) ((LookupField) ttf).lookupMapping(),
+                    mapping,
                     units.inputRowsMethod(owner, ttf.name()),
                     glueFor(ttf.parentTypeName(), ttf.name(), ttf.filters(), units, glueEnvByMethod))));
         }
@@ -296,18 +299,14 @@ public final class ProjectionCommands {
     }
 
     /**
-     * The inline table child's step-0 correlation: a leaf-carried payload with no capability
-     * home yet, read behind casts so no counted dispatch rides on it; a non-inline leaf
-     * reaching here is a delivery-fork bug surfaced loudly. Dissolves when the lookup
-     * triplet's fold single-homes the correlation.
+     * The inline table child's step-0 correlation: the one leaf that composes into the parent
+     * statement carries it; a non-inline leaf reaching here is a delivery-fork bug surfaced
+     * loudly.
      */
     private static no.sikt.graphitron.rewrite.model.ParentCorrelation inlineParentCorrelationOf(
             ChildField.TableTargetField ttf) {
         if (ttf instanceof ChildField.TableField tf) {
             return tf.parentCorrelation();
-        }
-        if (ttf instanceof ChildField.LookupTableField lf) {
-            return lf.parentCorrelation();
         }
         throw new IllegalStateException(
             "Graphitron generator bug (projection contribution): coordinate '"

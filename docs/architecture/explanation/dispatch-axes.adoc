@@ -18,7 +18,7 @@ record SourceKey(
 )
 ----
 
-`KeyLift`, carried by `BatchedTableField` / `BatchedLookupTableField` (both source shapes), and (as `parentKeyLift`) by the polymorphic `InterfaceField` / `UnionField`, names how the key tuple is lifted off the parent's held object:
+`KeyLift`, carried by `BatchedTableField` (both source shapes, lookup-keyed or not), and (as `parentKeyLift`) by the polymorphic `InterfaceField` / `UnionField`, names how the key tuple is lifted off the parent's held object:
 
 [source]
 ----

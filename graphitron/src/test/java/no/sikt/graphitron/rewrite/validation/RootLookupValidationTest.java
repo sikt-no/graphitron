@@ -10,7 +10,8 @@ import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
-import no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField;
+import no.sikt.graphitron.rewrite.model.LookupResolution;
+import no.sikt.graphitron.rewrite.model.QueryField.QueryTableField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
@@ -25,7 +26,7 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import no.sikt.graphitron.rewrite.TestFixtures;
 
 @UnitTier
-class QueryLookupTableFieldValidationTest {
+class RootLookupValidationTest {
 
     private static final ColumnRef FILM_ID_COL = new ColumnRef("film_id", "FILM_ID", "java.lang.Integer");
     private static final TableRef FILM_TABLE = TestFixtures.tableRef("film", "FILM", "Film", List.of());
@@ -37,6 +38,7 @@ class QueryLookupTableFieldValidationTest {
             "film_id", new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"),
             new CallSiteExtraction.Direct(), false)),
         FILM_TABLE);
+    private static final LookupResolution KEYED_LOOKUP = new LookupResolution.Keyed(SCALAR_LOOKUP);
     private static final OrderBySpec.Fixed PK_ORDER = new OrderBySpec.Fixed(
         List.of(new OrderBySpec.ColumnOrderEntry(FILM_ID_COL, null, OrderBySpec.SortDirection.ASC)), true);
 
@@ -49,10 +51,10 @@ class QueryLookupTableFieldValidationTest {
             List.of(callParam), List.of(bodyParam));
     }
 
-    private static QueryLookupTableField singleReturn(List<WhereFilter> filters, OrderBySpec orderBy) {
-        return new QueryLookupTableField("Query", "filmById", null,
+    private static QueryTableField singleReturn(List<WhereFilter> filters, OrderBySpec orderBy) {
+        return new QueryTableField("Query", "filmById", null,
             new ReturnTypeRef.TableBoundReturnType("Film", TestFixtures.tableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Single(true)),
-            filters, orderBy, null, SCALAR_LOOKUP);
+            filters, orderBy, null, KEYED_LOOKUP);
     }
 
     private static final String GENERATED_FILTER_ON_LOOKUP =
@@ -67,7 +69,7 @@ class QueryLookupTableFieldValidationTest {
             List.of()),
 
         // Cardinality-consistent, but the generated filter's method has no emitter on a lookup
-        // coordinate (the entity conditions layer skips LookupField), so the shape defers at
+        // coordinate (the entity conditions layer skips lookup-keyed reads), so the shape defers at
         // validate time instead of shipping a dangling call; these two pin the rejected state,
         // and flip back to valid when the lookup fold converges onto glue.
         COLUMN_ARG_DEFERRED("GeneratedConditionFilter scalar on lookup: deferred, no emitter",
@@ -75,9 +77,9 @@ class QueryLookupTableFieldValidationTest {
             List.of(GENERATED_FILTER_ON_LOOKUP)),
 
         LIST_COLUMN_ARG_DEFERRED("GeneratedConditionFilter list on lookup: deferred, no emitter",
-            new QueryLookupTableField("Query", "filmById", null,
+            new QueryTableField("Query", "filmById", null,
                 new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE, new FieldWrapper.List(true, true)),
-                List.of(columnFilter("id", false, true)), PK_ORDER, null, SCALAR_LOOKUP),
+                List.of(columnFilter("id", false, true)), PK_ORDER, null, KEYED_LOOKUP),
             List.of(GENERATED_FILTER_ON_LOOKUP)),
 
         VALID_WITH_TABLE_INPUT_TYPE_ARG("table-bound input type arg — skipped, empty filters, valid with single return",
@@ -85,9 +87,9 @@ class QueryLookupTableFieldValidationTest {
             List.of()),
 
         LIST_RETURN_NO_LIST_ARG("list return with no list filter — cardinality mismatch",
-            new QueryLookupTableField("Query", "filmById", null,
+            new QueryTableField("Query", "filmById", null,
                 new ReturnTypeRef.TableBoundReturnType("Film", TestFixtures.tableRef("film", "FILM", "Film", List.of()), new FieldWrapper.List(true, true)),
-                List.of(), PK_ORDER, null, SCALAR_LOOKUP),
+                List.of(), PK_ORDER, null, KEYED_LOOKUP),
             List.of("Field 'Query.filmById': result type does not match input cardinality")),
 
         SINGLE_RETURN_LIST_ARG("single return with list filter: cardinality mismatch, and the filter defers",
@@ -96,9 +98,9 @@ class QueryLookupTableFieldValidationTest {
                 GENERATED_FILTER_ON_LOOKUP)),
 
         CONNECTION_RETURN("connection return — never valid on lookup",
-            new QueryLookupTableField("Query", "filmById", null,
+            new QueryTableField("Query", "filmById", null,
                 new ReturnTypeRef.TableBoundReturnType("Film", TestFixtures.tableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Connection(true, 100)),
-                List.of(), new OrderBySpec.None(), null, SCALAR_LOOKUP),
+                List.of(), new OrderBySpec.None(), null, KEYED_LOOKUP),
             List.of("Field 'Query.filmById': lookup fields must not return a connection")),
 
         ORDERBY_ARG("@orderBy on a lookup field — not valid on lookup",
@@ -106,9 +108,9 @@ class QueryLookupTableFieldValidationTest {
             List.of("Field 'Query.filmById': @orderBy is not valid on a lookup field")),
 
         CONNECTION_AND_ORDERBY("connection return AND @orderBy — two independent errors",
-            new QueryLookupTableField("Query", "filmById", null,
+            new QueryTableField("Query", "filmById", null,
                 new ReturnTypeRef.TableBoundReturnType("Film", TestFixtures.tableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Connection(true, 100)),
-                List.of(), new OrderBySpec.Argument("order", "FilmOrder", false, false, "sortField", "direction", List.of(), new OrderBySpec.None()), null, SCALAR_LOOKUP),
+                List.of(), new OrderBySpec.Argument("order", "FilmOrder", false, false, "sortField", "direction", List.of(), new OrderBySpec.None()), null, KEYED_LOOKUP),
             List.of(
                 "Field 'Query.filmById': lookup fields must not return a connection",
                 "Field 'Query.filmById': @orderBy is not valid on a lookup field"));

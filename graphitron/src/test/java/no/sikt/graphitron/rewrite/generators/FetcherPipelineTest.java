@@ -189,7 +189,7 @@ class FetcherPipelineTest {
         assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).contains("rowsLanguage");
     }
 
-    // ===== record-backed parent — BatchedLookupTableField =====
+    // ===== record-backed parent, lookup-keyed batched read =====
     //
     // Backing class is the real jOOQ FilmRecord from graphitron-sakila-db — a TableRecord
     // bound to "film", classifying the parent as JooqTableRecordType. This lets parsePath anchor on
@@ -212,27 +212,27 @@ class FetcherPipelineTest {
             """;
 
     @Test
-    void recordLookupTableField_onRecordType_hasAsyncDataFetcher() {
+    void recordLookup_onRecordType_hasAsyncDataFetcher() {
         var fetchers = findSpec("FilmDetailsFetchers", RECORD_LOOKUP_TABLE_SDL);
         assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).contains("actorsByLookup");
     }
 
     @Test
-    void recordLookupTableField_onRecordType_asyncDataFetcherReturnsCompletableFutureListRecord() {
+    void recordLookup_onRecordType_asyncDataFetcherReturnsCompletableFutureListRecord() {
         var fetchers = findSpec("FilmDetailsFetchers", RECORD_LOOKUP_TABLE_SDL);
         assertThat(method(fetchers, "actorsByLookup").returnType().toString())
             .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<java.util.List<org.jooq.Record>>>");
     }
 
     @Test
-    void recordLookupTableField_onRecordType_hasRowsMethod() {
+    void recordLookup_onRecordType_hasRowsMethod() {
         var fetchers = findSpec("FilmDetailsFetchers", RECORD_LOOKUP_TABLE_SDL);
         assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).contains("rowsActorsByLookup");
     }
 
     @Test
-    void recordLookupTableField_onRecordType_hasInputRowsHelper() {
-        // Lookup-input VALUES helper — distinguishes BatchedLookupTableField from BatchedTableField.
+    void recordLookup_onRecordType_hasInputRowsHelper() {
+        // Lookup-input VALUES helper: the keyed resolution's own emission beside the rows method.
         var fetchers = findSpec("FilmDetailsFetchers", RECORD_LOOKUP_TABLE_SDL);
         assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).contains("actorsByLookupInputRows");
     }

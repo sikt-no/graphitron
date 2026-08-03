@@ -4,7 +4,7 @@ package no.sikt.graphitron.rewrite.model;
  * A {@link ChildField} whose {@code $project} projection is aliased by the runtime <em>result
  * key</em> rather than the schema field name, and whose fetcher reads that value back by the same
  * key. Implemented by the four families that mint an aliased SELECT term per result-key bucket:
- * {@link ChildField.TableField}, {@link ChildField.LookupTableField},
+ * {@link ChildField.TableField} (lookup-keyed or not),
  * {@link ChildField.ComputedField}, and {@link ChildField.ColumnBackedReferenceField}.
  *
  * <p>Result-key aliasing (the reserved {@code __rk_} prefix,

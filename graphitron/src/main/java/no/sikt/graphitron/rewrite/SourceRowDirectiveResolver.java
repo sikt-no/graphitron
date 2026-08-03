@@ -49,9 +49,9 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_SOURCE_ROW;
  *
  * <ul>
  *   <li>Every successful {@code @sourceRow} resolution projects into a record-sourced
- *       {@link no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField} or
- *       {@link no.sikt.graphitron.rewrite.model.ChildField.BatchedLookupTableField};
- *       the produced {@link KeyLift} is always the authored {@link KeyLift.Lifter} arm.</li>
+ *       {@link no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField} (lookup-keyed
+ *       or not); the produced {@link KeyLift} is always the authored {@link KeyLift.Lifter}
+ *       arm.</li>
  *   <li>On the no-{@code @reference} path, the resolution carries an empty {@code joinPath}
  *       plus the hop-less {@link ParentCorrelation.OnLiftedSlots} correlation (the leaf-PK
  *       shape).</li>

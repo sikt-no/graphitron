@@ -137,7 +137,7 @@ The conservative default: leave filter inputs carrier-free (the `Map`-traversal 
 
 == Lookup-key arguments are exempt
 
-A `@condition` does not interfere with xref:../reference/directives/lookupKey.adoc[`@lookupKey`]: lookup-key arguments are consumed upstream by `LookupValuesJoinEmitter`, not by the `WHERE`-clause projection. The implementation key is in `FieldBuilder.projectFilters`:
+A `@condition` does not interfere with xref:../reference/directives/lookupKey.adoc[`@lookupKey`]: lookup-key arguments are consumed upstream by the VALUES input-rows helper (`LookupRows`), not by the `WHERE`-clause projection. The implementation key is in `FieldBuilder.projectFilters`:
 
 [source,java]
 ----

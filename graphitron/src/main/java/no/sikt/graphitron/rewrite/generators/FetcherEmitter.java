@@ -496,9 +496,6 @@ public final class FetcherEmitter {
             }
             return columnByAlias(field.name(), fetchersClass);
         }
-        if (field instanceof ChildField.LookupTableField) {
-            return columnByAlias(field.name(), fetchersClass);
-        }
         if (field instanceof ChildField.PivotField) {
             // Inline @pivot: the projection is a single-row multiset aliased __rk_<resultKey>
             // (the pivot multiset arm); unwrap it as the single-cardinality TableField read does.

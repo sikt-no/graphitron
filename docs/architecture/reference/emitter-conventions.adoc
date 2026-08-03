@@ -65,7 +65,7 @@ DSL expressions (INSERT `values(...)`, UPDATE `set(...)`, DELETE/UPDATE `where(.
 `DSL.val(rawValue, col.getDataType())` does the coercion inside jOOQ without any Java-side step,
 and no `CallSiteExtraction` switch is needed.
 
-Precedent: `LookupValuesJoinEmitter.addRowBuildingCore` (search for `DSL.val` with two arguments).
+Precedent: `LookupRows.addRowBuildingCore` (search for `DSL.val` with two arguments).
 
 For DTO-parent batching ; where the parent's backing class is a plain POJO or Java record without
 a jOOQ FK to the child's `@table` ; see <<dto-parent-batching,DTO-parent batching>> below; the

@@ -7,7 +7,7 @@ import java.util.List;
  * ordering, and pagination.
  *
  * <p>Implemented by three root {@link QueryField} variants:
- * {@link QueryField.QueryTableField}, {@link QueryField.QueryLookupTableField},
+ * {@link QueryField.QueryTableField},
  * {@link QueryField.QueryTableInterfaceField}; and by all {@link ChildField.TableTargetField}
  * variants.
  *

@@ -124,7 +124,7 @@ class R58TypedRejectionPipelineTest {
     // The ConditionJoinReportable capability and its three sibling tests
     // (conditionJoinReportable_implementedByExpectedSixVariants,
     //  inlineTableField_conditionJoinStep_rejectedAtBuildTime,
-    //  inlineLookupTableField_conditionJoinStep_rejectedAtBuildTime) all delete with the capability
+    //  inlineLookup_conditionJoinStep_rejectedAtBuildTime) all delete with the capability
     // and the deferred-rejection arms they covered. The replacement assertions —
     // "condition join classifies and emits a real correlated subquery" — live on the per-variant
     // validation tests (TableFieldValidationTest.*_WITH_CONDITION_ONLY etc.) plus the new

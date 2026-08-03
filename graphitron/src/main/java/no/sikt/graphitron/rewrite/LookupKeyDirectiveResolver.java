@@ -13,8 +13,9 @@ import java.util.List;
  * accepts both Single and List, and Connection is structurally absent there).
  * {@link #resolveAtChild} (from {@code classifyChildFieldOnTableType}) checks cardinality only.
  *
- * <p>The record-sourced construction of
- * {@link no.sikt.graphitron.rewrite.model.ChildField.BatchedLookupTableField} in
+ * <p>The record-sourced lookup-keyed construction (a
+ * {@link no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField} carrying a keyed
+ * {@link no.sikt.graphitron.rewrite.model.LookupResolution}) in
  * {@code classifyChildFieldOnResultType} does not route through this resolver and performs no
  * cardinality validation.
  *

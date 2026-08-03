@@ -650,7 +650,7 @@ class GraphQLQueryTest {
 
     @Test
     void aliasedDuplicateLookupTableField_divergentArgsAndSubselections_resolveIndependently() {
-        // Inline LookupTableField (Film.actors) selected twice under two aliases with divergent
+        // The inline lookup-keyed child (Film.actors) selected twice under two aliases with divergent
         // @lookupKey arguments AND divergent sub-selections. Film 1's cast is PENELOPE GUINESS (1)
         // and NICK WAHLBERG (2). Each alias must read its own actor_id argument (a→[1], b→[2]) and
         // its own sub-selection (a→firstName, b→lastName), proving per-result-key-bucket emission.
@@ -910,7 +910,7 @@ class GraphQLQueryTest {
     @Test
     void filmsByNodeIdArgWithTitleFilter_composesPkInWithSiblingFilter() {
         // Same-table @nodeId composed with a sibling scalar filter classifies as
-        // QueryTableField (not QueryLookupTableField) with a BodyParam.In on film.film_id
+        // a plain QueryTableField (no keyed lookup) with a BodyParam.In on film.film_id
         // alongside a BodyParam.Eq on film.title, so sibling filter args ride the same rail
         // instead of being dropped silently. Encode three film ids; only the one whose title
         // matches survives the AND.
@@ -2041,7 +2041,7 @@ class GraphQLQueryTest {
             .extractingByKey("parent").isNull();
     }
 
-    // ===== inline LookupTableField (Film.actors via film_actor junction) =====
+    // ===== inline lookup-keyed child (Film.actors via film_actor junction) =====
 
     @Test
     void inlineLookupTableField_returnsMatchingActors() {
@@ -2875,11 +2875,11 @@ class GraphQLQueryTest {
                 "AFFAIR PREJUDICE", "AGENT TRUMAN");
     }
 
-    // ===== Record-sourced BatchedLookupTableField: @record parent + @splitQuery + @lookupKey =====
+    // ===== Record-sourced lookup-keyed batched read: @record parent + @splitQuery + @lookupKey =====
 
     @Test
     void recordLookupTableField_singleFilm_returnsFilteredActors() {
-        // FilmDetails.actorsByLookup: record-sourced BatchedLookupTableField — DataLoader-batched lookup keyed by
+        // FilmDetails.actorsByLookup: record-sourced lookup-keyed batched read, DataLoader-batched and keyed by
         // the Film record's film_id, narrowed by the caller's actor_id list via VALUES-join.
         // Film 1 (ACADEMY DINOSAUR) cast: PENELOPE (1), NICK (2).
         Map<String, Object> data = execute(
@@ -2908,7 +2908,7 @@ class GraphQLQueryTest {
     @Test
     void recordLookupTableField_multipleParents_batchesIntoOneRoundTrip() {
         // FilmDetailsCarrier is record-backed (Query.filmDetailsBatch returns List<FilmRecord>), so
-        // actorsByLookup is a record-sourced BatchedLookupTableField. 3 carriers + 1 batched
+        // actorsByLookup is a record-sourced lookup-keyed batched read. 3 carriers + 1 batched
         // lookup child = 2 round-trips. Unbatched: 1 + 3 = 4.
         // Film 2 cast: PENELOPE (1), ED (3). Film 3 cast: PENELOPE (1). actor_id: [1, 3] →
         // film 1 gets {1}; film 2 gets {1, 3}; film 3 gets {1}.
@@ -3034,7 +3034,7 @@ class GraphQLQueryTest {
             .containsEntry("releaseYear", 2006);
     }
 
-    // ===== NestingField — nested inline TableField / LookupTableField (sfName threading) =====
+    // ===== NestingField: nested inline table children, plain and lookup-keyed (sfName threading) =====
 
     @Test
     void nestingField_withNestedInlineTableField_resolvesViaOuterTableAlias() {
@@ -3055,8 +3055,8 @@ class GraphQLQueryTest {
 
     @Test
     void nestingField_withNestedInlineLookupTableField_appliesLookupKey() {
-        // Film.inlineBundle.actorsByKey is an inline LookupTableField nested inside a
-        // NestingField. Exercises the sf1-threaded path through InlineLookupTableFieldEmitter
+        // Film.inlineBundle.actorsByKey is an inline lookup-keyed child nested inside a
+        // NestingField. Exercises the sf1-threaded path through the LookupMultiset render arm
         // (inputRows call, empty-input short-circuit, buildInnerSelect all use sfName).
         Map<String, Object> data = execute(
             "{ filmById(film_id: [\"1\"]) { inlineBundle { actorsByKey(actor_id: [1, 2]) { actorId firstName } } } }");
@@ -3071,7 +3071,7 @@ class GraphQLQueryTest {
     @Test
     void nestingField_withNestedInlineLookupTableField_emptyInputShortCircuit() {
         // Empty @lookupKey list hits the rows.length == 0 short-circuit branch in
-        // InlineLookupTableFieldEmitter — which also uses sfName in the falseCondition
+        // the LookupMultiset render arm, which also uses sfName in the falseCondition
         // multiset. Parent row still carries the slot, populated as an empty list.
         Map<String, Object> data = execute(
             "{ filmById(film_id: [\"1\"]) { inlineBundle { actorsByKey(actor_id: []) { actorId } } } }");
@@ -3265,7 +3265,7 @@ class GraphQLQueryTest {
             .isEqualTo("first must not be negative (was: -1)");
     }
 
-    // ===== BatchedTableField / BatchedLookupTableField under NestingField =====
+    // ===== Batched reads (plain and lookup-keyed) under NestingField =====
 
     @SuppressWarnings("unchecked")
     @Test
@@ -3457,7 +3457,7 @@ class GraphQLQueryTest {
     @SuppressWarnings("unchecked")
     @Test
     void splitLookupTableField_nestedUnderNestingField_batchesPerOuterParent() {
-        // FilmInfo.castByKey exercises the table-sourced BatchedLookupTableField arm under NestingField:
+        // FilmInfo.castByKey exercises the table-sourced lookup-keyed batched arm under NestingField:
         // classifier, emitter, and wiring all route via BatchKeyField uniformly, so
         // @splitQuery + @lookupKey at nested depth takes the same path as the top-level
         // Film.actorsBySplitLookup.
