@@ -242,4 +242,64 @@ class TableOnInputDeprecationWarningTest {
             .as("the advisory is the only signal that the declared table was discarded")
             .hasSize(1);
     }
+
+    @Test
+    void multipleUsagesAcrossEveryVerbAndNesting_buildWithWarningsAndNoErrors() {
+        // The whole point of reopening the window, asserted as one schema: the shape that hit a
+        // wall of type-level rejections at once must now build. Six @table-carrying inputs across
+        // filter, INSERT, UPDATE, DELETE, and a nested grouping input, and nothing removed.
+        //
+        // Asserted over the type and field registries rather than diagnostics(): a field-level
+        // rejection lands as an UnclassifiedField and leaves diagnostics() empty at this stage, so
+        // a diagnostics-only check would pass over exactly the failure this is guarding.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film implements Node @table(name: "film") @node {
+              id: ID! @nodeId
+              filmId: Int! @field(name: "film_id")
+              title: String
+            }
+            type Actor @table(name: "actor") { actorId: Int! @field(name: "actor_id") }
+            input FilmFilter @table(name: "film") { title: String @field(name: "title") }
+            input ActorFilter @table(name: "actor") { actorId: Int @field(name: "actor_id") }
+            input FilmInsert @table(name: "film") { title: String @field(name: "title") }
+            input FilmUpdate @table(name: "film") {
+              filmId: Int! @field(name: "film_id")
+              title: String @field(name: "title")
+            }
+            input FilmDelete @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            input NestedGroupInput @table(name: "actor") { title: String @field(name: "title") }
+            input FilmWithNested { nested: NestedGroupInput }
+            type Query {
+              films(filter: FilmFilter): [Film!]!
+              actors(filter: ActorFilter): [Actor!]!
+              filmsNested(filter: FilmWithNested): [Film!]!
+            }
+            type Mutation {
+              createFilm(in: FilmInsert!): Film @mutation(typeName: INSERT)
+              updateFilm(in: FilmUpdate!): Film @mutation(typeName: UPDATE)
+              deleteFilm(in: FilmDelete!): ID @mutation(typeName: DELETE, table: "film")
+            }
+            """);
+
+        assertThat(schema.diagnostics()).isEmpty();
+        assertThat(schema.types().values())
+            .as("no type rejected")
+            .noneMatch(t -> t instanceof GraphitronType.UnclassifiedType);
+        assertThat(schema.fields().values())
+            .as("and no consuming field rejected either")
+            .noneMatch(f -> f instanceof no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField);
+
+        assertThat(schema.warnings())
+            .filteredOn(w -> w.message().contains(IGNORED_FRAGMENT))
+            .as("one advisory per @table-carrying input, all four wordings represented")
+            .hasSize(6);
+        assertThat(schema.warnings()).anyMatch(w -> w.message().contains("FilmDelete")
+            && w.message().contains("@mutation(typeName: DELETE)"));
+        assertThat(schema.warnings()).anyMatch(w -> w.message().contains("FilmInsert")
+            && w.message().contains("@mutation(typeName: INSERT)"));
+        assertThat(schema.warnings()).anyMatch(w -> w.message().contains("FilmUpdate")
+            && w.message().contains("@mutation(typeName: UPDATE)"));
+        assertThat(schema.warnings()).anyMatch(w -> w.message().contains("NestedGroupInput")
+            && w.message().contains("resolve against each consuming field's table"));
+    }
 }
