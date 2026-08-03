@@ -9,7 +9,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The population pins for the operation trigger slots landed at the keystone: one fixture
- * exercising every population of the condition, orderBy, lookup, service and write gathers,
+ * exercising every population of the condition, orderBy, lookup, service, write and delivery
+ * gathers,
  * with each slot's rows asserted against the fixture's authored applications by coordinate.
  * The pagination slot's pins live in {@link PaginationFactPipelineTest}; the fixture here
  * includes coordinates outside every population, so an over-gathering visitor fails as loudly
@@ -28,6 +29,7 @@ class TriggerFactPopulationPinTest {
                 language(name: String @field(name: "name")
                     @condition(condition: {className: "%s", method: "argCondition", argMapping: "cityNames: name"}, override: true)): Language
                     @reference(path: [{key: "film_language_id_fkey"}])
+                languageSplit: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
             }
             input LookupInput {
                 language_id: Int @lookupKey @field(name: "language_id")
@@ -44,6 +46,7 @@ class TriggerFactPopulationPinTest {
                 stub: String @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
                 ordered: [Language!]! @defaultOrder(primaryKey: true)
                 sorted(order: LangOrder @orderBy): [Language!]!
+                fannedFilms: [Film!]! @tenantFanOut
                 untouched: [Language!]!
             }
             type Mutation {
@@ -104,6 +107,17 @@ class TriggerFactPopulationPinTest {
         assertThat(facts.service().rows())
             .extracting(r -> r.parentTypeName() + "." + r.fieldName())
             .containsExactlyInAnyOrder("Query.stub");
+    }
+
+    @Test
+    void deliverySlotGathersBothAuthoredMarkers() {
+        var facts = gatherFixture();
+        assertThat(facts.delivery().rows())
+            .extracting(r -> r.parentTypeName() + "." + r.fieldName() + ":"
+                + r.splitQuery() + ":" + r.tenantFanOut())
+            .containsExactlyInAnyOrder(
+                "Film.languageSplit:true:false",
+                "Query.fannedFilms:false:true");
     }
 
     @Test

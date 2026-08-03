@@ -203,6 +203,12 @@ class HierarchyKindRegistryTest {
         // Previously nested inside Operation.ServiceCall and outside the scan; homed top-level
         // because the member row is the carrier's primary holder.
         Map.entry(no.sikt.graphitron.rewrite.model.ServiceCallCarrier.class, HierarchyKind.RESOLVED_VIEW),
+        // The delivery fact: batched-versus-inline arrival, read off the authored SDL markers
+        // (the gathered delivery-marker relation), the parent's record handoff and the
+        // polymorphic cardinality rule. Rows exist because the schema says so, not because a
+        // resolver inferred them; the nested Trigger seal inherits the kind (its arms are the
+        // walked provenances of one batched verdict).
+        Map.entry(no.sikt.graphitron.rewrite.model.DeliveryFact.class, HierarchyKind.WALKED_FACT),
 
         // Minted at emit grain: these describe what the emit does. The commands-in-waiting.
         Map.entry(no.sikt.graphitron.command.Predicate.class, HierarchyKind.COMMAND),

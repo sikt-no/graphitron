@@ -312,6 +312,11 @@ public class GraphitronSchemaBuilder {
         // surface reads these rows.
         var operationMembers = OperationMemberRelation.compute(
             ctx.schema, dedupedFields, ctx.types, ctx.facts);
+        // The materialized delivery fact: the post-walk fold of the gathered delivery markers
+        // with the shape facts, read through GraphitronSchema.deliveryOf; anchor-hood (the
+        // launcher membership predicate) is its first view.
+        var deliveryFacts = DeliveryFactRelation.compute(
+            ctx.schema, dedupedFields, ctx.types, ctx.facts);
         // The per-field tenant-binding fold. Ancestor-context fact (Inherited needs every
         // reaching path bound), so it is computed post-walk; read by the validator's tenant
         // mirror and the routing emitters.
@@ -324,7 +329,7 @@ public class GraphitronSchemaBuilder {
         var model = new GraphitronSchema(
             ctx.types, Collections.unmodifiableMap(dedupedFields), entitiesByType, ctx.warnings(),
             ctx.diagnostics(), arrivals, reachableSourceShapes, ctx.tenantScopes, tenantBindings,
-            argumentReachableInputs, connectionSynthesis, operationMembers);
+            argumentReachableInputs, connectionSynthesis, operationMembers, deliveryFacts);
         return new BuildResult(model, rebuiltAssembled);
     }
 

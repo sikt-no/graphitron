@@ -74,7 +74,8 @@ public record GraphitronSchema(
     TenantBindingIndex tenantBindings,
     Set<String> argumentReachableInputs,
     ConnectionSynthesisRelation connectionSynthesis,
-    OperationMemberRelation operationMembers
+    OperationMemberRelation operationMembers,
+    DeliveryFactRelation deliveryFacts
 ) {
 
     public GraphitronSchema {
@@ -85,6 +86,7 @@ public record GraphitronSchema(
         argumentReachableInputs = argumentReachableInputs == null ? Set.of() : argumentReachableInputs;
         connectionSynthesis = connectionSynthesis == null ? ConnectionSynthesisRelation.EMPTY : connectionSynthesis;
         operationMembers = operationMembers == null ? OperationMemberRelation.EMPTY : operationMembers;
+        deliveryFacts = deliveryFacts == null ? DeliveryFactRelation.EMPTY : deliveryFacts;
     }
 
     /**
@@ -123,7 +125,8 @@ public record GraphitronSchema(
         this(types, fields, groupByType(fields), Map.of(), List.of(),
             ContextArgumentClassifier.classify(fields.values()), List.of(), Map.of(), Map.of(),
             TenantScopes.None.INSTANCE, TenantBindingIndex.EMPTY, Set.of(),
-            ConnectionSynthesisRelation.EMPTY, OperationMemberRelation.EMPTY);
+            ConnectionSynthesisRelation.EMPTY, OperationMemberRelation.EMPTY,
+            DeliveryFactRelation.EMPTY);
     }
 
     /**
@@ -200,7 +203,8 @@ public record GraphitronSchema(
 
     /**
      * The {@link GraphitronSchemaBuilder} constructor with the minted operation member relation
-     * ({@link OperationMemberRelation}), the post-walk trigger-fact fold.
+     * ({@link OperationMemberRelation}), the post-walk trigger-fact fold. Defaults the delivery
+     * fact relation to its not-computed sentinel.
      */
     public GraphitronSchema(Map<String, GraphitronType> types,
                             Map<FieldCoordinates, GraphitronField> fields,
@@ -214,10 +218,33 @@ public record GraphitronSchema(
                             Set<String> argumentReachableInputs,
                             ConnectionSynthesisRelation connectionSynthesis,
                             OperationMemberRelation operationMembers) {
+        this(types, fields, entitiesByType, warnings, diagnostics, arrivals, reachableSourceShapes,
+            tenantScopes, tenantBindings, argumentReachableInputs, connectionSynthesis,
+            operationMembers, DeliveryFactRelation.EMPTY);
+    }
+
+    /**
+     * The {@link GraphitronSchemaBuilder} constructor with the materialized delivery fact
+     * relation ({@link DeliveryFactRelation}), the post-walk delivery fold beside the member
+     * relation.
+     */
+    public GraphitronSchema(Map<String, GraphitronType> types,
+                            Map<FieldCoordinates, GraphitronField> fields,
+                            Map<String, EntityResolution> entitiesByType,
+                            List<BuildWarning> warnings,
+                            List<ValidationError> diagnostics,
+                            Map<String, Arrival> arrivals,
+                            Map<FieldCoordinates, Set<ReachableSourceShape>> reachableSourceShapes,
+                            TenantScopes tenantScopes,
+                            TenantBindingIndex tenantBindings,
+                            Set<String> argumentReachableInputs,
+                            ConnectionSynthesisRelation connectionSynthesis,
+                            OperationMemberRelation operationMembers,
+                            DeliveryFactRelation deliveryFacts) {
         this(types, fields, groupByType(fields), Map.copyOf(entitiesByType), List.copyOf(warnings),
             ContextArgumentClassifier.classify(fields.values()), List.copyOf(diagnostics), Map.copyOf(arrivals),
             Map.copyOf(reachableSourceShapes), tenantScopes, tenantBindings, argumentReachableInputs,
-            connectionSynthesis, operationMembers);
+            connectionSynthesis, operationMembers, deliveryFacts);
     }
 
     /**
@@ -245,7 +272,7 @@ public record GraphitronSchema(
                             List<ValidationError> diagnostics) {
         this(types, fields, fieldsByType, entitiesByType, warnings, contextArguments, diagnostics, Map.of(), Map.of(),
             TenantScopes.None.INSTANCE, TenantBindingIndex.EMPTY, Set.of(), ConnectionSynthesisRelation.EMPTY,
-            OperationMemberRelation.EMPTY);
+            OperationMemberRelation.EMPTY, DeliveryFactRelation.EMPTY);
     }
 
     private static Map<String, List<GraphitronField>> groupByType(Map<FieldCoordinates, GraphitronField> fields) {
@@ -316,6 +343,32 @@ public record GraphitronSchema(
     /** {@link #operationMembersOf(FieldCoordinates)} keyed by type/field name. */
     public List<no.sikt.graphitron.rewrite.model.OperationMember> operationMembersOf(String typeName, String fieldName) {
         return operationMembersOf(FieldCoordinates.coordinates(typeName, fieldName));
+    }
+
+    /**
+     * The coordinate's delivery fact: batched keyed re-query or inline, the anchor-hood axis
+     * the launcher membership predicate joins with the member rows. Reads the materialized
+     * relation ({@link DeliveryFactRelation}, the post-walk fold beside the member relation);
+     * a schema built without the classify walk carries the not-computed sentinel and falls
+     * back to the leaf-derived crosswalk
+     * ({@link no.sikt.graphitron.rewrite.model.DeliveryFact#leafDerivedOf}), so the read
+     * surface is uniform across harnesses. The delivery pin holds the two productions equal
+     * over the classified corpus. {@link no.sikt.graphitron.rewrite.model.DeliveryFact.Inline}
+     * for a coordinate that is absent or does not classify to an {@link OutputField}.
+     */
+    public no.sikt.graphitron.rewrite.model.DeliveryFact deliveryOf(FieldCoordinates coord) {
+        if (deliveryFacts != DeliveryFactRelation.EMPTY) {
+            return deliveryFacts.deliveryOf(coord);
+        }
+        if (!(fields.get(coord) instanceof OutputField out)) {
+            return no.sikt.graphitron.rewrite.model.DeliveryFact.Inline.INSTANCE;
+        }
+        return no.sikt.graphitron.rewrite.model.DeliveryFact.leafDerivedOf(out);
+    }
+
+    /** {@link #deliveryOf(FieldCoordinates)} keyed by type/field name. */
+    public no.sikt.graphitron.rewrite.model.DeliveryFact deliveryOf(String typeName, String fieldName) {
+        return deliveryOf(FieldCoordinates.coordinates(typeName, fieldName));
     }
 
     /**

@@ -290,13 +290,14 @@ public record OperationMemberRelation(Map<FieldCoordinates, List<OperationMember
             if (leaf instanceof ParticipantFilterField pf) {
                 for (var participant : pf.participantFilters()) {
                     if (!participant.filters().isEmpty()) {
-                        members.add(new OperationMember.Condition(
-                            participant.participant().table(), participant.filters()));
+                        members.add(new OperationMember.Condition.OnParticipant(
+                            participant.participant(), participant.filters()));
                     }
                 }
             } else {
                 var sgf = (SqlGeneratingField) leaf;
-                members.add(new OperationMember.Condition(sgf.returnType().table(), sgf.filters()));
+                members.add(new OperationMember.Condition.OnReturnTable(
+                    sgf.returnType().table(), sgf.filters()));
             }
         }
         if (kinds.contains(OperationMember.Kind.ORDER_BY)) {

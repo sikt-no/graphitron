@@ -141,7 +141,6 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE_FOR;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_SERVICE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_SPLIT_QUERY;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_ROUTINE;
-import static no.sikt.graphitron.rewrite.BuildContext.DIR_TENANT_FAN_OUT;
 import static no.sikt.graphitron.rewrite.BuildContext.argString;
 import static no.sikt.graphitron.rewrite.BuildContext.argStringList;
 import static no.sikt.graphitron.rewrite.BuildContext.asMap;
@@ -1093,11 +1092,11 @@ class FieldBuilder {
             // runs it as a separate keyed query. Surface the request as a deferred rejection on
             // the diagnostic channel instead of demoting the verdict, so the classification and
             // its nested subtree stay intact for the editor view while the build fails through
-            // the validator's drain. This reads the @splitQuery half of forcesSplitDelivery;
-            // @tenantFanOut here is covered by the tenant-binding fold's unreached-marker sweep.
-            // The contains guard dedupes the shared-nesting case, where two hosts classify the
-            // same nested coordinate.
-            if (fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY)) {
+            // the validator's drain. This reads the @splitQuery half of the gathered
+            // delivery-marker relation; @tenantFanOut here is covered by the tenant-binding
+            // fold's unreached-marker sweep. The contains guard dedupes the shared-nesting
+            // case, where two hosts classify the same nested coordinate.
+            if (ctx.facts.delivery().splitQuery(fieldDef)) {
                 String producerNote = typeBuilder.resultProducerFor(elementTypeName)
                     .map(p -> " Type '" + elementTypeName + "' is also produced (" + p.describe()
                         + "); if the field should return the produced value rather than project"
@@ -1325,7 +1324,7 @@ class FieldBuilder {
 
         var spec = new PivotSpec(elements, pivotTable, discriminator.get(), value.get(),
             returnTypeName, slots, tokenBySlot);
-        if (fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY)) {
+        if (ctx.facts.delivery().splitQuery(fieldDef)) {
             var split = deriveSplitQuerySource(correlation, parentTableType.table(), false);
             return new ChildField.BatchedPivotField(parentTypeName, name, location, spec,
                 split.sourceKey(), split.lift(), split.loaderRegistration(), correlation);
@@ -2635,7 +2634,7 @@ class FieldBuilder {
                     yield new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.deferred(
                         "@lookupKey on a routine-backed child field classifies but does not emit yet"));
                 }
-                boolean hasSplitQuery = fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY);
+                boolean hasSplitQuery = ctx.facts.delivery().splitQuery(fieldDef);
                 // @splitQuery forces the batched keyed re-query anchor, which needs a key. A
                 // routine-headed chain's batch key is the routine's column-bound inputs (design
                 // note on deriveSplitQuerySource); an uncorrelated routine head has none, so the
@@ -5713,19 +5712,19 @@ class FieldBuilder {
     }
 
     /**
-     * The delivery-forcing markers on a table-backed child field: {@code @splitQuery}, and
+     * The delivery-forcing marker union on a table-backed child field: {@code @splitQuery}, and
      * {@code @tenantFanOut}, which forces the same fetcher boundary (a fanned child cannot
      * project into its parent's statement, since the parent runs on one source and the fanned
      * statement runs once per tenant, so the marker classifies the field batched and the fanned
-     * rows method scatters per parent batch). Single home for the marker set: the table-backed child
-     * arm reads the whole predicate, and the nesting arm's deferred rejection reads its
-     * {@code @splitQuery} half (a nesting type has no batched delivery, so the request is
-     * surfaced instead of ignored; {@code @tenantFanOut} on nesting-reached coordinates is swept
-     * separately by the tenant-binding fold's unreached-marker check).
+     * rows method scatters per parent batch). Read off the gathered delivery-marker relation
+     * ({@link no.sikt.graphitron.facts.DeliveryFacts}), whose visitor is the marker names'
+     * single lexical home; the table-backed child arm reads this union, while the nesting arm's
+     * deferred rejection, the {@code @pivot} batching gate and the routine-chain child read the
+     * {@code @splitQuery} half ({@code @tenantFanOut} on those shapes is the tenant-binding
+     * fold's unreached-marker sweep to reject, not a delivery trigger).
      */
-    private static boolean forcesSplitDelivery(GraphQLFieldDefinition fieldDef) {
-        return fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY)
-            || fieldDef.hasAppliedDirective(DIR_TENANT_FAN_OUT);
+    private boolean forcesSplitDelivery(GraphQLFieldDefinition fieldDef) {
+        return ctx.facts.delivery().forcesSplitDelivery(fieldDef);
     }
 
     /**

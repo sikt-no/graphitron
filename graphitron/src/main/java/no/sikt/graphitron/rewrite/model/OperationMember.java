@@ -101,15 +101,52 @@ public sealed interface OperationMember {
      * back-half condition relation's key, so a polymorphic coordinate carries one condition
      * member per table-bound participant instead of a fallback beside a one-arm summary. The
      * filter surface preserves the sealed generated-versus-authored {@link WhereFilter} split.
+     *
+     * <p>Sealed into two arms because the two rows carry genuinely different identities (the
+     * {@link Write} sub-family precedent): {@link OnReturnTable} filters the coordinate's own
+     * return table, and {@link OnParticipant} filters one table-bound participant of a
+     * polymorphic coordinate, carrying the participant reference itself so a consumer naming
+     * per-participant output (the back-half glue methods) reads the identity off the arm
+     * instead of reverse-mapping it from the table. Both arms answer {@link #table()}, so the
+     * {@code (coordinate, table)} key and the 1:1 join with the back-half relation are
+     * arm-independent.
      */
-    record Condition(TableRef table, List<WhereFilter> filters) implements OperationMember {
-        public Condition {
-            Objects.requireNonNull(table, "table");
-            filters = List.copyOf(filters);
-            if (filters.isEmpty()) {
-                throw new IllegalArgumentException(
-                    "a condition member exists only when its trigger produced filters; an empty "
-                    + "filter surface is the member's absence, not an empty payload");
+    sealed interface Condition extends OperationMember {
+
+        /** The filtered table: the member's key column beside the coordinate. */
+        TableRef table();
+
+        /** The lowered filter surface against {@link #table()}; never empty. */
+        List<WhereFilter> filters();
+
+        /** The WHERE contribution against the coordinate's own return table. */
+        record OnReturnTable(TableRef table, List<WhereFilter> filters) implements Condition {
+            public OnReturnTable {
+                Objects.requireNonNull(table, "table");
+                filters = List.copyOf(filters);
+                if (filters.isEmpty()) {
+                    throw new IllegalArgumentException(
+                        "a condition member exists only when its trigger produced filters; an empty "
+                        + "filter surface is the member's absence, not an empty payload");
+                }
+            }
+        }
+
+        /** The WHERE contribution against one table-bound participant's own table. */
+        record OnParticipant(ParticipantRef.TableBound participant, List<WhereFilter> filters)
+                implements Condition {
+            public OnParticipant {
+                Objects.requireNonNull(participant, "participant");
+                filters = List.copyOf(filters);
+                if (filters.isEmpty()) {
+                    throw new IllegalArgumentException(
+                        "a condition member exists only when its trigger produced filters; an empty "
+                        + "filter surface is the member's absence, not an empty payload");
+                }
+            }
+
+            @Override public TableRef table() {
+                return participant.table();
             }
         }
     }

@@ -30,6 +30,6 @@ public final class FactVisitors {
     public static List<FactVisitor> builtIn() {
         return List.of(new PaginationFactVisitor(), new ConditionFactVisitor(),
             new OrderByFactVisitor(), new LookupFactVisitor(), new ServiceFactVisitor(),
-            new WriteFactVisitor());
+            new WriteFactVisitor(), new DeliveryFactVisitor());
     }
 }

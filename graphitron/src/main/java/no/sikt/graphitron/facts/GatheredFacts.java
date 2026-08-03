@@ -36,7 +36,8 @@ public record GatheredFacts(PaginationFacts pagination,
                             OrderByFacts orderBy,
                             LookupFacts lookup,
                             ServiceFacts service,
-                            WriteFacts write) {
+                            WriteFacts write,
+                            DeliveryFacts delivery) {
 
     public GatheredFacts {
         Objects.requireNonNull(pagination, "pagination");
@@ -45,6 +46,7 @@ public record GatheredFacts(PaginationFacts pagination,
         Objects.requireNonNull(lookup, "lookup");
         Objects.requireNonNull(service, "service");
         Objects.requireNonNull(write, "write");
+        Objects.requireNonNull(delivery, "delivery");
     }
 
     /** For harnesses that build no schema; every relation is empty. */
@@ -54,7 +56,8 @@ public record GatheredFacts(PaginationFacts pagination,
             new OrderByFacts(Map.of()),
             new LookupFacts(Map.of(), Map.of()),
             new ServiceFacts(Map.of()),
-            new WriteFacts(Map.of()));
+            new WriteFacts(Map.of()),
+            new DeliveryFacts(Map.of()));
     }
 
     /**
@@ -73,6 +76,7 @@ public record GatheredFacts(PaginationFacts pagination,
         LookupFacts lookup = null;
         ServiceFacts service = null;
         WriteFacts write = null;
+        DeliveryFacts delivery = null;
         for (var visitor : visitors) {
             switch (visitor) {
                 case PaginationFactVisitor p -> pagination = p.relation();
@@ -81,9 +85,10 @@ public record GatheredFacts(PaginationFacts pagination,
                 case LookupFactVisitor l -> lookup = l.relation();
                 case ServiceFactVisitor s -> service = s.relation();
                 case WriteFactVisitor w -> write = w.relation();
+                case DeliveryFactVisitor d -> delivery = d.relation();
             }
         }
-        return new GatheredFacts(pagination, condition, orderBy, lookup, service, write);
+        return new GatheredFacts(pagination, condition, orderBy, lookup, service, write, delivery);
     }
 
     /**

@@ -322,7 +322,7 @@ public final class OperationMembers {
             members.add(new Join());
         }
         if (!filters.isEmpty()) {
-            members.add(new Condition(table, filters));
+            members.add(new Condition.OnReturnTable(table, filters));
         }
         if (!(orderBy instanceof OrderBySpec.None)) {
             members.add(new OrderBy(orderBy));
@@ -358,7 +358,7 @@ public final class OperationMembers {
         members.add(new Select());
         for (var pf : participantFilters) {
             if (!pf.filters().isEmpty()) {
-                members.add(new Condition(pf.participant().table(), pf.filters()));
+                members.add(new Condition.OnParticipant(pf.participant(), pf.filters()));
             }
         }
         return members;
@@ -376,7 +376,7 @@ public final class OperationMembers {
             members.add(new Join());
         }
         if (!f.filters().isEmpty()) {
-            members.add(new Condition(f.returnType().table(), f.filters()));
+            members.add(new Condition.OnReturnTable(f.returnType().table(), f.filters()));
         }
         if (!(f.orderBy() instanceof OrderBySpec.None)) {
             members.add(new OrderBy(f.orderBy()));
