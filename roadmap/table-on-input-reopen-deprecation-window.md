@@ -34,9 +34,9 @@ otherwise inert (today it rejects before resolution). That inertness is not free
 see the raw-directive readers below.
 
 **Raw-directive readers.** Dropping the classify-time arm is necessary but not
-sufficient. R519 retired the *verdict* and left two main-source readers of raw
+sufficient. R519 retired the *verdict* and left four main-source readers of raw
 `@table` on an `INPUT_OBJECT` standing, harmless only because the rejection
-short-circuited them. Both go live the moment the input classifies, and both
+short-circuited them. All four go live the moment the input classifies, and all four
 have to be handled here or the headline claim is false:
 
 - `RecordBindingResolver.groundRootProducers` registers an input-axis
@@ -62,17 +62,39 @@ have to be handled here or the headline claim is false:
   outright (one more accept-and-ignore site) or keep it and accept that `@table`
   on an input is not uniformly inert. Recommend deleting; an "ignored except when
   nested" contract is both harder to document and harder to close later.
+- `BuildContext.classifyInputField` descends into a nested input object only when
+  it does *not* carry `@table` (the `baseType instanceof GraphQLInputObjectType
+  nestedInputType && !nestedInputType.hasAppliedDirective(DIR_TABLE)` guard). With
+  the directive present the nesting arm is skipped and control falls through to the
+  column-lookup path below it, so a nested `@table` grouping input on the *plain
+  input* path resolves as a column named after the nested type and fails with an
+  unresolvable-column `InputFieldResolution.Unresolved` instead of flattening. This
+  is a different path from `InputBeanResolver.collectJooqBindings` above (that one
+  is the jOOQ-record param path), so deleting that rejection does not fix this;
+  both have to go or the nesting half of the acceptance criterion is unmet.
+- `MutationInputResolver.rejectInputFieldDirectives` recurses into a nested input
+  under the same `!hasAppliedDirective(DIR_TABLE)` conjunct. Once the directive is
+  inert, `@lookupKey` / `@condition` applications buried inside a nested `@table`
+  grouping input silently escape the admission scan that the identical fields trip
+  in a directiveless twin. Unlike the other three this fails *open*, not closed: no
+  build error, no test, just a mutation input admitted on rules its twin is held to.
 
-Grepping `DIR_TABLE` reads under an `INPUT_OBJECT`-typed guard is the
-completeness check for this sweep; every other read is object- or
-interface-typed and unaffected.
+All four sites are the same edit shape (drop the arm, or drop the
+`&& !…hasAppliedDirective(DIR_TABLE)` conjunct), and the recommendation is the same
+for all four: delete, so inertness is uniform. The completeness check is
+`grep -rn DIR_TABLE --include=*.java graphitron/src/main`, then reading each hit's
+guard: exactly these four are `GraphQLInputObjectType`-typed and every other read is
+object- or interface-typed and unaffected. Do not size this sweep from the
+`INPUT_OBJECT` string, which appears at none of the four.
 
 **Warning site.** Restore `GraphitronSchemaBuilder.emitTableOnInputDeprecationWarnings`
 as a post-classification pass, recoverable near-verbatim from `7eef0ddd1^`
 (`GraphitronSchemaBuilder.java:815`) together with its three
-`{delete,insert,update}ConsumedInputTypes` helpers. Post-classification and not
-inside `buildInputType` for two reasons: the per-verb replacement wording needs
-the classified field registry to know who consumes the input, and
+`{delete,insert,update}ConsumedInputTypes` helpers. (Agent sessions clone shallow, so
+`7eef0ddd1^` may need a `git fetch --deepen=400` before it resolves; a bare
+`invalid object name` there is the clone depth, not a bad ref.) Post-classification
+and not inside `buildInputType` for two reasons: the per-verb replacement wording
+needs the classified field registry to know who consumes the input, and
 `buildInputType` is reached through the memoizing `lookAheadVerdict`, so
 emitting there makes warning multiplicity a function of memo timing.
 
@@ -80,7 +102,11 @@ The `BuildWarning.NoRule` arm is the right one, unchanged from R332's reasoning:
 a deprecation announcement is not a lint-engine finding. Verify the two accessors
 the restored helpers read still exist post-R519 (`InputArgRef.inputTypeName()`
 for the DELETE leaves, `tableInputArg().typeName()` for the INSERT ones) and
-re-check the switch arms are still exhaustive over the DML leaves.
+re-check the switch arms are still exhaustive over the DML leaves. `MutationField`
+carries `MutationUpsertTableField` and `MutationRoutineWriteField` leaves that sit
+in none of the three sets; that is correct as-is (UPSERT is refused at the
+`@mutation` classifier dispatch, so an UPSERT-consumed input is unauthorable) and
+needs no fourth helper.
 
 **Message.** One change from the R332 wording: say **ignored**, not only
 deprecated. An author whose input `@table` named a *different* table than the
@@ -129,11 +155,14 @@ back to "deprecated, ignored, warns":
 - Seven further pages carry the statement, so do not size the sweep from the
   bullet above. The generating grep is
   `grep -rlniE "retired|rejected|no longer supported|outranked|hard removal"
-  --include=*.adoc docs/ | xargs grep -liE "input.{0,80}@table|@table.{0,80}input"`,
-  which returns twelve real pages (plus `field.adoc` and
-  `join-with-references.adoc` as false positives, matching on unrelated
-  rejections). Run it as the sweep's completeness check rather than working the
-  list by hand. Two of the seven are code-behaviour claims and not phrasing, so
+  --include=*.adoc --exclude-dir=target docs/ | xargs grep -liE
+  "input.{0,80}@table|@table.{0,80}input"`, which returns twelve real pages (plus
+  `field.adoc` and `join-with-references.adoc` as false positives, matching on
+  unrelated rejections). The `--exclude-dir=target` is load-bearing: without it a
+  tree that has built the docs module returns the whole `docs/target/staging/`
+  mirror, including the roadmap plan pages (this item's own spec among them), which
+  are historical records and out of scope for the rewording. Run it as the sweep's
+  completeness check rather than working the list by hand. Two of the seven are code-behaviour claims and not phrasing, so
   they go false rather than stale: `docs/architecture/reference/argument-resolution.adoc`
   states "`TypeBuilder.buildInputType` rejects any input carrying `@table`", the
   sentence this item's headline change inverts, and
@@ -176,6 +205,10 @@ back to "deprecated, ignored, warns":
   supersedes the `@record` warning. The `!isInput` guard itself stays correct
   (`@table` on an input contributes nothing to binding, so an input carrying
   both should reach the Matches / Disagrees arms); only the comment is wrong.
+  `RecordDirectiveIgnoredWarningTest.tableObjectWithRecord_recordIgnored_staysTableBackedNotConflict`
+  carries a third copy of the same stale claim in its own comment (the parenthetical
+  saying the input variant "rejects at the type instead", a retired location, "pinned
+  above"); it moves with the other two.
 - `TableOnInputRejectionTest` becomes `TableOnInputDeprecationWarningTest`
   again: warning fires per usage with a source location, per-verb wording for
   DELETE / INSERT / UPDATE / filter-only, unknown table name warns rather than
@@ -194,10 +227,20 @@ back to "deprecated, ignored, warns":
   "film_actor")` fixture already sits beside a directiveless twin (`PURE_FK_SDL`)
   that classifies to the JooqRecord carrier, so rewrite it as an *equivalence*
   assertion (same carrier, same column bindings, plus the warning). That makes it
-  the regression home for both raw-directive reader deletions above and for
+  the regression home for the `groundRootProducers` deletion and for
   R519's claim that the `InputBeanResolver` type-identity arm stays correctly
   deleted, a claim R519 justified on the `@table`-plus-jOOQ-record-param
-  conjunction being unauthorable, which this item makes authorable again.
+  conjunction being unauthorable, which this item makes authorable again. Its
+  fixture is top-level, though, so it covers exactly one of the four reader
+  deletions; the other three are all nested-path sites and need a *nested* fixture
+  that no existing test carries. Add one: a `@table`-carrying grouping input nested
+  inside another input, asserted equivalent to its directiveless twin on both the
+  jOOQ-record param path (`InputBeanResolver.collectJooqBindings`) and the plain
+  filter-input path (`BuildContext.classifyInputField`), plus a case putting
+  `@condition` on a field of that nested group and asserting it still rejects
+  (`MutationInputResolver.rejectInputFieldDirectives`, the fail-open site, which no
+  other assertion in this plan would catch). Without it the nesting half of the
+  acceptance criterion ships unpinned.
   `RecordDirectiveIgnoredWarningTest.tableWithRecordOnInput_rejectsAtTheType_noShadowedWarning`
   is the fourth, and it is the one entangled with the `emitDirectiveIgnoredWarning`
   design claim above: it asserts `UnclassifiedType` on an input carrying both
@@ -246,7 +289,8 @@ per-verb replacement, and the fact that the directive was ignored. The reported
 subgraph builds with warnings and no errors after removing nothing. No doc page or
 SDL description still calls the location retired or rejected, or describes the
 input directive as outranked-but-live, checked with the generating grep in the
-sweep rather than against the bullet list; and `migrating-from-legacy.adoc` no
+sweep (with its `--exclude-dir=target`) rather than against the bullet list, and
+counting roadmap plan pages as out of scope; and `migrating-from-legacy.adoc` no
 longer files the location under a hard-removals heading. Full reactor green under
 `-Plocal-db`.
 
