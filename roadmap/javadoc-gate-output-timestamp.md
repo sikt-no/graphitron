@@ -78,5 +78,8 @@ in the `release` profile too, which reaches the same parse.
 
 - The `maven-archiver` override plus a comment recording why it exists and when it can go.
 - Verify with the reproduction command above, and with a full `mvn install -Plocal-db` carrying an
-  out-of-range `-Dproject.build.outputTimestamp` to confirm no other execution shares the defect.
+  out-of-range `-Dproject.build.outputTimestamp`. Everything through `package` is already confirmed
+  clean under that override (`mvn package -Plocal-db -DskipTests` succeeds across the reactor), so
+  the plugins that also parse the property, `maven-jar-plugin` foremost, resolve a `maven-archiver`
+  new enough to tolerate the value. The verify-phase javadoc gate is the sole failure point.
 - No generator or runtime code is touched.
