@@ -127,7 +127,7 @@ startup-diagnostics detail.
 == Tracing the LSP request path
 
 When an editor session stops responding, `LspTrace` attributes the wall clock to
-a named phase. It is off by default and allocates nothing while off, so it sits
+a named phase. It is off by default and allocates no span while off, so it sits
 directly on per-keystroke paths.
 
 Turn it on with a system property or an environment variable:
@@ -140,24 +140,69 @@ mvn graphitron:dev -Dgraphitron.lsp.trace=true
 GRAPHITRON_LSP_TRACE=true
 ----
 
-Output goes to stderr, or to a file with
-`-Dgraphitron.lsp.trace.file=/tmp/lsp-trace.log`. It never goes to stdout: the
-stdio launcher speaks JSON-RPC there, so a stray byte would desynchronise the
-framing. Phases slower than `graphitron.lsp.trace.slowMs` (default 100) are
-tagged `SLOW`.
+An editor can also flip it mid-session by sending lsp4j's `$/setTrace` with
+`messages` or `verbose`, which is the route when the session is already
+misbehaving and you would rather not restart it and lose the state that provoked
+it. Note the asymmetry: `$/setTrace off` does stop tracing, but the `trace` value
+on the *initialize* handshake can only turn tracing on. Most clients send
+`trace: off` there as boilerplate whether or not anyone asked, and honouring that
+would silence a deliberately-set `graphitron.lsp.trace` before a single phase had
+been traced.
+
+=== Prefer the file sink when chasing a hang
+
+Send output to a file:
+
+[source,bash]
+----
+mvn graphitron:dev -Dgraphitron.lsp.trace=true \
+                   -Dgraphitron.lsp.trace.file=/tmp/lsp-trace.log
+----
+
+Stderr is the default and is fine for ordinary "why is this slow" work, where it
+has the advantage that mainstream clients surface a language server's stderr in
+an editor output panel. For a hang, use the file. Writes are synchronous, so a
+sink whose reader has stopped draining blocks the thread that is emitting, and
+two of the instrumented sites (`file.reparse` and `file.typeIndex`) emit while
+holding the workspace mutator lock. A client that spawns the server and never
+reads its stderr can therefore fill the pipe buffer and stall the server inside
+its critical section, which is the instrument manufacturing the symptom you are
+trying to attribute. A file never blocks that way.
+
+The synchronous write is deliberate rather than an oversight: what reaches the
+sink is what happened right up to a `kill`, and an asynchronous drain would lose
+the tail exactly when the tail is the evidence.
+
+Output never goes to stdout under any configuration, and never through slf4j: the
+stdio launcher speaks JSON-RPC on stdout, so a stray byte would desynchronise the
+framing, and in that deployment the classpath usually carries `slf4j-api` with no
+backend bound so a logger-based seam would emit nothing at all. It also does not
+go back over the connection via `window/logMessage`, which would be the
+editor-visible channel: that would route the diagnosis through the very channel
+under suspicion, serialised behind every other response and emitted from inside
+the workspace lock.
+
+Phases slower than `graphitron.lsp.trace.slowMs` (default 100) are tagged `SLOW`.
+
+=== Reading a trace
 
 Each phase emits an open line and a close line, so a phase that never returns
 shows up as an unmatched `>`. That is the point: it separates "stuck here" from
-"slow everywhere", which a duration-only format cannot.
+"slow everywhere", which a duration-only format cannot. Every line is stamped
+with the time of day, which is what lets an unmatched `>` be lined up against the
+moment the editor froze, against the editor's own log, or against a build swap in
+another window. A one-off header line carries the date, the resolved threshold and
+the pid, so a file read days later describes its own provenance.
 
 [source,text]
 ----
-lsp-trace > 6 workspace.mutate thread=graphitron-dev-conn-1
-lsp-trace > 7   file.reparse thread=graphitron-dev-conn-1
-lsp-trace < 7   file.reparse 1.1ms thread=graphitron-dev-conn-1 bytes=23781
-lsp-trace > 8   file.typeIndex thread=graphitron-dev-conn-1
-lsp-trace < 8   file.typeIndex 13.8ms thread=graphitron-dev-conn-1 bytes=23781 declared=400
-lsp-trace < 6 workspace.mutate 21.9ms thread=graphitron-dev-conn-1 open=1 queued=1
+14:32:07.301 lsp-trace header date=2026-08-03 slowMs=100 pid=48213
+14:32:07.412 lsp-trace > 6 workspace.mutate thread=graphitron-dev-conn-1
+14:32:07.412 lsp-trace > 7   file.reparse thread=graphitron-dev-conn-1
+14:32:07.413 lsp-trace < 7   file.reparse 1.1ms thread=graphitron-dev-conn-1 bytes=23781
+14:32:07.414 lsp-trace > 8   file.typeIndex thread=graphitron-dev-conn-1
+14:32:07.428 lsp-trace < 8   file.typeIndex 13.8ms thread=graphitron-dev-conn-1 bytes=23781 declared=400
+14:32:07.434 lsp-trace < 6 workspace.mutate 21.9ms thread=graphitron-dev-conn-1 open=1 queued=1
 ----
 
 Three things to read off a trace:
@@ -179,5 +224,11 @@ Three things to read off a trace:
 | `workspace.snapshot` far above zero
 | A read request waited on the mutator lock, so something else is holding it.
 |===
+
+The diagnostics walk is deliberately one span for the whole directive loop rather
+than one per directive, which would bury the log under hundreds of lines per file.
+To get at the per-site cost, subtract `diagnostics.validatorReport` from its
+enclosing `diagnostics.compute` and divide by the `directives=` count on the same
+line.
 
 xref:index.adoc[← How-to index]

@@ -3,15 +3,22 @@ package no.sikt.graphitron.lsp.server;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
 import no.sikt.graphitron.lsp.state.Workspace;
+import no.sikt.graphitron.lsp.trace.LspTrace;
 import org.eclipse.lsp4j.ApplyWorkspaceEditParams;
 import org.eclipse.lsp4j.ApplyWorkspaceEditResponse;
 import org.eclipse.lsp4j.ConfigurationParams;
+import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.InitializedParams;
 import org.eclipse.lsp4j.MessageActionItem;
 import org.eclipse.lsp4j.MessageParams;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
+import org.eclipse.lsp4j.SetTraceParams;
 import org.eclipse.lsp4j.ShowMessageRequestParams;
+import org.eclipse.lsp4j.TraceValue;
 import org.eclipse.lsp4j.services.LanguageClient;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -79,6 +86,76 @@ class GraphitronLanguageServerTest {
         server.connect(client);
         server.initialized(new InitializedParams());
         assertThat(workspace.inlayHintConfig().anyEnabled()).isFalse();
+    }
+
+    @Nested
+    @DisplayName("$/setTrace drives the trace seam")
+    class SetTrace {
+
+        @AfterEach
+        void resetSeam() {
+            // Global static state; leaving it on would fail LspTraceTest's off-by-default
+            // assertion depending on class ordering.
+            LspTrace.setEnabled(false);
+        }
+
+        @Test
+        @DisplayName("messages and verbose enable, off disables")
+        void mapsTraceValuesOntoTheSeam() {
+            var server = new GraphitronLanguageServer(new Workspace());
+
+            server.setTrace(new SetTraceParams(TraceValue.Messages));
+            assertThat(LspTrace.enabled()).isTrue();
+
+            server.setTrace(new SetTraceParams(TraceValue.Off));
+            assertThat(LspTrace.enabled()).isFalse();
+
+            server.setTrace(new SetTraceParams(TraceValue.Verbose));
+            assertThat(LspTrace.enabled()).isTrue();
+        }
+
+        @Test
+        @DisplayName("an unknown or absent trace value leaves the current state alone")
+        void unknownValueIsInert() {
+            var server = new GraphitronLanguageServer(new Workspace());
+            LspTrace.setEnabled(true);
+
+            server.setTrace(new SetTraceParams("nonsense"));
+            // lsp4j's one-arg constructor rejects null, so an absent value can only reach the
+            // handler from a client that sent no value at all: the default-constructed shape.
+            server.setTrace(new SetTraceParams());
+            server.setTrace(null);
+
+            assertThat(LspTrace.enabled())
+                .as("neither an unrecognised TraceValue nor a missing one should silence tracing")
+                .isTrue();
+        }
+
+        @Test
+        @DisplayName("the initialize handshake can turn tracing on but never off")
+        void handshakeNeverDisables() {
+            var server = new GraphitronLanguageServer(new Workspace());
+
+            // Most clients send trace=off at the handshake whether or not the user asked for
+            // anything. Honouring it would silence a deliberately-set graphitron.lsp.trace
+            // before the seam had traced a single phase, so the handshake is enable-only.
+            LspTrace.setEnabled(true);
+            server.initialize(initializeParams(TraceValue.Off));
+            assertThat(LspTrace.enabled())
+                .as("a client's boilerplate trace=off must not override the startup property")
+                .isTrue();
+
+            // The other direction is honoured: a client that does ask for tracing gets it.
+            LspTrace.setEnabled(false);
+            server.initialize(initializeParams(TraceValue.Verbose));
+            assertThat(LspTrace.enabled()).isTrue();
+        }
+
+        private static InitializeParams initializeParams(String trace) {
+            var params = new InitializeParams();
+            params.setTrace(trace);
+            return params;
+        }
     }
 
     private static final class RecordingLanguageClient implements LanguageClient {

@@ -1,6 +1,7 @@
 package no.sikt.graphitron.lsp.server;
 
 import no.sikt.graphitron.lsp.state.Workspace;
+import no.sikt.graphitron.lsp.trace.LspTrace;
 import org.eclipse.lsp4j.CompletionOptions;
 import org.eclipse.lsp4j.ConfigurationItem;
 import org.eclipse.lsp4j.ConfigurationParams;
@@ -8,7 +9,9 @@ import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.InitializeResult;
 import org.eclipse.lsp4j.InitializedParams;
 import org.eclipse.lsp4j.ServerCapabilities;
+import org.eclipse.lsp4j.SetTraceParams;
 import org.eclipse.lsp4j.TextDocumentSyncKind;
+import org.eclipse.lsp4j.TraceValue;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.LanguageClientAware;
 import org.eclipse.lsp4j.services.LanguageServer;
@@ -58,6 +61,7 @@ public class GraphitronLanguageServer implements LanguageServer, LanguageClientA
 
     @Override
     public CompletableFuture<InitializeResult> initialize(InitializeParams params) {
+        applyTraceValue(params.getTrace(), false);
         var capabilities = new ServerCapabilities();
         capabilities.setTextDocumentSync(TextDocumentSyncKind.Incremental);
         capabilities.setHoverProvider(true);
@@ -92,6 +96,45 @@ public class GraphitronLanguageServer implements LanguageServer, LanguageClientA
         var item = new ConfigurationItem();
         item.setSection(section);
         return item;
+    }
+
+    /**
+     * Turns {@link LspTrace} on and off from the client, so a session that has started
+     * misbehaving can be traced without relaunching the server with a system property.
+     * Trace output still goes to the seam's own stream rather than back over the
+     * connection; see {@link LspTrace} for why the protocol is the wrong carrier for a
+     * diagnosis of the protocol.
+     */
+    @Override
+    public void setTrace(SetTraceParams params) {
+        applyTraceValue(params == null ? null : params.getValue(), true);
+    }
+
+    /**
+     * Maps an LSP {@code TraceValue} onto the seam. {@code off} disables, {@code messages}
+     * and {@code verbose} enable, and anything else (including absent) leaves the current
+     * state alone.
+     *
+     * <p>{@code mayDisable} is what separates the two callers. A {@code $/setTrace}
+     * notification is a deliberate mid-session act, so it is honoured in both directions.
+     * The {@code trace} field on the initialize handshake is boilerplate most clients send
+     * as {@code off} whether or not the user asked for anything, so honouring it there
+     * would silence a deliberately-set {@code graphitron.lsp.trace} before the seam had
+     * traced a single phase. At the handshake the value can therefore only turn tracing on.
+     */
+    private static void applyTraceValue(String value, boolean mayDisable) {
+        if (value == null) {
+            return;
+        }
+        switch (value) {
+            case TraceValue.Messages, TraceValue.Verbose -> LspTrace.setEnabled(true);
+            case TraceValue.Off -> {
+                if (mayDisable) {
+                    LspTrace.setEnabled(false);
+                }
+            }
+            default -> { }
+        }
     }
 
     @Override

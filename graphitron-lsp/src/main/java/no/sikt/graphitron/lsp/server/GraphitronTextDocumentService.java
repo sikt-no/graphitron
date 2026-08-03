@@ -170,20 +170,20 @@ public class GraphitronTextDocumentService implements TextDocumentService {
                 span.detail("uri", uri);
                 Either<List<? extends Location>, List<? extends LocationLink>> result =
                     workspace.withView(uri, null, file -> {
-                    var pos = Positions.resolve(file.source(),
-                        params.getPosition().getLine(),
-                        params.getPosition().getCharacter()).tsPoint();
-                    // IntraSchemaDefinitions takes its own withAllViews (the lock is
-                    // released before this lambda runs, so that is not re-entrant); it
-                    // returns a read-only Location, so a per-provider generation skew is
-                    // harmless here in a way it would not be for a composed edit.
-                    return Definitions.compute(workspace.vocabulary(), file, workspace.catalog(),
-                            workspace.sourceIndex(), workspace.snapshot(), pos)
-                        .or(() -> IntraSchemaDefinitions.compute(workspace, workspace.snapshot(), uri, pos))
-                        .or(() -> DeclarationDefinitions.compute(file, workspace.catalog(),
-                            workspace.sourceIndex(), workspace.snapshot(), pos))
-                        .map(loc -> Either.<List<? extends Location>, List<? extends LocationLink>>forLeft(List.of(loc)))
-                        .orElseGet(() -> Either.forLeft(List.of()));
+                        var pos = Positions.resolve(file.source(),
+                            params.getPosition().getLine(),
+                            params.getPosition().getCharacter()).tsPoint();
+                        // IntraSchemaDefinitions takes its own withAllViews (the lock is
+                        // released before this lambda runs, so that is not re-entrant); it
+                        // returns a read-only Location, so a per-provider generation skew is
+                        // harmless here in a way it would not be for a composed edit.
+                        return Definitions.compute(workspace.vocabulary(), file, workspace.catalog(),
+                                workspace.sourceIndex(), workspace.snapshot(), pos)
+                            .or(() -> IntraSchemaDefinitions.compute(workspace, workspace.snapshot(), uri, pos))
+                            .or(() -> DeclarationDefinitions.compute(file, workspace.catalog(),
+                                workspace.sourceIndex(), workspace.snapshot(), pos))
+                            .map(loc -> Either.<List<? extends Location>, List<? extends LocationLink>>forLeft(List.of(loc)))
+                            .orElseGet(() -> Either.forLeft(List.of()));
                     });
                 return result != null ? result : Either.forLeft(List.of());
             }

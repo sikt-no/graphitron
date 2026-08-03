@@ -1,7 +1,7 @@
 ---
 id: R571
 title: "LSP request-path tracing and phase timing instrumentation"
-status: Ready
+status: In Progress
 bucket: tooling
 priority: 3
 theme: lsp
@@ -107,6 +107,45 @@ ranked hypotheses that motivated the item. The dominant per-edit cost is the ful
 tree-sitter, whose incremental reparse comes in at 1.1 ms. Both sit inside the workspace
 lock. `diagnostics.compute` runs 100 ms for 400 directives, and a cold `vocabulary.load`
 costs 270 ms.
+
+## What shipped in the rework pass
+
+All five requests below are addressed. Two carried design forks, decided as follows and
+recorded here rather than only in the commit message.
+
+**The editor-visible channel is half-implemented, deliberately.** `$/setTrace` landed:
+`GraphitronLanguageServer.setTrace` maps lsp4j's `TraceValue` onto `LspTrace.setEnabled`, so
+an editor can start tracing mid-session without a relaunch that would lose the state that
+provoked the problem. The handshake's `trace` value is honoured too but enable-only, since
+most clients send `trace: off` as boilerplate and honouring it would silence a deliberately
+set `graphitron.lsp.trace` before a single phase had been traced. What did *not* land is
+routing trace output through `window/logMessage`, and that is a rejection rather than a
+deferral: it would carry the diagnosis over the very connection whose framing and liveness
+are under suspicion, serialised behind every other response, emitted from inside the
+workspace lock. A hang report delivered by the channel fails exactly when the channel is the
+problem. Mainstream clients already surface a server's stderr in an editor output panel, so
+the editor-visible half of the goal is met without that coupling.
+
+**Writes stay synchronous.** The rework note floated buffering the lock-held sites to remove
+the blocking-write hazard rather than document around it. Rejected on the evidence: a
+synchronous write means what reaches the sink is what happened right up to a `kill`, and a
+hang is usually resolved by killing the process, so an asynchronous drain would lose the tail
+exactly when the tail is the only evidence. Deferring the *open* line is additionally
+incompatible with the design, since an unmatched `>` only exists because the open line is
+written before the phase runs. The hazard is real but the file sink already closes it, so it
+is now the documented recommendation for hang investigation with the reasoning attached,
+rather than an alternative listed without one.
+
+Delivered mechanically: a time-of-day stamp on every line plus a one-off header carrying the
+date, the resolved threshold and the pid, so a file read days later is self-describing;
+`slowNanos` moved off `static final` behind `slowMsForTesting` and the sink and enable
+resolution split into package-private `openSink` and `enabledFrom` seams, which is what makes
+the `SLOW` tag, the file sink, its fallback-to-stderr arm and the `GRAPHITRON_LSP_TRACE` arm
+assertable at all; `detail` given `int` and `long` overloads so the disabled path is boxing-free
+at the call site and the javadoc claim is literally true rather than nearly true;
+`definition` reflowed. Coverage: `LspTraceTest` 7 to 14 tests, `GraphitronLanguageServerTest`
+3 to 6, and the how-to gained the file-sink recommendation, the `$/setTrace` asymmetry, and
+the subtraction that gets at per-directive cost.
 
 ## Rework requested at the Done gate
 

@@ -3,18 +3,28 @@ package no.sikt.graphitron.lsp.trace;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.LocalDate;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Behaviour of the trace seam itself. Two of these assertions are what make the seam safe
- * to leave sitting on per-keystroke paths and in the stdio deployment: off allocates
- * nothing and emits nothing, and the default sink is never {@code System.out}.
+ * to leave sitting on per-keystroke paths and in the stdio deployment: off allocates no span
+ * and emits nothing, and the default sink is never {@code System.out}.
+ *
+ * <p>Several of the rest exist because the configuration they cover is otherwise
+ * unassertable. The {@code SLOW} threshold, the file sink and the {@code GRAPHITRON_LSP_TRACE}
+ * arm are all resolved once at class initialisation in production, so they are reached here
+ * through the package-private seams ({@code slowMsForTesting}, {@code openSink},
+ * {@code enabledFrom}) rather than by mutating the JVM's properties or environment.
  */
 class LspTraceTest {
 
@@ -24,6 +34,7 @@ class LspTraceTest {
     void resetSeam() {
         LspTrace.setEnabled(false);
         LspTrace.sinkForTesting(null);
+        LspTrace.slowMsForTesting(null);
     }
 
     @Test
@@ -146,6 +157,132 @@ class LspTraceTest {
         }
 
         assertThat(lineContaining("lsp-trace <", "throwing")).contains("uri=file:///schema.graphqls");
+    }
+
+    @Test
+    @DisplayName("every line carries a time of day, so an unmatched open span can be placed")
+    void everyLineIsStamped() {
+        redirectSink();
+        LspTrace.setEnabled(true);
+
+        try (var span = LspTrace.span("stamped")) {
+            span.detail("k", "v");
+        }
+
+        // An unmatched '>' is the seam's headline signal, and without a clock it says where
+        // the server stuck but not when, so it cannot be lined up against the user's report
+        // of when the editor froze. Both lines are stamped, not just the close.
+        assertThat(emitted())
+            .filteredOn(line -> line.contains("lsp-trace"))
+            .isNotEmpty()
+            .allSatisfy(line -> assertThat(line).matches("^\\d{2}:\\d{2}:\\d{2}\\.\\d{3} lsp-trace .*"));
+    }
+
+    @Test
+    @DisplayName("a header line records the date and the resolved threshold, once per sink")
+    void headerIsWrittenOncePerSink() {
+        redirectSink();
+        LspTrace.slowMsForTesting(250L);
+        LspTrace.setEnabled(true);
+
+        try (var _ = LspTrace.span("first")) {
+            // Two spans, one header: the artifact is self-describing without repeating itself.
+        }
+        try (var _ = LspTrace.span("second")) {
+            // no-op
+        }
+
+        var headers = emitted().stream().filter(l -> l.contains("lsp-trace header")).toList();
+        assertThat(headers).hasSize(1);
+        assertThat(headers.getFirst())
+            .as("per-line stamps are time-of-day only, so the date has to live here")
+            .contains("date=" + LocalDate.now())
+            .contains("slowMs=250");
+    }
+
+    @Test
+    @DisplayName("the SLOW tag fires above the threshold and stays off below it")
+    void slowTagTracksTheThreshold() {
+        redirectSink();
+        LspTrace.slowMsForTesting(0L);
+        LspTrace.setEnabled(true);
+        try (var _ = LspTrace.span("everything-is-slow")) {
+            // Threshold zero: any duration at all is at or above it.
+        }
+        assertThat(lineContaining("lsp-trace <", "everything-is-slow")).contains(" SLOW");
+
+        redirectSink();
+        LspTrace.slowMsForTesting(600_000L);
+        try (var _ = LspTrace.span("nothing-is-slow")) {
+            // Ten minutes: no test span reaches it.
+        }
+        assertThat(lineContaining("lsp-trace <", "nothing-is-slow")).doesNotContain("SLOW");
+    }
+
+    @Test
+    @DisplayName("the file sink writes span lines to the named path, creating parent directories")
+    void fileSinkWritesToTheNamedPath(@TempDir Path dir) throws Exception {
+        var target = dir.resolve("nested/deeper/lsp-trace.log");
+        var fileSink = LspTrace.openSink(target.toString());
+        LspTrace.sinkForTesting(fileSink);
+        LspTrace.setEnabled(true);
+
+        try (var span = LspTrace.span("to-a-file")) {
+            span.detail("uri", "file:///schema.graphqls");
+        }
+        // Released before reading rather than left to @AfterEach's sink swap, which would
+        // orphan the handle and leave @TempDir unable to clean up on some platforms.
+        fileSink.close();
+
+        assertThat(target).exists();
+        assertThat(Files.readString(target, StandardCharsets.UTF_8))
+            .contains("lsp-trace header")
+            .contains("to-a-file")
+            .contains("uri=file:///schema.graphqls");
+    }
+
+    @Test
+    @DisplayName("an unopenable trace file falls back to stderr rather than failing the server")
+    void fileSinkFallsBackToStderr(@TempDir Path dir) throws Exception {
+        // A directory where the file should be: opening it as a file cannot succeed. Tracing
+        // is a diagnostic, so a bad path must degrade rather than take the LSP down with it.
+        var occupied = dir.resolve("occupied");
+        Files.createDirectory(occupied);
+
+        assertThat(LspTrace.openSink(occupied.toString())).isSameAs(System.err);
+    }
+
+    @Test
+    @DisplayName("the environment variable enables the seam independently of the property")
+    void envVarArmEnables() {
+        // The pure-function seam exists because a test cannot set an environment variable for
+        // the JVM it runs in; without it this arm could only be checked by reading the source.
+        assertThat(LspTrace.enabledFrom(null, "true")).isTrue();
+        assertThat(LspTrace.enabledFrom("true", null)).isTrue();
+        assertThat(LspTrace.enabledFrom("true", "false")).isTrue();
+        assertThat(LspTrace.enabledFrom(null, null)).isFalse();
+        assertThat(LspTrace.enabledFrom("false", "false")).isFalse();
+        assertThat(LspTrace.enabledFrom("yes", "1"))
+            .as("Boolean.parseBoolean accepts only \"true\", so anything else reads as off")
+            .isFalse();
+    }
+
+    @Test
+    @DisplayName("primitive detail overloads render identically to the boxing one")
+    void primitiveDetailOverloadsRender() {
+        redirectSink();
+        LspTrace.setEnabled(true);
+
+        try (var span = LspTrace.span("counts")) {
+            span.detail("ints", 42).detail("longs", 9_000_000_000L).detail("objects", "text");
+        }
+
+        // The overloads exist so a count on a per-keystroke path does not box at the call
+        // site while the seam is off; the rendered line must not change because of them.
+        assertThat(lineContaining("lsp-trace <", "counts"))
+            .contains("ints=42")
+            .contains("longs=9000000000")
+            .contains("objects=text");
     }
 
     private void redirectSink() {
