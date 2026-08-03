@@ -11,7 +11,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -36,7 +35,7 @@ class LintSuppressionPipelineTest {
         Files.writeString(schema, sdl);
         var ctx = new RewriteContext(
             List.of(new SchemaInput(schema.toString(), Optional.empty(), Optional.empty())),
-            schema.getParent(), schema.getParent(), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE, Map.of()
+            schema.getParent(), schema.getParent(), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE
         ).withLintConfig(lintConfig);
         return new GraphQLRewriteGenerator(ctx).buildOutput().report();
     }

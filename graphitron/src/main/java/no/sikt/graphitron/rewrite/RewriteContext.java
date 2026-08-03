@@ -6,7 +6,6 @@ import no.sikt.graphitron.rewrite.session.SessionStateConfig;
 
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -33,7 +32,7 @@ import java.util.Set;
  *                       {@link java.net.URLClassLoader} over the project's compile classpath
  *                       and every reactor sibling's {@code target/classes}, parented on the
  *                       plugin loader. Unit-tier callers default to the current thread's
- *                       context classloader through the six-arg overload, which equals the
+ *                       context classloader through the five-arg overload, which equals the
  *                       system classloader in a JUnit-launched JVM.
  * @param compileSourceRoots compile source-root directories (hand-written plus
  *                       generated-sources) the LSP catalog parses to recover Java
@@ -59,7 +58,6 @@ public record RewriteContext(
     Path outputResourcesDirectory,
     String outputPackage,
     String jooqPackage,
-    Map<String, String> namedReferences,
     List<Path> classpathRoots,
     ClassLoader codegenLoader,
     List<Path> compileSourceRoots,
@@ -78,7 +76,6 @@ public record RewriteContext(
         Objects.requireNonNull(outputResourcesDirectory, "outputResourcesDirectory");
         Objects.requireNonNull(outputPackage, "outputPackage");
         Objects.requireNonNull(jooqPackage, "jooqPackage");
-        Objects.requireNonNull(namedReferences, "namedReferences");
         Objects.requireNonNull(classpathRoots, "classpathRoots");
         Objects.requireNonNull(codegenLoader, "codegenLoader");
         if (schemaFileExtensions.isEmpty()) {
@@ -86,7 +83,6 @@ public record RewriteContext(
         }
         schemaInputs = List.copyOf(schemaInputs);
         schemaFileExtensions = Set.copyOf(schemaFileExtensions);
-        namedReferences = Map.copyOf(namedReferences);
         classpathRoots = List.copyOf(classpathRoots);
         // The last four components are null-tolerant: only the build mojos populate them
         // (from <sessionState>, <lint>, <tenantColumn>, and the Maven project's source roots);
@@ -104,7 +100,7 @@ public record RewriteContext(
      */
     public RewriteContext withLintConfig(LintConfig lintConfig) {
         return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, outputDirectory,
-            outputResourcesDirectory, outputPackage, jooqPackage, namedReferences, classpathRoots,
+            outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
             codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn);
     }
 
@@ -114,7 +110,7 @@ public record RewriteContext(
      */
     public RewriteContext withSessionStateConfig(SessionStateConfig sessionStateConfig) {
         return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, outputDirectory,
-            outputResourcesDirectory, outputPackage, jooqPackage, namedReferences, classpathRoots,
+            outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
             codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn);
     }
 
@@ -124,11 +120,11 @@ public record RewriteContext(
      */
     public RewriteContext withTenantColumn(String tenantColumn) {
         return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, outputDirectory,
-            outputResourcesDirectory, outputPackage, jooqPackage, namedReferences, classpathRoots,
+            outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
             codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn);
     }
 
-    /** Thirteen-arg overload: defaults {@code tenantColumn} to {@code null} (single-tenant). */
+    /** Twelve-arg overload: defaults {@code tenantColumn} to {@code null} (single-tenant). */
     public RewriteContext(
         List<SchemaInput> schemaInputs,
         Set<String> schemaFileExtensions,
@@ -137,7 +133,6 @@ public record RewriteContext(
         Path outputResourcesDirectory,
         String outputPackage,
         String jooqPackage,
-        Map<String, String> namedReferences,
         List<Path> classpathRoots,
         ClassLoader codegenLoader,
         List<Path> compileSourceRoots,
@@ -145,12 +140,12 @@ public record RewriteContext(
         SessionStateConfig sessionStateConfig
     ) {
         this(schemaInputs, schemaFileExtensions, basedir, outputDirectory, outputResourcesDirectory,
-            outputPackage, jooqPackage, namedReferences, classpathRoots, codegenLoader,
+            outputPackage, jooqPackage, classpathRoots, codegenLoader,
             compileSourceRoots, lintConfig, sessionStateConfig, null);
     }
 
     /**
-     * Eleven-arg overload: defaults {@code lintConfig} to {@link LintConfig#empty()} (no
+     * Ten-arg overload: defaults {@code lintConfig} to {@link LintConfig#empty()} (no
      * suppression; every author-owned type is linted with every rule).
      */
     public RewriteContext(
@@ -161,18 +156,17 @@ public record RewriteContext(
         Path outputResourcesDirectory,
         String outputPackage,
         String jooqPackage,
-        Map<String, String> namedReferences,
         List<Path> classpathRoots,
         ClassLoader codegenLoader,
         List<Path> compileSourceRoots
     ) {
         this(schemaInputs, schemaFileExtensions, basedir, outputDirectory, outputResourcesDirectory,
-            outputPackage, jooqPackage, namedReferences, classpathRoots, codegenLoader,
+            outputPackage, jooqPackage, classpathRoots, codegenLoader,
             compileSourceRoots, LintConfig.empty(), SessionStateConfig.none());
     }
 
     /**
-     * Ten-arg overload: defaults {@code compileSourceRoots} to empty, so the catalog carries
+     * Nine-arg overload: defaults {@code compileSourceRoots} to empty, so the catalog carries
      * file-level / {@code UNKNOWN} positions.
      */
     public RewriteContext(
@@ -183,17 +177,16 @@ public record RewriteContext(
         Path outputResourcesDirectory,
         String outputPackage,
         String jooqPackage,
-        Map<String, String> namedReferences,
         List<Path> classpathRoots,
         ClassLoader codegenLoader
     ) {
         this(schemaInputs, schemaFileExtensions, basedir, outputDirectory, outputResourcesDirectory,
-            outputPackage, jooqPackage, namedReferences, classpathRoots, codegenLoader, List.of(),
+            outputPackage, jooqPackage, classpathRoots, codegenLoader, List.of(),
             LintConfig.empty(), SessionStateConfig.none());
     }
 
     /**
-     * Seven-arg overload for callers that supply {@code classpathRoots} but no explicit
+     * Six-arg overload for callers that supply {@code classpathRoots} but no explicit
      * {@code codegenLoader}; the loader defaults to the current thread's context classloader,
      * which equals the system classloader in a JUnit-launched JVM.
      */
@@ -203,27 +196,25 @@ public record RewriteContext(
         Path outputDirectory,
         String outputPackage,
         String jooqPackage,
-        Map<String, String> namedReferences,
         List<Path> classpathRoots
     ) {
         this(schemaInputs, DEFAULT_SCHEMA_FILE_EXTENSIONS, basedir, outputDirectory,
             defaultResourcesDirectory(outputDirectory), outputPackage, jooqPackage,
-            namedReferences, classpathRoots, Thread.currentThread().getContextClassLoader(), List.of(),
+            classpathRoots, Thread.currentThread().getContextClassLoader(), List.of(),
             LintConfig.empty(), SessionStateConfig.none());
     }
 
-    /** Six-arg overload for unit-tier callers that don't care about classpath scanning. */
+    /** Five-arg overload for unit-tier callers that don't care about classpath scanning. */
     public RewriteContext(
         List<SchemaInput> schemaInputs,
         Path basedir,
         Path outputDirectory,
         String outputPackage,
-        String jooqPackage,
-        Map<String, String> namedReferences
+        String jooqPackage
     ) {
         this(schemaInputs, DEFAULT_SCHEMA_FILE_EXTENSIONS, basedir, outputDirectory,
             defaultResourcesDirectory(outputDirectory), outputPackage, jooqPackage,
-            namedReferences, List.of(), Thread.currentThread().getContextClassLoader(), List.of(),
+            List.of(), Thread.currentThread().getContextClassLoader(), List.of(),
             LintConfig.empty(), SessionStateConfig.none());
     }
 

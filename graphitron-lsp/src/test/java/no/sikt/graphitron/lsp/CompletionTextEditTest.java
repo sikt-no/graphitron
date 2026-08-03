@@ -178,7 +178,7 @@ class CompletionTextEditTest {
         int innerStart = lines[line].indexOf("\"Fi\"") + 1;
         Point cursor = new Point(line, innerStart + 1);
 
-        var data = new CompletionData(List.of(), List.of(), List.of(), Map.of(),
+        var data = new CompletionData(List.of(), List.of(), List.of(),
             Map.of("Film", new CompletionData.NodeMetadata("Film", List.of("film_id"))));
         var items = runValueProvider(source, cursor,
             (ctx, dir, bytes) -> NodeTypeCompletions.generate(VOCAB, data, ctx));

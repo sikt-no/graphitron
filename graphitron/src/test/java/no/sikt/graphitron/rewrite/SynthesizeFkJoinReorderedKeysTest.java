@@ -88,7 +88,6 @@ class SynthesizeFkJoinReorderedKeysTest {
             java.nio.file.Path.of("."),
             java.nio.file.Path.of("."),
             "unused",
-            "unused",
-            java.util.Map.of());
+            "unused");
     }
 }

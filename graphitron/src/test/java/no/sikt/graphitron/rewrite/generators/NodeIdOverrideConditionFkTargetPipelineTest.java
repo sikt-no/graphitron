@@ -11,7 +11,6 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -42,8 +41,7 @@ class NodeIdOverrideConditionFkTargetPipelineTest {
     private static final String FIXTURE_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.nodeidfixture";
     private static final RewriteContext FIXTURE_CTX = new RewriteContext(
         List.of(), Path.of(""), Path.of(""),
-        DEFAULT_OUTPUT_PACKAGE, FIXTURE_JOOQ_PACKAGE,
-        Map.of()
+        DEFAULT_OUTPUT_PACKAGE, FIXTURE_JOOQ_PACKAGE
     );
 
     @Test

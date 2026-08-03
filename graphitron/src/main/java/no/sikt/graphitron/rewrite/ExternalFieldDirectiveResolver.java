@@ -65,9 +65,6 @@ final class ExternalFieldDirectiveResolver {
         }
 
         FieldBuilder.ExternalRef extRef = fb.parseExternalRef(parentTypeName, fieldDef, DIR_EXTERNAL_FIELD, ARG_EXTERNAL_FIELD_REF);
-        if (extRef != null && extRef.lookupError() != null) {
-            return new Resolved.Rejected(Rejection.structural("external field reference could not be resolved — " + extRef.lookupError()));
-        }
         if (extRef != null && extRef.argMappingError() != null) {
             return new Resolved.Rejected(Rejection.structural(extRef.argMappingError()));
         }

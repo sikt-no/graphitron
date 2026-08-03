@@ -84,7 +84,7 @@ class ArgNameCompletionsTest {
         var items = run(source, new Point(line, col));
 
         assertThat(items).extracting(i -> i.getLabel())
-            .containsExactlyInAnyOrder("className", "method", "name", "argMapping");
+            .containsExactlyInAnyOrder("className", "method", "argMapping");
     }
 
     @Test

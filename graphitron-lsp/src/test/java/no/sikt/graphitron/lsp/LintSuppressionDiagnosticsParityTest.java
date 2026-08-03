@@ -15,7 +15,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -67,7 +66,7 @@ class LintSuppressionDiagnosticsParityTest {
         Files.writeString(schema, SDL);
         var ctx = new RewriteContext(
             List.of(new SchemaInput(schema.toString(), Optional.empty(), Optional.empty())),
-            tmp, tmp, "fake.output", JOOQ_PACKAGE, Map.of()
+            tmp, tmp, "fake.output", JOOQ_PACKAGE
         ).withLintConfig(lintConfig);
 
         var output = new GraphQLRewriteGenerator(ctx).buildOutput();

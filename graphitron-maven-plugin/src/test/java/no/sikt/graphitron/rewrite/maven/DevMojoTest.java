@@ -382,8 +382,7 @@ class DevMojoTest {
             basedir,
             basedir.resolve("target/generated"),
             "com.example.generated",
-            "com.example.jooq",
-            Map.of());
+            "com.example.jooq");
     }
 
     /** Maven {@link org.apache.maven.plugin.logging.Log} that records error calls instead of printing. */

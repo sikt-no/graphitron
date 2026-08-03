@@ -19,7 +19,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 /**
  * Entry-point for {@code textDocument/codeAction} requests. Runs every
@@ -66,18 +65,26 @@ public final class CodeActions {
     }
 
     private static String countableNoun(String displayName) {
-        // Phrase the displayName for use after a count. The displayName
-        // ("Migrate `name:` to `className:`") becomes
-        // "ExternalCodeReference.name sites" in the spec's wording;
-        // a stable, neutral phrasing here is "rewrite sites".
-        return "ExternalCodeReference.name sites";
+        // Phrase the displayName for use after a count. Deliberately neutral, so the
+        // wording does not have to be revisited per registered action.
+        return "rewrite sites";
     }
 
     public static List<Either<Command, CodeAction>> compute(
         CodeActionParams params, Workspace workspace
     ) {
+        return compute(params, workspace, SdlActions.all(workspace.catalog()));
+    }
+
+    /**
+     * Seam taking the {@link SdlAction} list explicitly, so {@code CodeActionsTest} can
+     * exercise the three activation points and the result-message branches against a
+     * test-local action. The public overload supplies {@link SdlActions#all}.
+     */
+    static List<Either<Command, CodeAction>> compute(
+        CodeActionParams params, Workspace workspace, List<SdlAction> actions
+    ) {
         String fileUri = params.getTextDocument().getUri();
-        var actions = SdlActions.all(workspace.catalog());
 
         // One consistent generation of every open file: the cursor file's
         // per-site and file-bulk actions and the workspace-bulk action all read

@@ -175,7 +175,7 @@ class CatalogBuilderSnapshotTest {
                     new CompletionData.RecordComponent("title", "String")
                 )
             )),
-            Map.of(), Map.of()
+            Map.of()
         );
 
         var snapshot = CatalogBuilder.buildSnapshot(registry, schema, catalog);
@@ -211,7 +211,7 @@ class CatalogBuilderSnapshotTest {
                 ),
                 List.of()
             )),
-            Map.of(), Map.of()
+            Map.of()
         );
 
         var snapshot = CatalogBuilder.buildSnapshot(registry, schema, catalog);

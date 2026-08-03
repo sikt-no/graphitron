@@ -12,7 +12,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -102,7 +101,6 @@ class CatalogBuilderSourceTest {
             basedir.resolve("res"),
             "fake.output",
             DEFAULT_JOOQ_PACKAGE,
-            Map.of(),
             classpathRoots,
             Thread.currentThread().getContextClassLoader(),
             compileSourceRoots

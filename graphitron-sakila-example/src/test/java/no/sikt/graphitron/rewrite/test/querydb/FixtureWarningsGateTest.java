@@ -9,7 +9,6 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -53,8 +52,7 @@ class FixtureWarningsGateTest {
             FIXTURE_SCHEMA.getParent(),
             FIXTURE_SCHEMA.getParent(),
             OUTPUT_PACKAGE,
-            JOOQ_PACKAGE,
-            Map.of()
+            JOOQ_PACKAGE
         );
         return new GraphQLRewriteGenerator(ctx).buildOutput().report().warnings();
     }

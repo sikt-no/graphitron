@@ -4,7 +4,6 @@ import no.sikt.graphitron.rewrite.RewriteContext;
 
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 
 public class TestConfiguration {
     public static final String
@@ -17,8 +16,7 @@ public class TestConfiguration {
             Path.of(""),
             Path.of(""),
             DEFAULT_OUTPUT_PACKAGE,
-            DEFAULT_JOOQ_PACKAGE,
-            Map.of()
+            DEFAULT_JOOQ_PACKAGE
         );
     }
 }

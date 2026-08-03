@@ -21,18 +21,12 @@ class GenerateMojoTest {
         var mojo = mojo(basedir);
         mojo.outputDirectory = basedir.resolve("target/generated").toString();
 
-        var ref = new NamedReferenceBinding();
-        ref.name = "MyRef";
-        ref.className = "com.example.MyRef";
-        mojo.namedReferences = List.of(ref);
-
         var ctx = mojo.buildContext();
 
         assertThat(ctx.outputPackage()).isEqualTo("com.example.generated");
         assertThat(ctx.jooqPackage()).isEqualTo("com.example.jooq");
         assertThat(ctx.basedir()).isEqualTo(basedir);
         assertThat(ctx.outputDirectory()).isEqualTo(basedir.resolve("target/generated").normalize());
-        assertThat(ctx.namedReferences()).containsEntry("MyRef", "com.example.MyRef");
         assertThat(ctx.schemaInputs()).isEmpty();
     }
 

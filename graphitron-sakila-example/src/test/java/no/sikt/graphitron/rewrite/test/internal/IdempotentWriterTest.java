@@ -11,7 +11,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
@@ -42,8 +41,7 @@ class IdempotentWriterTest {
             schemaFile.getParent(),
             outputDir,
             DEFAULT_OUTPUT_PACKAGE,
-            DEFAULT_JOOQ_PACKAGE,
-            Map.of()
+            DEFAULT_JOOQ_PACKAGE
         );
     }
 

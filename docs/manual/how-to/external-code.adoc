@@ -118,7 +118,7 @@ The deprecated `@record` directive parses the same `record:` (`ExternalCodeRefer
 * The carrying artifact must be on the *plugin's* classpath (the `<plugin>...<dependencies>` block), not the module's outer `<dependencies>`. The generator runs at build time and only sees what the plugin can load.
 * Reflection runs at code-generation time, not at server startup. A typo in `className:` or `method:` fails the `mvn install` that builds the consumer module, not at request time.
 * `argMapping:` is `"javaParam: graphqlArg"`, not `"graphqlArg: javaParam"`. The Java side comes first because that is what the reflected method signature reads.
-* `ExternalCodeReference.name:` (a deprecated short alias resolved via the Mojo's `<namedReferences>` config) is still parsed for legacy schemas in transition, but new schemas should use `className:` directly. The deprecation warning surfaces during the rewrite-generate Maven goal.
+* `ExternalCodeReference.name:` is *removed and no longer supported*. It was a short alias resolved through the Maven plugin's `<namedReferences>` mappings; the argument and that plugin parameter are both gone. A schema still carrying `name:` fails to load, because the argument is no longer declared on the `ExternalCodeReference` input. Replace each site with `className:` and the fully qualified class name.
 
 == See also
 

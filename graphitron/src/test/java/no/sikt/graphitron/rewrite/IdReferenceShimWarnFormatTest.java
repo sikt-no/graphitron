@@ -11,7 +11,6 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 
 import static no.sikt.graphitron.rewrite.TestSchemaHelper.buildSchema;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -43,8 +42,7 @@ class IdReferenceShimWarnFormatTest {
         Path.of(""),
         Path.of(""),
         "fake.code.generated",
-        "no.sikt.graphitron.rewrite.idreffixture",
-        Map.of()
+        "no.sikt.graphitron.rewrite.idreffixture"
     );
 
     private static final RewriteContext NODEID_CTX = new RewriteContext(
@@ -52,8 +50,7 @@ class IdReferenceShimWarnFormatTest {
         Path.of(""),
         Path.of(""),
         "fake.code.generated",
-        "no.sikt.graphitron.rewrite.nodeidfixture",
-        Map.of()
+        "no.sikt.graphitron.rewrite.nodeidfixture"
     );
 
     private ListAppender<ILoggingEvent> appender;

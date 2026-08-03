@@ -50,7 +50,7 @@ class FixtureCatalogTest {
                 .build())
             .build();
         var ctx = new RewriteContext(
-            List.of(), Path.of(""), Path.of(""), "fake.output", JOOQ_PACKAGE, Map.of()
+            List.of(), Path.of(""), Path.of(""), "fake.output", JOOQ_PACKAGE
         );
         return CatalogBuilder.build(jooq, schema, ctx);
     }

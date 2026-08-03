@@ -1,8 +1,8 @@
 = Maven plugin configuration
-:description: Every parameter of every goal on Graphitron's Maven plugin (graphitron-maven-plugin). Covers the three goals (generate, validate, dev), the four shared <configuration> parameters, the dev-only watch parameters, the two complex POM bindings (<schemaInput>, <namedReference>), and the CLI -D properties.
+:description: Every parameter of every goal on Graphitron's Maven plugin (graphitron-maven-plugin). Covers the three goals (generate, validate, dev), the four shared <configuration> parameters, the dev-only watch parameters, the <schemaInput> POM binding, and the CLI -D properties.
 :!toc:
 
-`graphitron-maven-plugin` exposes three Maven goals: `generate` (the build-time codegen pipeline), `validate` (a faster schema-only run that emits no Java), and `dev` (the editor-loop server). Each goal accepts the same handful of `<configuration>` parameters; `dev` adds three of its own. Two of the parameters (`<schemaInputs>` and `<namedReferences>`) are list-of-complex-objects with their own POM bindings.
+`graphitron-maven-plugin` exposes three Maven goals: `generate` (the build-time codegen pipeline), `validate` (a faster schema-only run that emits no Java), and `dev` (the editor-loop server). Each goal accepts the same handful of `<configuration>` parameters; `dev` adds three of its own. One of the parameters (`<schemaInputs>`) is a list-of-complex-objects with its own POM binding.
 
 This page is the parameter-by-parameter reference. The xref:../tutorial/01-prerequisites.adoc[tutorial's first chapter] introduces the canonical `<configuration>` shape with one schema input and the two required packages; the directive reference under xref:directives/index.adoc[`reference/directives`] covers what each schema input declares.
 
@@ -57,11 +57,6 @@ The following parameters apply to every goal:
 | `List<SchemaInputBinding>`
 | empty
 | List of `<schemaInput>` entries pointing at schema files (or globs that expand to schema files) the loader assembles into one schema. By default schema files are those ending in `.graphqls` or `.graphql`; the `<schemaFileExtensions>` parameter narrows or extends that set. Order matters when two files declare the same type with overlapping fields; later entries win. See xref:#schemainput-binding[`<schemaInput>` binding] for the per-entry shape.
-
-| `namedReferences`
-| `List<NamedReferenceBinding>`
-| empty
-| Reusable `name` → `className` mappings the SDL refers to via `ExternalCodeReference.name:` instead of repeating a fully qualified class name at every directive site. Each entry carries `<name>` and `<className>` children. Empty by default; populated only when the same external class is referenced from many places.
 
 | `schemaFileExtensions`
 | `List<String>`
@@ -162,25 +157,6 @@ The minimum useful entry is one `pattern`:
     </schemaInput>
 </schemaInputs>
 ----
-
-== `<namedReference>` binding
-
-Each `<namedReference>` carries two required children:
-
-[cols="1,1,3",options="header"]
-|===
-| Child | Type | Description
-
-| `name`
-| `String`
-| Lookup key the SDL uses to refer to this reference. Matched against the `name:` argument of `ExternalCodeReference`-bearing directives (see xref:directives/condition.adoc[`@condition`], xref:directives/externalField.adoc[`@externalField`], xref:directives/service.adoc[`@service`]). Names live in a flat namespace; collisions are an author error.
-
-| `className`
-| `String` (FQCN)
-| Fully qualified Java class name the reference resolves to. The classifier checks this against the consumer module's classpath and fails the build with the offending name if the class can't be resolved.
-|===
-
-`<namedReferences>` is empty by default; consumers populate it when the same external class is referenced from many places and the FQCN repetition becomes painful. The directive-site form (without `name:`) takes a literal `className`, so this binding is purely an indirection and never adds new capability.
 
 [#silencing-lint-warnings]
 == Silencing lint warnings
@@ -367,7 +343,7 @@ A bidirectional coverage test (`MojoDocCoverageTest` in `graphitron-maven-plugin
 == See also
 
 * xref:runtime-api.adoc[Runtime API reference] covers the `Graphitron` facade and `GraphitronContext` interface this plugin's `generate` goal emits into the consumer module.
-* xref:directives/index.adoc[Directive reference] covers the SDL surface every `<schemaInput>` parses against; `<namedReference>` entries match `ExternalCodeReference.name:` on the four directives that take external Java code.
+* xref:directives/index.adoc[Directive reference] covers the SDL surface every `<schemaInput>` parses against, including the four directives that take external Java code through `ExternalCodeReference`.
 * xref:../tutorial/01-prerequisites.adoc[Tutorial page 1: Prerequisites] is the first place a consumer meets the plugin and the example consumer's pre-wired POM.
 
 xref:index.adoc[← Reference index]

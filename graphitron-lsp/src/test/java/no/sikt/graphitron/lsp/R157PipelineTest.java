@@ -31,7 +31,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -202,8 +201,7 @@ class R157PipelineTest {
     private static RewriteContext testContextWithTestClasses() {
         Path testClasses = testClassesRoot();
         return new RewriteContext(
-            List.of(), Path.of(""), Path.of(""), "fake.output", JOOQ_PACKAGE,
-            Map.of(), List.of(testClasses)
+            List.of(), Path.of(""), Path.of(""), "fake.output", JOOQ_PACKAGE, List.of(testClasses)
         );
     }
 

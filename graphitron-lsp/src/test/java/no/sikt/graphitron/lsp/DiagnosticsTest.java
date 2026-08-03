@@ -767,123 +767,6 @@ class DiagnosticsTest {
         assertThat(diags).isEmpty();
     }
 
-    // Legacy `name:` arms on ExternalCodeReference. The runtime resolves
-    // `name:` via RewriteContext.namedReferences to a fully-qualified class.
-    // The LSP mirrors that lookup: when `name:` resolves, no diagnostic
-    // (the build-tier WARN is the migration-tracking signal); when it
-    // doesn't, an error mirroring FieldBuilder.parseExternalRef's
-    // lookupError arm. One fixture per ExternalCodeReference binding site.
-
-    @Test
-    void legacyName_resolves_emitsNoDiagnostic() {
-        var file = file("""
-            type Query {
-                x: Int @service(service: {name: "FilmService", method: "foo"})
-            }
-            """);
-
-        var diags = compute(file, catalogWithNamedReferences(
-            Map.of("FilmService", "com.example.FilmService"), "com.example.FilmService"), LspSchemaSnapshot.unavailable());
-
-        assertThat(diags).isEmpty();
-    }
-
-    @Test
-    void legacyName_unresolved_service_messageNamesNameAndPointsAtFixes() {
-        var file = file("""
-            type Query {
-                x: Int @service(service: {name: "Ghost", method: "foo"})
-            }
-            """);
-
-        var diags = compute(file, catalogWithNamedReferences(
-            Map.of("FilmService", "com.example.FilmService"), "com.example.FilmService"), LspSchemaSnapshot.unavailable());
-
-        assertThat(diags).hasSize(1);
-        var d = diags.get(0);
-        assertThat(d.getSeverity()).isEqualTo(DiagnosticSeverity.Error);
-        assertThat(d.getMessage())
-            .contains("'Ghost'")
-            .contains("namedReferences")
-            .contains("className");
-    }
-
-    @Test
-    void legacyName_unresolved_externalField() {
-        var file = file("""
-            type Foo {
-                bar: Int @externalField(reference: {name: "Ghost"})
-            }
-            """);
-
-        var diags = compute(file, catalogWithNamedReferences(
-            Map.of(), "com.example.RealService"), LspSchemaSnapshot.unavailable());
-
-        assertThat(diags).hasSize(1);
-        assertThat(diags.get(0).getMessage()).contains("'Ghost'");
-    }
-
-    @Test
-    void legacyName_unresolved_enum() {
-        var file = file("""
-            enum Foo @enum(enumReference: {name: "Ghost"}) { A B }
-            """);
-
-        var diags = compute(file, catalogWithNamedReferences(
-            Map.of(), "com.example.RealEnum"), LspSchemaSnapshot.unavailable());
-
-        assertThat(diags).hasSize(1);
-        assertThat(diags.get(0).getMessage()).contains("'Ghost'");
-    }
-
-    @Test
-    void legacyName_record_carveOut_producesNoError() {
-        // @record is deprecated and ignored, so the legacy ExternalCodeReference.name →
-        // className alias nudge is dead tooling for it too (it would only push the author toward a
-        // className the directive no longer reads). The carve-out suppresses it, mirroring the
-        // className-tooling carve-out; the same legacy alias under @service/@condition still warns.
-        var file = file("""
-            type Foo @record(record: {name: "Ghost"}) {
-                bar: Int
-            }
-            """);
-
-        var diags = compute(file, catalogWithNamedReferences(
-            Map.of(), "com.example.RealRecord"), LspSchemaSnapshot.unavailable());
-
-        assertThat(diags).isEmpty();
-    }
-
-    @Test
-    void legacyName_unresolved_condition() {
-        var file = file("""
-            type Foo {
-                bar: Int @condition(condition: {name: "Ghost"})
-            }
-            """);
-
-        var diags = compute(file, catalogWithNamedReferences(
-            Map.of(), "com.example.RealCondition"), LspSchemaSnapshot.unavailable());
-
-        assertThat(diags).hasSize(1);
-        assertThat(diags.get(0).getMessage()).contains("'Ghost'");
-    }
-
-    @Test
-    void legacyName_unresolved_referencePathCondition() {
-        var file = file("""
-            type Foo {
-                bar: Int @reference(path: [{condition: {name: "Ghost"}}])
-            }
-            """);
-
-        var diags = compute(file, catalogWithNamedReferences(
-            Map.of(), "com.example.RealCondition"), LspSchemaSnapshot.unavailable());
-
-        assertThat(diags).hasSize(1);
-        assertThat(diags.get(0).getMessage()).contains("'Ghost'");
-    }
-
     @Test
     void unknownDirectiveProducesWarning() {
         // Built.Current with no user-declared directives mimics the
@@ -1356,7 +1239,6 @@ class DiagnosticsTest {
             List.of(film),
             List.of(),
             List.of(),
-            Map.of(),
             Map.of("Film", new CompletionData.NodeMetadata("Film", List.of("FILM_ID")))
         );
     }
@@ -1380,21 +1262,6 @@ class DiagnosticsTest {
             List.of(),
             List.of(),
             List.of(new CompletionData.ExternalReference(fqn, fqn, "", List.of(foo), List.of()))
-        );
-    }
-
-    private static CompletionData catalogWithNamedReferences(
-        Map<String, String> namedReferences, String knownClass
-    ) {
-        // Non-empty externalReferences satisfies the gate in
-        // validateExternalCodeReference; namedReferences is what the
-        // legacy `name:` arm queries.
-        var foo = new CompletionData.Method("foo", "String", "", List.of());
-        return new CompletionData(
-            List.of(),
-            List.of(),
-            List.of(new CompletionData.ExternalReference(knownClass, knownClass, "", List.of(foo), List.of())),
-            namedReferences
         );
     }
 

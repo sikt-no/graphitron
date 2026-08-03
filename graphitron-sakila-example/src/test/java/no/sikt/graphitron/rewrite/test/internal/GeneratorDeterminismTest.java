@@ -89,8 +89,7 @@ class GeneratorDeterminismTest {
             FIXTURE_SCHEMA.getParent(),
             outputDir,
             OUTPUT_PACKAGE,
-            JOOQ_PACKAGE,
-            Map.of()
+            JOOQ_PACKAGE
         );
     }
 

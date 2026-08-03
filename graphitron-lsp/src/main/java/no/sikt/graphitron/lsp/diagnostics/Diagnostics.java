@@ -119,10 +119,6 @@ public final class Diagnostics {
                 for (var leaf : leaves) {
                     dispatch(directive, leaf, vocabulary, file, catalog, snapshot, out);
                 }
-                // The legacy `name:` arm fires once per ExternalCodeReference
-                // object whose `className:` is empty/missing. Driven by leaves,
-                // since every ECR-name slot is an InputField coordinate.
-                validateLegacyNameLeaves(vocabulary, directive, leaves, file, catalog, out);
                 continue;
             }
             // Freshness-aware silence policy: only Built.Current warns.
@@ -790,42 +786,6 @@ public final class Diagnostics {
                 + "parameter help on '" + methodName + "' is unavailable. "
                 + "Set `<parameters>true</parameters>` on maven-compiler-plugin "
                 + "to surface parameter names."));
-        }
-    }
-
-    /**
-     * Validates legacy {@code ExternalCodeReference.name} leaves: when
-     * the sibling {@code className:} on the same ECR object is empty or
-     * missing, the build-tier resolves {@code name:} via
-     * {@code RewriteContext.namedReferences}. Surface unresolved names
-     * here so the user sees the error before the build runs.
-     */
-    private static void validateLegacyNameLeaves(
-        LspVocabulary vocabulary,
-        Directives.Directive directive, List<LspVocabulary.Leaf> leaves,
-        FileSnapshot file, CompletionData catalog, List<Diagnostic> out
-    ) {
-        // @record carve-out: @record is deprecated/ignored; it binds no class, so the legacy
-        // ExternalCodeReference.name → className alias nudge is dead tooling for it. Keys on the
-        // enclosing directive name (see DirectivePolicy).
-        if (!DirectivePolicy.bindsLiveClass(Nodes.text(directive.nameNode(), file.source()))) return;
-        var classNameCoord = new SchemaCoordinate.InputField("ExternalCodeReference", "className");
-        for (var leaf : leaves) {
-            if (!(leaf.coord() instanceof SchemaCoordinate.InputField f)) continue;
-            if (!"ExternalCodeReference".equals(f.type()) || !"name".equals(f.field())) continue;
-            // If the sibling className is set, the build-tier ignores name;
-            // skip to avoid double-flagging.
-            if (vocabulary.siblingStringAt(directive, leaf.valueNode(), classNameCoord, file.source())
-                    .isPresent()) {
-                continue;
-            }
-            String legacyName = Nodes.unquote(Nodes.text(leaf.valueNode(), file.source()));
-            if (legacyName.isEmpty()) continue;
-            if (catalog.namedReferences().get(legacyName) != null) continue;
-            out.add(diagnostic(file, leaf.valueNode(),
-                "Unknown reference '" + legacyName + "'. Not present in `namedReferences` "
-                + "config. Add an entry mapping '" + legacyName + "' to a fully-qualified "
-                + "class name, or rewrite this site as `className: \"<FQN>\"` directly."));
         }
     }
 

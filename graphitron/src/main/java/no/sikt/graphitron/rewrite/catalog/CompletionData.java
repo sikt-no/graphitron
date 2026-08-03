@@ -17,38 +17,23 @@ public record CompletionData(
     List<Table> tables,
     List<TypeData> types,
     List<ExternalReference> externalReferences,
-    Map<String, String> namedReferences,
     Map<String, NodeMetadata> nodeMetadata
 ) {
 
     /**
-     * Backwards-compatible 4-arg constructor that defaults
+     * Backwards-compatible 3-arg constructor that defaults
      * {@code nodeMetadata} to empty (no {@code @node}-bearing types).
-     */
-    public CompletionData(
-        List<Table> tables,
-        List<TypeData> types,
-        List<ExternalReference> externalReferences,
-        Map<String, String> namedReferences
-    ) {
-        this(tables, types, externalReferences, namedReferences, Map.of());
-    }
-
-    /**
-     * Backwards-compatible 3-arg constructor for tests and callers that
-     * don't carry a {@code namedReferences} map. Defaults to an empty
-     * map (no legacy {@code name:} resolution available).
      */
     public CompletionData(
         List<Table> tables,
         List<TypeData> types,
         List<ExternalReference> externalReferences
     ) {
-        this(tables, types, externalReferences, Map.of(), Map.of());
+        this(tables, types, externalReferences, Map.of());
     }
 
     public static CompletionData empty() {
-        return new CompletionData(List.of(), List.of(), List.of(), Map.of(), Map.of());
+        return new CompletionData(List.of(), List.of(), List.of(), Map.of());
     }
 
     public Optional<Table> getTable(String name) {

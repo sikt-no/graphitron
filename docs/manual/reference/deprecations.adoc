@@ -28,11 +28,19 @@ The rewrite's `@deprecated(reason:)` markers do not carry a structured removal v
 | Discouraged transition mechanism
 | Rewrite v1
 | Drop the override and let the generator synthesize `{ParentType}{FieldName}Connection`. Each connection field should own its own Connection type; sharing one across fields conflates distinct semantic contexts (different parents, filters, orders) at the type level.
+|===
 
-| xref:directives/record.adoc[`ExternalCodeReference.name`]
-| Phased out
+== Removed
+
+Surfaces that completed the deprecation cycle. A schema still carrying one does not build, so these rows exist to name the replacement rather than to warn.
+
+[cols="2,1,3",options="header"]
+|===
+| Site | Removed in | Migration
+
+| `ExternalCodeReference.name`
 | Rewrite v1
-| Use `className:` instead. `name:` was a Norwegian-language alias kept for backward compatibility with legacy schemas; `className:` is the canonical key on `ExternalCodeReference` (used by xref:directives/service.adoc[`@service`], xref:directives/error.adoc[`@error`], and other directive sites that reference external Java code).
+| Use `className:` with the fully qualified class name. `name:` was a short alias resolved through the Maven plugin's `<namedReferences>` mappings; both the argument and that plugin parameter are gone, so a schema carrying `name:` now fails to load with an unknown-field error from the schema parser. See xref:../how-to/external-code.adoc[How-to: External code references].
 |===
 
 == Deprecated whole directives and directive locations

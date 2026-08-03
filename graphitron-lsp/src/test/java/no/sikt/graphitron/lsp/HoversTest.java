@@ -523,7 +523,6 @@ class HoversTest {
             List.of(film),
             List.of(),
             List.of(),
-            java.util.Map.of(),
             java.util.Map.of("Film", new CompletionData.NodeMetadata("Film", List.of("film_id")))
         );
     }

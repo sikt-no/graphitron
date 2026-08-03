@@ -7355,10 +7355,9 @@ class FieldBuilder {
      * the {@code className} and {@code method} strings. Returns {@code null} when the directive or
      * argument is absent.
      *
-     * <p>When the reference uses the deprecated {@code name} form instead of {@code className},
-     * the name is looked up in {@link RewriteContext#namedReferences()}. A deprecation warning is
-     * logged per field. If the name is not in the map, the returned {@code ExternalRef} carries a
-     * non-null {@link ExternalRef#lookupError()} and the {@code className} is {@code null}.
+     * <p>{@code className} is a fully-qualified class name. Short-name resolution through build
+     * configuration is not supported; see the {@code ExternalCodeReference} declaration in
+     * {@code directives.graphqls}.
      */
     ExternalRef parseExternalRef(String parentTypeName, GraphQLFieldDefinition fieldDef, String directiveName, String argName) {
         var dir = fieldDef.getAppliedDirective(directiveName);
@@ -7368,34 +7367,21 @@ class FieldBuilder {
         Map<String, Object> ref = asMap(arg.getValue());
         String className = Optional.ofNullable(ref.get(ARG_CLASS_NAME)).map(Object::toString).orElse(null);
         String methodName = Optional.ofNullable(ref.get(ARG_METHOD)).map(Object::toString).orElse(null);
-        if (className == null) {
-            String name = Optional.ofNullable(ref.get(ARG_NAME)).map(Object::toString).orElse(null);
-            if (name != null) {
-                LOG.warn("ExternalCodeReference 'name' is deprecated on field '{}.{}'; use 'className' instead", parentTypeName, fieldDef.getName());
-                String resolved = ctx.ctx().namedReferences().get(name);
-                if (resolved != null) {
-                    className = resolved;
-                } else {
-                    return new ExternalRef(null, methodName, Map.of(),
-                        "named reference '" + name + "' not found in namedReferences config", null);
-                }
-            }
-        }
         String rawArgMapping = Optional.ofNullable(ref.get(ARG_ARG_MAPPING)).map(Object::toString).orElse(null);
         // Structural-inertness check: @externalField reaches a method whose Java parameter set is
         // fixed (the parent table). argMapping has no slot to bind to and is rejected at parse
         // time. (@enum / @record have their own parse sites in TypeBuilder.)
         if (rawArgMapping != null && !rawArgMapping.isBlank() && DIR_EXTERNAL_FIELD.equals(directiveName)) {
-            return new ExternalRef(className, methodName, Map.of(), null,
+            return new ExternalRef(className, methodName, Map.of(),
                 "argMapping is not supported on @" + directiveName
                 + " — this directive does not consume GraphQL-argument-bound parameters");
         }
         var parsed = ArgBindingMap.parseArgMapping(rawArgMapping);
         if (parsed instanceof ArgBindingMap.ParsedArgMapping.ParseError pe) {
-            return new ExternalRef(className, methodName, Map.of(), null, pe.message());
+            return new ExternalRef(className, methodName, Map.of(), pe.message());
         }
         var segmentChains = ((ArgBindingMap.ParsedArgMapping.Ok) parsed).overrides();
-        return new ExternalRef(className, methodName, segmentChains, null, null);
+        return new ExternalRef(className, methodName, segmentChains, null);
     }
 
     /**
@@ -7802,7 +7788,7 @@ class FieldBuilder {
      */
     record ExternalRef(String className, String methodName,
                        Map<String, java.util.List<String>> argMapping,
-                       String lookupError, String argMappingError) {}
+                       String argMappingError) {}
 
     static Set<String> fieldArgumentNames(GraphQLFieldDefinition fieldDef) {
         return fieldDef.getArguments().stream()

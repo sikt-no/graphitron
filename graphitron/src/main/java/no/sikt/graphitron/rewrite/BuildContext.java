@@ -2304,9 +2304,6 @@ class BuildContext {
      * {@link ServiceCatalog#reflectTableMethod}. Returns one of {@link ConditionResolution}'s
      * three arms: {@code Resolved}, {@code Failed}, or {@code Unresolved}.
      *
-     * <p>The deprecated {@code name:} form is resolved via {@link RewriteContext#namedReferences()},
-     * exactly as in {@link FieldBuilder#parseExternalRef}.
-     *
      * <p>For path-step {@code @condition}, no GraphQL arguments are in scope, so the slot set
      * is empty and any non-empty {@code argMapping} fails through {@link
      * ArgBindingMap.Result.UnknownArgRef}. Parse-time errors from {@code argMapping} itself also
@@ -2315,12 +2312,6 @@ class BuildContext {
     private ConditionResolution resolveConditionRef(Map<String, Object> conditionMap) {
         String className = Optional.ofNullable(conditionMap.get(ARG_CLASS_NAME)).map(Object::toString).orElse(null);
         String methodName = Optional.ofNullable(conditionMap.get(ARG_METHOD)).map(Object::toString).orElse(null);
-        if (className == null) {
-            String name = Optional.ofNullable(conditionMap.get(ARG_NAME)).map(Object::toString).orElse(null);
-            if (name != null) {
-                className = ctx.namedReferences().get(name);
-            }
-        }
         if (className == null || methodName == null || svc == null) {
             return new ConditionResolution.Unresolved();
         }
@@ -2347,8 +2338,6 @@ class BuildContext {
     }
 
     private String extractConditionQualifiedName(Map<String, Object> conditionMap) {
-        Object name = conditionMap.get(ARG_NAME);
-        if (name != null) return name.toString();
         String cls    = Optional.ofNullable(conditionMap.get(ARG_CLASS_NAME)).map(Object::toString).orElse(null);
         String method = Optional.ofNullable(conditionMap.get(ARG_METHOD)).map(Object::toString).orElse(null);
         if (cls != null && method != null) return "method '" + method + "' in class '" + cls + "'";
@@ -2391,10 +2380,6 @@ class BuildContext {
         Map<String, Object> ref = asMap(condArg.getValue());
         String className = Optional.ofNullable(ref.get(ARG_CLASS_NAME)).map(Object::toString).orElse(null);
         String methodName = Optional.ofNullable(ref.get(ARG_METHOD)).map(Object::toString).orElse(null);
-        if (className == null) {
-            String refName = Optional.ofNullable(ref.get(ARG_NAME)).map(Object::toString).orElse(null);
-            if (refName != null) className = ctx.namedReferences().get(refName);
-        }
         if (className == null || methodName == null) return null;
         boolean override = argBoolean(container, DIR_CONDITION, ARG_OVERRIDE, false);
         List<String> ctxArgs = argStringList(container, DIR_CONDITION, ARG_CONTEXT_ARGUMENTS);

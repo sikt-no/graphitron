@@ -122,8 +122,7 @@ class LauncherRelationClosureTest {
             workDir,
             workDir.resolve("generated-sources"),
             OUTPUT_PACKAGE,
-            TestConfiguration.DEFAULT_JOOQ_PACKAGE,
-            Map.of());
+            TestConfiguration.DEFAULT_JOOQ_PACKAGE);
         var result = new GraphQLRewriteGenerator(ctx).generate();
         walk = EmittedMethodClosure.walk(result.emittedUnits());
         launchers = result.plan().launchers();

@@ -1080,7 +1080,7 @@ class GraphitronMcpServerTest {
                 new CompletionData.Method("related", "List", "",
                     List.of(new CompletionData.Parameter("limit", "int", "Arg", "")), false)),
             List.of());
-        return new CompletionData(List.of(), List.of(), List.of(filmService), Map.of(), Map.of());
+        return new CompletionData(List.of(), List.of(), List.of(filmService), Map.of());
     }
 
     /** {@code public.film} (+ outbound FK to language, inbound FK from film_actor), language, film_actor. */
@@ -1128,7 +1128,7 @@ class GraphitronMcpServerTest {
             List.of(),
             List.of(new CompletionData.RecordComponent("filmId", "Integer"),
                 new CompletionData.RecordComponent("title", "String")));
-        var catalog = new CompletionData(List.of(), List.of(), List.of(service, card), Map.of(), Map.of());
+        var catalog = new CompletionData(List.of(), List.of(), List.of(service, card), Map.of());
         var workspace = builtWorkspace(catalog, new LspSchemaSnapshot.Built.Current(List.of(), Map.of(), Map.of()),
             ValidationReport.empty());
         // FilmService class + its activeFilms method are indexed; FilmCard is not (not-yet-indexed arm).
@@ -1152,7 +1152,7 @@ class GraphitronMcpServerTest {
         var snapshot = new LspSchemaSnapshot.Built.Current(
             List.of(), backing, Map.of(), fields, typeClassifications, locations);
         // @node metadata rides the catalog (the snapshot has no @node projection).
-        var catalog = new CompletionData(List.of(), List.of(), List.of(), Map.of(),
+        var catalog = new CompletionData(List.of(), List.of(), List.of(),
             Map.of("Film", new CompletionData.NodeMetadata("FilmType", List.of("film_id"))));
         return builtWorkspace(catalog, snapshot, ValidationReport.empty());
     }

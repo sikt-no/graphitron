@@ -53,8 +53,7 @@ class ServiceCatalogTest {
             java.nio.file.Path.of("."),
             java.nio.file.Path.of("."),
             "unused",
-            "unused",
-            Map.of());
+            "unused");
     }
 
     /** Test-side shorthand: wrap a raw Java-target → GraphQL-arg map as an {@link ArgBindingMap}. */

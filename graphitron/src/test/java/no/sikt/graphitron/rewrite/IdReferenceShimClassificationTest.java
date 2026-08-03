@@ -10,7 +10,6 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -56,8 +55,7 @@ class IdReferenceShimClassificationTest {
         Path.of(""),
         Path.of(""),
         "fake.code.generated",
-        "no.sikt.graphitron.rewrite.idreffixture",
-        Map.of()
+        "no.sikt.graphitron.rewrite.idreffixture"
     );
 
     private static final String SHARED_SDL_PREFIX = """

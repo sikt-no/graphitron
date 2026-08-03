@@ -395,10 +395,9 @@ directive @record(record: ExternalCodeReference) on OBJECT | INPUT_OBJECT
 enum MutationType { UPDATE, DELETE, INSERT, UPSERT }
 
 input ExternalCodeReference {
-    name: String @deprecated(reason: "Fases ut til fordel for `class`"),
     """Navnet på klassen man ønsker å referere til.
 
-    Dersom pakken klassen finnes i er importert i `externalReferences` i graphitron-konfigurasjonen så holder det med det forenklede navnet, ellers må det fullstendige navnet (fqcn) oppgis."""
+    Må være det fullstendige klassenavnet (fqcn). Forkortede navn støttes ikke."""
     className: String
     """Navnet på metoden man ønsker å referere til."""
     method: String

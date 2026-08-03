@@ -21,7 +21,7 @@ One replacement pointer for the "Legacy-only directives" list above: legacy `@ta
 
 == Hard removals
 
-Two directives the rewrite refuses to accept. Both stay declared so the SDL still parses, but every application is rejected at classify time with a "no longer supported" message.
+Two directives the rewrite refuses to accept, and one argument it no longer declares. The two directives stay declared so the SDL still parses, but every application is rejected at classify time with a "no longer supported" message. The argument is a harder break: the schema does not load at all.
 
 === `@notGenerated`
 
@@ -56,6 +56,34 @@ Legacy schemas used `@multitableReference(routes: [...])` to declare per-impleme
 ----
 
 Migration is a one-step delete-and-rebuild: drop the `@multitableReference` directive (and its `ReferencesForType` argument tree) and model the multi-table dispatch through `@discriminate` / `@discriminator`. xref:polymorphic-types.adoc[How-to: Polymorphic types] covers the supported shapes.
+
+=== `name:` on `ExternalCodeReference`
+
+Unlike the two directives above, this one is not even parsed: the argument is undeclared, so the schema fails to load before classification runs.
+
+[source,graphql]
+----
+# Legacy form, no longer supported
+@service(service: {name: "SampleQueryService", method: "filmsByService"})
+----
+
+Replaced with `className:`:
+
+[source,graphql]
+----
+# Canonical form
+@service(service: {className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService", method: "filmsByService"})
+----
+
+`className:` takes the FQCN. The legacy `name:` was a short name resolved through the plugin's `externalReferences:` config; the rewrite briefly carried the argument as a deprecated alias resolved through its own `<namedReferences>` parameter, and both are now gone. The failure names the offending field:
+
+[source,text]
+----
+uses an illegal value for the argument 'service' on directive 'service'.
+Fields ['name'] not present in type 'ExternalCodeReference'.
+----
+
+The migration is mechanical: copy the FQCN from the legacy `externalReferences:` entry into `className:` at every site, then delete the plugin config block. This applies to all four directives that take an `ExternalCodeReference` (`@service`, `@externalField`, `@condition`, `@enum`), including a `@condition` nested in a `@reference` path step.
 
 == WARN today, error later
 
@@ -168,24 +196,6 @@ The override coalesces multiple connection-bearing fields onto one synthesised t
 
 Migration: drop the argument and let each field own its synthesised connection type. The four reasons for the per-field default and the migration considerations live in xref:connections.adoc[How-to: Cursor-paginated connections] under "One field, one connection type".
 
-=== `name:` on `ExternalCodeReference`
-
-[source,graphql]
-----
-# Legacy form, deprecated
-@service(service: {name: "SampleQueryService", method: "filmsByService"})
-----
-
-Replaced with `className:`:
-
-[source,graphql]
-----
-# Canonical form
-@service(service: {className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService", method: "filmsByService"})
-----
-
-`className:` is the FQCN; the legacy `name:` was a short-name resolved through the plugin's `externalReferences:` config. Both still work, but only `className:` is the canonical form going forward. The migration is mechanical: copy the FQCN from the legacy `externalReferences:` entry into `className:` and drop the entry.
-
 === `@index` on enum values
 
 [source,graphql]
@@ -240,25 +250,25 @@ Every other directive on the legacy surface reads under the rewrite the same way
 
 The recommended order, from least invasive to most:
 
+. Migrate `name:` to `className:` on every `ExternalCodeReference` instance and drop the corresponding entries from `externalReferences:` plugin config. Do this first: the argument is undeclared, so the schema does not load at all until it lands, and none of the later steps can be observed before it does.
 . Run a `mvn install` to surface every `@notGenerated` and `@multitableReference` rejection, and every `@table`-on-input warning. Replace each `@notGenerated` with the directive named in the matrix above. The build won't compile under the rewrite until the two rejections are cleared; the `@table`-on-input warnings do not block it, but clear them too (per the per-consumer steps above) before the location is rejected in a future release.
 . Audit the build log for `synthesizes an `@nodeId` carrier without the directive` WARNs; declare `@nodeId` explicitly on each.
 . Audit input types for `[ID!] @field(name: "X_ID")` patterns; replace with `[ID!] @nodeId(typeName: "T")`.
 . Drop `connectionName:` arguments from `@asConnection` and let each field own its connection type.
-. Migrate `name:` to `className:` on `ExternalCodeReference` instances. Drop the corresponding entries from `externalReferences:` plugin config.
 . Migrate `@index` to `@order(index:)` on enum values.
 . If your schema uses `@condition(override: true)` with nested inputs that carry their own `@condition`, audit whether the legacy "outer owns everything" semantics were load-bearing. If they were, the SQL will change; rewrite the inner annotations to express the intended predicate set explicitly.
 
-Step 1's two rejections are non-optional (the build fails); its `@table`-on-input half warns only. Steps 2-3 and that half of step 1 will become non-optional when the corresponding retirement gates fire. Steps 4-6 produce deprecation notices but no failures. Step 7 only matters for schemas that relied on the divergence; most schemas don't.
+Step 1 is non-optional and comes first (the schema does not load at all). Step 2's two rejections are non-optional too (the build fails); its `@table`-on-input half warns only. Steps 3-4 and that half of step 2 will become non-optional when the corresponding retirement gates fire. Steps 5-6 produce deprecation notices but no failures. Step 7 only matters for schemas that relied on the divergence; most schemas don't.
 
 == Pitfalls
 
 * *`@notGenerated` is parsed but always rejected.* Removing the directive is the only fix; there is no warn-only mode and no migration shim. Schemas that still carry it will not compile.
 * *Synthesis shims run silently in IDE / language server contexts.* The WARN is a build-time log line; an IDE that loads the schema for completion may not surface it. Periodically grep your build logs for `synthesizes an` to catch shim-bearing fields.
 * *`@table` no longer auto-promotes to `NodeType`.* If a previously-promoted type breaks under the rewrite (typically: `Query.node` returns `null` for what used to resolve, or `@nodeId` synthesis stops firing), add `implements Node @node` to opt in explicitly.
-* *Deprecated arguments still work.* The deprecation notice from graphql-java is informational, not blocking. The migration is your call until the deprecation flips to removal in a future release.
+* *Deprecated arguments still work; removed ones do not.* A deprecation notice from graphql-java is informational, not blocking, so those migrations are your call until the deprecation flips to removal in a future release. `ExternalCodeReference.name:` has already made that flip: it is undeclared, and a schema carrying it does not load.
 * *The `@condition` cascade divergence is a real SQL change.* Schemas that relied on legacy "outer owns everything" semantics produce different result sets under the rewrite, not different errors. Audit `override: true` sites with nested-input `@condition` annotations before promoting the rewrite to production.
 * *The rewrite is directive-compatible, not field-classifier-compatible.* A schema that compiled under legacy may surface new diagnostics under the rewrite (stricter classification for shapes the legacy generator silently accepted). The diagnostic always names the field; treat each as the rewrite's stricter-shape analysis catching what legacy would have produced as a runtime error.
-* *Plugin configuration migrates separately.* The schema-side migration is what this recipe covers; `<schemaInputs>`, `<outputDirectory>`, `<outputPackage>`, `<jooqPackage>`, and `<namedReferences>` on the rewrite Mojo do not have a 1:1 mapping with every legacy plugin parameter. The legacy `<maxAllowedPageSize>` was deliberately excised; xref:connections.adoc[How-to: Cursor-paginated connections] covers the alternative.
+* *Plugin configuration migrates separately.* The schema-side migration is what this recipe covers; `<schemaInputs>`, `<outputDirectory>`, `<outputPackage>`, and `<jooqPackage>` on the rewrite Mojo do not have a 1:1 mapping with every legacy plugin parameter. The legacy `<maxAllowedPageSize>` was deliberately excised; xref:connections.adoc[How-to: Cursor-paginated connections] covers the alternative. The legacy `externalReferences:` mappings have no rewrite equivalent at all, since the argument they served is gone.
 
 == See also
 

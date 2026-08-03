@@ -315,7 +315,7 @@ class JooqRecordServiceParamPipelineTest {
 
     private static RewriteContext fixtureCtx(String jooqPackage) {
         return new RewriteContext(List.of(), Path.of(""), Path.of(""),
-            DEFAULT_OUTPUT_PACKAGE, jooqPackage, Map.of());
+            DEFAULT_OUTPUT_PACKAGE, jooqPackage);
     }
 
     private static final RewriteContext NODEID_CTX = fixtureCtx("no.sikt.graphitron.rewrite.nodeidfixture");

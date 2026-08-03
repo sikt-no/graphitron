@@ -111,8 +111,7 @@ class MethodClosureOracleTest {
             workDir,
             workDir.resolve("generated-sources"),
             OUTPUT_PACKAGE,
-            TestConfiguration.DEFAULT_JOOQ_PACKAGE,
-            Map.of());
+            TestConfiguration.DEFAULT_JOOQ_PACKAGE);
         walk = EmittedMethodClosure.walk(new GraphQLRewriteGenerator(ctx).generate().emittedUnits());
     }
 

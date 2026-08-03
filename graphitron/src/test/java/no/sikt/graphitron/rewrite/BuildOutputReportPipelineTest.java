@@ -10,7 +10,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
@@ -65,8 +64,7 @@ class BuildOutputReportPipelineTest {
             tmp,
             tmp,
             DEFAULT_OUTPUT_PACKAGE,
-            DEFAULT_JOOQ_PACKAGE,
-            Map.of()
+            DEFAULT_JOOQ_PACKAGE
         );
 
         var report = new GraphQLRewriteGenerator(ctx).buildOutput().report();
@@ -108,7 +106,7 @@ class BuildOutputReportPipelineTest {
 
         var ctx = new RewriteContext(
             List.of(new SchemaInput(schema.toString(), Optional.empty(), Optional.empty())),
-            tmp, tmp, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE, Map.of());
+            tmp, tmp, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
 
         var report = new GraphQLRewriteGenerator(ctx).buildOutput().report();
 

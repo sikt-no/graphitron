@@ -36,7 +36,6 @@ class SdlActionDriftTest {
     @Test
     void atLandingTimeCanonicalSetIsExact() {
         assertThat(VOCAB.deprecatedCoordinates()).containsExactlyInAnyOrder(
-            new SchemaCoordinate.InputField("ExternalCodeReference", "name"),
             new SchemaCoordinate.DirectiveArg("asConnection", "connectionName"),
             new SchemaCoordinate.Directive("index"),
             // @record's docstring carries the @deprecated marker, keeping the deprecation

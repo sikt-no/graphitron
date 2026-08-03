@@ -10,7 +10,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
@@ -66,8 +65,7 @@ class TaggedInputsPipelineTest {
             tmp,
             tmp,
             DEFAULT_OUTPUT_PACKAGE,
-            DEFAULT_JOOQ_PACKAGE,
-            Map.of()
+            DEFAULT_JOOQ_PACKAGE
         );
 
         var registry = new GraphQLRewriteGenerator(ctx).loadAttributedRegistry();

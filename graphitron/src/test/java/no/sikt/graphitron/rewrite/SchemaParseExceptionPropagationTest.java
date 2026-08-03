@@ -9,7 +9,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
@@ -46,8 +45,7 @@ class SchemaParseExceptionPropagationTest {
             tmp,
             tmp,
             DEFAULT_OUTPUT_PACKAGE,
-            DEFAULT_JOOQ_PACKAGE,
-            Map.of());
+            DEFAULT_JOOQ_PACKAGE);
 
         Throwable thrown = catchThrowable(() -> new GraphQLRewriteGenerator(ctx).generate());
 

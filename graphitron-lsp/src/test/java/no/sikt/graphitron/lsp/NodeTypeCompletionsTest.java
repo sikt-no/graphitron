@@ -97,7 +97,6 @@ class NodeTypeCompletionsTest {
             List.of(),
             List.of(),
             List.of(),
-            Map.of(),
             Map.of(
                 "Film", new CompletionData.NodeMetadata("Film", List.of("film_id")),
                 "Actor", new CompletionData.NodeMetadata(null, null)

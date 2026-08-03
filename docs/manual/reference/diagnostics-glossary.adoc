@@ -32,7 +32,7 @@ Three prefixes. Triage by which one you saw.
 
 *Cause.* Author-correctable: a name typo, a missing `@table` somewhere it's needed, a directive pointed at something the jOOQ catalog or SDL registry doesn't know about. When the lookup is against a closed set, the message includes a `did you mean: ...` hint with up to five candidates ranked by Levenshtein distance.
 
-*Next step.* The fix is in the schema or the consumer code (a column rename, an FK declaration, a `<namedReference>` entry); no Graphitron-internal change is needed. If the message includes `did you mean: ...`, the relevant attempt-kind below names the resolution rule. When you can't tell whether an error is `[author-error]` or `[invalid-schema]`, the rule of thumb is "could a column rename in the SDL fix it?" Yes → `[author-error]`. No → `[invalid-schema]`.
+*Next step.* The fix is in the schema or the consumer code (a column rename, an FK declaration, a corrected `className:`); no Graphitron-internal change is needed. If the message includes `did you mean: ...`, the relevant attempt-kind below names the resolution rule. When you can't tell whether an error is `[author-error]` or `[invalid-schema]`, the rule of thumb is "could a column rename in the SDL fix it?" Yes → `[author-error]`. No → `[invalid-schema]`.
 
 [#kind-invalid-schema]
 === invalid-schema
@@ -57,7 +57,7 @@ Three prefixes. Triage by which one you saw.
 
 == Unknown name: which kind of name
 
-When `[author-error]` carries an `UnknownName` variant (a closed-set name lookup that didn't resolve), the message contains a `did you mean: ...` suffix when there were close candidates. The variant's `attempt-kind` field names *what kind of thing the classifier was looking up*; the LSP fix-its read this typed value to offer the right action ("rename column", "add `<namedReference>` entry", etc.). Find your sample below.
+When `[author-error]` carries an `UnknownName` variant (a closed-set name lookup that didn't resolve), the message contains a `did you mean: ...` suffix when there were close candidates. The variant's `attempt-kind` field names *what kind of thing the classifier was looking up*; the LSP fix-its read this typed value to offer the right action ("rename column", "correct the class name", etc.). Find your sample below.
 
 [#attempt-column]
 === column

@@ -49,7 +49,7 @@ Page size resolves at request time:
 * *Client omits `first:`.* Use the directive's `defaultFirstValue:` (the `@asConnection(defaultFirstValue: 5)` argument), or the generator's `DEFAULT_PAGE_SIZE = 100` when `defaultFirstValue:` is also omitted.
 * *Backward pagination (`last: N`).* Same shape, `last` substitutes for `first` in the resolution.
 
-There is *no server-side cap on `first:` or `last:`* in the rewrite. The legacy generator's `<maxAllowedPageSize>` Maven-plugin setting was deliberately excised from the rewrite plugin (the rewrite Mojo's five `@Parameter` fields are `schemaInputs`, `outputDirectory`, `outputPackage`, `jooqPackage`, `namedReferences`; no page-size cap). A client passing `first: 100000` will produce that many rows, modulo database memory and network limits.
+There is *no server-side cap on `first:` or `last:`* in the rewrite. The legacy generator's `<maxAllowedPageSize>` Maven-plugin setting was deliberately excised from the rewrite plugin (the rewrite Mojo's four core `@Parameter` fields are `schemaInputs`, `outputDirectory`, `outputPackage`, `jooqPackage`; no page-size cap). A client passing `first: 100000` will produce that many rows, modulo database memory and network limits.
 
 If you need a request-rate or page-size cap, enforce it outside the generator:
 

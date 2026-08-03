@@ -929,7 +929,6 @@ public final class CatalogBuilder {
             buildTables(jooq, keysClassFqn),
             buildScalars(assembled),
             buildExternalReferences(ctx),
-            ctx.namedReferences(),
             buildNodeMetadata(assembled)
         );
     }

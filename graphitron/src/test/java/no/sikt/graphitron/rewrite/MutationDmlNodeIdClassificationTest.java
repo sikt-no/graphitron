@@ -8,7 +8,6 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static no.sikt.graphitron.rewrite.DmlWriteReads.deleteRowsOf;
@@ -32,8 +31,7 @@ class MutationDmlNodeIdClassificationTest {
         Path.of(""),
         Path.of(""),
         "fake.code.generated",
-        "no.sikt.graphitron.rewrite.nodeidfixture",
-        Map.of()
+        "no.sikt.graphitron.rewrite.nodeidfixture"
     );
 
     @Test

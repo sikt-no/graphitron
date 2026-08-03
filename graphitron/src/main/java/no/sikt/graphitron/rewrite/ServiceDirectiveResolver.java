@@ -124,9 +124,6 @@ final class ServiceDirectiveResolver {
         ReturnTypeRef returnType = ctx.resolveReturnType(elementTypeName, fb.buildWrapper(fieldDef));
 
         FieldBuilder.ExternalRef serviceRef = fb.parseExternalRef(parentTypeName, fieldDef, DIR_SERVICE, ARG_SERVICE_REF);
-        if (serviceRef != null && serviceRef.lookupError() != null) {
-            return new Resolved.Rejected(Rejection.structural("service method could not be resolved — " + serviceRef.lookupError()));
-        }
         if (serviceRef != null && serviceRef.argMappingError() != null) {
             return new Resolved.Rejected(Rejection.structural("service method could not be resolved — @service " + serviceRef.argMappingError()));
         }

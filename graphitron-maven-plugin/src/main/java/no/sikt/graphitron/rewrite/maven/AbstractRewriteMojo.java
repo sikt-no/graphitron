@@ -28,7 +28,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -73,9 +72,6 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
 
     @Parameter
     String jooqPackage;
-
-    @Parameter
-    List<NamedReferenceBinding> namedReferences;
 
     /**
      * Lint suppression. A {@code <lint>} block naming rule ids to silence everywhere
@@ -175,7 +171,6 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             resourcesAbs,
             effectiveOutput,
             effectiveJooq,
-            toNamedReferenceMap(namedReferences),
             resolveClasspathRoots(),
             codegenLoader,
             resolveCompileSourceRoots(),
@@ -763,10 +758,5 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             }
         }
         return new URLClassLoader(urls.toArray(URL[]::new), getClass().getClassLoader());
-    }
-
-    private static Map<String, String> toNamedReferenceMap(List<NamedReferenceBinding> refs) {
-        if (refs == null) return Map.of();
-        return refs.stream().collect(Collectors.toUnmodifiableMap(r -> r.name, r -> r.className));
     }
 }

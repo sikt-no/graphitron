@@ -5,7 +5,6 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -37,8 +36,7 @@ class RejectNonIdNodeIdPipelineTest {
     // ChildField.ColumnBackedReferenceField with NodeIdEncodeKeys — exactly finding H's encoded-key shape.
     private static final RewriteContext FIXTURE_CTX = new RewriteContext(
         List.of(), Path.of(""), Path.of(""),
-        DEFAULT_OUTPUT_PACKAGE, "no.sikt.graphitron.rewrite.nodeidfixture",
-        Map.of()
+        DEFAULT_OUTPUT_PACKAGE, "no.sikt.graphitron.rewrite.nodeidfixture"
     );
 
     // ===== Finding F: @nodeId on a non-ID input-object field =====

@@ -8,7 +8,6 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -49,8 +48,7 @@ class TableOnInputDeprecationWarningTest {
         Path.of(""),
         Path.of(""),
         "fake.code.generated",
-        "no.sikt.graphitron.rewrite.nodeidfixture",
-        Map.of()
+        "no.sikt.graphitron.rewrite.nodeidfixture"
     );
 
     @Test

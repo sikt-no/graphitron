@@ -11,7 +11,6 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -46,8 +45,7 @@ class TypedAccessorSchemaQualifiedIdentityPipelineTest {
             Path.of(""),
             Path.of(""),
             MULTI_OUTPUT_PACKAGE,
-            MULTI_JOOQ_PACKAGE,
-            Map.of()
+            MULTI_JOOQ_PACKAGE
         );
     }
 

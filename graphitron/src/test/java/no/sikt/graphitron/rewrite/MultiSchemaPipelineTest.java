@@ -16,7 +16,6 @@ import org.junit.jupiter.api.Test;
 import java.nio.file.Path;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -78,8 +77,7 @@ class MultiSchemaPipelineTest {
             Path.of(""),
             Path.of(""),
             MULTI_OUTPUT_PACKAGE,
-            MULTI_JOOQ_PACKAGE,
-            Map.of()
+            MULTI_JOOQ_PACKAGE
         );
     }
 
