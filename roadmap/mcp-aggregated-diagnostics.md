@@ -84,8 +84,13 @@ currently make:
 
 That leaves the message *within* the `AuthorError.Structural(String reason)` and
 `InvalidSchema.Structural(String reason)` catch-alls as the only genuinely untyped axis. Some
-retired-directive rejections live there (`@table` on an input type via `Rejection.structural`),
-alongside the mutation-argument-shape and payload-classification rows.
+retired-directive rejections live there (`@lookupKey` on a mutation input field, from both
+`FieldBuilder` and `MutationInputResolver.rejectInputFieldDirectives`, via `Rejection.structural`),
+alongside the mutation-argument-shape and payload-classification rows. The draft cited `@table` on an
+input type here; that example is stale, because the reopened `@table`-on-input deprecation window
+(accept, ignore, warn) deleted the rejection arm, so the directive now produces a `BuildWarning`
+rather than any `Rejection`. Nothing else in the design depended on the example, but it does mean the
+`Structural` residue open question 4 measures is smaller than the draft implied.
 
 ## What the model owns but does not yet expose
 
@@ -308,7 +313,7 @@ how the two parallel filter implementations this design exists to prevent get bu
 
 **Carved out at review: the sealed `Coordinate` component.** The draft's step 4 (a sealed
 `Coordinate { SchemaWide | TypeLevel | FieldLevel }` on `ValidationError`, deleting
-`WatchErrorFormatter`'s `isTypeLevel` / `typeOf`) now lives in its own item,
+`WatchErrorFormatter`'s `isTypeLevel` / `typeOf`) now lives in its own Backlog item,
 `validation-error-coordinate-sealed`. It is the right lift and the reasoning in "What the model owns"
 stands, but it is not a prerequisite here, and it was the only step reaching outside the diagnostics
 path. Two reasons it separates cleanly:
