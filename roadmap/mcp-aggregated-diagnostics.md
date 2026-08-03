@@ -125,12 +125,76 @@ Three parts, each of which Spec should settle in shape and wire naming:
 `instructions.txt` should point an agent at the aggregate first when the diagnostic count is
 large, or the capability will go undiscovered in exactly the sessions that need it.
 
+## Faceted aggregation, not a fixed set of reports
+
+The reports above are the reports *we* predicted. An agent mid-migration wants pivots we did
+not: "which types account for the unresolved `id` column", "which files carry deferred
+diagnostics only", "attempt kinds crossed against directory". Shipping a fixed report set
+means every unanticipated question falls back to paging entries, which is the failure this item
+exists to remove. So the aggregate should be **faceted**, and the named reports should be
+presets over the same mechanism rather than a parallel code path.
+
+**A closed dimension set, not an expression language.** The request shape is a pivot-table
+request:
+
+```
+diagnostics.aggregate(
+  groupBy:  ["actionable", "attemptKind"],   // ordered, composite key
+  where:    {source: "schema", file: "…/features/emne.graphqls"},
+  minCount: 3,                                // tail threshold, in place of a silent "Misc"
+  examples: 2,                                // example coordinates per group
+  orderBy:  "count",                          // or "key"
+  limit:    40
+)
+```
+
+Every dimension name comes from a closed enum, each value backed by one extractor function over
+a diagnostic row: `severity`, `source`, `actionable`, `kind`, `variant`, `attemptKind`,
+`attempt`, `stubKey`, `lintRule`, `coordinate`, `type`, `file`, `directory`, `messageTemplate`.
+`where` filters on the same extractors that `groupBy` groups on, which collapses this item's
+part 3 (drill-down filters) and part 1 (the aggregate) into a single mechanism instead of two
+parallel filter implementations. A preset report is then literally a named `(groupBy, where)`
+tuple, so a report and an ad-hoc pivot cannot drift in behaviour.
+
+**Why not a real query language.** A SQL-ish or CEL / JMESPath surface costs a grammar or a new
+pinned dependency, unbounded semantics to validate, error messages good enough to recover from,
+and a test surface that is the language rather than the data. It also spends the exact resource
+this item is meant to save: an agent has to guess syntax, get a parse error, and retry, whereas
+a closed enum is discoverable from the tool's input schema in one shot and cannot fail to parse.
+For an agent consumer the closed set is not the compromise, it is the better interface. The
+things a language would add that faceting does not (predicates over derived counts, arithmetic,
+regex over messages) reduce to one or two scalar parameters: `minCount` covers the `having`
+case, and a single optional `messageMatches` regex covers the rest if it proves necessary.
+
+**Enabling refactor.** `DiagnosticsTool` currently builds wire `LinkedHashMap`s inline from
+three sources (validator errors, build warnings, compile diagnostics) with no intermediate typed
+row, so there is nothing for an extractor to read. Faceting wants a package-private
+`DiagnosticRow` record unioning the three channels, with the existing per-entry wire mapping
+projected off it. That is a small refactor and it improves the existing tool independent of
+aggregation.
+
+**The one genuine cost to design around: group cardinality.** A composite `groupBy` over
+high-cardinality dimensions (`type` crossed with `attempt`, say) can produce nearly as many
+groups as there are entries, so an unbounded aggregate can be *larger* than the entry list it
+replaces. `limit` plus `minCount` handle it, but the response has to state how many groups were
+elided and their combined count, so the aggregate never reads as complete when it is truncated.
+Worth pinning as a test, because it is the failure mode that would quietly defeat the purpose.
+
 ## Forks for Spec
 
 - **Separate tool versus a mode on `diagnostics`.** A separate tool gets its own description,
   which is how an agent discovers the capability at all, and keeps the counts-not-entries wire
   shape from being a conditional branch in one result schema. A mode keeps the polling surface
-  singular. Leaning separate tool, on the discovery argument.
+  singular. Leaning separate tool, on the discovery argument, and faceting strengthens that: the
+  dimension enum has to be enumerated in a tool description somewhere, and it reads better as
+  one tool's own vocabulary than as half of a two-mode tool's schema.
+- **Whether the named presets are server-side or left to the agent.** Once faceting exists, a
+  preset is just a `(groupBy, where)` tuple, and an agent that has read the dimension list can
+  compose the triage view itself. Server-side presets still earn their place as the discoverable
+  default (the zero-argument call should return the actionable / deferred headline without the
+  agent having to know what to ask for), but the set should stay small; every preset is
+  vocabulary an agent has to read past. Leaning one default preset plus faceting, rather than a
+  catalogue of reports.
 - **Whether the residual prose-normalising fallback is acceptable, or whether the group identity
   belongs in the model.** Now that `UnknownName` and `Deferred` are known to cluster off
   `attemptKind` and `stubKey`, the fallback covers only the two `Structural` arms, so the
