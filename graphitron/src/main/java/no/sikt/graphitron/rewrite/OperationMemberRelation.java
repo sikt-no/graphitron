@@ -279,7 +279,13 @@ public record OperationMemberRelation(Map<FieldCoordinates, List<OperationMember
             members.add(new OperationMember.NodeResolve());
         }
         if (kinds.contains(OperationMember.Kind.PIVOT)) {
-            members.add(new OperationMember.Pivot());
+            members.add(switch (leaf) {
+                // The pivot payload is the leaf's carried component, by identity (PivotSpecField).
+                case ChildField.PivotSpecField f -> f.pivot();
+                default -> throw new IllegalStateException(
+                    "pivot membership on a leaf with no pivot payload component: "
+                    + leaf.getClass().getSimpleName());
+            });
         }
         if (kinds.contains(OperationMember.Kind.SELECT)) {
             members.add(new OperationMember.Select());

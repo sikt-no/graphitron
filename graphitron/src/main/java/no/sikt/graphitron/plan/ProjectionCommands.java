@@ -24,7 +24,6 @@ import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.model.OperationMembers;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.ParentRowDemand;
-import no.sikt.graphitron.rewrite.model.PivotSpec;
 import no.sikt.graphitron.rewrite.model.ResultKeyAliasedField;
 import graphql.language.SourceLocation;
 import no.sikt.graphitron.rewrite.model.TableExpr;
@@ -192,15 +191,15 @@ public final class ProjectionCommands {
             case ChildField.ComputedField cmp -> Optional.of(new Contribution.Project(cmp.name(),
                 List.of(new SelectTerm.HelperCall(cmp.method()))));
             case ChildField.PivotField pf -> {
-                var pivotUnit = mintPivotUnit(pf.parentTypeName(), pf.name(), pf.spec(), units, census);
+                var pivotUnit = mintPivotUnit(pf, units, census);
                 yield Optional.of(new Contribution.Call(pf.name(), pivotUnit,
-                    new CallWrap.PivotMultiset(pf.spec().pivotTable(), pf.spec().pairs())));
+                    new CallWrap.PivotMultiset(pf.pivot().table(), pf.spec().pairs())));
             }
             // The batched pivot delivers through the DataLoader seam (the projection itself is
             // still this coordinate's pivot unit, which the batched rows method consumes), so
             // the anchor's contribution is the correlation-key arm alone.
             case ChildField.BatchedPivotField bpf -> {
-                mintPivotUnit(bpf.parentTypeName(), bpf.name(), bpf.spec(), units, census);
+                mintPivotUnit(bpf, units, census);
                 yield correlationKeyArm(bpf, bpf.sourceKey() == null
                     ? List.of() : bpf.sourceKey().columns());
             }
@@ -331,16 +330,17 @@ public final class ProjectionCommands {
         return unit;
     }
 
-    private static UnitRef mintPivotUnit(String parentTypeName, String fieldName, PivotSpec spec,
+    private static UnitRef mintPivotUnit(ChildField.PivotSpecField field,
             GeneratedUnits units, AddressCensus census) {
-        var unit = units.pivotUnit(parentTypeName, fieldName);
-        var contributions = spec.slots().stream()
+        var unit = units.pivotUnit(field.parentTypeName(), field.name());
+        var pivot = field.pivot();
+        var contributions = field.spec().slots().stream()
             .map(slot -> (Contribution) new Contribution.Project(slot.name(), List.of(
-                new SelectTerm.Aggregate(spec.value(), spec.discriminator(),
-                    spec.tokenBySlot().get(slot.name()), slot.readName()))))
+                new SelectTerm.Aggregate(pivot.value(), pivot.discriminator(),
+                    pivot.tokenBySlot().get(slot.name()), slot.readName()))))
             .toList();
-        census.add(new ProjectionCommand.PivotUnit(unit, spec.pivotTable(), contributions),
-            "@pivot coordinate '" + parentTypeName + "." + fieldName + "'");
+        census.add(new ProjectionCommand.PivotUnit(unit, pivot.table(), contributions),
+            "@pivot coordinate '" + field.parentTypeName() + "." + field.name() + "'");
         return unit;
     }
 

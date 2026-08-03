@@ -74,6 +74,7 @@ import no.sikt.graphitron.rewrite.model.PivotSpec;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.LookupResolution;
+import no.sikt.graphitron.rewrite.model.RoutineResolution;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.RoutineChain;
@@ -1310,14 +1311,15 @@ class FieldBuilder {
         }
         var correlation = ((BuildContext.ParentCorrelationResolution.Resolved) pcResolution).correlation();
 
-        var spec = new PivotSpec(elements, pivotTable, discriminator.get(), value.get(),
-            returnTypeName, slots, tokenBySlot);
+        var pivot = new OperationMember.Pivot(pivotTable, discriminator.get(), value.get(),
+            tokenBySlot);
+        var spec = new PivotSpec(elements, returnTypeName, slots);
         if (ctx.facts.delivery().splitQuery(fieldDef)) {
             var split = deriveSplitQuerySource(correlation, parentTableType.table(), false);
-            return new ChildField.BatchedPivotField(parentTypeName, name, location, spec,
+            return new ChildField.BatchedPivotField(parentTypeName, name, location, pivot, spec,
                 split.sourceKey(), split.lift(), split.loaderRegistration(), correlation);
         }
-        return new ChildField.PivotField(parentTypeName, name, location, spec);
+        return new ChildField.PivotField(parentTypeName, name, location, pivot, spec);
     }
 
     /**
@@ -4560,7 +4562,8 @@ class FieldBuilder {
                             new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
                         case TableFieldComponents.Ok tfc ->
                             new QueryField.QueryTableField(parentTypeName, name, location, tb,
-                                tfc.filters(), tfc.orderBy(), tfc.pagination(), tfc.lookup());
+                                tfc.filters(), tfc.orderBy(), tfc.pagination(), tfc.lookup(),
+                                RoutineResolution.None.INSTANCE);
                     };
                 }
             };
@@ -4594,7 +4597,7 @@ class FieldBuilder {
                 buildNodeIdArgPlan(fieldDef, returnType.table()));
             if (components instanceof TableFieldComponents.Rejected rj) return new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
             var tfc = (TableFieldComponents.Ok) components;
-            return new QueryField.QueryTableField(parentTypeName, name, location, returnType, tfc.filters(), tfc.orderBy(), tfc.pagination(), tfc.lookup());
+            return new QueryField.QueryTableField(parentTypeName, name, location, returnType, tfc.filters(), tfc.orderBy(), tfc.pagination(), tfc.lookup(), RoutineResolution.None.INSTANCE);
         }
         if (tableBacked instanceof TableInterfaceType tableInterfaceType) {
             var wrapper = buildWrapper(fieldDef);

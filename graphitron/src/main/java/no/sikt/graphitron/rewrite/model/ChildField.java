@@ -17,7 +17,7 @@ public sealed interface ChildField extends OutputField
             ChildField.InterfaceField, ChildField.UnionField,
             ChildField.BatchedInterfaceField, ChildField.BatchedUnionField,
             ChildField.NestingField,
-            ChildField.PivotField, ChildField.BatchedPivotField, ChildField.PivotSlotField,
+            ChildField.PivotSpecField, ChildField.PivotSlotField,
             ChildField.ServiceRecordField,
             ChildField.RecordReadField,
             ChildField.RecordCompositeField,
@@ -851,13 +851,28 @@ public sealed interface ChildField extends OutputField
     }
 
     /**
+     * The two {@code @pivot} delivery leaves, an intermediate seal in the
+     * {@link TableTargetField} mould: the aggregate operation's parameters ride the carried
+     * {@link OperationMember.Pivot} member row (the coordinate's member set reads it by
+     * identity), and the target and join halves ride {@link #spec()}, so a switch arm on this
+     * seal keeps the full field surface without a cast back to the concrete leaf.
+     */
+    sealed interface PivotSpecField extends ChildField
+        permits ChildField.PivotField, ChildField.BatchedPivotField {
+
+        OperationMember.Pivot pivot();
+        PivotSpec spec();
+    }
+
+    /**
      * The inline {@code @pivot} leaf: a discriminator-keyed aggregate projection folded into the
      * parent query as a correlated aggregate subselect (one round-trip, no DataLoader, no
      * {@code GROUP BY}; the aggregate over the correlated set collapses to one row on its own).
      * One projection record exists per parent, always: a correlated aggregate over an empty set
      * still returns one row of nulls, never a null record; which slots are null is the only
-     * data-dependent part. Every pivot fact rides {@link #spec()}; the return type is a plain
-     * directive-free output type registered as an ordinary {@link GraphitronType.NestingType}.
+     * data-dependent part. The aggregate's parameters ride {@link #pivot()}, the target and join
+     * halves {@link #spec()}; the return type is a plain directive-free output type registered
+     * as an ordinary {@link GraphitronType.NestingType}.
      *
      * <p>Mirrors the {@link TableField} / {@link BatchedTableField} delivery split rather than
      * fusing both deliveries into one nullable-bag leaf: this inline arm deliberately does not
@@ -868,10 +883,11 @@ public sealed interface ChildField extends OutputField
         String parentTypeName,
         String name,
         SourceLocation location,
+        OperationMember.Pivot pivot,
         PivotSpec spec
-    ) implements ChildField, ResultKeyAliasedField {
+    ) implements PivotSpecField, ResultKeyAliasedField {
         public PivotField {
-            java.util.Objects.requireNonNull(spec, "spec");
+            PivotSpec.checkMemberAgreement(pivot, spec, "PivotField");
         }
         /**
          * The projection subselect returns a graphitron-built generic jOOQ {@code Record} whose
@@ -900,14 +916,15 @@ public sealed interface ChildField extends OutputField
         String parentTypeName,
         String name,
         SourceLocation location,
+        OperationMember.Pivot pivot,
         PivotSpec spec,
         SourceKey sourceKey,
         KeyLift lift,
         LoaderRegistration loaderRegistration,
         ParentCorrelation parentCorrelation
-    ) implements ChildField, BatchKeyField {
+    ) implements PivotSpecField, BatchKeyField {
         public BatchedPivotField {
-            java.util.Objects.requireNonNull(spec, "spec");
+            PivotSpec.checkMemberAgreement(pivot, spec, "BatchedPivotField");
             java.util.Objects.requireNonNull(lift, "lift");
             KeyLift.checkResidueAgreement(lift, sourceKey, "BatchedPivotField");
             ParentCorrelation.checkCarrierInvariant(parentCorrelation, spec.joinPath(), "BatchedPivotField");

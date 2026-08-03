@@ -101,9 +101,13 @@ class CommandSeamRatchetTest {
      * the dispatch block's four verb arms merged into one direct-return arm forking on the
      * carried write arm, and its four payload-carrier arms folded onto the two record-carrier
      * arms (the per-verb emit bodies survive behind write-arm switches the pattern does not
-     * count, because the fork is member payload, not leaf identity).
+     * count, because the fork is member payload, not leaf identity). Lowered 62 to 60 when the
+     * pivot payload single-homed: the registrations emitter's two pivot-leaf spec arms became
+     * one read of the {@code PivotSpecField} seal, which the pattern does not count for the
+     * same reason it skips the write-arm switches (a seal read is payload access, not leaf
+     * identity; the generator sites spell it with the nested-type import).
      */
-    private static final int GENERATOR_LEAF_CASE_PATTERNS = 62;
+    private static final int GENERATOR_LEAF_CASE_PATTERNS = 60;
 
     /**
      * Leaf references ({@code instanceof} plus {@code case}) inside {@code plan/}: the relocation

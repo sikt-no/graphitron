@@ -72,10 +72,35 @@ public sealed interface QueryField extends RootField
         List<WhereFilter> filters,
         OrderBySpec orderBy,
         PaginationSpec pagination,
-        LookupResolution lookup
+        LookupResolution lookup,
+        RoutineResolution routine
     ) implements QueryField, SqlGeneratingField {
         public QueryTableField {
             java.util.Objects.requireNonNull(lookup, "lookup");
+            java.util.Objects.requireNonNull(routine, "routine");
+            if (routine instanceof RoutineResolution.Chain c) {
+                // The shipped chain regime, pinned where source and read surface meet: a
+                // routine-sourced root read carries no graphitron read surface (@condition,
+                // @orderBy, connection shapes and @lookupKey on a routine chain are
+                // classify-time typed rejections), so a chain beside a populated surface is a
+                // classifier bug, not an author error.
+                if (!filters.isEmpty() || !(orderBy instanceof OrderBySpec.None)
+                        || pagination != null || !(lookup instanceof LookupResolution.None)) {
+                    throw new IllegalArgumentException(
+                        "QueryTableField with a routine chain must carry an empty read surface "
+                        + "(no filters, OrderBySpec.None, no pagination, LookupResolution.None); "
+                        + "the classifier rejects each of these surfaces on @routine before "
+                        + "construction");
+                }
+                // Terminus invariant: the projected @table type is the chain's last node.
+                if (!c.chain().terminus().denotesSameTableAs(returnType.table())) {
+                    throw new IllegalArgumentException(
+                        "QueryTableField routine terminus mismatch: the chain ends on '"
+                        + c.chain().terminus().tableName() + "' but the field's @table type is "
+                        + "bound to '" + returnType.table().tableName() + "'; the classifier's "
+                        + "terminus rule must reject this before construction");
+                }
+            }
         }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(returnType.table());

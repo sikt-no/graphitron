@@ -334,8 +334,8 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.ChildField.BatchedInterfaceField f   -> validateBatchedInterfaceField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.BatchedUnionField f       -> validateBatchedUnionField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.NestingField f            -> validateNestingField(f, errors);
-            case no.sikt.graphitron.rewrite.model.ChildField.PivotField f              -> validatePivotSpec(f, f.spec(), errors);
-            case no.sikt.graphitron.rewrite.model.ChildField.BatchedPivotField f       -> validatePivotSpec(f, f.spec(), errors);
+            case no.sikt.graphitron.rewrite.model.ChildField.PivotField f              -> validatePivotSpec(f, errors);
+            case no.sikt.graphitron.rewrite.model.ChildField.BatchedPivotField f       -> validatePivotSpec(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.PivotSlotField f          -> {} // readName-only leaf; every pivot admission check fires at classify time (PivotError via UnclassifiedField), and the consuming leaf's validatePivotSpec walks the slots
             case no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField f       -> validateServiceTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField f      -> validateServiceRecordField(f, types, errors);
@@ -990,10 +990,10 @@ public class GraphitronSchemaValidator {
      * under different aliases) plus the slot leaves' implementedness, the same walk
      * {@link #validateNestingField} runs over its nested fields.
      */
-    private void validatePivotSpec(GraphitronField field,
-            no.sikt.graphitron.rewrite.model.PivotSpec spec, List<ValidationError> errors) {
+    private void validatePivotSpec(no.sikt.graphitron.rewrite.model.ChildField.PivotSpecField field,
+            List<ValidationError> errors) {
         var slotsByToken = new java.util.LinkedHashMap<String, List<String>>();
-        spec.tokenBySlot().forEach((slot, token) ->
+        field.pivot().tokenBySlot().forEach((slot, token) ->
             slotsByToken.computeIfAbsent(token, k -> new java.util.ArrayList<>()).add(slot));
         slotsByToken.forEach((token, slots) -> {
             if (slots.size() > 1) {
@@ -1004,7 +1004,7 @@ public class GraphitronSchemaValidator {
                     field.location()));
             }
         });
-        for (var slot : spec.slots()) {
+        for (var slot : field.spec().slots()) {
             validateVariantIsImplemented(slot, errors);
         }
     }

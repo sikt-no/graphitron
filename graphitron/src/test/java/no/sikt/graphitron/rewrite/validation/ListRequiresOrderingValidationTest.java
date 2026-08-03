@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.validation;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.ChildField.TableField;
 import no.sikt.graphitron.rewrite.model.LookupResolution;
+import no.sikt.graphitron.rewrite.model.RoutineResolution;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
@@ -47,19 +48,19 @@ class ListRequiresOrderingValidationTest {
         QUERY_LIST_NO_ORDER("Query-rooted list field on no-PK table, no @defaultOrder — error",
             new QueryTableField("Query", "films", null,
                 filmReturn(new FieldWrapper.List(true, true)),
-                List.of(), new OrderBySpec.None(), null, LookupResolution.None.INSTANCE),
+                List.of(), new OrderBySpec.None(), null, LookupResolution.None.INSTANCE, RoutineResolution.None.INSTANCE),
             List.of("Field 'Query.films': " + LIST_ORDERING_ERROR)),
 
         QUERY_LIST_WITH_DEFAULT_ORDER("Query-rooted list field with @defaultOrder resolved to Fixed — admit",
             new QueryTableField("Query", "films", null,
                 filmReturn(new FieldWrapper.List(true, true)),
-                List.of(), PK_ORDER, null, LookupResolution.None.INSTANCE),
+                List.of(), PK_ORDER, null, LookupResolution.None.INSTANCE, RoutineResolution.None.INSTANCE),
             List.of()),
 
         QUERY_SINGLE_NO_ORDER("Query-rooted single field on no-PK table — admit (non-goal)",
             new QueryTableField("Query", "film", null,
                 filmReturn(new FieldWrapper.Single(true)),
-                List.of(), new OrderBySpec.None(), null, LookupResolution.None.INSTANCE),
+                List.of(), new OrderBySpec.None(), null, LookupResolution.None.INSTANCE, RoutineResolution.None.INSTANCE),
             List.of()),
 
         CHILD_LIST_NO_ORDER("Child-position list TableField on no-PK table — error",

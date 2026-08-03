@@ -271,9 +271,9 @@ public final class OperationMembers {
             case ChildField.BatchedInterfaceField _ -> List.of(new Select());
             case ChildField.BatchedUnionField _ -> List.of(new Select());
 
-            // --- Child fields: pivot ---
-            case ChildField.PivotField _ -> List.of(new OperationMember.Pivot(), new Join());
-            case ChildField.BatchedPivotField _ -> List.of(new OperationMember.Pivot(), new Join());
+            // --- Child fields: pivot. The member row is the leaf's carried component, by
+            // identity (PivotSpecField), the DmlWriteField discipline. ---
+            case ChildField.PivotSpecField f -> List.of(f.pivot(), new Join());
 
             // --- Child fields: service calls (reflected carrier) ---
             case ChildField.ServiceTableField f -> serviceTableRead(f);

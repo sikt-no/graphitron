@@ -177,6 +177,11 @@ class HierarchyKindRegistryTest {
         // realization of the walked @lookupKey application, total beside filters/orderBy/
         // pagination, gating the lookup member the way the carried window gates paginate.
         Map.entry(LookupResolution.class, HierarchyKind.WALKED_FACT),
+        // The resolved FROM-source axis carried on the root table read: the classify-time
+        // realization of the walked @routine chain, total beside the lookup resolution, so
+        // routine-sourced-ness is a source component rather than a leaf identity (the child
+        // side's joinPath precedent). Same registrar reasoning as LookupResolution.
+        Map.entry(no.sikt.graphitron.rewrite.model.RoutineResolution.class, HierarchyKind.WALKED_FACT),
 
         // Coalesces and inferences over facts, with no walk of their own.
         Map.entry(JoinStep.class, HierarchyKind.RESOLVED_VIEW),

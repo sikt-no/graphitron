@@ -528,8 +528,8 @@ public record TenantBindingIndex(
                 case ChildField.UnionField f -> addParticipantTables(f.participants(), tables);
                 case ChildField.BatchedInterfaceField f -> addParticipantTables(f.participants(), tables);
                 case ChildField.BatchedUnionField f -> addParticipantTables(f.participants(), tables);
-                case ChildField.PivotField f -> tables.add(f.spec().pivotTable());
-                case ChildField.BatchedPivotField f -> tables.add(f.spec().pivotTable());
+                case ChildField.PivotField f -> tables.add(f.pivot().table());
+                case ChildField.BatchedPivotField f -> tables.add(f.pivot().table());
                 default -> { }
             }
             return tables;

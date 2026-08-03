@@ -36,15 +36,16 @@ class PivotClassificationTest {
         """;
 
     @Test
-    void pivotField_carriesResolvedSpecWithVocabularyTokenMap() {
+    void pivotField_carriesResolvedMemberAndSpecWithVocabularyTokenMap() {
         var schema = TestSchemaHelper.buildSchema(VOCABULARY_SCHEMA);
         var pf = (ChildField.PivotField) schema.field("Film", "titleTexts");
+        var pivot = pf.pivot();
         var spec = pf.spec();
-        assertThat(spec.pivotTable().tableName()).isEqualTo("film_translation");
-        assertThat(spec.discriminator().sqlName()).isEqualTo("lang_code");
-        assertThat(spec.value().sqlName()).isEqualTo("title_txt");
+        assertThat(pivot.table().tableName()).isEqualTo("film_translation");
+        assertThat(pivot.discriminator().sqlName()).isEqualTo("lang_code");
+        assertThat(pivot.value().sqlName()).isEqualTo("title_txt");
         assertThat(spec.projectionTypeName()).isEqualTo("TranslatedTexts");
-        assertThat(spec.tokenBySlot())
+        assertThat(pivot.tokenBySlot())
             .containsExactlyInAnyOrderEntriesOf(Map.of("nn", "nno", "nb", "nob"));
         assertThat(spec.slots())
             .extracting(ChildField.PivotSlotField::name, ChildField.PivotSlotField::readName)
@@ -72,7 +73,7 @@ class PivotClassificationTest {
             type Query { film: Film }
             """);
         var pf = (ChildField.PivotField) schema.field("Film", "prices");
-        assertThat(pf.spec().tokenBySlot())
+        assertThat(pf.pivot().tokenBySlot())
             .containsExactlyInAnyOrderEntriesOf(Map.of("NOK", "NOK", "EUR", "EUR"));
     }
 
@@ -95,7 +96,7 @@ class PivotClassificationTest {
         assertThat(bpf.lift()).isInstanceOf(KeyLift.FkColumns.class);
         assertThat(bpf.loaderRegistration().dispatch()).isEqualTo(LoaderRegistration.Dispatch.LOAD_ONE);
         assertThat(bpf.emitsSingleRecordPerKey()).isTrue();
-        assertThat(bpf.spec().tokenBySlot())
+        assertThat(bpf.pivot().tokenBySlot())
             .containsExactlyInAnyOrderEntriesOf(Map.of("nob", "nob", "nno", "nno"));
     }
 

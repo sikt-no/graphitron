@@ -11,6 +11,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.LookupResolution;
+import no.sikt.graphitron.rewrite.model.RoutineResolution;
 import no.sikt.graphitron.rewrite.model.QueryField.QueryTableField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -54,7 +55,7 @@ class RootLookupValidationTest {
     private static QueryTableField singleReturn(List<WhereFilter> filters, OrderBySpec orderBy) {
         return new QueryTableField("Query", "filmById", null,
             new ReturnTypeRef.TableBoundReturnType("Film", TestFixtures.tableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Single(true)),
-            filters, orderBy, null, KEYED_LOOKUP);
+            filters, orderBy, null, KEYED_LOOKUP, RoutineResolution.None.INSTANCE);
     }
 
     private static final String GENERATED_FILTER_ON_LOOKUP =
@@ -79,7 +80,7 @@ class RootLookupValidationTest {
         LIST_COLUMN_ARG_DEFERRED("GeneratedConditionFilter list on lookup: deferred, no emitter",
             new QueryTableField("Query", "filmById", null,
                 new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE, new FieldWrapper.List(true, true)),
-                List.of(columnFilter("id", false, true)), PK_ORDER, null, KEYED_LOOKUP),
+                List.of(columnFilter("id", false, true)), PK_ORDER, null, KEYED_LOOKUP, RoutineResolution.None.INSTANCE),
             List.of(GENERATED_FILTER_ON_LOOKUP)),
 
         VALID_WITH_TABLE_INPUT_TYPE_ARG("table-bound input type arg — skipped, empty filters, valid with single return",
@@ -89,7 +90,7 @@ class RootLookupValidationTest {
         LIST_RETURN_NO_LIST_ARG("list return with no list filter — cardinality mismatch",
             new QueryTableField("Query", "filmById", null,
                 new ReturnTypeRef.TableBoundReturnType("Film", TestFixtures.tableRef("film", "FILM", "Film", List.of()), new FieldWrapper.List(true, true)),
-                List.of(), PK_ORDER, null, KEYED_LOOKUP),
+                List.of(), PK_ORDER, null, KEYED_LOOKUP, RoutineResolution.None.INSTANCE),
             List.of("Field 'Query.filmById': result type does not match input cardinality")),
 
         SINGLE_RETURN_LIST_ARG("single return with list filter: cardinality mismatch, and the filter defers",
@@ -100,7 +101,7 @@ class RootLookupValidationTest {
         CONNECTION_RETURN("connection return — never valid on lookup",
             new QueryTableField("Query", "filmById", null,
                 new ReturnTypeRef.TableBoundReturnType("Film", TestFixtures.tableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Connection(true, 100)),
-                List.of(), new OrderBySpec.None(), null, KEYED_LOOKUP),
+                List.of(), new OrderBySpec.None(), null, KEYED_LOOKUP, RoutineResolution.None.INSTANCE),
             List.of("Field 'Query.filmById': lookup fields must not return a connection")),
 
         ORDERBY_ARG("@orderBy on a lookup field — not valid on lookup",
@@ -110,7 +111,7 @@ class RootLookupValidationTest {
         CONNECTION_AND_ORDERBY("connection return AND @orderBy — two independent errors",
             new QueryTableField("Query", "filmById", null,
                 new ReturnTypeRef.TableBoundReturnType("Film", TestFixtures.tableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Connection(true, 100)),
-                List.of(), new OrderBySpec.Argument("order", "FilmOrder", false, false, "sortField", "direction", List.of(), new OrderBySpec.None()), null, KEYED_LOOKUP),
+                List.of(), new OrderBySpec.Argument("order", "FilmOrder", false, false, "sortField", "direction", List.of(), new OrderBySpec.None()), null, KEYED_LOOKUP, RoutineResolution.None.INSTANCE),
             List.of(
                 "Field 'Query.filmById': lookup fields must not return a connection",
                 "Field 'Query.filmById': @orderBy is not valid on a lookup field"));

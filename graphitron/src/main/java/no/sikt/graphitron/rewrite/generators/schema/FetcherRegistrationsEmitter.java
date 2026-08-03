@@ -8,6 +8,7 @@ import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.generators.FetcherEmitter;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator;
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.ChildField.PivotSpecField;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -289,15 +290,10 @@ public final class FetcherRegistrationsEmitter {
         // nesting edge does: either representative produces the same fetcher per slot coordinate,
         // because the read name derives from the slot's SDL name on both edges (the pivot's
         // projected alias and the nesting column resolution consume the same derivation).
-        var pivotSpec = switch (field) {
-            case ChildField.PivotField pf -> pf.spec();
-            case ChildField.BatchedPivotField bpf -> bpf.spec();
-            default -> null;
-        };
-        if (pivotSpec != null) {
-            out.putIfAbsent(pivotSpec.projectionTypeName(),
-                new NestedTypeWiring(pivotSpec.projectionTypeName(),
-                    List.copyOf(pivotSpec.slots()), pivotSpec.pivotTable()));
+        if (field instanceof PivotSpecField p) {
+            out.putIfAbsent(p.spec().projectionTypeName(),
+                new NestedTypeWiring(p.spec().projectionTypeName(),
+                    List.copyOf(p.spec().slots()), p.pivot().table()));
             return;
         }
         if (!(field instanceof ChildField.NestingField nf)) {

@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.model;
 import no.sikt.graphitron.rewrite.ArgumentRef;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -206,10 +207,36 @@ public sealed interface OperationMember {
     record Facet() implements OperationMember {}
 
     /**
-     * The discriminator-keyed row-to-column pivot verb ({@code @pivot}). The pivot facts stay on
-     * the consuming leaf's {@link PivotSpec} until payloads single-home.
+     * The discriminator-keyed row-to-column pivot verb ({@code @pivot}), carrying exactly the
+     * aggregate operation's parameters: each selected slot projects
+     * {@code max(value) FILTER (WHERE discriminator = token)} against {@link #table()}. The arm
+     * carries its table the way {@link Condition} does ({@link ColumnRef} names no table, so the
+     * arm must, or every consumer joins two homes); the target half of the pivot (the projection
+     * type and its slot leaves) and the join half (the single FK hop) stay on the consuming
+     * leaf's {@link PivotSpec}, and {@link PivotSpec#checkMemberAgreement} pins the two records
+     * to one coordinate from both leaf constructors.
+     *
+     * @param table the attribute table the discriminator and value columns resolve against
+     *     (the leaf's join-path terminus).
+     * @param discriminator the resolved {@code on:} column.
+     * @param value the resolved {@code value:} column whose per-token aggregate fills each slot.
+     * @param tokenBySlot the resolved slot → discriminator-token map, keyed by slot SDL name;
+     *     built at classify time from the {@code vocabulary:} enum's text mapping when given,
+     *     by identity when omitted.
      */
-    record Pivot() implements OperationMember {}
+    record Pivot(
+        TableRef table,
+        ColumnRef discriminator,
+        ColumnRef value,
+        Map<String, String> tokenBySlot
+    ) implements OperationMember {
+        public Pivot {
+            Objects.requireNonNull(table, "table");
+            Objects.requireNonNull(discriminator, "discriminator");
+            Objects.requireNonNull(value, "value");
+            tokenBySlot = Map.copyOf(tokenBySlot);
+        }
+    }
 
     /**
      * The site-level keyed re-query: this coordinate's own emit includes the

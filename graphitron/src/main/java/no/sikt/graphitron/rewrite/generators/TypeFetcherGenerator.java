@@ -27,6 +27,7 @@ import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.ChildField.PivotSpecField;
 import no.sikt.graphitron.rewrite.model.DialectRequirement;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
@@ -186,9 +187,8 @@ public class TypeFetcherGenerator {
         // A pivot edge reaches its projection type with the same generic-Record shape a nesting
         // edge does; it joins this index through a synthetic wiring carrier (see
         // pivotWiring) so a pivot-first representative feeds the same dual-shape seam.
-        var pivotSpec = pivotSpecOf(field);
-        if (pivotSpec != null) {
-            out.putIfAbsent(pivotSpec.projectionTypeName(), pivotWiring(pivotSpec));
+        if (field instanceof PivotSpecField p) {
+            out.putIfAbsent(p.spec().projectionTypeName(), pivotWiring(p));
             return;
         }
         if (!(field instanceof ChildField.NestingField nf)) {
@@ -198,14 +198,9 @@ public class TypeFetcherGenerator {
         nf.nestedFields().forEach(child -> indexNestingByType(child, out));
     }
 
-    /** The {@link no.sikt.graphitron.rewrite.model.PivotSpec} of a pivot leaf, else {@code null}. */
-    private static no.sikt.graphitron.rewrite.model.PivotSpec pivotSpecOf(GraphitronField field) {
-        return no.sikt.graphitron.rewrite.NestingReach.pivotSpecOf(field);
-    }
-
     /** See {@link no.sikt.graphitron.rewrite.NestingReach#pivotWiring}. */
-    private static ChildField.NestingField pivotWiring(no.sikt.graphitron.rewrite.model.PivotSpec spec) {
-        return no.sikt.graphitron.rewrite.NestingReach.pivotWiring(spec);
+    private static ChildField.NestingField pivotWiring(ChildField.PivotSpecField field) {
+        return no.sikt.graphitron.rewrite.NestingReach.pivotWiring(field);
     }
 
     private static TypeSpec generateForType(GraphitronSchema schema, String typeName, graphql.schema.GraphQLSchema assembled, String outputPackage,

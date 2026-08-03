@@ -4,7 +4,6 @@ import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
-import no.sikt.graphitron.rewrite.model.PivotSpec;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 
 import java.util.LinkedHashMap;
@@ -70,9 +69,8 @@ public record NestingReach(Map<String, ChildField.NestingField> representatives)
                 if (f instanceof ChildField.NestingField nf) {
                     collect(nf, representatives);
                 }
-                var spec = pivotSpecOf(f);
-                if (spec != null) {
-                    collect(pivotWiring(spec), representatives);
+                if (f instanceof ChildField.PivotSpecField p) {
+                    collect(pivotWiring(p), representatives);
                 }
             }));
         return new NestingReach(representatives);
@@ -87,24 +85,16 @@ public record NestingReach(Map<String, ChildField.NestingField> representatives)
         }
     }
 
-    /** The {@link PivotSpec} of a pivot leaf, else {@code null}. */
-    public static PivotSpec pivotSpecOf(GraphitronField field) {
-        return switch (field) {
-            case ChildField.PivotField pf -> pf.spec();
-            case ChildField.BatchedPivotField bpf -> bpf.spec();
-            default -> null;
-        };
-    }
-
     /**
      * An emit-time wiring carrier for a pivot edge, in the shape the nested-type seams already
      * consume ({@code returnTypeName} / {@code table} / {@code nestedFields}). Never registered
      * in the model: it exists only so the pivot edge rides the reach walk and the nested emit
      * seams without forking them on a second wiring type.
      */
-    public static ChildField.NestingField pivotWiring(PivotSpec spec) {
+    public static ChildField.NestingField pivotWiring(ChildField.PivotSpecField field) {
+        var spec = field.spec();
         return new ChildField.NestingField(spec.projectionTypeName(), spec.projectionTypeName(), null,
-            new ReturnTypeRef.TableBoundReturnType(spec.projectionTypeName(), spec.pivotTable(),
+            new ReturnTypeRef.TableBoundReturnType(spec.projectionTypeName(), field.pivot().table(),
                 new FieldWrapper.Single(true)),
             List.copyOf(spec.slots()));
     }

@@ -712,7 +712,7 @@ public final class LauncherCommands {
         return new LauncherCommand(
             units.rowsMethod(bpf.parentTypeName(), bpf.name()),
             FieldCoordinates.coordinates(bpf.parentTypeName(), bpf.name()),
-            new LaunchSource.PivotAggregate(bpf.spec().pivotTable(),
+            new LaunchSource.PivotAggregate(bpf.pivot().table(),
                 units.pivotUnit(bpf.parentTypeName(), bpf.name()), fkSlots),
             null,
             new Invocation.Batched(bpf.sourceKey(), bpf.loaderRegistration()),
