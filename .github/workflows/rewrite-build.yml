@@ -89,6 +89,19 @@ jobs:
         # CSVs. `install` rather than `verify` because the trunk-gated per-tier runs are
         # separate -pl :graphitron invocations that resolve graphitron's reactor
         # dependencies from the local repository.
+        env:
+          # Behavioural guard for the maven-archiver override in the root pom's
+          # pluginManagement; that comment carries the why. 315532800 is the ZIP epoch, the
+          # value NixOS exports from stdenv and the one the bundled maven-archiver rejects,
+          # so exporting it here makes every run exercise the condition and removing the
+          # override reddens the build on the commit that removes it. This is the only step
+          # reaching `verify`, hence the javadoc gate; the others stop at `test`/`package`.
+          #
+          # Not inert: maven-archiver stamps archive entries with it. The reactor is green
+          # under it across all four tiers. Scoped to this step, so it is not a project-wide
+          # Reproducible Builds policy: the publish workflow never sees it and
+          # project.build.outputTimestamp stays unset.
+          SOURCE_DATE_EPOCH: '315532800'
         run: mvn install -Plocal-db -Pcoverage --batch-mode -T 1C
       - name: Regenerate leaf-coverage report
         # Trunk-push only. PRs and main pushes skip; the artifact only feeds the

@@ -292,6 +292,35 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-javadoc-plugin</artifactId>
                     <version>3.12.0</version>
+                    <dependencies>
+                        <dependency>
+                            <!--
+                                Workaround, delete when the <version> above moves to a release
+                                pinning maven-archiver >= 3.6.5. 3.12.0 pins 3.6.4, whose
+                                parseBuildOutputTimestamp throws below a 1980-01-01T00:00:02Z
+                                floor: two seconds above the ZIP epoch, which is exactly what
+                                SOURCE_DATE_EPOCH=315532800 means. maven-archiver reads that
+                                variable when project.build.outputTimestamp is unset and NixOS
+                                exports it from stdenv, so the javadoc goal died before doing any
+                                of its own work for every NixOS contributor. 3.6.5 dropped the
+                                range check. Not 3.6.6, which fixes the same bug but raises its
+                                maven-core baseline to 3.9.12 while this repo builds on 3.9.11.
+
+                                In pluginManagement rather than on the gate's own execution so the
+                                release profile's attach-javadocs jar goal, which reaches the same
+                                parse, is covered too. Configuring outputTimestamp on those
+                                executions is not the simpler fix it looks like: an empty or
+                                single-character value falls through to the SOURCE_DATE_EPOCH
+                                branch, so it would take a magic in-range constant. The guard is
+                                behavioural rather than an assertion that this XML exists: CI
+                                exports the offending value, so dropping this override reddens the
+                                build on the commit that drops it.
+                            -->
+                            <groupId>org.apache.maven</groupId>
+                            <artifactId>maven-archiver</artifactId>
+                            <version>3.6.5</version>
+                        </dependency>
+                    </dependencies>
                     <configuration>
                         <sourcepath>${project.build.sourceDirectory}</sourcepath>
                     </configuration>

@@ -1,7 +1,7 @@
 ---
 id: R564
 title: "Javadoc reference gate hard-fails on an out-of-range project.build.outputTimestamp (maven-archiver 3.6.4 bundled by maven-javadoc-plugin 3.12.0)"
-status: Ready
+status: In Review
 bucket: bug
 priority: 4
 theme: tooling
@@ -149,6 +149,30 @@ mode discoverable only by contributors who hit it.
 - Unset-environment builds unaffected: the override only changes which `maven-archiver` the javadoc
   plugin loads, and with no property and no env var `parseBuildOutputTimestamp` returns empty on both
   versions.
+
+## Implementation notes
+
+Landed as specified, two files, no design changes. Verified: the repro command green after (it fails
+before); full `mvn install -Plocal-db` green both with `SOURCE_DATE_EPOCH=315532800` exported and
+with the environment clean, execution tier against PostgreSQL included in both.
+
+The gate was checked to still do its job under the override rather than merely stop crashing: a
+planted `{@link}` to a nonexistent type in `no.sikt.graphitron.javapoet.TypeVariableName` fails the
+execution with `error: reference not found`, and the pristine file passes, both with the offending
+epoch exported.
+
+Two findings from that check, neither changing this item's shape:
+
+- Proving the gate still fires requires deleting `target/maven-javadoc-plugin-stale-data.txt` first.
+  The plugin's incremental check keys on the javadoc options and source file list rather than on
+  source content, so an edited file is skipped on a warm `target/`. Pre-existing, orthogonal to this
+  item, and filed separately; CI checks out fresh, so trunk was never exposed. Worth knowing because
+  it also means a warm-`target` reproduction of this item's failure can mislead in the other
+  direction, and because `-bottom` carries the `{currentYear}` substitution, so runs with and
+  without the variable exported invalidate each other's stale data.
+- Accepting the value rather than rejecting it means a javadoc jar built with the ZIP epoch exported
+  renders a 1980 copyright footer, `{currentYear}` being one of the two cosmetic uses named above.
+  Cosmetic, and nothing the publish workflow runs sets the variable.
 
 ## Not in scope
 
