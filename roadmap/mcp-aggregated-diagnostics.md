@@ -351,7 +351,10 @@ server. The tests that carry weight are the invariant pins, not per-dimension un
   return more groups than a stated cap. This is the failure mode that would quietly defeat the
   item's purpose by making the aggregate bigger than the entry list.
 - **Dimension partition.** Every dimension declared in exactly one bucket (typed-key /
-  location-derived / prose-derived), in the `EdgeCoverageTest` mould.
+  location-derived / prose-derived), in the `EdgeCoverageTest` mould. Write it over whatever bucket
+  set survives the `messageTemplate` decision rather than hard-coding three: omitting that dimension
+  drops the prose bucket entirely. The same partition is the documentation's structure (see the
+  first-client check), so pin it once and let the tool description read from it.
 - **Rejection-leaf partition.** Every `Rejection` leaf declared coded or deliberately codeless
   (step 3), and no typed-key arm reachable from the prose path (step 4).
 - **Rows with no coordinate are not silently lost.** Warnings and compile diagnostics carry no
@@ -418,25 +421,71 @@ than leanings. Each takes the draft's leaning except where noted.
 - **Pure counts.** Ordering by count already surfaces the leverage; naming a fix strategy would be
   the server asserting the wrong layer.
 
-## Remaining author work before Ready
+## User documentation (first-client check)
 
-One item from `roadmap/workflow.adoc` § Item file conventions is outstanding: a plan with a
-user-visible surface includes a draft of the user docs as the first client of the design, and the
-convention exists precisely so that "if the docs do not read simply, the design is wrong and must
-change before implementation". This item adds a tool whose vocabulary is sixteen dimensions plus six
-request parameters, and the design's central bet against a query language is that a closed enum
-"is discoverable from the tool's input schema in one shot". That bet is only testable by writing the
-description and reading it back. Draft, inside this plan:
+The user surface is agent-facing: the tool description an agent reads from the input schema, the
+server instructions, and the manual's tool table. Drafts below, to move into their real homes when
+the feature ships. The design's central bet against a query language is that a closed dimension set
+"is discoverable from the tool's input schema in one shot", so this draft is where that bet gets
+tested rather than asserted.
 
-- The `diagnostics.aggregate` tool description, including how the sixteen dimensions get enumerated
-  without the description becoming the thing an agent has to page through.
-- The `mcp/instructions.txt` sentence pointing at the aggregate when the diagnostic count is large.
-- The new row for `docs/manual/how-to/mcp-agent-context.adoc`'s per-tool table, which already
-  carries a `diagnostics` row and is the surface the shipped `docs.search` and `catalog.search`
-  tools both landed prose on.
+**Tool description** (`GraphitronMcpServer.diagnosticsAggregateTool`), title "Aggregate schema
+diagnostics":
 
-If enumerating the vocabulary does not read simply, that is the signal to shrink the dimension set
-before implementation, which is exactly what this check is for.
+> Counts diagnostics grouped by the dimensions you name, and returns no entries, so the result stays
+> small however broken the schema is. Call it with no arguments for the triage view: how much of the
+> schema you can fix yourself, and how much is shapes graphitron does not generate yet. Then set
+> `groupBy` to pivot on your own question. Every group carries an exact count, a few example
+> coordinates, and the files it spans. When `minCount` or `limit` elides groups, the response says how
+> many were elided and their combined count, so a truncated aggregate never reads as complete. Filter
+> with `where` on the same dimensions you group on, then hand a group's key to the `diagnostics` tool
+> to read that group's entries without paging the rest.
+
+**Dimension vocabulary**, as the `groupBy` / `where` enum documents it. Grouped in three, not listed
+in sixteen:
+
+> *Read off the diagnostic's own data* (stable across a message rewording): `severity`, `source`,
+> `actionable` (can you fix this in the schema?), `kind`, `variant` (the rejection's own class),
+> `lspCode`, `attemptKind` (which lookup space a name resolution failed in), `attempt` (the name the
+> author wrote), `stubKey`, `directives`, `lintRule`.
+>
+> *Read off the location*: `coordinate` (a type or `Type.field`), `type`, `file`, `directory`. The
+> pairs are coarse and fine grains of one axis; pick deliberately.
+>
+> *Derived from message text* (not stable across a rewording): `messageTemplate`.
+
+**`mcp/instructions.txt`**, appended to the diagnostics guidance:
+
+> When the schema has more than a page of diagnostics, call `diagnostics.aggregate` before
+> `diagnostics`. It answers what is broken and in what proportion in one small result, and its group
+> keys feed straight back into `diagnostics` to read a single cluster's entries.
+
+**`docs/manual/how-to/mcp-agent-context.adoc`**, a new row after the `diagnostics` one:
+
+> `diagnostics.aggregate`: Counts those same diagnostics grouped by dimensions you choose (what kind
+> of error, which attempted name, which file or directory) instead of listing them. On a schema
+> mid-migration this answers "what is broken, in what proportion" in one small result, and each
+> group's key feeds back into `diagnostics` to read just that group.
+
+### What writing it surfaced
+
+Two things the check was for, both recommendations to the author rather than settled decisions:
+
+1. **Sixteen dimensions in a flat list does not read simply; grouped in three it does.** The natural
+   grouping turns out to be the *same* typed / location-derived / prose-derived partition the
+   dimension-partition test already pins. So the partition is not only an invariant, it is the
+   documentation's structure, and the two should be generated from or checked against one another
+   rather than maintained twice. That is a cheap strengthening of the test's value.
+2. **If `messageTemplate` is omitted, the third bucket disappears and the wire contract's
+   "which clusters are typed" claim goes vacuous** (everything would be typed). That is an argument
+   for the reviewer decision above defaulting to omission, and it means the partition test should be
+   written to pin whatever bucket set survives rather than hard-coding three. Worth knowing before
+   the test is written, not after.
+
+Neither reads as a reason to shrink the dimension set. The grain pairs (`coordinate` / `type`,
+`file` / `directory`, `attemptKind` / `attempt`) look redundant in a flat list and stop looking
+redundant once the list is grouped and the pairs are named as grains, which is the outcome the check
+is supposed to produce.
 
 ## Out of scope
 
