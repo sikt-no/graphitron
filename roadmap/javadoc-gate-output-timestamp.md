@@ -22,11 +22,30 @@ Failed to execute goal org.apache.maven.plugins:maven-javadoc-plugin:3.12.0:java
   1980-01-01T00:00:02Z to 2099-12-31T23:59:59Z
 ```
 
-The repo never sets that property, so the value arrives from the developer's Maven environment: a
-Maven 4 build (Reproducible Builds mode is active by default there and pins a fixed
-`project.build.outputTimestamp`), a `~/.m2/settings.xml` profile, a `MAVEN_ARGS` export, or a
-`.mvn/maven.config` in a directory above the checkout. Whatever the source, the gate is the only
-execution in the build that dies on it, and it dies before doing any of its work.
+The repo never sets that property, and it does not have to be set for the failure to happen. When the
+property is absent, `maven-archiver` falls back to the **`SOURCE_DATE_EPOCH`** environment variable,
+the cross-ecosystem Reproducible Builds convention:
+
+```java
+if (outputTimestamp == null || (outputTimestamp.length() < 2 && !isNumeric(outputTimestamp))) {
+    outputTimestamp = System.getenv("SOURCE_DATE_EPOCH");
+    if (outputTimestamp == null) return Optional.empty();
+}
+```
+
+`SOURCE_DATE_EPOCH=315532800` is `1980-01-01T00:00:00Z` to the second: the ZIP epoch, the value
+reproducible-build tooling most often picks as its floor. **NixOS exports exactly that value from
+`stdenv`**, so the gate fails for every NixOS contributor out of the box, on any Maven version, with
+no Maven configuration involved at all. That is the reported provenance: Maven 3.9.12, property
+unset, `SOURCE_DATE_EPOCH=315532800` inherited from the OS. The error message prints the *parsed*
+`Instant` rather than the raw input, which is why an ISO string appears in it even though the input
+was a numeric epoch.
+
+This makes the item a portability bug rather than a local misconfiguration: the environment is doing
+the conventional, correct thing, and the gate is the only thing in the reactor that cannot cope.
+
+The gate is the only execution in the build that dies on this, and it dies before doing any of its
+work.
 
 ## Mechanism
 
@@ -35,22 +54,29 @@ plain `javadoc` goal, feeds it to `MavenArchiver.parseBuildOutputTimestamp` for 
 purposes only: substituting `{currentYear}` into `bottom`, and forcing `-notimestamp` on. The gate
 sets `notimestamp` itself and discards the rendered output, so neither purpose matters here.
 
-The plugin pins `maven-archiver` **3.6.4**, whose `parseBuildOutputTimestamp` range-checks against a
-`1980-01-01T00:00:02Z` floor and throws. **3.6.5** dropped that check: it now throws only on a value
-it cannot parse at all. So the failure is a stale shared component reached through a code path that
-does not need the parsed value.
+The plugin pins `maven-archiver` **3.6.4**, whose `parseBuildOutputTimestamp` range-checks *both* the
+ISO and the numeric-epoch branch against a `1980-01-01T00:00:02Z` floor and throws. The floor sits two
+seconds above the ZIP epoch, so the canonical `SOURCE_DATE_EPOCH` value fails the check that exists to
+keep timestamps ZIP-representable. **3.6.5** dropped the range check entirely: it now throws only on a
+value it cannot parse at all. So the failure is a stale shared component reached through a code path
+that does not need the parsed value.
 
 ## Reproduction and verified fix
 
-Reproduces on the current tree under Maven 3.9.11 / JDK 25:
+Both paths reproduce on the current tree under Maven 3.9.11 / JDK 25, from a clean environment:
 
 ```bash
+# the reported shape: environment variable only, property unset
+SOURCE_DATE_EPOCH=315532800 mvn -pl graphitron-javapoet javadoc:javadoc@check-link-references
+
+# equivalently, via the property
 mvn -pl graphitron-javapoet javadoc:javadoc@check-link-references \
     -Dproject.build.outputTimestamp=1980-01-01T00:00:00Z
 ```
 
 Overriding the plugin's bundled `maven-archiver` to 3.6.5 in the root pom's `pluginManagement`
-entry turns that same command green:
+entry turns both commands green (verified against the `SOURCE_DATE_EPOCH` form, which 3.6.5 still
+honours, minus the range check):
 
 ```xml
 <artifactId>maven-javadoc-plugin</artifactId>
@@ -64,11 +90,11 @@ entry turns that same command green:
 </dependencies>
 ```
 
-This is preferable to declaring `project.build.outputTimestamp` in the root pom, which would fix the
-symptom by overriding whatever the developer's environment asked for, and would quietly commit the
-project to a Reproducible Builds policy (with a value to bump at every release) as a side effect of a
-bug fix. Whether graphitron *wants* reproducible published artifacts is a separate question worth its
-own item.
+This is preferable to declaring `project.build.outputTimestamp` in the root pom. That would also work,
+by short-circuiting the `SOURCE_DATE_EPOCH` fallback, but it fixes the symptom by overriding what the
+environment asked for, and it quietly commits the project to a Reproducible Builds policy (with a
+value to bump at every release) as a side effect of a bug fix. Whether graphitron *wants* reproducible
+published artifacts is a separate question worth its own item.
 
 The override is self-retiring: drop it once `maven-javadoc-plugin` ships a release that pins
 `maven-archiver` >= 3.6.5. Placing it in `pluginManagement` covers the `attach-javadocs` `jar` goal
