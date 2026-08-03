@@ -2932,7 +2932,7 @@ type DeletedFilmsIdPayload {
 # DmlEmitted @mutation(table:) grounding, the binding grounder had no field-relative write-target
 # source, so a field-derived payload-returning DELETE grounded no producer binding, the
 # payload never registered as a producer-backed carrier, and the field rejected with the generic
-# "return type not yet supported". It now classifies as MutationDeletePayloadField; deletedId echoes
+# "return type not yet supported". It now classifies as a MutationDmlRecordField carrying a Delete write arm; deletedId echoes
 # the deleted bin_id through the StorageBin @node encoder. See deleteStorageBinByCodePayload.
 type DeletedStorageBinPayload {
     deletedId: ID
@@ -3111,7 +3111,7 @@ type Mutation {
     createFilmWithErrors(in: FilmCreateInput!): FilmCreateLocalContextPayload @mutation(typeName: INSERT, table: "film")
 
     # R156 compilation-tier fixture: payload-returning DELETE carrier, ID-typed element-shape arm.
-    # Bulk DELETE returning [ID!] of encoded NodeIds. Classifies as MutationBulkDeletePayloadField
+    # Bulk DELETE returning [ID!] of encoded NodeIds. Classifies as a MutationBulkDmlRecordField carrying a Delete write arm,
     # with the carrier's `deletedIds` field as ChildField.SingleRecordIdFieldFromReturning with
     # CallSiteCompaction.NodeIdEncodeKeys carrying the Film encoder. Emitter: per-row
     # deleteFrom(film).where(row(film_id).in(...)).returningResult(film_id) inside transactionResult;

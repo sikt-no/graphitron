@@ -322,22 +322,14 @@ public record OperationMemberRelation(Map<FieldCoordinates, List<OperationMember
     }
 
     /**
-     * The write verbs' payload extraction: the one genuinely per-record fork, enumerated here
-     * until the DML verb dissolution folds the records onto the write member family.
+     * The write verbs' payload extraction: the DML leaves carry the payload as their
+     * component (the {@link DmlWriteField} capability), the routine chain carries none.
      */
     private static OperationMember.Write writePayloadOf(OutputField leaf) {
         return switch (leaf) {
-            case MutationField.MutationInsertTableField f -> new OperationMember.Write.Insert(f.tableInputArg());
-            case MutationField.MutationUpsertTableField f -> new OperationMember.Write.Upsert(f.tableInputArg());
-            case MutationField.MutationUpdateTableField f -> new OperationMember.Write.Update(f.inputArg(), f.updateRows());
-            case MutationField.MutationDeleteTableField f -> new OperationMember.Write.Delete(f.inputArg(), f.deleteRows());
-            case MutationField.MutationRoutineWriteField _ -> new OperationMember.Write.RoutineWrite();
             // The write payload is the leaf's carried component, by identity (DmlWriteField).
             case DmlWriteField f -> f.write();
-            case MutationField.MutationUpdatePayloadField f -> new OperationMember.Write.Update(f.inputArg(), f.updateRows());
-            case MutationField.MutationBulkUpdatePayloadField f -> new OperationMember.Write.Update(f.inputArg(), f.updateRows());
-            case MutationField.MutationDeletePayloadField f -> new OperationMember.Write.Delete(f.inputArg(), f.deleteRows());
-            case MutationField.MutationBulkDeletePayloadField f -> new OperationMember.Write.Delete(f.inputArg(), f.deleteRows());
+            case MutationField.MutationRoutineWriteField _ -> new OperationMember.Write.RoutineWrite();
             default -> throw new IllegalStateException(
                 "write membership on a leaf with no write payload components: "
                 + leaf.getClass().getSimpleName());

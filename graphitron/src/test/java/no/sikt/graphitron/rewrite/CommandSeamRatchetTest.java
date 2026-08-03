@@ -97,9 +97,13 @@ class CommandSeamRatchetTest {
      * the lookup triplet dissolved (the two dedicated fetcher arms merged into their siblings
      * behind the launcher row's source-arm fork, the deleted input-rows adapter's three-arm
      * name switch went with its file, and the parent-input rows-method gate's lookup twin
-     * collapsed onto the sibling arm).
+     * collapsed onto the sibling arm). Lowered 69 to 62 when the DML verb split dissolved:
+     * the dispatch block's four verb arms merged into one direct-return arm forking on the
+     * carried write arm, and its four payload-carrier arms folded onto the two record-carrier
+     * arms (the per-verb emit bodies survive behind write-arm switches the pattern does not
+     * count, because the fork is member payload, not leaf identity).
      */
-    private static final int GENERATOR_LEAF_CASE_PATTERNS = 69;
+    private static final int GENERATOR_LEAF_CASE_PATTERNS = 62;
 
     /**
      * Leaf references ({@code instanceof} plus {@code case}) inside {@code plan/}: the relocation
@@ -174,9 +178,11 @@ class CommandSeamRatchetTest {
      * dissolved: the edge producer's three vacuous lookup arms deleted, the launcher's four
      * lookup payload arms folded into their sibling arms behind the lookup-member fork, and
      * the projection's inline-correlation lookup read collapsed onto the surviving inline
-     * leaf.
+     * leaf. Lowered 132 to 128 when the DML verb split dissolved: the edge producer's four
+     * payload-verb arms folded onto the direct-return and record-carrier arms, all of which
+     * keep the condition-glue derivation.
      */
-    private static final int PLAN_LEAF_REFERENCES = 132;
+    private static final int PLAN_LEAF_REFERENCES = 128;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide

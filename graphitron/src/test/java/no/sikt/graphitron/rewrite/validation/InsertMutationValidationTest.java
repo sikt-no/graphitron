@@ -4,10 +4,10 @@ import no.sikt.graphitron.rewrite.ArgumentRef;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
-import no.sikt.graphitron.rewrite.model.DialectRequirement;
 import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
-import no.sikt.graphitron.rewrite.model.MutationField.MutationInsertTableField;
+import no.sikt.graphitron.rewrite.model.MutationField.DmlTableField;
+import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.model.ParentCorrelation;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -22,23 +22,22 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import no.sikt.graphitron.rewrite.TestFixtures;
 
 @UnitTier
-class MutationInsertTableFieldValidationTest {
+class InsertMutationValidationTest {
 
     enum Case implements ValidatorCase {
 
         VALID("insert mutation field, well-formed, no validation errors",
-            new MutationInsertTableField(
+            new DmlTableField(
                 "Mutation", "createFilm", null,
                 new DmlReturnExpression.ProjectedSingle("Film",
                     new ParentCorrelation.OnLiftedSlots(
                         TestFixtures.filmTableWithPk(), List.of(TestFixtures.filmIdCol()))),
-                DialectRequirement.None.INSTANCE,
-                ArgumentRef.InputTypeArg.TableInputArg.of(
+                new OperationMember.Write.Insert(ArgumentRef.InputTypeArg.TableInputArg.of(
                     "in", "FilmInput", true, false,
                     TestFixtures.tableRef("film", "FILM", "Film", List.of()),
                     List.of(),
                     Optional.empty(),
-                    List.of()),
+                    List.of())),
                 Optional.empty()),
             List.of()),
 
@@ -48,17 +47,16 @@ class MutationInsertTableFieldValidationTest {
         // slot overflows jOOQ's typed Row22 and must reject at validate time.
         BULK_REENTRY_KEY_EXCEEDS_ROW22_CAP(
             "bulk projected return whose reentry key has 22 PK columns → Row22-cap rejection",
-            new MutationInsertTableField(
+            new DmlTableField(
                 "Mutation", "createWides", null,
                 new DmlReturnExpression.ProjectedList("Wide",
                     new ParentCorrelation.OnLiftedSlots(wideTable(), wideKey())),
-                DialectRequirement.None.INSTANCE,
-                ArgumentRef.InputTypeArg.TableInputArg.of(
+                new OperationMember.Write.Insert(ArgumentRef.InputTypeArg.TableInputArg.of(
                     "in", "WideInput", true, true,
                     wideTable(),
                     List.of(),
                     Optional.empty(),
-                    List.of()),
+                    List.of())),
                 Optional.empty()),
             List.of("Field 'Mutation.createWides': bulk @mutation with a @table return re-fetches "
                 + "the written rows through a keyed re-query whose key is table 'wide's primary key; "
@@ -67,17 +65,16 @@ class MutationInsertTableFieldValidationTest {
 
         SINGLE_REENTRY_KEY_WIDE_PK_EXEMPT(
             "single-cardinality projected return with the same 22-column key → exempt (plain key equality, no idx slot)",
-            new MutationInsertTableField(
+            new DmlTableField(
                 "Mutation", "createWide", null,
                 new DmlReturnExpression.ProjectedSingle("Wide",
                     new ParentCorrelation.OnLiftedSlots(wideTable(), wideKey())),
-                DialectRequirement.None.INSTANCE,
-                ArgumentRef.InputTypeArg.TableInputArg.of(
+                new OperationMember.Write.Insert(ArgumentRef.InputTypeArg.TableInputArg.of(
                     "in", "WideInput", true, false,
                     wideTable(),
                     List.of(),
                     Optional.empty(),
-                    List.of()),
+                    List.of())),
                 Optional.empty()),
             List.of());
 

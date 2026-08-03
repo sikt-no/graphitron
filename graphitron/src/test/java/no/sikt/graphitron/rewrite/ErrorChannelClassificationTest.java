@@ -416,7 +416,7 @@ class ErrorChannelClassificationTest {
             type Mutation { createFilm(in: FilmInput!): Film @mutation(typeName: INSERT) }
             """);
 
-        var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createFilm");
+        var f = (MutationField.DmlTableField) schema.field("Mutation", "createFilm");
         assertThat(f.errorChannel()).isEqualTo(Optional.<ErrorChannel>empty());
     }
 

@@ -36,8 +36,14 @@ class LeafRatchetTest {
      */
     private static final int QUERY_FIELD_LEAVES = 11;
 
-    /** Installed at 15 (census 2026-08-02, unchanged from the 2026-08-01 baseline). */
-    private static final int MUTATION_FIELD_LEAVES = 15;
+    /**
+     * Installed at 15 (census 2026-08-02, unchanged from the 2026-08-01 baseline).
+     * 15 to 8 (2026-08-03): the DML verb split dissolved onto the write member family. The
+     * four DmlTableField verb leaves folded into one direct-return record and the four
+     * payload-verb leaves onto the two record carriers; the verb identity and per-verb input
+     * surfaces became the carried {@code OperationMember.Write.Dml} payload.
+     */
+    private static final int MUTATION_FIELD_LEAVES = 8;
 
     /**
      * Installed at 24 (census 2026-08-02, unchanged from the 2026-08-01 baseline).

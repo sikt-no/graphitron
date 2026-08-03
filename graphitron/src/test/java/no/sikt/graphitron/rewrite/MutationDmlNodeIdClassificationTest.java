@@ -11,6 +11,10 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static no.sikt.graphitron.rewrite.DmlWriteReads.deleteRowsOf;
+import static no.sikt.graphitron.rewrite.DmlWriteReads.updateRowsOf;
+import static no.sikt.graphitron.rewrite.DmlWriteReads.insertInputOf;
+import static no.sikt.graphitron.rewrite.DmlWriteReads.deleteArgOf;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
 /**
@@ -41,7 +45,7 @@ class MutationDmlNodeIdClassificationTest {
             type Mutation { createBar(in: BarInput!): ID @mutation(typeName: INSERT, table: "bar") }
             """, NODEID_CTX);
 
-        var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createBar");
+        var f = (MutationField.DmlTableField) schema.field("Mutation", "createBar");
         var rex = (DmlReturnExpression.EncodedSingle) f.returnExpression();
         assertThat(rex.encode().methodName()).isEqualTo("encodeBar");
         assertThat(rex.encode().paramSignature())
@@ -203,8 +207,8 @@ class MutationDmlNodeIdClassificationTest {
             type Mutation { deleteBar(in: DeleteBarInput!): ID @mutation(typeName: DELETE, table: "bar") }
             """, NODEID_CTX);
 
-        var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteBar");
-        var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) f.deleteRows();
+        var f = (MutationField.DmlTableField) schema.field("Mutation", "deleteBar");
+        var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) deleteRowsOf(f);
         assertThat(deleteRows.matchedKey()).isInstanceOf(
             no.sikt.graphitron.rewrite.model.MatchedKey.PrimaryKey.class);
         assertThat(deleteRows.whereColumns()).hasSize(2);
@@ -225,8 +229,8 @@ class MutationDmlNodeIdClassificationTest {
             type Query { x: String }
             type Mutation { deleteParentNode(in: DeleteParentNodeInput!): ID @mutation(typeName: DELETE, table: "parent_node") }
             """, NODEID_CTX);
-        var del = (MutationField.MutationDeleteTableField) deleteSchema.field("Mutation", "deleteParentNode");
-        var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) del.deleteRows();
+        var del = (MutationField.DmlTableField) deleteSchema.field("Mutation", "deleteParentNode");
+        var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) deleteRowsOf(del);
         assertThat(deleteRows.matchedKey()).isInstanceOf(no.sikt.graphitron.rewrite.model.MatchedKey.UniqueKey.class);
         assertThat(deleteRows.matchedKey().columns()).extracting(c -> c.sqlName()).containsExactly("alt_key");
         assertThat(deleteRows.whereColumns()).extracting(k -> k.targetColumn().sqlName()).containsExactly("alt_key");
@@ -240,8 +244,8 @@ class MutationDmlNodeIdClassificationTest {
             type Query { x: String }
             type Mutation { updateParentNode(in: UpdateParentNodeInput!): ParentNode @mutation(typeName: UPDATE) }
             """, NODEID_CTX);
-        var upd = (MutationField.MutationUpdateTableField) updateSchema.field("Mutation", "updateParentNode");
-        var updateRows = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) upd.updateRows();
+        var upd = (MutationField.DmlTableField) updateSchema.field("Mutation", "updateParentNode");
+        var updateRows = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) updateRowsOf(upd);
         assertThat(updateRows.matchedKey()).isInstanceOf(no.sikt.graphitron.rewrite.model.MatchedKey.UniqueKey.class);
         assertThat(updateRows.matchedKey().columns()).extracting(c -> c.sqlName()).containsExactly("alt_key");
 
@@ -266,8 +270,8 @@ class MutationDmlNodeIdClassificationTest {
 
         // The composite-NodeId key field projects to two KeyColumn entries sharing the SDL
         // field name "id"; name falls outside the matched key and partitions to SET.
-        var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateBar");
-        var updateRows = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) f.updateRows();
+        var f = (MutationField.DmlTableField) schema.field("Mutation", "updateBar");
+        var updateRows = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) updateRowsOf(f);
         assertThat(updateRows.matchedKey()).isInstanceOf(
             no.sikt.graphitron.rewrite.model.MatchedKey.PrimaryKey.class);
         assertThat(updateRows.keyColumns()).hasSize(2);
@@ -338,8 +342,8 @@ class MutationDmlNodeIdClassificationTest {
             type Mutation { deleteBaz(in: DeleteBazInput!): ID @mutation(typeName: DELETE, table: "baz") }
             """, NODEID_CTX);
 
-        var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteBaz");
-        var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) f.deleteRows();
+        var f = (MutationField.DmlTableField) schema.field("Mutation", "deleteBaz");
+        var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) deleteRowsOf(f);
         assertThat(deleteRows.whereColumns()).hasSize(1);
         var keyColumn = deleteRows.whereColumns().get(0);
         assertThat(keyColumn.sdlFieldName()).isEqualTo("id");
@@ -358,7 +362,7 @@ class MutationDmlNodeIdClassificationTest {
             type Mutation { createQux(in: QuxInput!): Qux @mutation(typeName: INSERT) }
             """, NODEID_CTX);
 
-        var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createQux");
+        var f = (MutationField.DmlTableField) schema.field("Mutation", "createQux");
         var rex = (DmlReturnExpression.ProjectedSingle) f.returnExpression();
         assertThat(rex.returnTypeName()).isEqualTo("Qux");
         assertThat(rex.reentryCorrelation().targetTable().tableName()).isEqualTo("qux");
@@ -384,7 +388,7 @@ class MutationDmlNodeIdClassificationTest {
             type Mutation { deleteBars(in: [DeleteBarInput!]!): DeletedBarsPayload @mutation(typeName: DELETE, table: "bar") }
             """, NODEID_CTX);
 
-        var mut = (MutationField.MutationBulkDeletePayloadField) schema.field("Mutation", "deleteBars");
+        var mut = (MutationField.MutationBulkDmlRecordField) schema.field("Mutation", "deleteBars");
         var dataField = (no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning)
             schema.field("DeletedBarsPayload", "deletedIds");
         assertThat(dataField.encode().encodeMethod().methodName()).isEqualTo("encodeBar");
@@ -406,7 +410,7 @@ class MutationDmlNodeIdClassificationTest {
             type Mutation { deleteBars(in: [DeleteBarInput!]!): DeletedBarsPayload @mutation(typeName: DELETE, table: "bar") }
             """, NODEID_CTX);
 
-        var mut = (MutationField.MutationBulkDeletePayloadField) schema.field("Mutation", "deleteBars");
+        var mut = (MutationField.MutationBulkDmlRecordField) schema.field("Mutation", "deleteBars");
         var dataField = (no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning)
             schema.field("DeletedBarsPayload", "deletedIds");
         assertThat(dataField.encode().encodeMethod().methodName()).isEqualTo("encodeBar");
@@ -449,7 +453,7 @@ class MutationDmlNodeIdClassificationTest {
             type Mutation { deleteBaz(in: DeleteBazInput!): DeletedBazPayload @mutation(typeName: DELETE, table: "baz") }
             """, NODEID_CTX);
 
-        var mut = (MutationField.MutationDeletePayloadField) schema.field("Mutation", "deleteBaz");
+        var mut = (MutationField.MutationDmlRecordField) schema.field("Mutation", "deleteBaz");
         var dataField = (no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning)
             schema.field("DeletedBazPayload", "deletedId");
         assertThat(dataField.encode().encodeMethod().methodName()).isEqualTo("encodeBaz");
@@ -470,7 +474,7 @@ class MutationDmlNodeIdClassificationTest {
             type Mutation { deleteBaz(in: DeleteBazInput!): DeletedBazPayload @mutation(typeName: DELETE, table: "baz") }
             """, NODEID_CTX);
 
-        var mut = (MutationField.MutationDeletePayloadField) schema.field("Mutation", "deleteBaz");
+        var mut = (MutationField.MutationDmlRecordField) schema.field("Mutation", "deleteBaz");
         var dataField = (no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning)
             schema.field("DeletedBazPayload", "deletedId");
         assertThat(dataField.encode().encodeMethod().methodName()).isEqualTo("encodeBaz");
@@ -528,8 +532,8 @@ class MutationDmlNodeIdClassificationTest {
             type Mutation { createBar(in: CreateBarInput!): ID @mutation(typeName: INSERT, table: "bar") }
             """, NODEID_CTX);
 
-        var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createBar");
-        var fields = f.tableInputArg().fields();
+        var f = (MutationField.DmlTableField) schema.field("Mutation", "createBar");
+        var fields = insertInputOf(f).fields();
         assertThat(fields).hasSize(2);
         var ref = (no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField)
             fields.stream().filter(x -> x.name().equals("bazRef")).findFirst().orElseThrow();
@@ -560,8 +564,8 @@ class MutationDmlNodeIdClassificationTest {
             type Mutation { deleteBar(in: DeleteBarInput!): ID @mutation(typeName: DELETE, table: "bar") }
             """, NODEID_CTX);
 
-        var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteBar");
-        var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) f.deleteRows();
+        var f = (MutationField.DmlTableField) schema.field("Mutation", "deleteBar");
+        var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) deleteRowsOf(f);
         assertThat(deleteRows.matchedKey().columns()).extracting(c -> c.sqlName())
             .containsExactlyInAnyOrder("id_1", "id_2");
         assertThat(deleteRows.whereColumns()).extracting(k -> k.targetColumn().sqlName())
@@ -596,8 +600,8 @@ class MutationDmlNodeIdClassificationTest {
             type Mutation { updateBar(in: UpdateBarInput!): ID @mutation(typeName: UPDATE, table: "bar") }
             """, NODEID_CTX);
 
-        var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateBar");
-        var updateRows = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) f.updateRows();
+        var f = (MutationField.DmlTableField) schema.field("Mutation", "updateBar");
+        var updateRows = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) updateRowsOf(f);
         assertThat(updateRows.keyColumns()).extracting(k -> k.targetColumn().sqlName())
             .containsExactlyInAnyOrder("id_1", "id_2");
         assertThat(updateRows.setColumns()).hasSize(1);
@@ -626,11 +630,11 @@ class MutationDmlNodeIdClassificationTest {
             }
             """, NODEID_CTX);
 
-        var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteReorderedChild");
+        var f = (MutationField.DmlTableField) schema.field("Mutation", "deleteReorderedChild");
         // DELETE has no SET partition: childId covers the single-column PK (child_id), and
         // parentRef contributes its 3 lifted columns as extra ANDed predicates sharing the SDL
         // field name "parentRef".
-        var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) f.deleteRows();
+        var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) deleteRowsOf(f);
         assertThat(deleteRows.matchedKey().columns()).extracting(c -> c.sqlName()).containsExactly("child_id");
         assertThat(deleteRows.whereColumns()).extracting(k -> k.targetColumn().sqlName())
             .containsExactlyInAnyOrder("child_id", "fk_a", "fk_b", "fk_c");
@@ -659,9 +663,9 @@ class MutationDmlNodeIdClassificationTest {
             }
             """, NODEID_CTX);
 
-        var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createReorderedChild");
+        var f = (MutationField.DmlTableField) schema.field("Mutation", "createReorderedChild");
         var ref = (no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField)
-            f.tableInputArg().fields().stream()
+            insertInputOf(f).fields().stream()
                 .filter(x -> x.name().equals("parentRef"))
                 .findFirst().orElseThrow();
         assertThat(ref.liftedSourceColumns()).extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
@@ -692,7 +696,7 @@ class MutationDmlNodeIdClassificationTest {
         var f = schema.field("Mutation", "deleteBarPkCov");
         assertThat(f)
             .as("FK-target nodeId reference must contribute liftedSourceColumns toward PK coverage")
-            .isInstanceOf(MutationField.MutationDeleteTableField.class);
+            .isInstanceOf(MutationField.DmlTableField.class);
     }
 
     @Test
@@ -774,8 +778,8 @@ class MutationDmlNodeIdClassificationTest {
             type Mutation { insertEmailReply(in: InsertEmailReplyInput!): ID @mutation(typeName: INSERT, table: "email") }
             """);
 
-        var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "insertEmailReply");
-        var fields = f.tableInputArg().fields();
+        var f = (MutationField.DmlTableField) schema.field("Mutation", "insertEmailReply");
+        var fields = insertInputOf(f).fields();
 
         var selfRef = (no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField)
             fields.stream().filter(x -> x.name().equals("inReplyTo")).findFirst().orElseThrow();
@@ -824,8 +828,8 @@ class MutationDmlNodeIdClassificationTest {
             type Mutation { updateEmailReply(in: UpdateEmailReplyInput!): Email @mutation(typeName: UPDATE) }
             """);
 
-        var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateEmailReply");
-        var updateRows = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) f.updateRows();
+        var f = (MutationField.DmlTableField) schema.field("Mutation", "updateEmailReply");
+        var updateRows = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) updateRowsOf(f);
 
         // WHERE: id's own PK columns.
         assertThat(updateRows.keyColumns()).extracting(k -> k.targetColumn().sqlName())

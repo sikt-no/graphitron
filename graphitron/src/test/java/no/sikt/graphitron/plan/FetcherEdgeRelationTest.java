@@ -110,10 +110,8 @@ class FetcherEdgeRelationTest {
             // Condition-derived families: a member exactly when the coordinate has a condition
             // row (see the producer's javadoc; empty today).
             case MutationField.DmlTableField dml -> hasConditionRow(dml.parentTypeName(), dml.name());
-            case MutationField.MutationUpdatePayloadField p -> hasConditionRow(p.parentTypeName(), p.name());
-            case MutationField.MutationBulkUpdatePayloadField p -> hasConditionRow(p.parentTypeName(), p.name());
-            case MutationField.MutationDeletePayloadField p -> hasConditionRow(p.parentTypeName(), p.name());
-            case MutationField.MutationBulkDeletePayloadField p -> hasConditionRow(p.parentTypeName(), p.name());
+            case MutationField.MutationDmlRecordField p -> hasConditionRow(p.parentTypeName(), p.name());
+            case MutationField.MutationBulkDmlRecordField p -> hasConditionRow(p.parentTypeName(), p.name());
             default -> false;
         };
     }

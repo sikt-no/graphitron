@@ -4,13 +4,13 @@ import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.DeleteRows;
-import no.sikt.graphitron.rewrite.model.DialectRequirement;
 import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
 import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.InputArgRef;
 import no.sikt.graphitron.rewrite.model.KeyColumn;
 import no.sikt.graphitron.rewrite.model.MatchedKey;
-import no.sikt.graphitron.rewrite.model.MutationField.MutationDeleteTableField;
+import no.sikt.graphitron.rewrite.model.MutationField.DmlTableField;
+import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.javapoet.ClassName;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -25,30 +25,30 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import no.sikt.graphitron.rewrite.TestFixtures;
 
 @UnitTier
-class MutationDeleteTableFieldValidationTest {
+class DeleteMutationValidationTest {
 
     enum Case implements ValidatorCase {
 
         VALID("delete mutation field, well-formed, no validation errors",
-            new MutationDeleteTableField(
+            new DmlTableField(
                 "Mutation", "deleteFilm", null,
                 new DmlReturnExpression.EncodedSingle(
                     new HelperRef.Encode(
                         ClassName.get("fake.code.generated", "NodeIdEncoder"),
                         "encodeFilm",
                         List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Long")))),
-                DialectRequirement.None.INSTANCE,
-                // DELETE carries the slim InputArgRef + the DeleteRows walker carrier (no
-                // TableInputArg). filmId covers the PK, so this is an Identified single-row delete.
-                new InputArgRef("in", "FilmKey",
-                    TestFixtures.tableRef("film", "FILM", "Film", List.of()), false),
-                new DeleteRows.Identified(
-                    new MatchedKey.PrimaryKey(
-                        List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Long")), "film_pkey"),
-                    List.of(new KeyColumn(
-                        "filmId",
-                        new ColumnRef("film_id", "FILM_ID", "java.lang.Long"),
-                        new CallSiteExtraction.Direct()))),
+                // DELETE carries the slim InputArgRef + the DeleteRows walker carrier on the
+                // write arm. filmId covers the PK, so this is an Identified single-row delete.
+                new OperationMember.Write.Delete(
+                    new InputArgRef("in", "FilmKey",
+                        TestFixtures.tableRef("film", "FILM", "Film", List.of()), false),
+                    new DeleteRows.Identified(
+                        new MatchedKey.PrimaryKey(
+                            List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Long")), "film_pkey"),
+                        List.of(new KeyColumn(
+                            "filmId",
+                            new ColumnRef("film_id", "FILM_ID", "java.lang.Long"),
+                            new CallSiteExtraction.Direct())))),
                 Optional.empty()),
             List.of());
 
@@ -77,9 +77,9 @@ class MutationDeleteTableFieldValidationTest {
 
     // Author-facing contract: DELETE -> @table is rejected at classify time (producing an
     // UnclassifiedField), so the validator surfaces a build-time ValidationError with the new
-    // message. The model can no longer represent the wrong shape (MutationDeleteTableField's compact
-    // constructor rejects a Projected* arm), so these contracts are pinned SDL-driven rather than by
-    // hand-building an illegal field object.
+    // message. The model can no longer represent the wrong shape (DmlTableField's compact
+    // constructor pairs a Delete arm with Encoded* returns only), so these contracts are pinned
+    // SDL-driven rather than by hand-building an illegal field object.
 
     @org.junit.jupiter.api.Test
     void directReturnTableType_yieldsValidationError() {

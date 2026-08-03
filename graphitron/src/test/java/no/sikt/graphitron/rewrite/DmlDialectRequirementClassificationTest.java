@@ -9,18 +9,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
 /**
- * Pipeline-tier coverage that the classifier populates {@link MutationField.DmlTableField}'s
- * typed {@link DialectRequirement} at construction. INSERT, DELETE, and single-row UPDATE carry
- * {@link DialectRequirement.None}; the bulk-UPDATE arm carries
- * {@link DialectRequirement.RequiresFamily}({@code POSTGRES}) because {@code UPDATE ... FROM (VALUES
- * ...)} is a Postgres extension.
+ * Pipeline-tier coverage that {@link MutationField.DmlTableField}'s typed
+ * {@link DialectRequirement} derives correctly from the write arm and its input cardinality.
+ * INSERT, DELETE, and single-row UPDATE derive {@link DialectRequirement.None}; the bulk-UPDATE
+ * combination derives {@link DialectRequirement.RequiresFamily}({@code POSTGRES}) because
+ * {@code UPDATE ... FROM (VALUES ...)} is a Postgres extension.
  *
- * <p>UPSERT ({@link DialectRequirement.RejectsFamily}({@code ORACLE})) is not exercised here: it is
- * refused at {@code MutationInputResolver.resolveInput} under the cardinality-safety regime
- * (deferred), so no {@link MutationField.MutationUpsertTableField} classifies through the
- * pipeline today. The shared {@code @mutation}-switch arm that stamps
- * {@code RejectsFamily(ORACLE)} onto it, and the emitter that renders the guard, are covered by
- * {@code TypeFetcherGeneratorTest} against a directly-constructed field.
+ * <p>UPSERT ({@link DialectRequirement.RejectsFamily}({@code ORACLE})) is not exercised here: it
+ * is refused at the classifier's verb dispatch under the cardinality-safety regime (deferred),
+ * so no Upsert arm classifies through the pipeline today. The derivation's Upsert branch, and
+ * the emitter that renders the guard, are covered by {@code TypeFetcherGeneratorTest} against a
+ * directly-constructed field.
  */
 @PipelineTier
 class DmlDialectRequirementClassificationTest {
@@ -36,7 +35,7 @@ class DmlDialectRequirementClassificationTest {
             type Query { x: String }
             type Mutation { createFilm(in: FilmInput!): Film @mutation(typeName: INSERT) }
             """);
-        var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createFilm");
+        var f = (MutationField.DmlTableField) schema.field("Mutation", "createFilm");
         assertThat(f.dialectRequirement()).isEqualTo(DialectRequirement.None.INSTANCE);
     }
 
@@ -51,7 +50,7 @@ class DmlDialectRequirementClassificationTest {
             type Query { x: String }
             type Mutation { updateFilm(in: FilmUpdateInput!): Film @mutation(typeName: UPDATE) }
             """);
-        var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateFilm");
+        var f = (MutationField.DmlTableField) schema.field("Mutation", "updateFilm");
         assertThat(f.dialectRequirement()).isEqualTo(DialectRequirement.None.INSTANCE);
     }
 
@@ -66,7 +65,7 @@ class DmlDialectRequirementClassificationTest {
             type Query { x: String }
             type Mutation { updateFilms(in: [FilmUpdateInput!]!): [Film!]! @mutation(typeName: UPDATE) }
             """);
-        var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateFilms");
+        var f = (MutationField.DmlTableField) schema.field("Mutation", "updateFilms");
         assertThat(f.dialectRequirement())
             .isInstanceOfSatisfying(DialectRequirement.RequiresFamily.class, r -> {
                 assertThat(r.family()).isEqualTo(SqlDialectFamily.POSTGRES);
@@ -84,7 +83,7 @@ class DmlDialectRequirementClassificationTest {
             type Query { x: String }
             type Mutation { deleteFilm(in: FilmDeleteInput!): ID @mutation(typeName: DELETE, table: "film") }
             """);
-        var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteFilm");
+        var f = (MutationField.DmlTableField) schema.field("Mutation", "deleteFilm");
         assertThat(f.dialectRequirement()).isEqualTo(DialectRequirement.None.INSTANCE);
     }
 }

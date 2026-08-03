@@ -480,18 +480,18 @@ input FilmInput {
 ----
 
 `Mutation.createFilm` inserts a `film` row from `FilmInput` and projects the inserted row as the `@table`
-type `Film`: `source = Mutation`, `operation = Insert`, target shape `Table` (`MutationInsertTableField`),
+type `Film`: `source = Mutation`, `operation = Insert`, target shape `Table` (`MutationField.DmlTableField` carrying an Insert write arm),
 the read-back being the derived re-fetch. Asserted by the `dml` corpus example.
 
 |===
 | Schema Pattern | `MutationField` Variant | `*Fetchers` Generates
 
-| `@mutation(typeName: INSERT)`, returning a `@table` type (write target derived from the return) | `MutationInsertTableField` | Fetcher method ; write + read-back SELECT (the derived re-fetch). The return names the write target
-| `@mutation(typeName: INSERT, table: "…")`, returning `ID` | `MutationInsertTableField` | As above; an encoded-`ID` return names no table, so `@mutation(table:)` names it on the field. Byte-identical carrier across the two rungs
-| `@mutation(typeName: UPDATE)`, returning `ID` or a `@table` type | `MutationUpdateTableField` | Fetcher method ; write + read-back SELECT (the derived re-fetch). Same two-rung write-target ladder as `INSERT` (return-derived, else `@mutation(table:)`)
-| `@mutation(typeName: DELETE, table: "…")`, returning `ID` | `MutationDeleteTableField` | Fetcher method ; write + encoded-PK off `RETURNING` (no read-back ; the row is gone, target shape `Column`). The write target is named on the field; a `DELETE` return can never name it
+| `@mutation(typeName: INSERT)`, returning a `@table` type (write target derived from the return) | `DmlTableField` (Insert write arm) | Fetcher method ; write + read-back SELECT (the derived re-fetch). The return names the write target
+| `@mutation(typeName: INSERT, table: "…")`, returning `ID` | `DmlTableField` (Insert write arm) | As above; an encoded-`ID` return names no table, so `@mutation(table:)` names it on the field. Byte-identical carrier across the two rungs
+| `@mutation(typeName: UPDATE)`, returning `ID` or a `@table` type | `DmlTableField` (Update write arm) | Fetcher method ; write + read-back SELECT (the derived re-fetch). Same two-rung write-target ladder as `INSERT` (return-derived, else `@mutation(table:)`)
+| `@mutation(typeName: DELETE, table: "…")`, returning `ID` | `DmlTableField` (Delete write arm) | Fetcher method ; write + encoded-PK off `RETURNING` (no read-back ; the row is gone, target shape `Column`). The write target is named on the field; a `DELETE` return can never name it
 | `@mutation(typeName: UPSERT, table: "…")` (`table:` on a verb that does not read it) | `UnclassifiedField` (typed `MutationTableArgError.UnsupportedVerb`) | Validation error ; build fails. `table:` is wired for `DELETE`, `INSERT`, and `UPDATE` only
-| `@mutation(typeName: UPSERT)`, returning `ID` or a `@table` type | `MutationUpsertTableField` | Rejected at classification ; UPSERT generation gated pending R145
+| `@mutation(typeName: UPSERT)`, returning `ID` or a `@table` type | `UnclassifiedField` (typed deferral; the Upsert write arm has no live producer) | Rejected at classification ; UPSERT generation gated pending R145
 | `@mutation(typeName: INSERT\|UPDATE\|DELETE\|UPSERT)`, returning a single-record class-backed carrier (one recognized data field, optional errors-shaped field; the carrier's backing class is reflected from the producing field, not declared) | `MutationDmlRecordField` | Two-step fetcher: per-kind DML chain inside `transactionResult` with PK-only `RETURNING`, plus a follow-up data-field SELECT outside the transaction
 | `@mutation(typeName: INSERT\|UPDATE)` with bulk input, returning a single-record carrier with a list-shaped `@table`-element data field | `MutationBulkDmlRecordField` | Per-row DML inside one `transactionResult`, accumulating a typed `Result<RecordN<PK>>` in input order. The write target is derived from that `@table`-element data field
 | `@service`, return `@table` type | `MutationServiceTableField` | Async DataLoader fetcher + `rows*()` method
@@ -500,7 +500,7 @@ the read-back being the derived re-fetch. Asserted by the `dml` corpus example.
 | Both `@service` and `@mutation` | `UnclassifiedField`** | Validation error ; build fails
 |===
 
-The four `Mutation*TableField` permits are guaranteed never to carry a class-backed (record-shaped) return: every DML mutation whose return type reflects to a record carrier routes through the DML-carrier permits (`MutationDmlRecordField` / `MutationBulkDmlRecordField`) via `BuildContext.scanStructuralDmlPayload`. The narrowness is enforced structurally by the routing in `FieldBuilder.classifyMutationField`, not by an Invariant the validator restates.
+The direct-return `DmlTableField` permit is guaranteed never to carry a class-backed (record-shaped) return: every DML mutation whose return type reflects to a record carrier routes through the DML-carrier permits (`MutationDmlRecordField` / `MutationBulkDmlRecordField`) via `BuildContext.scanStructuralDmlPayload`. The narrowness is enforced structurally by the routing in `FieldBuilder.classifyMutationField`, not by an Invariant the validator restates.
 
 === Child Fields (on `@table` parent)
 

@@ -4862,7 +4862,7 @@ class FieldBuilder {
 
     /**
      * Classifies a direct-@table/ID-return {@code @mutation(typeName: UPDATE)} field into a
-     * {@link MutationField.MutationUpdateTableField}. Resolves the write target and input fields through
+     * {@link MutationField.DmlTableField} carrying an Update write arm. Resolves the write target and input fields through
      * the shared return-capable lattice ({@link #resolveUpdateWriteTarget}: return-derived table, then
      * {@code @mutation(table:)}, then the deprecated input {@code @table} bridge), builds the slim
      * {@link InputArgRef} arg surface from the resolved write target, then runs {@code UpdateRowsWalker}
@@ -4916,21 +4916,15 @@ class FieldBuilder {
         var walkerResult = new no.sikt.graphitron.rewrite.walker.UpdateRowsWalker()
             .walk(fieldDef, writeTarget, inputFields, ctx.catalog, inputArg.name());
         var enc = encodeReturn;
-        // The bulk arm emits UPDATE... FROM (VALUES...), a Postgres extension jOOQ silently
-        // emulates with semantics drift on other dialects, so it requires the Postgres family;
-        // single-row UPDATE has no dialect constraint. The bulk-vs-single split is the emitter's
-        // (driven by inputArg.list()); this reads the same bit to pick the arm at construction.
-        DialectRequirement updateDialect = list
-            ? new DialectRequirement.RequiresFamily(SqlDialectFamily.POSTGRES,
-                "@mutation(typeName: UPDATE) with a listed @table input requires PostgreSQL; "
-                    + "the UPDATE ... FROM (VALUES ...) form is a Postgres extension. "
-                    + "Use a single-row input for portability.")
-            : DialectRequirement.None.INSTANCE;
+        // The dialect requirement (bulk UPDATE requires the Postgres family) is derived on
+        // DmlTableField.dialectRequirement() from the write arm and its input cardinality,
+        // never stored beside them.
         return switch (walkerResult) {
             case no.sikt.graphitron.rewrite.model.WalkerResult.Ok<no.sikt.graphitron.rewrite.model.UpdateRows> ok ->
                 buildDmlField(returnType, parentTypeName, name, location, fieldDef,
-                    (rex, ch) -> new MutationField.MutationUpdateTableField(
-                        parentTypeName, name, location, rex, updateDialect, inputArg, ok.carrier(), ch),
+                    (rex, ch) -> new MutationField.DmlTableField(
+                        parentTypeName, name, location, rex,
+                        new OperationMember.Write.Update(inputArg, ok.carrier()), ch),
                     enc);
             case no.sikt.graphitron.rewrite.model.WalkerResult.Err<no.sikt.graphitron.rewrite.model.UpdateRows> err ->
                 new UnclassifiedField(parentTypeName, name, location, fieldDef, err.errors().getFirst());
@@ -5017,8 +5011,9 @@ class FieldBuilder {
 
     /**
      * Classifies a payload-returning {@code @mutation(typeName: UPDATE)} field into a
-     * {@link MutationField.MutationUpdatePayloadField} (single) or
-     * {@link MutationField.MutationBulkUpdatePayloadField} (bulk). Combines the structural-DML-
+     * {@link MutationField.MutationDmlRecordField} (single) or
+     * {@link MutationField.MutationBulkDmlRecordField} (bulk), each carrying an Update write
+     * arm. Combines the structural-DML-
      * payload machinery the record-carrier classifier uses (the payload scan, the data-field
      * {@code @table}-equality check, the error-channel detection) with the {@code UpdateRowsWalker}
      * the direct-return UPDATE uses (PK-or-UK identification + SET/WHERE partition), so no UPDATE
@@ -5094,11 +5089,13 @@ class FieldBuilder {
         return switch (walkerResult) {
             case no.sikt.graphitron.rewrite.model.WalkerResult.Ok<no.sikt.graphitron.rewrite.model.UpdateRows> ok -> {
                 if (inputArg.list()) {
-                    yield new MutationField.MutationBulkUpdatePayloadField(
-                        parentTypeName, name, location, returnType, inputArg, ok.carrier(), channel);
+                    yield new MutationField.MutationBulkDmlRecordField(
+                        parentTypeName, name, location, returnType,
+                        new OperationMember.Write.Update(inputArg, ok.carrier()), channel);
                 }
-                yield new MutationField.MutationUpdatePayloadField(
-                    parentTypeName, name, location, returnType, inputArg, ok.carrier(), channel);
+                yield new MutationField.MutationDmlRecordField(
+                    parentTypeName, name, location, returnType,
+                    new OperationMember.Write.Update(inputArg, ok.carrier()), channel);
             }
             case no.sikt.graphitron.rewrite.model.WalkerResult.Err<no.sikt.graphitron.rewrite.model.UpdateRows> err ->
                 new UnclassifiedField(parentTypeName, name, location, fieldDef, err.errors().getFirst());
@@ -5189,7 +5186,7 @@ class FieldBuilder {
 
     /**
      * Classifies a direct-@table/ID-return {@code @mutation(typeName: DELETE)} field into a
-     * {@link MutationField.MutationDeleteTableField}. The DELETE analogue of
+     * {@link MutationField.DmlTableField} carrying a Delete write arm. The DELETE analogue of
      * {@link #classifyUpdateTableField}: resolves the write target and input fields (precedence:
      * {@code @mutation(table:)}, then the input's {@code @table}), validates the return type, resolves
      * the ID-return encoder, then runs {@code DeleteRowsWalker} for the PK-or-UK identification.
@@ -5246,11 +5243,9 @@ class FieldBuilder {
         return switch (walkerResult) {
             case no.sikt.graphitron.rewrite.model.WalkerResult.Ok<no.sikt.graphitron.rewrite.model.DeleteRows> ok ->
                 buildDmlField(returnType, parentTypeName, name, location, fieldDef,
-                    // DELETE emits a portable statement on every dialect graphitron targets, so
-                    // it carries no dialect constraint (the bulk row-tuple IN form is standard SQL).
-                    (rex, ch) -> new MutationField.MutationDeleteTableField(
-                        parentTypeName, name, location, rex, DialectRequirement.None.INSTANCE,
-                        inputArg, ok.carrier(), ch),
+                    (rex, ch) -> new MutationField.DmlTableField(
+                        parentTypeName, name, location, rex,
+                        new OperationMember.Write.Delete(inputArg, ok.carrier()), ch),
                     enc);
             case no.sikt.graphitron.rewrite.model.WalkerResult.Err<no.sikt.graphitron.rewrite.model.DeleteRows> err ->
                 new UnclassifiedField(parentTypeName, name, location, fieldDef, err.errors().getFirst());
@@ -5259,8 +5254,9 @@ class FieldBuilder {
 
     /**
      * Classifies a payload-returning {@code @mutation(typeName: DELETE)} field into a
-     * {@link MutationField.MutationDeletePayloadField} (single) or
-     * {@link MutationField.MutationBulkDeletePayloadField} (bulk). The DELETE analogue of
+     * {@link MutationField.MutationDmlRecordField} (single) or
+     * {@link MutationField.MutationBulkDmlRecordField} (bulk), each carrying a Delete write
+     * arm. The DELETE analogue of
      * {@link #classifyUpdatePayloadField}, plus DELETE's structural-payload reclassify
      * (the IdElement PK-echo and Table PK-only RETURNING projection the walkers cannot re-derive);
      * the input-side WHERE source lives in the {@code DeleteRowsWalker}. A pre-check
@@ -5350,11 +5346,13 @@ class FieldBuilder {
             ? Optional.of(p.channel()) : Optional.empty();
 
         if (inputArg.list()) {
-            return new MutationField.MutationBulkDeletePayloadField(
-                parentTypeName, name, location, returnType, inputArg, deleteRows, dmlChannel);
+            return new MutationField.MutationBulkDmlRecordField(
+                parentTypeName, name, location, returnType,
+                new OperationMember.Write.Delete(inputArg, deleteRows), dmlChannel);
         }
-        return new MutationField.MutationDeletePayloadField(
-            parentTypeName, name, location, returnType, inputArg, deleteRows, dmlChannel);
+        return new MutationField.MutationDmlRecordField(
+            parentTypeName, name, location, returnType,
+            new OperationMember.Write.Delete(inputArg, deleteRows), dmlChannel);
     }
 
     /**
@@ -5587,7 +5585,7 @@ class FieldBuilder {
 
     /**
      * Classifies a direct-{@code @table} / ID-return {@code @mutation(typeName: INSERT)} field into a
-     * {@link MutationField.MutationInsertTableField}. The INSERT analogue of
+     * {@link MutationField.DmlTableField} carrying an Insert write arm. The INSERT analogue of
      * {@link #classifyDeleteTableField}: resolves the write target and input fields through the INSERT
      * lattice ({@link #resolveInsertWriteTarget}), validates the return type, then resolves the
      * ID-return encoder against the resolved write target.
@@ -5627,8 +5625,8 @@ class FieldBuilder {
 
         var enc = encodeReturn;
         return buildDmlField(returnType, parentTypeName, name, location, fieldDef,
-            (rex, ch) -> new MutationField.MutationInsertTableField(parentTypeName, name, location, rex,
-                DialectRequirement.None.INSTANCE, tia, ch),
+            (rex, ch) -> new MutationField.DmlTableField(parentTypeName, name, location, rex,
+                new OperationMember.Write.Insert(tia), ch),
             enc);
     }
 

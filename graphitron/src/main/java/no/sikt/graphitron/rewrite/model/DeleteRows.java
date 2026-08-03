@@ -5,7 +5,7 @@ import java.util.List;
 /**
  * The DELETE-shape walker carrier. Holds the WHERE columns {@code DeleteRowsWalker} derived
  * from the DML input plus, on the {@link Identified} arm, the matched key identity that
- * proves the WHERE reduces to at most one row. Lands on {@link DeleteRowsField} alongside the slim
+ * proves the WHERE reduces to at most one row. Rides the {@link OperationMember.Write.Delete} arm alongside the slim
  * {@link InputArgRef} arg surface.
  *
  * <p><b>Why DELETE is not {@link UpdateRows}-minus-SET.</b> UPDATE partitions its input columns:

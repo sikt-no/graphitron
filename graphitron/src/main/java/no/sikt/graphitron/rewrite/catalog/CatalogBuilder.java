@@ -376,24 +376,14 @@ public final class CatalogBuilder {
                     targetTableName(f.returnType()),
                     f.routine() != null ? f.routine().routinesClass().canonicalName() : null,
                     f.routine() != null ? f.routine().methodName() : null);
-            case MutationField.MutationInsertTableField f -> dmlMutation(f.tableInputArg(), no.sikt.graphitron.rewrite.model.DmlKind.INSERT, f.errorChannel());
-            case MutationField.MutationUpdateTableField f ->
-                // UPDATE carries InputArgRef instead of TableInputArg; the table name and
-                // input type name come off the slim arg surface (both non-Optional by construction).
+            // The verb, the table name and the input type name all project off the write arm
+            // (the arms' input surfaces differ; the Dml seal and the helpers below fold them).
+            case MutationField.DmlTableField f ->
                 new FieldClassification.DmlMutation(
-                    f.inputArg().table().tableName(),
-                    f.inputArg().inputTypeName(),
-                    no.sikt.graphitron.rewrite.model.DmlKind.UPDATE,
+                    dmlWriteTableName(f.write()),
+                    dmlWriteInputTypeName(f.write()),
+                    dmlKindOf(f.write()),
                     errorChannelName(f.errorChannel()));
-            case MutationField.MutationDeleteTableField f ->
-                // DELETE carries InputArgRef instead of TableInputArg; the table name and
-                // input type name come off the slim arg surface (both non-Optional by construction).
-                new FieldClassification.DmlMutation(
-                    f.inputArg().table().tableName(),
-                    f.inputArg().inputTypeName(),
-                    no.sikt.graphitron.rewrite.model.DmlKind.DELETE,
-                    errorChannelName(f.errorChannel()));
-            case MutationField.MutationUpsertTableField f -> dmlMutation(f.tableInputArg(), no.sikt.graphitron.rewrite.model.DmlKind.UPSERT, f.errorChannel());
             case MutationField.MutationServiceTableField f ->
                 new FieldClassification.MutationService(
                     f.serviceMethodCall().fqClassName(),
@@ -438,38 +428,6 @@ public final class CatalogBuilder {
                     dmlWriteTableName(f.write()),
                     dmlWriteInputTypeName(f.write()),
                     dmlKindOf(f.write()),
-                    true,
-                    errorChannelName(f.errorChannel()));
-            // Payload-returning UPDATE carries InputArgRef (not TableInputArg); the table /
-            // input-type name come off the slim arg surface, and the kind is always UPDATE.
-            case MutationField.MutationUpdatePayloadField f ->
-                new FieldClassification.DmlRecord(
-                    f.inputArg().table().tableName(),
-                    f.inputArg().inputTypeName(),
-                    no.sikt.graphitron.rewrite.model.DmlKind.UPDATE,
-                    false,
-                    errorChannelName(f.errorChannel()));
-            case MutationField.MutationBulkUpdatePayloadField f ->
-                new FieldClassification.DmlRecord(
-                    f.inputArg().table().tableName(),
-                    f.inputArg().inputTypeName(),
-                    no.sikt.graphitron.rewrite.model.DmlKind.UPDATE,
-                    true,
-                    errorChannelName(f.errorChannel()));
-            // Payload-returning DELETE carries InputArgRef (not TableInputArg); the table /
-            // input-type name come off the slim arg surface, and the kind is always DELETE.
-            case MutationField.MutationDeletePayloadField f ->
-                new FieldClassification.DmlRecord(
-                    f.inputArg().table().tableName(),
-                    f.inputArg().inputTypeName(),
-                    no.sikt.graphitron.rewrite.model.DmlKind.DELETE,
-                    false,
-                    errorChannelName(f.errorChannel()));
-            case MutationField.MutationBulkDeletePayloadField f ->
-                new FieldClassification.DmlRecord(
-                    f.inputArg().table().tableName(),
-                    f.inputArg().inputTypeName(),
-                    no.sikt.graphitron.rewrite.model.DmlKind.DELETE,
                     true,
                     errorChannelName(f.errorChannel()));
 
@@ -535,19 +493,6 @@ public final class CatalogBuilder {
             case no.sikt.graphitron.rewrite.model.OperationMember.Write.Update u -> u.inputArg().inputTypeName();
             case no.sikt.graphitron.rewrite.model.OperationMember.Write.Delete d -> d.inputArg().inputTypeName();
         };
-    }
-
-    private static FieldClassification dmlMutation(
-        no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg inputArg,
-        no.sikt.graphitron.rewrite.model.DmlKind kind,
-        java.util.Optional<? extends no.sikt.graphitron.rewrite.model.ErrorChannel> errorChannel
-    ) {
-        return new FieldClassification.DmlMutation(
-            inputArg != null && inputArg.inputTable() != null ? inputArg.inputTable().tableName() : null,
-            inputArg != null ? inputArg.typeName() : null,
-            kind,
-            errorChannelName(errorChannel)
-        );
     }
 
     private static String targetTableName(

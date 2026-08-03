@@ -25,6 +25,7 @@ import java.nio.file.Path;
 import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static no.sikt.graphitron.rewrite.DmlWriteReads.updateArgOf;
 
 /**
  * Pipeline-tier coverage for single-record DML payloads: plain SDL Object payload types whose
@@ -55,18 +56,18 @@ class SingleRecordPayloadPipelineTest {
         // UPSERT is excluded: it is not supported under the cardinality-safety regime, and the
         // classifier surfaces a deferred rejection rather than constructing the leaf. The UPDATE
         // arm diverges: the payload-returning bulk UPDATE routes onto
-        // MutationBulkUpdatePayloadField (walker carrier), while INSERT stays on the
+        // a Write.Update arm sourced from the walker carrier, while INSERT stays on the
         // record-carrier MutationBulkDmlRecordField.
         var schema = TestSchemaHelper.buildSchema(payloadDml(kind, "type FilmPayload { films: [Film!] }"));
 
         var mutField = schema.field("Mutation", mutationName(kind));
         if (kind == DmlKind.UPDATE) {
-            assertThat(mutField).isInstanceOf(MutationField.MutationBulkUpdatePayloadField.class);
-            var upd = (MutationField.MutationBulkUpdatePayloadField) mutField;
+            assertThat(mutField).isInstanceOf(MutationField.MutationBulkDmlRecordField.class);
+            var upd = (MutationField.MutationBulkDmlRecordField) mutField;
             assertThat(upd.returnType()).isInstanceOf(ReturnTypeRef.ResultReturnType.class);
             assertThat(upd.returnType().returnTypeName()).isEqualTo("FilmPayload");
-            assertThat(upd.inputArg().table().tableName()).isEqualTo("film");
-            assertThat(upd.inputArg().list()).isTrue();
+            assertThat(updateArgOf(upd).table().tableName()).isEqualTo("film");
+            assertThat(upd.write().listInput()).isTrue();
         } else {
             assertThat(mutField).isInstanceOf(MutationField.MutationBulkDmlRecordField.class);
             var dmlField = (MutationField.MutationBulkDmlRecordField) mutField;
@@ -117,7 +118,7 @@ class SingleRecordPayloadPipelineTest {
     void payload_singleDataField_dataFieldClassifiesWithCardinalityOne(DmlKind kind) {
         var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(kind, "type FilmPayload { film: Film }"));
 
-        // UPDATE routes onto MutationUpdatePayloadField; INSERT stays on MutationDmlRecordField.
+        // UPDATE folds in with a Write.Update arm; INSERT carries Write.Insert.
         // The data field classifies as BatchedTableField (per-key cardinality ONE) for both.
         var mutField = schema.field("Mutation", mutationName(kind));
         assertThat(mutField).isInstanceOf(expectedSingleLeaf(kind));
@@ -208,7 +209,7 @@ class SingleRecordPayloadPipelineTest {
     void directReturn_atTableType_classifiesAsExistingPath() {
         // A @table return type goes through the existing TableBoundReturnType path; the
         // carrier trigger returns NotCandidate. The mutation field is a normal
-        // MutationInsertTableField; no payload-carrier BatchedTableField is registered.
+        // the direct-return DmlTableField; no payload-carrier BatchedTableField is registered.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             input FilmInput { title: String }
@@ -217,7 +218,7 @@ class SingleRecordPayloadPipelineTest {
             """);
 
         var mutField = schema.field("Mutation", "createFilm");
-        assertThat(mutField).isInstanceOf(MutationField.MutationInsertTableField.class);
+        assertThat(mutField).isInstanceOf(MutationField.DmlTableField.class);
         // Film.title classifies through the existing TableBackedType arm, not the carrier arm.
         assertThat(schema.field("Film", "title")).isNotInstanceOf(ChildField.BatchedTableField.class);
     }
@@ -585,7 +586,7 @@ class SingleRecordPayloadPipelineTest {
             CARRIER_WALK_LOCAL_CONTEXT_ERRORS
             + "type FilmPayload { film: Film errors: [CarrierError!] }", true));
 
-        // UPDATE routes onto MutationUpdatePayloadField; INSERT stays on MutationDmlRecordField.
+        // UPDATE folds in with a Write.Update arm; INSERT carries Write.Insert.
         // The LocalContext error channel is carried on the common WithErrorChannel supertype either way.
         var mutField = schema.field("Mutation", mutationName(kind));
         assertThat(mutField).isInstanceOf(expectedSingleLeaf(kind));
@@ -619,7 +620,7 @@ class SingleRecordPayloadPipelineTest {
             CARRIER_WALK_LOCAL_CONTEXT_ERRORS
             + "type FilmPayload { films: [Film!] errors: [CarrierError!] }", true));
 
-        // UPDATE routes onto MutationBulkUpdatePayloadField; INSERT stays on MutationBulkDmlRecordField.
+        // UPDATE folds in with a Write.Update arm; INSERT carries Write.Insert.
         // The LocalContext error channel is carried on the common WithErrorChannel supertype either way.
         var mutField = schema.field("Mutation", mutationName(kind));
         assertThat(mutField).isInstanceOf(expectedBulkLeaf(kind));
@@ -711,18 +712,14 @@ class SingleRecordPayloadPipelineTest {
         };
     }
 
-    /** The single-input payload leaf the classifier lands on for {@code kind}.*/
+    /** The single-input payload leaf: one carrier for every verb since the write-arm fold. */
     private static Class<? extends MutationField> expectedSingleLeaf(DmlKind kind) {
-        return kind == DmlKind.UPDATE
-            ? MutationField.MutationUpdatePayloadField.class
-            : MutationField.MutationDmlRecordField.class;
+        return MutationField.MutationDmlRecordField.class;
     }
 
-    /** The bulk-input payload leaf the classifier lands on for {@code kind}.*/
+    /** The bulk-input payload leaf: one carrier for every verb since the write-arm fold. */
     private static Class<? extends MutationField> expectedBulkLeaf(DmlKind kind) {
-        return kind == DmlKind.UPDATE
-            ? MutationField.MutationBulkUpdatePayloadField.class
-            : MutationField.MutationBulkDmlRecordField.class;
+        return MutationField.MutationBulkDmlRecordField.class;
     }
 
     /**

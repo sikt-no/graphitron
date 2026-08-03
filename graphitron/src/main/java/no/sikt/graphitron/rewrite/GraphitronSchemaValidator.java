@@ -315,21 +315,14 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.QueryField.QueryServiceRecordField f      -> validateQueryServiceRecordField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.QueryField.QueryServicePolymorphicField f -> validateQueryServicePolymorphicField(f, errors);
             case no.sikt.graphitron.rewrite.model.QueryField.QueryServiceTableInterfaceField f -> validateQueryServiceTableInterfaceField(f, errors);
-            case no.sikt.graphitron.rewrite.model.MutationField.MutationInsertTableField f     -> validateMutationInsertTableField(f, errors);
-            case no.sikt.graphitron.rewrite.model.MutationField.MutationUpdateTableField f     -> validateMutationUpdateTableField(f, errors);
-            case no.sikt.graphitron.rewrite.model.MutationField.MutationDeleteTableField f     -> validateMutationDeleteTableField(f, errors);
-            case no.sikt.graphitron.rewrite.model.MutationField.MutationUpsertTableField f     -> validateMutationUpsertTableField(f, errors);
+            case no.sikt.graphitron.rewrite.model.MutationField.DmlTableField f            -> validateDmlTableField(f, errors);
             case no.sikt.graphitron.rewrite.model.MutationField.MutationRoutineWriteField f    -> {} // RoutineDirectiveResolver pins routine resolution + arg binding at classify time; RoutineChain's compact constructor and the leaf's own pins (hops non-empty, terminus rule, ColumnPairs hop 0 via the classifier's re-read-anchor verdict) carry the structural shape
             case no.sikt.graphitron.rewrite.model.MutationField.MutationServiceTableField f    -> validateMutationServiceTableField(f, errors);
             case no.sikt.graphitron.rewrite.model.MutationField.MutationServiceRecordField f   -> validateMutationServiceRecordField(f, errors);
             case no.sikt.graphitron.rewrite.model.MutationField.MutationServicePolymorphicField f -> validateMutationServicePolymorphicField(f, errors);
             case no.sikt.graphitron.rewrite.model.MutationField.MutationServiceTableInterfaceField f -> validateMutationServiceTableInterfaceField(f, errors);
-            case no.sikt.graphitron.rewrite.model.MutationField.MutationDmlRecordField f       -> {} // Narrow ResultReturnType + DELETE-rejecting compact ctor pin the structural shape; admission-time checks (table-equality, etc.) live in the mutation-field classifier and the trigger function
-            case no.sikt.graphitron.rewrite.model.MutationField.MutationBulkDmlRecordField f   -> {} // Same structural pinning as MutationDmlRecordField plus list-input + list-data-field invariants on the compact ctor; admission-time checks (table-equality, Invariant #16) live in the classifier and the trigger function
-            case no.sikt.graphitron.rewrite.model.MutationField.MutationUpdatePayloadField f   -> {} // Narrow ResultReturnType + non-Optional InputArgRef / UpdateRows slots pin the structural shape; admission-time checks (PK-or-UK partition, table-equality) live in the @mutation classifier (classifyUpdatePayloadField) and the UpdateRowsWalker
-            case no.sikt.graphitron.rewrite.model.MutationField.MutationBulkUpdatePayloadField f -> {} // Bulk sibling of MutationUpdatePayloadField; same structural pinning, same classifier + walker admission-time checks
-            case no.sikt.graphitron.rewrite.model.MutationField.MutationDeletePayloadField f   -> {} // Narrow ResultReturnType + non-Optional InputArgRef / DeleteRows slots pin the structural shape; admission-time checks (PK-or-UK coverage, table-equality, DELETE-specific reclassify) live in the @mutation classifier (classifyDeletePayloadField) and the DeleteRowsWalker
-            case no.sikt.graphitron.rewrite.model.MutationField.MutationBulkDeletePayloadField f -> {} // Bulk sibling of MutationDeletePayloadField; same structural pinning, same classifier + walker admission-time checks
+            case no.sikt.graphitron.rewrite.model.MutationField.MutationDmlRecordField f       -> {} // Narrow ResultReturnType + the write arm's typed payloads pin the structural shape; admission-time checks (table-equality, PK-or-UK partition) live in the @mutation classifier and the walkers
+            case no.sikt.graphitron.rewrite.model.MutationField.MutationBulkDmlRecordField f   -> {} // Same structural pinning as MutationDmlRecordField plus the list-input + Upsert-rejecting invariants on the compact ctor; admission-time checks (table-equality, Invariant #16) live in the classifier and the walkers
             case no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedField f       -> validateColumnBackedField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedReferenceField f -> validateColumnBackedReferenceField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.ParticipantColumnReferenceField f -> {} // structural; the interface fetcher's LEFT JOIN materialises and aliases the value
@@ -780,14 +773,7 @@ public class GraphitronSchemaValidator {
         // Mutation twin of validateQueryServiceTableInterfaceField; same single-table floor.
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }
-    private void validateMutationInsertTableField(no.sikt.graphitron.rewrite.model.MutationField.MutationInsertTableField field, List<ValidationError> errors) {
-        validateDmlReentryKeyArity(field, errors);
-    }
-    private void validateMutationUpdateTableField(no.sikt.graphitron.rewrite.model.MutationField.MutationUpdateTableField field, List<ValidationError> errors) {
-        validateDmlReentryKeyArity(field, errors);
-    }
-    private void validateMutationDeleteTableField(no.sikt.graphitron.rewrite.model.MutationField.MutationDeleteTableField field, List<ValidationError> errors) {}
-    private void validateMutationUpsertTableField(no.sikt.graphitron.rewrite.model.MutationField.MutationUpsertTableField field, List<ValidationError> errors) {
+    private void validateDmlTableField(no.sikt.graphitron.rewrite.model.MutationField.DmlTableField field, List<ValidationError> errors) {
         validateDmlReentryKeyArity(field, errors);
     }
 
@@ -800,8 +786,8 @@ public class GraphitronSchemaValidator {
      * Surfaces the constraint as a validate-time rejection instead of the row builder's
      * codegen-time {@code IllegalStateException}. Single-cardinality arms render plain key
      * equality with no {@code idx} slot and are exempt; {@code Encoded*} arms carry no reentry
-     * and are skipped. DELETE never carries a reentry arm ({@code MutationInputResolver}
-     * rejects {@code @table} returns on DELETE), so its validator stub does not call this.
+     * and are skipped, which makes this check provably vacuous for a Delete write arm (the
+     * leaf constructor pairs Delete with {@code Encoded*} returns only).
      */
     private void validateDmlReentryKeyArity(no.sikt.graphitron.rewrite.model.MutationField.DmlTableField field,
             List<ValidationError> errors) {

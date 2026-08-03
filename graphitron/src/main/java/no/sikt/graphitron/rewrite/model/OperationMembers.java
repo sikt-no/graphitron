@@ -137,17 +137,13 @@ public final class OperationMembers {
             shape(Set.of(Kind.SERVICE_CALL), Set.of())),
 
         // Mutation roots. The projected / discriminated direct-DML returns re-query at their
-        // own site, so those verbs declare REENTRY optional; DELETE's direct return is always
-        // encoded (the leaf rejects projected arms), so it deliberately declares none, and a
-        // projected DELETE surfacing anyway fails the image check loudly.
-        Map.entry(MutationField.MutationInsertTableField.class,
+        // own site, so the direct-return leaf declares REENTRY optional. Read alone that
+        // widens DELETE (whose direct return is always encoded and mints no reentry): the
+        // real fence moved below the image check, to the leaf constructor, which rejects a
+        // Delete arm beside any table-bound return, so a reentry-minting DELETE is
+        // unconstructible rather than image-rejected.
+        Map.entry(MutationField.DmlTableField.class,
             shape(Set.of(Kind.WRITE), Set.of(Kind.REENTRY))),
-        Map.entry(MutationField.MutationUpsertTableField.class,
-            shape(Set.of(Kind.WRITE), Set.of(Kind.REENTRY))),
-        Map.entry(MutationField.MutationUpdateTableField.class,
-            shape(Set.of(Kind.WRITE), Set.of(Kind.REENTRY))),
-        Map.entry(MutationField.MutationDeleteTableField.class,
-            shape(Set.of(Kind.WRITE), Set.of())),
         Map.entry(MutationField.MutationRoutineWriteField.class,
             shape(Set.of(Kind.WRITE), Set.of())),
         Map.entry(MutationField.MutationServiceTableField.class,
@@ -161,14 +157,6 @@ public final class OperationMembers {
         Map.entry(MutationField.MutationDmlRecordField.class,
             shape(Set.of(Kind.WRITE), Set.of())),
         Map.entry(MutationField.MutationBulkDmlRecordField.class,
-            shape(Set.of(Kind.WRITE), Set.of())),
-        Map.entry(MutationField.MutationUpdatePayloadField.class,
-            shape(Set.of(Kind.WRITE), Set.of())),
-        Map.entry(MutationField.MutationBulkUpdatePayloadField.class,
-            shape(Set.of(Kind.WRITE), Set.of())),
-        Map.entry(MutationField.MutationDeletePayloadField.class,
-            shape(Set.of(Kind.WRITE), Set.of())),
-        Map.entry(MutationField.MutationBulkDeletePayloadField.class,
             shape(Set.of(Kind.WRITE), Set.of())),
 
         // Child fields.
@@ -253,21 +241,13 @@ public final class OperationMembers {
             case QueryField.QueryServiceTableInterfaceField f -> List.of(structuredServiceCall(f.serviceMethodCall()));
 
             // --- Mutation roots ---
-            case MutationField.MutationInsertTableField f -> List.of(new Write.Insert(f.tableInputArg()));
-            case MutationField.MutationUpsertTableField f -> List.of(new Write.Upsert(f.tableInputArg()));
-            case MutationField.MutationUpdateTableField f -> List.of(new Write.Update(f.inputArg(), f.updateRows()));
-            case MutationField.MutationDeleteTableField f -> List.of(new Write.Delete(f.inputArg(), f.deleteRows()));
+            // The write payload is the leaf's carried component, by identity (DmlWriteField).
+            case DmlWriteField f -> List.of(f.write());
             case MutationField.MutationRoutineWriteField _ -> List.of(new Write.RoutineWrite());
             case MutationField.MutationServiceTableField f -> List.of(structuredServiceCall(f.serviceMethodCall()));
             case MutationField.MutationServiceRecordField f -> List.of(structuredServiceCall(f.serviceMethodCall()));
             case MutationField.MutationServicePolymorphicField f -> List.of(structuredServiceCall(f.serviceMethodCall()));
             case MutationField.MutationServiceTableInterfaceField f -> List.of(structuredServiceCall(f.serviceMethodCall()));
-            // The write payload is the leaf's carried component, by identity (DmlWriteField).
-            case DmlWriteField f -> List.of(f.write());
-            case MutationField.MutationUpdatePayloadField f -> List.of(new Write.Update(f.inputArg(), f.updateRows()));
-            case MutationField.MutationBulkUpdatePayloadField f -> List.of(new Write.Update(f.inputArg(), f.updateRows()));
-            case MutationField.MutationDeletePayloadField f -> List.of(new Write.Delete(f.inputArg(), f.deleteRows()));
-            case MutationField.MutationBulkDeletePayloadField f -> List.of(new Write.Delete(f.inputArg(), f.deleteRows()));
 
             // --- Child fields: catalog column projections ---
             case ChildField.ColumnBackedField _ -> List.of(new Select());

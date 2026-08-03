@@ -13,7 +13,8 @@ package no.sikt.graphitron.rewrite.model;
  * unrepresentable here.
  */
 public sealed interface DmlWriteField
-        permits MutationField.MutationDmlRecordField, MutationField.MutationBulkDmlRecordField {
+        permits MutationField.DmlTableField,
+                MutationField.MutationDmlRecordField, MutationField.MutationBulkDmlRecordField {
 
     /** The DML write payload: verb identity and per-verb input surface, one home. */
     OperationMember.Write.Dml write();

@@ -132,7 +132,6 @@ public final class ExemptionRegistry {
      * {@link #ENUM_NO_CASE_REQUIRED}.
      */
     public static final Map<Class<?>, Exemption> CORPUS_NO_CASE_REQUIRED = Map.ofEntries(
-        Map.entry(MutationField.MutationUpsertTableField.class, UPSERT_RETIRED),
         Map.entry(ChildField.ErrorsField.class, ERRORS_FIELD_PENDING));
 
     /**
@@ -200,7 +199,6 @@ public final class ExemptionRegistry {
      * {@code GraphitronSchemaBuilderTest}.
      */
     public static final Map<Class<?>, Exemption> NO_PROJECTION_REQUIRED = Map.ofEntries(
-        Map.entry(MutationField.MutationUpsertTableField.class, UPSERT_RETIRED),
         Map.entry(ChildField.ErrorsField.class, ERRORS_FIELD_PENDING),
         Map.entry(GraphitronType.JooqRecordType.class, PLAIN_JOOQ_RECORD_PROJECTION_UNASSERTED),
         Map.entry(GraphitronType.JooqRecordInputType.class, PLAIN_JOOQ_RECORD_PROJECTION_UNASSERTED),

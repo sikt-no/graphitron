@@ -227,8 +227,11 @@ public sealed interface OperationMember {
      * carry the {@code @table} input arg that drives the statement, UPDATE / DELETE the slim
      * arg surface plus their walker-produced carrier, and the routine write carries nothing
      * (its call surface stays the leaf's {@link RoutineChain}). The per-verb construction
-     * invariants (DELETE rejects projected return arms, the per-verb dialect requirements)
-     * stay on the leaves in the additive window and migrate with the payloads.
+     * invariants live where verb and return shape meet: the leaf constructors gate the
+     * pairing ({@link MutationField.DmlTableField} rejects a Delete arm beside a table-bound
+     * return; the bulk carrier rejects Upsert and a single-shaped input), and the dialect
+     * requirement is derived on {@link MutationField.DmlTableField#dialectRequirement()} from
+     * the arm and its input cardinality, never stored beside them.
      */
     sealed interface Write extends OperationMember {
 

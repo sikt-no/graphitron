@@ -286,17 +286,10 @@ public class TypeFetcherGenerator {
         QueryField.QueryServicePolymorphicField.class,
         QueryField.QueryServiceTableInterfaceField.class,
         MutationField.MutationServiceTableInterfaceField.class,
-        MutationField.MutationInsertTableField.class,
-        MutationField.MutationUpdateTableField.class,
-        MutationField.MutationDeleteTableField.class,
-        MutationField.MutationUpsertTableField.class,
+        MutationField.DmlTableField.class,
         MutationField.MutationRoutineWriteField.class,
         MutationField.MutationDmlRecordField.class,
         MutationField.MutationBulkDmlRecordField.class,
-        MutationField.MutationUpdatePayloadField.class,
-        MutationField.MutationBulkUpdatePayloadField.class,
-        MutationField.MutationDeletePayloadField.class,
-        MutationField.MutationBulkDeletePayloadField.class,
         MutationField.MutationServiceTableField.class,
         MutationField.MutationServiceRecordField.class,
         MutationField.MutationServicePolymorphicField.class,
@@ -647,13 +640,7 @@ public class TypeFetcherGenerator {
                             .forEach(builder::addMethod);
                     }
                 }
-                case MutationField.MutationInsertTableField f  -> builder.addMethod(buildMutationInsertFetcher(ctx, f, outputPackage,
-                    launchers.rowFor(f.parentTypeName(), f.name()).orElse(null), launchers.carrierDsl()));
-                case MutationField.MutationUpdateTableField f  -> builder.addMethod(buildMutationUpdateFetcher(ctx, f, outputPackage,
-                    launchers.rowFor(f.parentTypeName(), f.name()).orElse(null), launchers.carrierDsl()));
-                case MutationField.MutationDeleteTableField f  -> builder.addMethod(buildMutationDeleteFetcher(ctx, f, outputPackage,
-                    launchers.rowFor(f.parentTypeName(), f.name()).orElse(null), launchers.carrierDsl()));
-                case MutationField.MutationUpsertTableField f  -> builder.addMethod(buildMutationUpsertFetcher(ctx, f, outputPackage,
+                case MutationField.DmlTableField f -> builder.addMethod(buildDmlTableFetcher(ctx, f, outputPackage,
                     launchers.rowFor(f.parentTypeName(), f.name()).orElse(null), launchers.carrierDsl()));
                 case MutationField.MutationRoutineWriteField f -> builder.addMethod(buildMutationRoutineWriteFetcher(ctx, f, outputPackage));
                 case MutationField.MutationServiceTableField f -> builder.addMethod(buildMutationServiceTableFetcher(ctx, f, outputPackage));
@@ -671,10 +658,6 @@ public class TypeFetcherGenerator {
                         .forEach(builder::addMethod);
                 case MutationField.MutationDmlRecordField f    -> builder.addMethod(buildMutationDmlRecordFetcher(ctx, f, outputPackage));
                 case MutationField.MutationBulkDmlRecordField f -> builder.addMethod(buildMutationBulkDmlRecordFetcher(ctx, f, outputPackage));
-                case MutationField.MutationUpdatePayloadField f -> builder.addMethod(buildMutationUpdatePayloadFetcher(ctx, f, outputPackage));
-                case MutationField.MutationBulkUpdatePayloadField f -> builder.addMethod(buildMutationBulkUpdatePayloadFetcher(ctx, f, outputPackage));
-                case MutationField.MutationDeletePayloadField f -> builder.addMethod(buildMutationDeletePayloadFetcher(ctx, f, outputPackage));
-                case MutationField.MutationBulkDeletePayloadField f -> builder.addMethod(buildMutationBulkDeletePayloadFetcher(ctx, f, outputPackage));
                 // ColumnBackedReferenceField: inline projection via the type's $project unit
                 // (Direct compaction); the read of that aliased projection is reified by
                 // FetcherEmitter.bind and collected below. The validator rejects the
@@ -1997,7 +1980,24 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Emits a fetcher for {@link MutationField.MutationDeleteTableField}: a synchronous static
+     * The direct-return DML dispatch: one arm per write verb, forking on the leaf's carried
+     * write arm. The per-verb emit bodies stay distinct because the SQL statements genuinely
+     * differ; what dissolved is the per-verb leaf identity, not the per-verb statement.
+     */
+    private static MethodSpec buildDmlTableFetcher(TypeFetcherEmissionContext ctx, MutationField.DmlTableField f,
+                                                   String outputPackage,
+                                                   no.sikt.graphitron.command.LauncherCommand row,
+                                                   no.sikt.graphitron.command.CarrierDsl carrierDsl) {
+        return switch (f.write()) {
+            case OperationMember.Write.Insert w -> buildMutationInsertFetcher(ctx, f, w, outputPackage, row, carrierDsl);
+            case OperationMember.Write.Update w -> buildMutationUpdateFetcher(ctx, f, w, outputPackage, row, carrierDsl);
+            case OperationMember.Write.Delete w -> buildMutationDeleteFetcher(ctx, f, w, outputPackage, row, carrierDsl);
+            case OperationMember.Write.Upsert w -> buildMutationUpsertFetcher(ctx, f, w, outputPackage, row, carrierDsl);
+        };
+    }
+
+    /**
+     * Emits a fetcher for the Delete write arm: a synchronous static
      * method that runs {@code dsl.deleteFrom(table).where(<lookupKey predicates>)
      * .returningResult(<keys or $project>).fetchOne(...)}.
      *
@@ -2005,18 +2005,19 @@ public class TypeFetcherGenerator {
      * matches no row. graphql-java surfaces that as a GraphQL null on a nullable field, or a
      * non-null violation on {@code ID!}/{@code Type!}.
      */
-    private static MethodSpec buildMutationDeleteFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationDeleteTableField f,
+    private static MethodSpec buildMutationDeleteFetcher(TypeFetcherEmissionContext ctx, MutationField.DmlTableField f,
+                                                          OperationMember.Write.Delete w,
                                                           String outputPackage,
                                                           no.sikt.graphitron.command.LauncherCommand row,
                                                           no.sikt.graphitron.command.CarrierDsl carrierDsl) {
         // The WHERE columns come off the DeleteRows carrier (deleteRows().whereColumns()) and
         // the slim arg surface (inputArg). The carrier's KeyColumn list projects into the
         // InputColumnBindingGroup shape the shared lookup-WHERE emitters consume via keyGroupsOf.
-        var inputArg = f.inputArg();
+        var inputArg = w.inputArg();
         var tableRef = inputArg.table();
         var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         String tableLocal = tablesOnly.tableLocalName();
-        var whereGroups = keyGroupsOf(f.deleteRows().whereColumns());
+        var whereGroups = keyGroupsOf(w.deleteRows().whereColumns());
 
         var dmlChain = CodeBlock.builder().add(".deleteFrom($L)\n", tableLocal);
         var postInGuard = CodeBlock.builder();
@@ -2035,7 +2036,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Emits a fetcher for {@link MutationField.MutationInsertTableField}: a synchronous static
+     * Emits a fetcher for the Insert write arm: a synchronous static
      * method that runs {@code dsl.insertInto(table, cols...).values(vals...)
      * .returningResult(<keys or $project>).fetchOne(...)}.
      *
@@ -2047,11 +2048,12 @@ public class TypeFetcherGenerator {
      * guarantees that every input field is a {@code Direct}-extracted {@code ColumnField},
      * which lets the loop walk {@code tia.fields()} with a single cast.
      */
-    private static MethodSpec buildMutationInsertFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationInsertTableField f,
+    private static MethodSpec buildMutationInsertFetcher(TypeFetcherEmissionContext ctx, MutationField.DmlTableField f,
+                                                          OperationMember.Write.Insert w,
                                                           String outputPackage,
                                                           no.sikt.graphitron.command.LauncherCommand row,
                                                           no.sikt.graphitron.command.CarrierDsl carrierDsl) {
-        var tia = f.tableInputArg();
+        var tia = w.input();
         var tableRef = tia.inputTable();
         var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         String tableLocal = tablesOnly.tableLocalName();
@@ -3311,7 +3313,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Emits a fetcher for {@link MutationField.MutationUpdateTableField}: a synchronous static
+     * Emits a fetcher for the Update write arm: a synchronous static
      * method that runs {@code dsl.update(table).set(col, val)... .where(<lookupKey predicates>)
      * .returningResult(<keys or $project>).fetchOne(...)}.
      *
@@ -3322,7 +3324,8 @@ public class TypeFetcherGenerator {
      * semantics: {@code .fetchOne(...)} returns {@code null} when the WHERE clause matches no
      * row, same as DELETE.
      */
-    private static MethodSpec buildMutationUpdateFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationUpdateTableField f,
+    private static MethodSpec buildMutationUpdateFetcher(TypeFetcherEmissionContext ctx, MutationField.DmlTableField f,
+                                                          OperationMember.Write.Update w,
                                                           String outputPackage,
                                                           no.sikt.graphitron.command.LauncherCommand row,
                                                           no.sikt.graphitron.command.CarrierDsl carrierDsl) {
@@ -3330,12 +3333,12 @@ public class TypeFetcherGenerator {
         // (updateRows.setColumns() / keyColumns()) and the slim arg surface (inputArg). Carrier
         // slots project into the SetGroup / InputColumnBindingGroup shapes the shared SET /
         // lookup-WHERE emitters consume.
-        var inputArg = f.inputArg();
+        var inputArg = w.inputArg();
         var tableRef = inputArg.table();
         var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         String tableLocal = tablesOnly.tableLocalName();
-        var setGroups = setGroupsOf(f.updateRows().setColumns());
-        var keyGroups = keyGroupsOf(f.updateRows().keyColumns());
+        var setGroups = setGroupsOf(w.updateRows().setColumns());
+        var keyGroups = keyGroupsOf(w.updateRows().keyColumns());
 
         if (inputArg.list()) {
             return buildBulkUpdateFetcher(ctx, f, outputPackage, inputArg, tableRef, tablesOnly, tableLocal,
@@ -3360,7 +3363,7 @@ public class TypeFetcherGenerator {
         // forces them equal, this checks it before the DML. Key-side groups are projected into the
         // SetGroup shape (by access path, nidk peeled) so the preamble reads each side's slot uniformly.
         // No-op (byte-identical) when there is no key∩set overlap.
-        var keySetGroups = setGroupsOf(f.updateRows().keyColumns().stream()
+        var keySetGroups = setGroupsOf(w.updateRows().keyColumns().stream()
             .map(kc -> new SetColumn(kc.sdlFieldName(), kc.targetColumn(), kc.extraction()))
             .toList());
         emitKeySetAgreementPreamble(postInGuard, keySetGroups, setGroups, "in", "keySet", tablesOnly, tableRef);
@@ -3405,7 +3408,7 @@ public class TypeFetcherGenerator {
      * jOOQ renders here; {@link #emitDialectGuard} renders it.
      */
     private static MethodSpec buildBulkUpdateFetcher(TypeFetcherEmissionContext ctx,
-                                                     MutationField.MutationUpdateTableField f,
+                                                     MutationField.DmlTableField f,
                                                      String outputPackage,
                                                      no.sikt.graphitron.rewrite.model.InputArgRef inputArg,
                                                      TableRef tableRef,
@@ -3556,7 +3559,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Emits a fetcher for {@link MutationField.MutationUpsertTableField}: a synchronous static
+     * Emits a fetcher for the Upsert write arm: a synchronous static
      * method that runs {@code dsl.insertInto(table, cols...).values(vals...).onConflict(<keys>)
      * .doUpdate().set(col, val)... .returningResult(<keys or $project>).fetchOne(...)}.
      *
@@ -3568,11 +3571,12 @@ public class TypeFetcherGenerator {
      *
      * <p>PostgreSQL-only: {@code ON CONFLICT} is a Postgres extension.
      */
-    private static MethodSpec buildMutationUpsertFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationUpsertTableField f,
+    private static MethodSpec buildMutationUpsertFetcher(TypeFetcherEmissionContext ctx, MutationField.DmlTableField f,
+                                                          OperationMember.Write.Upsert w,
                                                           String outputPackage,
                                                           no.sikt.graphitron.command.LauncherCommand row,
                                                           no.sikt.graphitron.command.CarrierDsl carrierDsl) {
-        var tia = f.tableInputArg();
+        var tia = w.input();
         var tableRef = tia.inputTable();
         var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         String tableLocal = tablesOnly.tableLocalName();
@@ -4771,13 +4775,35 @@ public class TypeFetcherGenerator {
      */
     private static MethodSpec buildMutationDmlRecordFetcher(
             TypeFetcherEmissionContext ctx, MutationField.MutationDmlRecordField f, String outputPackage) {
-        var input = recordCarrierInput(f.write());
-        // DML chain per write arm. Each branch produces a CodeBlock starting with `.<verb>(...)`
-        // suitable for chaining off `DSL.using(tx)` inside transactionResult.
-        return buildSingleRecordTwoStepFetcher(
-            ctx, f, input.name(), input.inputTable(), f.errorChannel(), f.qualifiedName(),
-            (tablesOnly, tableLocal) -> buildDmlChainForRecord(f.write(), input.inputTable(), tablesOnly, tableLocal),
-            outputPackage);
+        // One fetcher skeleton, per-write-arm chain: the Insert / Upsert arms drive the
+        // statement off the @table input arg, the Update / Delete arms off their walker
+        // carriers (the same sources the direct-return bodies read).
+        return switch (f.write()) {
+            case OperationMember.Write.Insert _, OperationMember.Write.Upsert _ -> {
+                var input = recordCarrierInput(f.write());
+                yield buildSingleRecordTwoStepFetcher(
+                    ctx, f, input.name(), input.inputTable(), f.errorChannel(), f.qualifiedName(),
+                    (tablesOnly, tableLocal) -> buildDmlChainForRecord(f.write(), input.inputTable(), tablesOnly, tableLocal),
+                    outputPackage);
+            }
+            case OperationMember.Write.Update w -> {
+                var setGroups = setGroupsOf(w.updateRows().setColumns());
+                var keyGroups = keyGroupsOf(w.updateRows().keyColumns());
+                yield buildSingleRecordTwoStepFetcher(
+                    ctx, f, w.inputArg().name(), w.inputArg().table(), f.errorChannel(), f.qualifiedName(),
+                    (tablesOnly, tableLocal) -> buildCarrierUpdateChainSingle(
+                        setGroups, keyGroups, w.inputArg().table(), tablesOnly, tableLocal),
+                    outputPackage);
+            }
+            case OperationMember.Write.Delete w -> {
+                var whereGroups = keyGroupsOf(w.deleteRows().whereColumns());
+                yield buildSingleRecordTwoStepFetcher(
+                    ctx, f, w.inputArg().name(), w.inputArg().table(), f.errorChannel(), f.qualifiedName(),
+                    (tablesOnly, tableLocal) -> buildRecordDeleteChain(
+                        whereGroups, w.inputArg().table(), tablesOnly, tableLocal),
+                    outputPackage);
+            }
+        };
     }
 
     /**
@@ -4856,46 +4882,6 @@ public class TypeFetcherGenerator {
             singleRecordSentinelFor(tableRef, tablesOnly, pkCols)));
         builder.endControlFlow();
         return builder.build();
-    }
-
-    /**
-     * Emits the fetcher for a {@link MutationField.MutationUpdatePayloadField}: the
-     * payload-returning single UPDATE. Reuses {@link #buildSingleRecordTwoStepFetcher}'s skeleton;
-     * the SET / WHERE partition is sourced from the {@link UpdateRows} carrier via the shared
-     * {@link #setGroupsOf} / {@link #keyGroupsOf} projections (the same source the direct-return
-     * {@link #buildMutationUpdateFetcher} reads), never from {@code tia.setFields()} /
-     * {@code tia.fieldBindings()}, so the payload UPDATE does not depend on {@code @value}.
-     */
-    private static MethodSpec buildMutationUpdatePayloadFetcher(
-            TypeFetcherEmissionContext ctx, MutationField.MutationUpdatePayloadField f, String outputPackage) {
-        var inputArg = f.inputArg();
-        var setGroups = setGroupsOf(f.updateRows().setColumns());
-        var keyGroups = keyGroupsOf(f.updateRows().keyColumns());
-        return buildSingleRecordTwoStepFetcher(
-            ctx, f, inputArg.name(), inputArg.table(), f.errorChannel(), f.qualifiedName(),
-            (tablesOnly, tableLocal) -> buildCarrierUpdateChainSingle(
-                setGroups, keyGroups, inputArg.table(), tablesOnly, tableLocal),
-            outputPackage);
-    }
-
-    /**
-     * Emits the fetcher for a {@link MutationField.MutationDeletePayloadField}: the
-     * payload-returning single DELETE. Reuses {@link #buildSingleRecordTwoStepFetcher}'s skeleton;
-     * the WHERE columns are sourced from the {@link no.sikt.graphitron.rewrite.model.DeleteRows}
-     * carrier via {@link #keyGroupsOf}
-     * (never from {@code tia.fieldBindings()}) and fed to the carrier-driven
-     * {@link #buildRecordDeleteChain}. The enclosing skeleton appends
-     * {@code .returningResult(pkCols).fetchOne()} inside {@code transactionResult}.
-     */
-    private static MethodSpec buildMutationDeletePayloadFetcher(
-            TypeFetcherEmissionContext ctx, MutationField.MutationDeletePayloadField f, String outputPackage) {
-        var inputArg = f.inputArg();
-        var whereGroups = keyGroupsOf(f.deleteRows().whereColumns());
-        return buildSingleRecordTwoStepFetcher(
-            ctx, f, inputArg.name(), inputArg.table(), f.errorChannel(), f.qualifiedName(),
-            (tablesOnly, tableLocal) -> buildRecordDeleteChain(
-                whereGroups, inputArg.table(), tablesOnly, tableLocal),
-            outputPackage);
     }
 
     /**
@@ -4994,7 +4980,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Single-row DELETE chain for the payload-returning {@link MutationField.MutationDeletePayloadField}
+     * Single-row DELETE chain for the payload-returning Delete write arm on the record
      * carrier. Mirrors the direct-return DELETE chain ({@link #buildMutationDeleteFetcher}): same
      * WHERE shape, no SET clause. The WHERE columns are sourced from the
      * {@link no.sikt.graphitron.rewrite.model.DeleteRows} carrier's
@@ -5139,12 +5125,37 @@ public class TypeFetcherGenerator {
      */
     private static MethodSpec buildMutationBulkDmlRecordFetcher(
             TypeFetcherEmissionContext ctx, MutationField.MutationBulkDmlRecordField f, String outputPackage) {
-        var input = recordCarrierInput(f.write());
-        return buildBulkRecordTwoStepFetcher(
-            ctx, f, input.name(), input.inputTable(), f.errorChannel(), f.qualifiedName(),
-            (tablesOnly, tableLocal, pkCols, recordRowType) ->
-                buildBulkRecordPerRowBody(f.write(), input.inputTable(), tablesOnly, tableLocal, pkCols, recordRowType),
-            outputPackage);
+        // One bulk skeleton, per-write-arm per-row body; the Upsert arm is rejected at the
+        // leaf's compact constructor under the cardinality-safety regime.
+        return switch (f.write()) {
+            case OperationMember.Write.Insert _ -> {
+                var input = recordCarrierInput(f.write());
+                yield buildBulkRecordTwoStepFetcher(
+                    ctx, f, input.name(), input.inputTable(), f.errorChannel(), f.qualifiedName(),
+                    (tablesOnly, tableLocal, pkCols, recordRowType) ->
+                        buildBulkRecordPerRowBody(f.write(), input.inputTable(), tablesOnly, tableLocal, pkCols, recordRowType),
+                    outputPackage);
+            }
+            case OperationMember.Write.Update w -> {
+                var setGroups = setGroupsOf(w.updateRows().setColumns());
+                var keyGroups = keyGroupsOf(w.updateRows().keyColumns());
+                yield buildBulkRecordTwoStepFetcher(
+                    ctx, f, w.inputArg().name(), w.inputArg().table(), f.errorChannel(), f.qualifiedName(),
+                    (tablesOnly, tableLocal, pkCols, recordRowType) -> buildCarrierBulkPerRowUpdateBody(
+                        setGroups, keyGroups, w.inputArg().table(), tablesOnly, tableLocal, pkCols, recordRowType),
+                    outputPackage);
+            }
+            case OperationMember.Write.Delete w -> {
+                var whereGroups = keyGroupsOf(w.deleteRows().whereColumns());
+                yield buildBulkRecordTwoStepFetcher(
+                    ctx, f, w.inputArg().name(), w.inputArg().table(), f.errorChannel(), f.qualifiedName(),
+                    (tablesOnly, tableLocal, pkCols, recordRowType) -> buildBulkRecordPerRowDeleteBody(
+                        whereGroups, w.inputArg().table(), tablesOnly, tableLocal, pkCols, recordRowType),
+                    outputPackage);
+            }
+            case OperationMember.Write.Upsert _ -> throw new IllegalStateException(
+                "bulk record-backed DML carrier holds an Upsert write arm its constructor rejects");
+        };
     }
 
     /** The seam for {@link #buildBulkRecordTwoStepFetcher}'s per-row DML body.*/
@@ -5230,45 +5241,6 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Emits the fetcher for a {@link MutationField.MutationBulkUpdatePayloadField}: the
-     * payload-returning bulk UPDATE. Reuses {@link #buildBulkRecordTwoStepFetcher}'s skeleton; the
-     * per-row SET / WHERE partition is sourced from the {@link UpdateRows} carrier (not
-     * {@code tia.setFields()} / {@code tia.fieldBindings()}), so the bulk payload UPDATE does not
-     * depend on {@code @value}.
-     */
-    private static MethodSpec buildMutationBulkUpdatePayloadFetcher(
-            TypeFetcherEmissionContext ctx, MutationField.MutationBulkUpdatePayloadField f, String outputPackage) {
-        var inputArg = f.inputArg();
-        var setGroups = setGroupsOf(f.updateRows().setColumns());
-        var keyGroups = keyGroupsOf(f.updateRows().keyColumns());
-        return buildBulkRecordTwoStepFetcher(
-            ctx, f, inputArg.name(), inputArg.table(), f.errorChannel(), f.qualifiedName(),
-            (tablesOnly, tableLocal, pkCols, recordRowType) -> buildCarrierBulkPerRowUpdateBody(
-                setGroups, keyGroups, inputArg.table(), tablesOnly, tableLocal, pkCols, recordRowType),
-            outputPackage);
-    }
-
-    /**
-     * Emits the fetcher for a {@link MutationField.MutationBulkDeletePayloadField}: the
-     * payload-returning bulk DELETE. Reuses {@link #buildBulkRecordTwoStepFetcher}'s skeleton; the
-     * per-row WHERE columns are sourced from the
-     * {@link no.sikt.graphitron.rewrite.model.DeleteRows} carrier ({@link #keyGroupsOf}),
-     * not {@code tia.fieldBindings()}, and fed to the carrier-driven
-     * {@link #buildBulkRecordPerRowDeleteBody}. The order-preservation invariant the skeleton's
-     * input-order loop provides is audited at the execution tier.
-     */
-    private static MethodSpec buildMutationBulkDeletePayloadFetcher(
-            TypeFetcherEmissionContext ctx, MutationField.MutationBulkDeletePayloadField f, String outputPackage) {
-        var inputArg = f.inputArg();
-        var whereGroups = keyGroupsOf(f.deleteRows().whereColumns());
-        return buildBulkRecordTwoStepFetcher(
-            ctx, f, inputArg.name(), inputArg.table(), f.errorChannel(), f.qualifiedName(),
-            (tablesOnly, tableLocal, pkCols, recordRowType) -> buildBulkRecordPerRowDeleteBody(
-                whereGroups, inputArg.table(), tablesOnly, tableLocal, pkCols, recordRowType),
-            outputPackage);
-    }
-
-    /**
  * The carrier-driven per-row UPDATE body for the bulk payload-returning UPDATE: a dynamic
      * SET map from the carrier's {@code setColumns()} ({@link #setGroupsOf}) and the WHERE from
      * the carrier's {@code keyColumns()} ({@link #keyGroupsOf}); no {@code @value}-derived
@@ -5336,7 +5308,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Per-row DELETE body for the payload-returning {@link MutationField.MutationBulkDeletePayloadField}
+     * Per-row DELETE body for the payload-returning Delete write arm on the bulk carrier
      * (driven from {@link #buildMutationBulkDeletePayloadFetcher}). Each input row builds a
      * {@code deleteFrom(table).where(<lookup>).returningResult(PK).fetchOne()} statement; the
      * returned PK-only {@code RecordN} is appended to the bulk accumulator in input order. A row that

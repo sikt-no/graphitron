@@ -890,10 +890,10 @@ public final class ClassifiedCorpus {
          * DML payload-carrier mutations (UPDATE and its bulk sibling, plus the bulk INSERT carrier).
          * Each returns a plain object wrapping one @table data field and exposes the affected rows as a
          * record, so the mutation field is source Mutation, target Record, with the write verb as the
-         * operation: Update for MutationUpdatePayloadField / MutationBulkUpdatePayloadField, and Insert for
-         * the bulk INSERT carrier (MutationBulkDmlRecordField, whose DmlKind reads INSERT). Distinct
-         * payload types keep the per-kind carrier scans isolated. The DELETE payload siblings
-         * (MutationDeletePayloadField / MutationBulkDeletePayloadField) live in the
+         * operation: an Update write arm on MutationDmlRecordField / MutationBulkDmlRecordField, and an Insert arm on
+         * the bulk INSERT carrier (the same MutationBulkDmlRecordField leaf). Distinct
+         * payload types keep the per-kind carrier scans isolated. The DELETE payload cases
+         * (the same carriers with a Delete write arm) live in the
          * `dml-delete-payload` example: their only admissible data field is an ID-element (a
          * @table-element projection off a deleted row is impossible), grounded on film_actor's
          * synthesised node metadata.
@@ -979,16 +979,16 @@ public final class ClassifiedCorpus {
         /*
          * The remaining root mutation forms (INSERT is the `dml` example above). UPDATE is a DML write
          * that projects the affected @table row back, so it is Mutation / Update / Table
-         * (MutationUpdateTableField; the projection re-fetch is derived). DELETE cannot project a
+         * (DmlTableField with an Update write arm; the projection re-fetch is derived). DELETE cannot project a
          * @table (the row is gone; RETURNING carries only the PK), so it tops out at an encoded-ID return:
-         * Mutation / Delete / Column (MutationDeleteTableField with an Encoded* return-expression arm).
+         * Mutation / Delete / Column (DmlTableField with a Delete write arm and an Encoded* return-expression arm).
          * DELETE admits two ways onto the same verdict: a PK-covering filter input (`deleteFilm`) or an
          * explicit `multiRow: true` broadcast over a non-PK filter (`deleteFilmsBroadcast`). An @service
          * mutation re-queries the catalog for its @table return (MutationServiceTableField, Mutation /
          * ServiceCall / Table) or materializes a non-table record-backed type (MutationServiceRecordField,
          * Mutation / ServiceCall / Record). A DML payload carrier (a plain object wrapping one @table
          * data field) exposes the RETURNING rows as a record, so the carrier itself is Mutation / Insert /
-         * Record (MutationDmlRecordField, DmlKind INSERT), the follow-up projection being the data field's
+         * Record (MutationDmlRecordField, Insert write arm), the follow-up projection being the data field's
          * own concern (a Child / Fetch / Table BatchedTableField on the payload). Corpus-only: these
          * remaining root forms are additional leaves on the principles the `dml` and `dml-payloads`
          * examples teach.
@@ -1057,8 +1057,8 @@ public final class ClassifiedCorpus {
         /*
          * Payload-returning DELETE, both cardinalities. A DELETE's only admissible data field is an
          * ID-element encoded off RETURNING (the row is gone; a @table-element projection is rejected),
-         * so the carrier classifies as MutationDeletePayloadField / MutationBulkDeletePayloadField
-         * (Mutation / Delete / Single(Record), the bulk-ness riding the input cardinality and the data
+         * so the carrier classifies as MutationDmlRecordField / MutationBulkDmlRecordField with a
+         * Delete write arm (Mutation / Delete / Single(Record), the bulk-ness riding the input cardinality and the data
          * field's list wrapper) and the data field as SingleRecordIdFieldFromReturning (an encoded-PK
          * column read off the RETURNING record: Fetch / Column with sourceShape Record). film_actor's
          * synthesised node metadata grounds the encode; the @nodeId input filter covers the composite

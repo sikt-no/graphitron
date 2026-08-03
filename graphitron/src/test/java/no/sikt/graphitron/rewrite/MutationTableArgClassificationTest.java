@@ -2,15 +2,9 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
-import no.sikt.graphitron.rewrite.model.MutationField.MutationBulkDeletePayloadField;
 import no.sikt.graphitron.rewrite.model.MutationField.MutationBulkDmlRecordField;
-import no.sikt.graphitron.rewrite.model.MutationField.MutationDeletePayloadField;
-import no.sikt.graphitron.rewrite.model.MutationField.MutationDeleteTableField;
+import no.sikt.graphitron.rewrite.model.MutationField.DmlTableField;
 import no.sikt.graphitron.rewrite.model.MutationField.MutationDmlRecordField;
-import no.sikt.graphitron.rewrite.model.MutationField.MutationInsertTableField;
-import no.sikt.graphitron.rewrite.model.MutationField.MutationBulkUpdatePayloadField;
-import no.sikt.graphitron.rewrite.model.MutationField.MutationUpdatePayloadField;
-import no.sikt.graphitron.rewrite.model.MutationField.MutationUpdateTableField;
 import no.sikt.graphitron.rewrite.model.MutationTableArgError;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
@@ -21,6 +15,10 @@ import java.util.Map;
 
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
+import static no.sikt.graphitron.rewrite.DmlWriteReads.deleteArgOf;
+import static no.sikt.graphitron.rewrite.DmlWriteReads.insertInputOf;
+import static no.sikt.graphitron.rewrite.DmlWriteReads.updateArgOf;
+import static no.sikt.graphitron.rewrite.DmlWriteReads.updateRowsOf;
 
 /**
  * The field-relative DML write-target precedence. For DELETE it pins the {@code @mutation(table:)}
@@ -61,7 +59,7 @@ class MutationTableArgClassificationTest {
             """);
         assertThat(schema.field("Mutation", "deleteFilm"))
             .as("a DELETE with @mutation(table:) and no @table on the input classifies")
-            .isInstanceOf(MutationDeleteTableField.class);
+            .isInstanceOf(DmlTableField.class);
         assertThat(validate(schema))
             .extracting(ValidationError::message)
             .as("the field-relative DELETE write target raises no error against the mutation or its input")
@@ -108,7 +106,7 @@ class MutationTableArgClassificationTest {
             """, NODEID_CTX);
         assertThat(schema.field("Mutation", "createBar"))
             .as("@mutation(table:) on INSERT names the rung-2 write target and classifies")
-            .isInstanceOf(no.sikt.graphitron.rewrite.model.MutationField.MutationInsertTableField.class);
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.MutationField.DmlTableField.class);
         assertThat(schema.diagnostics()).isEmpty();
     }
 
@@ -124,7 +122,7 @@ class MutationTableArgClassificationTest {
             """);
         assertThat(schema.field("Mutation", "updateFilm"))
             .as("@mutation(table:) on UPDATE names the rung-2 write target and classifies")
-            .isInstanceOf(no.sikt.graphitron.rewrite.model.MutationField.MutationUpdateTableField.class);
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.MutationField.DmlTableField.class);
         assertThat(schema.diagnostics()).isEmpty();
     }
 
@@ -191,8 +189,8 @@ class MutationTableArgClassificationTest {
             type Mutation { deleteBaz(in: DeleteBazInput!): DeletedBazPayload @mutation(typeName: DELETE, table: "baz") }
             """, NODEID_CTX);
 
-        var mut = (MutationDeletePayloadField) schema.field("Mutation", "deleteBaz");
-        assertThat(mut.inputArg().table().tableName())
+        var mut = (MutationDmlRecordField) schema.field("Mutation", "deleteBaz");
+        assertThat(deleteArgOf(mut).table().tableName())
             .as("@mutation(table:) grounds the write target")
             .isEqualTo("baz");
         assertThat(mut.errorChannel())
@@ -218,11 +216,11 @@ class MutationTableArgClassificationTest {
             type Mutation { deleteBars(in: [DeleteBarInput!]!): DeletedBarsPayload @mutation(typeName: DELETE, table: "bar") }
             """, NODEID_CTX);
 
-        var mut = (MutationBulkDeletePayloadField) schema.field("Mutation", "deleteBars");
-        assertThat(mut.inputArg().table().tableName())
+        var mut = (MutationBulkDmlRecordField) schema.field("Mutation", "deleteBars");
+        assertThat(deleteArgOf(mut).table().tableName())
             .as("@mutation(table:) grounds the bulk write target")
             .isEqualTo("bar");
-        assertThat(mut.inputArg().list())
+        assertThat(mut.write().listInput())
             .as("the bulk shape carries the list cardinality")
             .isTrue();
         var carrier = (SingleRecordIdFieldFromReturning) schema.field("DeletedBarsPayload", "deletedIds");
@@ -315,8 +313,8 @@ class MutationTableArgClassificationTest {
             type Mutation { createFilm(in: FilmInput!): Film @mutation(typeName: INSERT) }
             """);
 
-        var mut = (MutationInsertTableField) schema.field("Mutation", "createFilm");
-        assertThat(mut.tableInputArg().inputTable().tableName())
+        var mut = (DmlTableField) schema.field("Mutation", "createFilm");
+        assertThat(insertInputOf(mut).inputTable().tableName())
             .as("the write target derives from the @table return type")
             .isEqualTo("film");
         assertThat(schema.diagnostics()).isEmpty();
@@ -438,11 +436,11 @@ class MutationTableArgClassificationTest {
             type Mutation { updateFilm(in: FilmUpdateInput!): Film @mutation(typeName: UPDATE) }
             """);
 
-        var mut = (MutationUpdateTableField) schema.field("Mutation", "updateFilm");
-        assertThat(mut.inputArg().table().tableName())
+        var mut = (DmlTableField) schema.field("Mutation", "updateFilm");
+        assertThat(updateArgOf(mut).table().tableName())
             .as("the write target derives from the @table return type")
             .isEqualTo("film");
-        assertThat(mut.updateRows())
+        assertThat(updateRowsOf(mut))
             .as("the walker produced the SET/WHERE carrier against the derived table")
             .isNotNull();
         assertThat(schema.diagnostics()).isEmpty();
@@ -461,11 +459,11 @@ class MutationTableArgClassificationTest {
             type Mutation { updateFilmPayload(in: FilmUpdateInput!): FilmPayload @mutation(typeName: UPDATE) }
             """);
 
-        var mut = (MutationUpdatePayloadField) schema.field("Mutation", "updateFilmPayload");
-        assertThat(mut.inputArg().table().tableName())
+        var mut = (MutationDmlRecordField) schema.field("Mutation", "updateFilmPayload");
+        assertThat(updateArgOf(mut).table().tableName())
             .as("the write target derives from the payload's @table data field")
             .isEqualTo("film");
-        assertThat(mut.updateRows()).isNotNull();
+        assertThat(updateRowsOf(mut)).isNotNull();
         assertThat(schema.diagnostics()).isEmpty();
     }
 
@@ -483,12 +481,12 @@ class MutationTableArgClassificationTest {
             type Mutation { updateFilms(in: [FilmUpdateInput!]!): FilmsPayload @mutation(typeName: UPDATE) }
             """);
 
-        var mut = (MutationBulkUpdatePayloadField) schema.field("Mutation", "updateFilms");
-        assertThat(mut.inputArg().table().tableName())
+        var mut = (MutationBulkDmlRecordField) schema.field("Mutation", "updateFilms");
+        assertThat(updateArgOf(mut).table().tableName())
             .as("the write target derives from the payload's @table-element data field")
             .isEqualTo("film");
-        assertThat(mut.inputArg().list()).isTrue();
-        assertThat(mut.updateRows()).isNotNull();
+        assertThat(mut.write().listInput()).isTrue();
+        assertThat(updateRowsOf(mut)).isNotNull();
         assertThat(schema.diagnostics()).isEmpty();
     }
 

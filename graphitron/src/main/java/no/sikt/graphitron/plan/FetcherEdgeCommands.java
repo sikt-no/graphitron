@@ -51,13 +51,13 @@ import java.util.List;
  *   <li><b>Routine writes</b> ({@link MutationField.MutationRoutineWriteField}): the
  *       post-commit SELECT projects the terminus type inline, so the target is the return
  *       type's projection class.</li>
- *   <li><b>DML and payload mutations</b> ({@link MutationField.DmlTableField}, the record
- *       carriers and the four payload arms): targets are derived from the condition
- *       relation's rows for the coordinate. No mutation leaf is SQL-generating, so no
- *       mutation coordinate has a condition row today and these families are empty by
- *       derivation; every write-carrying arm keeps the derivation rather than hard-coding
- *       the absence, so a condition row appearing at a mutation coordinate would surface as
- *       an edge, not a gap.</li>
+ *   <li><b>DML mutations</b> ({@link MutationField.DmlTableField} and the two record
+ *       carriers): targets are derived from the condition relation's rows for the
+ *       coordinate. No mutation leaf is SQL-generating, so no mutation coordinate has a
+ *       condition row today and these families are empty by derivation; every
+ *       write-carrying arm keeps the derivation rather than hard-coding the absence, so a
+ *       condition row appearing at a mutation coordinate would surface as an edge, not a
+ *       gap.</li>
  * </ul>
  *
  * <p>Deliberate non-members, by the emitted shape: the {@code @service} table passthroughs
@@ -170,14 +170,6 @@ public final class FetcherEdgeCommands {
             case MutationField.MutationDmlRecordField f ->
                 glueOnlyRow(f.parentTypeName(), f.name(), conditions, units);
             case MutationField.MutationBulkDmlRecordField f ->
-                glueOnlyRow(f.parentTypeName(), f.name(), conditions, units);
-            case MutationField.MutationUpdatePayloadField f ->
-                glueOnlyRow(f.parentTypeName(), f.name(), conditions, units);
-            case MutationField.MutationBulkUpdatePayloadField f ->
-                glueOnlyRow(f.parentTypeName(), f.name(), conditions, units);
-            case MutationField.MutationDeletePayloadField f ->
-                glueOnlyRow(f.parentTypeName(), f.name(), conditions, units);
-            case MutationField.MutationBulkDeletePayloadField f ->
                 glueOnlyRow(f.parentTypeName(), f.name(), conditions, units);
         };
     }

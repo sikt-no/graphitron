@@ -69,7 +69,7 @@ public final class FieldValidationTestHelper {
      *
      * <p>Use in a per-variant test's expected-error list where that variant is stubbed:
      * <pre>
-     * List.of(stubbedError("Mutation.createFilm", MutationInsertTableField.class))
+     * List.of(stubbedError("Mutation.createFilm", MutationField.DmlTableField.class))
      * </pre>
      */
     public static String stubbedError(String qualifiedName, Class<? extends GraphitronField> variant) {

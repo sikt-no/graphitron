@@ -81,6 +81,11 @@ import java.util.function.Consumer;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
+import static no.sikt.graphitron.rewrite.DmlWriteReads.deleteArgOf;
+import static no.sikt.graphitron.rewrite.DmlWriteReads.deleteRowsOf;
+import static no.sikt.graphitron.rewrite.DmlWriteReads.insertInputOf;
+import static no.sikt.graphitron.rewrite.DmlWriteReads.updateArgOf;
+import static no.sikt.graphitron.rewrite.DmlWriteReads.updateRowsOf;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
@@ -6604,12 +6609,12 @@ class GraphitronSchemaBuilderTest {
         // example, Query.filmDetails). This enum keeps the @ProjectionFor projection test below.
 
         // The bare DML write-then-project verdicts live in the spec-by-example corpus: INSERT ->
-        // MutationInsertTableField (`dml` example, createFilm) and UPDATE ->
-        // MutationUpdateTableField (`mutation-roots` example, updateFilm). This enum keeps the
+        // DmlTableField (`dml` example, createFilm) and UPDATE ->
+        // DmlTableField (`mutation-roots` example, updateFilm). This enum keeps the
         // slot-asserting DmlReturnExpression / payload cases.
 
         DELETE_MUTATION_FIELD(
-            "R266 / R287: @mutation(typeName: DELETE) returning ID → MutationDeleteTableField carrying "
+            "R266 / R287: @mutation(typeName: DELETE) returning ID → DmlTableField carrying "
                 + "the DeleteRows walker carrier (filmId covers the PK → Identified; whereColumns is "
                 + "every admitted input column).",
             """
@@ -6619,13 +6624,13 @@ class GraphitronSchemaBuilderTest {
             type Mutation { deleteFilm(in: FilmInput!): ID @mutation(typeName: DELETE, table: "film") }
             """,
             schema -> {
-                var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteFilm");
-                var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) f.deleteRows();
+                var f = (MutationField.DmlTableField) schema.field("Mutation", "deleteFilm");
+                var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) deleteRowsOf(f);
                 assertThat(deleteRows.matchedKey().columns()).extracting(c -> c.sqlName()).containsExactly("film_id");
                 assertThat(deleteRows.whereColumns()).extracting(c -> c.targetColumn().sqlName()).containsExactly("film_id");
-                assertThat(f.inputArg().table().tableName()).isEqualToIgnoringCase("film");
+                assertThat(deleteArgOf(f).table().tableName()).isEqualToIgnoringCase("film");
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationDeleteTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.DmlTableField.class); }
         },
 
         DELETE_MUTATION_NO_INPUT_ARG(
@@ -6861,7 +6866,7 @@ class GraphitronSchemaBuilderTest {
 
         UPDATE_PAYLOAD_MUTATION_FIELD(
             "R258: @mutation(typeName: UPDATE) with single input and a single-record DML "
-                + "payload → MutationUpdatePayloadField. The payload-returning UPDATE shares the "
+                + "payload → MutationDmlRecordField. The payload-returning UPDATE shares the "
                 + "structural-payload emit shape with MutationDmlRecordField but sources its SET/WHERE "
                 + "partition from the UpdateRowsWalker carrier (PK-or-UK), not @value.",
             """
@@ -6874,24 +6879,24 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var f = (MutationField.MutationUpdatePayloadField)
+                var f = (MutationField.MutationDmlRecordField)
                     schema.field("Mutation", "updateFilmPayload");
                 assertThat(f.returnType().returnTypeName()).isEqualTo("FilmPayload");
-                assertThat(f.inputArg().table().tableName()).isEqualToIgnoringCase("film");
-                assertThat(f.inputArg().list()).isFalse();
+                assertThat(updateArgOf(f).table().tableName()).isEqualToIgnoringCase("film");
+                assertThat(updateArgOf(f).list()).isFalse();
                 // PK-or-UK partition: filmId (PK) → WHERE, title (non-key) → SET.
-                assertThat(f.updateRows().keyColumns()).extracting(c -> c.targetColumn().sqlName())
+                assertThat(updateRowsOf(f).keyColumns()).extracting(c -> c.targetColumn().sqlName())
                     .containsExactly("film_id");
-                assertThat(f.updateRows().setColumns()).extracting(c -> c.targetColumn().sqlName())
+                assertThat(updateRowsOf(f).setColumns()).extracting(c -> c.targetColumn().sqlName())
                     .containsExactly("title");
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationUpdatePayloadField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationDmlRecordField.class); }
         },
 
         UPDATE_BULK_PAYLOAD_MUTATION_FIELD(
             "R258: @mutation(typeName: UPDATE) with bulk input and a single-record DML carrier "
-                + "whose data field is list-shaped → MutationBulkUpdatePayloadField. Bulk sibling of "
-                + "MutationUpdatePayloadField; the emitter batches per-row UPDATE in input order off "
+                + "whose data field is list-shaped → MutationBulkDmlRecordField. Bulk sibling of "
+                + "MutationDmlRecordField; the emitter batches per-row UPDATE in input order off "
                 + "the same UpdateRows carrier partition.",
             """
             type Film @table(name: "film") { title: String }
@@ -6903,23 +6908,23 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var f = (MutationField.MutationBulkUpdatePayloadField)
+                var f = (MutationField.MutationBulkDmlRecordField)
                     schema.field("Mutation", "updateFilmsPayload");
                 assertThat(f.returnType().returnTypeName()).isEqualTo("FilmsPayload");
-                assertThat(f.inputArg().list()).isTrue();
-                assertThat(f.updateRows().keyColumns()).extracting(c -> c.targetColumn().sqlName())
+                assertThat(updateArgOf(f).list()).isTrue();
+                assertThat(updateRowsOf(f).keyColumns()).extracting(c -> c.targetColumn().sqlName())
                     .containsExactly("film_id");
-                assertThat(f.updateRows().setColumns()).extracting(c -> c.targetColumn().sqlName())
+                assertThat(updateRowsOf(f).setColumns()).extracting(c -> c.targetColumn().sqlName())
                     .containsExactly("title");
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationBulkUpdatePayloadField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationBulkDmlRecordField.class); }
         },
 
         DELETE_PAYLOAD_TABLE_ELEMENT_REJECTS(
             "R287: @mutation(typeName: DELETE) with a single-record payload whose data field is a "
                 + "@table-element → UnclassifiedField. The row is gone after the statement and RETURNING "
                 + "carries only the PK, so a full @table projection is impossible; the legitimate "
-                + "MutationDeletePayloadField shape carries an ID-element data field (see "
+                + "MutationDmlRecordField shape carries an ID-element data field (see "
                 + "MutationDmlNodeIdClassificationTest under the nodeidfixture catalog).",
             """
             type Film @table(name: "film") { title: String }
@@ -6941,7 +6946,7 @@ class GraphitronSchemaBuilderTest {
         DELETE_BULK_PAYLOAD_TABLE_ELEMENT_REJECTS(
             "R287: @mutation(typeName: DELETE) with a bulk payload whose data field is a list-shaped "
                 + "@table-element → UnclassifiedField. Bulk sibling of DELETE_PAYLOAD_TABLE_ELEMENT_REJECTS; "
-                + "the legitimate MutationBulkDeletePayloadField shape carries an ID-element data field.",
+                + "the legitimate MutationBulkDmlRecordField shape carries an ID-element data field.",
             """
             type Film @table(name: "film") { title: String }
             type FilmsPayload { films: [Film!] }
@@ -8239,7 +8244,7 @@ class GraphitronSchemaBuilderTest {
     enum MutationDmlCase implements ClassificationCase {
 
         INSERT_HAPPY_PATH(
-            "INSERT returning a @table type → MutationInsertTableField, tableInputArg.inputTable is the return-derived write target",
+            "INSERT returning a @table type → DmlTableField, tableInputArg.inputTable is the return-derived write target",
             """
             type Film @table(name: "film") { title: String }
             input FilmInput { title: String }
@@ -8247,9 +8252,9 @@ class GraphitronSchemaBuilderTest {
             type Mutation { createFilm(in: FilmInput!): Film @mutation(typeName: INSERT) }
             """,
             schema -> {
-                var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createFilm");
-                assertThat(f.tableInputArg().inputTable().tableName()).isEqualTo("film");
-                assertThat(f.tableInputArg().fieldBindings()).isEmpty();
+                var f = (MutationField.DmlTableField) schema.field("Mutation", "createFilm");
+                assertThat(insertInputOf(f).inputTable().tableName()).isEqualTo("film");
+                assertThat(insertInputOf(f).fieldBindings()).isEmpty();
                 var rex = (no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedSingle) f.returnExpression();
                 assertThat(rex.returnTypeName()).isEqualTo("Film");
                 // The classified reentry correlation: PK self-identity over the bound table's
@@ -8259,11 +8264,11 @@ class GraphitronSchemaBuilderTest {
                     .extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
                     .containsExactly("film_id");
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationInsertTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.DmlTableField.class); }
         },
 
         UPDATE_LOOKUP_KEY_COVERS_SINGLE_PK(
-            "R246: UPDATE input covering the single-column PK plus a non-key column → MutationUpdateTableField with the PK in keyColumns and the extra in setColumns",
+            "R246: UPDATE input covering the single-column PK plus a non-key column → DmlTableField with the PK in keyColumns and the extra in setColumns",
             """
             type Film @table(name: "film") { title: String }
             input FilmInput {
@@ -8274,13 +8279,13 @@ class GraphitronSchemaBuilderTest {
             type Mutation { updateFilm(in: FilmInput!): Film @mutation(typeName: UPDATE) }
             """,
             schema -> {
-                var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateFilm");
-                var ur = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) f.updateRows();
+                var f = (MutationField.DmlTableField) schema.field("Mutation", "updateFilm");
+                var ur = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) updateRowsOf(f);
                 assertThat(ur.matchedKey()).isInstanceOf(no.sikt.graphitron.rewrite.model.MatchedKey.PrimaryKey.class);
                 assertThat(ur.keyColumns()).extracting(k -> k.targetColumn().sqlName()).containsExactly("film_id");
                 assertThat(ur.setColumns()).extracting(s -> s.targetColumn().sqlName()).containsExactly("title");
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationUpdateTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.DmlTableField.class); }
         },
 
         UPDATE_NO_KEY_COVERAGE_REJECTED(
@@ -8334,7 +8339,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         UPDATE_FULL_COMPOSITE_PK_HAPPY(
-            "R246: UPDATE on composite-PK table covering all PK columns plus a non-key column → MutationUpdateTableField with both PK columns in keyColumns",
+            "R246: UPDATE on composite-PK table covering all PK columns plus a non-key column → DmlTableField with both PK columns in keyColumns",
             """
             type FilmActor @table(name: "film_actor") { actorId: Int! @field(name: "actor_id") }
             input FilmActorInput {
@@ -8346,8 +8351,8 @@ class GraphitronSchemaBuilderTest {
             type Mutation { updateFilmActor(in: FilmActorInput!): FilmActor @mutation(typeName: UPDATE) }
             """,
             schema -> {
-                var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateFilmActor");
-                var ur = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) f.updateRows();
+                var f = (MutationField.DmlTableField) schema.field("Mutation", "updateFilmActor");
+                var ur = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) updateRowsOf(f);
                 assertThat(ur.keyColumns()).extracting(k -> k.targetColumn().sqlName())
                     .containsExactlyInAnyOrder("actor_id", "film_id");
                 assertThat(ur.setColumns()).extracting(s -> s.targetColumn().sqlName())
@@ -8356,7 +8361,7 @@ class GraphitronSchemaBuilderTest {
 
         DELETE_FULL_COMPOSITE_PK_HAPPY(
             "R266: DELETE on a composite-PK table where the input covers all PK columns → "
-                + "MutationDeleteTableField with a DeleteRows.Identified carrier whose whereColumns "
+                + "DmlTableField with a DeleteRows.Identified carrier whose whereColumns "
                 + "are both PK columns.",
             """
             type FilmActor implements Node @table(name: "film_actor") @node { id: ID! @nodeId actorId: Int! @field(name: "actor_id") }
@@ -8368,8 +8373,8 @@ class GraphitronSchemaBuilderTest {
             type Mutation { deleteFilmActor(in: FilmActorInput!): ID @mutation(typeName: DELETE, table: "film_actor") }
             """,
             schema -> {
-                var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteFilmActor");
-                var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) f.deleteRows();
+                var f = (MutationField.DmlTableField) schema.field("Mutation", "deleteFilmActor");
+                var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) deleteRowsOf(f);
                 assertThat(deleteRows.matchedKey().columns()).extracting(c -> c.sqlName())
                     .containsExactlyInAnyOrder("actor_id", "film_id");
                 assertThat(deleteRows.whereColumns()).extracting(c -> c.targetColumn().sqlName())
@@ -8409,16 +8414,16 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var ur = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified)
-                    ((MutationField.MutationUpdateTableField) schema.field("Mutation", "updateFilm")).updateRows();
+                    updateRowsOf((MutationField.DmlTableField) schema.field("Mutation", "updateFilm"));
                 assertThat(ur.keyColumns()).extracting(k -> k.sdlFieldName()).containsExactly("filmId");
                 assertThat(ur.setColumns()).extracting(s -> s.sdlFieldName()).containsExactly("title", "description");
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationUpdateTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.DmlTableField.class); }
         },
 
         DML_NESTING_UPDATE_TABLE_RETURN_ADMITTED(
             "R186: direct-@table-return UPDATE with a nested non-@table grouping over outer-table columns "
-                + "→ MutationUpdateTableField; the nested leaves flatten across keyColumns / setColumns "
+                + "→ DmlTableField; the nested leaves flatten across keyColumns / setColumns "
                 + "with NestedInputField access paths",
             """
             type Film @table(name: "film") { title: String }
@@ -8428,8 +8433,8 @@ class GraphitronSchemaBuilderTest {
             type Mutation { updateFilm(in: FilmUpdateInput!): Film @mutation(typeName: UPDATE) }
             """,
             schema -> {
-                var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateFilm");
-                var ur = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) f.updateRows();
+                var f = (MutationField.DmlTableField) schema.field("Mutation", "updateFilm");
+                var ur = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) updateRowsOf(f);
                 // The top-level PK column stays a plain (non-nested) extraction.
                 assertThat(ur.keyColumns()).singleElement().satisfies(k -> {
                     assertThat(k.targetColumn().sqlName()).isEqualTo("film_id");
@@ -8446,12 +8451,12 @@ class GraphitronSchemaBuilderTest {
                     .isInstanceOfSatisfying(no.sikt.graphitron.rewrite.model.CallSiteExtraction.NestedInputField.class,
                         n -> assertThat(n.path()).containsExactly("details", "description"));
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationUpdateTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.DmlTableField.class); }
         },
 
         DML_NESTING_UPDATE_PAYLOAD_RETURN_ADMITTED(
             "R186: the canonical bulk + payload-returning UPDATE forcing-function shape classifies through "
-                + "the UpdateRowsWalker to MutationBulkUpdatePayloadField; nested leaves flatten into the "
+                + "the UpdateRowsWalker to MutationBulkDmlRecordField; nested leaves flatten into the "
                 + "UpdateRows carrier with their access paths",
             """
             type Film @table(name: "film") { title: String }
@@ -8462,8 +8467,8 @@ class GraphitronSchemaBuilderTest {
             type Mutation { updateFilmsPayload(in: [FilmUpdateInput!]!): FilmsPayload @mutation(typeName: UPDATE) }
             """,
             schema -> {
-                var f = (MutationField.MutationBulkUpdatePayloadField) schema.field("Mutation", "updateFilmsPayload");
-                var ur = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) f.updateRows();
+                var f = (MutationField.MutationBulkDmlRecordField) schema.field("Mutation", "updateFilmsPayload");
+                var ur = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) updateRowsOf(f);
                 assertThat(ur.keyColumns()).extracting(k -> k.targetColumn().sqlName()).containsExactly("film_id");
                 assertThat(ur.setColumns()).extracting(s -> s.targetColumn().sqlName())
                     .containsExactly("title", "description");
@@ -8472,12 +8477,12 @@ class GraphitronSchemaBuilderTest {
                         .isInstanceOfSatisfying(no.sikt.graphitron.rewrite.model.CallSiteExtraction.NestedInputField.class,
                             n -> assertThat(n.path()).first().isEqualTo("details")));
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationBulkUpdatePayloadField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationBulkDmlRecordField.class); }
         },
 
         DML_INSERT_NESTING_OK(
             "R186 (flips DML_NESTING_FIELD_DEFERRED): INSERT with a nested non-@table grouping → "
-                + "MutationInsertTableField; fields() retains the NestingField envelope and the nested "
+                + "DmlTableField; fields() retains the NestingField envelope and the nested "
                 + "leaf resolves against the outer @table. The flat leaf's wire access path is asserted "
                 + "by the compilation / execution tiers (the INSERT VALUES emit walks fields()); "
                 + "lookupKeyFields stays the top-level carrier filter (a NestingField is not one).",
@@ -8489,10 +8494,10 @@ class GraphitronSchemaBuilderTest {
             type Mutation { createFilm(in: FilmInput!): Film @mutation(typeName: INSERT) }
             """,
             schema -> {
-                var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createFilm");
+                var f = (MutationField.DmlTableField) schema.field("Mutation", "createFilm");
                 // fields() retains the SDL grouping envelope, and its nested leaf resolved to the
                 // outer film.title column (proving admission + outer-table resolution context).
-                assertThat(f.tableInputArg().fields()).singleElement()
+                assertThat(insertInputOf(f).fields()).singleElement()
                     .isInstanceOfSatisfying(no.sikt.graphitron.rewrite.model.InputField.NestingField.class,
                         nf -> assertThat(nf.fields()).singleElement().satisfies(leaf -> {
                             var cf = (no.sikt.graphitron.rewrite.model.InputField.ColumnBackedField) leaf;
@@ -8501,13 +8506,13 @@ class GraphitronSchemaBuilderTest {
                 // A NestingField is not a LookupKeyField, so the top-level carrier filter is empty;
                 // the nested wire access path lives on the walker carriers (UPDATE/DELETE) and is
                 // recomputed at emit from fields() for INSERT, never on this view.
-                assertThat(f.tableInputArg().lookupKeyFields()).isEmpty();
+                assertThat(insertInputOf(f).lookupKeyFields()).isEmpty();
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationInsertTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.DmlTableField.class); }
         },
 
         DML_DELETE_NESTING_OK(
-            "R186: DELETE with a nested grouping holding the PK column → MutationDeleteTableField; the "
+            "R186: DELETE with a nested grouping holding the PK column → DmlTableField; the "
                 + "nested leaf lands in DeleteRows.whereColumns with its access path and counts toward the "
                 + "single-row PK guard",
             """
@@ -8518,8 +8523,8 @@ class GraphitronSchemaBuilderTest {
             type Mutation { deleteFilm(in: FilmDeleteInput!): ID @mutation(typeName: DELETE, table: "film") }
             """,
             schema -> {
-                var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteFilm");
-                var dr = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) f.deleteRows();
+                var f = (MutationField.DmlTableField) schema.field("Mutation", "deleteFilm");
+                var dr = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) deleteRowsOf(f);
                 assertThat(dr.matchedKey()).isInstanceOf(no.sikt.graphitron.rewrite.model.MatchedKey.PrimaryKey.class);
                 assertThat(dr.whereColumns()).singleElement().satisfies(w -> {
                     assertThat(w.targetColumn().sqlName()).isEqualTo("film_id");
@@ -8528,7 +8533,7 @@ class GraphitronSchemaBuilderTest {
                             n -> assertThat(n.path()).containsExactly("keys", "filmId"));
                 });
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationDeleteTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.DmlTableField.class); }
         },
 
         DML_NESTING_DEEP(
@@ -8543,8 +8548,8 @@ class GraphitronSchemaBuilderTest {
             type Mutation { updateFilm(in: FilmUpdateInput!): Film @mutation(typeName: UPDATE) }
             """,
             schema -> {
-                var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateFilm");
-                var ur = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) f.updateRows();
+                var f = (MutationField.DmlTableField) schema.field("Mutation", "updateFilm");
+                var ur = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) updateRowsOf(f);
                 assertThat(ur.setColumns()).singleElement().satisfies(s -> {
                     assertThat(s.targetColumn().sqlName()).isEqualTo("title");
                     assertThat(s.extraction())
@@ -8556,7 +8561,7 @@ class GraphitronSchemaBuilderTest {
                             });
                 });
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationUpdateTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.DmlTableField.class); }
         },
 
         DML_NESTING_WITH_NODEID_FK_TARGET(
@@ -8572,8 +8577,8 @@ class GraphitronSchemaBuilderTest {
             type Mutation { updateCity(in: CityUpdateInput!): City @mutation(typeName: UPDATE) }
             """,
             schema -> {
-                var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateCity");
-                var ur = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) f.updateRows();
+                var f = (MutationField.DmlTableField) schema.field("Mutation", "updateCity");
+                var ur = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) updateRowsOf(f);
                 assertThat(ur.setColumns()).singleElement().satisfies(s -> {
                     assertThat(s.targetColumn().sqlName()).isEqualTo("country_id");
                     assertThat(s.extraction())
@@ -8585,7 +8590,7 @@ class GraphitronSchemaBuilderTest {
                             });
                 });
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationUpdateTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.DmlTableField.class); }
         },
 
         DML_NESTING_UNRESOLVABLE_LEAF(
@@ -8719,7 +8724,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         DML_INSERT_LIST_LIST_OK(
-            "DML INSERT with listed input + listed @table return → MutationInsertTableField with tia.list() == true",
+            "DML INSERT with listed input + listed @table return → DmlTableField with tia.list() == true",
             """
             type Film @table(name: "film") { title: String }
             input FilmInput { title: String }
@@ -8727,8 +8732,8 @@ class GraphitronSchemaBuilderTest {
             type Mutation { createFilms(in: [FilmInput!]!): [Film!]! @mutation(typeName: INSERT) }
             """,
             schema -> {
-                var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createFilms");
-                assertThat(f.tableInputArg().list()).isTrue();
+                var f = (MutationField.DmlTableField) schema.field("Mutation", "createFilms");
+                assertThat(insertInputOf(f).list()).isTrue();
                 var rex = (no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList) f.returnExpression();
                 assertThat(rex.returnTypeName()).isEqualTo("Film");
                 assertThat(rex.reentryCorrelation().targetTable().tableName()).isEqualTo("film");
@@ -8738,7 +8743,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         DML_UPDATE_LIST_LIST_OK(
-            "DML UPDATE with listed input + listed @table return → MutationUpdateTableField with inputArg.list() == true",
+            "DML UPDATE with listed input + listed @table return → DmlTableField with inputArg.list() == true",
             """
             type Film @table(name: "film") { title: String }
             input FilmInput {
@@ -8749,8 +8754,8 @@ class GraphitronSchemaBuilderTest {
             type Mutation { updateFilms(in: [FilmInput!]!): [Film!]! @mutation(typeName: UPDATE) }
             """,
             schema -> {
-                var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateFilms");
-                assertThat(f.inputArg().list()).isTrue();
+                var f = (MutationField.DmlTableField) schema.field("Mutation", "updateFilms");
+                assertThat(updateArgOf(f).list()).isTrue();
                 var rex = (no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList) f.returnExpression();
                 assertThat(rex.returnTypeName()).isEqualTo("Film");
                 assertThat(rex.reentryCorrelation().targetTable().tableName()).isEqualTo("film");
@@ -8760,7 +8765,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         DML_INSERT_DISCRIMINATED_INTERFACE_SINGLE(
-            "R406: INSERT returning a single-table discriminated interface → MutationInsertTableField "
+            "R406: INSERT returning a single-table discriminated interface → DmlTableField "
                 + "carrying DmlReturnExpression.DiscriminatedSingle with the discriminator column, known "
                 + "values, and participant set (not ProjectedSingle).",
             """
@@ -8786,7 +8791,7 @@ class GraphitronSchemaBuilderTest {
             type Mutation { createContent(in: ContentInput!): Content @mutation(typeName: INSERT, table: "content") }
             """,
             schema -> {
-                var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createContent");
+                var f = (MutationField.DmlTableField) schema.field("Mutation", "createContent");
                 assertThat(f.returnExpression())
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedSingle.class);
                 var ds = (no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedSingle) f.returnExpression();
@@ -8798,11 +8803,11 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f.returnExpression())
                     .isNotInstanceOf(no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedSingle.class);
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationInsertTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.DmlTableField.class); }
         },
 
         DML_UPDATE_DISCRIMINATED_INTERFACE_SINGLE(
-            "R406: UPDATE returning a single-table discriminated interface → MutationUpdateTableField "
+            "R406: UPDATE returning a single-table discriminated interface → DmlTableField "
                 + "carrying DmlReturnExpression.DiscriminatedSingle (not ProjectedSingle).",
             """
             interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
@@ -8825,7 +8830,7 @@ class GraphitronSchemaBuilderTest {
             type Mutation { updateContent(in: ContentUpdateInput!): Content @mutation(typeName: UPDATE, table: "content") }
             """,
             schema -> {
-                var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateContent");
+                var f = (MutationField.DmlTableField) schema.field("Mutation", "updateContent");
                 assertThat(f.returnExpression())
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedSingle.class);
                 var ds = (no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedSingle) f.returnExpression();
@@ -8835,12 +8840,12 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f.returnExpression())
                     .isNotInstanceOf(no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedSingle.class);
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationUpdateTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.DmlTableField.class); }
         },
 
         DML_INSERT_DISCRIMINATED_INTERFACE_LIST(
             "R406: INSERT with listed input returning a listed single-table discriminated interface "
-                + "([Content!]!) → MutationInsertTableField carrying DmlReturnExpression.DiscriminatedList "
+                + "([Content!]!) → DmlTableField carrying DmlReturnExpression.DiscriminatedList "
                 + "(not ProjectedList).",
             """
             interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
@@ -8863,8 +8868,8 @@ class GraphitronSchemaBuilderTest {
             type Mutation { createContents(in: [ContentInput!]!): [Content!]! @mutation(typeName: INSERT, table: "content") }
             """,
             schema -> {
-                var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createContents");
-                assertThat(f.tableInputArg().list()).isTrue();
+                var f = (MutationField.DmlTableField) schema.field("Mutation", "createContents");
+                assertThat(insertInputOf(f).list()).isTrue();
                 assertThat(f.returnExpression())
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedList.class);
                 var dl = (no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedList) f.returnExpression();
@@ -8879,7 +8884,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f.returnExpression())
                     .isNotInstanceOf(no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList.class);
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationInsertTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.DmlTableField.class); }
         },
 
         DML_DELETE_DISCRIMINATED_INTERFACE_REJECTED(
@@ -9107,7 +9112,7 @@ class GraphitronSchemaBuilderTest {
             type Mutation { createFilm(in: FilmInput!): Film @mutation(typeName: INSERT) }
             """,
             schema -> {
-                var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createFilm");
+                var f = (MutationField.DmlTableField) schema.field("Mutation", "createFilm");
                 var rex = (no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedSingle) f.returnExpression();
                 assertThat(rex.returnTypeName()).isEqualTo("Film");
                 assertThat(rex.reentryCorrelation().targetTable().tableName()).isEqualTo("film");
@@ -9219,7 +9224,7 @@ class GraphitronSchemaBuilderTest {
         // ===== New admission and rejection cases =====
 
         // The two bare DELETE-admission verdicts live in the spec-by-example corpus
-        // (`mutation-roots` example): DELETE admits onto MutationDeleteTableField via a
+        // (`mutation-roots` example): DELETE admits onto DmlTableField via a
         // PK-covering filter input (deleteFilm) or an explicit multiRow: true broadcast over a
         // non-PK filter (deleteFilmsBroadcast). This enum keeps DELETE_MUTATION_FIELD, which
         // asserts the DeleteRows slot detail.
@@ -9391,10 +9396,7 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    @ProjectionFor({
-        MutationField.MutationInsertTableField.class, MutationField.MutationUpdateTableField.class,
-        MutationField.MutationDeleteTableField.class
-    })
+    @ProjectionFor(MutationField.DmlTableField.class)
     void dmlMutationProjectionCarriesKindAndTablePayload() {
         // Three independent snapshots — separate registries because the UPDATE / UPSERT input
         // shapes don't cleanly coexist with the INSERT-canonical "title" column in one fixture.
@@ -9430,9 +9432,7 @@ class GraphitronSchemaBuilderTest {
 
     @Test
     @ProjectionFor({
-        MutationField.MutationDmlRecordField.class, MutationField.MutationBulkDmlRecordField.class,
-        MutationField.MutationUpdatePayloadField.class, MutationField.MutationBulkUpdatePayloadField.class,
-        MutationField.MutationDeletePayloadField.class, MutationField.MutationBulkDeletePayloadField.class
+        MutationField.MutationDmlRecordField.class, MutationField.MutationBulkDmlRecordField.class
     })
     void dmlRecordProjectionCarriesBulkFlagAndKind() {
         // Single (non-bulk) DML record carrier — bulk = false.
@@ -9495,8 +9495,8 @@ class GraphitronSchemaBuilderTest {
         assertThat(updBulk.bulk()).isTrue();
         assertThat(updBulk.kind()).isEqualTo(DmlKind.UPDATE);
 
-        // The payload-returning DELETE leaves (MutationDeletePayloadField /
-        // MutationBulkDeletePayloadField) project to DmlRecord with kind DELETE off the slim
+        // The payload-returning DELETE leaves (MutationDmlRecordField /
+        // MutationBulkDmlRecordField) project to DmlRecord with kind DELETE off the slim
         // InputArgRef, the same hover shape as the UPDATE payload carriers above. Their only
         // admissible data field is an ID-element (the @table-element projection is rejected at
         // classification), which requires the synthesised __NODE_TYPE_ID metadata absent from the default

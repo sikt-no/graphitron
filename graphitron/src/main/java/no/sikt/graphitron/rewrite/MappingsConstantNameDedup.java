@@ -187,18 +187,9 @@ public final class MappingsConstantNameDedup {
      */
     private static GraphitronField withResolvedChannel(GraphitronField field, String newName) {
         return switch (field) {
-            case MutationField.MutationInsertTableField f -> new MutationField.MutationInsertTableField(
-                f.parentTypeName(), f.name(), f.location(), f.returnExpression(), f.dialectRequirement(),
-                f.tableInputArg(), f.errorChannel().map(c -> renameRouted(c, newName)));
-            case MutationField.MutationUpdateTableField f -> new MutationField.MutationUpdateTableField(
-                f.parentTypeName(), f.name(), f.location(), f.returnExpression(), f.dialectRequirement(),
-                f.inputArg(), f.updateRows(), f.errorChannel().map(c -> renameRouted(c, newName)));
-            case MutationField.MutationDeleteTableField f -> new MutationField.MutationDeleteTableField(
-                f.parentTypeName(), f.name(), f.location(), f.returnExpression(), f.dialectRequirement(),
-                f.inputArg(), f.deleteRows(), f.errorChannel().map(c -> renameRouted(c, newName)));
-            case MutationField.MutationUpsertTableField f -> new MutationField.MutationUpsertTableField(
-                f.parentTypeName(), f.name(), f.location(), f.returnExpression(), f.dialectRequirement(),
-                f.tableInputArg(), f.errorChannel().map(c -> renameRouted(c, newName)));
+            case MutationField.DmlTableField f -> new MutationField.DmlTableField(
+                f.parentTypeName(), f.name(), f.location(), f.returnExpression(),
+                f.write(), f.errorChannel().map(c -> renameRouted(c, newName)));
             case MutationField.MutationServiceTableField f -> new MutationField.MutationServiceTableField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.serviceMethodCall(), f.errorChannel().map(c -> renameMapped(c, newName)));
             case MutationField.MutationServiceRecordField f -> new MutationField.MutationServiceRecordField(
@@ -218,18 +209,6 @@ public final class MappingsConstantNameDedup {
                 f.errorChannel().map(c -> renameRouted(c, newName)));
             case MutationField.MutationBulkDmlRecordField f -> new MutationField.MutationBulkDmlRecordField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.write(),
-                f.errorChannel().map(c -> renameRouted(c, newName)));
-            case MutationField.MutationUpdatePayloadField f -> new MutationField.MutationUpdatePayloadField(
-                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.inputArg(), f.updateRows(),
-                f.errorChannel().map(c -> renameRouted(c, newName)));
-            case MutationField.MutationBulkUpdatePayloadField f -> new MutationField.MutationBulkUpdatePayloadField(
-                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.inputArg(), f.updateRows(),
-                f.errorChannel().map(c -> renameRouted(c, newName)));
-            case MutationField.MutationDeletePayloadField f -> new MutationField.MutationDeletePayloadField(
-                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.inputArg(), f.deleteRows(),
-                f.errorChannel().map(c -> renameRouted(c, newName)));
-            case MutationField.MutationBulkDeletePayloadField f -> new MutationField.MutationBulkDeletePayloadField(
-                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.inputArg(), f.deleteRows(),
                 f.errorChannel().map(c -> renameRouted(c, newName)));
             default -> throw new IllegalStateException(
                 "MappingsConstantNameDedup: unhandled WithErrorChannel variant "

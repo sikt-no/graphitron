@@ -530,6 +530,22 @@ Slice-6a baseline (measured 2026-08-03, first dissolution landed):
   at 18.
 - Emit byte-identical through both of the slice's commits.
 
+Slice-6b baseline (measured 2026-08-03, the DML verb split dissolved):
+
+- Leaf ratchet fell 11/15/22/4 to 11/8/22/4, the largest single drop of the programme: the
+  four direct-return verb leaves folded into one `DmlTableField` record and the four
+  payload-verb leaves onto the two record carriers, with
+  the verb identity and the per-verb input surfaces carried as the sealed `Write.Dml`
+  payload, so the reconstruction key `leaf = f(source, delivery, target)` now holds for all
+  eight retired leaves (each differed from a sibling on the write verb alone).
+- Plan leaf references fell 132 to 128 (the edge producer's four payload-verb arms folded
+  onto the surviving write-carrying arms, all keeping the condition-glue derivation);
+  generator case patterns fell 69 to 62 (the dispatch block's four verb arms merged into one
+  write-arm fork and its four payload-carrier arms folded onto the two record-carrier arms);
+  the generator instanceof pin is unchanged at 69, entry points at 18, launcher render
+  sites at 8.
+- Emit byte-identical through both of the slice's commits.
+
 Re-run after the keystone and after the last 6x slice. What matters is direction: leaf counts and
 the minting-site count fall with each dissolution; `FieldBuilder` sheds its per-verb router weight;
 the dispatch pins fall as membership re-sources. A slice that moves none of them is a slice worth
@@ -960,6 +976,85 @@ Decisions bound here:
 
 Slice-6a baseline: recorded under Progress measurement above.
 
+### Slice 6b (landed 2026-08-03): the DML verb split dissolves
+
+Landed in two commits on the additive-then-destructive discipline: the first lands the verb
+payload's sealed home and re-keys the record carriers onto it with the reachable-state set
+unchanged, the second folds the eight verb-encoding leaves.
+
+First commit (the write payload lands):
+
+- The member family's `Write` seal gained the intermediate `Dml` seal (Insert, Upsert,
+  Update, Delete) exposing the write-target table and the input cardinality uniformly over
+  the arms' structurally different input surfaces; the two record carriers re-keyed their
+  `DmlKind` slot plus `TableInputArg` component onto one carried `Write.Dml` payload,
+  exposed through the new `DmlWriteField` capability (WALKED_FACT, on the
+  `HasInputRecordShape` precedent). The member view and the minted relation's payload
+  extraction read the capability, so the write member row is the leaf's component by
+  identity, not by copy, and both `recordCarrierWrite` crosswalk helpers (including the
+  stringly-typed one) retired. The consult refused the parallel model seal a 6a-shaped
+  design would have minted: unlike `LookupResolution` it would carry no axis the member arm
+  cannot (WRITE is required on every write-carrying leaf, so there is no `None` arm to
+  earn it), and identity beats a mapping a pin must keep proving equivalent.
+- Two emit bodies that were dead by constructor rejection (the `@value`-driven record
+  UPDATE chain and its bulk per-row twin) were deleted, so the fold could not leave two
+  UPDATE emit shapes on one leaf; the edge producer's record-carrier arms joined the
+  condition-glue derivation the class javadoc already declared instead of hard-coding the
+  absence (behaviorally identical: no mutation coordinate has a condition row).
+
+Second commit (the fold):
+
+- The four `DmlTableField` verb leaves folded into one direct-return record and the four
+  payload-verb leaves onto the two record carriers; `UpdateRowsField` and `DeleteRowsField`
+  (capability seals with zero readers, the `LookupField` shape) deleted. The classifier's
+  per-verb resolution lattices survive as trigger-fact resolution (the walkers and the
+  write-target rungs genuinely differ per verb); what collapsed is the minting, now one
+  record per family with the verb riding the write arm.
+- The dialect requirement became a derived accessor on the merged record, computed from
+  the write arm and its input cardinality, never stored beside them: the stored slot would
+  have made mispairings like a Delete arm carrying RequiresFamily constructible with no
+  rejector, and the derivation deletes the classifier's three per-site computations. The
+  DELETE construction invariant re-grained onto the real fact (a Delete arm pairs only
+  with Encoded* returns, where the old ctor rejected Projected* and left Discriminated*
+  representable on a prose contract), which makes the validator's reentry key-arity check
+  provably vacuous for Delete; the validator's ten mutation-DML arms became three with one
+  shared method.
+- The catalog projects the verb, write-target table and input-type name off the write arm;
+  `DmlKind` survives as the classifier's parse vocabulary and the catalog surface
+  (`FieldClassification.DmlMutation` / `DmlRecord` unchanged, so the LSP and MCP consumers
+  are untouched). `DECLARED_SHAPES` fell from ten mutation-DML entries to three; the
+  merged direct-return entry widens DELETE's declared optionals to include REENTRY, and
+  the entry's comment names the compensation: the fence moved below the image check, to
+  the constructor, where the reentry-minting DELETE is unconstructible rather than
+  image-rejected.
+
+Decisions bound here:
+
+- **Bulk-ness stays two carrier leaves, named honestly**: the single/bulk pair differs on
+  neither source, delivery, nor its own target (the carrier is single on both sides; the
+  list lives on the data field), so the distinguishing fact is input cardinality, an
+  input-side fact outside the reconstruction key. The acceptance criterion tolerates the
+  pair as a deliberate exception whose owner is the input-side classification half R222
+  keeps; folding it is not operation-relation work.
+- **Dependency direction**: the write payload originates at leaf construction (the
+  classifier resolves the write target, the walkers produce the carriers) and the member
+  view reads it off the leaf by identity. This edge is terminal for the programme; no
+  later slice moves the walkers upstream of leaf construction.
+- **The UPSERT consumer statement** lost its two leaf-keyed homes (the generated shapes
+  row and the `ExemptionRegistry` projection/corpus exemptions keyed by the retired leaf);
+  the surviving statements are the classifier's typed deferral, the code-generation
+  triggers row, and `Operation.Upsert` in the known-gaps registry. The per-verb generated
+  row degrades to prose deliberately; a verb dimension in the leaf-coverage tool was
+  refused as scope creep.
+- **Test fixtures follow the write arm**: the four per-verb validation files became
+  verb-gated cases on the merged record (`InsertMutationValidationTest` and siblings), and
+  payload reads across the test tree go through `DmlWriteReads`' asserting extractors, so
+  a fixture that silently classifies onto a different verb fails with the discriminating
+  message. The dialect pins in `TypeFetcherGeneratorTest` re-anchored onto the derived
+  reasons (the injected fixture-only reason strings retired with the stored slot).
+
+Slice-6b baseline: recorded under Progress measurement above.
+
 ## Retired vocabulary
 
 Declared per the item-file conventions in `roadmap/workflow.adoc`; each term names the slice that
@@ -972,6 +1067,8 @@ retires it, and the sweep at each gate runs against what has actually shipped.
 | `LookupField` (the capability seal) | 6a | the sealed `LookupResolution` carried total on the table-target leaves |
 | `LookupValuesJoinEmitter` (the input-rows adapter) | 6a | `render/LookupRows`, called with the launcher row's mapping payload |
 | `MutationField.DmlTableField`'s four verb leaves; the payload arms' verb halves | 6b | write members carrying the verb; source/target grain leaves |
+| `UpdateRowsField`, `DeleteRowsField` (the reader-less capability seals) | 6b | the Update / Delete write arms carrying the walker carriers, read via `DmlWriteField` |
+| `MutationDmlRecordField.kind()` (the stored `DmlKind` slot) and the stored `dialectRequirement` component | 6b | the carried write arm; the dialect requirement derived from arm plus input cardinality |
 | `LauncherRelation`'s "this family is single-operation" javadoc claim | 3 | the reentry and write members; the real key stated |
 | `requireNoGeneratedFilterOnLookup` (the producer backstop) | 6a | the fact-grain rejection: a condition member carrying a generated `WhereFilter` term co-present with a lookup member |
 | `DimensionTuple`'s single `Class<? extends Operation>` component | 7 | the member-set assertion |

@@ -927,27 +927,27 @@ class TypeFetcherGeneratorTest {
     // ===== typed DialectRequirement rendered as the request-time guard =====
     //
     // emitDialectGuard renders the guard from the model's typed DialectRequirement. The
-    // RequiresFamily(POSTGRES) arm is exercised end-to-end by the reachable bulk-UPDATE pipeline
-    // path (FetcherPipelineTest). UPSERT's RejectsFamily(ORACLE) arm cannot classify through the
-    // pipeline (UPSERT is refused at the classifier dispatch and deferred), so its guard rendering is
-    // pinned here against a directly-constructed field. The None arm (INSERT / DELETE / single
-    // UPDATE) must emit no guard at all.
+    // RequiresFamily(POSTGRES) branch is exercised end-to-end by the reachable bulk-UPDATE
+    // pipeline path (FetcherPipelineTest). The Upsert branch's RejectsFamily(ORACLE) cannot
+    // classify through the pipeline (UPSERT is refused at the classifier dispatch and deferred),
+    // so its derivation and guard rendering are pinned here against a directly-constructed
+    // field. The None branch (INSERT / DELETE / single UPDATE) must emit no guard at all.
 
     @Test
     void upsertFetcher_rejectsFamilyOracle_emitsDialectGuardFromModel() {
-        // The Oracle rejection is typed data on the model; emitDialectGuard renders it as a
-        // self-contained family() == "ORACLE" check that throws the model's reason() message. The
+        // The Oracle rejection derives on the model from the Upsert write arm; emitDialectGuard
+        // renders it as a self-contained family() == "ORACLE" check throwing the derived
+        // reason() message. The
         // emitted code references no generator-internal class (graphitron is test-scoped in
         // consumers; these fetchers compile as consumer main sources).
-        var upsert = new MutationField.MutationUpsertTableField(
+        var upsert = new MutationField.DmlTableField(
             "Mutation", "upsertFilm", null,
             new DmlReturnExpression.EncodedSingle(new HelperRef.Encode(
                 ClassName.get("fake.code.generated", "NodeIdEncoder"), "encodeFilm",
                 List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Long")))),
-            new DialectRequirement.RejectsFamily(SqlDialectFamily.ORACLE,
-                "@mutation(typeName: UPSERT) is not supported on Oracle: test reason"),
-            ArgumentRef.InputTypeArg.TableInputArg.of(
-                "in", "FilmInput", true, false, FILM_TABLE, List.of(), Optional.empty(), List.of()),
+            new no.sikt.graphitron.rewrite.model.OperationMember.Write.Upsert(
+                ArgumentRef.InputTypeArg.TableInputArg.of(
+                    "in", "FilmInput", true, false, FILM_TABLE, List.of(), Optional.empty(), List.of())),
             Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
             List.of(upsert), DEFAULT_OUTPUT_PACKAGE);
@@ -960,21 +960,21 @@ class TypeFetcherGeneratorTest {
             .doesNotContain("SqlDialectFamily")
             .as("throws UnsupportedOperationException carrying the model's reason() message")
             .contains("throw new java.lang.UnsupportedOperationException(")
-            .contains("@mutation(typeName: UPSERT) is not supported on Oracle: test reason");
+            .contains("@mutation(typeName: UPSERT) is not supported on Oracle");
     }
 
     @Test
     void insertFetcher_noneRequirement_emitsNoDialectGuard() {
-        // INSERT carries DialectRequirement.None; the None arm of emitDialectGuard emits nothing,
+        // The Insert arm derives DialectRequirement.None; the None arm of emitDialectGuard emits nothing,
         // so the fetcher body references no SqlDialectFamily and throws no dialect guard.
-        var insert = new MutationField.MutationInsertTableField(
+        var insert = new MutationField.DmlTableField(
             "Mutation", "createFilm", null,
             new DmlReturnExpression.EncodedSingle(new HelperRef.Encode(
                 ClassName.get("fake.code.generated", "NodeIdEncoder"), "encodeFilm",
                 List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Long")))),
-            DialectRequirement.None.INSTANCE,
-            ArgumentRef.InputTypeArg.TableInputArg.of(
-                "in", "FilmInput", true, false, FILM_TABLE, List.of(), Optional.empty(), List.of()),
+            new no.sikt.graphitron.rewrite.model.OperationMember.Write.Insert(
+                ArgumentRef.InputTypeArg.TableInputArg.of(
+                    "in", "FilmInput", true, false, FILM_TABLE, List.of(), Optional.empty(), List.of())),
             Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
             List.of(insert), DEFAULT_OUTPUT_PACKAGE);
