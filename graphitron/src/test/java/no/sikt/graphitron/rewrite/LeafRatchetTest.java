@@ -33,8 +33,11 @@ class LeafRatchetTest {
      * Installed at 12 (census 2026-08-02, unchanged from the 2026-08-01 baseline).
      * 12 to 11 (2026-08-03): QueryLookupTableField folded onto QueryTableField plus the
      * lookup member; the leaf's information became the {@code LookupResolution} payload.
+     * 11 to 10 (2026-08-03): QueryRoutineTableField folded onto QueryTableField plus the
+     * {@code RoutineResolution} source axis; routine-sourced-ness became a source component
+     * (the child side's joinPath precedent), closing the read-family dissolution.
      */
-    private static final int QUERY_FIELD_LEAVES = 11;
+    private static final int QUERY_FIELD_LEAVES = 10;
 
     /**
      * Installed at 15 (census 2026-08-02, unchanged from the 2026-08-01 baseline).

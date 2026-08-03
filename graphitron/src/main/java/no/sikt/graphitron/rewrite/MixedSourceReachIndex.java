@@ -77,8 +77,7 @@ final class MixedSourceReachIndex {
         // edge does (the slot fetchers read the pivot subselect's Record by name), so it
         // contributes the identical NESTING_RECORD reach to the union.
         switch (field) {
-            case ChildField.PivotField pf -> out.add(pf.spec().projectionTypeName());
-            case ChildField.BatchedPivotField bpf -> out.add(bpf.spec().projectionTypeName());
+            case ChildField.PivotSpecField p -> out.add(p.spec().projectionTypeName());
             default -> { }
         }
         if (!(field instanceof ChildField.NestingField nf)) {

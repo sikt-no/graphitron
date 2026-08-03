@@ -536,8 +536,7 @@ public class GraphitronSchemaBuilder {
         // registration, and a class-backed carrier verdict from a @service producer stands when
         // registered first. Slots are scalar leaves; no recursion applies.
         String pivotProjection = switch (field) {
-            case no.sikt.graphitron.rewrite.model.ChildField.PivotField pf -> pf.spec().projectionTypeName();
-            case no.sikt.graphitron.rewrite.model.ChildField.BatchedPivotField bpf -> bpf.spec().projectionTypeName();
+            case no.sikt.graphitron.rewrite.model.ChildField.PivotSpecField p -> p.spec().projectionTypeName();
             default -> null;
         };
         if (pivotProjection != null) {

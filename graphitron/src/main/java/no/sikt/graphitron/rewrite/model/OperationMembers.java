@@ -112,11 +112,14 @@ public final class OperationMembers {
      * independently, so neither enumeration can silently lag the other.
      */
     public static final Map<Class<? extends OutputField>, DeclaredShape> DECLARED_SHAPES = Map.ofEntries(
-        // Query roots.
+        // Query roots. The routine-sourced read shares this entry since the source axis folded
+        // onto the leaf: read alone that widens the routine coordinate's admitted image to the
+        // full optional set, but the real fence sits below the image check, in the leaf
+        // constructor, which rejects a Chain source beside any populated read surface, so a
+        // condition-, ordering-, paginate- or lookup-minting routine read is unconstructible
+        // rather than image-rejected.
         Map.entry(QueryField.QueryTableField.class,
             shape(Set.of(Kind.SELECT), withLookupOptional(TABLE_READ_OPTIONALS))),
-        Map.entry(QueryField.QueryRoutineTableField.class,
-            shape(Set.of(Kind.SELECT), Set.of())),
         Map.entry(QueryField.QueryTableInterfaceField.class,
             shape(Set.of(Kind.SELECT), TABLE_READ_OPTIONALS)),
         Map.entry(QueryField.QueryInterfaceField.class,
@@ -228,7 +231,6 @@ public final class OperationMembers {
             case QueryField.QueryTableField f ->
                 withResolvedLookup(tableRead(f.returnType().table(), List.of(), f.filters(), f.orderBy(), f.pagination()),
                     f.lookup());
-            case QueryField.QueryRoutineTableField _ -> List.of(new Select());
             case QueryField.QueryTableInterfaceField f ->
                 tableRead(f.returnType().table(), List.of(), f.filters(), f.orderBy(), f.pagination());
             case QueryField.QueryInterfaceField f -> polymorphicRootRead(f.participantFilters());

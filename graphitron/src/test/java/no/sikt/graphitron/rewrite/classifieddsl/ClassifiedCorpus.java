@@ -623,7 +623,7 @@ public final class ClassifiedCorpus {
         /*
          * @routine: a table-valued read function backing a root list field. jOOQ models the
          * function as a catalog Table<R>, so the verdict is the same shape as a plain catalog read
-         * (QueryRoutineTableField, Query / Fetch / List(Table)); only the FROM source differs (the
+         * (a routine-sourced QueryTableField, Query / Fetch / List(Table)); only the FROM source differs (the
          * generated Routines convenience method, with IN params bound from GraphQL arguments). The
          * routine resolves against the sakila-db fixture catalog.
          */

@@ -77,13 +77,13 @@ public final class RoutineCallEmitter {
                         sc.column().javaName());
                 // Classifier-unreachable: a SourceColumn binding reads the previous
                 // chain node's column, but a None head has no previous node. The root chain pins
-                // every start binding to ParamSource.Arg (QueryRoutineTableField's compact
+                // every start binding to ParamSource.Arg (RoutineChain's compact
                 // constructor; RoutineDirectiveResolver rejects columnMapping at root), so this
                 // combination cannot be produced.
                 case PreviousNodeRef.None ignored -> throw new IllegalStateException(
                     "correlated column binding for parameter '" + b.routineParamName()
                     + "' reached a headless (None) routine call — a root chain's head has no "
-                    + "previous node, and QueryRoutineTableField pins every start binding to "
+                    + "previous node, and RoutineChain pins every start binding to "
                     + "ParamSource.Arg");
             };
             case ParamSource.Context ignored -> throw nonRoutineParamSource(b);

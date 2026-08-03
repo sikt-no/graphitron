@@ -22,6 +22,7 @@ import no.sikt.graphitron.rewrite.model.OperationMembers;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.OutputField;
 import no.sikt.graphitron.rewrite.model.QueryField;
+import no.sikt.graphitron.rewrite.model.RoutineResolution;
 import no.sikt.graphitron.rewrite.model.RootField;
 import no.sikt.graphitron.rewrite.model.TargetShape;
 import no.sikt.graphitron.rewrite.model.TenantBinding;
@@ -211,6 +212,9 @@ public final class LauncherCommands {
             ConditionRelation conditions, GeneratedUnits units) {
         return switch (field) {
             case QueryField.QueryTableField qtf -> {
+                if (qtf.routine() instanceof RoutineResolution.Chain chain) {
+                    yield routineRow(qtf, chain, units);
+                }
                 var mapping = keyedLookupOf(
                     schema.operationMembersOf(qtf.parentTypeName(), qtf.name()));
                 yield mapping != null
@@ -219,7 +223,6 @@ public final class LauncherCommands {
                         facetPlanOf(schema, qtf, conditions, units),
                         tenancyOf(schema, qtf, units));
             }
-            case QueryField.QueryRoutineTableField qrtf -> routineRow(qrtf, units);
             case QueryField.QueryTableInterfaceField qtif -> interfaceRow(qtif,
                 schema.joinedTableReprojectionOf(qtif.returnType().returnTypeName()),
                 whereOf(qtif.parentTypeName(), qtif.name(), conditions), units);
@@ -415,12 +418,14 @@ public final class LauncherCommands {
             }
             rows.add(switch (field) {
                 case QueryField.QueryTableField qtf -> {
+                    if (qtf.routine() instanceof RoutineResolution.Chain chain) {
+                        yield routineRow(qtf, chain, units);
+                    }
                     var mapping = keyedLookupOf(OperationMembers.membersOf(qtf));
                     yield mapping != null
                         ? lookupRow(qtf, mapping, glueFromFilters(qtf, units), units)
                         : row(qtf, glueFromFilters(qtf, units), units, null, new TenantStrategy.Single());
                 }
-                case QueryField.QueryRoutineTableField qrtf -> routineRow(qrtf, units);
                 // The residence split is a classified-schema fact; a schema-free assembly's
                 // joined participants carry no base slice and no detail fields, the same
                 // fallback the retired inline assembly took on a null schema.
@@ -521,25 +526,26 @@ public final class LauncherCommands {
     }
 
     /**
-     * A {@code @routine} chain row: the source arm carries the borrowed start expression and the
-     * narrowed hop list (the chain constructor's own guarantee), the projection targets the
-     * terminus type. No WHERE slot (the leaf carries no filter surface, so no condition row
-     * exists) and no ordering (root routine lists are unordered by classification; the
-     * {@code @orderBy} surface is deferred on the chain).
+     * A {@code @routine} chain row, the {@link RoutineResolution.Chain} fork of the root table
+     * read: the source arm carries the borrowed start expression and the narrowed hop list (the
+     * chain constructor's own guarantee), the projection targets the terminus type. No WHERE
+     * slot and no ordering (the leaf constructor pins the chain-sourced read surface empty, so
+     * no condition row exists and root routine lists are unordered by classification).
      */
-    private static LauncherCommand routineRow(QueryField.QueryRoutineTableField qrtf, GeneratedUnits units) {
-        var hops = qrtf.chain().hops().stream()
+    private static LauncherCommand routineRow(QueryField.QueryTableField qtf,
+            RoutineResolution.Chain chain, GeneratedUnits units) {
+        var hops = chain.chain().hops().stream()
             .map(step -> (no.sikt.graphitron.rewrite.model.JoinStep.Hop) step)
             .toList();
         return new LauncherCommand(
-            units.launcherMethod(qrtf.parentTypeName(), qrtf.name()),
-            FieldCoordinates.coordinates(qrtf.parentTypeName(), qrtf.name()),
-            new LaunchSource.RoutineChain(qrtf.chain().start(), hops,
-                units.typeClass(qrtf.returnType().returnTypeName())),
+            units.launcherMethod(qtf.parentTypeName(), qtf.name()),
+            FieldCoordinates.coordinates(qtf.parentTypeName(), qtf.name()),
+            new LaunchSource.RoutineChain(chain.chain().start(), hops,
+                units.typeClass(qtf.returnType().returnTypeName())),
             null,
             new Invocation.Direct(),
             new TenantStrategy.Single(),
-            qrtf.returnType().wrapper().isList()
+            qtf.returnType().wrapper().isList()
                 ? new ResultShape.RecordList(null)
                 : new ResultShape.SingleRecord());
     }

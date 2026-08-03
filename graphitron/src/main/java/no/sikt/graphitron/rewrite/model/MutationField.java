@@ -156,10 +156,12 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * {@code @table} type. The routine never appears in step 2's {@code FROM}: re-invoking it
      * would re-execute the write, so the field's return binds to the re-read only.
      *
-     * <p>The chain shape is the shared {@link RoutineChain} (the {@code QueryRoutineTableField}
-     * carrier), exposed through {@link RoutineChainField}; this leaf adds one pin of its own,
-     * {@code hops} non-empty. With no hop there is no post-commit table to re-read from; the
-     * single-node Mutation {@code @routine} classifies as a typed {@code Deferred}.
+     * <p>The chain shape is the shared {@link RoutineChain} (the same carrier the query root's
+     * {@link RoutineResolution.Chain} source arm holds); this leaf adds two pins of its own:
+     * {@code hops} non-empty (with no hop there is no post-commit table to re-read from; the
+     * single-node Mutation {@code @routine} classifies as a typed {@code Deferred}), and hop 0
+     * joining by {@link On.ColumnPairs} (the classifier's re-read-anchor verdict routes every
+     * other shape to a typed {@code Deferred}, and the emitter's key capture reads the pairs).
      *
      * <p>{@code errorChannel()} is pinned empty: the return is the direct terminus {@code @table}
      * type (the terminus rule), never a payload carrying a typed {@code errors} field, so the
@@ -173,7 +175,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
         RoutineChain chain
-    ) implements MutationField, RoutineChainField {
+    ) implements MutationField {
 
         public MutationRoutineWriteField {
             if (chain == null) {
@@ -186,6 +188,14 @@ public sealed interface MutationField extends RootField, WithErrorChannel
                     "MutationRoutineWriteField requires at least one @reference hop: with no hop "
                     + "there is no post-commit table to re-read from, and the single-node Mutation "
                     + "@routine classifies as typed Deferred (routine-write-result-shapes)");
+            }
+            // Hop 0 joins by column pairs, so the post-commit re-read has a key to capture. The
+            // classifier's re-read-anchor verdict routes every other shape to a typed Deferred;
+            // the emitter narrows to On.ColumnPairs on this pin's authority.
+            if (!(((JoinStep.Hop) chain.hops().get(0)).on() instanceof On.ColumnPairs)) {
+                throw new IllegalArgumentException(
+                    "MutationRoutineWriteField hop 0 must join by column pairs (On.ColumnPairs); "
+                    + "the classifier's re-read-anchor verdict admits no other shape");
             }
             // Terminus invariant: the projected @table type is the chain's last node.
             if (!chain.terminus().denotesSameTableAs(returnType.table())) {

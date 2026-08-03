@@ -537,12 +537,9 @@ public final class ProjectionCommands {
                             + anchorTypeName + "'", nf.location());
                     walkAddresses(nf.nestedFields(), anchorTypeName, units, origins);
                 }
-                case ChildField.PivotField pf ->
+                case ChildField.PivotSpecField pf ->
                     record(origins, units.pivotUnit(pf.parentTypeName(), pf.name()).simpleName(),
                         "@pivot coordinate '" + pf.parentTypeName() + "." + pf.name() + "'", pf.location());
-                case ChildField.BatchedPivotField bpf ->
-                    record(origins, units.pivotUnit(bpf.parentTypeName(), bpf.name()).simpleName(),
-                        "@pivot coordinate '" + bpf.parentTypeName() + "." + bpf.name() + "'", bpf.location());
                 default -> { }
             }
         }

@@ -105,9 +105,11 @@ class CommandSeamRatchetTest {
      * pivot payload single-homed: the registrations emitter's two pivot-leaf spec arms became
      * one read of the {@code PivotSpecField} seal, which the pattern does not count for the
      * same reason it skips the write-arm switches (a seal read is payload access, not leaf
-     * identity; the generator sites spell it with the nested-type import).
+     * identity; the generator sites spell it with the nested-type import). Lowered 60 to 59
+     * when the routine root folded onto the table read's source axis: the dedicated dispatch
+     * arm deleted, the surviving arm's row fork living in the launcher row's source arm.
      */
-    private static final int GENERATOR_LEAF_CASE_PATTERNS = 60;
+    private static final int GENERATOR_LEAF_CASE_PATTERNS = 59;
 
     /**
      * Leaf references ({@code instanceof} plus {@code case}) inside {@code plan/}: the relocation
@@ -184,9 +186,14 @@ class CommandSeamRatchetTest {
      * the projection's inline-correlation lookup read collapsed onto the surviving inline
      * leaf. Lowered 132 to 128 when the DML verb split dissolved: the edge producer's four
      * payload-verb arms folded onto the direct-return and record-carrier arms, all of which
-     * keep the condition-glue derivation.
+     * keep the condition-glue derivation. Lowered 128 to 124 when the routine root and the
+     * pivot payload folded: the launcher's two routine dispatch arms merged into the root
+     * table read's source-axis fork, the edge producer's routine null arm went with the leaf,
+     * and the projection's address census folded its two pivot arms onto the
+     * {@code PivotSpecField} seal (which this counting rule still chases in plan/, so the
+     * fold is one reference where two stood).
      */
-    private static final int PLAN_LEAF_REFERENCES = 128;
+    private static final int PLAN_LEAF_REFERENCES = 124;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide

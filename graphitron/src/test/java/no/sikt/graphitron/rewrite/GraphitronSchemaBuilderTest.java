@@ -7237,11 +7237,11 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    @ProjectionFor(QueryField.QueryRoutineTableField.class)
     void queryRoutineProjectionCarriesRoutineCoordinates() {
-        // A @routine read projects onto the method-backed RoutineBacked classification,
-        // with className = the generated Routines class. The routine resolves against the sakila-db
-        // fixture catalog (public.tilganger_for_feidebruker_med_fs_fiktivt_fnr).
+        // A @routine-sourced QueryTableField projects onto the method-backed RoutineBacked
+        // classification (the source-axis fork of the QueryTable arm), with className = the
+        // generated Routines class. The routine resolves against the sakila-db fixture catalog
+        // (public.tilganger_for_feidebruker_med_fs_fiktivt_fnr).
         var snapshot = buildSnapshot("""
             type Tilgang @table(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr") {
               organisasjonskode: Int
@@ -7292,6 +7292,18 @@ class GraphitronSchemaBuilderTest {
         }
         """;
 
+    /**
+     * The routine chain of a root read expected to be routine-sourced: asserts the
+     * {@code RoutineResolution.Chain} arm first, so a fixture that silently classifies onto the
+     * plain catalog source fails with the discriminating message rather than a cast error.
+     */
+    private static no.sikt.graphitron.rewrite.model.RoutineChain routineChainOf(QueryField.QueryTableField f) {
+        assertThat(f.routine())
+            .as("expected a routine-sourced read; the source axis resolved None")
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.RoutineResolution.Chain.class);
+        return ((no.sikt.graphitron.rewrite.model.RoutineResolution.Chain) f.routine()).chain();
+    }
+
     @Test
     void rootChainNotStartingWithRoutineRejectsAsStructural() {
         var schema = build(TILGANG_TYPE + """
@@ -7319,11 +7331,12 @@ class GraphitronSchemaBuilderTest {
                 @reference(path: [{table: "film"}])
             }
             """);
-        var f = (QueryField.QueryRoutineTableField) schema.field("Query", "recentFilms");
-        assertThat(f.start().resultTable().tableName()).isEqualTo("films_for_actor");
+        var f = (QueryField.QueryTableField) schema.field("Query", "recentFilms");
+        var chain = routineChainOf(f);
+        assertThat(chain.start().resultTable().tableName()).isEqualTo("films_for_actor");
         assertThat(f.returnType().table().tableName()).isEqualTo("film");
-        assertThat(f.hops()).hasSize(1);
-        var hop = (JoinStep.Hop) f.hops().get(0);
+        assertThat(chain.hops()).hasSize(1);
+        var hop = (JoinStep.Hop) chain.hops().get(0);
         assertThat(hop.targetTable().tableName()).isEqualTo("film");
         assertThat(hop.originTable().tableName()).isEqualTo("films_for_actor");
         var pairs = (On.ColumnPairs) hop.on();
@@ -7903,7 +7916,7 @@ class GraphitronSchemaBuilderTest {
     // pins the single-node root desugar directly.
 
     @Test
-    void rootSingleNodeRoutineDesugarsToQueryRoutineTableFieldWithEmptyHops() {
+    void rootSingleNodeRoutineDesugarsToRoutineSourcedTableFieldWithEmptyHops() {
         // D3 — the single-node root @routine is the degenerate chain: no @reference
         // application, the routine result is itself the terminus, so hops is empty.
         var schema = build(TILGANG_TYPE + """
@@ -7912,9 +7925,10 @@ class GraphitronSchemaBuilderTest {
                 @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
             }
             """);
-        var f = (QueryField.QueryRoutineTableField) schema.field("Query", "tilganger");
-        assertThat(f.hops()).isEmpty();
-        assertThat(f.start().resultTable().tableName())
+        var f = (QueryField.QueryTableField) schema.field("Query", "tilganger");
+        var chain = routineChainOf(f);
+        assertThat(chain.hops()).isEmpty();
+        assertThat(chain.start().resultTable().tableName())
             .isEqualToIgnoringCase("tilganger_for_feidebruker_med_fs_fiktivt_fnr");
         assertThat(f.returnType().table().tableName())
             .isEqualToIgnoringCase("tilganger_for_feidebruker_med_fs_fiktivt_fnr");
@@ -7935,8 +7949,8 @@ class GraphitronSchemaBuilderTest {
             }
             """);
         var f = (MutationField.MutationRoutineWriteField) schema.field("Mutation", "rentFilm");
-        assertThat(f.hops()).hasSize(1);
-        assertThat(f.start().resultTable().tableName()).isEqualToIgnoringCase("rent_film");
+        assertThat(f.chain().hops()).hasSize(1);
+        assertThat(f.chain().start().resultTable().tableName()).isEqualToIgnoringCase("rent_film");
         assertThat(f.chain().terminus().tableName()).isEqualToIgnoringCase("rental");
         assertThat(f.returnType().table().tableName()).isEqualToIgnoringCase("rental");
         assertThat(f.errorChannel()).isEmpty();

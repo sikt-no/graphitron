@@ -2433,7 +2433,7 @@ class FieldBuilder {
 
         // Order-significant @routine / @reference composition. The ordered field-level
         // applications compose the field's table chain, and this is the only pass that reads
-        // their order. Root chains land QueryRoutineTableField (the single-node shape via
+        // their order. Root chains land QueryTableField with a Chain source (the single-node shape via
         // classifyRootField's @routine branch, routine-then-hops via classifyRootRoutineChain);
         // child chains with a routine node land ChildField.TableField via the chain walker
         // (classifyChildRoutineChain — head, mid-chain, or terminus routine position); child
@@ -2508,12 +2508,14 @@ class FieldBuilder {
      * result keys by the name-matched target key ({@code BuildContext
      * .synthesizeNameMatchedJoin}, gated on the catalog's table-valued-function fact); later hops
      * ride the ordinary FK / condition machinery. Lands
-     * {@link QueryField.QueryRoutineTableField} carrying the {@code (start, hops)} chain; the
-     * single-node shape is the degenerate chain with no {@code @reference} applications
-     * ({@code hops = []}).
+     * {@link QueryField.QueryTableField} with the chain carried on the
+     * {@link RoutineResolution.Chain} source axis; the single-node shape is the degenerate
+     * chain with no {@code @reference} applications ({@code hops = []}).
      *
      * <p>Ordering note: like the single-node root, the chain root carries no ordering
-     * surface ({@code QueryRoutineTableField} is not a {@code SqlGeneratingField}).
+     * surface (the read surface is empty by the {@code Chain} arm's constructor pin; the
+     * {@code @orderBy} / {@code @condition} deferral fires in {@code RoutineDirectiveResolver}
+     * before this classifier runs).
      */
     private GraphitronField classifyRootRoutineChain(GraphQLFieldDefinition fieldDef,
             String parentTypeName, String name, SourceLocation location) {
@@ -2526,11 +2528,12 @@ class FieldBuilder {
                 if (verdict != null) {
                     yield new UnclassifiedField(parentTypeName, name, location, fieldDef, verdict);
                 }
-                yield new QueryField.QueryRoutineTableField(parentTypeName, name, location,
+                yield new QueryField.QueryTableField(parentTypeName, name, location,
                     walk.tb().returnType(),
-                    new RoutineChain(
+                    List.of(), new OrderBySpec.None(), null, LookupResolution.None.INSTANCE,
+                    new RoutineResolution.Chain(new RoutineChain(
                         new TableExpr.RoutineCall(walk.tb().routine(), walk.tb().resultTable()),
-                        walk.steps()));
+                        walk.steps())));
             }
         };
     }
@@ -2679,7 +2682,7 @@ class FieldBuilder {
      * resolution, or the first rejection. {@code steps} contains the routine node as a lateral
      * {@link JoinStep.Hop} wherever a previous node exists (every child position); a root
      * chain's head has none, so the root walk yields the {@code @reference} hops only and the
-     * caller carries the routine as {@code QueryRoutineTableField.start}.
+     * caller carries the routine as the chain's start node.
      */
     private sealed interface ChainWalk {
         record Ok(List<JoinStep> steps, RoutineDirectiveResolver.Resolved.TableBound tb)

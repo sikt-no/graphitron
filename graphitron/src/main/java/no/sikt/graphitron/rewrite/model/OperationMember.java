@@ -327,7 +327,7 @@ public sealed interface OperationMember {
         /**
          * A database-routine write: the routine call is the write verb, committed before the
          * chain's follow-up re-read. The call surface and hops stay the leaf's
-         * {@link RoutineChain} (read via {@link RoutineChainField}), a source-side fact.
+         * {@link RoutineChain} (the leaf's own {@code chain} component), a source-side fact.
          */
         record RoutineWrite() implements Write {}
 

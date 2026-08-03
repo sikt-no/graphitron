@@ -30,6 +30,7 @@ import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
+import no.sikt.graphitron.rewrite.model.RoutineResolution;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
 import org.jooq.ForeignKey;
@@ -259,12 +260,12 @@ public final class CatalogBuilder {
                 new FieldClassification.Polymorphic(participantNames(f.participants()));
             case ChildField.NestingField ignored ->
                 new FieldClassification.Nesting();
-            case ChildField.PivotField f ->
+            // The batched flag is the delivery axis, read off BatchKeyField membership the
+            // way DeliveryFact.leafDerivedOf reads it.
+            case ChildField.PivotSpecField f ->
                 new FieldClassification.Pivot(f.pivot().table().tableName(),
-                    f.pivot().discriminator().sqlName(), f.pivot().value().sqlName(), false);
-            case ChildField.BatchedPivotField f ->
-                new FieldClassification.Pivot(f.pivot().table().tableName(),
-                    f.pivot().discriminator().sqlName(), f.pivot().value().sqlName(), true);
+                    f.pivot().discriminator().sqlName(), f.pivot().value().sqlName(),
+                    f instanceof no.sikt.graphitron.rewrite.model.BatchKeyField);
             // A projection slot is a by-name read off the pivot record; its LSP surface is the
             // same column-or-accessor shape a record property presents (no accessor to name).
             case ChildField.PivotSlotField f ->
@@ -309,16 +310,17 @@ public final class CatalogBuilder {
                     f.errorTypes().stream().map(GraphitronType.ErrorType::name).toList());
 
             // --- QueryField permits ---
+            // A @routine-sourced read keeps the method-backed RoutineBacked classification
+            // (className = the generated Routines class): the LSP hover and jump-to-source
+            // route to the routine's call surface, so the source-axis fork preserves the
+            // consumer-visible projection the dedicated leaf used to carry.
             case QueryField.QueryTableField f ->
-                new FieldClassification.QueryTable(targetTableName(f.returnType()), isKeyed(f.lookup()));
-            // A @routine read is a root table sourced from a generated Routines-class
-            // method call, so it projects onto the method-backed RoutineBacked classification
-            // (className = the generated Routines class).
-            case QueryField.QueryRoutineTableField f ->
-                new FieldClassification.RoutineBacked(
-                    targetTableName(f.returnType()),
-                    f.routine() != null ? f.routine().routinesClass().canonicalName() : null,
-                    f.routine() != null ? f.routine().methodName() : null);
+                f.routine() instanceof RoutineResolution.Chain chain
+                    ? new FieldClassification.RoutineBacked(
+                        targetTableName(f.returnType()),
+                        chain.chain().routine().routinesClass().canonicalName(),
+                        chain.chain().routine().methodName())
+                    : new FieldClassification.QueryTable(targetTableName(f.returnType()), isKeyed(f.lookup()));
             case QueryField.QueryNodeField ignored ->
                 new FieldClassification.QueryNode(false);
             case QueryField.QueryNodesField ignored ->
@@ -374,8 +376,8 @@ public final class CatalogBuilder {
             case MutationField.MutationRoutineWriteField f ->
                 new FieldClassification.RoutineBacked(
                     targetTableName(f.returnType()),
-                    f.routine() != null ? f.routine().routinesClass().canonicalName() : null,
-                    f.routine() != null ? f.routine().methodName() : null);
+                    f.chain().routine().routinesClass().canonicalName(),
+                    f.chain().routine().methodName());
             // The verb, the table name and the input type name all project off the write arm
             // (the arms' input surfaces differ; the Dml seal and the helpers below fold them).
             case MutationField.DmlTableField f ->

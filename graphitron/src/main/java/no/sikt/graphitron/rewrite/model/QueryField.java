@@ -25,7 +25,6 @@ import java.util.Optional;
  */
 public sealed interface QueryField extends RootField
     permits QueryField.QueryTableField,
-            QueryField.QueryRoutineTableField,
             QueryField.QueryNodeField, QueryField.QueryNodesField,
             QueryField.QueryTableInterfaceField, QueryField.QueryInterfaceField,
             QueryField.QueryUnionField,
@@ -43,7 +42,6 @@ public sealed interface QueryField extends RootField
         return switch (this) {
             // Catalog table reads: wrap(...) keeps the Connection -> Single(Connection) decomposition.
             case QueryTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
-            case QueryRoutineTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case QueryTableInterfaceField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case QueryServiceTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case QueryServiceRecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
@@ -64,6 +62,12 @@ public sealed interface QueryField extends RootField
         };
     }
 
+    /**
+     * A root table read whose FROM starts at the return type's own table or a routine chain.
+     * The source axis is the sealed {@link RoutineResolution}: the {@code Chain} arm carries a
+     * jOOQ database routine ({@code @routine}) whose table chain terminates on the field's
+     * {@code @table} return type, with the read surface constructor-pinned empty.
+     */
     record QueryTableField(
         String parentTypeName,
         String name,
@@ -102,52 +106,6 @@ public sealed interface QueryField extends RootField
                 }
             }
         }
-        @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Record(returnType.table());
-        }
-    }
-
-    /**
-     * A root query field whose table chain starts with a jOOQ database routine ({@code @routine}).
-     * jOOQ generates a table-valued read function as a catalog {@code Table<R>}, so the return
-     * type is always a {@link ReturnTypeRef.TableBoundReturnType} and the selection-narrowing
-     * projection applies.
-     *
-     * <p>This leaf's table chain is carried by the shared {@link RoutineChain}: {@code start} is
-     * the routine node (the {@code FROM} source — the schema's global {@code Routines} convenience
-     * method call with IN parameters bound from GraphQL arguments), {@code hops} the
-     * {@code @reference}-contributed steps that follow it in authored directive order. The
-     * single-node shape is {@code hops = []}, where the routine result is also the terminus. The
-     * start is a {@link TableExpr.RoutineCall} rather than a {@link JoinStep}: the model treats
-     * {@code on} as absent exactly for the start node, and the carrier encodes that absence
-     * structurally instead of widening {@code Hop.on} to an optional (see {@link On}). The shared
-     * chain invariants (all-{@code Arg} start bindings, catalog-only non-lateral hops) are pinned
-     * in {@link RoutineChain}'s compact constructor, one enforcer spanning this leaf and
-     * {@link MutationField.MutationRoutineWriteField}; only the terminus rule stays here (it
-     * reads this leaf's return type).
-     */
-    record QueryRoutineTableField(
-        String parentTypeName,
-        String name,
-        SourceLocation location,
-        ReturnTypeRef.TableBoundReturnType returnType,
-        RoutineChain chain
-    ) implements QueryField, RoutineChainField {
-
-        public QueryRoutineTableField {
-            if (chain == null) {
-                throw new NullPointerException("QueryRoutineTableField.chain must not be null");
-            }
-            // Terminus invariant: the projected @table type is the chain's last node.
-            if (!chain.terminus().denotesSameTableAs(returnType.table())) {
-                throw new IllegalArgumentException(
-                    "QueryRoutineTableField terminus mismatch: the chain ends on '"
-                    + chain.terminus().tableName() + "' but the field's @table type is bound to '"
-                    + returnType.table().tableName() + "'; the classifier's terminus rule must "
-                    + "reject this before construction");
-            }
-        }
-
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(returnType.table());
         }

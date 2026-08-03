@@ -275,7 +275,6 @@ public class TypeFetcherGenerator {
         QueryField.QueryNodeField.class,
         QueryField.QueryNodesField.class,
         QueryField.QueryTableField.class,
-        QueryField.QueryRoutineTableField.class,
         QueryField.QueryServiceTableField.class,
         QueryField.QueryServiceRecordField.class,
         QueryField.QueryServicePolymorphicField.class,
@@ -576,16 +575,6 @@ public class TypeFetcherGenerator {
                 }
                 case QueryField.QueryNodeField f              -> builder.addMethod(buildQueryNodeFetcher(ctx, f, outputPackage));
                 case QueryField.QueryNodesField f             -> builder.addMethod(buildQueryNodesFetcher(ctx, f, outputPackage));
-                case QueryField.QueryRoutineTableField f      -> {
-                    var routineRow = launchers.rowFor(f.parentTypeName(), f.name())
-                        .orElseThrow(() -> new IllegalStateException(
-                            "Graphitron generator bug (root launcher dispatch): routine root coordinate '"
-                            + f.qualifiedName() + "' has no launcher row;"
-                            + " the producer's membership and this dispatch have drifted"));
-                    builder.addMethod(buildQueryTableFetcher(ctx, f, routineRow, outputPackage));
-                    builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
-                        .render(routineRow, launchers.carrierDsl()));
-                }
                 case QueryField.QueryServiceTableField f      -> builder.addMethod(buildQueryServiceTableFetcher(ctx, f, outputPackage));
                 case QueryField.QueryServiceRecordField f     -> builder.addMethod(buildQueryServiceRecordFetcher(ctx, f, outputPackage));
                 case QueryField.QueryServicePolymorphicField f ->
@@ -1228,8 +1217,8 @@ public class TypeFetcherGenerator {
      * <p>Both the routine call and the hop table expressions come off the shared emitters
      * ({@link RoutineCallEmitter#emitCall} — all bindings are {@code ParamSource.Arg} per the
      * {@code RoutineChain} pin, so the uncorrelated value overload — and
-     * {@link JoinPathEmitter#emitTableExpression}), reading the chain through the
-     * {@code RoutineChainField} capability.
+     * {@link JoinPathEmitter#emitTableExpression}), reading the chain off the leaf's
+     * {@code chain} component.
      *
      * <p>Generated shape (list cardinality):
      * <pre>{@code
@@ -1259,24 +1248,20 @@ public class TypeFetcherGenerator {
         boolean isList = mrwf.returnType().wrapper().isList();
         var valueType = isList ? (TypeName) ParameterizedTypeName.get(RESULT, RECORD) : RECORD;
 
-        var hops = mrwf.hops();
+        var hops = mrwf.chain().hops();
         var hop0 = (JoinStep.Hop) hops.get(0);
-        // The classifier's re-read-anchor verdict admits only a ColumnPairs hop 0 (a
-        // condition-joined or filtered hop 0 lands a typed Deferred before construction).
-        if (!(hop0.on() instanceof On.ColumnPairs hop0Pairs)) {
-            throw new IllegalStateException(
-                "MutationRoutineWriteField hop 0 must join by column pairs; the classifier's "
-                + "re-read-anchor verdict admits no other shape");
-        }
+        // ColumnPairs is the leaf constructor's own pin (the classifier's re-read-anchor
+        // verdict feeds it), so the narrowing here is checked, never a reachable failure.
+        var hop0Pairs = (On.ColumnPairs) hop0.on();
         var builder = MethodSpec.methodBuilder(mrwf.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(syncResultType(valueType))
             .addParameter(ENV, "env");
 
         builder.beginControlFlow("try");
-        CodeBlock startExpr = RoutineCallEmitter.emitCall(mrwf.start(),
+        CodeBlock startExpr = RoutineCallEmitter.emitCall(mrwf.chain().start(),
             new PreviousNodeRef.None(), new ArgumentValueSource.Env());
-        builder.addStatement("$T source = $L", mrwf.start().resultTable().tableClass(), startExpr);
+        builder.addStatement("$T source = $L", mrwf.chain().start().resultTable().tableClass(), startExpr);
         for (JoinStep step : hops) {
             var hop = (JoinStep.Hop) step;
             CodeBlock hopTableExpr = JoinPathEmitter.emitTableExpression(

@@ -14,9 +14,10 @@ last-updated: 2026-07-08
 Non-gating residue recorded during R435, none of it blocking the shipped surface:
 
 * **Root ordering reconciliation**: a root routine chain carries no ordering surface
-  (`QueryRoutineTableField` is not a `SqlGeneratingField`, so the deterministic-order rule
-  exempts it), while a child routine list *requires* `@defaultOrder`. An `@defaultOrder`
-  surface over the root chain's catalog terminus reconciles the two positions.
+  (the `RoutineResolution.Chain` arm of `QueryTableField` pins the read surface empty and the
+  deterministic-order rule exempts the arm explicitly), while a child routine list *requires*
+  `@defaultOrder`. An `@defaultOrder` surface over the root chain's catalog terminus
+  reconciles the two positions.
 * **Correlated value-arg `DataType` binding**: mixed (`Field`-overload) routine calls type
   argument-sourced values by their Java `paramType` read, not a two-arg
   `DSL.val(v, dataType)`; jOOQ's TVF codegen exposes no `Parameter` constants to reference.

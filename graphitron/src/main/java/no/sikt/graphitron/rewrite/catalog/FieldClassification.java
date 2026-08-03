@@ -369,7 +369,7 @@ public sealed interface FieldClassification
 
     /**
      * A root field whose rows come from a generated jOOQ {@code Routines}-class method call.
-     * Covers {@code QueryField.QueryRoutineTableField} on the read side and
+     * Covers the routine-sourced {@code QueryField.QueryTableField} on the read side and
      * {@code MutationField.MutationRoutineWriteField} on the write side; {@code methodClassName}
      * is the generated {@code Routines} class, so hover and jump-to-source route to the
      * routine's call surface.

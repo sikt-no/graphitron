@@ -546,6 +546,27 @@ Slice-6b baseline (measured 2026-08-03, the DML verb split dissolved):
   sites at 8.
 - Emit byte-identical through both of the slice's commits.
 
+Slice-6c baseline (measured 2026-08-03, the read-family dissolution closed):
+
+- Leaf ratchet fell 11/8/22/4 to 10/8/22/4: the routine read folded onto the root table read
+  with the chain carried as the sealed `RoutineResolution` source axis, so the reconstruction
+  key holds with routine-sourced-ness as a source component (the child side's joinPath
+  precedent). The pivot pair and the routine write survive as grain (delivery-split
+  pivot-projection target; mutation placement with a routine-chain source), their operation
+  halves carried as member payload.
+- The reconstruction key gained its enforcer: `LeafReconstructionKeyTest` declares one
+  `(source, delivery, target)` triple per surviving output leaf, pinned total against the
+  sealed hierarchies, failing on any collision not named in its tolerated list (sole entry:
+  the single/bulk DML carrier pair, the input-cardinality exception the 6b record bound).
+- Plan leaf references fell 128 to 124 (the launcher's two routine dispatch arms merged into
+  the root read's source-axis fork, the edge producer's routine null arm went with the leaf,
+  the projection's address census folded onto the `PivotSpecField` seal); generator case
+  patterns fell 62 to 59 across the two commits (the registrations emitter's two pivot spec
+  arms became one seal read; the routine dispatch arm deleted); the generator instanceof pin
+  is unchanged at 69, entry points at 18; the launcher render-site pin fell 8 to 7 with the
+  routine arm merge.
+- Emit byte-identical through both of the slice's commits.
+
 Re-run after the keystone and after the last 6x slice. What matters is direction: leaf counts and
 the minting-site count fall with each dissolution; `FieldBuilder` sheds its per-verb router weight;
 the dispatch pins fall as membership re-sources. A slice that moves none of them is a slice worth
@@ -1055,6 +1076,102 @@ Decisions bound here:
 
 Slice-6b baseline: recorded under Progress measurement above.
 
+### Slice 6c (landed 2026-08-03): the pivot and routine operation halves dissolve
+
+Landed in two commits on the additive-then-destructive discipline: the first single-homes the
+pivot payload on the member and lands the routine source axis with no consumer dispatch moved,
+the second folds the routine read onto the root table read, retires the dead carriers, and
+closes the read-family dissolution. Unlike 6a and 6b this slice is chiefly a content
+dissolution: the census named these two "operation halves" rather than whole leaves, and what
+retires is the operation-encoding content (an empty member marker whose payload lived on leaf
+identity; a dedicated leaf for a source distinction), not a family of emit-distinct leaves.
+
+First commit (the payload and the axis):
+
+- `OperationMember.Pivot` gained exactly the aggregate operation's parameters
+  (`table`, `discriminator`, `value`, `tokenBySlot`), carrying its table the way `Condition`
+  does; `PivotSpec` slimmed to the target and join halves (`joinPath`, `projectionTypeName`,
+  `slots`). The consult refused the whole-spec payload: the member row would have carried
+  other coordinates' leaves (the slots) and the projection type, target and join grain on an
+  operation row, and the enforcement argument for one record dissolved against the idiom the
+  pair already uses (`ParentCorrelation.checkCarrierInvariant`), so the cross-record
+  invariants (token coverage; the member's table is the hop terminus) became
+  `PivotSpec.checkMemberAgreement`, invoked from both leaf constructors.
+- `PivotSpecField` landed as an intermediate seal in `ChildField`'s permits (the
+  `TableTargetField` mould, not a standalone capability: a switch arm keeps the full field
+  surface without a cast back to the concrete leaf), exposing `pivot()` and `spec()`; both
+  delivery leaves carry the member arm as a component and `membersOf` reads
+  `List.of(f.pivot(), new Join())`, the member row the leaf's component by identity.
+  `NestingReach.pivotSpecOf`'s nullable tri-state retired for seal reads.
+- `QueryField.QueryTableField` gained the sealed FROM-source axis `RoutineResolution`
+  (`None` | `Chain(RoutineChain)`), the source-side tableExpr fact the keystone crosswalk
+  promised, registered WALKED_FACT beside `LookupResolution` with the same registrar
+  reasoning. The `Chain` arm's constructor pins the shipped regime where source and read
+  surface meet (empty filters, `OrderBySpec.None`, no pagination, `LookupResolution.None`,
+  the terminus rule), the 6b fence pattern, so a surface-bearing routine read is
+  unconstructible rather than image-rejected.
+
+Second commit (the fold):
+
+- `QueryRoutineTableField` deleted; the classifier's root chain path mints the folded leaf
+  with the `Chain` source. The launcher's two dedicated dispatch arms merged into the root
+  table read's source-axis fork (`routineRow` re-signed onto the folded leaf; the
+  `LaunchSource.RoutineChain` row and the emitted SQL unchanged), and the generator's
+  dedicated dispatch arm deleted outright: it was byte-identical to the surviving arm's
+  behavior, the keyed-lookup fork being unreachable on a chain-sourced row by the ctor pin.
+- The consult falsified the fold's emit-neutrality premise as first proposed:
+  `validateListRequiresOrdering` fires on exactly the state the ctor pins (list-shaped,
+  `None` ordering, no re-fetch), so folding without compensation would have rejected two
+  shipped fixtures. The rule now exempts the `Chain` arm explicitly with the grounds beside
+  it (rows arrive in the routine's order; no ORDER BY surface ships for a chain), turning
+  the previously accidental exemption (a side effect of the dedicated leaf skipping
+  `SqlGeneratingField`) into a stated fact on the axis the rule reads.
+- `CatalogBuilder` keeps the `RoutineBacked` classification through the source-axis fork
+  (LSP hover and MCP jump-to-source unchanged, the 6b LSP-stability precedent); the two
+  defensive `routine() != null` guards deleted (the chain's presence is the arm's
+  guarantee). `FieldClassification` is untouched, so the catalog surface is stable.
+- `MutationRoutineWriteField` survives as grain and keeps its name: the leaf is
+  f(routine-chain source, Mutation placement, table target), write-ness derives from
+  placement, and the `RoutineWrite` token names the FROM/call mechanism, the sibling of
+  `Dml`, not an operation-axis encoding. Its constructor lifted the generator's defensive
+  hop-0 throw (hop 0 joins by `On.ColumnPairs`, the classifier's re-read-anchor verdict),
+  so the emitter's narrowing is checked on the leaf's own authority.
+- `RoutineChainField` retired: zero readers as a type (every occurrence was an implements
+  clause or a javadoc citation, and its "one accessor spanning both roots" claim had been
+  false since the write fetcher took the concrete leaf); the carriers read their own
+  `chain` components.
+- The reconstruction key became a derived table with an enforcer
+  (`LeafReconstructionKeyTest`): one grain triple per surviving leaf, total against
+  `sealedLeaves`, unnamed collisions failing. The consult surfaced the live collision the
+  prose claim hid: at the three materialized axes the pivot pair and the service record
+  child share a triple, resolved honestly at classified-target-type granularity (the pivot
+  projection is a context-free nesting type, the service return a result type), so the pair
+  needs no exception; the single/bulk DML carriers remain the sole tolerated entry.
+
+Decisions bound here:
+
+- **The pivot member carries the operation half only.** Whole-spec would have put target
+  and join facts (and the slot leaves) on a member row in the slice claiming axis honesty;
+  the split costs one shared static where the compact constructor stood, and the leaf keeps
+  target and join grain the reconstruction key claims for it.
+- **The ratchet counts leaf identity, not seal reads.** The two generator-package seal
+  reads spell `PivotSpecField` with the nested-type import, outside the counting rule's
+  alternation, the same status 6b's write-arm switches have (payload access, not leaf
+  dispatch); the registrations emitter's fold still lowered the case pin 62 to 60 because
+  two leaf arms became one seal read.
+- **The tenant fan-out ladder keeps its SDL rung.** The consult suggested re-sourcing the
+  `@routine` rung onto the `Chain` arm; refused: the rung rejects an authored directive
+  combination (the `@service` rung's grain), covers child positions the root axis never
+  carries, and must fire for coordinates whose chain classification failed and left no
+  model arm to read. The deviation and grounds recorded here.
+- **The @ProjectionFor row retired with the leaf.** The routine read's LSP projection
+  coverage rides `QueryTableField`'s method; the `RoutineBacked` fork keeps its own
+  (un-annotated) pin so the classification cannot silently downgrade to `QueryTable`.
+
+Slice-6c baseline: recorded under Progress measurement above. This is the last 6x slice: the
+leaf-member coexistence window the keystone opened closes with this landing, recorded in
+`roadmap/changelog.md`.
+
 ## Retired vocabulary
 
 Declared per the item-file conventions in `roadmap/workflow.adoc`; each term names the slice that
@@ -1069,6 +1186,10 @@ retires it, and the sweep at each gate runs against what has actually shipped.
 | `MutationField.DmlTableField`'s four verb leaves; the payload arms' verb halves | 6b | write members carrying the verb; source/target grain leaves |
 | `UpdateRowsField`, `DeleteRowsField` (the reader-less capability seals) | 6b | the Update / Delete write arms carrying the walker carriers, read via `DmlWriteField` |
 | `MutationDmlRecordField.kind()` (the stored `DmlKind` slot) and the stored `dialectRequirement` component | 6b | the carried write arm; the dialect requirement derived from arm plus input cardinality |
+| `QueryRoutineTableField` | 6c | `QueryTableField` with the `RoutineResolution.Chain` source axis |
+| `RoutineChainField` (the reader-less capability interface) | 6c | the carriers' own `chain` components (the `Chain` arm; the write leaf) |
+| `PivotSpec`'s operation-half components (`pivotTable`, `discriminator`, `value`, `tokenBySlot`) | 6c | `OperationMember.Pivot` carrying the aggregate parameters, the leaf's component by identity |
+| `NestingReach.pivotSpecOf` (the nullable tri-state read) | 6c | the `PivotSpecField` intermediate seal |
 | `LauncherRelation`'s "this family is single-operation" javadoc claim | 3 | the reentry and write members; the real key stated |
 | `requireNoGeneratedFilterOnLookup` (the producer backstop) | 6a | the fact-grain rejection: a condition member carrying a generated `WhereFilter` term co-present with a lookup member |
 | `DimensionTuple`'s single `Class<? extends Operation>` component | 7 | the member-set assertion |

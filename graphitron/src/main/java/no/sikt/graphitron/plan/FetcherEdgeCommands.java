@@ -117,7 +117,6 @@ public final class FetcherEdgeCommands {
             GeneratedUnits units) {
         return switch (field) {
             case QueryField.QueryTableField ignored -> null;
-            case QueryField.QueryRoutineTableField ignored -> null;
             case QueryField.QueryTableInterfaceField ignored -> null;
             case QueryField.QueryInterfaceField f ->
                 row(f.parentTypeName(), f.name(), units, targets -> {

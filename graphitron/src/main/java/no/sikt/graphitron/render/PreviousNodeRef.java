@@ -21,7 +21,7 @@ import no.sikt.graphitron.rewrite.model.TableRef;
  *       routine's {@code Field} overload.</li>
  *   <li>{@link None}: the routine node is the chain's head with no previous node (the
  *       root {@code @routine} fetcher). A root chain's bindings are all {@link ParamSource.Arg}
- *       (pinned by {@code QueryField.QueryRoutineTableField}'s compact constructor, which requires
+ *       (pinned by {@code RoutineChain}'s compact constructor, which requires
  *       every start binding be {@code ParamSource.Arg} — {@code RoutineDirectiveResolver} rejects
  *       {@code columnMapping} at root), so a {@link ParamSource.SourceColumn} binding never reaches
  *       {@code emitCall} with this arm; the emitter throws classifier-unreachable if one does.</li>

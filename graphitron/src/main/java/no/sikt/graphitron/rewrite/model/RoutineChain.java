@@ -9,11 +9,12 @@ import java.util.List;
  * it in authored directive order. The single-node shape is {@code hops = []}, where the
  * routine result is also the terminus.
  *
- * <p>Shared invariant enforcer for the read leaf ({@link QueryField.QueryRoutineTableField}) and
- * the mutation write leaf ({@link MutationField.MutationRoutineWriteField}); both embed this
- * record and expose it through {@link RoutineChainField}. Each leaf adds its own invariants on
- * top: the read leaf's terminus rule against its return type, the write leaf's non-empty
- * {@code hops}.
+ * <p>Shared invariant enforcer for the two carriers: the root read's
+ * {@link RoutineResolution.Chain} source arm and the mutation write leaf
+ * ({@link MutationField.MutationRoutineWriteField}). Each carrier adds its own invariants on
+ * top: the read side's terminus rule against the leaf's return type (in
+ * {@link QueryField.QueryTableField}'s constructor), the write leaf's non-empty {@code hops}
+ * and column-pairs hop 0.
  *
  * <p>The start-binding guard (every routine parameter bound from a {@link ParamSource.Arg}) is
  * what lets the shared {@link no.sikt.graphitron.render.RoutineCallEmitter} path

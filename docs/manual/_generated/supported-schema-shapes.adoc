@@ -15,17 +15,16 @@ Supported schema shapes are enumerated below by output sealed-leaf class. Each s
 * *MutationRoutineWriteField*: A mutation field whose table chain starts with a database routine: the routine call
 * *MutationServicePolymorphicField*: A mutation field backed by a developer-provided service method that returns a multitable
 * *MutationServiceRecordField*: A mutation field backed by a developer-provided service method, returning a non-table type
-* *MutationServiceTableField*: A mutation field backed by a developer-provided service method, returning a table-mapped type
+* _(not yet supported)_ *MutationServiceTableField*: A mutation field backed by a developer-provided service method, returning a table-mapped type
 * *MutationServiceTableInterfaceField*: The mutation analogue of `QueryField.QueryServiceTableInterfaceField`: a root
 * *QueryInterfaceField*: A root query field returning a multi-table `GraphitronType.InterfaceType`
 * *QueryNodeField*
 * *QueryNodesField*
-* *QueryRoutineTableField*: A root query field whose table chain starts with a jOOQ database routine (`@routine`)
 * *QueryServicePolymorphicField*: A root query field backed by a developer-provided service method that returns a multitable
 * *QueryServiceRecordField*: A root query field backed by a developer-provided service method, returning a non-table type
 * *QueryServiceTableField*: A root query field backed by a developer-provided service method, returning a table-mapped type
 * *QueryServiceTableInterfaceField*: A root `@service` field returning a single-table discriminated interface
-* *QueryTableField*
+* *QueryTableField*: A root table read whose FROM starts at the return type's own table or a routine chain
 * *QueryTableInterfaceField*
 * *QueryUnionField*: A root query field returning a multi-table `GraphitronType.UnionType`
 
@@ -73,8 +72,8 @@ Supported schema shapes are enumerated below by output sealed-leaf class. Each s
 * *InterfaceType*: An interface with no directives. Participating types may be table-bound (`ParticipantRef.TableBound`)
 * *JavaRecordInputType*: A non-table input type backed by a Java `record` class
 * *JavaRecordType*: A result type whose producer's reflected return is a Java `record` class
-* *JooqRecordInputType*: A non-table input type backed by a jOOQ `Record<?>` (not table-bound)
-* *JooqRecordType*: A result type whose producer's reflected return is a jOOQ `Record<?>` (not table-bound)
+* _(not yet supported)_ *JooqRecordInputType*: A non-table input type backed by a jOOQ `Record<?>` (not table-bound)
+* _(not yet supported)_ *JooqRecordType*: A result type whose producer's reflected return is a jOOQ `Record<?>` (not table-bound)
 * *JooqTableRecordInputType*: A non-table input type backed by a jOOQ `TableRecord<?>`
 * *JooqTableRecordType*: A result type whose runtime carrier is a jOOQ record of a resolved table
 * *NestingType*: A nesting projection: a directiveless SDL object type embedded under a `@table`-bound
@@ -85,6 +84,6 @@ Supported schema shapes are enumerated below by output sealed-leaf class. Each s
 * *ScalarType*: A GraphQL scalar type whose Java type and `GraphQLScalarType` constant (or inline
 * *TableInterfaceType*: An interface annotated with `@table` and `@discriminate`, where implementing
 * *TableType*: A GraphQL object type annotated with `@table`, without `@node`
-* *UnclassifiedType*: A type that could not be classified — examples include an unresolvable `@table`
+* _(not yet supported)_ *UnclassifiedType*: A type that could not be classified — examples include an unresolvable `@table`
 * *UnionType*: A union type whose member types all have `@table`
 

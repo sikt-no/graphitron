@@ -304,7 +304,6 @@ public class GraphitronSchemaValidator {
         }
         switch (field) {
             case no.sikt.graphitron.rewrite.model.QueryField.QueryTableField f         -> validateQueryTableField(f, types, errors);
-            case no.sikt.graphitron.rewrite.model.QueryField.QueryRoutineTableField f       -> {} // RoutineDirectiveResolver pins the routine resolution + arg-binding invariants at classify time
 
             case no.sikt.graphitron.rewrite.model.QueryField.QueryNodeField f          -> validateQueryNodeField(f, errors);
             case no.sikt.graphitron.rewrite.model.QueryField.QueryNodesField f         -> {} // no extra validation
@@ -334,8 +333,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.ChildField.BatchedInterfaceField f   -> validateBatchedInterfaceField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.BatchedUnionField f       -> validateBatchedUnionField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.NestingField f            -> validateNestingField(f, errors);
-            case no.sikt.graphitron.rewrite.model.ChildField.PivotField f              -> validatePivotSpec(f, errors);
-            case no.sikt.graphitron.rewrite.model.ChildField.BatchedPivotField f       -> validatePivotSpec(f, errors);
+            case no.sikt.graphitron.rewrite.model.ChildField.PivotSpecField f          -> validatePivotSpec(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.PivotSlotField f          -> {} // readName-only leaf; every pivot admission check fires at classify time (PivotError via UnclassifiedField), and the consuming leaf's validatePivotSpec walks the slots
             case no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField f       -> validateServiceTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField f      -> validateServiceRecordField(f, types, errors);
@@ -388,10 +386,21 @@ public class GraphitronSchemaValidator {
      * re-fetch field's visible order is locked to the source/target key correspondence (the
      * {@code ORDER BY idx} scatter re-keys the re-projected rows to the upstream source order), so
      * the "list-shaped + {@code None}" signal does not imply non-determinism for them.
+     *
+     * <p>Also exempts the routine-sourced root read (the
+     * {@link no.sikt.graphitron.rewrite.model.RoutineResolution.Chain} arm): its rows arrive in
+     * the routine's own result order and no graphitron ORDER BY surface ships for a routine
+     * chain ({@code @orderBy} / {@code @defaultOrder} on {@code @routine} is a classify-time
+     * typed deferral, and the {@code Chain} constructor pins {@code orderBy} to {@code None}),
+     * so the signal names an authoring surface the field cannot carry. Before the source axis
+     * folded onto the leaf, the same exemption held as a side effect of the dedicated routine
+     * leaf not implementing {@link SqlGeneratingField}; the axis makes it a stated fact.
      */
     private void validateListRequiresOrdering(GraphitronField field, List<ValidationError> errors) {
         if (field instanceof SqlGeneratingField sgf
                 && !(field instanceof no.sikt.graphitron.rewrite.model.OutputField out && out.requiresReFetch())
+                && !(field instanceof no.sikt.graphitron.rewrite.model.QueryField.QueryTableField qtf
+                    && qtf.routine() instanceof no.sikt.graphitron.rewrite.model.RoutineResolution.Chain)
                 && sgf.returnType().wrapper() instanceof FieldWrapper.List
                 && sgf.orderBy() instanceof OrderBySpec.None) {
             errors.add(new ValidationError(
