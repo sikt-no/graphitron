@@ -94,10 +94,11 @@ re-derive it. `BuildWarning.NoRule(String message, SourceLocation location)`
 carries no fix field; `Optional<LintFix>` lives on the `LintFinding` arm alone,
 deliberately (the sealed interface's javadoc: a finding's rule is a type and its
 fix lives only on the arm that has one). Independently,
-`LintFix.deleteBareAppliedDirective` returns empty for any applied directive that
-*carries arguments*, which `@table(name: "…")` does, so it would yield no fix even
-on the `LintFinding` arm. Ship the warning fix-less and do not reshape the sealed
-interface for it.
+`LintFix.deleteBareAppliedDirective` gates on `definition.getArguments().isEmpty()`,
+the *declared* arguments of the directive definition rather than the arguments a
+given application supplies, and `@table` declares `name: String`. So it yields no
+fix for `@table` on the `LintFinding` arm either, bare form included. Ship the
+warning fix-less and do not reshape the sealed interface for it.
 
 ## Sweep
 
@@ -121,16 +122,50 @@ back to "deprecated, ignored, warns":
   plus the rejected-locations bullet below the table),
   `docs/architecture/reference/code-generation-triggers.adoc` (the
   `Input type with @table` row, which pins `UnclassifiedType` + "build fails"),
-  and `docs/manual/reference/directives/mutation.adoc` ("on input types it is a
-  retired location").
+  and `docs/manual/reference/directives/mutation.adoc`, which carries four
+  touchpoints and not one: the prose at the top of the one-input-argument
+  paragraph, the DELETE section's parenthetical, the write-target summary bullet,
+  and the See-also line ("on input types it is a retired location").
+- Seven further pages carry the statement, so do not size the sweep from the
+  bullet above. The generating grep is
+  `grep -rlniE "retired|rejected|no longer supported|outranked|hard removal"
+  --include=*.adoc docs/ | xargs grep -liE "input.{0,80}@table|@table.{0,80}input"`,
+  which returns twelve real pages (plus `field.adoc` and
+  `join-with-references.adoc` as false positives, matching on unrelated
+  rejections). Run it as the sweep's completeness check rather than working the
+  list by hand. Two of the seven are code-behaviour claims and not phrasing, so
+  they go false rather than stale: `docs/architecture/reference/argument-resolution.adoc`
+  states "`TypeBuilder.buildInputType` rejects any input carrying `@table`", the
+  sentence this item's headline change inverts, and
+  `docs/manual/reference/directives/record.adoc` asserts in the *Shadowed by
+  `@table`* bullet that "`@table` on an input is a retired location and is
+  rejected outright", the published twin of the `emitDirectiveIgnoredWarning`
+  comment below (fix them together or the doc keeps saying what the comment
+  stopped saying). The remaining five are phrasing:
+  `docs/manual/explanation/design-decisions.adoc`,
+  `docs/manual/how-to/result-types.adoc`,
+  `docs/manual/how-to/condition-cascade.adoc`,
+  `docs/manual/how-to/map-types-to-tables.adoc` (two touchpoints), and
+  `docs/architecture/explanation/typed-rejection.adoc` ("the field-relative
+  mechanism that replaced the retired `@table` on the input type", where only
+  "retired" is wrong; the replacement claim stands).
 - `docs/manual/how-to/migrating-from-legacy.adoc` needs more than one section
   move, and the "WARN today, error later" section is the wrong destination as
   written: it is titled *Synthesis shims*, opens with "Two paths still work", and
   points readers at the synthesis-shim retirement item. Nothing is synthesized
   here; the directive is inert. Prefer keeping the existing
   `=== @table on input types` section and reframing its verdict sentence from
-  rejected to accepted-ignored-warns, then reconciling the page's other five
-  touchpoints: the `:description:` and the intro paragraph's four-category
+  rejected to accepted-ignored-warns, but note that leaving it in place leaves it
+  under the `== Hard removals` parent heading, which this item falsifies just as
+  squarely as the sentence inside it. Both candidate destinations are wrong only
+  in their *titles*, which are editable, and the surviving `== Synthesis shims:
+  WARN today, error later` bucket is the semantic match ("warns today, errors
+  later" is exactly R566's verdict). Recommend retitling that bucket to drop the
+  synthesis framing and moving the section into it, rather than reframing a
+  section that a heading two lines up contradicts. Either way the choice has to be
+  made explicitly, because the acceptance criterion does not catch it: "Hard
+  removals" says neither "retired" nor "rejected". Then reconcile the page's other
+  five touchpoints: the `:description:` and the intro paragraph's four-category
   taxonomy, the `@field(name:)`-shim parenthetical calling input `@table` "a hard
   removal, covered above", the directive-matrix line saying the same, and the
   migration-steps block, where step 1 ("Run a `mvn install` to surface every …
@@ -146,8 +181,10 @@ back to "deprecated, ignored, warns":
   DELETE / INSERT / UPDATE / filter-only, unknown table name warns rather than
   rejects, and the type's verdict is the plain one. The R332-era test is in
   history at `7eef0ddd1^` and is the starting point.
-- Three further test surfaces pin the rejection, not two.
-  `TypeClassificationProjectionTest` is a message re-pin.
+- Four further test surfaces pin the rejection, not two.
+  `TypeClassificationProjectionTest.tableDirectiveOnInputProjectsUnclassifiedWithMigrationReason`
+  is a message re-pin (it casts the projection to `TypeClassification.Unclassified`
+  and asserts the reason text, so the cast has to go with it).
   `GraphitronSchemaBuilderTest.InputFieldResolutionCase.TABLE_ON_INPUT_RETIRED` is
   a verdict inversion, not a re-pin: it casts `schema.type("CustomerInput")` to
   `UnclassifiedType`, so it has to assert the plain verdict instead, and its
@@ -161,6 +198,20 @@ back to "deprecated, ignored, warns":
   R519's claim that the `InputBeanResolver` type-identity arm stays correctly
   deleted, a claim R519 justified on the `@table`-plus-jOOQ-record-param
   conjunction being unauthorable, which this item makes authorable again.
+  `RecordDirectiveIgnoredWarningTest.tableWithRecordOnInput_rejectsAtTheType_noShadowedWarning`
+  is the fourth, and it is the one entangled with the `emitDirectiveIgnoredWarning`
+  design claim above: it asserts `UnclassifiedType` on an input carrying both
+  `@table` and `@record(record:)` *and* asserts the "carries both @table and"
+  warning does not fire. Both halves change meaning. The verdict assertion inverts
+  to the plain one, and the `noneMatch` starts passing for a different reason than
+  the one its comment gives: with the `groundRootProducers` input arm deleted, that
+  filter-only input has no input binding at all, so `emitDirectiveIgnoredWarning`
+  returns at the `!reachable` guard before the `!isInput` arm is ever consulted.
+  Rewrite it so the `!isInput` guard is actually exercised: give the input a
+  producer (a `@service` param, as in the `JooqRecordServiceParamPipelineTest`
+  fixture) and assert it reaches the Matches / Disagrees arm. That is the
+  regression home for this item's claim that the guard stays correct; as written
+  the test would pin nothing.
 - `graphitron-sakila-example`: a fixture that actually carries `@table` on an
   input is what proves the pass fires end-to-end through the plugin. Adding one
   re-opens the `FixtureWarningsGateTest` carve-out R332 needed, so budget for
@@ -194,7 +245,10 @@ either. The build emits one non-fatal advisory per such input naming the type, t
 per-verb replacement, and the fact that the directive was ignored. The reported
 subgraph builds with warnings and no errors after removing nothing. No doc page or
 SDL description still calls the location retired or rejected, or describes the
-input directive as outranked-but-live. Full reactor green under `-Plocal-db`.
+input directive as outranked-but-live, checked with the generating grep in the
+sweep rather than against the bullet list; and `migrating-from-legacy.adoc` no
+longer files the location under a hard-removals heading. Full reactor green under
+`-Plocal-db`.
 
 ## Retired vocabulary
 
@@ -202,7 +256,10 @@ input directive as outranked-but-live. Full reactor green under `-Plocal-db`.
   `INPUT_OBJECT` (the phrasing R519 introduced across SDL descriptions, docs, and
   `TableOnInputRejectionTest`), including the
   `GraphitronSchemaBuilderTest.InputFieldResolutionCase.TABLE_ON_INPUT_RETIRED`
-  case name and the `_retired_on_input_types` AsciiDoc anchor.
+  case name, the `_retired_on_input_types` AsciiDoc anchor, and the
+  `_rejectsAtTheType` suffix on the two test method names that carry it
+  (`JooqRecordServiceParamPipelineTest.tablePresentOnServiceRecordParamInput_rejectsAtTheType`
+  and `RecordDirectiveIgnoredWarningTest.tableWithRecordOnInput_rejectsAtTheType_noShadowedWarning`).
 - "the input's `@table` is outranked" as applied to a DELETE's input type
   (`directives.graphqls`, the `@mutation` `table:` paragraph). The directive is
   not outranked by anything; it is ignored.
