@@ -1,7 +1,7 @@
 ---
 id: R571
 title: "LSP request-path tracing and phase timing instrumentation"
-status: In Progress
+status: In Review
 bucket: tooling
 priority: 3
 theme: lsp
@@ -76,13 +76,14 @@ first and immune to the second. The sink is captured at class initialisation so 
 (`sinkForTesting`) is package-private for the same reason.
 
 **Off is genuinely free.** `span()` returns a shared no-op singleton when disabled, so the
-seam allocates nothing per call and can sit inside a per-keystroke edit. `LspTraceTest`
-asserts instance identity, not merely absence of output, so a future refactor that starts
-allocating fails the test.
+seam allocates no span and can sit inside a per-keystroke edit. `LspTraceTest` asserts
+instance identity, not merely absence of output, so a future refactor that starts allocating
+fails the test. (The first pass said "allocates nothing", which the rework pass made true by
+adding primitive `detail` overloads; before those, a count still boxed at the call site.)
 
 Enabled by `graphitron.lsp.trace` or `GRAPHITRON_LSP_TRACE`; `graphitron.lsp.trace.slowMs`
-(default 100) tags slower phases `SLOW`. `setEnabled` allows a runtime flip, anticipating a
-`$/setTrace` handler.
+(default 100) tags slower phases `SLOW`. `setEnabled` allows a runtime flip, which the rework
+pass wired to a `$/setTrace` handler.
 
 Instrumented sites, chosen to cover the mechanisms listed above rather than for uniform
 coverage: the document-service notifications and the four request handlers; the diagnostic
