@@ -18,16 +18,23 @@ is load-bearing, so it can ship any time after R519 lands.
 
 ## Scope
 
+Re-scoped after the deprecation window reopened. The LSP sub-goal below is void:
+`@table` stays applicable on `INPUT_OBJECT` for as long as the deprecation window
+is open, because a schema still carrying it has to parse and build, and the
+application has to surface as a warning squiggle rather than an unknown-location
+parse error. Dropping it from the completion list belongs to the eventual
+re-removal item, not here.
+
+What remains is documentation-only:
+
 - Add a migration note in `roadmap/changelog.md` naming the SHA where
-  `@table`-on-input ships zero scope (the R519 landing commit).
-- LSP completion + diagnostics: drop `@table` from the `INPUT_OBJECT`-applicable
-  directive list (once R519 narrows the scope, `@table` on an input is a parse
-  error and should not be offered as a completion there).
+  `@table`-on-input stopped contributing scope.
 - `docs/README.adoc` and any other documentation references: remove `@table` as a
-  directive consumers reach for on inputs.
+  directive consumers reach for on inputs. The reference pages already state the
+  deprecation; this is about residual "reach for it" framing elsewhere.
 
 ## Acceptance
 
-`@table` no longer surfaces as an input-applicable directive in LSP completion or
-diagnostics; docs carry no residual "reach for `@table` on inputs" guidance; the
-changelog names the zero-scope SHA. Build green.
+Docs carry no residual "reach for `@table` on inputs" guidance; the changelog
+names the zero-scope SHA. `@table` still completes on `INPUT_OBJECT` and its
+application still surfaces as a warning, not an error. Build green.

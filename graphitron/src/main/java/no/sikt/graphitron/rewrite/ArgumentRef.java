@@ -196,8 +196,10 @@ public sealed interface ArgumentRef {
     sealed interface InputTypeArg extends ArgumentRef {
 
         /**
-         * Input type with {@code @table}; fields resolve to columns on {@code inputTable}.
-         * Used by composite-key lookups and by mutations.
+         * Input argument resolved against a known table: its fields resolve to columns on
+         * {@code inputTable}. Used by composite-key lookups and by mutations. The table comes from
+         * the consuming field (a {@code @mutation} write target, or the lookup's return-type
+         * table), never from a {@code @table} on the input type, which is deprecated and ignored.
          *
          * <p>{@code lookupKeyFields} / {@code setFields} are the typed partition of {@code fields}.
          * The only verbs constructing a {@code TableInputArg} are INSERT and the query-side

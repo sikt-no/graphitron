@@ -27,7 +27,7 @@ You could, in principle, page each lookup value independently and join the page 
 
 == Input types carry no table directive
 
-A mutation like `createFilm(input: FilmCreateInput!): Film` names its write target on the *field*, never on the input type: the target is derived from the `Film` return type (which carries xref:../reference/directives/table.adoc[`@table`]), or named with xref:../reference/directives/mutation.adoc[`@mutation(table:)`] when the return names no table (`DELETE`, encoded-`ID` / scalar returns). Query filters work the same way: a filter input's fields resolve against the consuming query field's return-type table. `@table` on an input type is a retired directive location; the build rejects it with migration guidance.
+A mutation like `createFilm(input: FilmCreateInput!): Film` names its write target on the *field*, never on the input type: the target is derived from the `Film` return type (which carries xref:../reference/directives/table.adoc[`@table`]), or named with xref:../reference/directives/mutation.adoc[`@mutation(table:)`] when the return names no table (`DELETE`, encoded-`ID` / scalar returns). Query filters work the same way: a filter input's fields resolve against the consuming query field's return-type table. `@table` on an input type is a deprecated directive location: the build accepts it, ignores it, and warns with migration guidance.
 
 Two reasons the table fact lives on the consuming field rather than the input:
 

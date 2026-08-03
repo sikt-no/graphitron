@@ -25,7 +25,7 @@ enum MutationType { UPDATE, DELETE, INSERT, UPSERT }
 
 == Input shape
 
-A `@mutation` field takes exactly one input argument. Its fields bind to columns of the write target's table (`@field(name:)`, or the SDL name by default). The input type carries no table directive of its own (`@table` on an input is a xref:table.adoc[retired location]): for `INSERT` and `UPDATE` the write target is derived from the field's return (see <<_naming_the_insert_and_update_write_target>>), and for `DELETE` it is named on the field with `@mutation(table:)` (see <<_naming_the_delete_write_target>>).
+A `@mutation` field takes exactly one input argument. Its fields bind to columns of the write target's table (`@field(name:)`, or the SDL name by default). The input type carries no table directive of its own (`@table` on an input is a xref:table.adoc[deprecated location] and is ignored): for `INSERT` and `UPDATE` the write target is derived from the field's return (see <<_naming_the_insert_and_update_write_target>>), and for `DELETE` it is named on the field with `@mutation(table:)` (see <<_naming_the_delete_write_target>>).
 
 An input field may also be a nested input object: a grouping shape whose own fields map onto columns of the *same* table. The grouping carries no DML semantics; the leaves flatten onto the outer write target as if declared at the top level, and absent-vs-null is honored independently at every nesting layer (an absent or `null` group skips its whole subtree; a present group descends per leaf). The tutorial's xref:../../tutorial/05-mutations.adoc#_grouping_fields_with_nested_input_types[Grouping fields with nested input types] walks a worked example. A nested input introducing a *second* DML target is a separate compound-mutation shape and is not admitted here.
 
@@ -115,7 +115,7 @@ type Mutation {
 }
 ----
 
-The input type carries no directive; its fields resolve against the table named on the field. A `DELETE` that does not name its table with `@mutation(table:)` is rejected at build time, with the message steering you to the argument. (An input type still carrying a legacy `@table` is itself rejected; see the xref:table.adoc[retired location].)
+The input type carries no directive; its fields resolve against the table named on the field. A `DELETE` that does not name its table with `@mutation(table:)` is rejected at build time, with the message steering you to the argument. (An input type still carrying a legacy `@table` builds with a warning; the directive is ignored, so it does not name the table either. See the xref:table.adoc[deprecated location].)
 
 == Payload-returning DELETE
 
@@ -169,7 +169,7 @@ Both shapes work with single and bulk DELETE; cardinality follows the carrier fi
 
 == Constraints
 
-* `INSERT` and `UPDATE` derive their write target from the return (a `@table` return, or a payload's `@table`-element data field), falling back to `@mutation(table:)` for an encoded-`ID` / scalar return (see <<_naming_the_insert_and_update_write_target>>). `DELETE` names its write target with `@mutation(table: "…")` on the field (it cannot derive the table from its return type, since the row is gone after the statement). A field with no write-target source is rejected at build time, with the message naming the applicable fix. `@table` on the input type is a xref:table.adoc[retired location] and is rejected.
+* `INSERT` and `UPDATE` derive their write target from the return (a `@table` return, or a payload's `@table`-element data field), falling back to `@mutation(table:)` for an encoded-`ID` / scalar return (see <<_naming_the_insert_and_update_write_target>>). `DELETE` names its write target with `@mutation(table: "…")` on the field (it cannot derive the table from its return type, since the row is gone after the statement). A field with no write-target source is rejected at build time, with the message naming the applicable fix. `@table` on the input type is a xref:table.adoc[deprecated location], ignored rather than consulted, so it is never a write-target source.
 * `UPDATE` and `DELETE` require the input columns to cover a primary key or unique key of the write-target table (inferred from the catalog, no directive needed); otherwise the build fails so a non-unique filter cannot silently broadcast. `DELETE` can opt out with `multiRow: true` for a deliberate broadcast; `UPDATE` has no broadcast shape (cover a key). `@lookupKey` on a mutation input field is no longer supported (it identified rows in the pre-catalog model); remove it.
 * `UPDATE` requires at least one input field outside the matched key (otherwise the `SET` clause is empty). `DELETE` has no such requirement — a key-only DELETE is the canonical single-row delete. `UPSERT` is exempt on the SET side: an upsert with no SET-clause fields is `INSERT … ON CONFLICT DO NOTHING`, which is a legitimate shape.
 * `@mutation` and xref:service.adoc[`@service`] are mutually exclusive on the same field. Pick one: `@mutation` for fully-generated DB operations, `@service` for handing the operation to custom Java.
@@ -179,7 +179,7 @@ Both shapes work with single and bulk DELETE; cardinality follows the carrier fi
 
 * xref:../../tutorial/05-mutations.adoc[Tutorial page 5: A first mutation] walks the `INSERT`/`UPDATE` flow against a running database.
 * xref:lookupKey.adoc[`@lookupKey`] is a Query-side lookup-key marker on `ARGUMENT_DEFINITION`; it no longer participates in mutation row identification (that is catalog-derived).
-* xref:table.adoc[`@table`] binds the object types whose returns carry a write target; on input types it is a retired location.
+* xref:table.adoc[`@table`] binds the object types whose returns carry a write target; on input types it is a deprecated location and is ignored.
 * xref:service.adoc[`@service`] for custom-Java mutations.
 
 xref:../index.adoc[← Reference index]

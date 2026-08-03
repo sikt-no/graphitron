@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Fixture warnings-as-errors gate: builds the sakila-example schema and asserts the
- * generator's warning channel emits <em>exactly</em> the expected set (one advisory).
+ * generator's warning channel emits <em>exactly</em> the expected set (two advisories).
  *
  * <p>Fixture builds treat generator warnings as errors unless the fixture's point is to assert
  * the warning path. This test declares which warnings the example fixture intentionally carries:
@@ -24,13 +24,19 @@ import static org.assertj.core.api.Assertions.assertThat;
  * content assertion, both over the {@code warnings()} list
  * {@link GraphQLRewriteGenerator#buildOutput()} exposes.
  *
- * <p>The expected entry is the {@code @asConnection} + required same-table
+ * <p>The first expected entry is the {@code @asConnection} + required same-table
  * {@code @nodeId} hygiene advisory on {@code Query.filmsConnectionByRequiredIds}. That field is
  * the execution-tier proof (in {@link GraphQLQueryTest#filmsConnectionByRequiredIds_idsSupplied_paginatesBoundedSet})
  * that the production shape ships a working WHERE-pk-IN connection; the shape intrinsically
  * warns, so the warning is pinned here rather than tolerated as log noise. The message format
  * itself is pinned on minimal SDL by {@code AsConnectionSameTableWarnFormatTest}.
  *
+ * <p>The second is the {@code @table}-on-input deprecation advisory for {@code CityCountryFilter},
+ * the fixture that proves the pass fires end-to-end through the plugin. Unlike the first it is a
+ * plain {@link BuildWarning.NoRule} rather than a {@code LintFinding}, so it rides no rule source
+ * and cannot be segregated by the filters below; that is why it is asserted here rather than
+ * carved out. The message format is pinned on minimal SDL by
+ * {@code TableOnInputDeprecationWarningTest}.
  */
 @PipelineTier
 class FixtureWarningsGateTest {
@@ -72,29 +78,47 @@ class FixtureWarningsGateTest {
             .toList();
 
         assertThat(warnings)
-            .as("the sakila-example fixture must emit exactly one generator warning; "
+            .as("the sakila-example fixture must emit exactly two generator warnings; "
                 + "a new entry means a fixture started tripping an advisory that is not "
                 + "declared/asserted (see R294)")
-            .hasSize(1);
+            .hasSize(2);
 
-        BuildWarning warning = warnings.get(0);
+        assertThat(warnings)
+            .as("the @asConnection same-table @nodeId advisory")
+            .anySatisfy(warning -> {
+                assertThat(warning.message())
+                    .contains("field 'filmsConnectionByRequiredIds'")
+                    .contains("@nodeId(typeName: 'Film')")
+                    .contains("'ids'")
+                    .contains("every page of @asConnection would equal the input set");
 
-        assertThat(warning.message())
-            .as("the one expected warning is the @asConnection same-table @nodeId advisory")
-            .contains("field 'filmsConnectionByRequiredIds'")
-            .contains("@nodeId(typeName: 'Film')")
-            .contains("'ids'")
-            .contains("every page of @asConnection would equal the input set");
+                // The field sits at schema.graphqls line 327; fields added above it shift this
+                // line. Update the expected line if the field moves.
+                assertThat(warning.location()).isNotNull();
+                assertThat(warning.location().getSourceName())
+                    .as("warning is attributed to the example schema source")
+                    .endsWith("schema.graphqls");
+                assertThat(warning.location().getLine())
+                    .as("warning is attributed to the filmsConnectionByRequiredIds field definition")
+                    .isEqualTo(327);
+            });
 
-        // The field sits at schema.graphqls line 327; fields added above it shift this line.
-        // Update the expected line if the field moves.
-        assertThat(warning.location()).isNotNull();
-        assertThat(warning.location().getSourceName())
-            .as("warning is attributed to the example schema source")
-            .endsWith("schema.graphqls");
-        assertThat(warning.location().getLine())
-            .as("warning is attributed to the filmsConnectionByRequiredIds field definition")
-            .isEqualTo(327);
+        assertThat(warnings)
+            .as("the @table-on-input deprecation advisory for the CityCountryFilter fixture")
+            .anySatisfy(warning -> {
+                assertThat(warning)
+                    .as("a plain NoRule advisory, not a lint finding: a deprecation announcement "
+                        + "carries no rule and no fix")
+                    .isInstanceOf(BuildWarning.NoRule.class);
+                assertThat(warning.message())
+                    .contains("`@table` on input type 'CityCountryFilter'")
+                    .contains("was ignored")
+                    .contains("will be rejected in a future release")
+                    .as("filter-only wording: no consuming mutation verb to name")
+                    .contains("resolve against each consuming field's table");
+                assertThat(warning.location()).isNotNull();
+                assertThat(warning.location().getSourceName()).endsWith("schema.graphqls");
+            });
     }
 
 }

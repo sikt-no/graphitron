@@ -29,9 +29,10 @@ override-propagation semantics that tie them together.
   via the `LookupRows` input-rows helper.
 - the sealed `LookupResolution` (`None` | `Keyed`) carried total on the table-read leaves
   pairs with `@lookupKey`.
-- `TypeBuilder.buildInputType` rejects any input carrying `@table` (a retired
-  directive location; the rejection message carries the per-verb migration
-  guidance) and classifies every other input on the plain path. An input carries
+- `TypeBuilder.buildInputType` classifies every input on the plain path, including
+  one carrying `@table` (a deprecated directive location, accepted and ignored;
+  a post-classification pass emits the per-usage advisory carrying the per-verb
+  migration guidance). An input carries
   no table of its own; its fields resolve against the consuming field's target
   table at the call site (`InputFieldResolver` on the filter path,
   `TypeBuilder.resolveInputFields` on the arg-level `@lookupKey` path), so an

@@ -44,9 +44,9 @@ The GraphQL spec does not allow `@deprecated` on a directive definition, nor on 
 | Directive | Status | Since | Migration
 
 | xref:directives/table.adoc[`@table`] (on `INPUT_OBJECT`)
-| Removed; `OBJECT` / `INTERFACE` unaffected
+| Ignored, warns per usage; will be rejected. `OBJECT` / `INTERFACE` unaffected
 | Rewrite v1
-| Remove `@table` from input types. The location went through the deprecation cycle (deprecated with a per-usage build warning, then removed); the classifier now rejects any input application at build time with a migration message. An input's fields resolve against each consuming field's table, so filters and lookup arguments need no directive. For a `@mutation(typeName: INSERT)` or `UPDATE` field, the write target is derived from the return (a `@table` return, or a carrier payload's `@table`-element data field); for an encoded-`ID` / scalar return, name it with xref:directives/mutation.adoc[`@mutation(table: "…")`] on the field. For a `@mutation(typeName: DELETE)` field, name the write target with `@mutation(table: "…")` on the field.
+| Remove `@table` from input types. The directive is accepted there and then ignored: its `name:` argument is never read and the input classifies exactly as it would without it, so a schema still carrying it builds with warnings rather than errors. Note that an input whose `@table` named a different table from its consumer's is not migrated silently-but-correctly; the declared table is discarded and the warning is the only signal. An input's fields resolve against each consuming field's table, so filters and lookup arguments need no directive. For a `@mutation(typeName: INSERT)` or `UPDATE` field, the write target is derived from the return (a `@table` return, or a carrier payload's `@table`-element data field); for an encoded-`ID` / scalar return, name it with xref:directives/mutation.adoc[`@mutation(table: "…")`] on the field. For a `@mutation(typeName: DELETE)` field, name the write target with `@mutation(table: "…")` on the field.
 
 | xref:directives/index-directive.adoc[`@index`]
 | Backward-compatibility alias
@@ -64,7 +64,8 @@ The GraphQL spec does not allow `@deprecated` on a directive definition, nor on 
 These directives parse but the rewrite refuses to generate against them. They are *not* deprecations (a deprecated surface still works); they are explicit rejections that fail the build with a structured diagnostic. Listed here because users sometimes confuse the categories:
 
 * xref:directives/notGenerated.adoc[`@notGenerated`] is rejected. Remove it from the schema; the rewrite has no equivalent escape hatch.
-* xref:directives/table.adoc[`@table`] on an `INPUT_OBJECT` is rejected (the row above records the completed deprecation cycle). The declaration keeps the location so old schemas parse to the migration message rather than a generic parse error.
+
+`@table` on an `INPUT_OBJECT` is *not* in this category: it is a live deprecation (the first row of the table above), accepted and ignored with a build warning, and only a future release will move it here.
 
 == See also
 

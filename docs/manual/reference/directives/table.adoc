@@ -11,7 +11,7 @@ Binds a GraphQL type to a jOOQ-modelled database table so the generator can proj
 directive @table(name: String) on OBJECT | INPUT_OBJECT | INTERFACE
 ----
 
-The `INPUT_OBJECT` location is retired: the declaration keeps it only so schemas still carrying the directive parse to a useful diagnostic instead of a generic "unknown directive location" error. See <<_retired_on_input_types>> below.
+The `INPUT_OBJECT` location is deprecated: the directive is accepted there and then ignored, with a build warning per usage, and will be rejected in a future release. See <<_deprecated_on_input_types>> below.
 
 == Parameters
 
@@ -36,12 +36,14 @@ type Customer implements Node @table(name: "customer") @node {
 
 A query that selects `customers { firstName }` produces a `SELECT customer.first_name` against this binding. Because the type carries `@table`, every `@field`-annotated column inside resolves against the `customer` table by default; nested types like `Address` re-bind via their own `@table` and join to `Customer` through `@reference`.
 
-[[_retired_on_input_types]]
-== Retired on input types
+[[_deprecated_on_input_types]]
+== Deprecated on input types
 
 [WARNING]
 ====
-Applying `@table` to an input (`INPUT_OBJECT`) was deprecated and has been removed. The classifier rejects any input application at build time with a migration message; the SDL declaration keeps the location only so the parser does not fail before that message can be shown. `@table` on `OBJECT` and `INTERFACE` is unaffected.
+Applying `@table` to an input (`INPUT_OBJECT`) is deprecated. The directive is accepted and then *ignored*: its `name:` argument is never read, and the input classifies exactly as the same input without it would. Every usage earns a build warning naming the type, and the location will be rejected outright in a future release. Remove it now. `@table` on `OBJECT` and `INTERFACE` is unaffected.
+
+Because the directive is ignored rather than honoured, an input whose `@table` names a *different* table from the one its consuming field resolves is not migrated silently-but-correctly: the declared table is discarded and the consumer's is used. The build warning is the only signal, so read it rather than assuming the two agreed.
 
 An input type never needed its own table fact: an input's fields resolve against each consuming field's table, and an input reused across consumers resolves per-consumer. What to do instead depends on the consumer:
 

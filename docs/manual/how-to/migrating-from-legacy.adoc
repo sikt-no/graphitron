@@ -1,5 +1,5 @@
 = How-to: Migrating from the legacy generator
-:description: Walk a schema from the legacy graphitron-codegen-parent generator to the rewrite. Covers the hard removals, the synthesis shims that still warn but will retire, the deprecated arguments to phase out, and the one intentional behavior divergence.
+:description: Walk a schema from the legacy graphitron-codegen-parent generator to the rewrite. Covers the hard removals, the locations and shims that still warn but will retire, the deprecated arguments to phase out, and the one intentional behavior divergence.
 :!toc:
 
 The rewrite generator (`graphitron-rewrite`) is directive-compatible with the legacy generator (`graphitron-codegen-parent`): the same `@table`, `@field`, `@service`, `@reference`, `@asConnection`, `@nodeId`, `@condition` directives all do approximately the same thing on the rewrite, and a schema authored against the legacy generator's directive surface will mostly compile under the rewrite without changes. The "mostly" is what this recipe covers: the hard removals (build fails until you remove the directive), the synthesis shims (build succeeds with a WARN today, will fail later), the deprecated arguments (build succeeds with a deprecation notice from graphql-java), and the one behavior divergence the rewrite intentionally preserves over legacy semantics.
@@ -21,7 +21,7 @@ One replacement pointer for the "Legacy-only directives" list above: legacy `@ta
 
 == Hard removals
 
-Two directives, and one directive location, the rewrite refuses to accept. All stay declared so the SDL still parses, but every application is rejected at classify time with a "no longer supported" message.
+Two directives the rewrite refuses to accept. Both stay declared so the SDL still parses, but every application is rejected at classify time with a "no longer supported" message.
 
 === `@notGenerated`
 
@@ -57,9 +57,15 @@ Legacy schemas used `@multitableReference(routes: [...])` to declare per-impleme
 
 Migration is a one-step delete-and-rebuild: drop the `@multitableReference` directive (and its `ReferencesForType` argument tree) and model the multi-table dispatch through `@discriminate` / `@discriminator`. xref:polymorphic-types.adoc[How-to: Polymorphic types] covers the supported shapes.
 
+== WARN today, error later
+
+Paths that still work in the rewrite for backwards compatibility but emit a per-occurrence WARN at build time. Plan to migrate them before the retirement gate fires (no committed date; the synthesis shims are tracked at `roadmap/retire-synthesis-shims.md`).
+
 === `@table` on input types
 
-Legacy schemas bound every mutation and filter input to a table with `@table` on the input type. The rewrite retired that location: an input's fields resolve against each *consuming field's* table, so the input-side declaration is redundant, and an input reused across consumers resolves per-consumer. Any input application is rejected at build time with a migration message (the location went through a deprecation-warning cycle first; the warning is now a rejection). `@table` on `OBJECT` and `INTERFACE` is unchanged.
+Legacy schemas bound every mutation and filter input to a table with `@table` on the input type. The rewrite deprecated that location: an input's fields resolve against each *consuming field's* table, so the input-side declaration is redundant, and an input reused across consumers resolves per-consumer. The directive is accepted and then *ignored*, with a per-usage build warning, and will be rejected in a future release. `@table` on `OBJECT` and `INTERFACE` is unchanged.
+
+Because it is ignored rather than honoured, an input whose `@table` named a *different* table from the one its consuming field resolves does not migrate silently-but-correctly: the declared table is discarded and the consumer's is used. The warning is the only signal, so read it instead of assuming the two agreed.
 
 The migration is per-consumer:
 
@@ -67,11 +73,7 @@ The migration is per-consumer:
 * *`INSERT` / `UPDATE` mutation inputs*: delete the `@table`; the write target is derived from the mutation field's return type (a `@table` return, or a payload whose data field is a `@table` element). If the return names no table (an encoded-`ID` / scalar return), add xref:../reference/directives/mutation.adoc[`@mutation(table: "…")`] on the field.
 * *`DELETE` mutation inputs*: delete the `@table` and add `@mutation(table: "…")` on the field (a `DELETE` cannot derive its table from the return type).
 
-xref:../reference/directives/table.adoc[The `@table` reference page] carries the retired-location statement; xref:../reference/directives/mutation.adoc[`@mutation`] documents the write-target derivation.
-
-== Synthesis shims: WARN today, error later
-
-Two paths still work in the rewrite for backwards compatibility but emit a per-occurrence WARN at build time. Plan to migrate them before the shim retirement gate fires (no committed date; tracked at `roadmap/retire-synthesis-shims.md`).
+xref:../reference/directives/table.adoc[The `@table` reference page] carries the deprecation statement; xref:../reference/directives/mutation.adoc[`@mutation`] documents the write-target derivation.
 
 === Bare `id: ID!` on `@node` types
 
@@ -103,7 +105,7 @@ When the shim retires, the WARN flips to a classify-time rejection: the field re
 
 === `[ID!] @field(name: "X_ID")` on filter input fields
 
-Legacy input types let an `ID!` (or `[ID!]`) field carry a column name through `@field(name:)` and the FK qualifier was inferred from the catalog. The rewrite still does this, but warns. Migration: replace the `@field(name:)` annotation with an explicit xref:../reference/directives/nodeId.adoc[`@nodeId(typeName:)`]. (Legacy schemas also carried `@table` on the input itself; that is a hard removal, covered above. The examples below show the input after that directive is dropped.)
+Legacy input types let an `ID!` (or `[ID!]`) field carry a column name through `@field(name:)` and the FK qualifier was inferred from the catalog. The rewrite still does this, but warns. Migration: replace the `@field(name:)` annotation with an explicit xref:../reference/directives/nodeId.adoc[`@nodeId(typeName:)`]. (Legacy schemas also carried `@table` on the input itself; that is a deprecated location, covered above in this same section. The examples below show the input after that directive is dropped.)
 
 Before:
 
@@ -224,7 +226,7 @@ The example schema's `filmsOuterOverrideFilterInput` and `filmsOuterOverridePlai
 
 Every other directive on the legacy surface reads under the rewrite the same way, with one nuance per directive worth flagging:
 
-* xref:../reference/directives/table.adoc[`@table`] on `OBJECT` / `INTERFACE`, xref:../reference/directives/field.adoc[`@field`], xref:../reference/directives/reference.adoc[`@reference`]: unchanged; the catalog-driven mechanics are identical. (`@table` on input types is a hard removal; see above.)
+* xref:../reference/directives/table.adoc[`@table`] on `OBJECT` / `INTERFACE`, xref:../reference/directives/field.adoc[`@field`], xref:../reference/directives/reference.adoc[`@reference`]: unchanged; the catalog-driven mechanics are identical. (`@table` on input types is deprecated and ignored; see above.)
 * xref:../reference/directives/service.adoc[`@service`], xref:../reference/directives/externalField.adoc[`@externalField`], xref:../reference/directives/enum.adoc[`@enum`]: unchanged surface; the only change is the `name:` → `className:` migration on `ExternalCodeReference` (above). (`@record` is the exception: it is now a no-op; see "`@record` is now a no-op" above.)
 * xref:../reference/directives/discriminate.adoc[`@discriminate`] / xref:../reference/directives/discriminator.adoc[`@discriminator`]: unchanged; the rewrite generates the type resolvers and runtime dispatchers automatically (no `RuntimeWiring`-side wiring needed).
 * xref:../reference/directives/asConnection.adoc[`@asConnection`]: unchanged synth-vs-declared shape; only `connectionName:` is deprecated. The rewrite emits the same Relay connection contract.
@@ -238,7 +240,7 @@ Every other directive on the legacy surface reads under the rewrite the same way
 
 The recommended order, from least invasive to most:
 
-. Run a `mvn install` to surface every `@notGenerated`, `@multitableReference`, and `@table`-on-input rejection. Replace each `@notGenerated` with the directive named in the matrix above; drop `@table` from input types per the per-consumer steps above. The build won't compile under the rewrite until this lands.
+. Run a `mvn install` to surface every `@notGenerated` and `@multitableReference` rejection, and every `@table`-on-input warning. Replace each `@notGenerated` with the directive named in the matrix above. The build won't compile under the rewrite until the two rejections are cleared; the `@table`-on-input warnings do not block it, but clear them too (per the per-consumer steps above) before the location is rejected in a future release.
 . Audit the build log for `synthesizes an `@nodeId` carrier without the directive` WARNs; declare `@nodeId` explicitly on each.
 . Audit input types for `[ID!] @field(name: "X_ID")` patterns; replace with `[ID!] @nodeId(typeName: "T")`.
 . Drop `connectionName:` arguments from `@asConnection` and let each field own its connection type.
@@ -246,7 +248,7 @@ The recommended order, from least invasive to most:
 . Migrate `@index` to `@order(index:)` on enum values.
 . If your schema uses `@condition(override: true)` with nested inputs that carry their own `@condition`, audit whether the legacy "outer owns everything" semantics were load-bearing. If they were, the SQL will change; rewrite the inner annotations to express the intended predicate set explicitly.
 
-Steps 1 is non-optional (the build fails). Steps 2-3 will become non-optional when the synthesis shims retire. Steps 4-6 produce deprecation notices but no failures. Step 7 only matters for schemas that relied on the divergence; most schemas don't.
+Step 1's two rejections are non-optional (the build fails); its `@table`-on-input half warns only. Steps 2-3 and that half of step 1 will become non-optional when the corresponding retirement gates fire. Steps 4-6 produce deprecation notices but no failures. Step 7 only matters for schemas that relied on the divergence; most schemas don't.
 
 == Pitfalls
 

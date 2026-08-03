@@ -108,7 +108,7 @@ If you've been migrating from the legacy generator and you have an outer `@condi
 
 == Filter inputs resolve against the consuming field's table
 
-A filter input needs no directive of its own (`@table` on an input is a retired location; the classifier rejects it). Its fields resolve against the *consuming field's* table: the query's return-type table, per call site. Three consequences:
+A filter input needs no directive of its own (`@table` on an input is a deprecated location; the classifier ignores it and warns). Its fields resolve against the *consuming field's* table: the query's return-type table, per call site. Three consequences:
 
 * *Implicit predicates come for free.* An un-annotated input field that resolves to a column (via `@field(name:)` or the SDL-name default) contributes an implicit `column = ?` predicate, exactly like a scalar argument. xref:../reference/directives/condition.adoc[`@condition`] is for the predicates the equality decomposition can't express, not a prerequisite for filtering.
 * *Reuse resolves per-consumer.* The same input consumed by two fields returning different tables classifies once per call site, each against that consumer's table. A field that resolves on no column of a consumer's table fails the build with a diagnostic naming that consumer's table.

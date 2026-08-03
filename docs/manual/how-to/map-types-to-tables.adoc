@@ -81,7 +81,7 @@ The argument can also drive a typed-enum filter (see "Enum values" below) or a x
 
 == Input-field-to-column: mutations and filters
 
-`@field` on `INPUT_FIELD_DEFINITION` plays the same role inside an `input` type used by a mutation or a filter. The input type itself carries no table directive (`@table` on an input is a retired location; the classifier rejects it): its fields resolve against each *consuming field's* table. For a mutation that is the write-target table (derived from the field's return type, or named with xref:../reference/directives/mutation.adoc[`@mutation(table:)`]); for a query filter it is the field's return-type table.
+`@field` on `INPUT_FIELD_DEFINITION` plays the same role inside an `input` type used by a mutation or a filter. The input type itself carries no table directive (`@table` on an input is a deprecated location; the classifier ignores it and warns): its fields resolve against each *consuming field's* table. For a mutation that is the write-target table (derived from the field's return type, or named with xref:../reference/directives/mutation.adoc[`@mutation(table:)`]); for a query filter it is the field's return-type table.
 
 [source,graphql]
 ----
@@ -162,7 +162,7 @@ Two consequences worth highlighting:
 * The target identifier must resolve in the surrounding `@table`'s jOOQ catalog; mismatches fail the build with a candidate hint.
 * `@field` is for column-bound slots only. Relations and nested types use xref:../reference/directives/reference.adoc[`@reference`] or auto-discovered FK paths.
 * GraphQL slot name and target identifier match case-insensitively (lowercased + underscore-normalised). The directive is redundant when names match; spell it out anyway to surface drift.
-* Input types carry no `@table` (the location is retired); their fields resolve against each consuming field's table.
+* Input types carry no `@table` (the location is deprecated and ignored); their fields resolve against each consuming field's table.
 * Text-column enum values default to their own name when `@field` is omitted; that is only correct when the DB stores the GraphQL identifier verbatim.
 * jOOQ-enum values must match the Java enum constants 1:1; `@field` per value is rejected on the jOOQ-enum case.
 * The argument-side default (column lookup against the field's *return-type* table) is what makes argument `@field` work without a `@table` on the argument itself; it also means the same argument bound to two different return types resolves against two different tables.

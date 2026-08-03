@@ -27,13 +27,13 @@ directive @notGenerated on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_
 """
 Connect this type to a jOOQ table. All the containing fields will by default be assumed to be located there.
 
-Retired on `INPUT_OBJECT`. The declaration retains the location only so the GraphQL parser does
-not fail with "unknown directive location"; the rewrite classifier rejects any input application
-with a migration message. An input's fields resolve against each consuming field's table, so
-filters and lookup args need no directive; a DELETE mutation names its write target with
-`@mutation(table:)` on the field, and INSERT/UPDATE derive it from the field's return type
-(with `@mutation(table:)` for encoded-ID / scalar returns). `@table` on `OBJECT` / `INTERFACE`
-is unaffected.
+Deprecated on `INPUT_OBJECT`, where it is accepted and then **ignored**: the `name:` argument is
+never read, and the input classifies exactly as it would without the directive. Each usage earns a
+build warning and the location will be rejected in a future release, so remove it now. An input's
+fields resolve against each consuming field's table, so filters and lookup args need no directive;
+a DELETE mutation names its write target with `@mutation(table:)` on the field, and INSERT/UPDATE
+derive it from the field's return type (with `@mutation(table:)` for encoded-ID / scalar returns).
+`@table` on `OBJECT` / `INTERFACE` is unaffected.
 """
 directive @table(name: String) on OBJECT | INPUT_OBJECT | INTERFACE
 
@@ -288,8 +288,9 @@ the new regime; see R145).
 `table`: the SQL table a `@mutation(typeName: DELETE)` deletes from, named on the consuming field.
 This is the preferred way to give a DELETE its write target: a bare `ID` / `Boolean` / count return
 carries no table, so `@mutation(table: "film")` names it directly (the field-level analogue of
-`@service(argMapping:)`). It supersedes the deprecated `@table` on the DELETE's input type; when both
-are present the field-level `table:` wins and the input's `@table` is outranked. Currently wired for
+`@service(argMapping:)`). It replaces the deprecated `@table` on the DELETE's input type; that
+directive is ignored wherever it appears on an input, so there is nothing for `table:` to outrank.
+Currently wired for
 `typeName: DELETE` only; supplying it on any other verb is rejected (INSERT/UPDATE/UPSERT derive their
 write target by other means). See R457.
 """
