@@ -2,6 +2,7 @@ package no.sikt.graphitron.lsp.state;
 
 import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
 import no.sikt.graphitron.lsp.parsing.TypeNames;
+import no.sikt.graphitron.lsp.trace.LspTrace;
 import io.github.treesitter.jtreesitter.InputEdit;
 import io.github.treesitter.jtreesitter.Parser;
 import io.github.treesitter.jtreesitter.Point;
@@ -44,9 +45,12 @@ public final class WorkspaceFile {
     private Set<String> dependsOnDeclarations;
 
     public WorkspaceFile(int version, String content) {
-        this.parser = new Parser(GraphqlLanguage.get());
-        this.source = content.getBytes(StandardCharsets.UTF_8);
-        this.tree = parser.parse(content).orElseThrow(WorkspaceFile::parseHalted);
+        try (var span = LspTrace.span("file.parseInitial")) {
+            span.detail("chars", content.length());
+            this.parser = new Parser(GraphqlLanguage.get());
+            this.source = content.getBytes(StandardCharsets.UTF_8);
+            this.tree = parser.parse(content).orElseThrow(WorkspaceFile::parseHalted);
+        }
         this.version = version;
         refreshTypeIndex();
     }
@@ -117,8 +121,15 @@ public final class WorkspaceFile {
         tree.edit(new InputEdit(startByte, oldEndByte, newEndByte, startPoint, oldEndPoint, newEndPoint));
         this.source = updated;
         Tree previous = tree;
-        this.tree = parser.parse(new String(updated, StandardCharsets.UTF_8), previous)
-            .orElseThrow(WorkspaceFile::parseHalted);
+        // Separately timed from the type-index refresh below because the two scale for
+        // different reasons: the reparse is incremental in tree-sitter but pays a
+        // whole-buffer decode to hand the parser a String, while refreshTypeIndex walks the
+        // whole tree regardless. Both are per-edit and both scale with file size.
+        try (var span = LspTrace.span("file.reparse")) {
+            span.detail("bytes", updated.length);
+            this.tree = parser.parse(new String(updated, StandardCharsets.UTF_8), previous)
+                .orElseThrow(WorkspaceFile::parseHalted);
+        }
         previous.close();
         this.version = newVersion;
         refreshTypeIndex();
@@ -134,7 +145,10 @@ public final class WorkspaceFile {
         }
         this.source = content.getBytes(StandardCharsets.UTF_8);
         Tree previous = tree;
-        this.tree = parser.parse(content).orElseThrow(WorkspaceFile::parseHalted);
+        try (var span = LspTrace.span("file.reparseFull")) {
+            span.detail("chars", content.length());
+            this.tree = parser.parse(content).orElseThrow(WorkspaceFile::parseHalted);
+        }
         previous.close();
         this.version = newVersion;
         refreshTypeIndex();
@@ -155,12 +169,16 @@ public final class WorkspaceFile {
     }
 
     private void refreshTypeIndex() {
-        var extracted = TypeNames.extract(tree.getRootNode(), source);
-        this.declaredTypes = Set.copyOf(extracted.declared());
-        var deps = new LinkedHashSet<>(extracted.referenced());
-        deps.removeAll(extracted.declared());
-        deps.removeAll(TypeNames.BUILTIN_SCALARS);
-        this.dependsOnDeclarations = Set.copyOf(deps);
+        try (var span = LspTrace.span("file.typeIndex")) {
+            span.detail("bytes", source.length);
+            var extracted = TypeNames.extract(tree.getRootNode(), source);
+            this.declaredTypes = Set.copyOf(extracted.declared());
+            var deps = new LinkedHashSet<>(extracted.referenced());
+            deps.removeAll(extracted.declared());
+            deps.removeAll(TypeNames.BUILTIN_SCALARS);
+            this.dependsOnDeclarations = Set.copyOf(deps);
+            span.detail("declared", declaredTypes.size()).detail("depends", dependsOnDeclarations.size());
+        }
     }
 
     private static IllegalStateException parseHalted() {

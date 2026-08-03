@@ -9,6 +9,7 @@ import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.catalog.SourceWalker;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.Positions;
+import no.sikt.graphitron.lsp.trace.LspTrace;
 import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
 
 import java.nio.file.Path;
@@ -125,12 +126,18 @@ public final class Workspace {
      */
     public <R> R withView(String uri, R absent, java.util.function.Function<FileSnapshot, R> present) {
         FileSnapshot view;
-        synchronized (lock) {
-            var file = files.get(uri);
-            if (file == null) {
-                return absent;
+        // Scoped to the lock-held region only, not to `present`: this span's duration is
+        // how long a read request waited on the mutator lock, which is the contention a
+        // slow inline recalculation inflicts on concurrent requests. The feature
+        // computation that follows is timed by the calling handler's own span.
+        try (var _ = LspTrace.span("workspace.snapshot")) {
+            synchronized (lock) {
+                var file = files.get(uri);
+                if (file == null) {
+                    return absent;
+                }
+                view = file.snapshot();
             }
-            view = file.snapshot();
         }
         try {
             return present.apply(view);
@@ -151,10 +158,15 @@ public final class Workspace {
     public <R> R withAllViews(java.util.function.Function<Map<String, FileSnapshot>, R> present) {
         var views = new LinkedHashMap<String, FileSnapshot>();
         try {
-            synchronized (lock) {
-                for (var entry : files.entrySet()) {
-                    views.put(entry.getKey(), entry.getValue().snapshot());
+            // Lock-held region only, as in withView. Clones every open file, so on a large
+            // workspace this is the request-path cost that scales with file count.
+            try (var span = LspTrace.span("workspace.snapshotAll")) {
+                synchronized (lock) {
+                    for (var entry : files.entrySet()) {
+                        views.put(entry.getKey(), entry.getValue().snapshot());
+                    }
                 }
+                span.detail("files", views.size());
             }
             return present.apply(views);
         } finally {
@@ -398,10 +410,21 @@ public final class Workspace {
      * a correctness hazard.
      */
     private void enqueueAndNotify(Runnable mutation) {
-        synchronized (lock) {
-            mutation.run();
+        // Two spans, because the split is the whole question when the server stops
+        // responding: `mutate` covers lock acquisition plus the mutation (so its duration
+        // includes any wait behind a concurrent mutator), while `notify` covers the
+        // listener, which drains the queue and computes diagnostics inline on this thread.
+        // A `notify` far larger than its `mutate` sibling is the signal that a mutation's
+        // real cost is the recalculation it triggers, not the edit itself.
+        try (var span = LspTrace.span("workspace.mutate")) {
+            synchronized (lock) {
+                mutation.run();
+                span.detail("open", files.size()).detail("queued", toRecalculate.size());
+            }
         }
-        recalculateListener.run();
+        try (var _ = LspTrace.span("workspace.notify")) {
+            recalculateListener.run();
+        }
     }
 
     private void applyChange(WorkspaceFile file, int newVersion, TextDocumentContentChangeEvent change) {

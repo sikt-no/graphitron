@@ -123,4 +123,61 @@ surfaces a single startup error naming the extracted path rather than an opaque
 xref:../../manual/reference/lsp-requirements.adoc[LSP requirements] for the
 startup-diagnostics detail.
 
+[#tracing-the-request-path]
+== Tracing the LSP request path
+
+When an editor session stops responding, `LspTrace` attributes the wall clock to
+a named phase. It is off by default and allocates nothing while off, so it sits
+directly on per-keystroke paths.
+
+Turn it on with a system property or an environment variable:
+
+[source,bash]
+----
+mvn graphitron:dev -Dgraphitron.lsp.trace=true
+
+# or, when the editor spawns the server and you cannot add a flag
+GRAPHITRON_LSP_TRACE=true
+----
+
+Output goes to stderr, or to a file with
+`-Dgraphitron.lsp.trace.file=/tmp/lsp-trace.log`. It never goes to stdout: the
+stdio launcher speaks JSON-RPC there, so a stray byte would desynchronise the
+framing. Phases slower than `graphitron.lsp.trace.slowMs` (default 100) are
+tagged `SLOW`.
+
+Each phase emits an open line and a close line, so a phase that never returns
+shows up as an unmatched `>`. That is the point: it separates "stuck here" from
+"slow everywhere", which a duration-only format cannot.
+
+[source,text]
+----
+lsp-trace > 6 workspace.mutate thread=graphitron-dev-conn-1
+lsp-trace > 7   file.reparse thread=graphitron-dev-conn-1
+lsp-trace < 7   file.reparse 1.1ms thread=graphitron-dev-conn-1 bytes=23781
+lsp-trace > 8   file.typeIndex thread=graphitron-dev-conn-1
+lsp-trace < 8   file.typeIndex 13.8ms thread=graphitron-dev-conn-1 bytes=23781 declared=400
+lsp-trace < 6 workspace.mutate 21.9ms thread=graphitron-dev-conn-1 open=1 queued=1
+----
+
+Three things to read off a trace:
+
+[cols="1,3"]
+|===
+| Signal | What it means
+
+| `thread=` repeated across a request and a notification
+| Both ran on the same lsp4j thread. While a notification's phases run, the
+  server is not reading the connection, so client requests queue and can time
+  out rather than merely being slow.
+
+| `workspace.notify` much larger than the `workspace.mutate` before it
+| The mutation's real cost is the diagnostic recalculation it triggers, not the
+  edit. Check `queued=` on the `mutate` line and `files=` on
+  `publishDiagnostics.drain`.
+
+| `workspace.snapshot` far above zero
+| A read request waited on the mutator lock, so something else is holding it.
+|===
+
 xref:index.adoc[← How-to index]

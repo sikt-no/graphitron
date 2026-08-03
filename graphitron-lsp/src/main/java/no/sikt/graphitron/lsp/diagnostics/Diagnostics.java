@@ -18,6 +18,7 @@ import no.sikt.graphitron.lsp.parsing.SchemaCoordinate;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
 import no.sikt.graphitron.lsp.state.DirectiveResolution;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
+import no.sikt.graphitron.lsp.trace.LspTrace;
 import no.sikt.graphitron.rewrite.BuildWarning;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.ScalarTypeResolver;
@@ -83,8 +84,27 @@ public final class Diagnostics {
         LspVocabulary vocabulary, String uri, FileSnapshot file, CompletionData catalog,
         LspSchemaSnapshot snapshot, ValidationReport report
     ) {
+        try (var span = LspTrace.span("diagnostics.compute")) {
+            span.detail("uri", uri);
+            var result = computeTraced(vocabulary, uri, file, catalog, snapshot, report, span);
+            span.detail("diagnostics", result.size());
+            return result;
+        }
+    }
+
+    /**
+     * The document walk itself. Split from {@link #compute(LspVocabulary, String, FileSnapshot,
+     * CompletionData, LspSchemaSnapshot, ValidationReport)} so the trace span can attach the
+     * directive count and the validator-projection cost measured inside it without threading a
+     * span through every private validator.
+     */
+    private static List<Diagnostic> computeTraced(
+        LspVocabulary vocabulary, String uri, FileSnapshot file, CompletionData catalog,
+        LspSchemaSnapshot snapshot, ValidationReport report, LspTrace.Span span
+    ) {
         var out = new ArrayList<Diagnostic>();
         var directives = Directives.findAll(file.tree().getRootNode());
+        span.detail("directives", directives.size());
         for (var directive : directives) {
             String directiveName = Nodes.text(directive.nameNode(), file.source());
             if (SPEC_BUILTIN_DIRECTIVES.contains(directiveName)) {
@@ -127,7 +147,15 @@ public final class Diagnostics {
                 }
             }
         }
-        out.addAll(validatorDiagnostics(uri, file, snapshot, report));
+        // Timed separately from the directive walk: this projection scans the whole
+        // ValidationReport to pick out the entries for one URI, so its cost tracks the
+        // report's total size rather than anything about the file being diagnosed. On a
+        // whole-workspace recalculation it is paid once per open file.
+        try (var reportSpan = LspTrace.span("diagnostics.validatorReport")) {
+            reportSpan.detail("errors", report.errors().size())
+                .detail("warnings", report.warnings().size());
+            out.addAll(validatorDiagnostics(uri, file, snapshot, report));
+        }
         return out;
     }
 

@@ -12,6 +12,7 @@ import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import io.github.treesitter.jtreesitter.Node;
 import io.github.treesitter.jtreesitter.Point;
+import no.sikt.graphitron.lsp.trace.LspTrace;
 import no.sikt.graphitron.rewrite.lint.DeprecationRecognizer;
 import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
 
@@ -81,7 +82,13 @@ public record LspVocabulary(
      * overlay. The structural invariant fires on construction.
      */
     public static LspVocabulary load(Map<SchemaCoordinate, Behavior> overlay) {
-        return new LspVocabulary(overlay, parseDirectivesSdl());
+        // Traced because this is not as cheap as its call sites assume: it reparses the
+        // bundled SDL and re-validates every overlay coordinate against the result. A trace
+        // showing one of these per request identifies a hot path that should be holding the
+        // workspace's cached instance instead.
+        try (var _ = LspTrace.span("vocabulary.load")) {
+            return new LspVocabulary(overlay, parseDirectivesSdl());
+        }
     }
 
     /**

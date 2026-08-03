@@ -11,6 +11,7 @@ import no.sikt.graphitron.lsp.inlay.InlayHints;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.state.Workspace;
+import no.sikt.graphitron.lsp.trace.LspTrace;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionParams;
 import org.eclipse.lsp4j.Command;
@@ -79,30 +80,44 @@ public class GraphitronTextDocumentService implements TextDocumentService {
     @Override
     public void didOpen(DidOpenTextDocumentParams params) {
         var doc = params.getTextDocument();
-        workspace.didOpen(doc.getUri(), doc.getVersion(), doc.getText());
+        try (var span = LspTrace.span("didOpen")) {
+            span.detail("uri", doc.getUri()).detail("chars", doc.getText().length());
+            workspace.didOpen(doc.getUri(), doc.getVersion(), doc.getText());
+        }
     }
 
     @Override
     public void didChange(DidChangeTextDocumentParams params) {
         var doc = params.getTextDocument();
-        workspace.didChange(doc.getUri(), doc.getVersion(), params.getContentChanges());
+        try (var span = LspTrace.span("didChange")) {
+            span.detail("uri", doc.getUri())
+                .detail("version", doc.getVersion())
+                .detail("changes", params.getContentChanges().size());
+            workspace.didChange(doc.getUri(), doc.getVersion(), params.getContentChanges());
+        }
     }
 
     @Override
     public void didClose(DidCloseTextDocumentParams params) {
         String uri = params.getTextDocument().getUri();
-        // Clear any diagnostics the client may still be holding for the
-        // closed file. Other dependents recalculate via the workspace's
-        // recalculate listener as part of the didClose call below.
-        if (client != null) {
-            client.publishDiagnostics(new PublishDiagnosticsParams(uri, List.of()));
+        try (var span = LspTrace.span("didClose")) {
+            span.detail("uri", uri);
+            // Clear any diagnostics the client may still be holding for the
+            // closed file. Other dependents recalculate via the workspace's
+            // recalculate listener as part of the didClose call below.
+            if (client != null) {
+                client.publishDiagnostics(new PublishDiagnosticsParams(uri, List.of()));
+            }
+            workspace.didClose(uri);
         }
-        workspace.didClose(uri);
     }
 
     @Override
     public void didSave(DidSaveTextDocumentParams params) {
-        onSchemaSaved.accept(params.getTextDocument().getUri());
+        try (var span = LspTrace.span("didSave")) {
+            span.detail("uri", params.getTextDocument().getUri());
+            onSchemaSaved.accept(params.getTextDocument().getUri());
+        }
     }
 
     /**
@@ -112,28 +127,49 @@ public class GraphitronTextDocumentService implements TextDocumentService {
      */
     private void publishDiagnosticsForRecalculate() {
         if (client == null) return;
-        for (String uri : workspace.drainRecalculate()) {
-            var diagnostics = workspace.withView(uri, null, view ->
-                Diagnostics.compute(
-                    workspace.vocabulary(), uri, view, workspace.catalog(),
-                    workspace.snapshot(), workspace.validationReport()));
-            if (diagnostics != null) {
-                client.publishDiagnostics(new PublishDiagnosticsParams(uri, diagnostics));
+        var queued = workspace.drainRecalculate();
+        // Traced as one span around the whole drain plus one per file: the drain runs
+        // inline on the caller's thread, so the outer duration is what a caller pays for
+        // its mutation, and the per-file breakdown separates "many files" from "one slow
+        // file" as the cause.
+        try (var drainSpan = LspTrace.span("publishDiagnostics.drain")) {
+            drainSpan.detail("files", queued.size());
+            for (String uri : queued) {
+                try (var fileSpan = LspTrace.span("publishDiagnostics.file")) {
+                    fileSpan.detail("uri", uri);
+                    var diagnostics = workspace.withView(uri, null, view ->
+                        Diagnostics.compute(
+                            workspace.vocabulary(), uri, view, workspace.catalog(),
+                            workspace.snapshot(), workspace.validationReport()));
+                    if (diagnostics != null) {
+                        fileSpan.detail("diagnostics", diagnostics.size());
+                        client.publishDiagnostics(new PublishDiagnosticsParams(uri, diagnostics));
+                    }
+                }
             }
         }
     }
 
     @Override
     public CompletableFuture<List<Either<Command, CodeAction>>> codeAction(CodeActionParams params) {
-        return CompletableFuture.supplyAsync(() -> CodeActions.compute(params, workspace));
+        return CompletableFuture.supplyAsync(() -> {
+            try (var span = LspTrace.span("codeAction")) {
+                span.detail("uri", params.getTextDocument().getUri());
+                var actions = CodeActions.compute(params, workspace);
+                span.detail("actions", actions.size());
+                return actions;
+            }
+        });
     }
 
     @Override
     public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> definition(DefinitionParams params) {
         return CompletableFuture.supplyAsync(() -> {
             String uri = params.getTextDocument().getUri();
-            Either<List<? extends Location>, List<? extends LocationLink>> result =
-                workspace.withView(uri, null, file -> {
+            try (var span = LspTrace.span("definition")) {
+                span.detail("uri", uri);
+                Either<List<? extends Location>, List<? extends LocationLink>> result =
+                    workspace.withView(uri, null, file -> {
                     var pos = Positions.resolve(file.source(),
                         params.getPosition().getLine(),
                         params.getPosition().getCharacter()).tsPoint();
@@ -148,49 +184,67 @@ public class GraphitronTextDocumentService implements TextDocumentService {
                             workspace.sourceIndex(), workspace.snapshot(), pos))
                         .map(loc -> Either.<List<? extends Location>, List<? extends LocationLink>>forLeft(List.of(loc)))
                         .orElseGet(() -> Either.forLeft(List.of()));
-                });
-            return result != null ? result : Either.forLeft(List.of());
+                    });
+                return result != null ? result : Either.forLeft(List.of());
+            }
         });
     }
 
     @Override
     public CompletableFuture<List<InlayHint>> inlayHint(InlayHintParams params) {
-        return CompletableFuture.supplyAsync(() ->
-            workspace.withView(params.getTextDocument().getUri(), List.of(), file ->
-                InlayHints.compute(
-                    workspace.inlayHintConfig(), file, workspace.snapshot(), params.getRange())));
+        return CompletableFuture.supplyAsync(() -> {
+            try (var span = LspTrace.span("inlayHint")) {
+                span.detail("uri", params.getTextDocument().getUri());
+                var hints = workspace.withView(params.getTextDocument().getUri(), List.<InlayHint>of(), file ->
+                    InlayHints.compute(
+                        workspace.inlayHintConfig(), file, workspace.snapshot(), params.getRange()));
+                span.detail("hints", hints.size());
+                return hints;
+            }
+        });
     }
 
     @Override
     public CompletableFuture<Hover> hover(HoverParams params) {
-        return CompletableFuture.supplyAsync(() ->
-            workspace.withView(params.getTextDocument().getUri(), null, file -> {
-                var pos = Positions.resolve(file.source(),
-                    params.getPosition().getLine(),
-                    params.getPosition().getCharacter()).tsPoint();
-                return Hovers.compute(workspace.vocabulary(), file, workspace.catalog(),
-                    workspace.sourceIndex(), workspace.snapshot(), pos,
-                    workspace.inlayHintConfig().hoverClassification()).orElse(null);
-            }));
+        return CompletableFuture.supplyAsync(() -> {
+            try (var span = LspTrace.span("hover")) {
+                span.detail("uri", params.getTextDocument().getUri());
+                return workspace.withView(params.getTextDocument().getUri(), null, file -> {
+                    var pos = Positions.resolve(file.source(),
+                        params.getPosition().getLine(),
+                        params.getPosition().getCharacter()).tsPoint();
+                    return Hovers.compute(workspace.vocabulary(), file, workspace.catalog(),
+                        workspace.sourceIndex(), workspace.snapshot(), pos,
+                        workspace.inlayHintConfig().hoverClassification()).orElse(null);
+                });
+            }
+        });
     }
 
     @Override
     public CompletableFuture<Either<List<CompletionItem>, CompletionList>> completion(CompletionParams params) {
-        return CompletableFuture.supplyAsync(() ->
-            workspace.withView(params.getTextDocument().getUri(),
-                Either.<List<CompletionItem>, CompletionList>forLeft(List.of()), file -> {
-                    // One snapshot feeds the position resolve, the directive scan, and
-                    // Completions.at, so completion can no longer tear against an edit
-                    // that lands between its own source and tree reads.
-                    var pos = Positions.resolve(file.source(),
-                        params.getPosition().getLine(),
-                        params.getPosition().getCharacter()).tsPoint();
-                    var directiveOpt = Directives.findContaining(file.tree().getRootNode(), pos);
-                    if (directiveOpt.isEmpty()) {
-                        return Either.forLeft(List.of());
-                    }
-                    return Either.forLeft(Completions.at(
-                        workspace, directiveOpt.get(), pos, params.getPosition(), file.source()));
-                }));
+        return CompletableFuture.supplyAsync(() -> {
+            try (var span = LspTrace.span("completion")) {
+                span.detail("uri", params.getTextDocument().getUri());
+                return workspace.withView(params.getTextDocument().getUri(),
+                    Either.<List<CompletionItem>, CompletionList>forLeft(List.of()), file -> {
+                        // One snapshot feeds the position resolve, the directive scan, and
+                        // Completions.at, so completion can no longer tear against an edit
+                        // that lands between its own source and tree reads.
+                        var pos = Positions.resolve(file.source(),
+                            params.getPosition().getLine(),
+                            params.getPosition().getCharacter()).tsPoint();
+                        var directiveOpt = Directives.findContaining(file.tree().getRootNode(), pos);
+                        if (directiveOpt.isEmpty()) {
+                            span.detail("directive", "none");
+                            return Either.forLeft(List.of());
+                        }
+                        var items = Completions.at(
+                            workspace, directiveOpt.get(), pos, params.getPosition(), file.source());
+                        span.detail("items", items.size());
+                        return Either.forLeft(items);
+                    });
+            }
+        });
     }
 }
