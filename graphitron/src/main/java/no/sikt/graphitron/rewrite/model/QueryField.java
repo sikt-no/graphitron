@@ -73,6 +73,10 @@ public sealed interface QueryField extends RootField
         PaginationSpec pagination,
         LookupMapping lookupMapping
     ) implements QueryField, SqlGeneratingField, LookupField {
+        /** The resolved lookup correspondence; always keyed on this leaf. */
+        public LookupResolution lookup() {
+            return new LookupResolution.Keyed(lookupMapping);
+        }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(returnType.table());
         }
@@ -85,8 +89,12 @@ public sealed interface QueryField extends RootField
         ReturnTypeRef.TableBoundReturnType returnType,
         List<WhereFilter> filters,
         OrderBySpec orderBy,
-        PaginationSpec pagination
+        PaginationSpec pagination,
+        LookupResolution lookup
     ) implements QueryField, SqlGeneratingField {
+        public QueryTableField {
+            java.util.Objects.requireNonNull(lookup, "lookup");
+        }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(returnType.table());
         }

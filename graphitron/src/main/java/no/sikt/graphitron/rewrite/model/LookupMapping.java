@@ -11,9 +11,9 @@ import java.util.List;
  * {@link CallSiteExtraction.NodeIdDecodeKeys} arm (Throw on synthesised lookup-key paths, Skip
  * on the same-table {@code @nodeId} filter path).
  *
- * <p>The sealed interface is retained for shape-locality (every {@link LookupField} carries
- * a {@code LookupMapping}); a future "rooted at parent via correlated subquery" variant would
- * land as a sibling permit.
+ * <p>The sealed interface is retained for shape-locality (a {@link LookupResolution.Keyed}
+ * always carries a {@code LookupMapping}); a future "rooted at parent via correlated subquery"
+ * variant would land as a sibling permit.
  */
 public sealed interface LookupMapping permits LookupMapping.ColumnMapping {
 
@@ -41,13 +41,15 @@ public sealed interface LookupMapping permits LookupMapping.ColumnMapping {
         TableRef targetTable
     ) implements LookupMapping {
 
-        // No non-empty check on `args`. An empty list is a legitimate intermediate
-        // state: LookupMappingResolver.resolve returns ColumnMapping(emptyList(),
-        // table) when no @lookupKey-bearing arg was seen, and
-        // FieldBuilder.classifyTableFieldComponents rejects the field before it
-        // becomes a LookupTableField. The MapInput / DecodedRecord canonical
-        // constructors enforce non-empty bindings — divergence is intentional.
         public ColumnMapping {
+            // The "no @lookupKey-bearing arg was seen" outcome is LookupResolution.None,
+            // not an empty mapping, so a constructed mapping always carries at least one
+            // key slot the VALUES + JOIN emitter can render.
+            if (args.isEmpty()) {
+                throw new IllegalArgumentException(
+                    "ColumnMapping must carry at least one lookup arg; an argument surface"
+                    + " resolving no lookup keys is LookupResolution.None");
+            }
             args = List.copyOf(args);
         }
 

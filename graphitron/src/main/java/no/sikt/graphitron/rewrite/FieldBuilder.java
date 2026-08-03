@@ -72,7 +72,7 @@ import no.sikt.graphitron.rewrite.model.PivotError;
 import no.sikt.graphitron.rewrite.model.PivotSpec;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
-import no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping;
+import no.sikt.graphitron.rewrite.model.LookupResolution;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.RoutineChain;
@@ -288,10 +288,24 @@ class FieldBuilder {
      */
     private sealed interface TableFieldComponents {
         record Ok(List<WhereFilter> filters, OrderBySpec orderBy, PaginationSpec pagination,
-                  LookupMapping lookupMapping) implements TableFieldComponents {}
+                  LookupResolution lookup) implements TableFieldComponents {}
         record Rejected(Rejection rejection) implements TableFieldComponents {
             public String message() { return rejection.message(); }
         }
+    }
+
+    /**
+     * Unwraps the mapping at a mint site the {@code hasLookupKeyAnywhere} gate already guards:
+     * the resolver answers {@link LookupResolution.Keyed} for every gated coordinate because
+     * {@code projectForFilter} rejects the declared-but-unresolved combination first.
+     */
+    private static LookupMapping requireKeyed(LookupResolution lookup) {
+        return switch (lookup) {
+            case LookupResolution.Keyed keyed -> keyed.mapping();
+            case LookupResolution.None _ -> throw new IllegalStateException(
+                "Graphitron classifier bug: a lookup mint site was reached with no resolved"
+                + " lookup mapping; the projectForFilter rejection must fire first");
+        };
     }
 
     /**
@@ -923,7 +937,7 @@ class FieldBuilder {
                     parentSplitSource.sourceKey(),
                     parentSplitSource.lift(),
                     parentSplitSource.loaderRegistration(),
-                    tfc.lookupMapping(),
+                    requireKeyed(tfc.lookup()),
                     tbtParentCorrelation);
             }
             if (!hasSplitQuery && hasLookupKey) {
@@ -933,7 +947,7 @@ class FieldBuilder {
                 }
                 return new no.sikt.graphitron.rewrite.model.ChildField.LookupTableField(
                     parentTypeName, name, location, returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
-                    tfc.lookupMapping(),
+                    requireKeyed(tfc.lookup()),
                     tbtParentCorrelation);
             }
             if (hasSplitQuery) {
@@ -943,6 +957,7 @@ class FieldBuilder {
                     parentSplitSource.sourceKey(),
                     parentSplitSource.lift(),
                     parentSplitSource.loaderRegistration(),
+                    tfc.lookup(),
                     tbtParentCorrelation);
             }
             if (returnType.wrapper() instanceof FieldWrapper.Connection) {
@@ -952,6 +967,7 @@ class FieldBuilder {
             }
             return new TableField(parentTypeName, name, location,
                 returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
+                tfc.lookup(),
                 tbtParentCorrelation);
         }
 
@@ -1817,23 +1833,19 @@ class FieldBuilder {
             return new TableFieldComponents.Rejected(foldRejections(errors));
         }
         OrderBySpec orderBy = ((OrderByResolver.Resolved.Ok) orderByResolved).spec();
-        var lookupMapping = lookupMappingResolver.resolve(refs, rt);
-        // LookupField invariant: if any @lookupKey is present, the mapping must be non-empty.
-        // ColumnMapping must have at least one arg. Scalar NodeId @lookupKey args fold onto
-        // ColumnMapping carrying ScalarLookupArg with NodeIdDecodeKeys.ThrowOnMismatch.
-        boolean emptyMapping = switch (lookupMapping) {
-            case ColumnMapping cm -> cm.args().isEmpty();
-        };
-        if (hasLookupKeyAnywhere(fieldDef) && emptyMapping) {
+        var lookup = lookupMappingResolver.resolve(refs, rt);
+        // Scalar NodeId @lookupKey args fold onto ColumnMapping carrying ScalarLookupArg
+        // with NodeIdDecodeKeys.ThrowOnMismatch.
+        if (hasLookupKeyAnywhere(fieldDef) && lookup instanceof LookupResolution.None) {
             // Prefer the specific binding-failure reason (e.g. @lookupKey on a @reference field)
-            // when buildLookupBindings recorded one; fall back to the generic empty-mapping error.
+            // when buildLookupBindings recorded one; fall back to the generic unresolved-key error.
             Rejection r = errors.isEmpty()
                 ? Rejection.structural("@lookupKey is declared but no argument resolved to a lookup column")
                 : foldRejections(errors);
             return new TableFieldComponents.Rejected(r);
         }
         return new TableFieldComponents.Ok(filters, orderBy,
-            paginationResolver.resolve(ctx.facts.pagination(), fieldDef), lookupMapping);
+            paginationResolver.resolve(ctx.facts.pagination(), fieldDef), lookup);
     }
 
     /**
@@ -2680,10 +2692,10 @@ class FieldBuilder {
                         List.of(), orderBy, null,
                         SourceShape.Table,
                         splitSource.sourceKey(), splitSource.lift(),
-                        splitSource.loaderRegistration(), pc);
+                        splitSource.loaderRegistration(), LookupResolution.None.INSTANCE, pc);
                 }
                 yield new TableField(parentTypeName, name, location, walk.tb().returnType(),
-                    walk.steps(), List.of(), orderBy, null, pc);
+                    walk.steps(), List.of(), orderBy, null, LookupResolution.None.INSTANCE, pc);
             }
         };
     }
@@ -4572,7 +4584,7 @@ class FieldBuilder {
                             new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
                         case TableFieldComponents.Ok tfc ->
                             new QueryField.QueryLookupTableField(parentTypeName, name, location, tb, tfc.filters(), tfc.orderBy(), tfc.pagination(),
-                                tfc.lookupMapping());
+                                requireKeyed(tfc.lookup()));
                     };
                 }
             };
@@ -4606,7 +4618,7 @@ class FieldBuilder {
                 buildNodeIdArgPlan(fieldDef, returnType.table()));
             if (components instanceof TableFieldComponents.Rejected rj) return new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
             var tfc = (TableFieldComponents.Ok) components;
-            return new QueryField.QueryTableField(parentTypeName, name, location, returnType, tfc.filters(), tfc.orderBy(), tfc.pagination());
+            return new QueryField.QueryTableField(parentTypeName, name, location, returnType, tfc.filters(), tfc.orderBy(), tfc.pagination(), tfc.lookup());
         }
         if (tableBacked instanceof TableInterfaceType tableInterfaceType) {
             var wrapper = buildWrapper(fieldDef);
@@ -5729,30 +5741,15 @@ class FieldBuilder {
 
     /**
      * Returns {@code true} when {@code @lookupKey} appears on any direct argument of the field,
-     * or on any field within an input-type argument (recursively). This is the field-level
-     * classification signal — which specific argument carries it has no semantic significance.
+     * or on any field within an input-type argument (transitively). This is the field-level
+     * classification signal; which specific argument carries it has no semantic significance.
+     * Read off the gathered lookup-trigger relation
+     * ({@link no.sikt.graphitron.facts.LookupFacts#triggersFor}), whose visitor is the
+     * directive name's single lexical home and whose type-grain closure replaces the recursive
+     * walk this method used to own.
      */
     private boolean hasLookupKeyAnywhere(GraphQLFieldDefinition fieldDef) {
-        for (var arg : fieldDef.getArguments()) {
-            if (arg.hasAppliedDirective(DIR_LOOKUP_KEY)) return true;
-            String argTypeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(arg.getType())).getName();
-            if (ctx.schema.getType(argTypeName) instanceof GraphQLInputObjectType inputType) {
-                if (inputTypeHasLookupKey(inputType, 0)) return true;
-            }
-        }
-        return false;
-    }
-
-    private boolean inputTypeHasLookupKey(GraphQLInputObjectType inputType, int depth) {
-        if (depth > 10) return false; // guard against pathological nesting
-        for (var field : inputType.getFieldDefinitions()) {
-            if (field.hasAppliedDirective(DIR_LOOKUP_KEY)) return true;
-            String fieldTypeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(field.getType())).getName();
-            if (ctx.schema.getType(fieldTypeName) instanceof GraphQLInputObjectType nested) {
-                if (inputTypeHasLookupKey(nested, depth + 1)) return true;
-            }
-        }
-        return false;
+        return ctx.facts.lookup().triggersFor(fieldDef);
     }
 
     // ===== Conflict detection helpers =====
@@ -5931,7 +5928,7 @@ class FieldBuilder {
             parentTypeName, name, location, tb, List.of(),
             List.of(), new OrderBySpec.None(), null,
             SourceShape.Record,
-            sourceKey, lift, loaderRegistration, parentCorrelation);
+            sourceKey, lift, loaderRegistration, LookupResolution.None.INSTANCE, parentCorrelation);
     }
 
     private GraphitronField classifyChildFieldOnResultType(GraphQLFieldDefinition fieldDef, String parentTypeName,
@@ -6136,11 +6133,11 @@ class FieldBuilder {
             if (hasLookupKeyAnywhere(fieldDef)) {
                 return new ChildField.BatchedLookupTableField(parentTypeName, name, location, ok.tbReturnType(), joinPath,
                     tfc.filters(), tfc.orderBy(), tfc.pagination(), SourceShape.Record, ok.sourceKey(), ok.lift(),
-                    ok.loaderRegistration(), tfc.lookupMapping(), srParentCorrelation);
+                    ok.loaderRegistration(), requireKeyed(tfc.lookup()), srParentCorrelation);
             }
             return new ChildField.BatchedTableField(parentTypeName, name, location, ok.tbReturnType(), joinPath,
                 tfc.filters(), tfc.orderBy(), tfc.pagination(), SourceShape.Record, ok.sourceKey(), ok.lift(),
-                ok.loaderRegistration(), srParentCorrelation);
+                ok.loaderRegistration(), tfc.lookup(), srParentCorrelation);
         }
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
@@ -6261,12 +6258,12 @@ class FieldBuilder {
                 }
                 if (isLookup) {
                     yield new ChildField.BatchedLookupTableField(parentTypeName, name, location, tb, resolvedJoinPath, tfc.filters(), tfc.orderBy(), tfc.pagination(),
-                        SourceShape.Record, resolved.sourceKey(), resolved.lift(), resolved.loaderRegistration(), tfc.lookupMapping(),
+                        SourceShape.Record, resolved.sourceKey(), resolved.lift(), resolved.loaderRegistration(), requireKeyed(tfc.lookup()),
                         resolvedParentCorrelation);
                 }
                 yield new ChildField.BatchedTableField(parentTypeName, name, location, tb, resolvedJoinPath, tfc.filters(), tfc.orderBy(), tfc.pagination(),
                     SourceShape.Record, resolved.sourceKey(), resolved.lift(), resolved.loaderRegistration(),
-                    resolvedParentCorrelation);
+                    tfc.lookup(), resolvedParentCorrelation);
             }
             case ReturnTypeRef.ResultReturnType r -> recordReadFieldOrUnclassified(
                 fieldDef, parentTypeName, name, location, r, columnName, parentResultType, parentBackingClass);

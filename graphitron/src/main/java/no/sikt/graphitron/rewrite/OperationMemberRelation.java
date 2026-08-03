@@ -10,7 +10,7 @@ import no.sikt.graphitron.facts.GatheredFacts;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
-import no.sikt.graphitron.rewrite.model.LookupField;
+import no.sikt.graphitron.rewrite.model.LookupResolution;
 import no.sikt.graphitron.rewrite.model.MethodBackedField;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.OperationMember;
@@ -47,7 +47,7 @@ import java.util.Set;
  *   <li>{@link #memberKindsOf} decides <b>membership</b> from facts alone: the gathered trigger
  *       slots ({@code @service}, {@code @mutation}, the routine chain, the pagination facts
  *       flowing through the carried window), the target / source shape facts, the type-registry
- *       verdicts, and capability reads ({@link SqlGeneratingField}, {@link LookupField},
+ *       verdicts, and capability reads ({@link SqlGeneratingField}, {@link LookupResolution},
  *       {@link ParticipantFilterField}). It contains no switch over leaf classes; a membership
  *       decision that needs a new fact adds the fact, never a leaf arm.</li>
  *   <li>{@link #payloadsFor} extracts <b>payloads</b> from the leaf-carried resolutions, the
@@ -223,7 +223,7 @@ public record OperationMemberRelation(Map<FieldCoordinates, List<OperationMember
         if (leaf instanceof SqlGeneratingField sgf && sgf.pagination() != null) {
             kinds.add(OperationMember.Kind.PAGINATE);
         }
-        if (leaf instanceof LookupField) {
+        if (OperationMembers.lookupResolutionOf(leaf) instanceof LookupResolution.Keyed) {
             kinds.add(OperationMember.Kind.LOOKUP);
         }
 
@@ -307,7 +307,12 @@ public record OperationMemberRelation(Map<FieldCoordinates, List<OperationMember
             members.add(new OperationMember.Paginate(((SqlGeneratingField) leaf).pagination()));
         }
         if (kinds.contains(OperationMember.Kind.LOOKUP)) {
-            members.add(new OperationMember.Lookup(((LookupField) leaf).lookupMapping()));
+            members.add(new OperationMember.Lookup(switch (OperationMembers.lookupResolutionOf(leaf)) {
+                case LookupResolution.Keyed keyed -> keyed.mapping();
+                case LookupResolution.None _ -> throw new IllegalStateException(
+                    "Graphitron relation bug: the LOOKUP kind fired for '" + leaf.qualifiedName()
+                    + "' but the leaf resolved no lookup; the kind and payload read one axis");
+            }));
         }
         if (kinds.contains(OperationMember.Kind.REENTRY)) {
             members.add(new OperationMember.Reentry());

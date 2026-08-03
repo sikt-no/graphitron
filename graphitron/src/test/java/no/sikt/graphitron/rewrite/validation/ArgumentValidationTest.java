@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.BodyParam;
+import no.sikt.graphitron.rewrite.model.LookupResolution;
 import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField.TableField;
@@ -38,7 +39,7 @@ class ArgumentValidationTest {
             new FieldWrapper.Single(true));
 
     private static TableField tableField(List<WhereFilter> filters) {
-        return new TableField("Film", "actors", null, FILM_RETURN, List.of(), filters, new OrderBySpec.None(), null,
+        return new TableField("Film", "actors", null, FILM_RETURN, List.of(), filters, new OrderBySpec.None(), null, LookupResolution.None.INSTANCE,
             /* parentCorrelation */ null);
     }
 

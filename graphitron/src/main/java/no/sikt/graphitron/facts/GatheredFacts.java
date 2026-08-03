@@ -14,6 +14,7 @@ import graphql.util.TraverserContext;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.BiConsumer;
 
 /**
@@ -54,7 +55,7 @@ public record GatheredFacts(PaginationFacts pagination,
         return new GatheredFacts(new PaginationFacts(Map.of()),
             new ConditionFacts(Map.of(), Map.of()),
             new OrderByFacts(Map.of()),
-            new LookupFacts(Map.of(), Map.of()),
+            new LookupFacts(Map.of(), Map.of(), Set.of()),
             new ServiceFacts(Map.of()),
             new WriteFacts(Map.of()),
             new DeliveryFacts(Map.of()));

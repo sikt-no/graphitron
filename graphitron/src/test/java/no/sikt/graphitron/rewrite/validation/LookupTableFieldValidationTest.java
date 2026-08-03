@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField.LookupTableField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
@@ -26,7 +27,14 @@ import no.sikt.graphitron.rewrite.TestFixtures;
 class LookupTableFieldValidationTest {
 
     private static final TableRef FILM_TABLE = TestFixtures.tableRef("film", "FILM", "Film", List.of());
-    private static final LookupMapping EMPTY_LOOKUP = new LookupMapping.ColumnMapping(List.of(), FILM_TABLE);
+    // A minimal one-arg mapping: these cases pin wrapper/ordering verdicts, not the key
+    // payload, and ColumnMapping rejects an empty arg list (the vacuous mapping is
+    // LookupResolution.None, which never reaches a lookup leaf).
+    private static final LookupMapping SCALAR_LOOKUP = new LookupMapping.ColumnMapping(
+        List.of(new LookupMapping.ColumnMapping.LookupArg.ScalarLookupArg(
+            "film_id", new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"),
+            new CallSiteExtraction.Direct(), false)),
+        FILM_TABLE);
     private static final OrderBySpec.Fixed PK_ORDER = new OrderBySpec.Fixed(
         List.of(new OrderBySpec.ColumnOrderEntry(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"), null, OrderBySpec.SortDirection.ASC)), true);
 
@@ -50,26 +58,26 @@ class LookupTableFieldValidationTest {
         // record itself is constructible, and the validator has no extra errors to add.
         SINGLE_NOW_PROJECTED("single return — no validator errors; classifier rejection prevents reaching this state",
             new LookupTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null,
-                EMPTY_LOOKUP,
+                SCALAR_LOOKUP,
                 /* parentCorrelation */ null),
             List.of()),
 
         LIST_PROJECTED("list return — inline-projected, no validator errors",
             new LookupTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)), List.of(), List.of(), PK_ORDER, null,
-                EMPTY_LOOKUP,
+                SCALAR_LOOKUP,
                 /* parentCorrelation */ null),
             List.of()),
 
         LIST_WITH_CONDITION_ONLY("list cardinality with condition-only join step — classifies and emits a correlated subquery (R232)",
             new LookupTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)),
                 CONDITION_PATH,
-                List.of(), PK_ORDER, null, EMPTY_LOOKUP,
+                List.of(), PK_ORDER, null, SCALAR_LOOKUP,
                 TestFixtures.pcFor(CONDITION_PATH, TestFixtures.filmTable())),
             List.of()),
 
         CONNECTION_BLOCKED("connection return — not valid on lookup field (validator mirror of classifier rejection)",
             new LookupTableField("Language", "films", null, filmReturn(new FieldWrapper.Connection(true, 100)), List.of(), List.of(), new OrderBySpec.None(), null,
-                EMPTY_LOOKUP,
+                SCALAR_LOOKUP,
                 /* parentCorrelation */ null),
             List.of("Field 'Language.films': lookup fields must not return a connection"));
 

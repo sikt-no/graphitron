@@ -22,7 +22,11 @@ class TriggerFactPopulationPinTest {
     private static final String STUB = "no.sikt.graphitron.rewrite.TestConditionStub";
 
     private static GatheredFacts gatherFixture() {
-        var bundle = TestSchemaHelper.buildBundle("""
+        return GatheredFacts.gather(bundleFixture().assembled(), SchemaReachability::walk);
+    }
+
+    private static GraphitronSchemaBuilder.Bundle bundleFixture() {
+        return TestSchemaHelper.buildBundle("""
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
                 title: String
@@ -35,6 +39,7 @@ class TriggerFactPopulationPinTest {
                 language_id: Int @lookupKey @field(name: "language_id")
                 name: String @condition(condition: {className: "%s", method: "argCondition", argMapping: "cityNames: name"})
             }
+            input LookupOuter { nested: LookupInput }
             enum LangOrderField { NAME @order(primaryKey: true) }
             enum Direction { ASC DESC }
             input LangOrder { sortField: LangOrderField! direction: Direction! }
@@ -43,6 +48,7 @@ class TriggerFactPopulationPinTest {
                     @condition(condition: {className: "%s", method: "argCondition", argMapping: "cityNames: title"})
                 languagesByKey(language_id: [Int] @lookupKey @field(name: "language_id")): [Language!]!
                 byInput(in: LookupInput): [Language!]!
+                byOuter(in: LookupOuter): [Language!]!
                 stub: String @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
                 ordered: [Language!]! @defaultOrder(primaryKey: true)
                 sorted(order: LangOrder @orderBy): [Language!]!
@@ -55,7 +61,6 @@ class TriggerFactPopulationPinTest {
             }
             input FilmInput { title: String }
             """.formatted(STUB, STUB, STUB));
-        return GatheredFacts.gather(bundle.assembled(), SchemaReachability::walk);
     }
 
     @Test
@@ -91,14 +96,27 @@ class TriggerFactPopulationPinTest {
     }
 
     @Test
-    void lookupSlotGathersArgumentAndInputFieldSites() {
-        var facts = gatherFixture();
+    void lookupSlotGathersArgumentInputFieldAndClosurePopulations() {
+        var bundle = bundleFixture();
+        var facts = GatheredFacts.gather(bundle.assembled(), SchemaReachability::walk);
         assertThat(facts.lookup().rows())
             .extracting(r -> r.parentTypeName() + "." + r.fieldName() + ":" + r.lookupArgs())
             .containsExactlyInAnyOrder("Query.languagesByKey:[language_id]");
         assertThat(facts.lookup().inputRows())
             .extracting(r -> r.inputTypeName() + "." + r.fieldName())
             .containsExactlyInAnyOrder("LookupInput.language_id");
+        assertThat(facts.lookup().lookupBearingInputTypes())
+            .as("type-grain closure: the directly-marked input type plus its transitive referrer")
+            .containsExactlyInAnyOrder("LookupInput", "LookupOuter");
+        var query = bundle.assembled().getQueryType();
+        assertThat(facts.lookup().triggersFor(query.getFieldDefinition("languagesByKey")))
+            .as("direct argument application").isTrue();
+        assertThat(facts.lookup().triggersFor(query.getFieldDefinition("byInput")))
+            .as("application through the input type's own field").isTrue();
+        assertThat(facts.lookup().triggersFor(query.getFieldDefinition("byOuter")))
+            .as("application through a nested input type, the closure's transitive case").isTrue();
+        assertThat(facts.lookup().triggersFor(query.getFieldDefinition("untouched")))
+            .as("no application anywhere on the argument surface").isFalse();
     }
 
     @Test

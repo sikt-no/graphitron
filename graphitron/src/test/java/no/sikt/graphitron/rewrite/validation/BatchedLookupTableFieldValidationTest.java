@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.validation;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField.BatchedLookupTableField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
@@ -35,7 +36,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 class BatchedLookupTableFieldValidationTest {
 
     private static final TableRef FILM_TABLE = TestFixtures.tableRef("film", "FILM", "Film", List.of());
-    private static final LookupMapping EMPTY_LOOKUP = new LookupMapping.ColumnMapping(List.of(), FILM_TABLE);
+    // A minimal one-arg mapping: these cases pin wrapper/ordering verdicts, not the key
+    // payload, and ColumnMapping rejects an empty arg list (the vacuous mapping is
+    // LookupResolution.None, which never reaches a lookup leaf).
+    private static final LookupMapping SCALAR_LOOKUP = new LookupMapping.ColumnMapping(
+        List.of(new LookupMapping.ColumnMapping.LookupArg.ScalarLookupArg(
+            "film_id", new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"),
+            new CallSiteExtraction.Direct(), false)),
+        FILM_TABLE);
     private static final List<ColumnRef> PARENT_KEY_COLS = List.of(new ColumnRef("dummy_id", "DUMMY_ID", "java.lang.Integer"));
 
     private static ReturnTypeRef.TableBoundReturnType filmReturn(FieldWrapper wrapper) {
@@ -81,7 +89,7 @@ class BatchedLookupTableFieldValidationTest {
 
         TABLE_CONNECTION_BLOCKED("Table arm: connection return — not valid on lookup field",
             new BatchedLookupTableField("Language", "films", null, RT_CONN, List.of(), List.of(), new OrderBySpec.None(), null,
-                SourceShape.Table, T_SOURCE_KEY_CONN, TestFixtures.fkColumnsLift(), T_LR_CONN, EMPTY_LOOKUP,
+                SourceShape.Table, T_SOURCE_KEY_CONN, TestFixtures.fkColumnsLift(), T_LR_CONN, SCALAR_LOOKUP,
                 /* parentCorrelation */ null),
             List.of("Field 'Language.films': lookup fields must not return a connection")),
 
@@ -89,7 +97,7 @@ class BatchedLookupTableFieldValidationTest {
 
         RECORD_SINGLE_NO_PATH("Record arm: single cardinality, empty joinPath — emittable post-R61",
             new BatchedLookupTableField("Language", "film", null, RT_SINGLE, List.of(), List.of(), new OrderBySpec.None(), null,
-                SourceShape.Record, R_SOURCE_KEY_SINGLE, TestFixtures.fkColumnsLift(), R_LR_SINGLE, EMPTY_LOOKUP,
+                SourceShape.Record, R_SOURCE_KEY_SINGLE, TestFixtures.fkColumnsLift(), R_LR_SINGLE, SCALAR_LOOKUP,
                 /* parentCorrelation */ null),
             List.of()),
 
@@ -97,7 +105,7 @@ class BatchedLookupTableFieldValidationTest {
             new BatchedLookupTableField("Language", "film", null, RT_SINGLE,
                 FK_PATH,
                 List.of(), new OrderBySpec.None(), null, SourceShape.Record, R_SOURCE_KEY_SINGLE,
-                TestFixtures.fkColumnsLift(), R_LR_SINGLE, EMPTY_LOOKUP,
+                TestFixtures.fkColumnsLift(), R_LR_SINGLE, SCALAR_LOOKUP,
                 TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable())),
             List.of()),
 
@@ -105,7 +113,7 @@ class BatchedLookupTableFieldValidationTest {
             new BatchedLookupTableField("Language", "films", null, RT_LIST,
                 CONDITION_PATH,
                 List.of(), PK_ORDER, null, SourceShape.Record, R_SOURCE_KEY_LIST,
-                TestFixtures.fkColumnsLift(), R_LR_LIST, EMPTY_LOOKUP,
+                TestFixtures.fkColumnsLift(), R_LR_LIST, SCALAR_LOOKUP,
                 TestFixtures.pcFor(CONDITION_PATH, TestFixtures.filmTable())),
             List.of()),
 
@@ -113,13 +121,13 @@ class BatchedLookupTableFieldValidationTest {
             new BatchedLookupTableField("Language", "films", null, RT_LIST,
                 FK_PATH,
                 List.of(), PK_ORDER, null, SourceShape.Record, R_SOURCE_KEY_LIST,
-                TestFixtures.fkColumnsLift(), R_LR_LIST, EMPTY_LOOKUP,
+                TestFixtures.fkColumnsLift(), R_LR_LIST, SCALAR_LOOKUP,
                 TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable())),
             List.of()),
 
         RECORD_CONNECTION_BLOCKED("Record arm: connection return — lookup-field rejection",
             new BatchedLookupTableField("Language", "films", null, RT_CONN, List.of(), List.of(), new OrderBySpec.None(), null,
-                SourceShape.Record, R_SOURCE_KEY_CONN, TestFixtures.fkColumnsLift(), R_LR_CONN, EMPTY_LOOKUP,
+                SourceShape.Record, R_SOURCE_KEY_CONN, TestFixtures.fkColumnsLift(), R_LR_CONN, SCALAR_LOOKUP,
                 /* parentCorrelation */ null),
             List.of("Field 'Language.films': lookup fields must not return a connection"));
 

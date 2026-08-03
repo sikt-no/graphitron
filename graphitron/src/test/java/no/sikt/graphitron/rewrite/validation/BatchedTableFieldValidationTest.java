@@ -4,6 +4,7 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField;
+import no.sikt.graphitron.rewrite.model.LookupResolution;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
@@ -99,7 +100,7 @@ class BatchedTableFieldValidationTest {
             new BatchedTableField("Film", "actors", null, T_RT_SINGLE,
                 T_FK_PATH,
                 List.of(), new OrderBySpec.None(), null, SourceShape.Table, T_SOURCE_KEY_SINGLE,
-                TestFixtures.fkColumnsLift(), T_LR_SINGLE,
+                TestFixtures.fkColumnsLift(), T_LR_SINGLE, LookupResolution.None.INSTANCE,
                 TestFixtures.pcFor(T_FK_PATH, TestFixtures.filmTable())),
             List.of()),
 
@@ -107,7 +108,7 @@ class BatchedTableFieldValidationTest {
             new BatchedTableField("Film", "actors", null, T_RT_SINGLE,
                 T_CONDITION_PATH,
                 List.of(), new OrderBySpec.None(), null, SourceShape.Table, T_SOURCE_KEY_SINGLE,
-                TestFixtures.fkColumnsLift(), T_LR_SINGLE,
+                TestFixtures.fkColumnsLift(), T_LR_SINGLE, LookupResolution.None.INSTANCE,
                 TestFixtures.pcFor(T_CONDITION_PATH, TestFixtures.filmTable())),
             List.of()),
 
@@ -118,7 +119,7 @@ class BatchedTableFieldValidationTest {
             new BatchedTableField("Film", "actors", null, T_RT_CONN,
                 T_FK_PATH,
                 List.of(), new OrderBySpec.None(), null, SourceShape.Table, T_SOURCE_KEY_CONN,
-                TestFixtures.fkColumnsLift(), T_LR_CONN,
+                TestFixtures.fkColumnsLift(), T_LR_CONN, LookupResolution.None.INSTANCE,
                 TestFixtures.pcFor(T_FK_PATH, TestFixtures.filmTable())),
             List.of("Field 'Film.actors': @splitQuery connections require a non-empty ORDER BY "
                 + "(add @defaultOrder, @orderBy, or a primary key on the target table)")),
@@ -127,7 +128,7 @@ class BatchedTableFieldValidationTest {
             new BatchedTableField("Film", "actors", null, T_RT_CONN,
                 T_FK_PATH,
                 List.of(), new OrderBySpec.Fixed(List.of(), true), null, SourceShape.Table, T_SOURCE_KEY_CONN,
-                TestFixtures.fkColumnsLift(), T_LR_CONN,
+                TestFixtures.fkColumnsLift(), T_LR_CONN, LookupResolution.None.INSTANCE,
                 TestFixtures.pcFor(T_FK_PATH, TestFixtures.filmTable())),
             List.of("Field 'Film.actors': @splitQuery connections require a non-empty ORDER BY "
                 + "(add @defaultOrder, @orderBy, or a primary key on the target table)")),
@@ -136,7 +137,7 @@ class BatchedTableFieldValidationTest {
 
         RECORD_SINGLE_NO_PATH("Record arm: single cardinality, empty joinPath — emittable post-R61 (single-record-per-key arm)",
             new BatchedTableField("FilmDetails", "film", null, R_RT_SINGLE, List.of(), List.of(), new OrderBySpec.None(), null,
-                SourceShape.Record, R_SOURCE_KEY_SINGLE, TestFixtures.fkColumnsLift(), R_LR_SINGLE,
+                SourceShape.Record, R_SOURCE_KEY_SINGLE, TestFixtures.fkColumnsLift(), R_LR_SINGLE, LookupResolution.None.INSTANCE,
                 /* parentCorrelation */ null),
             List.of()),
 
@@ -144,7 +145,7 @@ class BatchedTableFieldValidationTest {
             new BatchedTableField("FilmDetails", "film", null, R_RT_SINGLE,
                 R_FK_PATH,
                 List.of(), new OrderBySpec.None(), null, SourceShape.Record, R_SOURCE_KEY_SINGLE,
-                TestFixtures.fkColumnsLift(), R_LR_SINGLE,
+                TestFixtures.fkColumnsLift(), R_LR_SINGLE, LookupResolution.None.INSTANCE,
                 TestFixtures.pcFor(R_FK_PATH, TestFixtures.filmTable())),
             List.of()),
 
@@ -152,7 +153,7 @@ class BatchedTableFieldValidationTest {
             new BatchedTableField("FilmDetails", "film", null, R_RT_SINGLE,
                 R_CONDITION_PATH,
                 List.of(), new OrderBySpec.None(), null, SourceShape.Record, R_SOURCE_KEY_SINGLE,
-                TestFixtures.fkColumnsLift(), R_LR_SINGLE,
+                TestFixtures.fkColumnsLift(), R_LR_SINGLE, LookupResolution.None.INSTANCE,
                 TestFixtures.pcFor(R_CONDITION_PATH, TestFixtures.filmTable())),
             List.of()),
 
@@ -160,7 +161,7 @@ class BatchedTableFieldValidationTest {
             new BatchedTableField("FilmDetails", "film", null, R_RT_LIST,
                 R_CONDITION_PATH,
                 List.of(), R_PK_ORDER, null, SourceShape.Record, R_SOURCE_KEY_LIST,
-                TestFixtures.fkColumnsLift(), R_LR_LIST,
+                TestFixtures.fkColumnsLift(), R_LR_LIST, LookupResolution.None.INSTANCE,
                 TestFixtures.pcFor(R_CONDITION_PATH, TestFixtures.filmTable())),
             List.of()),
 
@@ -168,7 +169,7 @@ class BatchedTableFieldValidationTest {
             new BatchedTableField("FilmDetails", "films", null, R_RT_LIST,
                 R_FK_PATH,
                 List.of(), R_PK_ORDER, null, SourceShape.Record, R_SOURCE_KEY_LIST,
-                TestFixtures.fkColumnsLift(), R_LR_LIST,
+                TestFixtures.fkColumnsLift(), R_LR_LIST, LookupResolution.None.INSTANCE,
                 TestFixtures.pcFor(R_FK_PATH, TestFixtures.filmTable())),
             List.of()),
 
@@ -184,7 +185,7 @@ class BatchedTableFieldValidationTest {
             new BatchedTableField("FilmDetails", "films", null, R_RT_LIST,
                 R_FK_PATH,
                 List.of(), new OrderBySpec.None(), null, SourceShape.Record, R_SOURCE_KEY_LIST,
-                TestFixtures.fkColumnsLift(), R_LR_LIST,
+                TestFixtures.fkColumnsLift(), R_LR_LIST, LookupResolution.None.INSTANCE,
                 TestFixtures.pcFor(R_FK_PATH, TestFixtures.filmTable())),
             List.of());
 

@@ -10,6 +10,7 @@ import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.ArgumentRef;
 import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.rewrite.model.BodyParam;
+import no.sikt.graphitron.rewrite.model.LookupResolution;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
@@ -62,7 +63,7 @@ class TypeFetcherGeneratorTest {
         var wrapper = isList ? (FieldWrapper) nonNullList() : single();
         var returnType = tableBoundFilm(wrapper);
         return new QueryField.QueryTableField("Query", name, null, returnType,
-            List.of(), new OrderBySpec.None(), null);
+            List.of(), new OrderBySpec.None(), null, LookupResolution.None.INSTANCE);
     }
 
     private static MethodSpec method(TypeSpec spec, String name) {
@@ -259,7 +260,7 @@ class TypeFetcherGeneratorTest {
             no.sikt.graphitron.rewrite.model.SourceShape.Table,
             TestFixtures.splitSourceKey(keyCols),
             TestFixtures.fkColumnsLift(),
-            TestFixtures.loaderRegistration(rt, false, false),
+            TestFixtures.loaderRegistration(rt, false, false), LookupResolution.None.INSTANCE,
             TestFixtures.pcFor(path, LANGUAGE_TABLE));
     }
 
@@ -493,7 +494,7 @@ class TypeFetcherGeneratorTest {
             List.of(namedOrder), base);
         return new QueryField.QueryTableField("Query", fieldName, null,
             TestFixtures.tableBoundFilm(TestFixtures.nonNullList()),
-            List.of(), orderBy, null);
+            List.of(), orderBy, null, LookupResolution.None.INSTANCE);
     }
 
     @Test
@@ -556,7 +557,7 @@ class TypeFetcherGeneratorTest {
             List.of(new OrderBySpec.ColumnOrderEntry(TestFixtures.filmIdCol(), null, OrderBySpec.SortDirection.ASC)), true);
         return new QueryField.QueryTableField("Query", name, null,
             TestFixtures.tableBoundFilm(new FieldWrapper.Connection(true, 100)),
-            List.of(), orderBy, forwardPagination());
+            List.of(), orderBy, forwardPagination(), LookupResolution.None.INSTANCE);
     }
 
     private static QueryField.QueryTableField connectionFieldWithArgOrderBy(String name) {
@@ -571,7 +572,7 @@ class TypeFetcherGeneratorTest {
             List.of(namedOrder), base);
         return new QueryField.QueryTableField("Query", name, null,
             TestFixtures.tableBoundFilm(new FieldWrapper.Connection(true, 100)),
-            List.of(), orderBy, forwardPagination());
+            List.of(), orderBy, forwardPagination(), LookupResolution.None.INSTANCE);
     }
 
     @Test

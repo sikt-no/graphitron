@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
+import no.sikt.graphitron.rewrite.model.LookupResolution;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
@@ -36,19 +37,19 @@ class QueryTableFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("no ordering directives — always valid",
-            new QueryTableField("Query", "films", null, filmReturn(new FieldWrapper.Single(true)), List.of(), new OrderBySpec.None(), null),
+            new QueryTableField("Query", "films", null, filmReturn(new FieldWrapper.Single(true)), List.of(), new OrderBySpec.None(), null, LookupResolution.None.INSTANCE),
             List.of()),
 
         DEFAULT_ORDER_INDEX("@defaultOrder with index mode — valid",
             new QueryTableField("Query", "films", null,
                 filmReturn(new FieldWrapper.List(true, true)),
-                List.of(), INDEX_ORDER, null),
+                List.of(), INDEX_ORDER, null, LookupResolution.None.INSTANCE),
             List.of()),
 
         DEFAULT_ORDER_PRIMARY_KEY("@defaultOrder with primaryKey mode — valid",
             new QueryTableField("Query", "films", null,
                 filmReturn(new FieldWrapper.List(true, true)),
-                List.of(), new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(ID_COL, null, OrderBySpec.SortDirection.DESC)), false), null),
+                List.of(), new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(ID_COL, null, OrderBySpec.SortDirection.DESC)), false), null, LookupResolution.None.INSTANCE),
             List.of()),
 
         DEFAULT_ORDER_FIELDS("@defaultOrder with explicit fields — valid",
@@ -59,7 +60,7 @@ class QueryTableFieldValidationTest {
                     new OrderBySpec.ColumnOrderEntry(TITLE_COL, null, OrderBySpec.SortDirection.ASC),
                     new OrderBySpec.ColumnOrderEntry(ID_COL, "C", OrderBySpec.SortDirection.ASC)),
                     true),
-                null),
+                null, LookupResolution.None.INSTANCE),
             List.of()),
 
         ORDER_BY_INDEX("@orderBy argument with resolved named orders — valid",
@@ -71,7 +72,7 @@ class QueryTableFieldValidationTest {
                         new OrderBySpec.NamedOrder("TITLE", INDEX_ORDER),
                         new OrderBySpec.NamedOrder("ID", PK_ORDER)),
                     PK_ORDER),
-                null),
+                null, LookupResolution.None.INSTANCE),
             List.of()),
 
         DEFAULT_ORDER_AND_ORDER_BY("@defaultOrder combined with @orderBy argument — valid",
@@ -83,7 +84,7 @@ class QueryTableFieldValidationTest {
                         new OrderBySpec.NamedOrder("TITLE", INDEX_ORDER),
                         new OrderBySpec.NamedOrder("ID", PK_ORDER)),
                     INDEX_ORDER),
-                null),
+                null, LookupResolution.None.INSTANCE),
             List.of()),
 
         PAGINATED_WITH_ORDERING("connection with pagination and ordering — valid",
@@ -94,7 +95,7 @@ class QueryTableFieldValidationTest {
                     new PaginationSpec.PaginationArg("Int", false),
                     null,
                     new PaginationSpec.PaginationArg("String", false),
-                    null)),
+                    null), LookupResolution.None.INSTANCE),
             List.of()),
 
         PAGINATED_WITHOUT_ORDERING("connection with pagination but no ordering — error",
@@ -105,7 +106,7 @@ class QueryTableFieldValidationTest {
                     new PaginationSpec.PaginationArg("Int", false),
                     null,
                     new PaginationSpec.PaginationArg("String", false),
-                    null)),
+                    null), LookupResolution.None.INSTANCE),
             List.of("Field 'Query.films': paginated fields must have ordering (add @defaultOrder or @orderBy)"));
 
         private final String description;

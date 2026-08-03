@@ -366,6 +366,10 @@ public sealed interface ChildField extends OutputField
      *       {@link OrderBySpec.None} when not applicable or not resolvable.</li>
      *   <li>{@link #pagination()}: Relay pagination arguments; {@code null} when the field has
      *       no pagination arguments.</li>
+     *   <li>{@link #lookup()}: the resolved {@code @lookupKey} correspondence; never null,
+     *       {@link LookupResolution.None} when the argument surface resolved no lookup. The
+     *       polymorphic and service variants answer {@code None} structurally (no storage):
+     *       the classifier routes {@code @lookupKey} only onto the table-read leaves.</li>
      * </ul>
      *
      * <p>{@link NestingField} is intentionally excluded: it carries a
@@ -383,6 +387,7 @@ public sealed interface ChildField extends OutputField
         List<WhereFilter> filters();
         OrderBySpec orderBy();
         PaginationSpec pagination();
+        LookupResolution lookup();
     }
 
     record TableField(
@@ -394,9 +399,11 @@ public sealed interface ChildField extends OutputField
         List<WhereFilter> filters,
         OrderBySpec orderBy,
         PaginationSpec pagination,
+        LookupResolution lookup,
         ParentCorrelation parentCorrelation
     ) implements TableTargetField, ResultKeyAliasedField {
         public TableField {
+            java.util.Objects.requireNonNull(lookup, "lookup");
             ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "TableField");
             // No validator gate re-checks TableField's shape, so the emittable routine-chain
             // set is pinned mechanically here: the check below admits exactly the shape the
@@ -464,9 +471,11 @@ public sealed interface ChildField extends OutputField
         SourceKey sourceKey,
         KeyLift lift,
         LoaderRegistration loaderRegistration,
+        LookupResolution lookup,
         ParentCorrelation parentCorrelation
     ) implements TableTargetField, BatchKeyField {
         public BatchedTableField {
+            java.util.Objects.requireNonNull(lookup, "lookup");
             // (1) the lift is total and must agree with the key residue it derives.
             java.util.Objects.requireNonNull(lift, "lift");
             KeyLift.checkResidueAgreement(lift, sourceKey, "BatchedTableField");
@@ -567,6 +576,9 @@ public sealed interface ChildField extends OutputField
         public LookupTableField {
             ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "LookupTableField");
         }
+        @Override public LookupResolution lookup() {
+            return new LookupResolution.Keyed(lookupMapping);
+        }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(returnType.table());
         }
@@ -617,6 +629,9 @@ public sealed interface ChildField extends OutputField
                 }
             }
         }
+        @Override public LookupResolution lookup() {
+            return new LookupResolution.Keyed(lookupMapping);
+        }
         @Override
         public boolean emitsSingleRecordPerKey() {
             // One definition for both arms, same formula as BatchedTableField. The classifier
@@ -643,6 +658,10 @@ public sealed interface ChildField extends OutputField
         OrderBySpec orderBy,
         PaginationSpec pagination
     ) implements TableTargetField, ParentRowDemand {
+        /** Structurally none: the classifier routes {@code @lookupKey} only onto table-read leaves. */
+        @Override public LookupResolution lookup() {
+            return LookupResolution.None.INSTANCE;
+        }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(returnType.table());
         }
@@ -1060,6 +1079,10 @@ public sealed interface ChildField extends OutputField
         LoaderRegistration loaderRegistration,
         Optional<ErrorChannel.RouterDispatched> errorChannel
     ) implements TableTargetField, MethodBackedField, BatchKeyField, WithErrorChannel {
+        /** Structurally none: the classifier routes {@code @lookupKey} only onto table-read leaves. */
+        @Override public LookupResolution lookup() {
+            return LookupResolution.None.INSTANCE;
+        }
         /**
          * Although the service method returns the typed {@code XRecord} (or
          * {@code List<XRecord>}) per the service-producer-strict-return contract, the typed

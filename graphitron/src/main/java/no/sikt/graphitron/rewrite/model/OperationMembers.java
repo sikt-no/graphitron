@@ -338,6 +338,21 @@ public final class OperationMembers {
         return members;
     }
 
+    /**
+     * The leaf's resolved lookup axis: {@link LookupResolution.Keyed} exactly when the
+     * coordinate mints a lookup member. Total over the sealed hierarchies; the leaves outside
+     * the table-read families resolve no lookup structurally, so the default arm states a
+     * structural fact rather than swallowing one.
+     */
+    public static LookupResolution lookupResolutionOf(OutputField leaf) {
+        return switch (leaf) {
+            case QueryField.QueryTableField f -> f.lookup();
+            case QueryField.QueryLookupTableField f -> f.lookup();
+            case ChildField.TableTargetField ttf -> ttf.lookup();
+            default -> LookupResolution.None.INSTANCE;
+        };
+    }
+
     /** A catalog column projection with an optional reference traversal. */
     private static List<OperationMember> columnReference(List<JoinStep> joinPath) {
         var members = new ArrayList<OperationMember>();
