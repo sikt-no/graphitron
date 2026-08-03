@@ -19,7 +19,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-08-01 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-01 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
-| `R564` | Javadoc reference gate hard-fails on an out-of-range project.build.outputTimestamp (maven-archiver 3.6.4 bundled by maven-javadoc-plugin 3.12.0) | Spec | 2026-08-03 | [plan](javadoc-gate-output-timestamp.md) |
+| `R564` | Javadoc reference gate hard-fails on an out-of-range project.build.outputTimestamp (maven-archiver 3.6.4 bundled by maven-javadoc-plugin 3.12.0) | Ready | 2026-08-03 | [plan](javadoc-gate-output-timestamp.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-07-28 | [plan](deprecate-externalfield-fold-into-service.md) |
@@ -385,7 +385,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R298` [**Leverage Rover and GraphOS: composition checks in CI, contract verification, rover lsp in the dev loop**](rover-graphos-integration.md) — Backlog, feature, blocked by [oneof-augment-defeated-by-descriptions](oneof-augment-defeated-by-descriptions.md)
 - `R538` [**BgeEmbedderOnnxTest fails nondeterministically under full-reactor parallel load**](onnx-embedder-nondeterminism-under-parallel-load.md) — Backlog, testing
-- `R564` [**Javadoc reference gate hard-fails on an out-of-range project.build.outputTimestamp (maven-archiver 3.6.4 bundled by maven-javadoc-plugin 3.12.0)**](javadoc-gate-output-timestamp.md) — Spec, bug
+- `R564` [**Javadoc reference gate hard-fails on an out-of-range project.build.outputTimestamp (maven-archiver 3.6.4 bundled by maven-javadoc-plugin 3.12.0)**](javadoc-gate-output-timestamp.md) — Ready, bug
 - `R133` [**Flip leaf-coverage profile activation to opt-in**](leaf-coverage-profile-opt-in.md) — Backlog, cleanup
 - `R553` [**srp resolves one disqualified session where the guard means every session with a trail on the draft**](srp-disqualified-session-set.md) — Backlog, improvement
 - `R506` [**Roadmap tool as statechart driver, items as machine instances**](roadmap-tool-statechart-driver.md) — Backlog, architecture

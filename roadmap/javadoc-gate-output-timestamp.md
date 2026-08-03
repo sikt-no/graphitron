@@ -1,7 +1,7 @@
 ---
 id: R564
 title: "Javadoc reference gate hard-fails on an out-of-range project.build.outputTimestamp (maven-archiver 3.6.4 bundled by maven-javadoc-plugin 3.12.0)"
-status: Spec
+status: Ready
 bucket: bug
 priority: 4
 theme: tooling
