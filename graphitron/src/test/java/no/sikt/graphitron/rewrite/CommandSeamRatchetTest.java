@@ -150,13 +150,22 @@ class CommandSeamRatchetTest {
      * name-recomputing registry probe (an {@code instanceof} on the ConnectionType leaf) to the
      * relation's typed accessor on {@link no.sikt.graphitron.rewrite.GraphitronSchema#connectionSynthesis()}.
      * Raised to 156 when the launcher producer declared its minting membership as data
-     * ({@link no.sikt.graphitron.plan.LauncherCommands#MINTING_KINDS} with the {@code covers}
-     * accessor's DML-leaf probe), and {@code mintedMethodOf} plus the schema-free walk
-     * re-sourced onto it: the two consumers' arms now name their leaves in import-short form
-     * this counting rule chases, where the previous fully-qualified spellings sat outside it;
-     * same dispatch, now visible to the count.
+     * (a leaf-keyed minting-kind set with the {@code covers} accessor's DML-leaf probe), and
+     * {@code mintedMethodOf} plus the schema-free walk re-sourced onto it: the two consumers'
+     * arms then named their leaves in import-short form this counting rule chases, where the
+     * previous fully-qualified spellings sat outside it; same dispatch, then visible to the
+     * count. Lowered to 140 when back-half membership re-sourced onto the operation members
+     * and the delivery fact: the launcher's leaf-identity membership arms (the root family's
+     * null arms, the census naming switch, the schema-free filter's leaf probe) retired for
+     * the member-derived launch verdict
+     * ({@link no.sikt.graphitron.plan.LauncherCommands.Launch}), the condition producer's
+     * polymorphic-root arms dissolved into the condition member's sealed participant arm, and
+     * the projection producer's six table-target leaf arms merged into one
+     * {@code TableTargetField} arm whose forks read members and delivery; the surviving
+     * references are payload dispatch behind verdict guards plus the sealed nest, pivot and
+     * record arms, each named for a dissolution slice.
      */
-    private static final int PLAN_LEAF_REFERENCES = 156;
+    private static final int PLAN_LEAF_REFERENCES = 140;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide

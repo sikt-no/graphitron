@@ -506,6 +506,17 @@ Slice-4 baseline (measured 2026-08-02, accessor retired):
   deleted tenant-emitter traversal was carrier-payload dispatch, outside the ratchet's
   patterns). Emit byte-identical through both of the slice's commits.
 
+Slice-5 baseline (measured 2026-08-03, back-half membership re-sourced):
+
+- Plan leaf references fell 156 to 140: the launcher's root null arms, census naming switch
+  and schema-free leaf filter retired for the member-derived launch verdict; the condition
+  producer's polymorphic arms dissolved into the condition member's participant arm; the
+  projection producer's six table-target leaf cases merged into one intermediate-seal arm.
+  The survivors are payload dispatch behind verdict guards plus the sealed nest, pivot and
+  record arms, each with a named dissolution owner.
+- Leaf ratchet unchanged at 12/15/24/4; generator pins unchanged at 18 / 71 + 76. Emit
+  byte-identical through both of the slice's commits.
+
 Re-run after the keystone and after the last 6x slice. What matters is direction: leaf counts and
 the minting-site count fall with each dissolution; `FieldBuilder` sheds its per-verb router weight;
 the dispatch pins fall as membership re-sources. A slice that moves none of them is a slice worth
@@ -751,6 +762,94 @@ Slice-4 baseline (measured 2026-08-02):
   unchanged at 18 / 71 + 76 / 156 (the deleted emitter traversal was carrier-payload dispatch,
   not leaf dispatch, so `CommandSeamRatchetTest`'s patterns never counted it).
 - Generator suite 3100 tests green; emit byte-identical through both commits.
+
+### Slice 5 (landed 2026-08-03): back-half membership re-sources
+
+Landed in two commits on the additive-then-destructive discipline: the first materializes the
+delivery fact with no consumer moved, the second re-sources the three plan producers onto the
+members and the fact and retires the leaf-identity membership.
+
+First commit (the delivery fact):
+
+- `DeliveryFact` (model, WALKED_FACT): `Batched(trigger)` | `Inline`, the trigger sealed
+  `Authored` | `RecordHandedParent` | `PolymorphicFanIn`. The third arm extends the keystone's
+  two-trigger disjunction, which this materialization falsified: the batched polymorphic pair
+  mints from the cardinality-plus-participant rule on table and record parents alike, a
+  provenance neither bound arm covered. The falsifiable content did its job; the arm is named
+  rather than absorbed into a catch-all.
+- The authored markers became the seventh gathered-facts slot (`DeliveryFactVisitor` owns the
+  `splitQuery` / `tenantFanOut` literals; `BuildContext` delegates), and the classifier's four
+  delivery-forcing reads re-sourced onto the gathered rows, so the marker set single-homes
+  including the directive names. The row carries the two markers separately because their
+  forcing scopes differ (the table-child arm reads the union; the pivot gate, routine-chain
+  gate and nesting deferral read the `@splitQuery` half), which resolves the marker-set
+  discrepancy the consult surfaced without splitting the fact's home.
+- `DeliveryFactRelation`: the post-walk fold of the markers with the source-shape, target and
+  verdict facts, stored on `GraphitronSchema` beside the member relation with the same
+  EMPTY-sentinel-plus-crosswalk-fallback read surface. `DeliveryFact.leafDerivedOf` is the
+  compile-total comparison side and walk-less fallback, never a production source; unlike the
+  member crosswalk it carries no expiry date, because delivery is one of the three axes the
+  leaf reconstruction key keeps. `DeliveryFactPinTest` holds the two productions equal over
+  the corpus with per-trigger floors; the shared-inputs discipline (production and classifier
+  read the same facts during the window, pinned for regression rather than independence) is
+  the keystone record's, cited on the relation.
+- `OperationMember.Condition` re-grained into `OnReturnTable` | `OnParticipant` on the `Write`
+  sub-family precedent: the participant arm carries the `ParticipantRef.TableBound` whose type
+  name the back-half glue naming reads off the arm, retiring the reverse table-to-typeName
+  lookup the flat record would have forced. Both arms answer `table()`, so the
+  `(coordinate, table)` key and the 1:1 back-half join are unchanged.
+
+Second commit (the re-source):
+
+- `LauncherCommands`: membership single-homes on a sealed launch verdict
+  (`Launch`: none, service, DML reentry, root catalog, batched child catalog), derived from
+  members, delivery and position only, with the fact-parameterized overload serving the
+  schema-free walk from the leaf projection and crosswalk so the two walks read one
+  predicate. `MINTING_KINDS`, the `MintingKind` key shapes and the schema-free leaf filter
+  retired; the row builders survive as payload dispatch behind per-verdict switches whose
+  default throws are drift guards, and the `DmlReturnExpression` switch stays total (the
+  `Encoded*` arms now throw: their exclusion is the absent reentry member). `mintedMethodOf`
+  re-derives naming from the verdict plus the lookup member. The single-table anchor is the
+  target-axis read (`TargetShape.Table`, which includes the single-table interface root); the
+  polymorphic family's `Interface` / `Union` shapes exclude it without leaf identity.
+- `ConditionCommands`: one row per condition member, the member payload being the row input
+  and the glue naming a total switch over the member's two arms; the polymorphic
+  `participantFilters()` arms dissolved. Nested instances read the leaf-projected members per
+  the member relation's domain boundary; the two validator-mirror backstops stay.
+- `ProjectionCommands`: the six table-target leaf cases merged into one
+  `ChildField.TableTargetField` arm whose forks read the serviceCall member, the delivery
+  fact, the parent-row-demand capability and the lookup member; payload extraction keeps the
+  sanctioned casts (the step-0 correlation has no capability home until the lookup triplet's
+  fold). `PLAN_LEAF_REFERENCES` re-pinned 156 to 140.
+- The launcher membership census re-shaped onto the verdict: coordinate-set equality against
+  the pinned fixture roster, per-family and per-`LaunchSource`-arm non-vacuity floors; the
+  reentry-launcher agreement pin re-worded (the launcher side now reads the member, so the pin
+  guards the verdict-to-payload seam rather than two independent productions).
+
+Decisions bound here (the consult's findings, adopted):
+
+- **Membership is a sealed verdict, not a boolean.** A boolean `covers` would have re-derived
+  the launch family at three consumers; the verdict is computed once and every consumer
+  switches total over it, which is the compile-error property the Spec required carried
+  forward, relocated onto the verdict's arm set plus the two total crosswalks and the
+  censuses.
+- **`Inline` deliberately covers two situations** (rides the parent's statement; has no
+  statement of its own). A serviceCall coordinate reads `Inline` because the call owns its
+  delivery the way it claims the projection slot; the launcher's anchor-hood is therefore a
+  join of delivery with the hosted members, not a view over delivery alone, and the service
+  and reentry rules bypass the delivery axis by design (the keystone's "derived, not arms").
+- **The nest and pivot arms stay sealed dispatch.** Folding the nest walk onto
+  (empty members and Table-shaped target) would trade the projection seam's compile-checked
+  coverage for a runtime cast over an observed-not-structural conjunction, and the pivot
+  pair's operation half is slice 6c's dissolution by name; the spec row's "Nest/Pivot walk
+  reads members" lands as the unit-minting membership staying with the sealed arms whose
+  leaves 6c folds, recorded here as the deviation and its grounds.
+- **The delivery axis's corpus voice** is the delivery pin until the corpus re-grain; whether
+  `@classified` grows a delivery argument is slice 7's question, decided beside the member-set
+  assertion shape, so the axis does not land unasserted (the pin is corpus-wide) nor
+  half-asserted (a directive shape chosen before the member vocabulary's own re-grain).
+
+Slice-5 baseline: recorded under Progress measurement above.
 
 ## Retired vocabulary
 

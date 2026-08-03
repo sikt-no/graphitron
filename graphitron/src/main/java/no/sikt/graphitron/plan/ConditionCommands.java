@@ -21,9 +21,9 @@ import no.sikt.graphitron.rewrite.model.FkTargetConditionFilter;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
-import no.sikt.graphitron.rewrite.model.LookupField;
-import no.sikt.graphitron.rewrite.model.QueryField;
-import no.sikt.graphitron.rewrite.model.SqlGeneratingField;
+import no.sikt.graphitron.rewrite.model.OperationMember;
+import no.sikt.graphitron.rewrite.model.OperationMembers;
+import no.sikt.graphitron.rewrite.model.OutputField;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
 
@@ -34,23 +34,25 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Produces the condition command relation: one {@link ConditionCommand} row per covered
- * {@code (coordinate, resolvedTable)} key with a nonempty live filter set. Production reads the
- * resolved filter lists exactly where the generators read them today ({@code filters()} /
- * {@code participantFilters()}); re-sourcing onto raw relations is later work, and override
- * suppression stays upstream in {@code FieldBuilder.projectFilters}, which already expresses a
- * suppressed generated filter as absence.
+ * Produces the condition command relation: one {@link ConditionCommand} row per condition
+ * member row, the {@code (coordinate, table)} keys being one key by construction (the member
+ * key was minted to mirror this relation's). Membership is the member's presence and the row
+ * inputs are the member's payload: {@link OperationMember.Condition.OnReturnTable} carries the
+ * coordinate's own-table filter surface, {@link OperationMember.Condition.OnParticipant} one
+ * table-bound participant's, and the glue naming is a total switch over the two arms, so the
+ * per-participant expansion that used to live here as identity arms is now the member
+ * production's fact. Override suppression stays upstream in
+ * {@code FieldBuilder.projectFilters}, which already expresses a suppressed generated filter
+ * as absence (an absent member).
  *
- * <p>Membership is one capability read, not a leaf enumeration: any
- * {@link SqlGeneratingField} whose filter list is nonempty gets a row (adding a new
- * SQL-generating variant needs no producer edit), with identity arms only where the filter surface
- * genuinely lives elsewhere: the polymorphic roots (filters ride {@code participantFilters()},
- * one row per participant table) and {@link ChildField.NestingField} (its children have no
- * {@code fieldsOf} entry, so the producer recurses into the carried {@code nestedFields()}).
- * A nesting type reused from several {@code @table} parents yields the same nested coordinate
- * once per reuse site; the rows are equal by construction (filters resolve against the nested
- * field's own return table) and the producer deduplicates by key, failing hard if two reuse
- * sites ever disagree (the validator's nested-shape comparison enforces the same fact).
+ * <p>One identity arm survives where the walk structure genuinely lives elsewhere:
+ * {@link ChildField.NestingField} (its children have no {@code fieldsOf} entry, so the
+ * producer recurses into the carried {@code nestedFields()}, reading the nested instances'
+ * leaf-projected members per the member relation's domain boundary). A nesting type reused
+ * from several {@code @table} parents yields the same nested coordinate once per reuse site;
+ * the rows are equal by construction (filters resolve against the nested field's own return
+ * table) and the producer deduplicates by key, failing hard if two reuse sites ever disagree
+ * (the validator's nested-shape comparison enforces the same fact).
  *
  * <p>Every row renders glue and every consumer calls it; the migration dial that once restricted
  * rendering to root rows closed with call-site convergence. Two producer-side backstops mirror
@@ -71,31 +73,34 @@ public final class ConditionCommands {
         var rows = new LinkedHashMap<String, ConditionCommand>();
         for (var type : schema.types().values()) {
             for (var field : schema.fieldsOf(type.name())) {
-                collect(schema, units, field, rows);
+                collect(schema, units, field, rows, false);
             }
         }
         return new ConditionRelation(List.copyOf(rows.values()));
     }
 
     private static void collect(GraphitronSchema schema, GeneratedUnits units,
-            GraphitronField field, LinkedHashMap<String, ConditionCommand> rows) {
-        switch (field) {
-            // The polymorphic roots carry their filter surface per participant, a genuinely
-            // different accessor; the expansion is the fact, one row per participant table.
-            case QueryField.QueryInterfaceField qif ->
-                addParticipantRows(rows, units, qif.parentTypeName(), qif.name(), qif.participantFilters());
-            case QueryField.QueryUnionField quf ->
-                addParticipantRows(rows, units, quf.parentTypeName(), quf.name(), quf.participantFilters());
-            // Nested coordinates have no fieldsOf entry; the walk reaches them through the
-            // nesting field's own children.
-            case ChildField.NestingField nf -> {
-                for (var nested : nf.nestedFields()) {
-                    collect(schema, units, nested, rows);
-                }
+            GraphitronField field, LinkedHashMap<String, ConditionCommand> rows, boolean nested) {
+        // Nested coordinates have no fieldsOf entry; the walk reaches them through the
+        // nesting field's own children.
+        if (field instanceof ChildField.NestingField nf) {
+            for (var nestedField : nf.nestedFields()) {
+                collect(schema, units, nestedField, rows, true);
             }
-            default -> { }
         }
-        if (!(field instanceof SqlGeneratingField sgf) || sgf.filters().isEmpty()) {
+        if (!(field instanceof OutputField out)) {
+            return;
+        }
+        // Flat coordinates read the minted member view; nested instances keep the
+        // leaf-projected derivation, the member relation's domain boundary.
+        var members = nested
+            ? OperationMembers.membersOf(out)
+            : schema.operationMembersOf(out.parentTypeName(), out.name());
+        var conditions = members.stream()
+            .filter(m -> m instanceof OperationMember.Condition)
+            .map(m -> (OperationMember.Condition) m)
+            .toList();
+        if (conditions.isEmpty()) {
             return;
         }
         if (field instanceof ChildField.TableInterfaceField) {
@@ -104,24 +109,23 @@ public final class ConditionCommands {
                 + "filters, which its fetcher does not fold; the validator must reject this shape "
                 + "before production");
         }
-        if (field instanceof LookupField) {
-            requireNoGeneratedFilterOnLookup(field, sgf.filters());
-        }
-        addRow(rows, row(field.parentTypeName(), field.name(), sgf.returnType().table(), sgf.filters(),
-            units.conditionMethod(field.parentTypeName(), field.name()),
-            facetsFor(schema, field.parentTypeName(), field.name()), units));
-    }
-
-    private static void addParticipantRows(LinkedHashMap<String, ConditionCommand> rows, GeneratedUnits units,
-            String parentTypeName, String fieldName,
-            List<no.sikt.graphitron.rewrite.model.ParticipantFilters> participantFilters) {
-        for (var pf : participantFilters) {
-            if (pf.filters().isEmpty()) {
-                continue;
+        boolean lookup = members.stream().anyMatch(m -> m.kind() == OperationMember.Kind.LOOKUP);
+        for (var condition : conditions) {
+            if (lookup) {
+                requireNoGeneratedFilterOnLookup(field, condition.filters());
             }
-            addRow(rows, row(parentTypeName, fieldName, pf.participant().table(), pf.filters(),
-                units.participantConditionMethod(parentTypeName, fieldName, pf.participant().typeName()),
-                List.of(), units));
+            switch (condition) {
+                case OperationMember.Condition.OnReturnTable own ->
+                    addRow(rows, row(out.parentTypeName(), out.name(), own.table(), own.filters(),
+                        units.conditionMethod(out.parentTypeName(), out.name()),
+                        facetsFor(schema, out.parentTypeName(), out.name()), units));
+                case OperationMember.Condition.OnParticipant participant ->
+                    addRow(rows, row(out.parentTypeName(), out.name(), participant.table(),
+                        participant.filters(),
+                        units.participantConditionMethod(out.parentTypeName(), out.name(),
+                            participant.participant().typeName()),
+                        List.of(), units));
+            }
         }
     }
 

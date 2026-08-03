@@ -11,14 +11,20 @@ import no.sikt.graphitron.command.TermAlias;
 import no.sikt.graphitron.command.UnitMethodRef;
 import no.sikt.graphitron.command.UnitRef;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.model.BatchKeyField;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.DeliveryFact;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.LookupField;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
+import no.sikt.graphitron.rewrite.model.OperationMember;
+import no.sikt.graphitron.rewrite.model.OperationMembers;
 import no.sikt.graphitron.rewrite.model.ParamSource;
+import no.sikt.graphitron.rewrite.model.ParentRowDemand;
 import no.sikt.graphitron.rewrite.model.PivotSpec;
 import no.sikt.graphitron.rewrite.model.ResultKeyAliasedField;
 import graphql.language.SourceLocation;
@@ -40,9 +46,10 @@ import java.util.stream.Collectors;
  * every {@code (anchor, nesting type)} reach; pivot units for every {@code @pivot}-bearing
  * coordinate (inline and batched delivery alike, since both hosts consume the same unit).
  *
- * <p>The producer reads exactly where the retired generator read (the classified leaves), so
- * this relation needs no fact walk; re-sourcing the reads onto fact relations is the fact-visitor
- * engine's job and the renderer never notices.
+ * <p>The table-target family's contribution fork reads the operation members and the delivery
+ * fact (the serviceCall member and batched delivery route to correlation-key arms, the lookup
+ * member picks the multiset wrap); the payload extraction inside still reads the leaf-carried
+ * resolutions, the additive window's sanctioned half, and the renderer never notices.
  *
  * <p><b>Membership census.</b> {@link #CONTRIBUTION_MINTING_LEAVES} declares the leaf kinds this
  * producer mints projection output for, adjacent to the dispatch that implements it; the
@@ -108,7 +115,8 @@ public final class ProjectionCommands {
             }
             var anchor = units.typeClass(typeName);
             var contributions = collectContributions(
-                schema.fieldsOf(typeName), anchor, typeName, units, glueEnvByMethod, census);
+                schema, schema.fieldsOf(typeName), anchor, typeName, units, glueEnvByMethod,
+                census, false);
             census.add(new ProjectionCommand.AnchorUnit(anchor, type.table(), contributions),
                 "table-backed type '" + typeName + "'");
         }
@@ -126,9 +134,10 @@ public final class ProjectionCommands {
      * here until it declares its projection verdict; a leaf whose projection the producer cannot
      * yet mint surfaces as a validate-time rejection, never a silent skip.
      */
-    private static List<Contribution> collectContributions(List<? extends GraphitronField> fields,
+    private static List<Contribution> collectContributions(GraphitronSchema schema,
+            List<? extends GraphitronField> fields,
             UnitRef owner, String anchorTypeName, GeneratedUnits units,
-            Map<UnitMethodRef, Boolean> glueEnvByMethod, AddressCensus census) {
+            Map<UnitMethodRef, Boolean> glueEnvByMethod, AddressCensus census, boolean nested) {
         var contributions = new ArrayList<Contribution>();
         for (var field : fields) {
             if (field instanceof GraphitronField.UnclassifiedField) {
@@ -140,7 +149,8 @@ public final class ProjectionCommands {
                     + field.getClass().getSimpleName() + ") reached a projection-unit walk; "
                     + "root operation types are never projection units");
             }
-            var contribution = contributionFor(cf, owner, anchorTypeName, units, glueEnvByMethod, census);
+            var contribution = contributionFor(schema, cf, owner, anchorTypeName, units,
+                glueEnvByMethod, census, nested);
             contribution.ifPresent(c -> {
                 requireAliasedWriteArm(cf, c);
                 contributions.add(c);
@@ -149,9 +159,9 @@ public final class ProjectionCommands {
         return contributions;
     }
 
-    private static Optional<Contribution> contributionFor(ChildField field, UnitRef owner,
-            String anchorTypeName, GeneratedUnits units,
-            Map<UnitMethodRef, Boolean> glueEnvByMethod, AddressCensus census) {
+    private static Optional<Contribution> contributionFor(GraphitronSchema schema, ChildField field,
+            UnitRef owner, String anchorTypeName, GeneratedUnits units,
+            Map<UnitMethodRef, Boolean> glueEnvByMethod, AddressCensus census, boolean nested) {
         return switch (field) {
             case ChildField.ColumnBackedField cf -> Optional.of(new Contribution.Project(cf.name(),
                 cf.columns().stream()
@@ -173,30 +183,14 @@ public final class ProjectionCommands {
                         : new SelectTerm.ScalarSubselect(
                             crf.joinPath(), crf.parentCorrelation(), crf.columns().get(0)))));
             }
-            case ChildField.TableField tf -> Optional.of(new Contribution.Call(tf.name(),
-                units.typeClass(tf.returnType().returnTypeName()),
-                new CallWrap.Multiset(
-                    tf.joinPath(),
-                    tf.parentCorrelation(),
-                    tf.returnType().table(),
-                    tf.returnType().wrapper() instanceof FieldWrapper.Single ? Arity.SINGLE : Arity.LIST,
-                    tf.orderBy(),
-                    !(tf.returnType().wrapper() instanceof FieldWrapper.Single)
-                        && tf.pagination() != null && tf.pagination().first() != null,
-                    glueFor(tf.parentTypeName(), tf.name(), tf.filters(), units, glueEnvByMethod),
-                    readsSelectedFieldArguments(tf))));
-            case ChildField.LookupTableField lf -> Optional.of(new Contribution.Call(lf.name(),
-                units.typeClass(lf.returnType().returnTypeName()),
-                new CallWrap.LookupMultiset(
-                    lf.joinPath(),
-                    lf.parentCorrelation(),
-                    lf.returnType().table(),
-                    (LookupMapping.ColumnMapping) lf.lookupMapping(),
-                    units.inputRowsMethod(owner, lf.name()),
-                    glueFor(lf.parentTypeName(), lf.name(), lf.filters(), units, glueEnvByMethod))));
+            // The table-target family's one arm: the delivery fork and the
+            // Multiset-vs-LookupMultiset fork are member and delivery reads, never leaf
+            // identity; the payload extraction inside keeps the sanctioned leaf reads.
+            case ChildField.TableTargetField ttf ->
+                tableTargetContribution(schema, ttf, owner, units, glueEnvByMethod, nested);
             case ChildField.NestingField nf -> {
-                var nested = mintNestedUnit(nf, anchorTypeName, units, glueEnvByMethod, census);
-                yield Optional.of(new Contribution.Call(nf.name(), nested, new CallWrap.Splice()));
+                var nested2 = mintNestedUnit(schema, nf, anchorTypeName, units, glueEnvByMethod, census);
+                yield Optional.of(new Contribution.Call(nf.name(), nested2, new CallWrap.Splice()));
             }
             case ChildField.ComputedField cmp -> Optional.of(new Contribution.Project(cmp.name(),
                 List.of(new SelectTerm.HelperCall(cmp.method()))));
@@ -219,22 +213,16 @@ public final class ProjectionCommands {
                 "PivotSlotField '" + slot.qualifiedName() + "' reached a table-context projection "
                 + "walk; slots live on the pivot projection type and mint inside their pivot unit");
             // Correlation-key arms: these leaves deliver their data through their own fetcher
-            // methods (batched re-queries, service delegations, polymorphic dispatch), but the
-            // fetchers extract their key / correlation columns off the parent row, so the parent
-            // SELECT must carry those columns exactly when the field is selected. The column
-            // list is read from the same accessors the extraction emitters consume
+            // methods (service delegations, polymorphic dispatch), but the fetchers extract
+            // their key / correlation columns off the parent row, so the parent SELECT must
+            // carry those columns exactly when the field is selected. The column list is read
+            // from the same accessors the extraction emitters consume
             // (BatchKeyField.sourceKey(), ParentRowDemand.parentRowColumns()), so supply and
             // demand are one read, not two derivations to cross-check. A null sourceKey is a
-            // no-Sources service method: plain per-parent delegation, nothing to project.
-            case ChildField.BatchedTableField bt -> correlationKeyArm(bt, bt.sourceKey() == null
-                ? List.of() : bt.sourceKey().columns());
-            case ChildField.BatchedLookupTableField bl -> correlationKeyArm(bl, bl.sourceKey() == null
-                ? List.of() : bl.sourceKey().columns());
-            case ChildField.ServiceTableField st -> correlationKeyArm(st, st.sourceKey() == null
-                ? List.of() : st.sourceKey().columns());
+            // no-Sources service method: plain per-parent delegation, nothing to project. The
+            // table-target family's correlation-key arms live in the merged arm above.
             case ChildField.ServiceRecordField sr -> correlationKeyArm(sr, sr.sourceKey() == null
                 ? List.of() : sr.sourceKey().columns());
-            case ChildField.TableInterfaceField tif -> correlationKeyArm(tif, tif.parentRowColumns());
             case ChildField.InterfaceField pif -> correlationKeyArm(pif, pif.parentRowColumns());
             case ChildField.UnionField uf -> correlationKeyArm(uf, uf.parentRowColumns());
             case ChildField.BatchedInterfaceField bif -> correlationKeyArm(bif, bif.parentRowColumns());
@@ -249,11 +237,95 @@ public final class ProjectionCommands {
         };
     }
 
-    private static UnitRef mintNestedUnit(ChildField.NestingField nf, String anchorTypeName,
+    /**
+     * The table-target family's contribution, dispatched on the operation members, the
+     * delivery fact and the parent-row-demand capability: a serviceCall member delegates
+     * through its loader and projects the key columns; a batched delivery re-queries and
+     * projects the key columns; the parent-row-demanding twin (the single-table interface
+     * child) projects its demand columns; the inline remainder composes into the parent
+     * statement, with the Multiset-vs-LookupMultiset fork read off the lookup member. Members come from the minted
+     * view for flat coordinates and the leaf projection for nested instances (the member
+     * relation's domain boundary); delivery reads the same split. The casts inside are the
+     * additive window's sanctioned payload reads (the correlation component and the lookup
+     * mapping have no capability home yet), dissolving with the lookup triplet's fold.
+     */
+    private static Optional<Contribution> tableTargetContribution(GraphitronSchema schema,
+            ChildField.TableTargetField ttf, UnitRef owner, GeneratedUnits units,
+            Map<UnitMethodRef, Boolean> glueEnvByMethod, boolean nested) {
+        var members = nested
+            ? OperationMembers.membersOf(ttf)
+            : schema.operationMembersOf(ttf.parentTypeName(), ttf.name());
+        var delivery = nested
+            ? DeliveryFact.leafDerivedOf(ttf)
+            : schema.deliveryOf(FieldCoordinates.coordinates(ttf.parentTypeName(), ttf.name()));
+        boolean serviceCall = hasKind(members, OperationMember.Kind.SERVICE_CALL);
+        if (serviceCall || delivery instanceof DeliveryFact.Batched) {
+            var keyed = (BatchKeyField) ttf;
+            return correlationKeyArm(ttf, keyed.sourceKey() == null
+                ? List.of() : keyed.sourceKey().columns());
+        }
+        // The single-table interface child twin: inline delivery, but the discriminated
+        // fetcher reads its correlation off the parent row, and the demand capability is the
+        // fact (within the table-target seal, exactly the twin declares one).
+        if (ttf instanceof ParentRowDemand demand) {
+            return correlationKeyArm(ttf, demand.parentRowColumns());
+        }
+        if (hasKind(members, OperationMember.Kind.LOOKUP)) {
+            return Optional.of(new Contribution.Call(ttf.name(),
+                units.typeClass(ttf.returnType().returnTypeName()),
+                new CallWrap.LookupMultiset(
+                    ttf.joinPath(),
+                    inlineParentCorrelationOf(ttf),
+                    ttf.returnType().table(),
+                    (LookupMapping.ColumnMapping) ((LookupField) ttf).lookupMapping(),
+                    units.inputRowsMethod(owner, ttf.name()),
+                    glueFor(ttf.parentTypeName(), ttf.name(), ttf.filters(), units, glueEnvByMethod))));
+        }
+        return Optional.of(new Contribution.Call(ttf.name(),
+            units.typeClass(ttf.returnType().returnTypeName()),
+            new CallWrap.Multiset(
+                ttf.joinPath(),
+                inlineParentCorrelationOf(ttf),
+                ttf.returnType().table(),
+                ttf.returnType().wrapper() instanceof FieldWrapper.Single ? Arity.SINGLE : Arity.LIST,
+                ttf.orderBy(),
+                !(ttf.returnType().wrapper() instanceof FieldWrapper.Single)
+                    && ttf.pagination() != null && ttf.pagination().first() != null,
+                glueFor(ttf.parentTypeName(), ttf.name(), ttf.filters(), units, glueEnvByMethod),
+                readsSelectedFieldArguments(ttf))));
+    }
+
+    /**
+     * The inline table child's step-0 correlation: a leaf-carried payload with no capability
+     * home yet, read behind casts so no counted dispatch rides on it; a non-inline leaf
+     * reaching here is a delivery-fork bug surfaced loudly. Dissolves when the lookup
+     * triplet's fold single-homes the correlation.
+     */
+    private static no.sikt.graphitron.rewrite.model.ParentCorrelation inlineParentCorrelationOf(
+            ChildField.TableTargetField ttf) {
+        if (ttf instanceof ChildField.TableField tf) {
+            return tf.parentCorrelation();
+        }
+        if (ttf instanceof ChildField.LookupTableField lf) {
+            return lf.parentCorrelation();
+        }
+        throw new IllegalStateException(
+            "Graphitron generator bug (projection contribution): coordinate '"
+            + ttf.qualifiedName() + "' (" + ttf.getClass().getSimpleName()
+            + ") reached the inline multiset arm; the delivery fork above must route batched,"
+            + " service and interface deliveries to their correlation-key arms first");
+    }
+
+    private static boolean hasKind(List<OperationMember> members, OperationMember.Kind kind) {
+        return members.stream().anyMatch(m -> m.kind() == kind);
+    }
+
+    private static UnitRef mintNestedUnit(GraphitronSchema schema, ChildField.NestingField nf,
+            String anchorTypeName,
             GeneratedUnits units, Map<UnitMethodRef, Boolean> glueEnvByMethod, AddressCensus census) {
         var unit = units.nestingUnit(anchorTypeName, nf.returnType().returnTypeName());
         var contributions = collectContributions(
-            nf.nestedFields(), unit, anchorTypeName, units, glueEnvByMethod, census);
+            schema, nf.nestedFields(), unit, anchorTypeName, units, glueEnvByMethod, census, true);
         census.add(new ProjectionCommand.NestedUnit(unit, nf.returnType().table(), contributions),
             "nesting type '" + nf.returnType().returnTypeName() + "' under anchor '"
                 + anchorTypeName + "'");
@@ -307,7 +379,7 @@ public final class ProjectionCommands {
      * {@code Arg} bindings. An arm that merely carries arguments nothing reads stays unguarded,
      * so the occurrence guard cannot false-positive on divergence in arguments nothing consumes.
      */
-    private static boolean readsSelectedFieldArguments(ChildField.TableField tf) {
+    private static boolean readsSelectedFieldArguments(ChildField.TableTargetField tf) {
         boolean singleCardinality = tf.returnType().wrapper() instanceof FieldWrapper.Single;
         if (!singleCardinality && tf.pagination() != null && tf.pagination().first() != null) {
             return true;

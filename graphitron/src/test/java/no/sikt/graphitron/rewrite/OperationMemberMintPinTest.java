@@ -221,9 +221,11 @@ class OperationMemberMintPinTest {
     /**
      * The reentry-launcher agreement: over the corpus's DML table coordinates, the minted
      * reentry member's coordinate set equals the launcher relation's reentry-sourced row set.
-     * The two are produced by independent predicates (the central reentry mint vs the
-     * {@code DmlReturnExpression} switch in the launcher producer); this is the enforcer that
-     * keeps them one fact.
+     * Since the back-half membership re-source the launcher side reads the reentry member
+     * itself, so the two sides are no longer independent predicates; what this pins now is the
+     * verdict-to-payload seam (the launch verdict against the {@code DmlReturnExpression}
+     * payload dispatch, whose encoded arms throw on membership drift), kept as a regression
+     * guard on the one-fact claim.
      */
     @Test
     void reentryMembersMatchTheDmlReentryLauncherRows() {

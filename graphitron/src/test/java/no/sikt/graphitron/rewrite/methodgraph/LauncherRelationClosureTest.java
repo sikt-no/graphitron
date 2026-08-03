@@ -131,15 +131,15 @@ class LauncherRelationClosureTest {
     }
 
     /**
-     * The covered-family boundary, read off the producer's declared minting membership
-     * ({@link LauncherCommands#covers}, the one accessor over
-     * {@link LauncherCommands#MINTING_KINDS}), so this leg and the producer cannot drift: the
-     * membership census test binds the declaration to observed minting, and this test binds the
-     * generator run's relation to the same declaration.
+     * The covered-family boundary, read off the producer's one membership accessor
+     * ({@link LauncherCommands#covers}, the member-and-delivery-derived launch verdict against
+     * its none arm), so this leg and the producer cannot drift: the membership census test
+     * binds the verdict to observed minting, and this test binds the generator run's relation
+     * to the same verdict.
      */
     private static Set<String> coveredCoordinates() {
         return model.fields().values().stream()
-            .filter(LauncherCommands::covers)
+            .filter(f -> LauncherCommands.covers(model, f))
             .map(f -> ((OutputField) f).qualifiedName())
             .collect(Collectors.toCollection(LinkedHashSet::new));
     }
@@ -273,8 +273,8 @@ class LauncherRelationClosureTest {
         assertThat(deleteFilm.returnExpression())
             .as("a DELETE returning ID carries the encoded-single return arm")
             .isInstanceOf(DmlReturnExpression.EncodedSingle.class);
-        assertThat(LauncherCommands.covers(deleteFilm))
-            .as("the declared membership excludes the encoded return arms")
+        assertThat(LauncherCommands.covers(model, deleteFilm))
+            .as("the membership verdict excludes the encoded return arms (no reentry member)")
             .isFalse();
         assertThat(launchers.rowFor("Mutation", "deleteFilm")).isEmpty();
 

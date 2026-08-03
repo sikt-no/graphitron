@@ -13,31 +13,42 @@ import no.sikt.graphitron.command.Ordering;
 import no.sikt.graphitron.command.ResultShape;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.ChildField;
-import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
+import no.sikt.graphitron.rewrite.model.DeliveryFact;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.MutationField;
+import no.sikt.graphitron.rewrite.model.OperationMember;
+import no.sikt.graphitron.rewrite.model.OperationMembers;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
+import no.sikt.graphitron.rewrite.model.OutputField;
 import no.sikt.graphitron.rewrite.model.QueryField;
+import no.sikt.graphitron.rewrite.model.RootField;
+import no.sikt.graphitron.rewrite.model.TargetShape;
 import no.sikt.graphitron.rewrite.model.TenantBinding;
 import no.sikt.graphitron.rewrite.model.TenantScopes;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
- * Produces the launcher command relation: one {@link LauncherCommand} row per covered root
- * SELECT coordinate. Membership has one home, {@link #rowOf}: a single switch, total over
- * {@link QueryField}'s permits, whose arms either mint the coordinate's row or state why the
- * kind is outside the family (polymorphic, node, service roots, all out by the fact, with no
- * exemption list anywhere). The migration dial that excluded not-yet-landed shapes while the
- * seam was being built emptied with the lookup root's fold and is deleted; that the switch has
- * no default and no dial <em>is</em> the membership enforcer: a new root kind is a compile
- * error here, and flipping an existing kind's verdict is a visible arm edit, never a silent
- * exclusion.
+ * Produces the launcher command relation: one {@link LauncherCommand} row per covered
+ * coordinate. Membership has one home, {@link #verdictOf(List, DeliveryFact, OutputField)}:
+ * anchor-hood (a view over the delivery fact) joined with the members the launch hosts. A
+ * child hosting a serviceCall member launches through its loader; a coordinate hosting write
+ * and reentry members launches the write's reentry companion; a select member on a
+ * single-table-anchored target (or a pivot member) launches a catalog unit when the
+ * coordinate is a root or its delivery is batched. No leaf identity participates in the
+ * verdict; the payload builders behind each verdict arm keep their sanctioned leaf reads
+ * until the dissolution slices move the payloads, guarded by loud membership-drift throws.
+ *
+ * <p>What replaced the retired leaf-identity membership switches' compile error for an
+ * undecided new leaf: a new leaf must declare its member shape (the {@code OperationMembers}
+ * crosswalk and declared-shape table are total) and its delivery arm
+ * ({@link DeliveryFact#leafDerivedOf} is total), the verdict then derives, and the membership
+ * censuses (the launcher membership fixture, the closure test's covered-set equality, the
+ * delivery and member agreement pins) fail on any divergence between the declared facts and
+ * observed minting.
  *
  * <p>The generator's dispatch does not restate this membership: it routes on row presence
  * (a coordinate with a row gets the launcher emission), so the predicate has one home and the
@@ -56,78 +67,89 @@ public final class LauncherCommands {
     private LauncherCommands() {}
 
     /**
-     * One declared member of the launcher family's minting membership. Launcher membership is
-     * leaf-grain except for the DML family, where it is conditioned on the leaf's
-     * return-expression arm, so the declared set carries two key shapes: {@link Leaf} names a
-     * field leaf whose every instance mints a row, and {@link DmlReturn} names a
-     * {@link DmlReturnExpression} arm that mints on every
-     * {@link MutationField.DmlTableField} leaf carrying that return arm (the flat leaf-class
-     * form cannot express this: {@code getClass()} never returns the sealed
-     * {@code DmlTableField} intermediate). {@link #covers} is the one accessor owning the
-     * leaf-plus-return-arm conjunction.
+     * The launch-family verdict: which launcher family a coordinate's facts place it in, or
+     * {@link #NONE}. The membership declaration and the production dispatch are total switches
+     * over these arms, so a new family is a compile-time decision at every consumer
+     * ({@link #mintedMethodOf}, the {@link #produce} dispatch, the schema-free walk) rather
+     * than a re-derived boolean; the membership census pins a per-arm non-vacuity floor over
+     * its fixture so a family silently ceasing to produce is a census failure.
      */
-    public sealed interface MintingKind {
-
-        /** A field leaf whose every instance mints the coordinate's launcher row. */
-        record Leaf(Class<? extends GraphitronField> leaf) implements MintingKind {}
-
-        /**
-         * A DML return-expression arm minting the reentry companion row on every
-         * {@link MutationField.DmlTableField} leaf that carries it.
-         */
-        record DmlReturn(Class<? extends DmlReturnExpression> returnArm) implements MintingKind {}
+    public enum Launch {
+        /** No launcher row: the coordinate rides another statement or has no query of its own. */
+        NONE,
+        /** A {@code @service} child's loader delegation ({@code load<Field>}). */
+        SERVICE,
+        /** A DML write's reentry companion re-select ({@code reentryRows<Field>}). */
+        DML_REENTRY,
+        /** A root catalog launch ({@code launcher<Field>} / {@code lookup<Field>}). */
+        ROOT_CATALOG,
+        /** A batched child's catalog re-query ({@code rows<Field>}). */
+        BATCHED_CHILD_CATALOG
     }
 
     /**
-     * The minting kinds this producer mints launcher rows for, declared beside the dispatch
-     * ({@link #rowOf}, {@link #childRowOf}, {@link #dmlRowOf}) that implements it: the four
-     * migrated root kinds, the three batched child kinds, the two {@code @service} child kinds,
-     * and the four reentry-carrying DML return arms (the {@code Encoded*} arms carry no reentry
-     * and are outside by their absence here, stated once). The launcher membership census test
-     * validates this declaration against observed minting in both directions, so the set cannot
-     * drift from the switches it sits beside.
+     * The one membership accessor: the verdict for {@code field} under {@code schema}'s member
+     * and delivery views. Every membership consumer (the closure test's covered set,
+     * {@link #mintedMethodOf}, the {@link #produce} dispatch, the Encoded-DML negative pin)
+     * reads the verdict here.
      */
-    public static final Set<MintingKind> MINTING_KINDS = Set.of(
-        new MintingKind.Leaf(QueryField.QueryTableField.class),
-        new MintingKind.Leaf(QueryField.QueryRoutineTableField.class),
-        new MintingKind.Leaf(QueryField.QueryTableInterfaceField.class),
-        new MintingKind.Leaf(QueryField.QueryLookupTableField.class),
-        new MintingKind.Leaf(ChildField.BatchedTableField.class),
-        new MintingKind.Leaf(ChildField.BatchedLookupTableField.class),
-        new MintingKind.Leaf(ChildField.BatchedPivotField.class),
-        new MintingKind.Leaf(ChildField.ServiceTableField.class),
-        new MintingKind.Leaf(ChildField.ServiceRecordField.class),
-        new MintingKind.DmlReturn(DmlReturnExpression.ProjectedSingle.class),
-        new MintingKind.DmlReturn(DmlReturnExpression.ProjectedList.class),
-        new MintingKind.DmlReturn(DmlReturnExpression.DiscriminatedSingle.class),
-        new MintingKind.DmlReturn(DmlReturnExpression.DiscriminatedList.class));
-
-    /**
-     * The non-DML declared members ({@link MintingKind.Leaf} arms only), derived from
-     * {@link #MINTING_KINDS}: the filter {@link #produceWithoutSchema} walks with. The DML
-     * reentry companions are deliberately absent from the schema-free walk (see that method's
-     * javadoc).
-     */
-    private static final Set<Class<? extends GraphitronField>> SCHEMA_FREE_MINTING_LEAVES =
-        MINTING_KINDS.stream()
-            .filter(k -> k instanceof MintingKind.Leaf)
-            .map(k -> ((MintingKind.Leaf) k).leaf())
-            .collect(Collectors.toUnmodifiableSet());
-
-    /**
-     * The one membership accessor over the declared set: {@code field} mints a launcher row iff
-     * its leaf class is a declared {@link MintingKind.Leaf}, or it is a
-     * {@link MutationField.DmlTableField} whose return-expression arm is a declared
-     * {@link MintingKind.DmlReturn}. Every membership consumer (the closure test's covered set,
-     * {@link #mintedMethodOf}, {@link #produceWithoutSchema}'s filter through its derived
-     * non-DML view, the Encoded-DML negative pin) reads this conjunction here, so the
-     * {@code Encoded*} exclusion is stated once instead of per consumer.
-     */
-    public static boolean covers(GraphitronField field) {
-        if (field instanceof MutationField.DmlTableField dml) {
-            return MINTING_KINDS.contains(new MintingKind.DmlReturn(dml.returnExpression().getClass()));
+    public static Launch verdictOf(GraphitronSchema schema, GraphitronField field) {
+        if (!(field instanceof OutputField out)) {
+            return Launch.NONE;
         }
-        return MINTING_KINDS.contains(new MintingKind.Leaf(field.getClass()));
+        var coord = FieldCoordinates.coordinates(out.parentTypeName(), out.name());
+        return verdictOf(schema.operationMembersOf(coord), schema.deliveryOf(coord), out);
+    }
+
+    /** Whether {@code field} mints a launcher row: {@link #verdictOf} against {@link Launch#NONE}. */
+    public static boolean covers(GraphitronSchema schema, GraphitronField field) {
+        return verdictOf(schema, field) != Launch.NONE;
+    }
+
+    /**
+     * The verdict from the facts alone, parameterized on its inputs so the schema view and the
+     * schema-free walk read one predicate over two fact sources (the members and delivery
+     * views on a walk-built schema; the leaf projection and crosswalk on a walk-less one).
+     *
+     * <p>The three rules, in order: a child hosting a serviceCall member launches through its
+     * loader (the call is the delivery, so anchor-hood is bypassed by the member the way the
+     * member production lets the call claim the projection slot); write plus reentry members
+     * launch the write's companion re-select (the launcher relation's reentry-sourced rows;
+     * the {@code Encoded*} returns mint no reentry member, so their exclusion is the member
+     * fact, stated nowhere); a select member on a single-table-anchored target, or a pivot
+     * member, launches a catalog unit when the coordinate is a root (roots always run their
+     * own unit) or its delivery is batched. Single-table anchoring is the target-axis fact
+     * {@link TargetShape.Table}: the multi-table polymorphic family carries
+     * {@code Interface} / {@code Union} shapes and its UNION-ALL stage belongs to the
+     * polymorphic-emit family, roots and batched children alike.
+     */
+    public static Launch verdictOf(List<OperationMember> members,
+            DeliveryFact delivery, OutputField out) {
+        boolean root = out instanceof RootField;
+        if (!root && hasKind(members, OperationMember.Kind.SERVICE_CALL)) {
+            return Launch.SERVICE;
+        }
+        if (hasKind(members, OperationMember.Kind.WRITE)
+                && hasKind(members, OperationMember.Kind.REENTRY)) {
+            return Launch.DML_REENTRY;
+        }
+        TargetShape shape = out.target().shape();
+        TargetShape unwrapped = shape instanceof TargetShape.Connection c ? c.inner() : shape;
+        boolean anchored =
+            hasKind(members, OperationMember.Kind.SELECT)
+                && unwrapped instanceof TargetShape.Table
+            || hasKind(members, OperationMember.Kind.PIVOT);
+        if (anchored && root) {
+            return Launch.ROOT_CATALOG;
+        }
+        if (anchored && delivery instanceof DeliveryFact.Batched) {
+            return Launch.BATCHED_CHILD_CATALOG;
+        }
+        return Launch.NONE;
+    }
+
+    private static boolean hasKind(List<OperationMember> members, OperationMember.Kind kind) {
+        return members.stream().anyMatch(m -> m.kind() == kind);
     }
 
     /**
@@ -159,24 +181,17 @@ public final class LauncherCommands {
         var rows = new ArrayList<LauncherCommand>();
         for (var type : schema.types().values()) {
             for (var field : schema.fieldsOf(type.name())) {
-                if (field instanceof QueryField qf) {
-                    var row = rowOf(schema, qf, conditions, units);
-                    if (row != null) {
-                        rows.add(row);
-                    }
+                var verdict = verdictOf(schema, field);
+                if (verdict == Launch.NONE) {
+                    continue;
                 }
-                if (field instanceof no.sikt.graphitron.rewrite.model.ChildField cf) {
-                    var row = childRowOf(schema, cf, conditions, units);
-                    if (row != null) {
-                        rows.add(row);
-                    }
-                }
-                if (field instanceof no.sikt.graphitron.rewrite.model.MutationField.DmlTableField dml) {
-                    var row = dmlRowOf(schema, dml, units);
-                    if (row != null) {
-                        rows.add(row);
-                    }
-                }
+                rows.add(switch (verdict) {
+                    case NONE -> throw new IllegalStateException("unreachable: NONE is filtered above");
+                    case SERVICE -> serviceRow(field, units);
+                    case DML_REENTRY -> dmlRowOf(schema, requireDmlCarrier(field), units);
+                    case ROOT_CATALOG -> rootCatalogRow(schema, field, conditions, units);
+                    case BATCHED_CHILD_CATALOG -> batchedChildRow(schema, field, conditions, units);
+                });
             }
         }
         var carrierDsl = schema.tenantScopes() instanceof TenantScopes.Configured
@@ -186,13 +201,13 @@ public final class LauncherCommands {
     }
 
     /**
-     * The one membership-and-production switch: each permit either mints the coordinate's row
-     * or is outside the family by the fact ({@code null}). Total with no default, so a new
-     * root kind is a compile-time decision here rather than a runtime throw or a silent
-     * exclusion; this totality is the membership enforcer the migration dial's deletion
-     * promised.
+     * The root catalog family's payload dispatch, reached only behind a
+     * {@link Launch#ROOT_CATALOG} verdict: the leaf reads are the sanctioned payload half of
+     * the additive window (each arm extracts what its row carries from the leaf-resolved
+     * components), and the default throw is the membership-drift guard, not a membership
+     * statement (membership lives on the verdict alone).
      */
-    private static LauncherCommand rowOf(GraphitronSchema schema, QueryField field,
+    private static LauncherCommand rootCatalogRow(GraphitronSchema schema, GraphitronField field,
             ConditionRelation conditions, GeneratedUnits units) {
         return switch (field) {
             case QueryField.QueryTableField qtf -> row(qtf, whereOf(qtf, conditions), units,
@@ -204,91 +219,87 @@ public final class LauncherCommands {
                 whereOf(qtif.parentTypeName(), qtif.name(), conditions), units);
             case QueryField.QueryLookupTableField qlf -> lookupRow(qlf,
                 whereOf(qlf.parentTypeName(), qlf.name(), conditions), units);
-            // Polymorphic targets (their UNION-ALL stage is a dedicated polymorphic-emit
-            // family), node dispatch, and the service-backed roots are outside by the fact.
-            case QueryField.QueryInterfaceField ignored -> null;
-            case QueryField.QueryUnionField ignored -> null;
-            case QueryField.QueryNodeField ignored -> null;
-            case QueryField.QueryNodesField ignored -> null;
-            case QueryField.QueryServiceTableField ignored -> null;
-            case QueryField.QueryServiceRecordField ignored -> null;
-            case QueryField.QueryServicePolymorphicField ignored -> null;
-            case QueryField.QueryServiceTableInterfaceField ignored -> null;
+            default -> throw new IllegalStateException(
+                "Graphitron generator bug (launcher production): coordinate '"
+                + field.qualifiedName() + "' (" + field.getClass().getSimpleName()
+                + ") received a root catalog launch verdict but has no payload arm here;"
+                + " the membership predicate and this payload dispatch have drifted");
         };
     }
 
     /**
-     * The child family's membership-and-production switch, the {@link #rowOf} shape over
-     * {@link no.sikt.graphitron.rewrite.model.ChildField}'s permits: each leaf either mints the
-     * coordinate's row or is outside the family by the fact ({@code null}), total with no
-     * default, so a new child leaf is a compile-time decision here rather than a silent
-     * non-member.
+     * The batched child catalog family's payload dispatch, reached only behind a
+     * {@link Launch#BATCHED_CHILD_CATALOG} verdict; same discipline as
+     * {@link #rootCatalogRow}.
      */
-    private static LauncherCommand childRowOf(GraphitronSchema schema,
-            no.sikt.graphitron.rewrite.model.ChildField field,
+    private static LauncherCommand batchedChildRow(GraphitronSchema schema, GraphitronField field,
             ConditionRelation conditions, GeneratedUnits units) {
         return switch (field) {
-            // The batched and service families own their coordinates' whole payload production.
-            case no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField btf ->
-                batchedRow(btf, schema, conditions, units);
-            case no.sikt.graphitron.rewrite.model.ChildField.BatchedLookupTableField blf ->
-                batchedLookupRow(blf,
-                    whereOf(blf.parentTypeName(), blf.name(), conditions),
-                    tenancyOf(schema, blf.parentTypeName(), blf.name(), units), units);
-            case no.sikt.graphitron.rewrite.model.ChildField.BatchedPivotField bpf ->
-                batchedPivotRow(bpf, units);
-            case no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField stf ->
-                serviceTableRow(stf, units);
-            case no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField srf ->
-                serviceRecordRow(srf, units);
-            // Inline SQL children: their composition rides the parent's query (the projection
-            // wrap or a correlated subquery), so no launcher unit exists at the coordinate.
-            case no.sikt.graphitron.rewrite.model.ChildField.TableField ignored -> null;
-            case no.sikt.graphitron.rewrite.model.ChildField.LookupTableField ignored -> null;
-            case no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField ignored -> null;
-            // Inline polymorphic delivery: the UNION-ALL stage is the dedicated
-            // polymorphic-emit family, out by the fact like the polymorphic roots.
-            case no.sikt.graphitron.rewrite.model.ChildField.InterfaceField ignored -> null;
-            case no.sikt.graphitron.rewrite.model.ChildField.UnionField ignored -> null;
-            // The batched polymorphic pair: names minted through the same GeneratedUnits scheme
-            // with no row behind them, the one decided emitted-and-uncommitted population (the
-            // per-participant UNION assembly is the polymorphic-emit family's, not a launcher).
-            case no.sikt.graphitron.rewrite.model.ChildField.BatchedInterfaceField ignored -> null;
-            case no.sikt.graphitron.rewrite.model.ChildField.BatchedUnionField ignored -> null;
-            // Column and scalar reads off the parent's already-fetched row: no query of their own.
-            case no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedField ignored -> null;
-            case no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedReferenceField ignored -> null;
-            case no.sikt.graphitron.rewrite.model.ChildField.ParticipantColumnReferenceField ignored -> null;
-            case no.sikt.graphitron.rewrite.model.ChildField.ComputedField ignored -> null;
-            case no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdField ignored -> null;
-            case no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning ignored -> null;
-            // Pass-through and record shapes: they read the parent's row (or a service record)
-            // through the projection family, never a query of their own.
-            case no.sikt.graphitron.rewrite.model.ChildField.NestingField ignored -> null;
-            case no.sikt.graphitron.rewrite.model.ChildField.RecordReadField ignored -> null;
-            case no.sikt.graphitron.rewrite.model.ChildField.RecordCompositeField ignored -> null;
-            // The inline pivot rides its parent's multiset; the slot rides the aggregate's row.
-            case no.sikt.graphitron.rewrite.model.ChildField.PivotField ignored -> null;
-            case no.sikt.graphitron.rewrite.model.ChildField.PivotSlotField ignored -> null;
-            // The error channel is synthesised delivery, not a query coordinate.
-            case no.sikt.graphitron.rewrite.model.ChildField.ErrorsField ignored -> null;
+            case ChildField.BatchedTableField btf -> batchedRow(btf, schema, conditions, units);
+            case ChildField.BatchedLookupTableField blf -> batchedLookupRow(blf,
+                whereOf(blf.parentTypeName(), blf.name(), conditions),
+                tenancyOf(schema, blf.parentTypeName(), blf.name(), units), units);
+            case ChildField.BatchedPivotField bpf -> batchedPivotRow(bpf, units);
+            default -> throw new IllegalStateException(
+                "Graphitron generator bug (launcher production): coordinate '"
+                + field.qualifiedName() + "' (" + field.getClass().getSimpleName()
+                + ") received a batched child catalog launch verdict but has no payload arm"
+                + " here; the membership predicate and this payload dispatch have drifted");
         };
     }
 
     /**
-     * The DML family's membership-and-production switch, the {@link #rowOf} shape over
-     * {@link no.sikt.graphitron.rewrite.model.DmlReturnExpression}'s arms; this switch is the
-     * one home of the kind-to-(source, result) projection. The {@code Projected*} and
-     * {@code Discriminated*} arms mint the coordinate's reentry companion row (the write itself
-     * stays with the mutation entry point, which is deliberately not thin: it owns the
-     * transaction, the dialect guard, the no-match guard and the channel envelope); the
-     * {@code Encoded*} arms carry no reentry and get no row.
+     * The {@code @service} family's payload dispatch, reached only behind a
+     * {@link Launch#SERVICE} verdict; same discipline as {@link #rootCatalogRow}.
+     */
+    private static LauncherCommand serviceRow(GraphitronField field, GeneratedUnits units) {
+        return switch (field) {
+            case ChildField.ServiceTableField stf -> serviceTableRow(stf, units);
+            case ChildField.ServiceRecordField srf -> serviceRecordRow(srf, units);
+            default -> throw new IllegalStateException(
+                "Graphitron generator bug (launcher production): coordinate '"
+                + field.qualifiedName() + "' (" + field.getClass().getSimpleName()
+                + ") received a service launch verdict but has no payload arm here;"
+                + " the membership predicate and this payload dispatch have drifted");
+        };
+    }
+
+    /**
+     * The write member's payload home during the additive window: the reentry companion's
+     * return-shape facts still live on the DML leaf's return-expression arm, so a reentry
+     * launch verdict on any other carrier is membership drift, surfaced loudly.
+     */
+    private static MutationField.DmlTableField requireDmlCarrier(GraphitronField field) {
+        if (!(field instanceof MutationField.DmlTableField dml)) {
+            throw new IllegalStateException(
+                "Graphitron generator bug (launcher production): coordinate '"
+                + field.qualifiedName() + "' (" + field.getClass().getSimpleName()
+                + ") received a DML reentry launch verdict but carries no DML return"
+                + " expression; the membership predicate and the write payload home have"
+                + " drifted");
+        }
+        return dml;
+    }
+
+    /**
+     * The DML reentry companion's payload dispatch over
+     * {@link no.sikt.graphitron.rewrite.model.DmlReturnExpression}'s arms, reached only behind
+     * a {@link Launch#DML_REENTRY} verdict; this switch is the one home of the
+     * kind-to-(source, result) projection, total with no default so a new return arm is a
+     * compile-time decision. The {@code Projected*} and {@code Discriminated*} arms mint the
+     * coordinate's reentry companion row (the write itself stays with the mutation entry
+     * point, which is deliberately not thin: it owns the transaction, the dialect guard, the
+     * no-match guard and the channel envelope); the {@code Encoded*} arms mint no reentry
+     * member, so their exclusion is the member fact and reaching them here is membership
+     * drift, surfaced loudly.
      */
     private static LauncherCommand dmlRowOf(GraphitronSchema schema,
             no.sikt.graphitron.rewrite.model.MutationField.DmlTableField field, GeneratedUnits units) {
         return switch (field.returnExpression()) {
-            case no.sikt.graphitron.rewrite.model.DmlReturnExpression.EncodedSingle ignored -> null;
-            case no.sikt.graphitron.rewrite.model.DmlReturnExpression.EncodedList ignored -> null;
+            case no.sikt.graphitron.rewrite.model.DmlReturnExpression.EncodedSingle ignored ->
+                throw encodedDriftGuard(field);
+            case no.sikt.graphitron.rewrite.model.DmlReturnExpression.EncodedList ignored ->
+                throw encodedDriftGuard(field);
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedSingle ps ->
                 reentryRow(field,
                     new LaunchSource.ProjectedReentry(units.typeClass(ps.returnTypeName()),
@@ -310,6 +321,15 @@ public final class LauncherCommands {
                         dl.knownDiscriminatorValues(), dl.participants(), dl.reentryCorrelation(), units),
                     new ResultShape.RecordList(null), units);
         };
+    }
+
+    private static IllegalStateException encodedDriftGuard(
+            no.sikt.graphitron.rewrite.model.MutationField.DmlTableField field) {
+        return new IllegalStateException(
+            "Graphitron generator bug (launcher production): coordinate '"
+            + field.qualifiedName() + "' carries an encoded DML return, which mints no reentry"
+            + " member, yet received a DML reentry launch verdict; the membership predicate and"
+            + " the return-expression payload dispatch have drifted");
     }
 
     /**
@@ -364,18 +384,24 @@ public final class LauncherCommands {
      * disagree). Facetedness is a schema fact, so schema-free connection rows are facetless by
      * construction, matching what a schema-free assembly can classify.
      *
-     * <p>The walk filters through the declared membership's non-DML view
-     * ({@link #SCHEMA_FREE_MINTING_LEAVES}), so it is bound to {@link #MINTING_KINDS} rather
-     * than restating it. The DML reentry companions are deliberately absent: a schema-free
-     * assembly builds no mutation writes, so no captured {@code RETURNING} keys exist for a
-     * companion to re-select by.
+     * <p>The walk reads the same membership predicate as the schema path
+     * ({@link #verdictOf(List, DeliveryFact, OutputField)}), sourced from the leaf projection
+     * and the delivery crosswalk (the walk-less fact sources behind the schema views), so the
+     * two walks cannot disagree on membership. The DML reentry companions are deliberately
+     * absent: a schema-free assembly builds no mutation writes, so no captured
+     * {@code RETURNING} keys exist for a companion to re-select by, and the reentry verdict is
+     * skipped rather than served.
      */
     public static LauncherRelation produceWithoutSchema(List<? extends GraphitronField> fields,
             String outputPackage) {
         var units = new GeneratedUnits(outputPackage);
         var rows = new ArrayList<LauncherCommand>();
         for (var field : fields) {
-            if (!SCHEMA_FREE_MINTING_LEAVES.contains(field.getClass())) {
+            if (!(field instanceof OutputField out)) {
+                continue;
+            }
+            var verdict = verdictOf(OperationMembers.membersOf(out), DeliveryFact.leafDerivedOf(out), out);
+            if (verdict == Launch.NONE || verdict == Launch.DML_REENTRY) {
                 continue;
             }
             rows.add(switch (field) {
@@ -401,9 +427,9 @@ public final class LauncherCommands {
                 case ChildField.ServiceRecordField srf -> serviceRecordRow(srf, units);
                 default -> throw new IllegalStateException(
                     "Graphitron generator bug (schema-free launcher production): field '"
-                    + field.qualifiedName() + "' passed the declared non-DML membership filter"
-                    + " but has no production arm here; the declared set and this switch have"
-                    + " drifted");
+                    + field.qualifiedName() + "' received a launch verdict but has no"
+                    + " schema-free production arm here; the membership predicate and this"
+                    + " payload dispatch have drifted");
             });
         }
         return new LauncherRelation(rows, CarrierDsl.ENV_ACQUIRED);
@@ -822,9 +848,9 @@ public final class LauncherCommands {
      * {@code (owner, method)}, with the groups that collide across distinct coordinates
      * returned for rejection (the projection producer's address-census division: the relation
      * constructor's hard failure is the backstop, this is what an author sees, located at the
-     * colliding declarations). The kind-to-scheme mapping restates the membership switches
-     * above at name grain only; a drift produces a census that misses or over-reports, caught
-     * by the constructor backstop either way.
+     * colliding declarations). The verdict-to-scheme mapping reads the same launch verdict the
+     * production reads, at name grain only; a drift produces a census that misses or
+     * over-reports, caught by the constructor backstop either way.
      */
     public static List<MethodCollision> methodCollisions(GraphitronSchema schema) {
         var units = new GeneratedUnits("");
@@ -832,7 +858,7 @@ public final class LauncherCommands {
             java.util.LinkedHashMap<String, graphql.language.SourceLocation>>();
         for (var type : schema.types().values()) {
             for (var field : schema.fieldsOf(type.name())) {
-                var ref = mintedMethodOf(field, units);
+                var ref = mintedMethodOf(schema, field, units);
                 if (ref == null) {
                     continue;
                 }
@@ -860,32 +886,23 @@ public final class LauncherCommands {
 
     /**
      * The name the covered family would mint for {@code field}, or {@code null} for a
-     * non-member: the census-grain restatement of {@link #rowOf}, {@link #childRowOf} and
-     * {@link #dmlRowOf}'s minting arms, reading only the naming schemes (never conditions or
-     * tenancy, which a name census does not need). Membership is {@link #covers}' verdict (so
-     * the {@code Encoded*} exclusion is not restated here); the switch maps only the declared
-     * minting kinds onto their naming schemes.
+     * non-member: a total switch over the launch verdict, reading only the naming schemes
+     * (never conditions or tenancy, which a name census does not need). The lookup fork inside
+     * the root catalog arm is a member read (the lookup member's presence names the
+     * {@code lookup<Field>} scheme), so no leaf identity participates in the census either.
      */
     private static no.sikt.graphitron.command.UnitMethodRef mintedMethodOf(
-            GraphitronField field, GeneratedUnits units) {
-        if (!covers(field)) {
-            return null;
-        }
-        return switch (field) {
-            case QueryField.QueryTableField f -> units.launcherMethod(f.parentTypeName(), f.name());
-            case QueryField.QueryRoutineTableField f -> units.launcherMethod(f.parentTypeName(), f.name());
-            case QueryField.QueryTableInterfaceField f -> units.launcherMethod(f.parentTypeName(), f.name());
-            case QueryField.QueryLookupTableField f -> units.lookupMethod(f.parentTypeName(), f.name());
-            case ChildField.BatchedTableField f -> units.rowsMethod(f.parentTypeName(), f.name());
-            case ChildField.BatchedLookupTableField f -> units.rowsMethod(f.parentTypeName(), f.name());
-            case ChildField.BatchedPivotField f -> units.rowsMethod(f.parentTypeName(), f.name());
-            case ChildField.ServiceTableField f -> units.loadMethod(f.parentTypeName(), f.name());
-            case ChildField.ServiceRecordField f -> units.loadMethod(f.parentTypeName(), f.name());
-            case MutationField.DmlTableField f -> units.reentryRowsMethod(f.parentTypeName(), f.name());
-            default -> throw new IllegalStateException(
-                "Graphitron generator bug (launcher method census): field '" + field.qualifiedName()
-                + "' is declared minting but has no naming-scheme arm here; the declared"
-                + " membership and this census restatement have drifted");
+            GraphitronSchema schema, GraphitronField field, GeneratedUnits units) {
+        return switch (verdictOf(schema, field)) {
+            case NONE -> null;
+            case SERVICE -> units.loadMethod(field.parentTypeName(), field.name());
+            case DML_REENTRY -> units.reentryRowsMethod(field.parentTypeName(), field.name());
+            case ROOT_CATALOG ->
+                hasKind(schema.operationMembersOf(field.parentTypeName(), field.name()),
+                        OperationMember.Kind.LOOKUP)
+                    ? units.lookupMethod(field.parentTypeName(), field.name())
+                    : units.launcherMethod(field.parentTypeName(), field.name());
+            case BATCHED_CHILD_CATALOG -> units.rowsMethod(field.parentTypeName(), field.name());
         };
     }
 

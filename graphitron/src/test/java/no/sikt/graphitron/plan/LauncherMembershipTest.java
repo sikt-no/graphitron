@@ -1,7 +1,7 @@
 package no.sikt.graphitron.plan;
 
 import no.sikt.graphitron.command.LaunchSource;
-import no.sikt.graphitron.plan.LauncherCommands.MintingKind;
+import no.sikt.graphitron.plan.LauncherCommands.Launch;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.generators.GeneratorCoverageTest;
@@ -11,7 +11,6 @@ import no.sikt.graphitron.rewrite.model.OutputField;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
-import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 
@@ -20,22 +19,23 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The launcher relation's membership enforcer, the {@code ProjectionMembershipTest} shape for
- * the launcher family: over a composite fixture exercising every declared minting kind, the
- * producer's declared membership ({@link LauncherCommands#MINTING_KINDS}) is bound to observed
- * minting in both directions (observed a subset of declared; declared minus observed empty),
- * and the relation's coordinate set equals the accessor-derived covered set, so neither the
- * declaration nor {@link LauncherCommands#covers} can drift from the dispatch they sit beside.
- * A family member silently ceasing to produce a row is a census mismatch here, not an
+ * the launcher family. Membership is the member-and-delivery-derived verdict
+ * ({@link LauncherCommands#verdictOf(GraphitronSchema, GraphitronField)}), so the census binds
+ * the verdict to observed minting: the relation's coordinate set equals the verdict-derived
+ * covered set, every launch family and every {@link LaunchSource} arm is observed over the
+ * composite fixture (the per-arm non-vacuity floors), and the pinned coordinate roster keeps
+ * the fixture itself honest, so a family member silently ceasing to produce a row, or the
+ * fixture silently ceasing to exercise a family, is a census mismatch here, not an
  * unquantified gap.
  */
 @PipelineTier
 class LauncherMembershipTest {
 
-    // Every declared minting kind in one fixture: the four migrated root kinds (plain table,
-    // routine chain, discriminated interface, keyed lookup), the three batched child kinds
-    // (plain split, split lookup at list-per-key cardinality, split pivot), both @service child
-    // kinds (table-returning and scalar), and all four reentry-carrying DML return arms. The
-    // encoded DELETE is the deliberate non-member witness: present in the model, no row.
+    // Every launch family in one fixture: the four root catalog shapes (plain table, routine
+    // chain, discriminated interface, keyed lookup), the three batched child shapes (plain
+    // split, split lookup at list-per-key cardinality, split pivot), both @service child kinds
+    // (table-returning and scalar), and all four reentry-carrying DML return arms. The encoded
+    // DELETE is the deliberate non-member witness: present in the model, no row.
     private static final String SDL = """
         interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
           contentId: Int! @field(name: "CONTENT_ID")
@@ -91,46 +91,60 @@ class LauncherMembershipTest {
         }
         """;
 
+    /** The 13 minting coordinates the fixture exercises, pinned so the fixture stays honest. */
+    private static final List<String> EXPECTED_COVERED = List.of(
+        "Query.films", "Query.filmById", "Query.content", "Query.tilganger",
+        "Film.titleTextsSplit", "Film.actorsSplit", "Film.languages",
+        "Language.films", "Language.rank",
+        "Mutation.createFilm", "Mutation.createFilms",
+        "Mutation.createContent", "Mutation.createContents");
+
     private static LauncherRelation produce(GraphitronSchema schema) {
         var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
         return LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE);
     }
 
-    /** The declared key of one classified field: leaf class, or DML leaf plus return arm. */
-    private static MintingKind mintingKindOf(GraphitronField field) {
-        if (field instanceof MutationField.DmlTableField dml) {
-            return new MintingKind.DmlReturn(dml.returnExpression().getClass());
-        }
-        return new MintingKind.Leaf(field.getClass());
-    }
-
+    /**
+     * The census, verdict-derived: the relation's coordinate set equals the covered set the
+     * verdict admits, that set is exactly the pinned roster (so the fixture cannot silently
+     * stop exercising a family), every non-NONE launch family is observed, and every declared
+     * {@link LaunchSource} arm appears on some row (the source-arm grain the retired declared
+     * kind set used to pin).
+     */
     @Test
     void censusMatchesObservedMintingInBothDirections() {
         var schema = TestSchemaHelper.buildSchema(SDL);
         var relation = produce(schema);
 
-        // Observed: map each produced row's coordinate back to the classified field and take
-        // its minting kind.
-        var observed = new LinkedHashSet<MintingKind>();
-        for (var row : relation.rows()) {
-            var field = schema.field(row.coordinate().getTypeName(), row.coordinate().getFieldName());
-            assertThat(field)
-                .as("row %s must map back to a classified model field", row.coordinate())
-                .isNotNull();
-            observed.add(mintingKindOf(field));
+        var covered = schema.fields().values().stream()
+            .filter(f -> LauncherCommands.covers(schema, f))
+            .map(f -> ((OutputField) f).qualifiedName())
+            .toList();
+        assertThat(covered)
+            .as("the verdict-derived covered set is exactly the pinned fixture roster")
+            .containsExactlyInAnyOrderElementsOf(EXPECTED_COVERED);
+        assertThat(relation.rows())
+            .extracting(r -> r.coordinate().getTypeName() + "." + r.coordinate().getFieldName())
+            .containsExactlyInAnyOrderElementsOf(covered);
+
+        var observedFamilies = new LinkedHashSet<Launch>();
+        for (var field : schema.fields().values()) {
+            observedFamilies.add(LauncherCommands.verdictOf(schema, field));
         }
+        assertThat(observedFamilies)
+            .as("every launch family is observed over the fixture (NONE included: the"
+                + " non-member witnesses)")
+            .containsExactlyInAnyOrder(Launch.values());
 
-        assertThat(observed)
-            .as("every observed minting kind is declared in MINTING_KINDS")
-            .isSubsetOf(LauncherCommands.MINTING_KINDS);
-
-        var unexercised = new ArrayList<>(LauncherCommands.MINTING_KINDS);
-        unexercised.removeAll(observed);
-        assertThat(unexercised)
-            .as("the composite fixture exercises every declared minting kind, so the declared"
-                + " set has no unobserved residue; a new declared kind must extend the fixture"
-                + " (or enumerate itself here with a prose reason)")
-            .isEmpty();
+        var observedSources = new LinkedHashSet<Class<?>>();
+        for (var row : relation.rows()) {
+            observedSources.add(row.source().getClass());
+        }
+        assertThat(observedSources)
+            .as("every declared LaunchSource arm is produced over the fixture; a new arm must"
+                + " extend the fixture (or enumerate itself here with a prose reason)")
+            .containsExactlyInAnyOrderElementsOf(
+                GeneratorCoverageTest.sealedLeaves(LaunchSource.class));
     }
 
     /**
@@ -144,7 +158,7 @@ class LauncherMembershipTest {
         var relation = produce(schema);
 
         var covered = schema.fields().values().stream()
-            .filter(LauncherCommands::covers)
+            .filter(f -> LauncherCommands.covers(schema, f))
             .map(f -> ((OutputField) f).qualifiedName())
             .toList();
         assertThat(relation.rows())
@@ -167,27 +181,26 @@ class LauncherMembershipTest {
     }
 
     /**
-     * The schema-free walk's positive direction: fed one instance of every declared non-DML
-     * member (the fixture's classified fields, so no hand-built records drift from the
-     * classifier), {@link LauncherCommands#produceWithoutSchema} serves exactly the coordinates
-     * the declared membership's non-DML view admits. The DML companions are deliberately outside
-     * the schema-free walk (no write, no captured keys), which is why the expected set filters
-     * them out.
+     * The schema-free walk's positive direction: fed the fixture's classified fields (so no
+     * hand-built records drift from the classifier),
+     * {@link LauncherCommands#produceWithoutSchema} serves exactly the covered non-DML
+     * coordinates, membership read through the same verdict predicate over the leaf-projected
+     * fact sources. The DML companions are deliberately outside the schema-free walk (no
+     * write, no captured keys), which is why the expected set filters them out.
      */
     @Test
-    void produceWithoutSchemaServesExactlyTheDeclaredNonDmlMembers() {
+    void produceWithoutSchemaServesExactlyTheCoveredNonDmlCoordinates() {
         var schema = TestSchemaHelper.buildSchema(SDL);
         List<GraphitronField> fields = List.copyOf(schema.fields().values());
         var relation = LauncherCommands.produceWithoutSchema(fields, DEFAULT_OUTPUT_PACKAGE);
 
         var expected = fields.stream()
-            .filter(LauncherCommands::covers)
+            .filter(f -> LauncherCommands.covers(schema, f))
             .filter(f -> !(f instanceof MutationField.DmlTableField))
             .map(f -> ((OutputField) f).qualifiedName())
             .toList();
         assertThat(expected)
-            .as("the fixture must exercise every non-DML declared member (%d leaves)",
-                LauncherCommands.MINTING_KINDS.size() - 4)
+            .as("the fixture must exercise every non-DML launch family member")
             .hasSize(9);
         assertThat(relation.rows())
             .extracting(r -> r.coordinate().getTypeName() + "." + r.coordinate().getFieldName())
