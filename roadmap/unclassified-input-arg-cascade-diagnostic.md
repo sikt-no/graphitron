@@ -31,6 +31,12 @@ coordinate and the wrong fact. Observed on a downstream subgraph migrating off
 arg-shape errors, and the phantom message contradicts the schema in front of
 the author (the DELETE fields each had exactly one input argument).
 
+`table-on-input-reopen-deprecation-window` removes the trigger that surfaced
+this: once `@table` on an input classifies plainly and only warns, that input
+stops producing an `UnclassifiedType` verdict. The conflation itself survives,
+because any other type-level input rejection reaches the same arm, so this item
+stays live on its own merits with the urgency taken out of it.
+
 ## Scope sketch
 
 Distinguish "the argument's type is not an input object" (a genuine arg-shape
