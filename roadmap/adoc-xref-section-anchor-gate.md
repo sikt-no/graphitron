@@ -125,16 +125,24 @@ live link, not literal text; only a plus-delimited passthrough inside the span s
 should therefore treat it as a reference and the *prose* is what gets fixed, rather than teaching the check
 to skip inline monospace, which would blind it to the same mistake in ordinary prose.
 
-Exactly one line of this item's own body is such a macro, not three. Asciidoctor's inline xref macro
-requires an attrlist and a target opening on a word character or a colon, so the two `<file>.adoc#anchor`
-placeholders (no brackets, and a target opening on `<`) already render literally and are invisible to
-Asciidoctor and to any Asciidoctor-faithful gate. Scanning `docs/target/staging` picks up only the
-`zzz-no-such-cross-anchor` illustration in "Why a gate and not just the sweep". That one is a live link on
+Exactly one line of this item's own body is such a macro, not three. Established by rendering probes
+against the site's own configuration rather than read off the macro grammar: `xref:node.adoc#anchor` and
+`xref:#anchor` render literally (no attrlist), and `xref:<file>.adoc#anchor[label]` renders literally even
+*with* an attrlist, so the two `<file>.adoc#anchor` placeholders in this body are safe twice over and are
+invisible to Asciidoctor and to any Asciidoctor-faithful gate. Scanning `docs/target/staging` picks up only
+the `zzz-no-such-cross-anchor` illustration in "Why a gate and not just the sweep". That one is a live link on
 a published page and should be rewritten as a passthrough on rendering grounds, but it is not what fails
 the gate: staged at `staging/roadmap/plans/`, its target `node.adoc` resolves to no file, so it lands in
 the unresolvable count rather than the dangling-anchor failure. The class is real all the same, since a
 quoted example naming a page that does exist beside the item (`workflow.adoc`, say) would fail; this body
 simply does not instantiate it.
+
+**What counts as a reference is wider than the target's first character suggests.** The same probes settle
+it: `xref:../architecture/index.adoc#zzz-nope[label]` renders as a live link, silently, so a target opening
+on `.` is a macro like any other. 15 of the 27 cross-file references in the census above are `../`-relative,
+including the fourth dangling one (`mutation.adoc:30` → `../../tutorial/05-mutations.adoc`). Detection
+therefore keys on the bracketed attrlist and accepts any relative path; narrowing it by the target's opening
+character would skip the majority of the population and one of the four bugs the gate exists to catch.
 
 **Unresolvable targets are reported, never failed.** A cross-file reference whose target `.adoc` is absent
 from staging is counted and printed, not a build failure: a wrong path is out of scope for the reasons
@@ -162,9 +170,13 @@ rewritten by hand, at the cost of literal plus signs in GitHub's markdown view o
   `[#builder-step-results-are-sealed-not-strings-or-out-params]` in `development-principles.adoc`.
   `reference.adoc:38`'s same-file `+<<Schema-qualified keys>>+` natural-language reference keeps working and
   needs no change.
-* The one live xref macro in this item's body (the `zzz-no-such-cross-anchor` illustration) rewritten as a
-  plus-delimited passthrough, so the published page carries no link to nowhere. A rendering fix, not a gate
-  fix: as staged that reference resolves to no file and is counted, not failed.
+* All three quoted references in this item's body rewritten as plus-delimited passthroughs, so the published
+  page carries no link to nowhere. The `zzz-no-such-cross-anchor` xref macro is one; the other two are the
+  backtick-quoted `<<...>>` forms, one in "Why a gate and not just the sweep" and one in the
+  `reference.adoc:38` bullet below, which render as live same-file links to nowhere and are the only two
+  `possible invalid reference` INFO lines the whole site render emits. All three are a rendering fix, not a
+  gate fix: same-file `<<...>>` is out of scope below, and the xref's target resolves to no file as staged,
+  so it is counted rather than failed. Fixing only the xref macro leaves two links to nowhere on the page.
 * `check-adoc-xrefs` fails the build on a dangling cross-file anchor, verified by planting one and
   observing the failure, not only by unit test.
 * The rule is written down where an author reads before the gate teaches it by failing:
@@ -174,13 +186,18 @@ rewritten by hand, at the cost of literal plus signs in GitHub's markdown view o
   cross-file anchored case: it is the one class that renders silent under exactly that setting.
 * The check reports a count of references it could not resolve to an authored `.adoc`, rather than passing
   over them silently, so under-coverage is visible without the count itself failing the build.
-* Findings inside `staging/roadmap/` name the authored `roadmap/<slug>.md` source alongside the staged
-  path, since the staged `.adoc` is generated and an author cannot edit it.
-* `AdocXrefAnchorCheckTest` covers: a resolving explicit anchor, a dangling anchor, the underscore-vs-kebab
-  case specifically, an anchor inside a `----` listing or `////` comment block (must not count as a
-  reference), a reference in a single-backtick span (*does* count, per the Design note above) versus one in
-  a plus-delimited passthrough (does not), and a target page outside the tree (counted as unresolvable,
-  neither silently passed nor failed).
+* Every finding names its authored source alongside the staged path, since all of `staging/` is build output
+  an author cannot edit: `staging/manual/...` and `staging/architecture/...` are `stage-adoc` copies and map
+  back by stripping the staging root onto `docs/`, while `staging/roadmap/plans/<slug>.adoc` is generated by
+  `render-roadmap-adoc` and maps back to `roadmap/<slug>.md`, a different file in a different markup.
+* `AdocXrefAnchorCheckTest` covers: a resolving explicit anchor in each of the two declaration forms
+  (`[#id]` and `[[id]]`, both live in the tree, the latter at `table.adoc:39` and `routine.adoc:75,110`, so
+  a collector that reads only `[#id]` would false-fail rather than under-report), a dangling anchor, the
+  underscore-vs-kebab case specifically, a `../`-relative target (15 of the 27 references, per the Design
+  note), a reference inside a `|===` table cell (live at `mojo-configuration.adoc:117`), an anchor inside a
+  `----` listing or `////` comment block (must not count as a reference), a reference in a single-backtick
+  span (*does* count, per the Design note above) versus one in a plus-delimited passthrough (does not), and
+  a target page outside the tree (counted as unresolvable, neither silently passed nor failed).
 
 ## Not in scope
 
