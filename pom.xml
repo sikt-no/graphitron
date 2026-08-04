@@ -31,7 +31,7 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
         <version.org.jooq>3.20.11</version.org.jooq>
-        <version.org.junit>6.0.3</version.org.junit>
+        <version.org.junit>6.1.2</version.org.junit>
         <version.ch.qos.logback>1.5.32</version.ch.qos.logback>
         <version.postgresql>42.7.10</version.postgresql>
         <version.testcontainers.postgresql>2.0.4</version.testcontainers.postgresql>
