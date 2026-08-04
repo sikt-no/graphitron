@@ -14,7 +14,7 @@ package no.sikt.graphitron.rewrite.model;
  *       scalar reflected off such a record. {@code Table : Column :: Record : Field}.</li>
  *   <li>{@link Connection}: the Relay-connection container shape, wrapping the inner element shape.
  *       Its many-ness lives on its own {@code edges} / {@code nodes} fields, classified normally; the
- *       windowed-<em>read</em> verb lives on {@link Operation.Paginate}.</li>
+ *       windowed-<em>read</em> verb lives on the {@link OperationMember.Paginate} member.</li>
  *   <li>{@link Interface} / {@link Union}: the polymorphic shapes. Both are catalog-bound (every
  *       participant is a {@code @table} / NodeType), the catalog projection landing on participant
  *       rows. They carry no payload (no participant set, join paths, or backing distinction);

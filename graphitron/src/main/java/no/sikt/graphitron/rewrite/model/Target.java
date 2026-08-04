@@ -12,12 +12,12 @@ package no.sikt.graphitron.rewrite.model;
  * free {@code One} / {@code Many} enum, is the structural fix the wrapper algebra exists to hold: the
  * same {@code {One, Many}} values appear on the {@link Source} wrapper (accumulated) and here (local), so
  * a detached cardinality value would be ambiguous. A Relay connection is {@code Single(Connection(inner))}
- * (the windowed-read verb is {@link Operation.Paginate}, not a wrapper fact).
+ * (the windowed read is the coordinate's {@link OperationMember.Paginate} member, not a wrapper fact).
  *
  * <p>{@code target()} is the projection-axis primitive; the {@code mapping} axis was later retired and
  * the classification corpus migrated onto it. The fused {@code TableConnection} mapping
- * decomposed into this wrapper's {@code Single(Connection)} shape plus the {@link Operation.Paginate}
- * windowed-read verb.
+ * decomposed into this wrapper's {@code Single(Connection)} shape plus the
+ * {@link OperationMember.Paginate} member's windowed read.
  */
 public sealed interface Target {
 

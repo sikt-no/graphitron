@@ -35,7 +35,6 @@ import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.MutationTableArgError;
 import no.sikt.graphitron.rewrite.model.On;
-import no.sikt.graphitron.rewrite.model.Operation;
 import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.OutputField;
@@ -212,11 +211,11 @@ class HierarchyKindRegistryTest {
         // nested Write seal inherits this kind: the verb payloads it carries are trigger-fact
         // references the view realizes, not emit-grain mints.
         Map.entry(OperationMember.class, HierarchyKind.RESOLVED_VIEW),
-        // The @service call carrier held by the service-call member (and the summary arm's
-        // vocabulary): its rows exist when the service directive resolves to a structured
-        // invocation or a reflected method, the same resolution provenance as MethodRef.
-        // Previously nested inside Operation.ServiceCall and outside the scan; homed top-level
-        // because the member row is the carrier's primary holder.
+        // The @service call carrier held by the service-call member: its rows exist when the
+        // service directive resolves to a structured invocation or a reflected method, the same
+        // resolution provenance as MethodRef. Previously nested inside the retired summary
+        // seal's ServiceCall arm and outside the scan; homed top-level because the member row
+        // is the carrier's primary holder.
         Map.entry(no.sikt.graphitron.rewrite.model.ServiceCallCarrier.class, HierarchyKind.RESOLVED_VIEW),
         // The delivery fact: batched-versus-inline arrival, read off the authored SDL markers
         // (the gathered delivery-marker relation), the parent's record handoff and the
@@ -238,12 +237,6 @@ class HierarchyKindRegistryTest {
         Map.entry(no.sikt.graphitron.command.LaunchSource.class, HierarchyKind.COMMAND),
         Map.entry(no.sikt.graphitron.command.TypeUnitCommand.class, HierarchyKind.COMMAND),
         Map.entry(no.sikt.graphitron.command.GlobalCommand.class, HierarchyKind.COMMAND),
-        // Re-labelled COMMAND -> RESOLVED_VIEW at the keystone: the summary column is a derived
-        // view over the coordinate's member rows (the payload-mirroring pin holds them equal),
-        // not an emit-grain mint; its arm payloads are the same trigger-fact references the
-        // member arms carry. The COMMAND label predated the member relation and encoded the
-        // one-arm-per-coordinate reading the operation relation dissolves.
-        Map.entry(Operation.class, HierarchyKind.RESOLVED_VIEW),
         Map.entry(BodyParam.class, HierarchyKind.COMMAND),
         Map.entry(DmlReturnExpression.class, HierarchyKind.COMMAND),
         Map.entry(CallSiteExtraction.class, HierarchyKind.COMMAND),

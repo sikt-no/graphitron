@@ -150,7 +150,7 @@ class TenantFanOutClassificationTest {
 
     @Test
     void markerOnAChildLookupFieldRejects() {
-        // Child lookups report Operation.Lookup like root lookups, so one rung covers both.
+        // Child lookups carry a lookup member like root lookups, so one rung covers both.
         var schema = build("""
             type Actor @table(name: "actor") { actorId: Int @field(name: "actor_id") }
             type Film @table(name: "film") {

@@ -23,10 +23,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Population agreement lives elsewhere: {@link OperationMemberMintPinTest} holds the minted
  * trigger-fact production equal to the leaf projection per coordinate over the corpus (with
  * per-kind non-vacuity floors), and the summary column this test once mirrored is retired; the
- * corpus's {@code operation:} vocabulary is now the member-derived fold on
- * {@link no.sikt.graphitron.rewrite.classifieddsl.DimensionTuple#summaryArmOf}, whose
- * arm-for-arm equality to the retired column was demonstrated by a bridge pin that shipped and
- * retired with the accessor.
+ * corpus asserts the member rows directly ({@code @classified(operations:)}, the arm-token
+ * multiset), each retirement's equality to its successor demonstrated by a bridge pin that
+ * shipped and retired with the retiring surface.
  */
 @PipelineTier
 class OperationMemberProjectionTest {

@@ -2,7 +2,6 @@ package no.sikt.graphitron.rewrite.classifieddsl;
 
 import no.sikt.graphitron.rewrite.ExemptionRegistry;
 import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedCorpus.Example;
-import no.sikt.graphitron.rewrite.model.Operation;
 import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.model.OperationMembers;
 import no.sikt.graphitron.rewrite.model.OutputField;
@@ -32,21 +31,28 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * The spec-by-example corpus. Each fixture is an annotated schema; the harness classifies
  * it with today's classifier and checks every {@code @classified} / {@code @classifiedType} coordinate
- * against its declared dimensional verdict (read off the field model's {@code source()} /
- * {@code operation()} / {@code target()} accessors).
+ * against its declared dimensional verdict (read through the schema's {@code sourceOf} /
+ * {@code operationMembersOf} seams and the leaf's {@code target()}).
  *
- * <p>The meta-tests pin the coverage obligations over the {@code (source, operation, target)} axes:
+ * <p>The meta-tests pin the coverage obligations over the {@code (source, operations, target)} axes:
  * <ul>
- *   <li><b>Verdict totality</b> is compiler-enforced: the {@code source()} / {@code operation()} /
+ *   <li><b>Verdict totality</b> is compiler-enforced for the leaf-derived axes: the {@code source()} /
  *       {@code target()} producers on each root ({@code QueryField} / {@code MutationField} /
  *       {@code ChildField}) switch exhaustively over that root's sealed leaves, so a new leaf without a
- *       verdict fails the build. No runtime test can strengthen that, so none is written.</li>
+ *       verdict fails the build. The member rows are fenced per leaf by
+ *       {@code OperationMembers.DECLARED_SHAPES} (totality against the sealed leaves is
+ *       {@code OperationMemberProjectionTest}'s). No runtime test can strengthen that, so none is
+ *       written.</li>
  *   <li><b>Value exercise</b>, {@link #everyDimensionValueIsExercised()}: every {@link Source} wrapper
- *       arm, {@link Operation} arm, {@link no.sikt.graphitron.rewrite.model.Target} wrapper arm,
- *       {@link no.sikt.graphitron.rewrite.model.TargetShape} arm, and {@link SourceShape} value is either
- *       produced by some fixture or, for the modeled-but-unpopulated arms, on an explicit known-gap list
- *       with a stated reason.</li>
- *   <li><b>SDL-vs-Java mirrors</b>: the SDL {@code SourceWrapper} / {@code Operation} /
+ *       arm, {@link OperationMember} leaf arm, {@link no.sikt.graphitron.rewrite.model.Target} wrapper
+ *       arm, {@link no.sikt.graphitron.rewrite.model.TargetShape} arm, and {@link SourceShape} value is
+ *       either produced by some fixture (member arms on declared-and-agreeing rows) or, for the
+ *       modeled-but-unpopulated arms, on an explicit known-gap list with a stated reason.</li>
+ *   <li><b>Declaration fence</b>, {@link #declaredMemberListsSitInsideTheLeafsDeclaredShape()}: every
+ *       declared {@code operations:} list is judged against the classified leaf's declared
+ *       co-occurrence shape, production-independently, so an authored list the grammar rejects fails
+ *       even when the production agrees with it.</li>
+ *   <li><b>SDL-vs-Java mirrors</b>: the SDL {@code SourceWrapper} / {@code Member} /
  *       {@code TargetWrapper} / {@code TargetShape} / {@code SourceShape} enums equal the sealed-arm sets
  *       the field model produces.</li>
  *   <li><b>TypeVerdict mirror</b>: the SDL {@code TypeVerdict} enum equals the non-failure
@@ -73,7 +79,7 @@ class ClassifiedDslTest {
 
         for (var fc : result.fields()) {
             assertThat(fc.actual())
-                .as("%s.%s classifies to its declared (source, operation, target)", fc.parentType(), fc.fieldName())
+                .as("%s.%s classifies to its declared (source, operations, target)", fc.parentType(), fc.fieldName())
                 .isEqualTo(fc.expected());
         }
         for (var tc : result.types()) {
@@ -238,7 +244,7 @@ class ClassifiedDslTest {
      * the two instruments cannot drift on what an axis value is.
      */
     private record CoordinateAxes(
-        String source, SourceShape sourceShape, String operation, String targetWrapper, String targetShape) {}
+        String source, SourceShape sourceShape, String targetWrapper, String targetShape) {}
 
     private static List<CoordinateAxes> corpusAxes;
 
@@ -256,7 +262,6 @@ class ClassifiedDslTest {
                     rows.add(new CoordinateAxes(
                         source.getClass().getSimpleName(),
                         shape,
-                        fc.actual().operation().getSimpleName(),
                         fc.actual().target().wrapper().getSimpleName(),
                         fc.actual().target().shape().getSimpleName()));
                 }
@@ -307,69 +312,11 @@ class ClassifiedDslTest {
             .as("a known-gap source arm that a fixture now exercises must be removed from SOURCE_KNOWN_GAPS")
             .doesNotContainAnyElementsOf(sourceArms);
 
-        // Operation arms: every arm exercised or exempt with a typed reason. The known-gap map
-        // (ExemptionRegistry.OPERATION_KNOWN_GAPS) is one registry obligation; the shared
-        // assertion carries the exercised-must-be-removed ratchet this test used to state inline.
-        ExemptionRegistry.assertHonoured(ExemptionRegistry.OPERATION_ARMS);
-
-        // Member arms: the operation axis at member grain, every OperationMember leaf reached by
-        // a declared-and-agreeing corpus row or exempt with a typed reason (the retiring
-        // single-token obligation's successor).
+        // The operation axis, at member grain: every OperationMember leaf arm reached by a
+        // declared-and-agreeing corpus row or exempt with a typed reason. The known-gap map
+        // (ExemptionRegistry.MEMBER_KNOWN_GAPS) is one registry obligation; the shared
+        // assertion carries the exercised-must-be-removed ratchet.
         ExemptionRegistry.assertHonoured(ExemptionRegistry.MEMBER_ARMS);
-    }
-
-    /**
-     * The re-grain window's content-preservation bridge: the retiring single-token
-     * {@code operation:} column is a pure function of the declared member list and the declared
-     * target shape, so deleting it loses no asserted content. Checked over <em>declarations
-     * alone</em> (both sides of the equality are directive text, no production involved): the
-     * token-level restatement of {@code DimensionTuple.summaryArmOf}'s precedence fold, applied
-     * to the declared {@code operations:} tokens and the declared {@code targetShape:}, must
-     * reproduce the declared {@code operation:} token at every corpus coordinate. Retires with
-     * the {@code operation:} argument.
-     */
-    @Test
-    void declaredOperationTokenIsAFoldOfTheDeclaredMemberListAndTargetShape() {
-        for (var example : ClassifiedCorpus.examples()) {
-            for (var fc : ClassifiedHarness.classify(example.sdl()).fields()) {
-                var declaredArms = fc.expected().operations().stream()
-                    .map(Class::getSimpleName).toList();
-                var declaredShape = fc.expected().target().shape().getSimpleName();
-                assertThat(declaredFold(declaredArms, declaredShape))
-                    .as("declared operation: token at %s: %s.%s must equal the fold of the "
-                            + "declared operations: list %s and targetShape: %s",
-                        example.id(), fc.parentType(), fc.fieldName(), declaredArms, declaredShape)
-                    .isEqualTo(fc.expected().operation().getSimpleName());
-            }
-        }
-    }
-
-    private static String declaredFold(List<String> arms, String targetShape) {
-        for (var verb : List.of("Insert", "Upsert", "Update", "Delete", "RoutineWrite",
-                "UpdateMatching", "DeleteMatching")) {
-            if (arms.contains(verb)) {
-                return verb;
-            }
-        }
-        if (arms.contains("NodeResolve")) {
-            return "NodeResolve";
-        }
-        if (arms.contains("ServiceCall")) {
-            return "ServiceCall";
-        }
-        if (arms.contains("Lookup")) {
-            return "Lookup";
-        }
-        if (arms.contains("Pivot")) {
-            return "Pivot";
-        }
-        if (targetShape.equals("Connection")) {
-            return "Paginate";
-        }
-        if (arms.contains("Select")) {
-            return "Fetch";
-        }
-        return targetShape.equals("Table") ? "Nest" : "Fetch";
     }
 
     /**
@@ -438,7 +385,6 @@ class ClassifiedDslTest {
         Map<String, Function<CoordinateAxes, String>> axes = new LinkedHashMap<>();
         axes.put("source", CoordinateAxes::source);
         axes.put("sourceShape", row -> row.sourceShape() == null ? null : row.sourceShape().name());
-        axes.put("operation", CoordinateAxes::operation);
         axes.put("targetWrapper", CoordinateAxes::targetWrapper);
         axes.put("targetShape", CoordinateAxes::targetShape);
 
@@ -483,20 +429,22 @@ class ClassifiedDslTest {
     }
 
     /**
-     * The member-grain census, beside the coordinate-grain axis-pair census above (whose rows
-     * stay valid as the empty-or-one projection of the member set): one observation per
-     * {@code (coordinate, member)} row of
+     * The member-grain census, the operation axis's instrument since the coordinate-grain
+     * axis-pair census above dropped its single-token operation column (the census re-key of the
+     * corpus re-grain): one observation per {@code (coordinate, member)} row of
      * {@link no.sikt.graphitron.rewrite.GraphitronSchema#operationMembersOf}, printing the
      * member-kind occupancy histogram, the per-leaf admissible-versus-observed combination gap
      * (admissible is the image of the leaf's declared shape, the required kinds plus the
      * powerset of the payload-gated optionals; observed is the distinct member-kind sets corpus
-     * coordinates actually produce), and the member-kind-by-source and member-kind-by-target
-     * pairs in the axis-pair census's print form. The assertion is non-vacuity; the measured
-     * figures print as the re-derivable data the dissolution slices consume.
+     * coordinates actually produce), and the member-kind-by-source / by-target-wrapper /
+     * by-target-shape pairs in the axis-pair census's print form, so every retired
+     * operation-column pair has a member-grain successor here. The assertion is non-vacuity; the
+     * measured figures print as the re-derivable data the dissolution slices consume.
      */
     @Test
     void memberGrainCensusIsDerivable() {
-        record MemberRow(Class<?> leaf, Set<OperationMember.Kind> kinds, String source, String targetShape) {}
+        record MemberRow(Class<?> leaf, Set<OperationMember.Kind> kinds, String source,
+                         String targetWrapper, String targetShape) {}
         var rows = new ArrayList<MemberRow>();
         for (var example : ClassifiedCorpus.examples()) {
             var schema = ClassifiedHarness.classify(example.sdl()).schema();
@@ -510,6 +458,7 @@ class ClassifiedDslTest {
                 var source = schema.sourceOf(entry.getKey());
                 rows.add(new MemberRow(leaf.getClass(), kinds,
                     source == null ? "?" : source.getClass().getSimpleName(),
+                    leaf.target().getClass().getSimpleName(),
                     leaf.target().shape().getClass().getSimpleName()));
             }
         }
@@ -540,19 +489,26 @@ class ClassifiedDslTest {
                 new TreeSet<>(e.getValue().required()), new TreeSet<>(e.getValue().optional()));
         }
 
-        // Member-kind pairs against the coordinate axes, one observation per member row.
-        for (var axis : List.of("source", "targetShape")) {
+        // Member-kind pairs against the coordinate axes, one observation per member row. These
+        // three pairs are the operation axis's share of the retired coordinate-grain pair census
+        // (whose operation column dropped with the single-token fold); the coordinate-grain
+        // census keeps measuring the source and target axes against each other.
+        Map<String, Function<MemberRow, String>> pairAxes = new LinkedHashMap<>();
+        pairAxes.put("source", MemberRow::source);
+        pairAxes.put("targetWrapper", MemberRow::targetWrapper);
+        pairAxes.put("targetShape", MemberRow::targetShape);
+        for (var axis : pairAxes.entrySet()) {
             var observedPairs = new TreeSet<String>();
             for (var row : rows) {
-                String b = axis.equals("source") ? row.source() : row.targetShape();
+                String b = axis.getValue().apply(row);
                 for (var kind : row.kinds()) {
                     observedPairs.add(kind + "*" + b);
                 }
             }
             System.out.printf("PAIR memberKind x %s: observed %d pairs: %s%n",
-                axis, observedPairs.size(), observedPairs);
+                axis.getKey(), observedPairs.size(), observedPairs);
             assertThat(observedPairs)
-                .as("member-kind pair census over %s must be observable", axis)
+                .as("member-kind pair census over %s must be observable", axis.getKey())
                 .isNotEmpty();
         }
     }
@@ -565,13 +521,6 @@ class ClassifiedDslTest {
             .containsExactlyInAnyOrderElementsOf(ClassifiedHarness.sourceWrapperArmSimpleNames());
     }
 
-    @Test
-    void operationMirrorsAdapterValues() {
-        assertThat(ClassifiedHarness.operationEnumConstants())
-            .as("the SDL Operation enum must mirror the sealed Operation arms; "
-                + "adding an arm to one side without the other fails here")
-            .containsExactlyInAnyOrderElementsOf(ClassifiedHarness.operationArmSimpleNames());
-    }
 
     @Test
     void memberMirrorsTheOperationMemberArms() {
@@ -651,7 +600,6 @@ class ClassifiedDslTest {
         // pass while a real leaf goes unmirrored. (Table / Record / Interface reused *across* SourceShape
         // and TargetShape is safe: the two seals are never folded into one name set.)
         assertThat(ClassifiedHarness.sourceWrapperArmSimpleNames()).as("Source arm names").doesNotHaveDuplicates();
-        assertThat(ClassifiedHarness.operationArmSimpleNames()).as("Operation arm names").doesNotHaveDuplicates();
         assertThat(ClassifiedHarness.memberArmSimpleNames()).as("OperationMember arm names").doesNotHaveDuplicates();
         assertThat(ClassifiedHarness.targetWrapperArmSimpleNames()).as("Target wrapper arm names").doesNotHaveDuplicates();
         assertThat(ClassifiedHarness.targetShapeArmSimpleNames()).as("TargetShape arm names").doesNotHaveDuplicates();

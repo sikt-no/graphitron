@@ -15,7 +15,7 @@ package no.sikt.graphitron.rewrite.model;
  *       {@code @service} method or a DML write handed back a record (a payload / DTO parent),
  *       and the field re-projects from it. The distinguishing fact that separates a re-fetch
  *       inline field (source {@code Record}) from a {@code @lookupKey} child lookup (source
- *       {@code Table}) when both classify as {@link Operation.Lookup} on a {@link TargetShape.Table}.</li>
+ *       {@code Table}) when both carry an {@link OperationMember.Lookup} member on a {@link TargetShape.Table}.</li>
  * </ul>
  *
  * <p>Source-shape is a projection of the parent producer's {@link OutputField#domainReturnType()}

@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R563` | Operations as a relation: the leaf cross-product dissolves additively | In Progress | 2026-08-02 <sub>created 2026-08-01</sub> | [plan](operation-relation.md) |
+| `R563` | Operations as a relation: the leaf cross-product dissolves additively | In Progress | 2026-08-04 <sub>created 2026-08-01</sub> | [plan](operation-relation.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-08-01 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-01 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |

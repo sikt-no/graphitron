@@ -20,7 +20,6 @@ import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.generators.GeneratorCoverageTest;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
-import no.sikt.graphitron.rewrite.model.Operation;
 import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.model.OutputField;
 import no.sikt.graphitron.rewrite.model.Source;
@@ -42,7 +41,7 @@ import java.util.stream.Collectors;
  * Drives the spec-by-example corpus: parses an annotated fixture schema, runs <em>today's</em>
  * classifier, and for each {@code @classified} / {@code @classifiedType} coordinate compares the
  * directive's declared verdict against what the classifier produces (read off the field model's
- * {@code source()} / {@code operation()} / {@code target()} accessors for fields, off the sealed leaf's
+ * {@code sourceOf} / {@code operationMembersOf} schema seams and the leaf's {@code target()} for fields, off the sealed leaf's
  * simple name for types).
  *
  * <p>The fixture's test-only directives ({@link ClassifiedDsl#PRELUDE}) are prepended before the
@@ -276,7 +275,7 @@ public final class ClassifiedHarness {
                 + "OutputField (got " + (field == null ? "null" : field.getClass().getSimpleName())
                 + "); the corpus asserts successful classification only.");
         }
-        DimensionTuple expected = new DimensionTuple(sourceArg(d), operationArg(d), operationsArg(d), targetArg(d));
+        DimensionTuple expected = new DimensionTuple(sourceArg(d), operationsArg(d), targetArg(d));
         // The arrival arm is the parent-type ancestor-product fold and the member rows are the
         // minted relation's, both read through the schema seams every consumer reads (a leaf
         // cannot compute its own arm, and the corpus asserts the production, not the leaf-derived
@@ -319,20 +318,6 @@ public final class ClassifiedHarness {
     private static SourceShape sourceShapeArg(Directive d) {
         Argument a = d.getArgument("sourceShape");
         return a == null ? SourceShape.Table : SourceShape.valueOf(((EnumValue) a.getValue()).getName());
-    }
-
-    /**
- * The {@code operation:} verb, as the {@link Operation} arm type token. The arm carries a
-     * payload the directive cannot express, so the corpus asserts arm identity only; the token is
-     * resolved from the seal's leaf set by simple name, so a directive value that names no arm fails.
-     */
-    private static Class<? extends Operation> operationArg(Directive d) {
-        String name = enumArg(d, "operation");
-        Class<? extends Operation> arm = OPERATION_ARMS.get(name);
-        if (arm == null) {
-            throw new AssertionError("@classified: unknown operation '" + name + "'");
-        }
-        return arm;
     }
 
     /**
@@ -401,7 +386,6 @@ public final class ClassifiedHarness {
             .collect(Collectors.toMap(Class::getSimpleName, c -> (Class<? extends T>) c));
     }
 
-    private static final Map<String, Class<? extends Operation>> OPERATION_ARMS = armsByName(Operation.class);
     private static final Map<String, Class<? extends OperationMember>> MEMBER_ARMS = armsByName(OperationMember.class);
     private static final Map<String, Class<? extends Target>> TARGET_WRAPPERS = armsByName(Target.class);
     private static final Map<String, Class<? extends TargetShape>> TARGET_SHAPES = armsByName(TargetShape.class);
@@ -474,21 +458,6 @@ public final class ClassifiedHarness {
      */
     public static List<String> sourceWrapperArmSimpleNames() {
         return sealedLeafSimpleNames(Source.class);
-    }
-
-    /** The {@code Operation} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */
-    public static Set<String> operationEnumConstants() {
-        return preludeEnumConstants("Operation");
-    }
-
-    /**
-     * The simple names of the sealed {@link Operation} arms (the live verb set). The {@code Operation}
-     * arms are all direct records, so the recursive walker stops at them; the per-arm transitional holders
-     * (e.g. {@code ServiceCallCarrier}) are payload components, not permitted subclasses, so they never enter
-     * this set.
-     */
-    public static List<String> operationArmSimpleNames() {
-        return sealedLeafSimpleNames(Operation.class);
     }
 
     /** The {@code Member} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */

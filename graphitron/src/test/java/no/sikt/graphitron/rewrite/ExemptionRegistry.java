@@ -8,7 +8,6 @@ import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.MutationField;
-import no.sikt.graphitron.rewrite.model.Operation;
 import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.model.OutputField;
 
@@ -100,7 +99,7 @@ public final class ExemptionRegistry {
     private static final Exemption UPSERT_RETIRED = new Exemption.Unimplemented(
         "R145 lifting the MutationInputResolver UPSERT rejection (R144 retired generation)",
         "The classifier rejects every UPSERT mutation upstream, so no schema-reachable case can "
-        + "land on the UPSERT mutation leaf or the Upsert operation arm.");
+        + "land on the UPSERT mutation leaf or the Write.Upsert member arm.");
 
     private static final Exemption ERRORS_FIELD_PENDING = new Exemption.Unimplemented(
         "the error-handling parity item's C3 lifting the five PolymorphicReturnType rejection "
@@ -143,41 +142,10 @@ public final class ExemptionRegistry {
     public static final Map<Class<?>, Exemption> ENUM_NO_CASE_REQUIRED = Map.of();
 
     /**
-     * {@link Operation} arms the model declares but no corpus fixture lands on. An arm leaves
-     * this map the moment a fixture exercises it (the ratchet); an unexercised arm not listed
-     * here fails the completeness check.
-     */
-    public static final Map<Class<?>, Exemption> OPERATION_KNOWN_GAPS = Map.of(
-        Operation.EntityResolve.class, new Exemption.Unimplemented(
-            "a federation _entities classification item",
-            "Federation _entities resolution is not a classified leaf yet, so no fixture can "
-            + "produce the arm."),
-        Operation.Count.class, new Exemption.Unimplemented(
-            SYNTHESISED_CONNECTION_FIELDS_NOT_COORDINATES,
-            "A synthesised connection type's totalCount field is not a classified coordinate in "
-            + "the fact base, so no fixture can land a coordinate on the Count arm; R562 owns "
-            + "the synthesised-fields-as-coordinates model question."),
-        Operation.Facet.class, new Exemption.Unimplemented(
-            SYNTHESISED_CONNECTION_FIELDS_NOT_COORDINATES,
-            "A synthesised connection type's facets field is not a classified coordinate in "
-            + "the fact base, so no fixture can land a coordinate on the Facet arm; R562 owns "
-            + "the synthesised-fields-as-coordinates model question."),
-        Operation.UpdateMatching.class, new Exemption.Unimplemented(
-            "condition-matched UPDATE",
-            "The condition-matched write verbs are declared ahead of implementation; the "
-            + "validator-mirror-gaps item owns the per-arm verdicts."),
-        Operation.DeleteMatching.class, new Exemption.Unimplemented(
-            "condition-matched DELETE",
-            "The condition-matched write verbs are declared ahead of implementation; the "
-            + "validator-mirror-gaps item owns the per-arm verdicts."),
-        Operation.Upsert.class, UPSERT_RETIRED);
-
-    /**
      * {@link OperationMember} leaf arms no declared-and-agreeing {@code operations:} corpus row
-     * reaches: the member-grain successor of {@link #OPERATION_KNOWN_GAPS}, carrying the same
-     * blocker stories re-keyed onto the member vocabulary (the five modeled-but-unpopulated arms
-     * plus the retired UPSERT). An arm leaves this map the moment a fixture declares-and-agrees
-     * on it (the ratchet); an unreached arm not listed here fails the completeness check.
+     * reaches: the five modeled-but-unpopulated arms plus the retired UPSERT, each with its
+     * blocker story. An arm leaves this map the moment a fixture declares-and-agrees on it (the
+     * ratchet); an unreached arm not listed here fails the completeness check.
      */
     public static final Map<Class<?>, Exemption> MEMBER_KNOWN_GAPS = Map.of(
         OperationMember.EntityResolve.class, new Exemption.Unimplemented(
@@ -305,17 +273,6 @@ public final class ExemptionRegistry {
         return covered;
     }
 
-    /** The {@link Operation} arm classes observed on the corpus's {@code @classified} coordinates. */
-    private static Set<Class<?>> corpusObservedOperations() {
-        var ops = new HashSet<Class<?>>();
-        for (var example : ClassifiedCorpus.examples()) {
-            for (var fc : ClassifiedHarness.classify(example.sdl()).fields()) {
-                ops.add(fc.actual().operation());
-            }
-        }
-        return ops;
-    }
-
     /**
      * The {@link OperationMember} leaf arms the corpus demonstrates at member grain: every arm
      * in a declared {@code operations:} list that agrees with the produced member rows at its
@@ -412,16 +369,10 @@ public final class ExemptionRegistry {
         memo(ExemptionRegistry::enumCaseCoveredLeaves),
         ENUM_NO_CASE_REQUIRED);
 
-    public static final Obligation OPERATION_ARMS = new Obligation(
-        "classified-dsl: operation arms vs corpus-observed operations",
-        memo(() -> GeneratorCoverageTest.sealedLeaves(Operation.class)),
-        memo(ExemptionRegistry::corpusObservedOperations),
-        OPERATION_KNOWN_GAPS);
-
     /**
-     * The member-grain operation obligation, {@link #OPERATION_ARMS}' successor: every
-     * {@link OperationMember} leaf arm must be reached by a declared-and-agreeing
-     * {@code operations:} corpus row or carry a typed exemption.
+     * The member-grain operation obligation: every {@link OperationMember} leaf arm must be
+     * reached by a declared-and-agreeing {@code operations:} corpus row or carry a typed
+     * exemption.
      */
     public static final Obligation MEMBER_ARMS = new Obligation(
         "classified-dsl: operation-member arms vs declared-and-agreeing member rows",
@@ -468,14 +419,14 @@ public final class ExemptionRegistry {
      * {@code ProjectionCoverageTest}.
      */
     public static List<Obligation> corpusObligations() {
-        return List.of(VARIANT_COVERAGE_OUTPUT, VARIANT_COVERAGE_INPUT, OPERATION_ARMS,
-            MEMBER_ARMS, SOURCE_SHAPE_CORPUS, LAUNCHER_COMMITMENT);
+        return List.of(VARIANT_COVERAGE_OUTPUT, VARIANT_COVERAGE_INPUT, MEMBER_ARMS,
+            SOURCE_SHAPE_CORPUS, LAUNCHER_COMMITMENT);
     }
 
     /** All rows, the discovery guard's registration authority. */
     public static List<Obligation> obligations() {
-        return List.of(VARIANT_COVERAGE_OUTPUT, VARIANT_COVERAGE_INPUT, OPERATION_ARMS,
-            MEMBER_ARMS, SOURCE_SHAPE_CORPUS, LAUNCHER_COMMITMENT, LSP_PROJECTION);
+        return List.of(VARIANT_COVERAGE_OUTPUT, VARIANT_COVERAGE_INPUT, MEMBER_ARMS,
+            SOURCE_SHAPE_CORPUS, LAUNCHER_COMMITMENT, LSP_PROJECTION);
     }
 
     private static <T> Supplier<T> memo(Supplier<T> s) {

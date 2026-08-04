@@ -8,7 +8,7 @@ package no.sikt.graphitron.rewrite.classifieddsl;
  * exist in the schema document only so graphql-java's {@code SchemaGenerator.makeExecutableSchema}
  * accepts the applications (an undeclared directive application fails schema assembly).
  *
- * <p>The enums make the assertion validated SDL-side: a typo in a {@code source}, {@code operation}, or
+ * <p>The enums make the assertion validated SDL-side: a typo in a {@code source}, {@code operations}, or
  * {@code target} value is a parse/assembly error graphql-java rejects before the harness runs.
  *
  * <ul>
@@ -19,9 +19,7 @@ package no.sikt.graphitron.rewrite.classifieddsl;
  *       {@code operations:} list asserts the coordinate's operation-member rows as a multiset of
  *       sealed-arm tokens ({@code Member} mirrors the {@code OperationMember} leaves): arm
  *       identity and row count, never payloads or the condition rows' table keys (the
- *       {@code @commits} grammar applied to the member relation). During the re-grain window the
- *       single-token {@code operation:} column rides beside it, held equal to the fold of the
- *       declared list and target shape until it retires.</li>
+ *       {@code @commits} grammar applied to the member relation).</li>
  *   <li>{@code @classifiedType(as:)} asserts the {@code GraphitronType} sealed leaf a type
  *       classifies to; {@code TypeVerdict} enumerates those leaves minus the failure leaf
  *       {@code UnclassifiedType}, and {@link ClassifiedHarness} mirrors the enum against the live
@@ -67,12 +65,6 @@ public final class ClassifiedDsl {
     public static final String PRELUDE = """
         enum SourceWrapper { Query Mutation OnlyChild Child }
 
-        enum Operation {
-          Fetch Paginate Lookup ServiceCall Count Facet Nest Pivot
-          NodeResolve EntityResolve
-          Insert Upsert Update UpdateMatching Delete DeleteMatching RoutineWrite
-        }
-
         enum Member {
           Select Join OnReturnTable OnParticipant OrderBy Paginate Lookup ServiceCall
           NodeResolve EntityResolve Count Facet Pivot Reentry
@@ -107,8 +99,7 @@ public final class ClassifiedDsl {
         input Mint { name: String!, as: SynthesisedType! }
 
         directive @classified(
-          source: SourceWrapper!, operation: Operation!, operations: [Member!]!,
-          target: TargetWrapper!, targetShape: TargetShape!
+          source: SourceWrapper!, operations: [Member!]!, target: TargetWrapper!, targetShape: TargetShape!
           sourceShape: SourceShape
         ) on FIELD_DEFINITION
 

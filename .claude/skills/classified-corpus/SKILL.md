@@ -20,7 +20,7 @@ All under the repo root:
 - **Corpus** (source of truth): `graphitron/src/test/java/no/sikt/graphitron/rewrite/classifieddsl/ClassifiedCorpus.java`. A `List<Example>`; each `Example(id, sdl[, query])`. A non-null `query` makes it a doc example.
 - **Harness / DSL test**: `.../classifieddsl/ClassifiedHarness.java` (classifies a fixture, reads `@classified`/`@classifiedType` off the AST, records the sealed leaf each coordinate landed on), `ClassifiedDslTest.java` (asserts every annotated coordinate classifies to its declared dimensions, and that every dimension arm is exercised or on a stated known-gap list).
 - **Renderer + drift guard**: `QueryViewRenderer.java` (query-as-view, AST-print, strips the internal directives; expands argument input-type closure and renders unions/interfaces reached by a kept field or a `fragment on Type`), `ClassifiedDocTest.java` (asserts each doc example's rendered SDL appears verbatim in the page).
-- **Dimensional vocabulary**: `ClassifiedDsl.java` (the `@classified`/`@classifiedType` directives plus the `SourceWrapper` / `Operation` / `TargetWrapper` / `TargetShape` / `SourceShape` / `TypeVerdict` SDL prelude, declared test-only, ignored by the classifier), `DimensionTuple` (the three-axis verdict record, `source` + `operation` arm token + `TargetVerdict`).
+- **Dimensional vocabulary**: `ClassifiedDsl.java` (the `@classified`/`@classifiedType` directives plus the `SourceWrapper` / `Member` / `TargetWrapper` / `TargetShape` / `SourceShape` / `TypeVerdict` SDL prelude, declared test-only, ignored by the classifier), `DimensionTuple` (the verdict record, `source` + the `operations` member-arm token multiset + `TargetVerdict`).
 - **The page**: `docs/architecture/reference/code-generation-triggers.adoc`.
 - **Enum truth table**: `graphitron/src/test/java/no/sikt/graphitron/rewrite/GraphitronSchemaBuilderTest.java` (the `*Case implements ClassificationCase` enums). It keeps the slot-asserting, rejection, and input-side rows by design; those are not corpus material.
 - **Coverage obligations**: `graphitron/src/test/java/no/sikt/graphitron/rewrite/VariantCoverageTest.java`. Two partitioned checks, no union: `everyOutputFieldAndTypeLeafIsDemonstratedByTheCorpus` reads `ClassifiedCorpus.coveredLeaves()` **alone** (so a green run *is* proof the corpus carries an output-field or type verdict), and `everyInputFieldLeafHasAnEnumClassificationCase` keeps input-field leaves on the enum table. Its `NO_CASE_REQUIRED` allowlist documents leaves unreachable from the standard Sakila catalog; those stay allowlisted rather than forced into a fixture.
@@ -40,7 +40,7 @@ current leaf set:
 ### 2. Author the corpus example
 Add an `Example` to `ClassifiedCorpus.EXAMPLES`. Rules:
 - Fixtures classify against the **standard Sakila catalog**. Use real tables/columns/FKs. Prefer unambiguous single FKs (e.g. `city -> country`; **avoid** `film -> language`, which has two FKs and is ambiguous). Mine working SDL from an existing enum case or pipeline test covering the shape.
-- Annotate each coordinate: output fields with `@classified(source: ..., operation: ..., target: ..., targetShape: ...)` (plus `sourceShape:` where the arrival shape matters), types with `@classifiedType(as: ...)`. The enum value spaces live in `ClassifiedDsl.PRELUDE`, and a typo is a schema-assembly error before the harness runs.
+- Annotate each coordinate: output fields with `@classified(source: ..., operations: [...], target: ..., targetShape: ...)` (plus `sourceShape:` where the arrival shape matters; `operations:` lists the coordinate's operation-member arm tokens, sorted, one entry per member row, `[]` legal), types with `@classifiedType(as: ...)`. The enum value spaces live in `ClassifiedDsl.PRELUDE`, and a typo is a schema-assembly error before the harness runs.
 - For a doc example, add a `query` selecting exactly the coordinates to show. **Minimal pairs teach best**: vary one axis, hold the rest constant (e.g. the same return type with and without `@splitQuery` to isolate the batched delivery; a scalar under a `@table` vs a `@record` parent to isolate `targetShape`).
 - A `query` may also be a bare `fragment F on Type { ... }` when the coordinate has no reachable root path; the renderer resolves argument input-type closure and polymorphic members, so mutation and type verdicts can render honest excerpts too. Omit `query` (and skip steps 4-5) when an example is worth testing but not worth featuring in the page.
 
@@ -63,7 +63,7 @@ The failure message prints the exact SDL block (AstPrinter form, e.g. `@table(na
 
 ### 5. Write the worked example in the page
 In `code-generation-triggers.adoc`, add prose stating the rule **in dimensional terms** (the
-`(source, operation, target)` axes for fields, the `GraphitronType` leaf for types; never cross-product
+`(source, operations, target)` axes for fields, the `GraphitronType` leaf for types; never cross-product
 leaf names on the field side, the axes are what the dimensional model exposes) + a `[source,graphql]`
 block holding the captured SDL **verbatim** +
 a closing "Asserted by the `<id>` corpus example." Condense the superseded leaf-name table rows into the
@@ -112,6 +112,6 @@ fast-forward trunk).
   reads `coveredLeaves()` alone, so it does prove some example carries the leaf; it cannot tell you the
   *shape* a deleted row pinned survived. Verify at the coordinate per step 6.
 - **Success-only.** The corpus asserts the happy path. Rejection and input-field rows stay in the enum table.
-- **Verdict, not slots.** Assert the `(source, operation, target)` axes / `TypeVerdict`. Slot detail stays in the pipeline tier (the slot-asserting enum cases).
+- **Verdict, not slots.** Assert the `(source, operations, target)` axes / `TypeVerdict`. Slot detail stays in the pipeline tier (the slot-asserting enum cases).
 - **Drift is exact.** The page must contain the rendered block byte-for-byte; re-capture after any fixture change.
 - **Test-only directives** live in `ClassifiedDsl.PRELUDE`, never in production `directives.graphqls`; the classifier ignores them.

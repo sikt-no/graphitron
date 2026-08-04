@@ -20,8 +20,8 @@ import java.util.Set;
 
 /**
  * The leaf-to-member crosswalk: derives a coordinate's {@link OperationMember} set from its
- * classified leaf by one compile-total switch, the vocabulary mapping between the summary
- * {@link Operation} column and the member relation written as code. Since the keystone the
+ * classified leaf by one compile-total switch, the vocabulary mapping between the retired
+ * summary column and the member relation written as code. Since the keystone the
  * schema view reads the minted trigger-fact production instead of this switch; the projection
  * survives the coexistence window as the membership-agreement pin's comparison side, as the
  * fallback for schemas built without the classify walk, and as the leaf-local derivation

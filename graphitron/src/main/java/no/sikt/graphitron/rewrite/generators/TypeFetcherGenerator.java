@@ -4427,8 +4427,8 @@ public class TypeFetcherGenerator {
      * re-read on the {@code keys} local captured in step 1. The routine-write re-read is this
      * helper's sole sanctioned caller: the DML reentry companions resolve their correlation through
      * the launcher row's source arm ({@link no.sikt.graphitron.render.ReentryRowsFragments}),
-     * and {@code Operation.RoutineWrite} joins that seam if
-     * it ever joins the reentry family — do not grow new keys-IN callers. {@code conditionCols}
+     * and the routine-write coordinate joins that seam if
+     * its member set ever mints the reentry re-select; do not grow new keys-IN callers. {@code conditionCols}
      * are the field expressions the WHERE tests (the follow-up table's columns), {@code keyCols}
      * the field expressions that read the captured values back off {@code keys} (the fields
      * step 1 selected — the routine result's columns for the write chain). Composite-safe: a

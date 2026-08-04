@@ -7,7 +7,7 @@ priority: 2
 theme: classification-model
 depends-on: []
 created: 2026-08-01
-last-updated: 2026-08-02
+last-updated: 2026-08-04
 ---
 
 # Operations as a relation: the leaf cross-product dissolves additively
@@ -1172,6 +1172,105 @@ Slice-6c baseline: recorded under Progress measurement above. This is the last 6
 leaf-member coexistence window the keystone opened closes with this landing, recorded in
 `roadmap/changelog.md`.
 
+### Slice 7 (landed 2026-08-04): the corpus voice
+
+Landed in two commits on the additive-then-destructive discipline: the first lands the
+member-list assertion with both voices coexisting on every corpus coordinate, the second retires
+the single-token voice and the `Operation` seal with it.
+
+First commit (the re-grain):
+
+- `@classified` gained the required `operations: [Member!]!` argument: the coordinate's
+  operation-member rows asserted as a sorted arm-token multiset. Arm identity and row count are
+  the asserted content; payloads and the condition rows' table keys stay with
+  `OperationMemberMintPinTest` (the `@commits` grammar applied to the member relation: arm
+  tokens only, never emitted names). The `Member` prelude enum mirrors the sealed
+  `OperationMember` leaves (21 arms), mirror-tested and uniqueness-guarded like every axis enum.
+- The produced side reads `GraphitronSchema.operationMembersOf`, the minted relation through the
+  seam every consumer reads. The consult falsified the draft's leaf-projection ground (every
+  `@classified` coordinate sits in the flat index the relation covers), so the corpus asserts
+  the production and `OperationMemberMintPinTest` stays the independent minted-vs-projected pin.
+- The content-preservation bridge: the retiring `operation:` token was checkable as a pure fold
+  of the declared member list and declared target shape, over declarations alone, and a
+  commit-scoped test held that equality at every coordinate, so the second commit's deletion
+  demonstrably lost no asserted content. The bridge shipped and retired within the slice; its
+  demonstration is the first commit's history.
+- The declaration fence (`declaredMemberListsSitInsideTheLeafsDeclaredShape`): every declared
+  list is judged against `OperationMembers.DECLARED_SHAPES` for the classified leaf,
+  production-independently, because the declared lists were script-generated from the
+  production and reviewed; the fence is the second judge (the grammar, not the producer). The
+  two member vocabularies, arm tokens in the corpus and `Kind` in the fence, are bound by the
+  total `OperationMember.kind()` column restated class-token-wise from the seal's own structure.
+- `MEMBER_ARMS` landed as the operation obligation (domain = the 21 sealed leaves, covered =
+  declared-and-agreeing rows, the `corpusCommittedLauncherArms` gate), with the six blocker
+  stories re-keyed onto member arms: `EntityResolve` (federation), `Count` / `Facet` (R562,
+  still Backlog, reasons unchanged), `Write.UpdateMatching` / `Write.DeleteMatching`
+  (condition-matched verbs), `Write.Upsert` (the retirement story).
+- The new `polymorphic-filter` example (customer / staff union with a `@field`-mapped filter
+  argument) reaches `Condition.OnParticipant` with two rows, closing the one populated-arm gap
+  the pre-slice measurement found, and is the corpus's only duplicate-token declaration: the
+  multiset voice demonstrated where it carries content.
+
+Second commit (the retirement):
+
+- The `operation:` argument, the SDL `Operation` enum, `DimensionTuple.summaryArmOf` (with its
+  documented `Nest` / `Fetch` empty-set fiction), the harness's operation arm map and mirrors,
+  and the bridge test retired; `DimensionTuple` re-grained to
+  `(source, operations, target)`.
+- The `Operation` seal retired outright, the parked end-state decision taken: after the
+  re-grain it had zero code readers anywhere, and a 17-arm seal kept as display vocabulary
+  would be a consumer-side shadow taxonomy. The corpus vocabulary is the `OperationMember` seal
+  itself through the prelude mirror. The four main-source javadoc references re-pointed to
+  member arms; `HierarchyKindRegistryTest`'s label row retired with the type.
+- The census re-key: the coordinate-grain axis-pair census dropped its operation column; the
+  member-grain census is that axis's instrument and gained the member-kind-by-target-wrapper
+  pair, so every retired operation-column pair has a member-grain successor (source and
+  target-shape pairs existed since slice 2). The coordinate-grain census keeps measuring the
+  source and target axes against each other.
+- `OPERATION_ARMS` / `OPERATION_KNOWN_GAPS` and their covered-set derivation deleted;
+  `everyDimensionValueIsExercised` delegates the operation axis to `MEMBER_ARMS`.
+
+Decisions bound here:
+
+- **The member-set assertion lives inside `@classified`, required.** `@classified` is the
+  verdict directive, and the member rows are the operation axis of the verdict it names; its
+  `source:` axis already reads through a schema seam (the arrival fold), so a relation-homed
+  axis joining the verdict is not a new kind of thing there. The consult falsified the draft's
+  "sibling because different relation" ground (`@synthesises` is a sibling asserting a
+  schema-homed relation), so the record rests on the verdict-directive ground. Required rather
+  than optional buys totality: no classified coordinate's operation axis goes silently
+  unasserted, and `operations: []` is a positive claim (the twelve empty-set coordinates,
+  previously the fold's `Nest` / `Fetch` fiction, now say what the relation says: nothing).
+- **Arm grain, multiset semantics.** Kind tokens would collapse the write verbs; arm tokens
+  keep them and voice the condition split (`OnReturnTable` vs `OnParticipant` is honest
+  vocabulary: a single-table interface root and a multi-table polymorphic root both declare
+  `targetShape: Interface` and differ exactly there). The multiset closes the consult's
+  collapse finding: a polymorphic root with two filtered participants declares two
+  `OnParticipant` entries, so a regression dropping one participant's condition row fails at
+  exactly the coordinate the arm was introduced to voice.
+- **No delivery argument** (slice 5's parked question, decided no). Grounds re-based per the
+  consult, on scope and grain rather than the draft's three-encodings claim (two of whose legs
+  did not hold): this slice's payoff is the 0..N axis whose summary fold was a documented
+  fiction, delivery is single-valued with its own landed instrument (`DeliveryFactPinTest`),
+  and a fourth `@classified` axis is a separate decision. The residual gap recorded as fact:
+  per-coordinate delivery has no declared corpus voice; the leaf roster asserts only that some
+  fixture reaches each batched leaf, `@commits` expresses batched-ness only where a launcher
+  row exists and cannot express inline at all, and the delivery pin holds two derivations of
+  one classifier decision equal rather than pinning any coordinate's verdict. A future
+  delivery-voice item starts from this recorded state, not from "already asserted three ways".
+- **The `@commits` alignment is grammatical, not textual.** No `@commits` code moved; the
+  alignment R543 parked is the member assertion adopting its exact grammar: sealed-arm tokens,
+  no payloads or emitted names, declared-equals-produced per coordinate, coverage gated on
+  declared-and-agreeing rows, prelude-enum-vs-sealed-arms mirror tests.
+
+Slice-7 measurement (2026-08-04): 97 `@classified` coordinates over 52 examples; declared
+member-list distribution: 14 of 21 arms reached by declared-and-agreeing rows (the seven
+unreached being the six exemption rows plus nothing: `OnParticipant` gained its fixture), 12
+empty-list coordinates, largest list 4 entries (`faceted-connection`'s
+`OnReturnTable, OrderBy, Paginate, Select`). Suite 3116 green; emit untouched by construction
+(the slice edits test sources, main javadoc prose, and deletes the construction-dead seal);
+leaf ratchet unchanged at 10/8/22/4; dispatch pins unchanged.
+
 ## Retired vocabulary
 
 Declared per the item-file conventions in `roadmap/workflow.adoc`; each term names the slice that
@@ -1179,7 +1278,7 @@ retires it, and the sweep at each gate runs against what has actually shipped.
 
 | term | slice | successor |
 |---|---|---|
-| `OutputField.operation()` as the single-valued accessor, and the three leaf-identity `operation()` switches | 4 | the coordinate's member rows on `GraphitronSchema`; the summary column, if the corpus keeps one, is a derived view named at slice 7 |
+| `OutputField.operation()` as the single-valued accessor, and the three leaf-identity `operation()` switches | 4 | the coordinate's member rows on `GraphitronSchema`; the derived summary survived only as the corpus fold until slice 7 retired it outright |
 | `LookupTableField`, `BatchedLookupTableField`, `QueryLookupTableField` | 6a | the Fetch-sibling leaves plus the lookup member row |
 | `LookupField` (the capability seal) | 6a | the sealed `LookupResolution` carried total on the table-target leaves |
 | `LookupValuesJoinEmitter` (the input-rows adapter) | 6a | `render/LookupRows`, called with the launcher row's mapping payload |
@@ -1192,7 +1291,11 @@ retires it, and the sweep at each gate runs against what has actually shipped.
 | `NestingReach.pivotSpecOf` (the nullable tri-state read) | 6c | the `PivotSpecField` intermediate seal |
 | `LauncherRelation`'s "this family is single-operation" javadoc claim | 3 | the reentry and write members; the real key stated |
 | `requireNoGeneratedFilterOnLookup` (the producer backstop) | 6a | the fact-grain rejection: a condition member carrying a generated `WhereFilter` term co-present with a lookup member |
-| `DimensionTuple`'s single `Class<? extends Operation>` component | 7 | the member-set assertion |
+| `DimensionTuple`'s single `Class<? extends Operation>` component | 7 | the member-list assertion (`operations`, the sorted arm-token multiset) |
+| The `Operation` seal (17 arms) and its SDL enum mirror | 7 | the `OperationMember` seal, mirrored by the prelude `Member` enum |
+| `@classified(operation:)` (the single-valued argument) | 7 | `@classified(operations:)`, required, `[]` legal |
+| `DimensionTuple.summaryArmOf` (the precedence fold and its `Nest` / `Fetch` empty-set fiction) | 7 | none; the empty list is the honest verdict for the no-operation coordinates |
+| `ExemptionRegistry.OPERATION_ARMS` / `OPERATION_KNOWN_GAPS` | 7 | `MEMBER_ARMS` / `MEMBER_KNOWN_GAPS` (domain = member vocabulary, covered = declared-and-agreeing rows) |
 
 ## Non-goals
 
