@@ -5,9 +5,9 @@ status: Spec
 bucket: feature
 priority: 5
 theme: diagnostics
-depends-on: []
+depends-on: [input-field-resolution-typed-rejections]
 created: 2026-08-03
-last-updated: 2026-08-03
+last-updated: 2026-08-04
 ---
 
 # Aggregated diagnostics commands for the MCP server
@@ -253,35 +253,20 @@ extractor at once.
 
 **The prose fallback needs an enforcer, not a hedge.** Saying on the wire "these clusters are
 prose-derived" is honest but nothing fails when a message reword silently re-partitions the
-aggregate. Worse, the `@notGenerated` retirement sentence is currently emitted from three sites
-with three *different* rejection identities: `Rejection.directiveConflict(...)` in `FieldBuilder`
-(typed, carrying the directive list), `Rejection.structural(...)` elsewhere in `FieldBuilder`
-(prose only), and a bare-string `InputFieldResolution.Unresolved` in `BuildContext`. A message
-template fuses those three only *because the sentence is duplicated*, and splits them the day one
-is reworded.
+aggregate. The sharpest case is the retired directives: `@notGenerated` and `@lookupKey` on a
+mutation input field each carry *three* rejection identities today, only one of which is a typed
+`Rejection.directiveConflict`. A message template fuses them only *because a sentence is
+duplicated*, and splits them the day one is reworded, which for `@lookupKey` has already happened:
+`MutationInputResolver.rejectInputFieldDirectives` words it differently from the other two, so a
+template does not fuse those sites even now.
 
-Reviewer re-measurement closed the inventory, and it is one directive wider than the above. The
-divergence set is exactly two retired directives:
+Converging those identities turned out to be a change to the input-field resolution path rather than
+a rewrite of three call sites, so it is its own item and this one depends on it; see the carve-out
+under Phasing for the measured inventory. `@multitableReference` needs no work: its retirement
+already routes through `Rejection.directiveConflict` from a single site, which is the target shape.
 
-- **`@notGenerated`**: the three identities described above
-  (`FieldBuilder.classifyField`'s `DIR_NOT_GENERATED` guard via `directiveConflict`, the
-  input-like arm's `Rejection.structural`, and `BuildContext.classifyInputFieldInternal`'s
-  `InputFieldResolution.Unresolved`).
-- **`@lookupKey` on a mutation input field**: the same three-way split, across *three* files.
-  `FieldBuilder`'s `retiredLookupKey` arm and `BuildContext.classifyInputFieldInternal` mirror the
-  `@notGenerated` shape, and a third site,
-  `MutationInputResolver.rejectInputFieldDirectives`, emits a fourth `Rejection.structural`. That
-  third site's prose is *differently worded* from the other two ("remove it (the field is a filter
-  by default)" against the longer sentence the other two share), so for `@lookupKey` a message
-  template does not fuse the sites even today. This is the spec's own argument in its strongest
-  form, and it is why step 5's scope has to be the closed set rather than one worked example.
-
-`@multitableReference` needs no work: its retirement already routes through
-`Rejection.directiveConflict` from a single site, which is the target shape.
-
-So: add the `directives` dimension, route both directives' stray sites through
-`Rejection.directiveConflict` so each cause has one identity, then measure what residue is left.
-Whatever prose clustering survives gets a partition test over `Rejection` leaves, so no coded or
+So: add the `directives` dimension on top of the converged identities, then measure what residue is
+left. Whatever prose clustering survives gets a partition test over `Rejection` leaves, so no coded or
 typed-key arm can reach the prose path and the heuristic's domain is a declared, shrinking set
 rather than the default bucket new arms fall into.
 
@@ -302,18 +287,36 @@ extractors on today's wide shapes means doing them twice.
 | 1 | `RejectionKind` gains the author-fixable projection; `Diagnostics.severityOf`'s comment becomes a read of it | `graphitron`, `graphitron-lsp` | small |
 | 2 | `StubKey` splits into two permits, non-null `VariantClass` plus an inline-defer arm; the two `deferred` factories map to their own arm | `graphitron` | small |
 | 3 | `CodedRejection` capability lift; `Diagnostics.lspCodeOf` collapses to one `instanceof`; membership partition meta-test | `graphitron`, `graphitron-lsp` | small-medium (42 sites, mechanical) |
-| 4 | Retired-directive rejection identities converge on `Rejection.directiveConflict`, over the closed two-directive set above | `graphitron` | small |
-| 5 | `DiagnosticRow` union over the three channels; existing per-entry wire mapping projects off it | `graphitron-mcp` | small |
-| 6 | Dimension enum + extractors + grouping + tail rule; the new counts-only tool; `where` shared with the widened `diagnostics` filters | `graphitron-mcp` | medium |
+| 4 | `DiagnosticRow` union over the three channels; existing per-entry wire mapping projects off it | `graphitron-mcp` | small |
+| 5 | Dimension enum + extractors + grouping + tail rule; the new counts-only tool; `where` shared with the widened `diagnostics` filters | `graphitron-mcp` | medium |
 
-Steps 1 to 4 are each independently defensible and each improve the LSP or the watch formatter on
-their own, so they can be carved into separate items if parallelism is wanted. Steps 5 and 6 must
+Steps 1 to 3 are each independently defensible and each improve the LSP or the watch formatter on
+their own, so they can be carved into separate items if parallelism is wanted. Steps 4 and 5 must
 not be split from each other: the shared `where` mechanism is the whole point, and splitting it is
 how the two parallel filter implementations this design exists to prevent get built.
 
-**Carved out at review: the sealed `Coordinate` component.** The draft's step 4 (a sealed
+**Carved out at review, as a dependency: the retired-directive identity convergence.** Routing
+`@notGenerated` and `@lookupKey` through `Rejection.directiveConflict` so each cause has one identity
+now lives in `input-field-resolution-typed-rejections`. It was sized "small" across three
+files on the strength of the two `FieldBuilder` sites and `MutationInputResolver`, all of which already
+hand a `Rejection` to their caller. The third site does not:
+`BuildContext.classifyInputFieldInternal` returns `InputFieldResolution.Unresolved`, which carries prose
+and no `Rejection` at all, and both of its consumers join many failures into one `Rejection.structural`
+before one reaches a `ValidationError`. So the identity cannot move until the record and the fan-in
+move: sixteen producers, three consumers, and a real fork inside it (several rejections per input type,
+or one). That is a lift of a documented principle violation in its own right and does not belong inside
+a diagnostics-read item.
+
+Unlike the `Coordinate` carve-out, this one is a **dependency** rather than a separation. The
+`directives` dimension counts only rejections carrying a typed directive list, so on today's tree it
+would report one row for `@notGenerated` where three rejections concern it. Shipping the dimension
+before the convergence would put a confidently wrong count in the very view this item builds to replace
+hedged counts. Nothing else in the design touches it, so the two can be worked in parallel provided the
+dependency lands first.
+
+**Carved out at review: the sealed `Coordinate` component.** A sealed
 `Coordinate { SchemaWide | TypeLevel | FieldLevel }` on `ValidationError`, deleting
-`WatchErrorFormatter`'s `isTypeLevel` / `typeOf`) now lives in its own Backlog item,
+`WatchErrorFormatter`'s `isTypeLevel` / `typeOf`, now lives in its own Backlog item,
 `validation-error-coordinate-sealed`. It is the right lift and the reasoning in "What the model owns"
 stands, but it is not a prerequisite here, and it was the only step reaching outside the diagnostics
 path. Two reasons it separates cleanly:
@@ -332,7 +335,7 @@ path. Two reasons it separates cleanly:
   `graphitron-maven-plugin`, which nothing else here touches.
 
 Dropping it leaves this item spanning `graphitron`, `graphitron-lsp`, and `graphitron-mcp`, which is
-a defensible blast radius for one item given steps 1 to 4 all exist to keep the aggregate a
+a defensible blast radius for one item given steps 1 to 3 all exist to keep the aggregate a
 projection.
 
 ## Tests
@@ -356,7 +359,8 @@ server. The tests that carry weight are the invariant pins, not per-dimension un
   drops the prose bucket entirely. The same partition is the documentation's structure (see the
   first-client check), so pin it once and let the tool description read from it.
 - **Rejection-leaf partition.** Every `Rejection` leaf declared coded or deliberately codeless
-  (step 3), and no typed-key arm reachable from the prose path (step 4).
+  (step 3), and no typed-key arm reachable from the prose path (which the directive-convergence
+  dependency delivers; this pin is what stops it regressing afterwards).
 - **Rows with no coordinate are not silently lost.** Warnings and compile diagnostics carry no
   coordinate, so coordinate-reading dimensions yield a stated absent bucket rather than dropping
   rows out of the totals.
@@ -364,7 +368,7 @@ server. The tests that carry weight are the invariant pins, not per-dimension un
   `diagnostics.aggregate` (it pins the list with `containsExactlyInAnyOrder`, so it fails until
   updated), plus one end-to-end call asserting the structured shape and the snapshot axes.
 
-Steps 1 to 4 pin at their own layers: `RejectionKindProjectionTest` for the actionable projection,
+Steps 1 to 3 pin at their own layers: `RejectionKindProjectionTest` for the actionable projection,
 and the existing LSP tests (`RejectionSeverityCoverageTest` reads each arm's stable code today) for
 the collapsed `lspCodeOf`.
 
@@ -381,10 +385,6 @@ the collapsed `lspCodeOf`.
 - `docs/manual/how-to/mcp-agent-context.adoc`: the per-tool table gains a `diagnostics.aggregate`
   row beside the existing `diagnostics` one. This is the user-facing surface the shipped
   `docs.search` / `catalog.search` tools landed prose on, and the draft omitted it.
-- `FieldBuilder`, `BuildContext.classifyInputFieldInternal`, and
-  `MutationInputResolver.rejectInputFieldDirectives`: the retired-directive identity convergence
-  (step 4) spans all three, over `@notGenerated` and `@lookupKey`. The draft named only the first
-  two files.
 - `ValidationReport.canonicalUri` is declared the single canonical URI site, but
   `addCompileLocation` puts `CompileDiagnostic.file()` into the `uri` slot raw. A `file` dimension
   spanning both channels would group two spellings of one path apart, so the compile channel has
@@ -405,16 +405,17 @@ than leanings. Each takes the draft's leaning except where noted.
 - **One default preset plus faceting.** The zero-argument call returns the actionable / deferred
   headline, so an agent that has read nothing still gets the triage view; everything else is composed
   from the dimension list. No catalogue of named reports.
-- **Steps 1 to 4 stay in this item; the `Coordinate` lift is carved out.** This is the reviewer
-  taking the draft's own offered carve-out, for the reasons recorded under Phasing: steps 1 to 4 each
-  directly remove a prose fallback or an `instanceof` copy from the aggregate, so they genuinely
-  precede the tool, whereas the `Coordinate` lift is separable at a single extractor and is the only
-  step reaching outside the diagnostics path. Blast radius lands at three modules instead of four.
+- **Steps 1 to 3 stay in this item; the `Coordinate` lift and the directive convergence are carved
+  out.** Steps 1 to 3 each directly remove a prose fallback or an `instanceof` copy from the
+  aggregate, so they genuinely precede the tool. The `Coordinate` lift is separable at a single
+  extractor and was the only step reaching outside the diagnostics path. The directive convergence
+  turned out to be a lift of the input-field resolution path, so it is a dependency rather than a
+  step; see Phasing for both. Blast radius lands at three modules.
 - **"Measure then decide" is acceptable for `messageTemplate`, with the rule stated up front.**
   Deferring is legitimate here because the measurement is cheap and the fallback is strictly smaller
-  and safe. What a Spec may not defer is *who decides and on what basis*, so: after step 4, measure
-  the surviving `AuthorError.Structural` / `InvalidSchema.Structural` residue over the reactor's own
-  fixture corpus. Ship `messageTemplate` only if that residue does not read usefully off `variant`
+  and safe. What a Spec may not defer is *who decides and on what basis*, so: once the
+  directive-convergence dependency has landed, measure the surviving `AuthorError.Structural` /
+  `InvalidSchema.Structural` residue over the reactor's own fixture corpus. Ship `messageTemplate` only if that residue does not read usefully off `variant`
   alone; otherwise omit the dimension and let those rows cluster on `variant`. Either way the
   implementer records the measurement in the In Review note, so the Done reviewer can check the call
   rather than re-derive it. Omitting is the default, not the exception.
