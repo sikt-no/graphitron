@@ -1,7 +1,7 @@
 ---
 id: R579
 title: "Drop the unused parentTypeName parameter from FieldBuilder.parseExternalRef"
-status: Spec
+status: Ready
 bucket: cleanup
 priority: 4
 theme: legacy-migration
