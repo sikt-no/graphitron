@@ -2802,7 +2802,7 @@ class GraphQLQueryTest {
         // ThrowOnMismatch contract: a NodeId encoded for the wrong typeId must surface as an error
         // rather than silently producing degenerate VALUES rows. A Customer-prefixed id reaches
         // decodeFilmActor, which returns null on prefix-mismatch; the lookup VALUES row-builder
-        // (LookupValuesJoinEmitter) then throws a plain GraphqlErrorException. That throw is NOT the
+        // (LookupRows) then throws a plain GraphqlErrorException. That throw is NOT the
         // GraphitronClientException marker the authored-filter path introduced (that work enriched the
         // CompositeDecodeHelperRegistry filter/lookup-arg helpers, not the separate lookup-values
         // emitter, mirroring how the record-decode siblings keep their own message), so

@@ -241,7 +241,7 @@ class TypeFetcherGeneratorTest {
         // binds via DSL.val(value, table.FILM_ID.getDataType()) so jOOQ's own Converter coerces
         // GraphQL String args to the column's Java type at bind time. Execution tier covers the
         // end-to-end behaviour; the emitter call is asserted here for faster diagnosis of
-        // regressions inside LookupValuesJoinEmitter.
+        // regressions inside LookupRows.
         assertThat(method(spec, "filmByIdInputRows").code().toString()).contains("getDataType()");
     }
 

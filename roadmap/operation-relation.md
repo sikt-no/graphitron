@@ -1337,10 +1337,13 @@ Decisions bound here:
   operation obligation's domain, not an exemption inside it.
 - **No `RetiredVocabularyGuardTest` entries for the eight dissolved leaf names.** The registry's
   entry bar is demonstrated recurrence (6a's precedent, applied consistently since); the audit
-  scanned every guarded habitat (main and test comment/javadoc regions, main-source string
-  literals, authored `docs/` AsciiDoc, fixture SDL) and found zero survivals; the only mentions
-  anywhere are `LeafRatchetTest`'s deliberate history lines, which entries would flag into
-  allowlist noise for lineage `roadmap/changelog.md` already owns.
+  scanned the guarded habitats (main and test comment/javadoc regions, main-source string
+  literals, fixture SDL) plus authored `docs/` AsciiDoc, and reported zero survivals. The gate
+  review falsified that report: the sweep missed the lookup rows in
+  `code-generation-triggers.adoc` and four `LookupValuesJoinEmitter` test-prose sites (see the
+  rework record below, which closed them). The entry decision itself stands: after the rework
+  the only mentions anywhere are `LeafRatchetTest`'s deliberate history lines, which entries
+  would flag into allowlist noise for lineage `roadmap/changelog.md` already owns.
 - **`Exemption.HarnessSingleCatalog`'s deletion parked out of the slice**: an unpopulated arm of
   the exemption taxonomy is not leaf-dissolution residue, so the Spec row does not reach it;
   filed as R586 (`roadmap/exemption-taxonomy-arm-census.md`) together with the missing
@@ -1379,7 +1382,7 @@ retires it, and the sweep at each gate runs against what has actually shipped.
 | `PivotSpec`'s operation-half components (`pivotTable`, `discriminator`, `value`, `tokenBySlot`) | 6c | `OperationMember.Pivot` carrying the aggregate parameters, the leaf's component by identity |
 | `NestingReach.pivotSpecOf` (the nullable tri-state read) | 6c | the `PivotSpecField` intermediate seal |
 | `LauncherRelation`'s "this family is single-operation" javadoc claim | 3 | the reentry and write members; the real key stated |
-| `requireNoGeneratedFilterOnLookup` (the producer backstop) | 6a | the fact-grain rejection: a condition member carrying a generated `WhereFilter` term co-present with a lookup member |
+| `requireNoGeneratedFilterOnLookup`'s leaf-identity trigger (the lookup-leaf instanceof gate) | 6a | the method survives in `ConditionCommands` as the producer backstop; its call site re-grained onto the fact-level predicate, gating on a condition member carrying a generated `WhereFilter` term co-present with a LOOKUP member |
 | `DimensionTuple`'s single `Class<? extends Operation>` component | 7 | the member-list assertion (`operations`, the sorted arm-token multiset) |
 | The `Operation` seal (17 arms) and its SDL enum mirror | 7 | the `OperationMember` seal, mirrored by the prelude `Member` enum |
 | `@classified(operation:)` (the single-valued argument) | 7 | `@classified(operations:)`, required, `[]` legal |
@@ -1489,6 +1492,37 @@ obligation guarded against (leaves never dissolving because the members depend o
 occur. Worth a Backlog item naming the residual rather than a re-opened programme. The payloads are
 shared by reference, not copied, so the "one payload, one member row" acceptance holds in the
 object-identity sense the 6b and 6c records use for `f.write()` and `f.pivot()`.
+
+## Rework (2026-08-04): the documentation tail closes
+
+The four gate findings, addressed in one pass:
+
+1. **The migration fragment regenerated from a full-reactor trace.** After a green
+   `mvn install -Plocal-db`, `leaf-coverage . --mode=migration` flipped the four wrongly
+   `(not yet supported)` entries back to supported (`MutationServiceTableField`,
+   `JooqRecordInputType`, `JooqRecordType`, `UnclassifiedType`); the diff touches exactly those
+   four lines, so the slice-6c regeneration is confirmed as the partial-trace error the review
+   diagnosed. The footgun itself (the fragment carries no `--verify` execution, so nothing
+   catches the next partial-trace regeneration) is filed as R590
+   (`roadmap/leaf-coverage-migration-verify-gate.md`).
+2. **`code-generation-triggers.adoc` swept onto the surviving vocabulary.** The lookup rows now
+   name the fetch siblings carrying the keyed lookup arm (the directive table, the QueryField
+   table, both ChildField tables and the DataLoader-category table), the `TableTargetField`
+   seal census reads 4 variants, and the Generators-package helper list drops the deleted
+   emitter, pointing the lookup emission at `render/LookupRows`. The sweep also caught two rows
+   the review did not enumerate (the `@splitQuery` / `@lookupKey` directive-effect rows at the
+   top of the file).
+3. **The four `LookupValuesJoinEmitter` prose sites re-point at `render/LookupRows`**, including
+   the dangling test-source `{@link}` in `ValuesJoinRowBuilderTest`.
+4. **The `requireNoGeneratedFilterOnLookup` retired-vocabulary row rewritten as the re-grain it
+   was** (the method is live in `ConditionCommands`; what retired is its leaf-identity
+   trigger), and slice 8's zero-survivals audit claim corrected in place to record what the
+   sweep actually missed.
+
+The review's non-blocking residual (`SqlGeneratingField` stays the storage home for the
+condition, orderBy and paginate payloads, so on those axes the member rows are a view over the
+leaf) is filed as R591 (`roadmap/member-payload-storage-home.md`) rather than re-opening the
+programme, per the review's own recommendation.
 
 ## Acceptance
 

@@ -4146,7 +4146,7 @@ class GraphitronSchemaBuilderTest {
                 // Arg-level @lookupKey on a plain input promotes this to QueryTableField,
                 // resolving the input's fields against the consumer's return table (film).
                 // Every admissible input field becomes a binding under the filter-by-default
-                // rule; bound fields are consumed by LookupValuesJoinEmitter and must not appear
+                // rule; bound fields are consumed by the LookupRows emission and must not appear
                 // as implicit BodyParams. With no plain (non-table) arg present, no
                 // GeneratedConditionFilter is emitted.
                 var f = (SqlGeneratingField) schema.field("Query", "films");

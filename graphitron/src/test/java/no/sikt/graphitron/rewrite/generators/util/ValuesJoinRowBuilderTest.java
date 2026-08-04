@@ -15,7 +15,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Unit tests for the shared row-construction core consumed by both
- * {@link no.sikt.graphitron.rewrite.generators.LookupValuesJoinEmitter} and
+ * {@link no.sikt.graphitron.render.LookupRows} and
  * {@link SelectMethodBody}.
  *
  * <p>Tests use {@code List<ColumnRef>} with the identity projection. Real callers either pass
