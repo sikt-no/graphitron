@@ -1423,6 +1423,73 @@ belongs to rather than living here as a side channel:
 - **Budget review attention on slice 4.** Adopted as a review emphasis in slice 4's row: the
   `fanOutArmOf` re-source is where the member vocabulary's sufficiency is actually tested.
 
+## Gate review (In Review -> Done, 2026-08-04): rework requested
+
+Independent-session review of all sixteen implementation commits (`cba24d0`..`827a140`). The
+architectural delivery holds: `mvn install -Plocal-db` is green across the full reactor, the leaf
+ratchet fell 51 to 40 output leaves with a history line per move, `LeafReconstructionKeyTest`
+enforces the acceptance's `leaf = f(source, delivery, target)` claim with a collision check rather
+than prose, `OperationMemberRelation.memberKindsOf` decides membership from gathered facts,
+capability reads and shape verdicts with no operation-encoding leaf switch, no delivered test
+asserts on generated method-body strings, and every deviation from the Spec's bound decisions is
+recorded in the slice that took it. The rework is confined to the documentation tail: what shipped
+into two rendered `docs/` pages does not match what the code now does, and slice 8's audit claim
+that it does is the thing to correct.
+
+1. **The user manual advertises four shipped shapes as unsupported.**
+   `docs/manual/_generated/supported-schema-shapes.adoc` is a materialized view whose
+   `(not yet supported)` marker is `COALESCE(t.cnt, 0) > 0` over the classify traces present when
+   the tool runs (`LeafCoverageReport`, the `observed` column). Slice 6c (`b71a203`) regenerated it
+   from an incomplete trace set, flipping `MutationServiceTableField` (line 18),
+   `JooqRecordInputType` (75), `JooqRecordType` (76) and `UnclassifiedType` (87) to
+   `(not yet supported)`; slice 6a (`043f13e`) had made the inverse error on `JooqRecordType` in
+   the other direction. Regenerating after a clean `mvn install -Plocal-db`
+   (`leaf-coverage . --mode=migration`) flips all four back, so the committed content is wrong, not
+   merely stale. The fragment is included from `docs/manual/how-to/migrating-from-legacy.adoc`, the
+   page a consumer reads to decide whether their schema shape is supported, and
+   `MutationServiceTableField` is a shipped capability. The regen is unlike
+   `supported-directives.adoc` in that it carries no `--verify` gate (the CI job at
+   `.github/workflows/rewrite-build.yml` regenerates and uploads an artifact without committing),
+   so nothing catches a partial-trace regeneration. Fix the four entries from a full-reactor trace;
+   consider whether the missing `--verify` execution is worth a Backlog item of its own, since the
+   same footgun will fire for the next item that folds a leaf.
+
+2. **The retirement sweep missed `docs/architecture/reference/code-generation-triggers.adoc`.** The
+   three leaves 6a retired are still presented there as live classification verdicts, in the
+   `QueryField Variant` column (line 442, `QueryLookupTableField`), the `ChildField Variant` columns
+   (527, 528, 548, 550) and the DataLoader-category table (580, 581, 583). The page's own preamble
+   sells itself as "the vocabulary needed to read the source code", so a contributor following it
+   greps for a type that does not exist. The precedent is in the same file: slice 6b (`030ccf9`)
+   rewrote that table's DML rows onto `DmlTableField` carrying a write arm, and 6c left no routine
+   residue, so only the lookup fold skipped the step. Slice 8's record states the audit "scanned
+   every guarded habitat ... authored `docs/` AsciiDoc ... and found zero survivals"; that sentence
+   needs to become true or go.
+
+3. **`LookupValuesJoinEmitter` survives in four prose sites after 6a deleted the class.**
+   `graphitron/src/test/java/no/sikt/graphitron/rewrite/generators/util/ValuesJoinRowBuilderTest.java:18`
+   is a `{@link}` at a deleted type, which the javadoc reference gate does not catch because it is
+   test source; the other three are comments
+   (`generators/TypeFetcherGeneratorTest.java:244`, `GraphitronSchemaBuilderTest.java:4149`,
+   `graphitron-sakila-example/.../querydb/GraphQLQueryTest.java:2805`). The successor named in the
+   retired-vocabulary table is `render/LookupRows`.
+
+4. **One retired-vocabulary row overstates what happened** (accuracy only, no code change).
+   `requireNoGeneratedFilterOnLookup` is listed as retired at 6a, but the method is live at
+   `graphitron/src/main/java/no/sikt/graphitron/plan/ConditionCommands.java:156`. What retired is
+   its leaf-identity trigger: the call site now gates on `Kind.LOOKUP` member presence
+   (`ConditionCommands.java:112-116`), which is exactly the successor the row describes. Reword the
+   row to name the re-grain rather than a deletion.
+
+Not blocking, recorded for whoever picks up the axis next: `SqlGeneratingField` is still the
+storage home for the condition, orderBy and paginate payloads, so on those three axes the member
+rows are a view over the leaf rather than the reverse. Slice 6b's design record takes this
+deliberately ("the write payload originates at leaf construction ... this edge is terminal for the
+programme"), and the leaves dissolved anyway, so the failure mode the Spec's dependency-direction
+obligation guarded against (leaves never dissolving because the members depend on them) did not
+occur. Worth a Backlog item naming the residual rather than a re-opened programme. The payloads are
+shared by reference, not copied, so the "one payload, one member row" acceptance holds in the
+object-identity sense the 6b and 6c records use for `f.write()` and `f.pivot()`.
+
 ## Acceptance
 
 The programme is not "done"; individual slices are. What signals it worked: the classifier mints no
