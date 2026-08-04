@@ -15,6 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R563` | Operations as a relation: the leaf cross-product dissolves additively | In Progress | 2026-08-04 <sub>created 2026-08-01</sub> | [plan](operation-relation.md) |
+| `R581` | @nodeId(typeName:) resolves off the named type, not a reverse table lookup | In Review | 2026-08-04 | [plan](nodeid-typename-first-decode-resolution.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-08-01 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-01 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
@@ -261,6 +262,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### nodeid
 
+- `R581` [**@nodeId(typeName:) resolves off the named type, not a reverse table lookup**](nodeid-typename-first-decode-resolution.md) — In Review, architecture
 - `R267` [**Replace deprecated-for-removal DataType.convert(Object) in NodeIdEncoder.decode<Type>**](nodeid-encoder-deprecated-convert.md) — Backlog, tech-debt
 - `R273` [**Align the bare scalar-ID argument arm with the R473 grammar; land or retire R265's deferred compile-tier guard**](bare-scalar-id-arm-modernisation.md) — Backlog, architecture, blocked by [explicit-nodeid-grammar](explicit-nodeid-grammar.md)
 - `R473` [**Explicit @nodeId grammar: Node.id is the only implicit nodeId; typeName-first decode resolution**](explicit-nodeid-grammar.md) — Backlog, architecture

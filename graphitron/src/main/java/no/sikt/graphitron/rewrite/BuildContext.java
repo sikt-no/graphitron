@@ -2810,7 +2810,7 @@ class BuildContext {
                 + " and no primary key) — declare key columns on the target type or surface the"
                 + " metadata via KjerneJooqGenerator");
         }
-        var decodeMethod = resolveDecodeHelperForTable(targetTableName, targetTypeId, targetKeyColumns);
+        var decodeMethod = resolveDecodeHelperForType(refTypeName, targetTableName, targetTypeId, targetKeyColumns);
         if (decodeMethod == null) {
             return new InputFieldResolution.Unresolved(name, null,
                 "@nodeId(typeName: '" + refTypeName + "') targets table '" + targetTableName
@@ -2826,10 +2826,35 @@ class BuildContext {
     }
 
     /**
+     * Resolves the {@code decode<TypeName>} helper for a call site that <em>names</em> its target
+     * type, either through {@code @nodeId(typeName:)} or through an inference that already
+     * produced a unique name. The name is the author's own answer to "which NodeType", so the
+     * {@link NodeIndex} by-name view answers it directly; how many other {@code @node} types
+     * happen to share the backing table is irrelevant.
+     *
+     * <p>Falls back to {@link #resolveDecodeHelperForTable} only when no NodeType carries that
+     * name, which is the orphan case that helper exists for: a {@code @table}-only type over a
+     * table whose jOOQ class carries {@code __NODE_TYPE_ID} metadata.
+     */
+    no.sikt.graphitron.rewrite.model.HelperRef.Decode resolveDecodeHelperForType(
+            String refTypeName,
+            String sqlTableName,
+            String fallbackTypeId,
+            java.util.List<no.sikt.graphitron.rewrite.model.ColumnRef> keyColumns) {
+        var named = nodes.forName(refTypeName);
+        if (named.isPresent()) {
+            return named.get().decodeMethod();
+        }
+        return resolveDecodeHelperForTable(sqlTableName, fallbackTypeId, keyColumns);
+    }
+
+    /**
      * Resolves the {@code decode<TypeName>} {@link no.sikt.graphitron.rewrite.model.HelperRef.Decode}
      * for the NodeType backing the given SQL table, or {@code null} when no usable mapping exists.
-     * Used by the {@code @nodeId} synthesis shim and other input-side classifier paths that need
-     * the per-Node decode helper but only have the SQL table name in scope.
+     * Used by the {@code @nodeId} synthesis shim and other input-side classifier paths that have
+     * <em>only</em> the SQL table name in scope. A call site holding a type name must use
+     * {@link #resolveDecodeHelperForType} instead: the ambiguity arm below answers "no" to a
+     * question such a site has already answered.
      *
      * <p>Resolves through the {@code @node}-only {@link NodeIndex} by-table view, which is exactly
      * the right domain: it sees only {@code @node} types, not the nesting-projection {@code @table}
@@ -2839,9 +2864,9 @@ class BuildContext {
      *
      * <ul>
      *   <li>Exactly one {@code @node} backs the table: return its {@code decodeMethod()}.</li>
-     *   <li>Two or more {@code @node} types back it and the call site did not disambiguate with
-     *       {@code @nodeId(typeName:)}: return {@code null} so the caller emits a validate-time
-     *       rejection rather than a {@code decode<typeId>} call the encoder never generates.</li>
+     *   <li>Two or more {@code @node} types back it and the call site could not name one: return
+     *       {@code null} so the caller emits a validate-time rejection rather than a
+     *       {@code decode<typeId>} call the encoder never generates.</li>
      *   <li>No {@code @node} backs it (orphan-input / synthesis-shim case): fall back to the
      *       metadata's {@code typeId} as the helper suffix. Only reachable through the synthesis
      *       shim.</li>
@@ -2896,15 +2921,26 @@ class BuildContext {
      */
     TargetKeys resolveTargetKeys(GraphQLObjectType targetObj, String refTypeName,
                                  String targetTableName) {
-        var meta = catalog.nodeIdMetadata(targetTableName);
-        if (meta.isPresent()) {
-            return new TargetKeys(meta.get().typeId(), meta.get().keyColumns(), null);
-        }
-        // Node lookup through the pure NodeIndex (a fixed point built before the walk),
-        // not types.get: the node may not be registered yet during the walk.
+        // Name-first. Every caller arrives holding an authoritative type name, and the NodeType
+        // the index carries is the fully reconciled answer for that name: TypeBuilder already
+        // folded @node against the table's KjerneJooqGenerator metadata, letting SDL win on both
+        // axes (typeId outright, keyColumns on order). Reading the table's metadata first would
+        // overwrite that reconciliation with a table fact, which is wrong twice over: two @node
+        // types over one table each publish their own typeId, and a @node(keyColumns:) that pins a
+        // different order than the metadata would project columns transposed against the order its
+        // own decode helper returns values in.
+        //
+        // Lookup goes through the pure NodeIndex (a fixed point built before the walk), not
+        // types.get: the node may not be registered yet during the walk.
         var ntOpt = nodes.forName(refTypeName);
         if (ntOpt.isPresent()) {
             return new TargetKeys(ntOpt.get().typeId(), ntOpt.get().nodeKeyColumns(), null);
+        }
+        // No NodeType under that name: the target is a @table-only type (or failed classification)
+        // over a metadata-carrying table. The table fact is the only source left.
+        var meta = catalog.nodeIdMetadata(targetTableName);
+        if (meta.isPresent()) {
+            return new TargetKeys(meta.get().typeId(), meta.get().keyColumns(), null);
         }
         if (targetObj.hasAppliedDirective(DIR_NODE)) {
             String typeId = argString(targetObj, DIR_NODE, ARG_TYPE_ID).orElse(refTypeName);

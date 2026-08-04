@@ -86,6 +86,20 @@ type Person implements Node @table(name: "customer") @node(typeId: "C") {
 
 The `typeId: "C"` keeps existing IDs valid even if `Person` is later renamed to `User` or `Customer`.
 
+=== Several node types over one table
+
+A table may back more than one `@node` type, each publishing its own `typeId`. The shape comes up when a federation entity owned by another subgraph has to issue the same global ID as a type you already expose, and when a renamed type lives alongside its predecessor through a deprecation window:
+
+[source,graphql]
+----
+type LegacyCustomer implements Node @table(name: "customer") @node { id: ID! @nodeId }
+type Customer implements Node @table(name: "customer") @node(typeId: "46") @key(fields: "id") {
+    id: ID! @nodeId
+}
+----
+
+Only the `typeId` values have to differ; the two types may embed the same `keyColumns`. Once a second `@node` covers the table, `@nodeId` can no longer infer which of them a leaf means from the table alone, so every leaf that is not the node's own `id:` field names its type with xref:nodeId.adoc[`@nodeId(typeName:)`]. A named leaf reads `typeId` and `keyColumns` off the type it names, so the two node types stay independent regardless of how many share the table.
+
 == Constraints
 
 * The decorated type must also carry xref:table.adoc[`@table`]; the bound table supplies the columns to embed.

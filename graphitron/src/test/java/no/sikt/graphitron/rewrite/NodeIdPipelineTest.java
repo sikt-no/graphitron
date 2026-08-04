@@ -484,6 +484,55 @@ class NodeIdPipelineTest {
                 assertThat(f.reason()).contains("zero or multiple GraphQL types map to it");
             }),
 
+        EXPLICIT_TYPENAME_DISAMBIGUATES_MULTI_NODE_TABLE(
+            "an explicit @nodeId(typeName:) naming one of two @node types on a shared table "
+                + "resolves off that type's own @node, not off a reverse table → type lookup. "
+                + "Sibling to R377_MULTI_NODE_REJECTS, where the leaf carries no typeName and the "
+                + "table-keyed lookup is genuinely the only source available. Declaring a second "
+                + "@node over a table must not break the @nodeId leaves that name the first one.",
+            """
+            type FooA implements Node @table(name: "bar") @node(typeId: "FooA") { id: ID! }
+            type FooB implements Node @table(name: "bar") @node(typeId: "FooB") { id: ID! }
+            input Selector { id: ID! @nodeId(typeName: "FooA") }
+            type Query { a: FooA b: FooB bars(in: Selector): [FooA!] }
+            """,
+            schema -> {
+                var bp = inputBodyParam(schema, "bars", BodyParam.RowEq.class);
+                assertThat(bp.columns()).extracting(ColumnRef::sqlName)
+                    .containsExactly("id_1", "id_2");
+                assertThat(leafDecodeMethodName(bp)).isEqualTo("decodeFooA");
+            }),
+
+        EXPLICIT_TYPENAME_PICKS_THE_NAMED_SIBLING(
+            "the same two-@node table, with the leaf naming the *other* sibling: the decode helper "
+                + "follows the named type rather than a declaration-order or first-wins accident.",
+            """
+            type FooA implements Node @table(name: "bar") @node(typeId: "FooA") { id: ID! }
+            type FooB implements Node @table(name: "bar") @node(typeId: "FooB") { id: ID! }
+            input Selector { id: ID! @nodeId(typeName: "FooB") }
+            type Query { a: FooA b: FooB bars(in: Selector): [FooA!] }
+            """,
+            schema -> assertThat(leafDecodeMethodName(inputBodyParam(schema, "bars", BodyParam.RowEq.class)))
+                .isEqualTo("decodeFooB")),
+
+        EXPLICIT_TYPENAME_TAKES_KEY_ORDER_FROM_THE_NAMED_NODE(
+            "@node(keyColumns:) pins an order different from the table's KjerneJooqGenerator "
+                + "metadata (SDL order wins at type classification, with a WARN). The @nodeId leaf "
+                + "must project the columns in the named type's order, matching the order its "
+                + "decode helper returns values in; a metadata-keyed read would pair decoded "
+                + "values with the columns transposed.",
+            """
+            type BarRev implements Node @table(name: "bar") @node(typeId: "BarRev", keyColumns: ["ID_2", "ID_1"]) { id: ID! }
+            input Selector { id: ID! @nodeId(typeName: "BarRev") }
+            type Query { bars(in: Selector): [BarRev!] }
+            """,
+            schema -> {
+                var bp = inputBodyParam(schema, "bars", BodyParam.RowEq.class);
+                assertThat(bp.columns()).extracting(ColumnRef::sqlName)
+                    .containsExactly("id_2", "id_1");
+                assertThat(leafDecodeMethodName(bp)).isEqualTo("decodeBarRev");
+            }),
+
         R377_ORPHAN_INPUT_TYPEID_FALLBACK(
             "R377: an input resolved against a metadata-carrying table with NO @node SDL type "
                 + "(orphan-input / synthesis-shim case). With no @node backing the table the decode "
@@ -1124,6 +1173,32 @@ class NodeIdPipelineTest {
                 assertThat(bp.extraction()).isInstanceOf(CallSiteExtraction.ThrowOnMismatch.class);
                 var skip = (CallSiteExtraction.ThrowOnMismatch) bp.extraction();
                 assertThat(skip.decodeMethod().methodName()).isEqualTo("decodeBaz");
+            }),
+
+        SAME_TABLE_SCALAR_UNREFERENCED_SIBLING_NODE(
+            "the same single-PK shape with a second @node declared over baz that no query, field "
+                + "or input reaches. The NodeIndex is an all-declared superset, so the sibling is "
+                + "visible to classification the moment it is declared; naming Baz on the argument "
+                + "still resolves decodeBaz. Models adding a federation entity over a table an "
+                + "existing type already covers.",
+            """
+            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type BazEntity implements Node @table(name: "baz") @node(typeId: "46") { id: ID! }
+            type Query { bazById(id: ID! @nodeId(typeName: "Baz")): Baz }
+            """,
+            schema -> {
+                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryTableField)
+                    schema.field("Query", "bazById");
+                var gcf = (no.sikt.graphitron.rewrite.model.GeneratedConditionFilter)
+                    f.filters().stream()
+                        .filter(no.sikt.graphitron.rewrite.model.GeneratedConditionFilter.class::isInstance)
+                        .findFirst().orElseThrow();
+                var bp = (no.sikt.graphitron.rewrite.model.BodyParam.Eq) gcf.bodyParams().stream()
+                    .filter(no.sikt.graphitron.rewrite.model.BodyParam.Eq.class::isInstance)
+                    .findFirst().orElseThrow();
+                assertThat(bp.column().sqlName()).isEqualTo("id");
+                var decode = (CallSiteExtraction.ThrowOnMismatch) bp.extraction();
+                assertThat(decode.decodeMethod().methodName()).isEqualTo("decodeBaz");
             }),
 
         SAME_TABLE_SCALAR_COMPOSITE_PK(

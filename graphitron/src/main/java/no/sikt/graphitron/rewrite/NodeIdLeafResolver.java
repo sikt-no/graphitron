@@ -266,12 +266,18 @@ final class NodeIdLeafResolver {
                 + " jOOQ's typed Row22 cap. Reduce key arity or expose components as separate"
                 + " scalar arguments."));
         }
-        var decodeMethod = ctx.resolveDecodeHelperForTable(
-            targetTableName, keys.typeId(), keys.keyColumns());
+        // Resolution keys on refTypeName, not on targetTableName. By this point the type name is
+        // settled, either authored as @nodeId(typeName:) or inferred only where inference was
+        // unambiguous, so several @node types sharing the backing table is not this leaf's
+        // problem. Only a target with no NodeType of that name at all falls back to the table.
+        var decodeMethod = ctx.resolveDecodeHelperForType(
+            refTypeName, targetTableName, keys.typeId(), keys.keyColumns());
         if (decodeMethod == null) {
             return new Resolved.Rejected(Rejection.structural("@nodeId(typeName: '" + refTypeName + "') on leaf '" + leafName
-                + "': unable to resolve the NodeType backing table '" + targetTableName
-                + "' (zero or multiple GraphQL types map to it)."));
+                + "': '" + refTypeName + "' is not a @node type, and table '" + targetTableName
+                + "' carries no unambiguous node identity to fall back on"
+                + " (zero or multiple GraphQL types map to it)."
+                + " Annotate '" + refTypeName + "' with @node."));
         }
 
         // Same-table short-circuit (own-PK identity) only when @reference is absent. An explicit
