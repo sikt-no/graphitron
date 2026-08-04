@@ -79,9 +79,17 @@ reading conflates two axes, and the distinction is what makes this change safe t
   arguments, and cross-type references still require `@nodeId(typeName: T)`.
 - This item is about a **type** that has already published nodehood in SDL getting its two identity
   parameters filled in from the catalog. The declaration of nodehood stays in SDL, where `R473`
-  wants it; only `typeId` and `keyColumns` are sourced from the generator that owns them. `R473`
-  rule 1 ("`Node.id` is the only implicit nodeId") is if anything strengthened: the set of types on
-  which that rule fires grows to include the ones the author plainly meant.
+  wants it; only `typeId` and `keyColumns` are sourced from the generator that owns them.
+
+`R473` rule 1 is in fact the direct precedent, not an obstacle: "`Node.id` is the only implicit
+nodeId. The `id` field satisfying the `Node` interface on a type declared `implements Node @node` is
+obviously a nodeId and obviously of the enclosing type. The directive is redundant there." That is
+already live behaviour, confirmed against the `bar` fixture: `implements Node @table @node` with a
+bare `id: ID!` classifies as `ColumnBackedField` carrying
+`compaction=NodeIdEncodeKeys(encodeFoo)` over both key columns, with no `@nodeId` written. This item
+extends the same "obviously" one step outward, from the `id` field to the `@node` directive itself:
+where the jOOQ generator has published the node identity and the author has published the Node
+contract, restating the two values is the same redundancy `R473` already removed at the field level.
 
 Reconciliation work this item owns at Spec time:
 
@@ -95,33 +103,60 @@ Reconciliation work this item owns at Spec time:
 - Rewrite the `TypeBuilder.buildTableType` comment; it states the retired policy and the stale
   rationale above.
 
-## Non-goals and open questions
+## The shadowed `id` column
 
-- **`implements Node` + `@table` with no metadata is out of scope.** The natural coherent rule would
-  be "`implements Node` on a `@table` type means the type is a node", with parameters resolved by
-  the existing precedence ladder (metadata, then the `@node`-only defaults of type name for `typeId`
-  and PK for `keyColumns`). Recommendation is to hold that back: metadata is a positive assertion by
-  the jOOQ generator that this table has a published node identity and what its wire typeId is,
-  whereas a primary key is not, and promoting on PK alone would silently convert every
-  `implements Node @table` type's `id` from a column value to an encoded global id. The residue is
-  that the misleading column did-you-mean rejection survives for that narrower shape; fix the
-  message there rather than widening the inference.
-- **The literal `id` column case is the one real migration hazard.** A table that carries `__NODE_*`
-  metadata *and* a column named `id` classifies today as a plain column-mapped scalar and would
-  become a NodeId-encoded field, changing the wire value. Spec should sweep the fixture corpus and
-  the consumer schemas for that overlap; if any exists, decide between a targeted warning and
-  requiring `@field(name: "id")` to keep the raw column.
-- **Explicit field-level directives on `id`.** Decide whether `id: ID! @field(name: "...")` on an
-  inferred node type suppresses the node interpretation (author override, consistent with `@node`
-  winning at the type level) or is a rejection. Either is defensible; pick one and pin it.
+A table can carry `__NODE_*` metadata *and* a column literally named `id`. Decided 2026-08-04: the
+node metadata wins, and the build emits a warning that the `id` column is being shadowed, naming the
+two ways the author silences it by stating the choice explicitly. `@nodeId` on the field pins the
+node interpretation; `@field` pins the column.
+
+This is not only a migration concern for inferred nodes. It is a live defect on the **explicit**
+`@node` path, which makes it a correctness fix this item carries rather than a compatibility rider.
+Observed against the `baz` fixture (metadata `typeId = "Baz"`, `__NODE_KEY_COLUMNS = { BAZ.ID }`, and
+the key column is itself named `id`):
+
+| SDL | Type verdict | `id` compaction |
+|---|---|---|
+| `baz`, `implements Node @table @node`, bare `id: ID!` | `NodeType` | `Direct` (raw column) |
+| `baz`, same plus `id: ID! @nodeId` | `NodeType` | `NodeIdEncodeKeys(encodeFoo)` |
+| `baz`, same plus `id: ID! @field(name: "id")` | `NodeType` | `Direct` |
+| `bar` (no literal `id` column), `implements Node @table @node`, bare `id: ID!` | `NodeType` | `NodeIdEncodeKeys(encodeFoo)` |
+
+So a type that declares `@node` today, and whose table happens to have an `id` column, silently
+publishes the raw column value as its Relay global id, while the identical declaration over a table
+without that column collision publishes an encoded one. Nothing warns. The rule above corrects the
+default and surfaces the case.
+
+The precedence the rule needs already exists and needs no new machinery: both silencers are live
+today (rows 2 and 3 above), so the work is flipping the default when metadata is present and adding
+the warning. Spec should also cover the variant with no fixture yet, a table whose metadata keys on
+columns *other* than a literal `id` column that also exists, where the same shadowing applies.
+
+## Non-goals
+
+- **`implements Node` + `@table` with no metadata: no change.** Decided 2026-08-04. Inference does
+  not extend to deriving node identity from a primary key; metadata is a positive assertion by the
+  jOOQ generator that this table has a published node identity and what its wire typeId is, whereas
+  a primary key is not. Recorded observation for Spec, since it cuts against reading this shape as
+  currently well-formed: over a table with no metadata and no literal `id` column (the `qux`
+  fixture), `implements Node @table` without `@node` classifies the type as `TableType` and rejects
+  `id: ID!` as `UnclassifiedField("column 'id' could not be resolved ...")`. Written `@node`
+  explicitly, the same shape is well-formed and resolves against the `@node`-only defaults (type
+  name for `typeId`, PK for `keyColumns`). Confirm at Spec time which of those two the non-goal is
+  meant to preserve.
 - Wire format, encode/decode emission, and the `Query.node` dispatch surface are untouched.
 
 ## Test surface
 
-- `NodeIdPipelineTest`: inferred promotion on `implements Node @table` over `film_actor` (the
-  headline case); `@table` + metadata without `implements Node` still `TableType`; inferred typeId
-  collision produces the uniqueness diagnostic; explicit `@node(typeId:)` still overrides an
-  inferred sibling. The existing `NO_METADATA_NO_NODE` case stays green unchanged.
+- `NodeIdPipelineTest`: inferred promotion on `implements Node @table` over `bar` (the headline
+  case, `compaction=NodeIdEncodeKeys` with no directive written); `@table` + metadata without
+  `implements Node` still `TableType`; inferred typeId collision produces the uniqueness diagnostic;
+  explicit `@node(typeId:)` still overrides an inferred sibling. The existing `NO_METADATA_NO_NODE`
+  case stays green unchanged. `METADATA_ONLY_NO_PROMOTION` survives on its `@table`-without-
+  `implements Node` fixture but its description needs rewriting: it currently reads
+  "without `implements Node @node`" and cites the stale collision rationale.
+- The shadowing rule's four rows above, pinned on `baz` (three) and `bar` (one), plus the warning's
+  presence and absence. The first row is the behaviour change, so it is the load-bearing assertion.
 - `ClassifiedCorpus`: the `relay-node` example declares `type Film implements Node
   @table(name: "film")` over a table with no metadata, so it is unaffected; consider a sibling
   fixture pinning the inferred verdict.
