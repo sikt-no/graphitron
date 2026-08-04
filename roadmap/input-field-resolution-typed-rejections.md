@@ -56,6 +56,16 @@ Scope sketch, in dependency order:
    `Rejection.directiveConflict` from all sites, so each cause has one identity carrying the directive
    name. `@multitableReference` needs no work; its retirement already routes through
    `directiveConflict` from a single site, which is the target shape.
+4. Pin what `DirectiveConflict.directives` means, since step 3 makes it load-bearing. Its javadoc
+   promises only "the bare directive names (no leading `@`) for downstream tooling", and the sites do
+   not agree: ten name directives present on the declaration, while `FieldBuilder`'s `@asConnection`
+   on an inline `TableField` lists `splitQuery`, which is *absent* and is the remedy. So the component
+   is today a bag mixing causes with fixes. State the contract as "every listed directive is present on
+   the declaration" and pin it; the anomalous site then either drops `splitQuery` from the list and
+   keeps "add `@splitQuery`" in its prose where it belongs, or is declared an exception on purpose.
+   The aggregated-diagnostics item is the first consumer to depend on the answer: it groups
+   diagnostics on this component, and it can only offer a per-directive count once the contract holds,
+   so it currently groups on the whole set instead.
 
 Carved out of the aggregated-diagnostics MCP item (`mcp-aggregated-diagnostics`) at Spec review, which
 had this convergence as an in-item step sized "small" across three files. It is neither: the identity

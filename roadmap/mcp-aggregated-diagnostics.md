@@ -230,6 +230,10 @@ hierarchy buys nothing. Two constraints keep it from smuggling in a stringly sid
   `RejectionKind.of` and `Diagnostics.severityOf` already do.
 - Extractors return a **uniform `Optional<String>`** for "not applicable on this row", never
   `null`, so `where` and `groupBy` cannot disagree about absence.
+- **Every extractor is single-valued, so every dimension groups at one row per diagnostic.** This is
+  the constraint `directives` has to satisfy and the reason it groups on the set; see the reviewer
+  decision. Keeping the whole enum at one grain is what lets group counts sum to the row count, which
+  the truncation-honesty and cardinality pins both read.
 - The enum gets the coverage pin the module already established with `EdgeCoverageTest`: every
   dimension declared in exactly one bucket (typed-key / location-derived / prose-derived), which
   makes the wire contract's "which clusters are typed" claim a live partition instead of prose.
@@ -316,6 +320,16 @@ before the convergence would put a confidently wrong count in the very view this
 hedged counts. Nothing else in the design touches it, so the two can be worked in parallel provided the
 dependency lands first.
 
+**Related, and deliberately not a dependency: `validation-adds-facts`.** That item makes classification
+a relation and stops a failed coordinate from discarding what the classifier established, which widens
+this dimension set on its own: every fact that survives a rejection becomes a candidate dimension, and
+the pivot a measured session actually wanted ("the diagnostics on my DELETE mutations") becomes
+expressible. It is not a prerequisite. Nothing here reads a classification today, it does not touch
+`ValidationError` and so leaves `DiagnosticRow`'s shape alone, and no dimension already in the enum
+changes meaning when it lands, so the growth is one enum value plus one extractor, which is the case
+the dimension coverage pin exists to make safe. Every count this item reports is true on today's model;
+it is narrower, not wrong.
+
 **Carved out at review: the sealed `Coordinate` component.** A sealed
 `Coordinate { SchemaWide | TypeLevel | FieldLevel }` on `ValidationError`, deleting
 `WatchErrorFormatter`'s `isTypeLevel` / `typeOf`, now lives in its own Backlog item,
@@ -359,7 +373,10 @@ server. The tests that carry weight are the invariant pins, not per-dimension un
   location-derived / prose-derived), in the `EdgeCoverageTest` mould. Write it over whatever bucket
   set survives the `messageTemplate` decision rather than hard-coding three: omitting that dimension
   drops the prose bucket entirely. The same partition is the documentation's structure (see the
-  first-client check), so pin it once and let the tool description read from it.
+  first-client check), so pin it once and let the tool description read from it. No grain axis is
+  needed while every dimension is single-valued; one arrives with the exploded per-directive dimension
+  the reviewer decisions defer. Pin the `directives` canonical render here too, since an unsorted join
+  is the one way a single-valued extractor can still split a group.
 - **Rejection-leaf partition.** Every `Rejection` leaf declared coded or deliberately codeless
   (step 3), and no typed-key arm reachable from the prose path (which the directive-convergence
   dependency delivers; this pin is what stops it regressing afterwards).
@@ -426,6 +443,30 @@ than leanings. Each takes the draft's leaning except where noted.
   rather than re-derive it. Omitting is the default, not the exception.
 - **Pure counts.** Ordering by count already surfaces the leverage; naming a fix strategy would be
   the server asserting the wrong layer.
+- **`directives` groups on the set, not on the individual directive.** The component is
+  `List<String>`, the only multi-valued dimension in the enum, so it needs a rule and the rule is a
+  canonical render: sort, then join, so `[routine, splitQuery]` and `[splitQuery, routine]` cannot
+  split a group. One row, one group, counts still sum.
+
+  Two reasons this is the right key and not a lossy compromise. The co-occurrence cases are where
+  multi-element lists come from, and there the *pair* is the cause: `@splitQuery` alone is fine, and
+  attributing `[splitQuery, routine]` to `routine` would name the wrong culprit. Second, and this is
+  what rules out the exploded alternative today, the component is not "the directives on this field".
+  Its javadoc promises only "the bare directive names for downstream tooling", and one site
+  (`FieldBuilder`'s `@asConnection` on an inline `TableField`) lists a directive that is *absent*,
+  because adding it is the remedy. A per-directive count would therefore report `@splitQuery` as
+  implicated in diagnostics where writing `@splitQuery` is the fix, inverting the action the number
+  exists to drive.
+
+  So the exploded per-directive dimension is deliberately deferred, not rejected. It needs the
+  component's contract pinned first (every listed directive present on the declaration), which is
+  model work and belongs with `input-field-resolution-typed-rejections`, and it needs the response to
+  declare its grain, since exploding makes group counts sum above the row count. Revisit as a second
+  dimension alongside this one once the contract holds, which is the coarse/fine grain pair this
+  design already uses elsewhere.
+
+  Because of that gap between the name and the contract, the wire gloss says "the directive names
+  identifying this conflict", never "the directives on this field".
 
 ## User documentation (first-client check)
 
@@ -453,7 +494,8 @@ in sixteen:
 > *Read off the diagnostic's own data* (stable across a message rewording): `severity`, `source`,
 > `actionable` (can you fix this in the schema?), `kind`, `variant` (the rejection's own class),
 > `lspCode`, `attemptKind` (which lookup space a name resolution failed in), `attempt` (the name the
-> author wrote), `stubKey`, `directives`, `lintRule`.
+> author wrote), `stubKey`, `directives` (the directive names identifying a conflict, as one value),
+> `lintRule`.
 >
 > *Read off the location*: `coordinate` (a type or `Type.field`), `type`, `file`, `directory`. The
 > pairs are coarse and fine grains of one axis; pick deliberately.
