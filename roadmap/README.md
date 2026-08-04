@@ -28,8 +28,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R572` | Warn at build time when consumer graphql-java / jOOQ versions lag | Spec | 2026-08-03 | [plan](consumer-dependency-version-warning.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-07-28 | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
-| `R580` | Infer @node from `implements Node` + __NODE_* metadata | Spec | 2026-08-04 <sub>created 2026-08-03</sub> | [plan](infer-node-from-implements-node-and-metadata.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-07-15 | [plan](catalog-check-constraint-validation.md) |
+| `R580` | Infer @node from `implements Node` + __NODE_* metadata | Ready | 2026-08-04 <sub>created 2026-08-03</sub> | [plan](infer-node-from-implements-node-and-metadata.md) |
 | `R427` | Type-ahead search backed by native database indexes | Ready | 2026-07-17 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-07-15 <sub>created 2026-05-26</sub> | [plan](dml-payload-positional-alignment.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec | 2026-07-14 | [plan](capability-catalog.md) |
@@ -275,7 +275,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R273` [**Align the bare scalar-ID argument arm with the R473 grammar; land or retire R265's deferred compile-tier guard**](bare-scalar-id-arm-modernisation.md) — Backlog, architecture, blocked by [explicit-nodeid-grammar](explicit-nodeid-grammar.md)
 - `R473` [**Explicit @nodeId grammar: Node.id is the only implicit nodeId; typeName-first decode resolution**](explicit-nodeid-grammar.md) — Spec, architecture
 - `R57` [**FK-target argument @nodeId, JOIN-with-translation emission**](nodeid-fk-target-arg-join-translation.md) — Backlog, architecture
-- `R580` [**Infer @node from `implements Node` + __NODE_* metadata**](infer-node-from-implements-node-and-metadata.md) — Spec, architecture
+- `R580` [**Infer @node from `implements Node` + __NODE_* metadata**](infer-node-from-implements-node-and-metadata.md) — Ready, architecture
 - `R24` [**Rooted-at-parent NodeId reference JOIN-projection emitter (ColumnBackedReferenceField, both arities)**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup
 - `R419` [**Reject list-valued @nodeId+@reference carriers on INSERT inputs at build time**](list-nodeid-reference-insert-rejection.md) — Backlog, validation
 - `R420` [**Support list-valued @nodeId+@reference on INSERT inputs (row fan-out)**](list-nodeid-reference-insert-fanout.md) — Backlog, feature

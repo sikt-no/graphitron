@@ -1,7 +1,7 @@
 ---
 id: R580
 title: "Infer @node from `implements Node` + __NODE_* metadata"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 8
 theme: nodeid
