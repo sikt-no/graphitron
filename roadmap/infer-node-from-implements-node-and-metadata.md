@@ -173,6 +173,13 @@ same-table and id-reference warnings, not this one), so dropping it is contained
 
 Reconciliation work this item owns at Spec time:
 
+- **Rewrite `R473` rule 1's statement of scope.** This is the reconciliation most likely to drift,
+  because Phase 2's whole justification is "adopt rule 1". Rule 1 is currently stated over "a type
+  declared `implements Node @node`", and `R473`'s intro enumerates the output-side `FieldBuilder`
+  site as one of three shims. Phase 2 makes `@node` non-necessary for that antecedent and converts
+  the site from shim to permanent carrier. Restate the antecedent as "a type classified as a
+  `NodeType`, however it got there" and move the site out of the shim inventory in the same edit, or
+  the two specs will disagree about what rule 1 covers.
 - Rewrite `R273`'s second bullet. The deliverable is live, not dropped, and `R273`'s surviving scope
   (the bare scalar-`ID` argument arm) is unaffected by it.
 - Re-scope `R34` step 3. Its type-level hint offering `implements Node @node` is moot for the
@@ -200,7 +207,19 @@ the key column is itself named `id`):
 | `baz`, `implements Node @table @node`, bare `id: ID!` | `NodeType` | `Direct` (raw column) |
 | `baz`, same plus `id: ID! @nodeId` | `NodeType` | `NodeIdEncodeKeys(encodeFoo)` |
 | `baz`, same plus `id: ID! @field(name: "id")` | `NodeType` | `Direct` |
+| `shared_node`, `implements Node @table @node(typeId: "10154")`, bare `id: ID!` | `NodeType` | `Direct` (raw column) |
 | `bar` (no literal `id` column), `implements Node @table @node`, bare `id: ID!` | `NodeType` | `NodeIdEncodeKeys(encodeFoo)` |
+
+Row 4 is the row to reason from, not row 1. `baz` is convenient but degenerate: its typeId is the
+literal string `"Baz"`, so nothing distinguishes the encoded form from the type name.
+`nodeidfixture.shared_node` (`init.sql`, `id varchar(50) PRIMARY KEY`, metadata
+`("10154", ["ID"])`) is the same shadowing shape with a *numeric* typeId that differs from the type
+name, which is exactly the axis `BuildContext.resolveDecodeHelperForTable`'s typeId-suffix fallback
+turns on. It is also already written down: `NodeIdPipelineTest`'s
+`R377_DECODE_VIA_NODE_INDEX_NOT_TYPEID` declares
+`type SharedNode implements Node @table(name: "shared_node") @node(typeId: "10154") { id: ID! }` and
+asserts on the decode helper's name. So the shadowing rule changes the wire value under a case whose
+whole point is decode-helper resolution, and `baz` is not the only affected fixture table.
 
 So a type that declares `@node` today, and whose table happens to have an `id` column, silently
 publishes the raw column value as its Relay global id, while the identical declaration over a table
@@ -230,22 +249,133 @@ over a table with an `external_id` column from column-mapped to nodeId-encoded, 
 the intended blast radius. Pin the hoisted arm to the Node-interface `id` field specifically, and
 leave every other bare-`ID` field in the fall-through arm with its deprecation WARN intact for `R27`.
 
-**Reviewer question: should this be a hard error instead of a warning?** The decision on record
-(2026-08-04) is warn-and-flip. Weighing against it: forty lines up, `buildTableType` faces the same
-class of ambiguity, SDL and metadata disagreeing about which columns identify the row, and refuses
-to pick a winner, rejecting with "the column sets are different; one side is wrong about the
-schema". Item 3 picks a winner and changes the wire value of `Node.id` under existing green builds.
-The additive-then-cutover alternative is to reject the ambiguous shape and make the author state the
-choice, since both silencers already work; the flip then follows once consumers have migrated. This
-is recorded for the reviewer to weigh, not as a reversal of the decision.
+**Hard error instead of a warning? Settled: warn-and-flip.** The question was raised because
+`buildTableType`, in the same file, faces a neighbouring ambiguity (SDL and metadata disagreeing
+about which columns identify the row) and refuses to pick a winner, rejecting with "the column sets
+are different; one side is wrong about the schema", whereas this rule picks a winner and changes the
+wire value of `Node.id` under existing green builds. Both the decision on record (2026-08-04) and
+the Spec review land on warn, for three reasons worth keeping:
 
-**Measured blast radius.** In-repo, inference itself flips nothing: all 17 `implements Node`
-declarations across the SDL fixtures already carry `@node`, so the new inference path needs new
-fixtures to be exercised at all. The shadowing rule is the opposite. 22 test fixtures write
-`type Baz implements Node @table(name: "baz") @node { id: ID! }`, which is exactly row 1, so every
-one of them flips its `id` from raw column to encoded and changes generated output. Three more
-already write `id: ID! @nodeId` on the same shape, which is fixture authors hand-applying the
-silencer, and is independent evidence that the current default is the wrong one.
+- The additive-then-cutover discipline in `roadmap/workflow.adoc` is scoped to "a widely-pinned type
+  or seam" and says outright that it is a technique, not a prescription. This is a value change at
+  one field.
+- The two cases are different in kind. In `buildTableType`, both sides make a positive claim about
+  row identity and either can be wrong. Here, the metadata is the positive assertion and the
+  identically-named column is an accident of the table's shape; there is a right answer.
+- Both silencers already work today, so an author who disagrees with the default is one directive
+  away, with no migration window needed to make that possible.
+
+Pin the warning's presence and the flipped compaction in the *same* pipeline case, so the migration
+reads as one fact rather than two coincidental assertions.
+
+**Measured blast radius.** Counts below are from a scan on 2026-08-04; re-measure at pickup with the
+script under Test surface rather than trusting the numbers.
+
+*Inference itself flips nothing in-repo, but not for the reason the `.graphqls` files suggest.* The
+schema fixtures are overwhelmingly Java-inline: roughly 318 `implements Node @table` declarations
+across `.java` and `.graphqls` sources, of which the four `.graphqls` files hold 17. Exactly five of
+the 318 omit `@node`: `NestedConnectionElementRetentionPipelineTest` (a `Customer`/`Payment` pair,
+twice, across two schemas) and `ClassifiedCorpus`'s `relay-node` `Film`. All five are safe because
+`customer`, `payment` and `film` carry no `__NODE_*` metadata, not because every declaration carries
+the directive. Those five are the canaries: adding metadata to a sakila table would flip them. The
+`Customer`/`Payment` pair is also worth reading directly, since it is the non-goal shape
+(`implements Node @table` with no metadata) written with `id: ID! @nodeId` over a `TableType`, which
+is what the open non-goal question below is really about.
+
+*The shadowing rule is the opposite, and it is bigger than first measured.* Twenty-nine sites across
+six test classes write a `baz`-backed node type with a bare `id: ID!`, which is row 1:
+`NodeIdPipelineTest` (20), `NodeIdReferenceFilterPipelineTest` (3), `NodeIdLeafResolverTest` (2),
+`InlineFilterArgumentSourcePipelineTest` (2), `AsConnectionSameTableWarnFormatTest` (1),
+`NodeIdOverrideConditionFkTargetPipelineTest` (1). Several are multi-line declarations, so a
+single-line grep undercounts. Add `R377_DECODE_VIA_NODE_INDEX_NOT_TYPEID` for `shared_node` (row 4).
+Every one of them flips its `id` from raw column to encoded and changes generated output.
+
+Thirteen more already write `id: ID! @nodeId` on the same `baz` shape
+(`MutationDmlNodeIdClassificationTest` 10, `MutationTableArgClassificationTest` 2,
+`NodeIdPipelineTest` 1). That is fixture authors reaching for the silencer unprompted on the exact
+shape where the default is wrong, and it is the strongest in-repo evidence that this item corrects
+rather than breaks.
+
+## User documentation (first-client check)
+
+Required by the Plan-quality rule in `roadmap/workflow.adoc`: an item with a user-visible surface
+drafts the docs first, and if they do not read simply the design is wrong. This item changes what
+`@node` is *for* and changes the wire value of `Node.id` under existing green builds, so the draft
+is load-bearing rather than a formality. The manual currently states the opposite in two places, so
+neither page can be left alone:
+
+- `docs/manual/reference/directives/node.adoc`, Constraints: "The type must declare an `id: ID!`
+  field decorated with `@nodeId`. The directive on the type alone does not produce the ID."
+  Phase 2 falsifies this.
+- `docs/manual/reference/directives/nodeId.adoc`, Constraints: "The named or inferred type must
+  carry `@node`." Phase 1 falsifies this.
+
+**The question the draft has to answer plainly: after this item, is `@node` still how you declare a
+node?** No, and saying so is what makes the page read simply:
+
+> `implements Node` declares nodehood. `@node` supplies or overrides the two identity parameters,
+> `typeId` and `keyColumns`. When the jOOQ generator has already published them for the bound table,
+> `@node` is optional.
+
+Everything else follows from that one sentence, which is the sign the design is the right shape.
+
+### Draft: `node.adoc` Constraints
+
+* The decorated type must also carry `@table`; the bound table supplies the columns to embed.
+* The type must implement the `Node` interface (`type X implements Node ...`). Without the
+  interface, `Query.node(id:)` cannot return the type, and `@node` alone is rejected.
+* `@node` itself is **optional** when the bound jOOQ class publishes `__NODE_TYPE_ID` and
+  `__NODE_KEY_COLUMNS`: `implements Node @table(name: "x")` is then a complete node declaration and
+  takes both values from the catalog. Write `@node` when the generator has published nothing, or to
+  override either value.
+* The node's own `id: ID!` field does not need `@nodeId`. The `id` field satisfying the `Node`
+  interface on a node type is a node ID by construction. Other `ID` slots still require the
+  directive.
+* `keyColumns` must form a primary key or another unique key on the bound table.
+* `keyColumns` ordering matters and is part of the ID's wire format.
+* `typeId` collisions across types are rejected at startup, whether the `typeId` is written,
+  defaulted, or taken from catalog metadata.
+
+### Draft: `node.adoc`, new subsection "When the table has its own `id` column"
+
+> A table can publish node metadata *and* have a column literally named `id`. The node ID wins: the
+> field publishes the encoded global ID, not the raw column value, and the build warns that the
+> column is shadowed. Silence it by stating the choice:
+>
+> [source,graphql]
+> ----
+> type Doc implements Node @table(name: "doc") { id: ID! @nodeId }        # the global ID (default)
+> type Doc implements Node @table(name: "doc") { id: ID! @field(name: "id") }  # the raw column
+> ----
+>
+> `@field` is the escape hatch for exposing the column itself. Note that a type whose `Node.id` is
+> a raw column cannot round-trip through `Query.node(id:)`.
+
+### Draft: the warning text
+
+> `Doc.id`: the table `doc` has a column named `id` and also publishes node metadata. Graphitron is
+> using the node ID. Add `@nodeId` to confirm, or `@field(name: "id")` to expose the raw column
+> instead.
+
+Naming both silencers in the message is what makes the finding actionable without the manual.
+
+### Draft: `nodeId.adoc` Constraints, the one bullet that changes
+
+* The named or inferred type must be a node type: either it carries `@node`, or it declares
+  `implements Node` over a table whose jOOQ class publishes node metadata. The build fails when
+  `typeName:` resolves to a non-node type.
+
+### The glossary, and a gap worth naming rather than absorbing
+
+`docs/manual/reference/diagnostics-glossary.adoc` is error-only by construction: it opens on the
+three error prefixes (`[author-error]`, `[invalid-schema]`, `[deferred]`) and enumerates the
+`unknown-name` attempt kinds. It has no warnings section, and no page in the manual documents the
+`LintRule` ids at all, even though the enum is a closed set with stable kebab-case ids that the MCP
+`diagnostics` tool already projects onto the wire. The shadowing warning has no glossary-shaped home
+to go into. This item documents the warning where an author will actually hit it (the `node.adoc`
+subsection above) and does **not** grow a lint-rule inventory page, which is a separate deliverable
+covering fifteen existing rules and should be its own Backlog item. Flagged here so the omission is
+a decision rather than an oversight.
 
 ## Implementation plan
 
@@ -263,27 +393,60 @@ cannot read the classifier. Landing the gate without this is what would make an 
 explicit node differ in reachability seeding, arrival folding, federation entity membership, and LSP
 visibility.
 
+One consumer needs no work: `TypeBuilder.buildClassificationIndices` populates `NodeIndex` by
+pattern-matching classified types (`if (tbt instanceof NodeType nt)`), never by reading the
+directive, so inferred nodes enter the index for free. What that site does need is a javadoc
+rewrite, since `NodeIndex`'s invariant is currently stated in terms of `@node` self-seeding
+reachability. That is the same fact as the `SchemaReachability` finding above, seen from the index
+side.
+
 `NodeType` should also gain a narrow provenance slot (declared versus inferred, per axis, since
 `@node(typeId:)` plus metadata keyColumns is a mixed case). Three consumers need it, and each would
 otherwise re-derive it by reading SDL below the classifier boundary: the collision message, the
 shadowing warning, and `R34`'s hint. One record component removes three re-derivations.
 
-**Phase 2: adopt the `Node.id` rule.** At `FieldBuilder.java:7255-7265`, drop the deprecation WARN
-and restate the branch as the permanent `R473` rule-1 carrier rather than a shim awaiting deletion,
-narrowing its predicate to the Node-interface `id` field per the implementation trap above. Leave
-the other two `R27` shim sites alone, and leave non-`id` bare-`ID` fields in the deprecated arm.
-Coordinate the wording so `R27`'s inventory stays accurate.
+**Phase 2: adopt the `Node.id` rule.** Both this phase and Phase 3 edit the same method,
+`FieldBuilder.classifyChildFieldOnTableType` (declared at `FieldBuilder.java:7072` at the time of
+writing; the file is 7k+ lines and actively edited, so navigate by symbol). The site is the
+`instanceof NodeType` arm inside the `column.isEmpty()` branch, greppable by its WARN text
+"synthesizes an `@nodeId` carrier without the directive". Drop the deprecation WARN and restate the
+branch as the permanent `R473` rule-1 carrier rather than a shim awaiting deletion, narrowing its
+predicate to the Node-interface `id` field per the implementation trap above. Leave the other two
+`R27` shim sites alone, and leave non-`id` bare-`ID` fields in the deprecated arm. Coordinate the
+wording so `R27`'s inventory stays accurate.
 
-**Phase 3: the shadowing rule.** Reorder the column lookup and the `NodeType` arm as described
-above, add the warning for the shadowed column, and migrate the 22 affected fixtures. The warning
-names the column, the winning interpretation, and both silencers. Carry it as a
-`BuildWarning.LintFinding` rather than `NoRule` so it reaches `ValidationReport.warnings()` and the
-LSP replay with a fix attached, which is the same surface `R34` builds on; that also means it needs
-a `LintRule` and a `LintFix` per silencer, and the two-fix shape should be checked against what
-`LintQuickFixes.compute` can currently render.
+**Phase 3: the shadowing rule.** In the same method, the ordering to invert is the
+`svc.resolveColumn(columnName, tableType)` call and the `NodeType` arm below it; `hasFieldDirective`
+in the same scope is already the `@field` opt-out. Add the warning for the shadowed column and
+migrate the affected fixtures (29 bare-`id` sites over `baz`, plus the `shared_node` case; see
+Measured blast radius). The warning names the column, the winning interpretation, and both
+silencers.
 
-**Phase 4: reconciliation.** Rewrite `R273`'s second bullet (the deliverable is live, not dropped),
-note the reversal in `R27`, and update `METADATA_ONLY_NO_PROMOTION`'s description in
+Carry it as a `BuildWarning.LintFinding` rather than `NoRule` so it reaches
+`ValidationReport.warnings()` and the LSP replay with a fix attached, which is the same surface
+`R34` builds on. That needs a new `LintRule` constant with `Source.CLASSIFIER` (the same arm as
+`ASCONNECTION_SAME_TABLE_PK_IN`, tagged at the classifier emit site, no engine visitor, so the
+registry coverage test stays satisfied).
+
+**The two-fix shape does not currently render, and the answer is already determined.**
+`BuildWarning.LintFinding` carries `Optional<LintFix>`, singular, and `LintQuickFixes.compute` emits
+exactly one code action per finding via `finding.fix().get()`. Two silencers therefore require
+either two findings at one location or widening `LintFinding` to a list. Emit two findings: it needs
+no change to the sealed type or to the quick-fix renderer, and the two fixes are genuinely different
+advice rather than two spellings of one repair. The cost is a duplicated message line in the
+non-LSP report, which the message wording can absorb by differing per fix ("confirm with `@nodeId`"
+/ "expose the column with `@field(name: \"id\")`").
+
+**Phase 4: docs and reconciliation.** The manual edits are the ones with a consumer, so they ship
+with the phase that changes the behaviour rather than trailing it: `node.adoc`'s Constraints list
+and its new shadowed-column subsection with Phase 1 and 3, `nodeId.adoc`'s `@node`-required bullet
+with Phase 1. Drafts are under User documentation above; moving them into place is the whole of the
+docs work, which is the point of drafting them first.
+
+Then rewrite `R473` rule 1's antecedent and shim inventory (see Reconciliation work above, and note
+this is the reconciliation Phase 2 most depends on), rewrite `R273`'s second bullet (the deliverable
+is live, not dropped), note the reversal in `R27`, and update `METADATA_ONLY_NO_PROMOTION`'s
+description in
 `NodeIdPipelineTest`, which currently reads "without `implements Node @node`" and cites the stale
 collision rationale. That fixture survives unchanged, since `@table` without `implements Node` still
 stays a `TableType`.
@@ -299,9 +462,14 @@ reads the uniqueness reduction and not just the metadata probe. That stays insid
 
 ## Sequencing
 
-Phase 2 is the reason this item cannot simply queue behind `R473`: `R473` is a Backlog architecture
-item spanning input-side shims, decode-resolution polarity, and a breaking SDL migration, and
-blocking a small classifier correction on all of it would be disproportionate. Taking only rule 1's
+Phase 2 is the reason this item cannot simply queue behind `R473`. `R473` is in **Spec** (not
+Backlog, as an earlier draft of this item said), and its Phase 1 has already shipped as `R581`: the
+call sites holding an authoritative type name no longer route decode resolution through the table.
+What remains in `R473` is the inversion itself, spanning the input-side shims, decode-resolution
+polarity, and a breaking SDL migration. That is still a substantially larger surface than this item,
+so the disproportion argument survives the corrected premise, and it now has a precedent: `R581`
+carved a self-contained half out of `R473` and shipped it ahead of the rest. Phase 2 is the same
+move at a smaller scale. Taking only rule 1's
 adoption at one site is the minimum needed for Phase 1 to be coherent, and it moves in `R473`'s own
 direction rather than against it. Reviewer should confirm that reading and that `R473`'s remaining
 scope survives intact.
@@ -336,13 +504,27 @@ that changes wire output. Reviewer's call.
 - **`implements Node` + `@table` with no metadata: no change.** Decided 2026-08-04. Inference does
   not extend to deriving node identity from a primary key; metadata is a positive assertion by the
   jOOQ generator that this table has a published node identity and what its wire typeId is, whereas
-  a primary key is not. Recorded observation for Spec, since it cuts against reading this shape as
-  currently well-formed: over a table with no metadata and no literal `id` column (the `qux`
-  fixture), `implements Node @table` without `@node` classifies the type as `TableType` and rejects
-  `id: ID!` as `UnclassifiedField("column 'id' could not be resolved ...")`. Written `@node`
-  explicitly, the same shape is well-formed and resolves against the `@node`-only defaults (type
-  name for `typeId`, PK for `keyColumns`). Confirm at Spec time which of those two the non-goal is
-  meant to preserve.
+  a primary key is not.
+
+  The question of *which* reading this non-goal preserves is now settled empirically. Three
+  spellings of "no metadata" exist and they do not agree, so the non-goal has to name the one it
+  freezes:
+
+  1. `implements Node @table` + bare `id: ID!` over a table with no metadata and no literal `id`
+     column (the `qux` fixture): `TableType`, and `id` is rejected as
+     `UnclassifiedField("column 'id' could not be resolved ...")`.
+  2. The same plus explicit `@node`: well-formed, resolving against the `@node`-only defaults (type
+     name for `typeId`, PK for `keyColumns`).
+  3. **The same as (1) but with `id: ID! @nodeId` written: already well-formed and green.** Verified
+     by running `NestedConnectionElementRetentionPipelineTest`, whose
+     `type Customer implements Node @table(name: "customer") { id: ID! @nodeId }` and its `Payment`
+     sibling carry no `@node` over metadata-free sakila tables and pass on trunk.
+
+  So (1) is not the whole picture, and "legal and valid" is already true of this shape when the
+  author writes one directive at either level. The non-goal freezes all three exactly as they are:
+  inference does not fire without metadata, and (1) keeps rejecting. That is defensible precisely
+  because (3) exists, so an author who wants a node here has a working spelling that does not
+  require guessing identity from a primary key.
 - Wire format, encode/decode emission, and the `Query.node` dispatch surface are untouched.
 
 ## Test surface
@@ -367,11 +549,22 @@ that changes wire output. Reviewer's call.
   one: reachability seeding (an inferred node reachable only via `Query.node` survives registry
   pruning), arrival folding, federation `_Entity` membership or its documented absence, and the LSP
   node view.
-- The shadowing rule's four rows above, pinned on `baz` (three) and `bar` (one), plus the warning's
-  presence and absence. The first row is the behaviour change, so it is the load-bearing assertion.
-- `ClassifiedCorpus`: the `relay-node` example declares `type Film implements Node
-  @table(name: "film")` over a table with no metadata, so it is unaffected; consider a sibling
-  fixture pinning the inferred verdict.
+- The shadowing rule's five rows above, pinned on `baz` (three), `shared_node` (one) and `bar`
+  (one), plus the warning's presence and absence. Rows 1 and 4 are the behaviour change, so they are
+  the load-bearing assertions, and row 4 is the one that also proves the decode-helper name is
+  unaffected (`R377_DECODE_VIA_NODE_INDEX_NOT_TYPEID` already asserts `decodeSharedNode`, not
+  `decode10154`; that assertion must still hold after the flip).
+- Re-measure the fixture census at pickup rather than trusting the counts above. The scan that
+  produced them walks `.java` and `.graphqls` sources for
+  `type X implements Node @table(name: "baz") ... { ... }`, classifies the `id` field as bare,
+  `@nodeId`-pinned or `@field`-pinned, and must handle multi-line declarations, which a single-line
+  grep silently drops (that undercount is what produced the earlier figures of 22 and 3).
+- **The five no-`@node` canaries must stay green untouched**, and their staying green is a weaker
+  signal than it looks: `NestedConnectionElementRetentionPipelineTest`'s two `Customer`/`Payment`
+  schemas and `ClassifiedCorpus`'s `relay-node` `Film` are safe only because `customer`, `payment`
+  and `film` carry no metadata. Assert them, but do not read them as coverage of the inference path.
+  Consider a `ClassifiedCorpus` sibling over a metadata-bearing table pinning the inferred verdict,
+  which is the only way that corpus exercises this item at all.
 - Execution tier: the `film_actor` NodeId round-trip already exists (`GraphQLQueryTest`'s
   `filmActorByNodeId`); a variant with `@node` dropped from the SDL proves inference end to end.
 
