@@ -2,7 +2,14 @@
 :description: Opt a type into Relay Global Object Identification, producing opaque, table-keyed global IDs.
 :!toc:
 
-Marks a type as a Relay https://graphql.org/learn/global-object-identification/[Global Object Identification] node. Every `@node`-decorated type gets a synthesised opaque ID encoding `(typeId, primary-key columns)`; xref:nodeId.adoc[`@nodeId`] fields encode and decode that ID. The `Query.node(id:)` and `Query.nodes(ids:)` entry points dispatch by `typeId` prefix to the matching `@node` type's table at runtime.
+Supplies the two identity parameters of a Relay https://graphql.org/learn/global-object-identification/[Global Object Identification] node: the `typeId` embedded in the ID, and the `keyColumns` it encodes.
+
+Two sentences carry the whole model:
+
+* `implements Node` declares nodehood.
+* `@node` supplies or overrides `typeId` and `keyColumns`. When the bound jOOQ class has already published them, `@node` is optional.
+
+A node type gets a synthesised opaque ID encoding `(typeId, keyColumns)`; xref:nodeId.adoc[`@nodeId`] fields encode and decode that ID, and the node's own `id:` field needs no directive. The `Query.node(id:)` and `Query.nodes(ids:)` entry points dispatch by `typeId` prefix to the matching node type's table at runtime.
 
 `@node` only takes effect on types that also carry xref:table.adoc[`@table`]; the global ID embeds primary-key (or unique-key) columns from the bound table.
 
@@ -100,14 +107,46 @@ type Customer implements Node @table(name: "customer") @node(typeId: "46") @key(
 
 Only the `typeId` values have to differ; the two types may embed the same `keyColumns`. Once a second `@node` covers the table, `@nodeId` can no longer infer which of them a leaf means from the table alone, so every leaf that is not the node's own `id:` field names its type with xref:nodeId.adoc[`@nodeId(typeName:)`]. A named leaf reads `typeId` and `keyColumns` off the type it names, so the two node types stay independent regardless of how many share the table.
 
+== Inferring the identity parameters
+
+When the bound table's generated jOOQ class publishes node metadata, `@node` has nothing left to say and can be omitted:
+
+[source,graphql]
+----
+type Studieprogram implements Node @table(name: "studieprogram") {
+    id: ID!
+    navn: String
+}
+----
+
+`typeId` and `keyColumns` come from the catalog. The type is a node, `Query.node(id:)` can return it, and `id` publishes the encoded global ID, with no directive written anywhere. Sikt's `KjerneJooqGenerator` publishes this metadata for every table that carries a platform node identity.
+
+Two boundaries are worth knowing:
+
+* `implements Node` is what opts the type in. `@table` plus metadata and *no* interface stays an ordinary table type, which is what lets a nesting projection sit over a node-bearing table without becoming a second node.
+* `@node` still wins on any axis it names. Write `@node(typeId: "46")` to pin a wire `typeId` different from the published one; the key columns still come from the catalog.
+
+=== When the table has its own `id` column
+
+A table can publish node metadata *and* have a column literally named `id`. The node ID wins: the field publishes the encoded global ID, not the raw column value, and the build warns that the column is shadowed. Silence it by stating the choice:
+
+[source,graphql]
+----
+type Doc implements Node @table(name: "doc") { id: ID! @nodeId }             # the global ID (default)
+type Doc implements Node @table(name: "doc") { id: ID! @field(name: "id") }  # the raw column
+----
+
+xref:field.adoc[`@field`] is the escape hatch for exposing the column itself. Note that a type whose `Node.id` is a raw column cannot round-trip through `Query.node(id:)`.
+
 == Constraints
 
 * The decorated type must also carry xref:table.adoc[`@table`]; the bound table supplies the columns to embed.
-* The type must implement the `Node` interface (`type X implements Node ...`). Without the interface, `Query.node(id:)` cannot return the type.
-* The type must declare an `id: ID!` field decorated with xref:nodeId.adoc[`@nodeId`]. The directive on the type alone does not produce the ID; the field-level marker tells the generator which slot is the ID.
+* The type must implement the `Node` interface (`type X implements Node ...`). Without the interface, `Query.node(id:)` cannot return the type, and `@node` alone is rejected.
+* `@node` itself is *optional* when the bound jOOQ class publishes node metadata. `implements Node @table(name: "x")` is then a complete node declaration and takes both values from the catalog; see <<Inferring the identity parameters>>. Write `@node` when the generator has published nothing, or to override either value.
+* The node's own `id: ID!` field does not need xref:nodeId.adoc[`@nodeId`]. The `id` field satisfying the `Node` interface on a node type is a node ID by construction. Other `ID` slots still require the directive.
 * `keyColumns` must form a primary key or another unique key on the bound table. The build fails if the columns don't form a unique constraint.
 * `keyColumns` ordering matters and is part of the ID's wire format; reordering breaks already-issued IDs.
-* `typeId` collisions across types are rejected at startup. If two types share a `typeId` (whether explicit or defaulted), `Query.node(id:)` cannot dispatch unambiguously.
+* `typeId` collisions across types are rejected at build time, whether the `typeId` is written, defaulted, or taken from catalog metadata. If two types share a `typeId`, `Query.node(id:)` cannot dispatch unambiguously.
 
 == Editor support
 

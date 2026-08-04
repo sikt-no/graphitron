@@ -1874,8 +1874,15 @@ input FilmActorKey {
     actorId: Int! @field(name: "actor_id")
 }
 
-type FilmActor implements Node @table(name: "film_actor") @node {
-    id:      ID!  @nodeId
+# Deliberately the *inferred* node spelling: `film_actor`'s generated jOOQ class publishes
+# __NODE_TYPE_ID / __NODE_KEY_COLUMNS (see NodeIdFixtureGenerator, which models Sikt's
+# KjerneJooqGenerator), so `implements Node @table` is a complete node declaration and the `id`
+# field satisfying the Node interface needs no @nodeId. This is the one place in this schema where
+# inference applies, and the filmActorByNodeId round-trip in GraphQLQueryTest is what proves it
+# end to end: real generated code, real encode/decode, real database. The declared spelling over
+# the same metadata-carrying table is covered by federated-schema.graphqls's own FilmActor.
+type FilmActor implements Node @table(name: "film_actor") {
+    id:      ID!
     filmId:  Int! @field(name: "film_id")
     actorId: Int! @field(name: "actor_id")
     # R285 lift-back fixture: a @reference sub-field (correlated multiset, not a stored column)

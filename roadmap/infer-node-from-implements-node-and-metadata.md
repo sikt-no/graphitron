@@ -380,6 +380,58 @@ covering the fourteen existing rules (9 `ENGINE`, 3 `CLASSIFIER`, 2 `CODEGEN`) a
 Backlog item. Flagged here so the omission is
 a decision rather than an oversight.
 
+## What shipped, and where it departed from this plan
+
+Implemented 2026-08-04. The four phases landed as one change; the plan's own recommendation on
+splitting is under Sequencing and is unchanged by the outcome.
+
+Two departures worth reading, both narrower than the plan expected:
+
+1. **One lint finding, not two.** Phase 3 called for two `BuildWarning.LintFinding`s at the shadowed
+   field so each silencer could carry its own `LintFix`. Neither fix is attachable: both are directive
+   insertions *after* the field's type, and graphql-java records a type node's start location but not
+   its end, so the insertion point for `id: ID!` (where the `!` may be separated by whitespace) is not
+   derivable from source locations. `LintFix`'s own rule is that a finding whose edit cannot be
+   computed safely carries `Optional.empty()`. With no fix to attach, the fork the plan was resolving
+   does not arise, and one finding naming both silencers beats two identical lines in the report. The
+   quick-fix surface is `R34`'s to build, and it will have to solve directive-insertion positioning
+   for its own hints anyway.
+2. **The decode-helper one-to-two transition is only half reachable, and the plan named the wrong
+   half as urgent.** The transition itself is real and now pinned, but not from the site the plan
+   pointed at: a call site holding an authoritative type name resolves its decode helper by name since
+   `R581`, so the input leaf in the `shared_node` fixture is unaffected by how many nodes back the
+   table. What remains reachable is the shape where the table has no column matching the input field,
+   which is what `NodeIdPipelineTest`'s existing multi-node rejection case already used. The
+   *zero-to-one* direction turned out to be the quieter and more interesting one and is pinned too:
+   adding `implements Node` to an output type changes an input leaf's emitted helper from the
+   typeId-suffixed fallback (`decodeBar`) to the type-name-keyed one (`decodeFoo`), which is a codegen
+   change at a coordinate naming nothing this item touches.
+
+Deliberately not done, and not an oversight:
+
+- **No `ClassifiedCorpus` sibling.** The Test surface listed it as "consider". The verdicts are pinned
+  by `NodeInferencePipelineTest` instead; adding a corpus example means authoring a dimension tuple
+  and satisfying the corpus's own coverage and doc-render gates, which is a documentation deliverable
+  rather than coverage this change is missing. The existing `relay-node` example is unaffected either
+  way, since `film` publishes no metadata.
+- **No lint-rule inventory page.** Filed as `R592` (`roadmap/lint-rule-reference-page.md`), as the
+  User documentation section said it should be. The shadowing warning is documented where an author
+  hits it, in `node.adoc`'s shadowed-column subsection.
+
+The three fixture tables the plan predicted would be needed all were: `collide_a` / `collide_b`
+publish a shared `__NODE_TYPE_ID` (without them an inferred collision cannot be written at all, since
+every other fixture typeId is distinct), and `plain_id` / `keyed_elsewhere` cover the shadowing rule's
+two remaining shapes, a node whose key columns came from the primary key rather than the catalog, and
+a shadowed column that is not a key column. The census re-measured at pickup matches the figures
+below exactly: 29 bare-`id` sites over `baz`, 13 already `@nodeId`-pinned, one over `shared_node`.
+
+**The sis census under Evidence required was not performed.** It cannot be answered from this
+repository, and the user directed implementation with that open. It remains the item's one unverified
+safety claim: if a meaningful number of sis types pair `implements Node` with tables sharing a
+`__NODE_TYPE_ID`, this change produces a diagnostic per member of each colliding group. The gate now
+reads as a pre-rollout check rather than a pre-implementation one, and the mitigation is unchanged:
+`@node(typeId:)` on one side of each group, which the collision message names.
+
 ## Implementation plan
 
 **Phase 1: inference, and the predicate it splits.** In `TypeBuilder.buildTableType`, replace the

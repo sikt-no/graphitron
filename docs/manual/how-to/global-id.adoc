@@ -159,7 +159,8 @@ Both entry points only project the fields the client actually selects. The frame
 == Constraints and pitfalls
 
 * `@node` requires the type to also carry xref:../reference/directives/table.adoc[`@table`] and to implement the `Node` interface. The build rejects bare `@node` and `@node` on non-`Node`-implementing types.
-* `id: ID!` plus xref:../reference/directives/nodeId.adoc[`@nodeId`] is required on every `@node` type. The directive on the type alone does not produce the ID; the field-level marker tells the generator which slot is the ID.
+* `@node` itself is optional when the bound jOOQ class publishes `__NODE_TYPE_ID` / `__NODE_KEY_COLUMNS`: `implements Node @table(name: "x")` is a complete node declaration and takes both values from the catalog. `@table` plus metadata *without* the interface is still an ordinary table type.
+* `id: ID!` is required on every node type, but xref:../reference/directives/nodeId.adoc[`@nodeId`] on it is not: the field satisfying the `Node` interface is a node ID by construction. When the bound table also has a column literally named `id`, the node ID wins and the build warns that the column is shadowed; write `@nodeId` to confirm, or xref:../reference/directives/field.adoc[`@field(name: "id")`] to expose the raw column instead.
 * `keyColumns:` must form a primary key or another unique key. Reordering the columns changes the ID's wire format; treat the order as part of the public contract.
 * `typeId:` collisions across types are rejected at build time. If you need two GraphQL types to share a backing table, give each a distinct `typeId`.
 * `@nodeId` is a binding directive, not a projection. The slot's GraphQL type must be `ID!`, `ID`, `[ID!]`, or `[ID!]!`.

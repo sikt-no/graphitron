@@ -97,16 +97,16 @@ A nullable (`ID`) field follows jOOQ's changed-flag contract: an omitted key lea
 
 == Constraints
 
-* The named or inferred type must carry xref:node.adoc[`@node`]. The build fails when `typeName:` resolves to a non-node type.
+* The named or inferred type must be a node type: either it carries xref:node.adoc[`@node`], or it declares `implements Node` over a table whose jOOQ class publishes node metadata. The build fails when `typeName:` resolves to a non-node type.
 * `typeName:` is required when neither inference rule fires: when the field's type is not the containing type and no `@reference` provides an unambiguous target table.
-* `@nodeId` does not stand alone on a non-`@node` field as the type's identity. Use it on the `id: ID!` field of a `@node` type, or on slots that *reference* a node from elsewhere.
+* `@nodeId` does not stand alone on a non-node type as its identity. Use it on the `id: ID!` field of a node type, or on slots that *reference* a node from elsewhere. On a node's own `id:` field the directive is optional: that field is a node ID by construction.
 * On `[ID!]` arguments where `typeName` matches the surrounding query's return-type table, xref:lookupKey.adoc[`@lookupKey`] is implied; an explicit `@lookupKey` is permitted but redundant.
 * Decode-time ID/typeId mismatch fails the request with a GraphQL error; same with malformed base64.
 * `@nodeId` is a binding directive, not a projection. The slot's GraphQL type must be `ID!`, `ID`, `[ID!]`, or `[ID!]!` (lists are valid for batch decode).
 
 == Editor support
 
-The graphitron LSP completes `typeName:` against the set of types that declare xref:node.adoc[`@node`] in the schema; typing into the empty quoted value offers every node-bearing type, and a value that does not resolve to one surfaces as an error inline. Hover on a resolved `typeName:` shows the type's `typeId` and key-column list, pulling each column's GraphQL type from xref:field.adoc[`@field`] / xref:table.adoc[`@table`] metadata.
+The graphitron LSP completes `typeName:` against the schema's node types, whether they declare xref:node.adoc[`@node`] or take their identity from catalog metadata; typing into the empty quoted value offers every node-bearing type, and a value that does not resolve to one surfaces as an error inline. Hover on a resolved `typeName:` shows the type's `typeId` and key-column list, pulling each column's GraphQL type from xref:field.adoc[`@field`] / xref:table.adoc[`@table`] metadata.
 
 == See also
 
