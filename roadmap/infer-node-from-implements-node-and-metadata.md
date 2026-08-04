@@ -1,13 +1,13 @@
 ---
 id: R580
 title: "Infer @node from `implements Node` + __NODE_* metadata"
-status: Backlog
+status: Spec
 bucket: architecture
 priority: 8
 theme: nodeid
 depends-on: []
 created: 2026-08-03
-last-updated: 2026-08-03
+last-updated: 2026-08-04
 ---
 
 # Infer @node from `implements Node` + __NODE_* metadata
@@ -47,26 +47,37 @@ Unchanged on every other axis:
 - **`@node` without `implements Node` is still rejected**, and the unconditional malformed-metadata
   diagnostic still runs ahead of everything.
 
-## Why the recorded objection is stale
+## The collision hazard, and why `implements Node` is load-bearing
 
 `TypeBuilder.buildTableType`'s comment justifies opt-in promotion on the grounds that inferring from
 metadata "would silently collide typeIds across types whose backing tables share `__NODE_TYPE_ID`,
-with no SDL-side opt-out". Both halves are false as the code stands:
+with no SDL-side opt-out". That is not a hypothetical: `R27`'s History section records the incident
+behind it. A metadata-only auto-promotion shim lived at this exact site and was retired on consumer
+feedback after roughly 200 sis event types, all backed by tables sharing
+`__NODE_TYPE_ID = "195"`, promoted in lockstep and were then symmetrically demoted to
+`UnclassifiedType` by `TypeBuilder.validateNodeTypeIdUniqueness`. A working build became hundreds of
+simultaneous errors.
 
-- Not silent. `TypeBuilder.validateNodeTypeIdUniqueness` (run from `finishTypeClassification`)
-  already groups every classified `NodeType` by `typeId` and registers a build-time diagnostic on
-  each member of a colliding group, which the validator drains and which fails the build before
-  generation. An inferred collision lands in exactly that check, because inference produces ordinary
-  `NodeType`s.
-- Not without opt-out. That check's own message already names the escape hatch: "pick one via
-  `@node(typeId:)`". Explicit `@node` continues to override inference, so the author resolves a
-  collision by declaring the directive on one of the two types.
+Two things separate that shim from this proposal, and the item stands or falls on the first:
 
-So the hazard the opt-in rule was protecting against is already a handled, diagnosed, author-fixable
-condition, while the protection itself costs every correctly-declared node an unexplained rejection.
-Spec should confirm the collision message reads sensibly when one or both sides are inferred (it
-currently says "is declared on multiple types", which is imprecise for an inferred typeId) and add a
-pipeline case for the inferred-collision shape.
+1. **The retired shim promoted on metadata alone. This one requires `implements Node`.** A `@table`
+   event type that never published the Relay contract does not promote here, so the lockstep
+   promotion that caused the incident does not occur for those ~200 types unless they also declare
+   `implements Node`. This is the central safety claim and it is **unverified against the real sis
+   schema**; see Evidence required below. If a meaningful number of sis types do pair
+   `implements Node` with tables sharing a typeId, this item reproduces the incident in miniature
+   and the design needs a per-collision-group fallback rather than a mass rejection.
+2. **The collision is diagnosed, not silent, and has a stated opt-out.**
+   `validateNodeTypeIdUniqueness` registers a build-time diagnostic naming every member of a
+   colliding group, and its message already names the escape hatch: "pick one via `@node(typeId:)`".
+   Explicit `@node` continues to override inference. This is real mitigation but it does not scale
+   to a 200-type lockstep group, which is precisely what the incident demonstrated: a diagnostic per
+   colliding type is not a usable migration when the group is that large. Treat this as a reason the
+   failure is *legible*, not a reason it is *acceptable*.
+
+Spec should also confirm the collision message reads sensibly when one or both sides are inferred
+(it currently says "is declared on multiple types", which is imprecise for an inferred typeId) and
+add a pipeline case for the inferred-collision shape.
 
 ## Relationship to the nodeId grammar track
 
@@ -81,15 +92,29 @@ reading conflates two axes, and the distinction is what makes this change safe t
   parameters filled in from the catalog. The declaration of nodehood stays in SDL, where `R473`
   wants it; only `typeId` and `keyColumns` are sourced from the generator that owns them.
 
-`R473` rule 1 is in fact the direct precedent, not an obstacle: "`Node.id` is the only implicit
+`R473` rule 1 is the direct precedent for the shape of the argument: "`Node.id` is the only implicit
 nodeId. The `id` field satisfying the `Node` interface on a type declared `implements Node @node` is
-obviously a nodeId and obviously of the enclosing type. The directive is redundant there." That is
-already live behaviour, confirmed against the `bar` fixture: `implements Node @table @node` with a
-bare `id: ID!` classifies as `ColumnBackedField` carrying
-`compaction=NodeIdEncodeKeys(encodeFoo)` over both key columns, with no `@nodeId` written. This item
+obviously a nodeId and obviously of the enclosing type. The directive is redundant there." This item
 extends the same "obviously" one step outward, from the `id` field to the `@node` directive itself:
 where the jOOQ generator has published the node identity and the author has published the Node
-contract, restating the two values is the same redundancy `R473` already removed at the field level.
+contract, restating the two values is the same redundancy `R473` removes at the field level.
+
+**But that behaviour is a deprecated shim today, and this item cannot ship on top of it unchanged.**
+Bare `Node.id` does encode without `@nodeId` (confirmed against `bar`: `implements Node @table @node`
+with a bare `id: ID!` classifies as `ColumnBackedField` with
+`compaction=NodeIdEncodeKeys(encodeFoo)` over both key columns). It does so through `R27` Shim 1
+site A, the branch at `FieldBuilder.java:7255-7265`, which fires a per-occurrence deprecation WARN
+("declare `@nodeId` explicitly. The synthesis shim will be removed in a future release") and which
+`R27` is chartered to delete and flip to a terminal classifier error. So on current trunk an
+inferred node type would infer its own `@node`, then warn on its own `id` field that the author
+should have written a directive, and would hard-fail once `R27` lands.
+
+That is incoherent, so this item owns the reconciliation: adopt `R473` rule 1 at that site, making
+the implicit `Node.id` carrier permanent for `NodeType` parents and dropping its deprecation WARN,
+while leaving the other two shim sites (the input-scalar arm and the FK-qualifier arm) untouched for
+`R27` to retire. The alternative, sequencing strictly behind `R473`, is discussed under Sequencing.
+No test asserts the WARN's text (the two `*WarnFormatTest` classes cover the `@asConnection`
+same-table and id-reference warnings, not this one), so dropping it is contained.
 
 Reconciliation work this item owns at Spec time:
 
@@ -131,6 +156,74 @@ The precedence the rule needs already exists and needs no new machinery: both si
 today (rows 2 and 3 above), so the work is flipping the default when metadata is present and adding
 the warning. Spec should also cover the variant with no fixture yet, a table whose metadata keys on
 columns *other* than a literal `id` column that also exists, where the same shadowing applies.
+
+The single implementation site is the column-lookup-first ordering at `FieldBuilder.java:7247-7271`:
+`svc.resolveColumn(columnName, tableType)` runs before the `NodeType` arm, so a successful lookup
+short-circuits to `Direct` and the node interpretation never gets a turn. The fix is to give the
+`NodeType` + Node-interface-`id` + no-field-directive case precedence over the column hit, and warn
+when the column existed. `hasFieldDirective` (line 7208) is already the `@field` opt-out.
+
+**Measured blast radius, which is why this may want to be its own item.** In-repo, inference itself
+flips nothing: all 17 `implements Node` declarations across the SDL fixtures already carry `@node`,
+so the new inference path needs new fixtures to be exercised at all. The shadowing rule is the
+opposite. 22 test fixtures write `type Baz implements Node @table(name: "baz") @node { id: ID! }`,
+which is exactly row 1, so every one of them flips its `id` from raw column to encoded and changes
+generated output. Three more already write `id: ID! @nodeId` on the same shape, which is fixture
+authors hand-applying the silencer, and is independent evidence that the current default is the
+wrong one. Splitting decision goes to the reviewer; see Sequencing.
+
+## Implementation plan
+
+**Phase 1: inference.** In `TypeBuilder.buildTableType`, replace the `hasNode` early return
+(`TypeBuilder.java:1308-1311`) with a gate that also admits `implementsNode(objType) &&
+metadata.isPresent()`, routing that case to `buildNodeType` with the metadata's `typeId` and
+`keyColumns`. The existing SDL-versus-metadata merge below stays reachable only when `@node` is
+present, unchanged. Rewrite the comment at `:1294-1299`, which states the retired policy and the
+rationale this item revises.
+
+**Phase 2: adopt the `Node.id` rule.** At `FieldBuilder.java:7255-7265`, drop the deprecation WARN
+and restate the branch as the permanent `R473` rule-1 carrier rather than a shim awaiting deletion.
+Leave the other two `R27` shim sites alone. Coordinate the wording so `R27`'s inventory stays
+accurate.
+
+**Phase 3: the shadowing rule.** Reorder the column lookup and the `NodeType` arm as described
+above, add the warning for the shadowed column, and migrate the 22 affected fixtures. The warning
+names the column, the winning interpretation, and both silencers. Carry it as a
+`BuildWarning.LintFinding` rather than `NoRule` so it reaches `ValidationReport.warnings()` and the
+LSP replay with a fix attached, which is the same surface `R34` builds on; that also means it needs
+a `LintRule` and a `LintFix` per silencer, and the two-fix shape should be checked against what
+`LintQuickFixes.compute` can currently render.
+
+**Phase 4: reconciliation.** Rewrite `R273`'s second bullet (the deliverable is live, not dropped),
+re-scope `R34` step 3 to the narrower `implements Node`-missing hint, note the reversal in `R27`,
+and update `METADATA_ONLY_NO_PROMOTION`'s description in `NodeIdPipelineTest`, which currently reads
+"without `implements Node @node`" and cites the stale collision rationale. The fixture itself
+survives unchanged, since `@table` without `implements Node` still stays a `TableType`.
+
+## Sequencing
+
+Phase 2 is the reason this item cannot simply queue behind `R473`: `R473` is a Backlog architecture
+item spanning input-side shims, decode-resolution polarity, and a breaking SDL migration, and
+blocking a small classifier correction on all of it would be disproportionate. Taking only rule 1's
+adoption at one site is the minimum needed for Phase 1 to be coherent, and it moves in `R473`'s own
+direction rather than against it. Reviewer should confirm that reading and that `R473`'s remaining
+scope survives intact.
+
+The open split question for the reviewer: Phase 3 changes behaviour on the **existing explicit
+`@node` path** and carries the entire measured blast radius, while Phases 1 and 2 flip nothing
+in-repo. A reviewer who wants the inference landed cleanly may prefer Phase 3 carved into its own
+item, at the cost of leaving the raw-column-as-global-id defect live longer and of the two items
+touching the same `FieldBuilder` block in sequence.
+
+## Evidence required before this leaves Ready
+
+1. **The sis verification.** Count the types in the sis schema that declare `implements Node` over a
+   `@table` whose backing class carries `__NODE_TYPE_ID`, grouped by typeId, and confirm no group
+   has more than one member. This is the direct test of the safety claim above and cannot be
+   answered from this repo. If any group has more than one member, bring the count and the shape
+   back to Spec before implementing.
+2. **A shadowing sweep of the consumer schemas** for types over tables that carry metadata and also
+   have a column named `id`, since those are the sites whose wire values change.
 
 ## Non-goals
 
