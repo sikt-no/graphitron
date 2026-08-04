@@ -333,8 +333,10 @@ Everything else follows from that one sentence, which is the sign the design is 
   directive.
 * `keyColumns` must form a primary key or another unique key on the bound table.
 * `keyColumns` ordering matters and is part of the ID's wire format.
-* `typeId` collisions across types are rejected at startup, whether the `typeId` is written,
-  defaulted, or taken from catalog metadata.
+* `typeId` collisions across types are rejected at build time, whether the `typeId` is written,
+  defaulted, or taken from catalog metadata. (The current page says "at startup"; `global-id.adoc`
+  already says "at build time" for the same fact, so this edit settles a pre-existing inconsistency
+  in the bullet it was rewriting anyway.)
 
 ### Draft: `node.adoc`, new subsection "When the table has its own `id` column"
 
@@ -374,7 +376,8 @@ three error prefixes (`[author-error]`, `[invalid-schema]`, `[deferred]`) and en
 `diagnostics` tool already projects onto the wire. The shadowing warning has no glossary-shaped home
 to go into. This item documents the warning where an author will actually hit it (the `node.adoc`
 subsection above) and does **not** grow a lint-rule inventory page, which is a separate deliverable
-covering fifteen existing rules and should be its own Backlog item. Flagged here so the omission is
+covering the fourteen existing rules (9 `ENGINE`, 3 `CLASSIFIER`, 2 `CODEGEN`) and should be its own
+Backlog item. Flagged here so the omission is
 a decision rather than an oversight.
 
 ## Implementation plan
@@ -474,6 +477,17 @@ adoption at one site is the minimum needed for Phase 1 to be coherent, and it mo
 direction rather than against it. Reviewer should confirm that reading and that `R473`'s remaining
 scope survives intact.
 
+**A gap this item deliberately leaves open.** With all three no-metadata spellings settled (see
+Non-goals), `implements Node @table` over a table with no `__NODE_*` metadata is a trap in every
+spelling except explicit `@node`, and neither failing message names `@node` as the fix. Spelling
+(1)'s "column 'id' could not be resolved; did you mean: ..." actively misdirects toward
+`@field(name:)`, which is the same misdiagnosis this item's opening complains about, just on the
+metadata-absent branch instead of the metadata-present one. This item fixes the metadata-present
+branch and leaves the other alone, so the trap survives in narrower form. Filed as `R588`
+(`roadmap/node-without-metadata-diagnostics.md`), Backlog, diagnostics only. It is not a blocker
+here, and folding it in would mix a classification change with a message change. It gets easier
+after this item lands, since the message can then contrast against an inference path that exists.
+
 **On splitting Phase 3 out.** The case for it is that Phase 3 changes behaviour on the existing
 explicit `@node` path and carries the entire measured blast radius, so it reviews and migrates
 separately. The case against, which currently looks stronger: Phases 1 and 3 are one precedence
@@ -506,25 +520,38 @@ that changes wire output. Reviewer's call.
   jOOQ generator that this table has a published node identity and what its wire typeId is, whereas
   a primary key is not.
 
-  The question of *which* reading this non-goal preserves is now settled empirically. Three
-  spellings of "no metadata" exist and they do not agree, so the non-goal has to name the one it
-  freezes:
+  The question of *which* reading this non-goal preserves is settled by classifying the three
+  spellings of "no metadata" directly. Only one of them works:
 
   1. `implements Node @table` + bare `id: ID!` over a table with no metadata and no literal `id`
      column (the `qux` fixture): `TableType`, and `id` is rejected as
      `UnclassifiedField("column 'id' could not be resolved ...")`.
   2. The same plus explicit `@node`: well-formed, resolving against the `@node`-only defaults (type
-     name for `typeId`, PK for `keyColumns`).
-  3. **The same as (1) but with `id: ID! @nodeId` written: already well-formed and green.** Verified
-     by running `NestedConnectionElementRetentionPipelineTest`, whose
-     `type Customer implements Node @table(name: "customer") { id: ID! @nodeId }` and its `Payment`
-     sibling carry no `@node` over metadata-free sakila tables and pass on trunk.
+     name for `typeId`, PK for `keyColumns`). **This is the only working spelling.**
+  3. The same as (1) but with `id: ID! @nodeId` written: also **rejects**, from `FieldBuilder`'s
+     `@nodeId`-on-non-`NodeType` arm, with
+     `Structural("@nodeId requires the containing type to be a node type (via @node or KjerneJooqGenerator metadata)")`.
 
-  So (1) is not the whole picture, and "legal and valid" is already true of this shape when the
-  author writes one directive at either level. The non-goal freezes all three exactly as they are:
-  inference does not fire without metadata, and (1) keeps rejecting. That is defensible precisely
-  because (3) exists, so an author who wants a node here has a working spelling that does not
-  require guessing identity from a primary key.
+  A caution about (3), because an earlier revision of this item got it wrong in a way worth not
+  repeating. `NestedConnectionElementRetentionPipelineTest` carries exactly shape (3)
+  (`type Customer implements Node @table(name: "customer") { id: ID! @nodeId }` plus a `Payment`
+  sibling, over metadata-free sakila tables) and is green on trunk. That is not evidence the shape
+  is well-formed: the test never asserts the `id` field, and `TestSchemaHelper.buildBundle` does not
+  run the validator, so a rejected field rides through a passing test silently. Classify the shape,
+  do not run a test that happens to contain it.
+
+  So the non-goal freezes all three exactly as they are: inference does not fire without metadata,
+  and (1) and (3) keep rejecting. The "metadata is a positive assertion by the jOOQ generator, a
+  primary key is not" argument carries this on its own, and does not need a second working spelling
+  to lean on. What it costs is real and should be stated plainly: over a metadata-free table,
+  explicit `@node` is the only way to declare a node, and the two other spellings an author would
+  naturally try both fail. See the diagnostic-quality note under Sequencing.
+
+  One detail worth carrying into implementation: (3)'s message already reads
+  "via `@node` **or KjerneJooqGenerator metadata**". It was written for the semantics this item
+  introduces and is currently accurate about a path that does not exist yet. After Phase 1 it
+  becomes true as written, which is a small piece of evidence that inference is the behaviour the
+  codebase already expected.
 - Wire format, encode/decode emission, and the `Query.node` dispatch surface are untouched.
 
 ## Test surface
@@ -559,12 +586,18 @@ that changes wire output. Reviewer's call.
   `type X implements Node @table(name: "baz") ... { ... }`, classifies the `id` field as bare,
   `@nodeId`-pinned or `@field`-pinned, and must handle multi-line declarations, which a single-line
   grep silently drops (that undercount is what produced the earlier figures of 22 and 3).
-- **The five no-`@node` canaries must stay green untouched**, and their staying green is a weaker
-  signal than it looks: `NestedConnectionElementRetentionPipelineTest`'s two `Customer`/`Payment`
-  schemas and `ClassifiedCorpus`'s `relay-node` `Film` are safe only because `customer`, `payment`
-  and `film` carry no metadata. Assert them, but do not read them as coverage of the inference path.
-  Consider a `ClassifiedCorpus` sibling over a metadata-bearing table pinning the inferred verdict,
-  which is the only way that corpus exercises this item at all.
+- **The five no-`@node` canaries: pin the rejection, not the green build.** Four of the five
+  (`NestedConnectionElementRetentionPipelineTest`'s two `Customer`/`Payment` schemas) carry an `id`
+  field that is *already rejected* today, and their host test is green only because it never asserts
+  that field and `TestSchemaHelper.buildBundle` skips the validator. Writing green-at-field-level
+  assertions there will fail. The correct pin is that this item changes nothing at that shape: the
+  type stays `TableType` and `id` stays an `UnclassifiedField`, with the two distinct messages kept
+  apart, `@nodeId requires the containing type to be a node type` for the `Customer`/`Payment` pair
+  and `column 'id' could not be resolved` for spelling (1) over `qux`. Assert through a helper that
+  runs the validator, since the pipeline helper these tests use does not.
+- `ClassifiedCorpus`'s `relay-node` `Film` is the fifth canary and the only one whose `id` is bare
+  over a metadata-free table. Unaffected either way. Consider a sibling over a metadata-bearing
+  table pinning the inferred verdict, which is the only way that corpus exercises this item at all.
 - Execution tier: the `film_actor` NodeId round-trip already exists (`GraphQLQueryTest`'s
   `filmActorByNodeId`); a variant with `@node` dropped from the SDL proves inference end to end.
 
