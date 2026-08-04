@@ -100,8 +100,9 @@ the strict rule; the alternative is the reviewer's to reopen.
 with a `check-adoc-xrefs` mode in `Main` and a `AdocXrefAnchorCheckTest`, matching the shape of the three
 sibling checks (`check-adoc-tables`, `check-transient-citations`, `check-module-enumeration`).
 
-Invoke it, however, from the **docs** module against `${project.build.directory}/staging` after the
-`stage-adoc` execution, not from `roadmap-tool` against the source tree. This is the one real fork in the
+Invoke it, however, from the **docs** module against `${project.build.directory}/staging` once staging is
+fully populated (after `stage-adoc` and after `render-roadmap-adoc`), not from `roadmap-tool` against the
+source tree. This is the one real fork in the
 item and the reason is path resolution: `stage-adoc` flattens two source roots into one tree (`docs/<rest>`
 → `staging/<rest>`, but repo-root `roadmap/` → `staging/roadmap/`, with roadmap `.md` rendered to `.adoc`),
 and `docs/` genuinely references across that seam (`docs/index.adoc:89` and `docs/architecture/index.adoc:37`
@@ -110,28 +111,44 @@ still could not resolve a target that only exists as `.adoc` post-render. Runnin
 resolution free and exact, because it is the same tree asciidoctor resolves against. Note this inverts
 `AdocMarkdownTableCheck`'s deliberate `target/` skip, so say why in the javadoc.
 
-Cost: the gate does not run under `-P!docs`. Acceptable and consistent, on the same footing as `-Pquick`
-skipping the javadoc reference gate.
+**Bind it in the docs module's base build, not inside the `docs` profile,** and there is no `-P!docs` hole
+to accept. Only the `render-site` execution lives in that profile (`docs/pom.xml:281-373`); `stage-adoc`,
+`stage-theme-css` and `render-roadmap-adoc` are all base-build steps that populate staging under `-P!docs`
+too. A second `exec-maven-plugin` execution declared after `render-roadmap-adoc` at `process-resources`
+therefore gates every build. The check reads staged `.adoc` sources rather than rendered HTML, so skipping
+the AsciiDoctor render costs it nothing.
 
 **Quoted xref syntax counts as a reference, and that is correct.** Staging includes `staging/roadmap/`, so
 roadmap prose is in the scan, and prose about xrefs quotes xref syntax. A single-backtick span applies
 AsciiDoc's normal substitution group, macros included, so wrapping an xref macro in backticks renders a
 live link, not literal text; only a plus-delimited passthrough inside the span suppresses it. The gate
-should therefore treat it as a reference and the *prose* is what gets fixed. This item's own body is the
-first instance: the
-deliberately-dangling illustration in "Why a gate and not just the sweep", plus the two `<file>`
-placeholders, stage as cross-file anchored references and will fail the gate on the commit that adds it.
-Rewrite them as passthrough rather than teaching the check to skip inline monospace, which would blind it
-to the same mistake in ordinary prose.
+should therefore treat it as a reference and the *prose* is what gets fixed, rather than teaching the check
+to skip inline monospace, which would blind it to the same mistake in ordinary prose.
 
-Two things to keep straight about that. First, the alternative of scoping `staging/roadmap/` out of the
+Exactly one line of this item's own body is such a macro, not three. Asciidoctor's inline xref macro
+requires an attrlist and a target opening on a word character or a colon, so the two `<file>.adoc#anchor`
+placeholders (no brackets, and a target opening on `<`) already render literally and are invisible to
+Asciidoctor and to any Asciidoctor-faithful gate. Scanning `docs/target/staging` picks up only the
+`zzz-no-such-cross-anchor` illustration in "Why a gate and not just the sweep". That one is a live link on
+a published page and should be rewritten as a passthrough on rendering grounds, but it is not what fails
+the gate: staged at `staging/roadmap/plans/`, its target `node.adoc` resolves to no file, so it lands in
+the unresolvable count rather than the dangling-anchor failure. The class is real all the same, since a
+quoted example naming a page that does exist beside the item (`workflow.adoc`, say) would fail; this body
+simply does not instantiate it.
+
+**Unresolvable targets are reported, never failed.** A cross-file reference whose target `.adoc` is absent
+from staging is counted and printed, not a build failure: a wrong path is out of scope for the reasons
+below, and failing on one would turn every quoted example into a build break. Only a reference that
+resolves to a real staged page and names an anchor that page does not publish fails the build.
+
+Two things to keep straight about scanning roadmap prose. First, the alternative of scoping `staging/roadmap/` out of the
 scan is worse than it looks: roadmap items are published pages on the site, so their links rot like any
 other, and this item would have exempted the one page it was written about. Second, the general fix lives
 one level down and is filed separately: markdown code spans are literal by definition while AsciiDoc code
 spans are substituted, and the md-to-adoc render currently passes backticks straight through, so every
 roadmap author has to know AsciiDoc passthrough syntax to quote a macro safely. Emitting a passthrough
-span from the renderer would retire the whole class. This item does not wait on it; the three lines here
-are rewritten by hand, at the cost of literal plus signs in GitHub's markdown view of the item.
+span from the renderer would retire the whole class. This item does not wait on it; the one line here is
+rewritten by hand, at the cost of literal plus signs in GitHub's markdown view of the item.
 
 ## Acceptance
 
@@ -145,8 +162,9 @@ are rewritten by hand, at the cost of literal plus signs in GitHub's markdown vi
   `[#builder-step-results-are-sealed-not-strings-or-out-params]` in `development-principles.adoc`.
   `reference.adoc:38`'s same-file `<<Schema-qualified keys>>` natural-language reference keeps working and
   needs no change.
-* This item's own quoted xref examples rewritten as passthroughs, so the gate passes on the tree that
-  contains the item specifying it.
+* The one live xref macro in this item's body (the `zzz-no-such-cross-anchor` illustration) rewritten as a
+  plus-delimited passthrough, so the published page carries no link to nowhere. A rendering fix, not a gate
+  fix: as staged that reference resolves to no file and is counted, not failed.
 * `check-adoc-xrefs` fails the build on a dangling cross-file anchor, verified by planting one and
   observing the failure, not only by unit test.
 * The rule is written down where an author reads before the gate teaches it by failing:
@@ -154,13 +172,15 @@ are rewritten by hand, at the cost of literal plus signs in GitHub's markdown vi
   paragraph is corrected. That paragraph currently claims `failIf severity=WARN` (live at
   `docs/pom.xml:362`) means "missing xrefs ... fail the build", which the census above disproves for the
   cross-file anchored case: it is the one class that renders silent under exactly that setting.
-* The check reports a count of references it could not resolve to an authored `.adoc` rather than passing
-  over them silently, so under-coverage is visible.
+* The check reports a count of references it could not resolve to an authored `.adoc`, rather than passing
+  over them silently, so under-coverage is visible without the count itself failing the build.
+* Findings inside `staging/roadmap/` name the authored `roadmap/<slug>.md` source alongside the staged
+  path, since the staged `.adoc` is generated and an author cannot edit it.
 * `AdocXrefAnchorCheckTest` covers: a resolving explicit anchor, a dangling anchor, the underscore-vs-kebab
   case specifically, an anchor inside a `----` listing or `////` comment block (must not count as a
   reference), a reference in a single-backtick span (*does* count, per the Design note above) versus one in
-  a plus-delimited passthrough (does not), and a target page outside the tree (counted as unresolvable, not
-  as a pass).
+  a plus-delimited passthrough (does not), and a target page outside the tree (counted as unresolvable,
+  neither silently passed nor failed).
 
 ## Not in scope
 
