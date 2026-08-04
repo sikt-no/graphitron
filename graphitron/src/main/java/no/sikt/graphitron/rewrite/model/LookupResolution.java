@@ -20,9 +20,20 @@ import java.util.Objects;
  */
 public sealed interface LookupResolution {
 
+    /**
+     * The lookup-presence predicate, answered once per arm. Presence-only readers (the
+     * validator's lookup gates, the emitters' helper gates, the member relation's kind
+     * derivation, the LSP classification boolean) call this instead of spelling
+     * {@code instanceof Keyed} locally, so a new arm forces one decision here rather than
+     * silently answering "not keyed" at every unchecked {@code instanceof} site. Readers
+     * that need the mapping payload still pattern-match on {@link Keyed}.
+     */
+    boolean isKeyed();
+
     /** The coordinate's argument surface resolved no {@code @lookupKey} application. */
     record None() implements LookupResolution {
         public static final None INSTANCE = new None();
+        @Override public boolean isKeyed() { return false; }
     }
 
     /** The resolved positional {@code @lookupKey} correspondence keying the coordinate's select. */
@@ -30,5 +41,6 @@ public sealed interface LookupResolution {
         public Keyed {
             Objects.requireNonNull(mapping, "mapping");
         }
+        @Override public boolean isKeyed() { return true; }
     }
 }

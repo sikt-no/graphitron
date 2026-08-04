@@ -224,7 +224,7 @@ public record OperationMemberRelation(Map<FieldCoordinates, List<OperationMember
         if (leaf instanceof SqlGeneratingField sgf && sgf.pagination() != null) {
             kinds.add(OperationMember.Kind.PAGINATE);
         }
-        if (OperationMembers.lookupResolutionOf(leaf) instanceof LookupResolution.Keyed) {
+        if (OperationMembers.lookupResolutionOf(leaf).isKeyed()) {
             kinds.add(OperationMember.Kind.LOOKUP);
         }
 

@@ -870,7 +870,7 @@ public class TypeFetcherGenerator {
         boolean hasListSplitField = fields.stream().anyMatch(f ->
             f instanceof ChildField.BatchedTableField btf
                 && (btf.returnType().wrapper() instanceof FieldWrapper.List
-                    || (btf.lookup() instanceof no.sikt.graphitron.rewrite.model.LookupResolution.Keyed
+                    || (btf.lookup().isKeyed()
                         && btf.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Record)));
         if (hasListSplitField) {
             builder.addMethod(SplitRowsMethodEmitter.buildScatterByIdxHelper());
@@ -904,7 +904,7 @@ public class TypeFetcherGenerator {
         // empty-input short-circuit.
         boolean hasSplitLookupField = fields.stream().anyMatch(f ->
             f instanceof ChildField.BatchedTableField btf
-                && btf.lookup() instanceof no.sikt.graphitron.rewrite.model.LookupResolution.Keyed);
+                && btf.lookup().isKeyed());
         if (hasSplitLookupField) {
             builder.addMethod(SplitRowsMethodEmitter.buildEmptyScatterHelper());
         }

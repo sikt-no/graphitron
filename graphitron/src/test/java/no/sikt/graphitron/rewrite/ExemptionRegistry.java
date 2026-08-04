@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -62,7 +63,13 @@ public final class ExemptionRegistry {
     /** Asserts one obligation row: keys in-domain, keys still uncovered, domain accounted for. */
     public static void assertHonoured(Obligation o) {
         Set<Class<?>> domain = o.domain().get();
-        Set<Class<?>> covered = o.covered().get();
+        // Restrict the covered set to the domain's vocabulary once, here, so an instrument
+        // that observes more than the row's domain (a reflective scan spanning hierarchies)
+        // cannot inflate the counts in the failure message below, and no per-row derivation
+        // needs its own in-domain filter kept in sync with the domain supplier.
+        Set<Class<?>> covered = o.covered().get().stream()
+            .filter(domain::contains)
+            .collect(Collectors.toSet());
 
         var outOfDomain = o.exemptions().keySet().stream()
             .filter(k -> !domain.contains(k))
@@ -95,11 +102,11 @@ public final class ExemptionRegistry {
 
     // ===== Shared blocker facts (one declaration, referenced by every obligation it exempts) =====
 
-    /** The UPSERT retirement; the blocker string names the lifting item. */
+    /** The UPSERT retirement; the blocker names the live rejection that would have to lift. */
     private static final Exemption UPSERT_RETIRED = new Exemption.Unimplemented(
-        "R145 lifting the MutationInputResolver UPSERT rejection (R144 retired generation)",
+        "lifting the MutationInputResolver UPSERT rejection (UPSERT generation is retired)",
         "The classifier rejects every UPSERT mutation upstream, so no schema-reachable case can "
-        + "land on the UPSERT mutation leaf or the Write.Upsert member arm.");
+        + "mint the Write.Upsert member arm.");
 
     private static final Exemption ERRORS_FIELD_PENDING = new Exemption.Unimplemented(
         "the error-handling parity item's C3 lifting the five PolymorphicReturnType rejection "

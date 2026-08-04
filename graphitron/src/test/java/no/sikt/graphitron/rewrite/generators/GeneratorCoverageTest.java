@@ -22,12 +22,12 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 public class GeneratorCoverageTest {
 
     /**
-     * Recursive leaf walker — {@link Class#getPermittedSubclasses()} is shallow; it returns
-     * {@code TableTargetField.class} (a nested sealed interface) rather than its eight concrete
-     * implementations.
-     *
-     * <p>Public so Phase 2's {@code VariantCoverageTest} in the parent package can reuse it.
-     * Extraction to a shared {@code SealedLeafUtils} helper is deferred until a third caller arrives.
+     * The canonical leaf-set derivation: a recursive walk, because
+     * {@link Class#getPermittedSubclasses()} is shallow and returns nested sealed
+     * interfaces rather than their concrete implementations. The leaf ratchet, the
+     * obligation registry, the reconstruction-key test and the corpus harnesses all
+     * count leaves through this one rule, so a hierarchy change moves every instrument
+     * in the same direction at once.
      */
     public static Set<Class<?>> sealedLeaves(Class<?> type) {
         var direct = type.getPermittedSubclasses();
@@ -72,17 +72,20 @@ public class GeneratorCoverageTest {
         Set<Class<?>> notDispatched = new HashSet<>(TypeFetcherGenerator.NOT_DISPATCHED_LEAVES);
         Set<Class<?>> minting = new HashSet<>(ProjectionCommands.CONTRIBUTION_MINTING_LEAVES);
 
-        assertThat(simpleNames(intersection(minting, implemented)))
+        assertThat(intersection(minting, implemented))
             .as("the dual-arm kinds: leaves that project (a contribution, a unit row of their own,"
                 + " or ridden slot contributions) AND get a fetcher arm. The correlation-key"
                 + " leaves all live here: their fetchers deliver the data, their gated arms"
-                + " project the key columns the fetchers read off the parent row. Pinned exactly"
-                + " so a new dual-arm leaf is a deliberate edit here, not a silent derivation"
-                + " change")
-            .containsExactlyInAnyOrder("ColumnBackedField", "ComputedField", "BatchedPivotField",
-                "BatchedTableField", "ServiceTableField",
-                "ServiceRecordField", "TableInterfaceField", "InterfaceField", "UnionField",
-                "BatchedInterfaceField", "BatchedUnionField");
+                + " project the key columns the fetchers read off the parent row. Pinned exactly,"
+                + " as class literals so a rename or deletion fails compilation rather than"
+                + " dodging the pin, so a new dual-arm leaf is a deliberate edit here, not a"
+                + " silent derivation change")
+            .containsExactlyInAnyOrder(ChildField.ColumnBackedField.class,
+                ChildField.ComputedField.class, ChildField.BatchedPivotField.class,
+                ChildField.BatchedTableField.class, ChildField.ServiceTableField.class,
+                ChildField.ServiceRecordField.class, ChildField.TableInterfaceField.class,
+                ChildField.InterfaceField.class, ChildField.UnionField.class,
+                ChildField.BatchedInterfaceField.class, ChildField.BatchedUnionField.class);
 
         Set<Class<?>> projected = new HashSet<>(minting);
         projected.removeAll(implemented);

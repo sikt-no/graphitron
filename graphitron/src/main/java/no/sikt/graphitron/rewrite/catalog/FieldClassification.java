@@ -12,18 +12,19 @@ import java.util.List;
  * {@link LspSchemaSnapshot.Built}.
  *
  * <p>Sized to <b>distinct hover-payload shapes</b>, not 1:1 with the generator-side
- * {@code GraphitronField} permits. Permits that differ only in a label dimension
- * (DML verb, single/list multiplicity, split-batch toggle, lookup-key toggle) collapse
- * onto one record carrying that dimension as a discriminator field. Permits whose
- * hover-relevant payload genuinely diverges keep their own record.
+ * {@code GraphitronField} permits. Classifications that differ only in a discriminator
+ * dimension (the write verb, single/list multiplicity, the split-batch or lookup-key
+ * axis) collapse onto one record carrying that dimension as a payload field. Permits
+ * whose hover-relevant payload genuinely diverges keep their own record.
  *
  * <p>The producer-side exhaustive switch in
  * {@link CatalogBuilder#projectFieldClassification} enforces <em>coverage</em>: a new
  * permit in {@code ChildField} / {@code QueryField} / {@code MutationField} /
- * {@code InputField} fails the switch to compile until mapped. What this projection
- * collapses is the LSP-side cardinality; the label switch in
- * {@code LspClassificationLabels} still dispatches over the full generator-side permit
- * set.
+ * {@code InputField} fails the switch to compile until mapped. That switch and the
+ * {@code @ProjectionFor} coverage pins are the two compile-checked homes of the
+ * leaf-to-record mapping, so record javadoc below does not restate which permits reach
+ * which record. The label switch in {@code LspClassificationLabels} dispatches over
+ * this projection's own sealed permit set.
  *
  * <p>Each record carries only LSP-renderable payload (table names, column names, FK
  * names, target type names, error-channel constants, primitive flags). No
@@ -156,16 +157,14 @@ public sealed interface FieldClassification
     // ===== Column-bearing fields =====
 
     /**
-     * A single-column projection on a {@code @table}-backed parent. Covers
-     * the single-column {@code ChildField.ColumnBackedField} and {@code InputField.ColumnBackedField}; the input/output
-     * label dimension is dispatched by the label switch, not by the record identity.
+     * A single-column projection on a {@code @table}-backed parent; input and output
+     * fields project alike (the SDL declaration site the hover sits on shows which one
+     * the reader is looking at).
      */
     record Column(String tableName, String columnName) implements FieldClassification {}
 
     /**
-     * A single-column projection reached through a {@code @reference} join path. Covers
-     * the single-column {@code ChildField.ColumnBackedReferenceField} and
-     * {@code InputField.ColumnBackedReferenceField}.
+     * A single-column projection reached through a {@code @reference} join path.
      */
     record ColumnReference(String tableName, String columnName, List<FkStep> joinPath)
         implements FieldClassification {
@@ -176,11 +175,9 @@ public sealed interface FieldClassification
     }
 
     /**
-     * A multi-column projection on a {@code @table}-backed parent. Covers the composite
-     * (multi-column) {@code ChildField.ColumnBackedField} and
-     * {@code InputField.ColumnBackedField}. Denormalized view: the merged output leaf
-     * carries arity as a column count, and the projection derives this variant from its
-     * {@code isComposite()} accessor, keeping the wire surface stable.
+     * A multi-column projection on a {@code @table}-backed parent. Denormalized view:
+     * the merged leaf carries arity as a column count, and the projection derives this
+     * variant from its {@code isComposite()} accessor, keeping the wire surface stable.
      */
     record CompositeColumn(String tableName, List<String> columnNames)
         implements FieldClassification {
@@ -191,10 +188,9 @@ public sealed interface FieldClassification
     }
 
     /**
-     * A multi-column projection reached through a {@code @reference} join path. Covers the
-     * composite (multi-column) {@code ChildField.ColumnBackedReferenceField} and
-     * {@code InputField.ColumnBackedReferenceField}. Denormalized view derived from the
-     * merged output leaf's {@code isComposite()} accessor, like {@link CompositeColumn}.
+     * A multi-column projection reached through a {@code @reference} join path.
+     * Denormalized view derived from the merged leaf's {@code isComposite()} accessor,
+     * like {@link CompositeColumn}.
      */
     record CompositeColumnReference(
         String tableName, List<String> columnNames, List<FkStep> joinPath
@@ -208,9 +204,8 @@ public sealed interface FieldClassification
 
     /**
      * A scalar field on a {@code @table}-interface participant reached via a single-hop
-     * {@code @reference} to a different table. Covers
-     * {@code ChildField.ParticipantColumnReferenceField}; the participant-cross-table
-     * shape (target table + column + FK constant + projection alias) is hover-distinct
+     * {@code @reference} to a different table. The participant-cross-table shape
+     * (target table + column + FK constant + projection alias) is hover-distinct
      * from the broader {@link ColumnReference} payload, so this record stays separate.
      */
     record ParticipantCrossTable(
@@ -221,12 +216,8 @@ public sealed interface FieldClassification
 
     /**
      * A child field that navigates to (or stays at) a table scope and generates SQL.
-     * Covers the four {@code ChildField.TableField} family permits ({@code TableField},
-     * the Table-sourced {@code BatchedTableField} arms and the lookup-keyed reads)
-     * plus {@code TableInterfaceField} which adds the polymorphic axes (see
-     * {@link TableInterface} for the polymorphic-only payload). The {@code splitBatched}
-     * and {@code hasLookupKey} booleans encode the per-permit axes; the label switch
-     * still emits a per-permit label.
+     * The {@code splitBatched} and {@code hasLookupKey} booleans carry the delivery and
+     * lookup axes as payload facts.
      */
     record TableTarget(
         String tableName, List<FkStep> joinPath, boolean splitBatched, boolean hasLookupKey
@@ -239,8 +230,7 @@ public sealed interface FieldClassification
 
     /**
      * A child field on a class-backed parent that resolves to a table-bound target
-     * via a DataLoader. Covers the record-sourced {@code ChildField.BatchedTableField} arm and
-     * the record-sourced lookup-keyed {@code ChildField.BatchedTableField} arm.
+     * via a DataLoader; {@code hasLookupKey} carries the lookup axis.
      */
     record RecordTableTarget(
         String tableName, List<FkStep> joinPath, boolean hasLookupKey
@@ -254,8 +244,8 @@ public sealed interface FieldClassification
     // ===== Polymorphic =====
 
     /**
-     * Single-table polymorphic field. Covers {@code ChildField.TableInterfaceField}
-     * (carries discriminator column + participants on a single shared table).
+     * Single-table polymorphic field: discriminator column + participants on a single
+     * shared table.
      */
     record TableInterface(
         String tableName, String discriminatorColumn, List<String> participantTypeNames
@@ -267,9 +257,8 @@ public sealed interface FieldClassification
     }
 
     /**
-     * Multi-table polymorphic field. Covers {@code ChildField.InterfaceField} and
-     * {@code ChildField.UnionField}; the source axis (interface implementer set vs
-     * union member set) is encoded by the per-permit label, not by the record identity.
+     * Multi-table polymorphic field. The interface-vs-union distinction is not on the
+     * record; the SDL type declaration the hover sits on already carries it.
      */
     record Polymorphic(List<String> participantTypeNames) implements FieldClassification {
 
@@ -282,9 +271,8 @@ public sealed interface FieldClassification
 
     /**
      * Nesting fragment: the field's value is a sub-projection of the parent's
-     * table-bound shape (no SQL navigation). Covers {@code ChildField.NestingField} and
-     * {@code InputField.NestingField}; the input/output dimension is dispatched by the
-     * label switch.
+     * table-bound shape (no SQL navigation); input and output nesting fields project
+     * alike.
      */
     record Nesting() implements FieldClassification {}
 
@@ -298,9 +286,9 @@ public sealed interface FieldClassification
         implements FieldClassification {}
 
     /**
-     * A child field backed by a developer-provided {@code @service} method. Covers
-     * {@code ChildField.ServiceTableField} (tableBound = true, tableName non-null) and
-     * {@code ChildField.ServiceRecordField} (tableBound = false, tableName null).
+     * A child field backed by a developer-provided {@code @service} method;
+     * {@code tableBound} distinguishes the table-bound return ({@code tableName}
+     * non-null) from the record-backed one ({@code tableName} null).
      */
     record ServiceBacked(
         String methodClassName, String methodName, boolean tableBound, String tableName,
@@ -309,22 +297,21 @@ public sealed interface FieldClassification
 
     /**
      * A record-backed-parent field whose value reaches the field through a parent
-     * column or accessor. Covers {@code ChildField.RecordReadField} (the locator arm
-     * decides which component carries the read fact) plus the record-backed passthrough
-     * projections ({@code ChildField.RecordCompositeField}, {@code ChildField.PivotSlotField});
-     * either component may be null when the read doesn't carry that resolution kind.
+     * column or accessor, including the record-backed passthrough shapes (no column,
+     * no accessor); either component may be null when the read doesn't carry that
+     * resolution kind.
      */
     record RecordOrProperty(String columnName, String accessorName) implements FieldClassification {}
 
     /**
      * A child field using {@code @externalField}: a developer-supplied static method
      * returning a jOOQ {@code Field<X>} inlined into the parent's projection at emit
-     * time. Covers {@code ChildField.ComputedField}.
+     * time.
      */
     record Computed(String methodClassName, String methodName) implements FieldClassification {}
 
     /**
-     * An input field that does not bind to a SQL column. Covers {@code InputField.UnboundField}.
+     * An input field that does not bind to a SQL column.
      * {@code methodClassName} / {@code methodName} are populated when the carrier has an explicit
      * {@code @condition}; {@code override} reflects the directive flag. All three are {@code null}/
      * {@code false} when the carrier has no condition at all (the cascade-admitted bare-field case).
@@ -333,7 +320,7 @@ public sealed interface FieldClassification
 
     /**
      * The {@code errors} field on a payload type, listing the mapped {@code @error}
-     * types in source order. Covers {@code ChildField.ErrorsField}.
+     * types in source order.
      */
     record Errors(List<String> errorTypeNames) implements FieldClassification {
 
@@ -346,48 +333,43 @@ public sealed interface FieldClassification
 
     /**
      * The single data field on a payload-returning DELETE carrier where the data field
-     * is an ID-typed scalar encoding the deleted row's primary key. Covers
-     * {@code ChildField.SingleRecordIdFieldFromReturning}.
+     * is an ID-typed scalar encoding the deleted row's primary key.
      */
     record SingleRecordIdFromReturning() implements FieldClassification {}
 
     /**
      * The single data field on an {@code @service} source-record carrier where the data field
      * is an ID-typed scalar encoding the producer record's node-key column(s), with no
-     * follow-up SELECT. Covers {@code ChildField.SingleRecordIdField}.
+     * follow-up SELECT.
      */
     record SingleRecordId(String tableName) implements FieldClassification {}
 
     // ===== Query fields =====
 
     /**
-     * A root query field returning a {@code @table}-bound type. Covers
-     * {@code QueryField.QueryTableField}, lookup-keyed or not;
-     * the lookup-helper axis is encoded by {@code isLookup}.
+     * A root query field returning a {@code @table}-bound type; the lookup-helper axis
+     * is carried by {@code isLookup}.
      */
     record QueryTable(String tableName, boolean isLookup) implements FieldClassification {}
 
     /**
-     * A root field whose rows come from a generated jOOQ {@code Routines}-class method call.
-     * Covers the routine-sourced {@code QueryField.QueryTableField} on the read side and
-     * {@code MutationField.MutationRoutineWriteField} on the write side; {@code methodClassName}
-     * is the generated {@code Routines} class, so hover and jump-to-source route to the
-     * routine's call surface.
+     * A root field whose rows come from a generated jOOQ {@code Routines}-class method
+     * call, on the read or the write side; {@code methodClassName} is the generated
+     * {@code Routines} class, so hover and jump-to-source route to the routine's call
+     * surface.
      */
     record RoutineBacked(
         String tableName, String methodClassName, String methodName
     ) implements FieldClassification {}
 
     /**
-     * A root query field implementing Relay's {@code node(id:)} or {@code nodes(ids:)}.
-     * Covers {@code QueryField.QueryNodeField} ({@code isList = false}) and
-     * {@code QueryField.QueryNodesField} ({@code isList = true}).
+     * A root query field implementing Relay's {@code node(id:)} or {@code nodes(ids:)};
+     * {@code isList} distinguishes them.
      */
     record QueryNode(boolean isList) implements FieldClassification {}
 
     /**
-     * A root query field returning a single-table interface. Covers
-     * {@code QueryField.QueryTableInterfaceField}.
+     * A root query field returning a single-table interface.
      */
     record QueryTableInterface(
         String tableName, String discriminatorColumn, List<String> participantTypeNames
@@ -399,8 +381,7 @@ public sealed interface FieldClassification
     }
 
     /**
-     * A root query field returning a multi-table interface or union. Covers
-     * {@code QueryField.QueryInterfaceField} and {@code QueryField.QueryUnionField}.
+     * A root query field returning a multi-table interface or union.
      */
     record QueryPolymorphic(List<String> participantTypeNames) implements FieldClassification {
 
@@ -410,9 +391,9 @@ public sealed interface FieldClassification
     }
 
     /**
-     * A root query field backed by a developer-provided {@code @service} method.
-     * Covers {@code QueryField.QueryServiceTableField} ({@code tableBound = true}) and
-     * {@code QueryField.QueryServiceRecordField} ({@code tableBound = false}).
+     * A root query field backed by a developer-provided {@code @service} method;
+     * {@code tableBound} distinguishes the table-bound return from the record-backed
+     * (and polymorphic) ones.
      */
     record QueryService(
         String methodClassName, String methodName, boolean tableBound, String tableName,
@@ -422,21 +403,18 @@ public sealed interface FieldClassification
     // ===== Mutation fields =====
 
     /**
-     * A mutation field bound to a DML input arg that emits direct DML and
-     * returns the {@code @table}-bound type. Covers the four
-     * {@code MutationField.DmlTableField} permits via the {@link DmlKind} discriminator.
+     * A mutation field bound to a DML input arg that emits direct DML and returns the
+     * {@code @table}-bound type; the write verb projects off the carried write arm onto
+     * the {@link DmlKind} discriminator.
      */
     record DmlMutation(
         String tableName, String inputTypeName, DmlKind kind, String errorChannelMappingName
     ) implements FieldClassification {}
 
     /**
-     * A mutation field backed by a developer-provided {@code @service} method. Covers
-     * {@code MutationField.MutationServiceTableField} ({@code tableBound = true},
-     * {@code tableName} non-null) and {@code MutationField.MutationServiceRecordField}
-     * ({@code tableBound = false}, {@code tableName} null). Mirrors {@link QueryService}'s
-     * payload shape so the hover surface renders the target table for table-bound service
-     * mutations.
+     * A mutation field backed by a developer-provided {@code @service} method. Mirrors
+     * {@link QueryService}'s payload shape so the hover surface renders the target
+     * table for table-bound service mutations.
      */
     record MutationService(
         String methodClassName, String methodName, boolean tableBound, String tableName,
@@ -444,9 +422,8 @@ public sealed interface FieldClassification
     ) implements FieldClassification {}
 
     /**
-     * A record-returning DML mutation. Covers {@code MutationField.MutationDmlRecordField}
-     * ({@code bulk = false}) and {@code MutationField.MutationBulkDmlRecordField}
-     * ({@code bulk = true}); the bulk-input axis is encoded by the boolean.
+     * A record-returning DML mutation; the write verb projects onto the {@link DmlKind}
+     * discriminator and the bulk-input axis onto {@code bulk}.
      */
     record DmlRecord(
         String tableName, String inputTypeName, DmlKind kind, boolean bulk,
@@ -456,9 +433,8 @@ public sealed interface FieldClassification
     // ===== Unclassified =====
 
     /**
-     * A field the classifier could not assign a variant to. Covers
-     * {@code GraphitronField.UnclassifiedField}. The {@code reason} is the human-readable
-     * rejection message; rendering decides whether to surface it.
+     * A field the classifier could not assign a variant to. The {@code reason} is the
+     * human-readable rejection message; rendering decides whether to surface it.
      */
     record Unclassified(String reason) implements FieldClassification {}
 }

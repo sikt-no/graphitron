@@ -1271,6 +1271,95 @@ empty-list coordinates, largest list 4 entries (`faceted-connection`'s
 (the slice edits test sources, main javadoc prose, and deletes the construction-dead seal);
 leaf ratchet unchanged at 10/8/22/4; dispatch pins unchanged.
 
+### Slice 8 (landed 2026-08-04): obligation re-typing closes at the end state
+
+One commit; no coexistence window (nothing retired with live readers). An exhaustive audit of
+both mandated surfaces ran first and found every compile-checked half already re-sourced by the
+6x slices themselves: no obligation domain, covered-set derivation, or exemption key referenced
+a deleted leaf (the `sealedLeaves` domains are live-computed), the `@ProjectionFor` pins matched
+the surviving leaves exactly with `LSP_PROJECTION` green, and the catalog projection switches
+were total and default-free with no stale leaf names. The residue was concentrated in the
+un-compiled halves, and this slice closed it:
+
+- **The lookup-presence predicate got its total accessor.** `x instanceof LookupResolution.Keyed`
+  was spelled at eight main-source sites, five of them presence-only (the validator's lookup
+  gates, the emitters' helper gates, the member relation's kind derivation, the LSP
+  classification boolean); an `instanceof` against one arm is not exhaustiveness-checked, so a
+  new arm would silently answer "not keyed" everywhere at once. `LookupResolution.isKeyed()` is
+  now implemented per arm, the five presence-only sites read it, and the payload readers keep
+  their pattern matches. `CatalogBuilder`'s private `isKeyed` helper retired into the accessor.
+- **The `FieldClassification` record javadocs dropped their leaf censuses.** The leaf-to-record
+  mapping has two compile-checked homes (the total `projectFieldClassification` switch and the
+  `@ProjectionFor` pins); the hand-written "Covers {leaf, leaf}" sentences were a third copy
+  that had rotted in every dissolution slice (the four-permit DML claim, the lookup-keyed read
+  enumeration, the unqualified `QueryTable` claim colliding with `RoutineBacked`'s). All
+  censuses deleted; each record keeps only what prose alone can say (payload semantics,
+  discriminator meaning, why an arm stays separate from its sibling), and the class javadoc now
+  states the two-homes rule so the census does not regrow. The false "label switch dispatches
+  over the full generator-side permit set" claim (three copies in `FieldClassification`, one in
+  `TypeClassification`) corrected: `LspClassificationLabels` dispatches over the projection's
+  own sealed permits, and the interface-vs-union axis is accordingly not LSP-visible (the SDL
+  declaration the hover sits on carries it). `TypeClassification`'s own record censuses stay:
+  the type hierarchy was not dissolved and they have no rot history.
+- **The dual-arm dispatch pin re-typed from simple-name strings to class literals**
+  (`GeneratorCoverageTest`): the last obligation whose domain vocabulary was strings; a leaf
+  rename or deletion now fails compilation instead of dodging the pin.
+- **`assertHonoured` intersects the covered set with the domain once**, so an instrument that
+  observes more than a row's domain (the `variants()` reflective scan spans hierarchies) cannot
+  inflate the failure-message counts for any row, with no per-row in-domain filter to keep in
+  sync with the domain supplier.
+- **The emptied stub chain's dead weight removed, the gate kept armed.**
+  `FieldValidationTestHelper.stubbedError` read `STUBBED_VARIANTS.get(variant).message()` and
+  would NPE on every possible call since 6b emptied the map (its javadoc example also named
+  `DmlTableField` as stubbed, which is in `IMPLEMENTED_LEAVES`); deleted with its one unused
+  import. The map, its validator gate, the partition bucket and the keys-are-leaves check stay
+  per 6a's bound decision; `StubbedVariantPipelineTest`'s javadoc replaced its per-verb stub
+  inventory with the armed-gate statement.
+- **`UPSERT_RETIRED`'s reason** named the deleted UPSERT mutation leaf and cited two roadmap ids
+  in its blocker string; both rewritten to live prose (the member arm, the named rejection).
+- **`sealedLeaves`' javadoc** promised extraction "when a third caller arrives" and named a
+  transient programme phase; there are ~10 calling classes and the symbol is the programme's own
+  counting rule, cited by `{@link}` from the ratchet, registry, reconstruction-key and corpus
+  harnesses. Rewritten at intent altitude (the canonical leaf-set derivation); relocation would
+  move a checked citation surface and buy zero drift-surface reduction.
+
+Decisions bound here:
+
+- **The member-read half of the projection obligation is satisfied per axis, not waived.**
+  Membership questions read the relation (the validator's lookup-plus-generated-filter
+  co-presence check does); payload questions read the member row the leaf carries by identity
+  (`f.write()` is the `Write.Dml` row's payload, `f.pivot()` the pivot member's, both
+  single-homed by 6b/6c), which keeps a total non-null shape that re-plumbing onto
+  `operationMembersOf(coord)` would trade for a filter-and-first over a heterogeneous list; the
+  lookup axis is the walked fact the member kind derives from, now read through the seal's own
+  total accessor. The routine fork (`RoutineResolution.Chain`, the `RoutineBacked`
+  classification) is source-axis grain that 6c bound as surviving, so it is outside the
+  operation obligation's domain, not an exemption inside it.
+- **No `RetiredVocabularyGuardTest` entries for the eight dissolved leaf names.** The registry's
+  entry bar is demonstrated recurrence (6a's precedent, applied consistently since); the audit
+  scanned every guarded habitat (main and test comment/javadoc regions, main-source string
+  literals, authored `docs/` AsciiDoc, fixture SDL) and found zero survivals; the only mentions
+  anywhere are `LeafRatchetTest`'s deliberate history lines, which entries would flag into
+  allowlist noise for lineage `roadmap/changelog.md` already owns.
+- **`Exemption.HarnessSingleCatalog`'s deletion parked out of the slice**: an unpopulated arm of
+  the exemption taxonomy is not leaf-dissolution residue, so the Spec row does not reach it;
+  filed as R586 (`roadmap/exemption-taxonomy-arm-census.md`) together with the missing
+  arm-population census.
+- **The catalog's delivery spelling parked with grounds**: `TableTarget.splitBatched` (source
+  shape) and `Pivot.batched` (`BatchKeyField` membership) derive delivery from leaf state while
+  `GraphitronSchema.deliveryOf` is the materialized relation; delivery is not operation grain
+  (slice 7 recorded the delivery voice as its own future decision), so re-sourcing those two
+  booleans belongs to whatever item gives delivery its corpus voice, and the residual is now
+  recorded rather than implied. Also audited and left: merging `SOURCE_SHAPE_CORPUS` into
+  `VARIANT_COVERAGE_OUTPUT` (different walks, no stale vocabulary) and
+  `projectPayloadDataFields`' hand-rolled carrier predicate (delivery/lift grain).
+
+Slice-8 measurement (2026-08-04): leaf ratchet unchanged at 10/8/22/4; dispatch pins unchanged
+(the `LookupResolution` sites are outside the seam ratchet's hierarchy alternation); emit
+byte-identical by construction (the main-source changes are javadoc prose plus a
+semantics-preserving predicate re-home returning the same booleans). This is the programme's
+last slice.
+
 ## Retired vocabulary
 
 Declared per the item-file conventions in `roadmap/workflow.adoc`; each term names the slice that
@@ -1296,6 +1385,8 @@ retires it, and the sweep at each gate runs against what has actually shipped.
 | `@classified(operation:)` (the single-valued argument) | 7 | `@classified(operations:)`, required, `[]` legal |
 | `DimensionTuple.summaryArmOf` (the precedence fold and its `Nest` / `Fetch` empty-set fiction) | 7 | none; the empty list is the honest verdict for the no-operation coordinates |
 | `ExemptionRegistry.OPERATION_ARMS` / `OPERATION_KNOWN_GAPS` | 7 | `MEMBER_ARMS` / `MEMBER_KNOWN_GAPS` (domain = member vocabulary, covered = declared-and-agreeing rows) |
+| `FieldValidationTestHelper.stubbedError` (the stub-message factory) | 8 | none; the stub gate stays armed, and a returning stub asserts its expected message inline |
+| `CatalogBuilder.isKeyed` (the private presence helper) | 8 | `LookupResolution.isKeyed()`, the seal's own total accessor |
 
 ## Non-goals
 

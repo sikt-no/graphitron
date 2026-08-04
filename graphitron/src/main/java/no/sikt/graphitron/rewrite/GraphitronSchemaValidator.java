@@ -899,7 +899,7 @@ public class GraphitronSchemaValidator {
     }
     private void validateTableField(no.sikt.graphitron.rewrite.model.ChildField.TableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
-        if (field.lookup() instanceof no.sikt.graphitron.rewrite.model.LookupResolution.Keyed) {
+        if (field.lookup().isKeyed()) {
             rejectLookupConnection(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
         }
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
@@ -907,7 +907,7 @@ public class GraphitronSchemaValidator {
     private void validateBatchedTableField(no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
-        if (field.lookup() instanceof no.sikt.graphitron.rewrite.model.LookupResolution.Keyed) {
+        if (field.lookup().isKeyed()) {
             // The lookup-gated branch owns the Connection verdict outright: one located
             // rejection, not the ORDER-BY guard stacked on top of it.
             rejectLookupConnection(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
@@ -1506,7 +1506,7 @@ public class GraphitronSchemaValidator {
                     // read shares its class with an admitted plain read and differs only on
                     // the resolution axis.
                     String siblingShape = sib instanceof ChildField.TableTargetField ttf
-                            && ttf.lookup() instanceof no.sikt.graphitron.rewrite.model.LookupResolution.Keyed
+                            && ttf.lookup().isKeyed()
                         ? sib.getClass().getSimpleName() + " with a keyed lookup"
                         : sib.getClass().getSimpleName();
                     errors.add(new ValidationError(

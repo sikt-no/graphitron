@@ -15,7 +15,7 @@ import java.util.List;
  *
  * <p>The producer-side exhaustive switch in
  * {@link CatalogBuilder#projectTypeClassification} enforces coverage; the label switch in
- * {@code LspClassificationLabels} dispatches over the full generator-side permit set.
+ * {@code LspClassificationLabels} dispatches over this projection's own sealed permit set.
  *
  * <p>{@link TypeBackingShape} covers what is resolvable as a member name inside a type;
  * this projection covers the orthogonal axis, what kind of type the SDL author declared.

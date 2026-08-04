@@ -238,13 +238,13 @@ public final class CatalogBuilder {
                 new FieldClassification.SingleRecordId(f.table().tableName());
             case ChildField.TableField f ->
                 new FieldClassification.TableTarget(
-                    targetTableName(f.returnType()), fkSteps(f.joinPath()), false, isKeyed(f.lookup()));
+                    targetTableName(f.returnType()), fkSteps(f.joinPath()), false, f.lookup().isKeyed());
             case ChildField.BatchedTableField f ->
                 f.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Table
                     ? new FieldClassification.TableTarget(
-                        targetTableName(f.returnType()), fkSteps(f.joinPath()), true, isKeyed(f.lookup()))
+                        targetTableName(f.returnType()), fkSteps(f.joinPath()), true, f.lookup().isKeyed())
                     : new FieldClassification.RecordTableTarget(
-                        targetTableName(f.returnType()), fkSteps(f.joinPath()), isKeyed(f.lookup()));
+                        targetTableName(f.returnType()), fkSteps(f.joinPath()), f.lookup().isKeyed());
             case ChildField.TableInterfaceField f ->
                 new FieldClassification.TableInterface(
                     targetTableName(f.returnType()),
@@ -320,7 +320,7 @@ public final class CatalogBuilder {
                         targetTableName(f.returnType()),
                         chain.chain().routine().routinesClass().canonicalName(),
                         chain.chain().routine().methodName())
-                    : new FieldClassification.QueryTable(targetTableName(f.returnType()), isKeyed(f.lookup()));
+                    : new FieldClassification.QueryTable(targetTableName(f.returnType()), f.lookup().isKeyed());
             case QueryField.QueryNodeField ignored ->
                 new FieldClassification.QueryNode(false);
             case QueryField.QueryNodesField ignored ->
@@ -501,11 +501,6 @@ public final class CatalogBuilder {
         no.sikt.graphitron.rewrite.model.ReturnTypeRef.TableBoundReturnType ret
     ) {
         return ret != null && ret.table() != null ? ret.table().tableName() : null;
-    }
-
-    /** The lookup axis as the classification boolean the LSP projection carries. */
-    private static boolean isKeyed(no.sikt.graphitron.rewrite.model.LookupResolution lookup) {
-        return lookup instanceof no.sikt.graphitron.rewrite.model.LookupResolution.Keyed;
     }
 
     private static String terminalTableName(List<JoinStep> joinPath) {

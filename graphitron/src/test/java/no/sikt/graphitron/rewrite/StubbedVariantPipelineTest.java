@@ -14,12 +14,11 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
  * {@code GraphitronSchemaValidator.validateVariantIsImplemented} and the
  * {@link TypeFetcherGenerator#STUBBED_VARIANTS} map.
  *
- * <p>All six mutation-leaf stubs (DELETE, INSERT, UPDATE, UPSERT, plus both service
- * variants) are now closed. The previous {@code mutationUpsertOnATableType_surfacesStubbedError} (and its
- * UPDATE / INSERT predecessors) is therefore retired: there is no DML stub left to ratchet
- * through the pipeline. The negative-direction test below remains and continues to guard
- * against regressions where an implemented variant accidentally emits a "not yet implemented"
- * message.
+ * <p>The stub map is empty: every reachable leaf has a real or projected arm, so no
+ * positive-direction pipeline case exists to ratchet. The gate stays armed all the same
+ * (the validator reads the map dynamically), and the negative-direction test below guards
+ * against an implemented variant accidentally emitting a "not yet implemented" message.
+ * If a stub is ever minted again, add the positive pipeline case beside it.
  */
 @PipelineTier
 class StubbedVariantPipelineTest {
