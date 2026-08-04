@@ -54,7 +54,7 @@ small: the sweep is four one-token substitutions and the gate has a single failu
 
 Established empirically rather than assumed, by planting both forms in `nodeId.adoc` and rendering:
 
-* Same-file `<<zzz-no-such-anchor>>` → `asciidoctor: INFO: possible invalid reference:
+* Same-file `+<<zzz-no-such-anchor>>+` → `asciidoctor: INFO: possible invalid reference:
   zzz-no-such-anchor`. Reported, but at INFO, and the build still succeeds.
 * Cross-file `xref:node.adoc#zzz-no-such-cross-anchor[label]` → **completely silent**. No INFO, no
   warning, `BUILD SUCCESS`.
@@ -160,7 +160,7 @@ rewritten by hand, at the cost of literal plus signs in GitHub's markdown view o
   `[#acceptances-classifier-guarantees-shape-emitter-assumptions]`,
   `[#rejections-validator-mirrors-classifier-invariants]`,
   `[#builder-step-results-are-sealed-not-strings-or-out-params]` in `development-principles.adoc`.
-  `reference.adoc:38`'s same-file `<<Schema-qualified keys>>` natural-language reference keeps working and
+  `reference.adoc:38`'s same-file `+<<Schema-qualified keys>>+` natural-language reference keeps working and
   needs no change.
 * The one live xref macro in this item's body (the `zzz-no-such-cross-anchor` illustration) rewritten as a
   plus-delimited passthrough, so the published page carries no link to nowhere. A rendering fix, not a gate
