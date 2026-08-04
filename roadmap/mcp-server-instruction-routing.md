@@ -1,7 +1,7 @@
 ---
 id: R584
 title: "MCP server instructions route agents to every tool family"
-status: Backlog
+status: Spec
 bucket: feature
 priority: 5
 theme: tooling
@@ -42,7 +42,7 @@ subprocess round trip on a number the tool had already handed over.
 
 ## What the ambient slot is for
 
-The fix is not "name the other eleven tools". It is to decide what the handshake `instructions`
+The fix is not "name the other ten tools". It is to decide what the handshake `instructions`
 string is *for*, because the file is not one surface among several: it is the only prose the server
 ships that reaches the agent without the agent choosing to fetch it.
 
@@ -60,7 +60,7 @@ looking at that tool, and it can only ever speak for that one tool. That split a
 Today's file inverts the split. Its catalog paragraph restates `catalog.describe`'s own description
 almost verbatim (the jOOQ-comments caveat is in both, and "SQL names are the discovery keys" is
 `catalog.tables`'s "SQL names drive discovery"), so the ambient budget is spent duplicating one
-tool's local prose while eleven tools and a resource get nothing. Cutting that duplication is what
+tool's local prose while ten tools and a resource get nothing. Cutting that duplication is what
 pays for the routing table: the rewrite adds coverage of every tool without becoming a wall of prose,
 because the per-tool detail it would otherwise carry already has a home.
 
@@ -72,12 +72,24 @@ independent reasons:
   `schema`'s description does name field classifications, and the agent still grepped, because
   nothing connected the question it had ("which mutations delete, and from what table") to the tool
   that answers it.
-- Local descriptions are not reliably in context. Claude Code defers MCP tool schemas: a session
-  sees the tool *names* and must make an explicit search call to load a description. So the design
-  cannot assume the agent has read all twelve; it can assume the agent has read the instructions.
-  This is client-specific and should not be load-bearing on its own, which is why the first reason
-  is stated first. It does mean the ambient slot should name each tool in a form that survives
-  having only names available, which the question-keyed table does.
+- Local descriptions are not reliably in context. Claude Code defers MCP tool schemas: a session sees
+  the tool *names* and must make an explicit search call to load a description.
+
+The second reason is evidence about *leverage*, deliberately not the criterion. It is a vendor
+behaviour nothing in this reactor can enforce and it expires without notice when a client changes, so
+a design resting on it would be a design with no enforcer. Worse, taken as the criterion it argues
+for the wrong thing: if the problem were "descriptions may be missing", the fix would be to copy the
+descriptions into the ambient slot, which is a derived fact maintained apart from its source and grows
+without bound per tool. The criterion is the first reason alone, which holds either way: *the ambient
+slot carries only what no single tool description can carry.* The deferral observation is why the slot
+is worth spending tokens on at all.
+
+That criterion needs one review tell, because this is the seam that will erode under the next append.
+A routing line may name the question, the tool, and the fact the tool carries ("`schema` carries each
+mutation's write kind and its resolved table"). It may not restate the tool's argument names, its
+result fields, or its caveats. The source-index location cadence that `services` / `conditions` /
+`records` describe is the worked example: genuinely useful, genuinely per-tool, and the first thing
+this seam routes *out* of the ambient block.
 
 ## Design
 
@@ -94,21 +106,36 @@ data, read the schema, read what is broken, follow the bindings, run it), not th
 The **three cross-tool conventions** are each drawn from an observed miss or a real cross-tool
 invariant, and each is a fact no single description can state:
 
-1. *Every result's first line is a summary carrying the pre-paging totals.* Read it before paging or
-   post-processing. This is the first episode's fix, and it is true of every structured tool
-   (`catalog.tables`, `diagnostics`, `schema`, the code tools, `edges`, `catalog.search`), which is
-   exactly why the claim belongs in the ambient slot rather than repeated twelve times.
+1. *A paged tool's first line carries the total before paging.* Read it before paging or
+   post-processing. This is the first episode's fix, and it holds across every paged tool
+   (`catalog.tables`, `diagnostics`, `schema`, the three code tools, `edges`), which is why it belongs
+   in the ambient slot rather than repeated six times.
+
+   The claim is scoped to paged tools *on purpose*, and the scope was measured rather than assumed.
+   `docs.search`'s summary names the top hit and carries no count; the degradation arms of
+   `docs.search` and `catalog.search` return `WarmState.degradationMessage`, which carries neither a
+   tool prefix nor a number. An ambient sentence promising "the first line always carries the total"
+   would send an agent looking for a count in a sentence about ONNX. The honest grain is the paged
+   tools, and the pin below asserts exactly that grain so the sentence stays true as tools are added.
 2. *IDs are stable and shared across tools.* A schema-qualified SQL table name, a `Type.field`
    coordinate, and a `fqcn#method/arity` method ref select the same thing in every tool that takes
    one, so a result's id feeds the next call. `edges` already says this about its own endpoints
    ("the same stable IDs the catalog / schema / code tools accept"); the ambient slot is where the
    claim covers the whole surface, and it is what turns a `catalog.search` hit or an `edges`
-   neighbour into a follow-up call rather than a fresh search by name.
+   neighbour into a follow-up call rather than a fresh search by name. This is the one convention
+   already pinned end to end rather than merely true:
+   `GraphitronMcpServerTest.methodRefIdsMatchTheSourceIndexJoinKeys` and
+   `catalogSearchReturnsRankedTableIdsWhoseTopFeedsCatalogDescribe` assert the handoff the sentence
+   promises.
 3. *Every tool reads the live workspace, and the schema-facing ones report the snapshot's
    availability and freshness* (`schema`, `diagnostics`, `edges`, `status`; the catalog and code tools
    read their own live projections and carry no snapshot axis). After a save, re-call. The point is to
    stop an agent reasoning about whether an earlier answer went stale when re-asking is one cheap
-   call, and to make `Built/Previous` legible when it appears.
+   call, and to make `Built/Previous` legible when it appears. The sentence must not generalise into
+   "anything missing is staleness a re-call fixes": an absent source location on a code tool is that
+   tool's own independent walk cadence, which its description already explains, and one ambient
+   sentence fusing the build cadence with the source cadence would tell an agent to re-call for
+   something re-calling does not change.
 
 ## Draft (first-client check)
 
@@ -133,18 +160,18 @@ implementation. Wording is the implementer's to refine; the shape is what the re
 > - Which tables exist, what is in one: `catalog.tables`, then `catalog.describe`.
 > - Which table holds data I can only describe in words: `catalog.search`.
 > - What is in my schema, what did graphitron make of a type or field, which table backs it, which
->   mutations write and to what: `schema`.
+>   mutations write and to what: `schema`. A field reported `Unclassified`, or a snapshot reported
+>   `Unavailable` or `Previous`, means graphitron could not read the intent you are asking about: go to
+>   `diagnostics` for why, rather than back to the schema text.
 > - What is broken right now: `diagnostics`.
 > - Which consumer Java the schema binds to: `services`, `conditions`, `records`.
 > - What else touches this, what breaks if I change it: `edges`.
-> - Does the operation actually work: `execute` (present only when the project configured a dev
->   database).
 > - Is the dev session live, and is its answer current: `status`.
 >
-> Three things hold across every tool:
+> Three things hold across these tools:
 >
-> - The first line of a result is a summary with the totals before paging. Read it before you page or
->   post-process: the count you want is usually already there.
+> - A paged result's first line summarises the whole set, including the total before paging. Read it
+>   before you page or post-process: the count you want is usually already there.
 > - IDs are stable and shared. A schema-qualified SQL table name, a `Type.field` coordinate, and a
 >   `fqcn#method/arity` method ref select the same thing in every tool that takes one, so follow the
 >   ids out of one result into the next call instead of searching again by name.
@@ -156,13 +183,39 @@ implementation. Wording is the implementer's to refine; the shape is what the re
 > documentation site is the reference for the directive vocabulary, the generation pipeline, and the
 > schema conventions.
 
+And the conditional tail, appended only when the `execute` tool is registered:
+
+> This project configured a dev database, so `execute` runs a query or mutation against the generated
+> resolvers in-process and hands back what it returns. Use it to check that a schema edit actually
+> works, rather than reasoning about the generated Java.
+
+### The ambient string is composed, not a single literal resource
+
+That conditional tail is a design decision, not a formatting one, and it is the fork the coverage pin
+turns on. `execute` is registered exactly when `executeConfig != null`, while `instructions` is loaded
+once from a fixed jar resource ("it is shape, not state", per the class javadoc). A static routing line
+for `execute` would advertise an absent tool to every project without a dev database; omitting the line
+leaves the highest payoff-per-discovery tool as the one the ambient slot never routes to.
+
+Settled: **compose the ambient string**, base block plus the conditional sentence, mirroring the
+conditional registration exactly. `GraphitronMcpServer` already holds `executeConfig` at the point it
+calls `loadResource`, so the change is a second bundled resource (`mcp/instructions-execute.txt`,
+keeping agent-facing prose out of Java string literals as the existing two resources do) appended when
+the tool is registered. The pin then asserts coverage of the advertised surface *per boot*, which is
+strictly stronger than a union-across-boots check, and the exempt set can ship genuinely empty rather
+than carrying `execute` as an untested-looking placeholder.
+
+`GraphitronMcpServerTest.initializeReturnsBundledInstructions` compares the handshake string to the
+resource verbatim. It boots without an execute config, so it keeps passing unchanged and now pins the
+base arm; the composed arm wants its own case asserting the tail appears exactly when the tool does.
+
 ### What writing it surfaced
 
-- The draft runs 393 words / 2450 characters against today's 195 / 1291, so covering twelve tools, a
-  resource, and three conventions costs a little under double. That is the honest price, and it is
-  still small against a session's context. But it is the ambient slot, charged per request, so the
-  item ships a size ceiling with the coverage pin (below) rather than leaving the next append
-  unbounded.
+- The draft runs 411 words / 2582 characters for the base block, 452 / 2834 composed with the execute
+  tail, against today's 195 / 1291. So covering twelve tools, a resource, and three conventions costs a
+  little over double. That is the honest price, and it is still small against a session's context. But
+  it is the ambient slot, charged per request, so the item ships a size ceiling with the coverage pin
+  (below) rather than leaving the next append unbounded.
 - `status` is the one tool whose routing line reads thin, because convention 3 already tells the
   agent what `status` is for. Kept anyway: the exempt half of the coverage pin should be empty on
   landing, so the first entry ever added to it has to argue for itself.
@@ -173,47 +226,110 @@ implementation. Wording is the implementer's to refine; the shape is what the re
 ## Implementation
 
 - `graphitron-mcp/src/main/resources/mcp/instructions.txt`: the rewrite above.
+- `graphitron-mcp/src/main/resources/mcp/instructions-execute.txt`: new, the conditional tail.
+- `GraphitronMcpServer`: the only main-code change, appending the tail to the loaded instructions when
+  `executeConfig != null`. Two or three lines beside the existing `loadResource` calls.
 - `graphitron-mcp/src/test/java/no/sikt/graphitron/mcp/` gains the coverage pin (new test class;
   `GraphitronMcpServerTest` is already 1200+ lines and its subject is the transport contract, not the
   bundled prose). Naming follows `EdgeCoverageTest`.
-- No main-code change. The tool descriptions stay as they are: the item cuts duplication out of the
-  ambient file, not out of the local descriptions, because the local one is the copy with a
-  single-tool reader.
+- `GraphitronMcpServerTest`: one case for the composed-arm tail. Its existing
+  `initializeReturnsBundledInstructions` needs no change.
+- The tool descriptions are deliberately untouched. The item cuts duplication out of the ambient file,
+  not out of the local descriptions, because the local one is the copy whose reader is looking at that
+  tool.
 
 ## Tests
 
-One coverage pin, in the shape the module already uses for partition invariants (`EdgeCoverageTest`).
+One coverage pin over the advertised surface, plus a pin under the convention the ambient prose
+asserts. Shape follows `EdgeCoverageTest` for the partition and
+`MojoDocCoverageTest.everyMojoParameterHasADocRowAndViceVersa` for the bidirectional
+producer-and-view assertion, which is the closer precedent: a generated descriptor as producer, a
+hand-written `.adoc` as view, both directions checked, stale view entries named in the failure message,
+and the view located by walking up from the test working directory.
 
-**Derive the tool list, never restate it.** The pin boots a real server on an ephemeral loopback port
-both ways (with and without an `ExecuteTool.Config`, exactly as `GraphitronMcpServerTest`'s
-`executeToolIsAdvertisedExactlyWhenADevDatabaseIsConfigured` already does), and takes the union of
-`listTools`, `listResources`, and `listPrompts` names off the SDK client. A hand-written expected list
-would drift the same way the instructions drifted; deriving from the booted server means a newly
-registered tool fails this test on the commit that registers it.
+**Derive the advertised surface, never restate it.** The pin boots a real server on an ephemeral
+loopback port both ways (with and without an `ExecuteTool.Config`, exactly as
+`GraphitronMcpServerTest`'s `executeToolIsAdvertisedExactlyWhenADevDatabaseIsConfigured` already does)
+and reads `listTools`, `listResources`, and `listPrompts` off the SDK client. A hand-written expected
+list would drift the same way the instructions drifted; deriving from the booted server means a newly
+registered tool fails this test on the commit that registers it. Because the ambient string is composed
+per boot, the assertion runs **per boot** rather than over a union: the no-database boot must not
+mention `execute`, and the configured boot must.
 
-**Assert a partition.** Every advertised name is either present in `instructions.txt` or declared in
-an exempt set. Overlap and stale entries fail too, as in `EdgeCoverageTest.assertPartition`.
+The three namespaces stay distinct. A flat `Set<String>` would report "unrouted:
+graphitron://directives" without saying which surface that is, and would make a per-surface exemption
+reason impossible, so the pin carries a small `(kind, name)` record (tool / resource / prompt) through
+one shared assertion helper.
 
-- Presence is checked in **backticked form** (`` `schema` ``, not `schema`). This is load-bearing:
-  the bare word "schema" appears throughout the prose, so a substring check would pass vacuously on
-  the tool that the second observed episode is about. The instructions already quote every tool name
-  in backticks, so the convention costs nothing and the test comment should say why it exists.
-- The exempt set lands **empty**, with a comment stating that an entry needs a written reason for why
-  an agent needs no cross-tool orientation for that tool. An empty half still earns the guard: the
-  guard's subject is the *next* tool, and the choice between "route it" and "exempt it" is exactly
-  the choice that has been made silently until now.
+**Assert the partition in both directions.**
+
+- *Advertised is routed.* Every advertised name appears in the ambient string, or sits in an exempt
+  set. This is the failure the item observed.
+- *Routed is advertised.* Every tool-shaped backticked token in the ambient string is an advertised
+  name. This is the failure the item has not observed yet and the one that actively misleads: a
+  routing line surviving a rename or a removal points an agent at a tool that is not there. An
+  ambient block accumulates exactly this as the tool surface churns.
+
+Overlap and stale exemptions fail too, as in `EdgeCoverageTest.assertPartition`.
+
+- Presence is checked in **backticked form** (`` `schema` ``, not `schema`). This is load-bearing: the
+  bare word "schema" appears throughout the prose, so a substring check would pass vacuously on the
+  tool the second observed episode is about. The instructions already quote every tool name in
+  backticks, so the convention costs nothing and the test comment should say why it exists. The reverse
+  direction needs a token rule rather than a name list (backticked tokens that look like tool names:
+  lowercase, optionally dotted, no spaces), so the prose's other backticked terms (`@table`,
+  `Type.field`, `mvn graphitron:dev`) do not read as tool claims. Getting that rule slightly wrong
+  fails loudly and locally, which is the right failure mode.
+- The exempt set lands **empty**, and after the composition decision above it is empty for a real
+  reason rather than because nothing was examined. Keep the slot, with a comment requiring a written
+  reason per entry: it is where a future deliberate omission has to become visible. The guard's value
+  is the stale direction and the next tool, not the exempt half.
 - Set placement is test-local, unlike `EdgeCoverageTest`'s (which reads `EdgeProducer`'s sets out of
   main code). No main code has any use for the exemption list, and putting it in main to mirror a
   sibling test would be shape-matching for its own sake.
 
-**A size ceiling on the ambient file.** The same test asserts `instructions.txt` stays under a
-declared character budget. Arbitrary in its exact value, principled in its existence: this file is
-charged on every request of every session, it has no natural back-pressure, and the next item to
-touch it is already planning an append. The ceiling forces an append to be terse or to displace
-something, which is the decision we want made deliberately. 3200 characters is the
-suggested value: a round number a third above the 2450-character draft, so the pin does not fire on
-a wording pass. Put the reasoning in the test comment so a future raise is an argued change rather
-than a bumped constant.
+**The same derived surface covers the manual's tool table.** `docs/manual/how-to/mcp-agent-context.adoc`
+is the second hand-maintained view of the same advertised set, and it is unpinned today, so it drifts
+for the same reason. The pin asserts its rows bidirectionally against the same derived names. This is
+what structurally keeps the two views from becoming copies of each other: they are pinned to the same
+base and differ in *grain*, which the Spec states so the reviewer has something to check. The manual
+table is **per tool** (one row each, tool-owned facts, read once by a human deciding whether to connect
+an agent). The ambient block is **per question** (one line per question, naming several tools or none,
+injected on every request). Different grains over one base is one model with two views; the same grain
+twice is a copy.
+
+**Pin the summary-line convention.** Convention 1 is a contract an agent will act on, so it needs
+something that fails when a new tool breaks it: drive each paged tool once against a built workspace
+(the fixtures `GraphitronMcpServerTest` already uses) and assert the first line of the text content
+names the tool and carries the unpaged total. The measured scope above is what the assertion encodes,
+and it is why the pin covers the paged tools rather than every advertised tool: the warm-degradation
+arms return a bare `WarmState` notice and would fail a universal form of this assertion. That is a real
+inconsistency in the result surface, and prefixing those messages is a reasonable follow-up, filed
+separately rather than smuggled in here.
+
+Convention 2 is already pinned (the two `GraphitronMcpServerTest` cases named in the Design section).
+Convention 3 is pinned by the existing snapshot-axis assertions on `status` / `schema` / `diagnostics` /
+`edges`. So each of the three ambient claims is backed, which is the bar for stating them at all.
+
+**A size ceiling on the ambient string.** The same test asserts the composed string (base plus the
+execute tail, the worst case) stays under a declared budget. Arbitrary in its exact value, principled
+in its existence, and the case is stronger than the one behind
+`DocSizeBudgetTest.developmentPrinciplesStaysUnderBudget`: that budget guards a per-consult cost, this
+one guards a per-request cost for every request of every session, and the next item to touch the file
+is already planning an append. The ceiling forces an append to be terse or to displace something, which
+is exactly the decision that should be conscious. Details, each with its reason, so a future raise is
+an argued change rather than a bumped constant:
+
+- **Unit: characters**, not the words the doc-budget precedent uses. The real cost is tokens; a routing
+  table's words are much shorter than prose words, so a word count understates it relative to the
+  file it would be compared against.
+- **Value: 3600**, a round number roughly a quarter above the 2834-character composed draft, so the pin
+  does not fire on a wording pass but a new paragraph has to be paid for.
+- **The reason lives in the test, not in the file.** The doc-budget precedent puts the budget statement
+  inside the document it governs, which works because that document's reader is the author. This
+  file's only reader is the agent, so an author-facing note inside it would itself be ambient cost
+  charged on every request. The test comment is the right home, and the Spec's own wording is what a
+  future author encounters through the failure message.
 
 ## Sequencing with the aggregated-diagnostics item
 
@@ -223,14 +339,20 @@ item is the one reaching Spec with the file as its subject:
 
 - **This item writes the diagnostics routing line** (`What is broken right now: diagnostics`), as one
   row of the table like every other tool. It does not write anything about aggregation.
-- **R569 keeps its own append**, unchanged in intent: when it registers `diagnostics.aggregate` it
-  adds that tool's row and the "call the aggregate first when the count is large" steer. Its append
-  then lands in a file that has a diagnostics row to attach to, and its new tool trips this item's
-  coverage pin until the row exists, which is the guard doing its job.
-- **No dependency either way.** Whichever lands first, the other still applies: this item's rewrite
-  does not depend on the aggregate existing, and R569's append does not depend on the rewrite (it
-  would just be appending to the old file). If R569 lands first, the rewrite absorbs its paragraph
-  into the table rather than dropping it.
+- **R569 keeps its own append**, unchanged in intent: when it registers `diagnostics.aggregate` it adds
+  that tool's routing line and the "call the aggregate first when the count is large" steer, plus its
+  manual row, which it already plans. Its append then lands in a file that has a diagnostics line to
+  attach to.
+- **The coordination is mechanical once this item lands, not a note in two bodies.** R569 cannot
+  register `diagnostics.aggregate` without adding the routing line and the manual row: the coverage pin
+  fails until both exist. That is the same mechanism R569 already relies on for the tool-name list,
+  which it notes "fails until updated". So neither item needs a `depends-on` edge, and this item does
+  not touch R569's file.
+- **Order is free.** This item's rewrite does not depend on the aggregate existing; R569's append does
+  not depend on the rewrite (without it, the append lands in the old file and this item's rewrite later
+  absorbs the paragraph into the table rather than dropping it). What the pair must not do is leave both
+  items pointing at a section neither committed to creating, which is why the first bullet is a
+  commitment rather than an offer.
 
 ## Out of scope
 
@@ -241,12 +363,15 @@ item is the one reaching Spec with the file as its subject:
   ambient). But an agent must choose to run it, so it cannot be where routing lives, and duplicating
   the routing table there would be a second copy to drift. Naming the prompt from the instructions
   is enough.
-- **The manual's tool table** (`docs/manual/how-to/mcp-agent-context.adoc`). Same content, different
-  reader: it is written for the human deciding whether to connect an agent, one row per tool, and it
-  covers setup, ports, and the `execute` configuration. The two do not need reconciling, and merging
-  them would serve neither reader. What keeps them honest is that they answer different questions
-  ("what does the server give me" versus "which tool do I call now"), and that only the instructions
-  file is under the coverage pin.
+- **Rewriting the manual's tool table** (`docs/manual/how-to/mcp-agent-context.adoc`). Its prose is
+  fine and its reader is a human deciding whether to connect an agent, so the item does not reword it.
+  It comes *into* scope only for the coverage pin, which asserts its rows against the same derived
+  advertised surface (see Tests): the drift risk is shared, the grain is not, and merging the two views
+  would serve neither reader.
+- **Prefixing the warm-degradation messages.** `WarmState.degradationMessage` returns a bare notice with
+  no tool prefix, which is why convention 1 is scoped to paged tools. Making it uniform is a small
+  main-code change with its own reasoning, filed separately rather than folded in to widen one
+  assertion.
 - **The classification gap behind the second episode.** For fields that failed classification the
   snapshot carries `Unclassified` plus a prose reason and no `dmlKind` / `tableName`, so an agent
   repairing broken delete mutations genuinely cannot get the DELETE-intent population out of
