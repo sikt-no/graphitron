@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R563` | Operations as a relation: the leaf cross-product dissolves additively | In Progress | 2026-08-04 <sub>created 2026-08-01</sub> | [plan](operation-relation.md) |
+| `R563` | Operations as a relation: the leaf cross-product dissolves additively | In Review | 2026-08-04 <sub>created 2026-08-01</sub> | [plan](operation-relation.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-08-01 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R582` | Gate dangling cross-file .adoc xref anchors, which render silently and rot invisibly | Spec | 2026-08-04 | [plan](adoc-xref-section-anchor-gate.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
@@ -214,7 +214,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R234` [**Support jOOQ embedded and UDT records as non-table input backings**](jooq-embedded-and-udt-input-backings.md) — Backlog, architecture
 - `R523` [**Carry field SourceLocations through the tenant-binding fold rejections**](tenant-fold-rejection-source-locations.md) — Backlog, tech-debt
-- `R563` [**Operations as a relation: the leaf cross-product dissolves additively**](operation-relation.md) — In Progress, architecture
+- `R563` [**Operations as a relation: the leaf cross-product dissolves additively**](operation-relation.md) — In Review, architecture
 - `R222` [**Dimensional model pivot: slots over cross-product permits**](dimensional-model-pivot.md) — Spec, structural
 - `R333` [**The Graphitron data model**](coordinate-lowers-to-datafetcher-queryparts.md) — Ready, structural
 - `R574` [**Clear the residual inaccuracies the @table-on-input deprecation reopen left behind**](table-on-input-deprecation-sweep-residuals.md) — Backlog, architecture
