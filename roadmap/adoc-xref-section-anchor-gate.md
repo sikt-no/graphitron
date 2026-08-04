@@ -28,7 +28,9 @@ Asciidoctor's own documentation or from a habit formed outside this repo, and it
 Census over `docs/target/staging` (the tree the renderer is pointed at), resolving each anchored
 reference against the `id="..."` attributes in the page the build actually produced. 31 anchored
 references (27 cross-file `xref:<file>.adoc#anchor`, 4 same-file `xref:#anchor`), **4 dangling, all four
-the same mistake**, and every one has an exact kebab-case sibling that exists:
+the same mistake**, and every one has an exact kebab-case sibling that exists. The counts cover the
+authored docs; this item's own two illustration macros are staged and scanned too, and are accounted for
+separately below:
 
 [cols="3,2"]
 |===
@@ -125,17 +127,18 @@ live link, not literal text; only a plus-delimited passthrough inside the span s
 should therefore treat it as a reference and the *prose* is what gets fixed, rather than teaching the check
 to skip inline monospace, which would blind it to the same mistake in ordinary prose.
 
-Exactly one line of this item's own body is such a macro, not three. Established by rendering probes
+Exactly two lines of this item's own body are such a macro, not three. Established by rendering probes
 against the site's own configuration rather than read off the macro grammar: `xref:node.adoc#anchor` and
 `xref:#anchor` render literally (no attrlist), and `xref:<file>.adoc#anchor[label]` renders literally even
 *with* an attrlist, so the two `<file>.adoc#anchor` placeholders in this body are safe twice over and are
-invisible to Asciidoctor and to any Asciidoctor-faithful gate. Scanning `docs/target/staging` picks up only
-the `zzz-no-such-cross-anchor` illustration in "Why a gate and not just the sweep". That one is a live link on
-a published page and should be rewritten as a passthrough on rendering grounds, but it is not what fails
-the gate: staged at `staging/roadmap/plans/`, its target `node.adoc` resolves to no file, so it lands in
-the unresolvable count rather than the dangling-anchor failure. The class is real all the same, since a
-quoted example naming a page that does exist beside the item (`workflow.adoc`, say) would fail; this body
-simply does not instantiate it.
+invisible to Asciidoctor and to any Asciidoctor-faithful gate. Scanning `docs/target/staging` picks up two
+macros from this page: the `zzz-no-such-cross-anchor` illustration in "Why a gate and not just the sweep",
+and the `zzz-nope` probe in the paragraph below. Both are live links on a published page (confirmed in the
+generated HTML, which carries an `href` for each) and both should be rewritten as passthroughs on rendering
+grounds, but neither is what fails the gate: staged at `staging/roadmap/plans/`, their targets resolve to no
+file, so they land in the unresolvable count rather than the dangling-anchor failure. The class is real all
+the same, since a quoted example naming a page that does exist beside the item (`workflow.adoc`, say) would
+fail; this body simply does not instantiate it.
 
 **What counts as a reference is wider than the target's first character suggests.** The same probes settle
 it: `xref:../architecture/index.adoc#zzz-nope[label]` renders as a live link, silently, so a target opening
@@ -170,20 +173,24 @@ rewritten by hand, at the cost of literal plus signs in GitHub's markdown view o
   `[#builder-step-results-are-sealed-not-strings-or-out-params]` in `development-principles.adoc`.
   `reference.adoc:38`'s same-file `+<<Schema-qualified keys>>+` natural-language reference keeps working and
   needs no change.
-* All three quoted references in this item's body rewritten as plus-delimited passthroughs, so the published
-  page carries no link to nowhere. The `zzz-no-such-cross-anchor` xref macro is one; the other two are the
-  backtick-quoted `<<...>>` forms, one in "Why a gate and not just the sweep" and one in the
-  `reference.adoc:38` bullet below, which render as live same-file links to nowhere and are the only two
-  `possible invalid reference` INFO lines the whole site render emits. All three are a rendering fix, not a
-  gate fix: same-file `<<...>>` is out of scope below, and the xref's target resolves to no file as staged,
-  so it is counted rather than failed. Fixing only the xref macro leaves two links to nowhere on the page.
+* Both live xref macros in this item's body rewritten as plus-delimited passthroughs, so the published page
+  carries no link to nowhere: the `zzz-no-such-cross-anchor` illustration in "Why a gate and not just the
+  sweep", and the `zzz-nope` probe in the "What counts as a reference" paragraph. Verify against the
+  generated HTML, which today carries an `href` for each; fixing only the first leaves one link to nowhere.
+  This is a rendering fix, not a gate fix: both targets resolve to no file as staged, so the gate counts
+  them rather than failing them. The two backtick-quoted `<<...>>` forms elsewhere in the body (in the same
+  "Why a gate" bullet, and in the `reference.adoc:38` bullet below) are *already* plus-delimited and render
+  literally; leave them that way, and do not let a rewrite drop the plus signs. The site render currently
+  emits no `possible invalid reference` INFO lines at all, so that is the baseline to preserve rather than a
+  count to reduce.
 * `check-adoc-xrefs` fails the build on a dangling cross-file anchor, verified by planting one and
   observing the failure, not only by unit test.
 * The rule is written down where an author reads before the gate teaches it by failing:
   `docs/README.adoc`'s "Authoring conventions" list gains the strict rule, and its "Errors-vs-warnings"
   paragraph is corrected. That paragraph currently claims `failIf severity=WARN` (live at
-  `docs/pom.xml:362`) means "missing xrefs ... fail the build", which the census above disproves for the
-  cross-file anchored case: it is the one class that renders silent under exactly that setting.
+  `docs/pom.xml:362`) means "missing xrefs ... fail the build", which the probes above disprove for both
+  anchored cases under exactly that setting: the cross-file one renders silent, and the same-file one logs at
+  INFO and still reaches `BUILD SUCCESS`. No missing xref fails the build today.
 * The check reports a count of references it could not resolve to an authored `.adoc`, rather than passing
   over them silently, so under-coverage is visible without the count itself failing the build.
 * Every finding names its authored source alongside the staged path, since all of `staging/` is build output
