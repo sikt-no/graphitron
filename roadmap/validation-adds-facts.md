@@ -1,7 +1,7 @@
 ---
 id: R589
 title: "Classification is a relation; validation adds facts"
-status: Backlog
+status: Spec
 bucket: architecture
 priority: 4
 theme: classification-model
