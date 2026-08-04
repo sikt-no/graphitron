@@ -182,7 +182,9 @@ Three parts, each of which Spec should settle in shape and wire naming:
    what makes the per-cluster example coordinates a sample rather than a lossy summary.
 
 `instructions.txt` should point an agent at the aggregate first when the diagnostic count is
-large, or the capability will go undiscovered in exactly the sessions that need it.
+large, or the capability will go undiscovered in exactly the sessions that need it. This item writes
+that one routing sentence only; the file's structure, its diagnostics orientation, and the coverage pin
+that keeps routing honest belong to `mcp-server-instruction-routing`.
 
 ## Faceted aggregation, not a fixed set of reports
 
@@ -381,7 +383,10 @@ the collapsed `lspCodeOf`.
 - `GraphitronMcpServer`'s `tools` list: register the new tool. The `GraphitronMcpServerTest`
   tool-name assertion pins the list, so it fails until updated.
 - Both tool descriptions: the dimension vocabulary has to be enumerated somewhere for discovery.
-- `mcp/instructions.txt`: point at the aggregate when the diagnostic count is large.
+- `mcp/instructions.txt`: one sentence pointing at the aggregate when the diagnostic count is large.
+  The file carries no diagnostics guidance today (it routes only to the `catalog.*` tools), and writing
+  that orientation is `mcp-server-instruction-routing`'s scope, not this item's. If that item has not
+  landed, drop the sentence in wherever the file's structure then is and let it be folded in later.
 - `docs/manual/how-to/mcp-agent-context.adoc`: the per-tool table gains a `diagnostics.aggregate`
   row beside the existing `diagnostics` one. This is the user-facing surface the shipped
   `docs.search` / `catalog.search` tools landed prose on, and the draft omitted it.
@@ -455,7 +460,8 @@ in sixteen:
 >
 > *Derived from message text* (not stable across a rewording): `messageTemplate`.
 
-**`mcp/instructions.txt`**, appended to the diagnostics guidance:
+**`mcp/instructions.txt`**, the one sentence this item contributes to the diagnostics orientation that
+`mcp-server-instruction-routing` owns:
 
 > When the schema has more than a page of diagnostics, call `diagnostics.aggregate` before
 > `diagnostics`. It answers what is broken and in what proportion in one small result, and its group
