@@ -19,7 +19,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R582` | Gate dangling cross-file .adoc xref anchors, which render silently and rot invisibly | Spec | 2026-08-04 | [plan](adoc-xref-section-anchor-gate.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-01 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
-| `R579` | Drop the unused parentTypeName parameter from FieldBuilder.parseExternalRef | In Progress | 2026-08-04 <sub>created 2026-08-03</sub> | [plan](parse-external-ref-unused-parent-type.md) |
+| `R579` | Drop the unused parentTypeName parameter from FieldBuilder.parseExternalRef | In Review | 2026-08-04 <sub>created 2026-08-03</sub> | [plan](parse-external-ref-unused-parent-type.md) |
 | `R569` | Aggregated diagnostics commands for the MCP server <sub>blocked by: [input-field-resolution-typed-rejections](input-field-resolution-typed-rejections.md)</sub> | Spec | 2026-08-04 <sub>created 2026-08-03</sub> | [plan](mcp-aggregated-diagnostics.md) |
 | `R473` | Explicit @nodeId grammar: Node.id is the only implicit nodeId; typeName-first decode resolution | Spec | 2026-08-04 <sub>created 2026-07-13</sub> | [plan](explicit-nodeid-grammar.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
@@ -384,7 +384,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### legacy-migration
 
 - `R360` [**Retire the @enum directive; infer enum Java backing from producers**](retire-enum-directive.md) — Backlog, cleanup
-- `R579` [**Drop the unused parentTypeName parameter from FieldBuilder.parseExternalRef**](parse-external-ref-unused-parent-type.md) — In Progress, cleanup
+- `R579` [**Drop the unused parentTypeName parameter from FieldBuilder.parseExternalRef**](parse-external-ref-unused-parent-type.md) — In Review, cleanup
 - `R27` [**Retire `@nodeId` and `IdReferenceField` synthesis shims**](retire-synthesis-shims.md) — Backlog, cleanup, blocked by [nodeid-migration-quickfix](nodeid-migration-quickfix.md), [explicit-nodeid-grammar](explicit-nodeid-grammar.md)
 - `R540` [**mutation.adoc documents UPSERT the generator refuses at dispatch**](upsert-docs-match-dispatch-refusal.md) — Backlog, docs
 
