@@ -108,15 +108,18 @@ invariant, and each is a fact no single description can state:
 
 1. *A paged tool's first line carries the total before paging.* Read it before paging or
    post-processing. This is the first episode's fix, and it holds across every paged tool
-   (`catalog.tables`, `diagnostics`, `schema`, the three code tools, `edges`), which is why it belongs
+   (`catalog.tables`, `diagnostics`, `schema`, and the three code tools), which is why it belongs
    in the ambient slot rather than repeated six times.
 
-   The claim is scoped to paged tools *on purpose*, and the scope was measured rather than assumed.
-   `docs.search`'s summary names the top hit and carries no count; the degradation arms of
-   `docs.search` and `catalog.search` return `WarmState.degradationMessage`, which carries neither a
-   tool prefix nor a number. An ambient sentence promising "the first line always carries the total"
-   would send an agent looking for a count in a sentence about ONNX. The honest grain is the paged
-   tools, and the pin below asserts exactly that grain so the sentence stays true as tools are added.
+   The claim is scoped to paged tools *on purpose*, and the scope is exactly the six tools that call
+   `McpWire.page`. The other list-shaped tools are near misses rather than counterexamples:
+   `edges`, `docs.search`, and `catalog.search` all do carry a count in their success summaries, so
+   the miss is not a missing number. None of them takes a cursor, so "the total before paging" names
+   nothing for them; and the degradation arms of `docs.search` and `catalog.search` return
+   `WarmState.degradationMessage`, which carries neither a tool prefix nor a number. An ambient
+   sentence promising "the first line always carries the total" would send an agent looking for a
+   count in a sentence about ONNX. The honest grain is the paged tools, and the pin below asserts
+   exactly that grain so the sentence stays true as tools are added.
 2. *IDs are stable and shared across tools.* A schema-qualified SQL table name, a `Type.field`
    coordinate, and a `fqcn#method/arity` method ref select the same thing in every tool that takes
    one, so a result's id feeds the next call. `edges` already says this about its own endpoints
@@ -290,22 +293,35 @@ Overlap and stale exemptions fail too, as in `EdgeCoverageTest.assertPartition`.
 
 **The same derived surface covers the manual's tool table.** `docs/manual/how-to/mcp-agent-context.adoc`
 is the second hand-maintained view of the same advertised set, and it is unpinned today, so it drifts
-for the same reason. The pin asserts its rows bidirectionally against the same derived names. This is
+for the same reason. The pin asserts it bidirectionally against the same derived names. This is
 what structurally keeps the two views from becoming copies of each other: they are pinned to the same
 base and differ in *grain*, which the Spec states so the reviewer has something to check. The manual
-table is **per tool** (one row each, tool-owned facts, read once by a human deciding whether to connect
-an agent). The ambient block is **per question** (one line per question, naming several tools or none,
-injected on every request). Different grains over one base is one model with two views; the same grain
-twice is a copy.
+is **per tool** (tool-owned facts, read once by a human deciding whether to connect an agent). The
+ambient block is **per question** (one line per question, naming several tools or none, injected on
+every request). Different grains over one base is one model with two views; the same grain twice is a
+copy.
+
+The two directions get different spans over that file, because its shape does not support one rule
+for both. Presence runs over the **whole document**: every advertised name across the three
+namespaces already appears in backticks somewhere in it, `about` and `directives` included, so the
+forward half needs nothing reworded. Staleness runs over the **tool table's first column only**,
+where a backticked token is unambiguously a tool claim. Two things force that split rather than the
+row-per-name rule `MojoDocCoverageTest` gets to use: the table is ten rows for twelve tools
+(`services`, `conditions`, `records` share one cell, which the pin splits), and `about` and
+`directives` are named in the prose above the table rather than as rows. A whole-document reverse
+check is the wrong instrument here for a third reason: the manual's backticked vocabulary is much
+wider than the ambient file's and includes tool-shaped tokens that are not tools (`dev`,
+`graphitron`), so it would need an ignore list that grows with the prose. Rewording the manual to fit
+a simpler rule stays out of scope.
 
 **Pin the summary-line convention.** Convention 1 is a contract an agent will act on, so it needs
-something that fails when a new tool breaks it: drive each paged tool once against a built workspace
-(the fixtures `GraphitronMcpServerTest` already uses) and assert the first line of the text content
-names the tool and carries the unpaged total. The measured scope above is what the assertion encodes,
-and it is why the pin covers the paged tools rather than every advertised tool: the warm-degradation
-arms return a bare `WarmState` notice and would fail a universal form of this assertion. That is a real
-inconsistency in the result surface, and prefixing those messages is a reasonable follow-up, filed
-separately rather than smuggled in here.
+something that fails when a new tool breaks it: drive each of the six paged tools once against a built
+workspace (the fixtures `GraphitronMcpServerTest` already uses) and assert the first line of the text
+content names the tool and carries the unpaged total. The measured scope above is what the assertion
+encodes, and it is why the pin covers the paged tools rather than every advertised tool: the
+warm-degradation arms return a bare `WarmState` notice and would fail a universal form of this
+assertion. That is a real inconsistency in the result surface, and prefixing those messages is a
+reasonable follow-up, filed separately rather than smuggled in here.
 
 Convention 2 is already pinned (the two `GraphitronMcpServerTest` cases named in the Design section).
 Convention 3 is pinned by the existing snapshot-axis assertions on `status` / `schema` / `diagnostics` /
@@ -365,13 +381,13 @@ item is the one reaching Spec with the file as its subject:
   is enough.
 - **Rewriting the manual's tool table** (`docs/manual/how-to/mcp-agent-context.adoc`). Its prose is
   fine and its reader is a human deciding whether to connect an agent, so the item does not reword it.
-  It comes *into* scope only for the coverage pin, which asserts its rows against the same derived
+  It comes *into* scope only for the coverage pin, which asserts it against the same derived
   advertised surface (see Tests): the drift risk is shared, the grain is not, and merging the two views
   would serve neither reader.
 - **Prefixing the warm-degradation messages.** `WarmState.degradationMessage` returns a bare notice with
-  no tool prefix, which is why convention 1 is scoped to paged tools. Making it uniform is a small
-  main-code change with its own reasoning, filed separately rather than folded in to widen one
-  assertion.
+  no tool prefix, which is one of the two reasons convention 1 is scoped to paged tools. Making it
+  uniform is a small main-code change with its own reasoning, filed separately rather than folded in
+  to widen one assertion.
 - **The classification gap behind the second episode.** For fields that failed classification the
   snapshot carries `Unclassified` plus a prose reason and no `dmlKind` / `tableName`, so an agent
   repairing broken delete mutations genuinely cannot get the DELETE-intent population out of
