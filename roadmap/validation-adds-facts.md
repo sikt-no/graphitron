@@ -23,13 +23,13 @@ a violation, not deleting a classification.
 
 The pivot purifies the pipeline's stages, and each stage comes out simpler than it is today.
 **Classification gathers facts from the schema**: classifiers examine coordinates and either claim
-them or decline, and the claims land in a relation, `Coordinate -> Claim*`. **Validation adds
-derived facts**: a wrong claim count on a coordinate becomes a located violation; the claims stay.
-**Planning returns to the single-classification worldview**: commands are created from the facts,
-and on a valid schema the claims relation *is* functional, so the view planning reads
-(`Coordinate -> Classification`, total) keeps today's contract and no downstream consumer grows a
-cardinality branch. Execute/render stays the simplest stage. The count check is not a mechanism; it
-is one validation rule over the relation.
+them or decline, and the claims land in relations keyed `(coordinate, classifier)`. **Validation
+adds derived facts**: a violated key constraint on the claim relations becomes a located violation;
+the claims stay. **Planning returns to the single-classification worldview**: the reduced claim
+view is single-valued per coordinate on a valid schema, and planning joins it with the gathered
+slot facts directly into command records, so no downstream consumer grows a cardinality branch.
+Execute/render stays the simplest stage. The count check is not a mechanism; it is a key
+constraint, and its violations are validation's derived facts.
 
 One premise of the first draft was wrong, and correcting it makes the item smaller. The additive
 violation channel already ships: `GraphitronSchema.diagnostics` carries "build-time validation
@@ -43,8 +43,11 @@ slot value at a coordinate with no resolvable verdict; it stops being the record
 This *extends* the umbrella data-model item (`coordinate-lowers-to-datafetcher-queryparts`, R333)
 rather than merely implementing it: the umbrella's normalised model today has no classification base
 relation at all (classification is described as a denormalised view over facts), and this item adds
-one, the claims relation. The amendment is deliberate, is the first slice of the scope below, and is
-reviewed through this item's gates; R333 stays in Ready.
+two, the authored and inferred claim relations. It also sharpens the umbrella's end state: the
+commands are the parse targets, planning joins facts directly into them, and today's classification
+record hierarchy is the transitional producer surface the umbrella's arm-by-arm migration dissolves.
+The amendment is deliberate, is the first slice of the scope below, and is reviewed through this
+item's gates; R333 stays in Ready.
 
 ## Cardinality: "could not classify" reports two different things
 
@@ -59,7 +62,11 @@ coordinate lands as an `UnclassifiedField`, asserting *zero* classifications whe
 or more. What the two claims *were* is never retained, and in most cases never computed, so the
 strongest available description of the defect ("this field claims both a table target and a service
 backing, pick one") is unavailable to every view. The participating directive names survive on the
-rejection; the classifications they would have produced do not.
+rejection; the classifications they would have produced do not. The machinery is invisible enough
+that one of its own rows is dead: the `Composes` verdict (`@routine` with `@splitQuery`) can never
+fire, because neither detector list ever passes `@splitQuery`, and the live routine-and-splitQuery
+interaction is a conditional conflict minted mid-arm against a resolution result (an empty derived
+batch key), not against co-occurrence.
 
 **A failed bind is laundered as a successful one.** `InputField.UnboundField` should be a positive
 fact: this field binds no SQL column. Instead it doubles as the demotion target for column-miss, and
@@ -98,8 +105,9 @@ Nothing pins *fidelity*: a view may narrow a permit to a message and no test not
 case: `UnclassifiedField.definition()` (the full authored `GraphQLFieldDefinition`) is in hand and
 discarded in favour of `f.reason()`. And coverage without a producer is worth nothing: the
 `FieldClassification.InputUnbound` arm compiles but is unreachable, because input fields contribute
-no entries to the projection's index. The input half of any projection fix is therefore blocked on
-input-member coordinates (umbrella work), not on this item.
+no entries to the projection's index. The arm is even declared edge-bearing in `EdgeProducer`, a
+second consumer-side declaration pinning an unreachable arm. The input half of any projection fix
+is therefore blocked on input-member coordinates (umbrella work), not on this item.
 
 **Consumer layer: views re-derive from text what the model had.** Measured on a live session against
 a consumer schema mid-migration, an agent asked to repair `@mutation` usage on the delete mutations
@@ -109,53 +117,114 @@ ones, which are exactly the population needing repair, it answers `Unclassified`
 tool is useless precisely where the author needs it, the agent falls back to SDL text, and SDL text
 is worse data: it reads intent rather than the verdict and carries no table binding.
 
-## Target model: scatter-gather classification over a claims relation
+## Target model: scatter-gather classification over claim relations
 
-A claim row is `(coordinate, classification payload, provenance, tier)`. Provenance names the
-classifier that claimed and the trigger it claimed on (a directive application, or the structural
-trigger), which is what turns a conflict message from "@service, @routine are mutually exclusive"
-into "the service classifier claimed service-backed from `@service` at line 12; the routine
-classifier claimed routine-backed from `@routine` at line 12".
+Two base relations, both keyed `(coordinate, classifier)`:
 
-**Guards are part of a classifier's contract.** Classifiers that might step on each other make the
-interaction explicit by knowing each other's directives: the condition classifier and the lookup-key
-classifier both know `@lookupKey`, one claims only when it is present, the other only when it is
-absent. A claim is therefore a gathered fact about the schema as authored, never a counterfactual
-("what `@service` would have produced had `@routine` not been there"), which is what disqualified
-running today's arms speculatively: the arms are not pure, and their output under co-occurrence is a
-derivation under a false premise.
+- `authoredClaims`: claims triggered by a directive application. Provenance is the application and
+  its source location.
+- `inferredClaims`: claims triggered by structure (a name resolving against the parent's table, a
+  grouping type nesting). Provenance is the structural trigger.
+
+Separate relations rather than one relation with a tier tag keep each row type honest: the two
+provenance shapes never share a record, so no component goes nullable by kind, which is the
+`UnboundField` smell above. The key is the purity statement: a classifier is a deterministic
+function from gathered facts to at most one claim per coordinate. Two hosts classifying the same
+nested coordinate land on the same key, so deduplication is structural, not procedural. Provenance
+is what turns a conflict message from "@service, @routine are mutually exclusive" into "the service
+classifier claimed service-backed from `@service` at line 12; the routine classifier claimed
+routine-backed from `@routine` at line 12".
+
+**The claim payload is decoded slot facts.** A claim carries the classification kind it asserts and
+the facts the classifier resolved on the way there (a resolved table, a parent correlation, an
+order spec), all decoded. No graphql-java node crosses into the relations, preserving the
+containment line `FieldClassification`'s javadoc pins for the views. A conflicted DELETE mutation
+reports its intended table because the table slot fact was resolved before the conflict was
+derived, not because anything specially preserved it.
+
+**Claims cover the classification axis only.** Delivery (`@splitQuery`), reachable source shapes,
+and the other gathered axes stay their own coordinate-keyed relations; `GraphitronSchema` already
+carries eight, and the claim relations join that family rather than swallowing it. Which axis a
+directive binds is declared at the directive definition and rendered into the generated directives
+reference, so "classification-claiming" stops being a hand-enumerated list; `@splitQuery` never
+claims, and the `Composes` verdict dissolves rather than migrates.
+
+**Resolution is a relational expression, not a tag filter.** The view planning reads is the
+authored relation unioned with the inferred rows at coordinates the authored relation does not
+cover. Structural classifiers therefore need zero directive knowledge: masking is the join's job,
+never a guard's, and the masked structural reading survives as data ("would classify as a table
+column; `@service` overrides it") for any hover or diagnostic that wants it.
+
+**Validation rules are the key constraints, refined.** More than one authored claim on a coordinate
+is a conflict violation carrying every claim, except where a recognized-combinations rule refines
+the kind: `@routine` with `@lookupKey` is a capability gap (keyed batch lookup backed by a routine
+is coherent authored intent with no designed emit strategy), so that pair mints a Deferred-kind
+violation, exactly the cause identity `reduceDirectiveConflict` produces today. Deferral fails the
+build like any rejection, so planning's totality is never exercised and nothing unimplemented
+reaches emit; the pairwise table's entire residue is this one rule's data. More than one inferred
+claim on an authored-free coordinate is a structural ambiguity. Zero claims on a coordinate that
+requires one is unclassifiable. All three mint into `GraphitronSchema.diagnostics`; the claims
+stay.
+
+**Guards are part of a classifier's contract, within the authored side.** Authored classifiers that
+might step on each other make the interaction explicit by knowing each other's directives: the
+condition classifier and the lookup-key classifier both know `@lookupKey`, one claims only when it
+is present, the other only when it is absent. A claim is therefore a gathered fact about the schema
+as authored, never a counterfactual ("what `@service` would have produced had `@routine` not been
+there"), which is what disqualified running today's arms speculatively: the arms are not pure, and
+their output under co-occurrence is a derivation under a false premise. Where a co-occurrence is
+recognised and deliberate, the guards let both claims stand and the recognized-combinations rule
+names the pair; that is the `@routine` with `@lookupKey` case above.
 
 **Guard drift is self-reporting.** Too-loose guards produce two claims and surface as a conflict
 violation carrying both; too-tight guards produce zero claims and surface as unclassifiable. Drift
-can never silently produce wrong code; it lands as a cardinality violation on the first schema that
-exercises the overlap. The invariant carries its own enforcer, where today a wrong `pairVerdict`
-entry or a name missing from the two hand-enumerated detector lists misclassifies silently, because
-arm order in `FieldBuilder` is the de facto precedence table and nothing renders it.
+can never silently produce wrong code; it lands as a key-constraint violation on the first schema
+that exercises the overlap. The invariant carries its own enforcer, where today a wrong
+`pairVerdict` entry or a name missing from the two hand-enumerated detector lists misclassifies
+silently, because arm order in `FieldBuilder` is the de facto precedence table and nothing renders
+it.
 
-**Two tiers, one explicit precedence rule.** Claims are authored (directive-triggered) or inferred
-(structural: a name resolving against the parent's table, a grouping type nesting). Resolution
-prefers authored over inferred; conflict is meaningful within the winning tier. This is the one
-global rule that replaces the invisible arm ordering implementing exactly this today, and it keeps
-structural classifiers from enumerating the full directive set, which would re-centralise the very
-list the guards distribute.
+**Parse, don't validate, at the right grain.** Each classification arm today is a parser whose
+target is the classification record, and the records rightly cannot be instantiated half-filled.
+The defect is that the parse's intermediate progress lives in locals: by the time the
+uncorrelated-routine `@splitQuery` check fails (the `Rejection.directiveConflict` naming
+`@splitQuery` and `@routine` in `FieldBuilder`'s routine-chain arm), the arm has resolved the
+table-backed target, built the `ParentCorrelation`, and derived the split source, and all of it
+evaporates into one `UnclassifiedField`. All-or-nothing is a property of the parse target; today
+it leaks into the knowledge. Under this model classifiers record the slot facts they resolve, a
+coordinate whose facts cannot fill a target's slots yields a violation naming exactly the missing
+slot, and every filled slot survives to every view. The parse targets are the commands: planning
+joins the reduced claim view and the slot facts directly into command records (a coordinate may
+lower to several), with no intermediate classification record between facts and commands. Today's
+`GraphitronField` hierarchy is the transitional producer surface; dissolving it is umbrella work.
 
-**Classifiers are pure.** A classifier is a function from gathered facts to claim rows. Today's arms
-mint into `ctx.diagnostics()` and the field registry mid-flight; under this model, violations and
-registry entries come out of validation and planning, never out of classifiers.
+**Classifiers are pure, and the additive pattern already ships.** The
+`@splitQuery`-on-nesting-field branch in `FieldBuilder` already does what this item asks for: it
+mints a Deferred diagnostic into `ctx.diagnostics()`, keeps the classification and its subtree
+intact for the editor view, and fails the build through the validator's drain. It also carries the
+purity hazard to retire: it reads the accumulator to dedupe the shared-nesting case. Under
+coordinate-keyed claims that dedup is structural, per the key above; violations and registry
+entries come out of validation and planning, never out of classifiers.
 
 ## Scope
 
-1. **Amend the umbrella.** Add the claims base relation and the stage vocabulary (classification
-   gathers, validation derives, planning returns to the functional view) to R333's model text. First
-   slice, reviewed through this item's gates; R333 does not leave Ready.
-2. **The claims relation ships.** `Coordinate -> Claim*` with payload, provenance, and tier. The
-   existing monolithic classifier participates as a single claim producer in the interim. Validation
-   derives cardinality violations into `GraphitronSchema.diagnostics` with every claim retained;
-   planning reads the functional view, total on a valid schema.
-3. **Conflicts record instead of reduce.** `reduceDirectiveConflict` stops reducing to a verdict and
-   starts recording claim rows (floor payload: the directive application plus the classification
-   kind it claims) and one violation. The pairwise table and the two hand-enumerated detector lists
-   become derivations over one claiming-directive relation rather than a fourth list.
+1. **Amend the umbrella.** Add the claim base relations, the stage vocabulary (classification
+   gathers, validation derives, planning joins facts into commands), and the
+   commands-as-parse-targets end state to R333's model text. First slice, reviewed through this
+   item's gates; R333 does not leave Ready.
+2. **The claim relations ship.** `authoredClaims` and `inferredClaims`, keyed
+   `(coordinate, classifier)`, payloads as decoded slot facts. The existing monolithic classifier
+   participates as the single claim producer in the interim, and planning reads the reduced view.
+   Acceptance is projection and generated-output identity on the fixture corpus; the relations are
+   single-claim by construction here, so the key-constraint rules are vacuous by design until
+   slice 3, and the guard mechanism is exercised in slice 6.
+3. **Conflicts record instead of reduce.** `reduceDirectiveConflict` stops reducing to a verdict
+   and starts recording claim rows and one violation. The `Conflict` default becomes the
+   authored-relation key constraint; the `Deferred` row survives as the recognized-combinations
+   refinement (cause identity pinned: `@routine` with `@lookupKey` stays a capability-gap
+   rejection); the `Composes` row dissolves because `@splitQuery` is a delivery-axis directive
+   that never claims (the row is dead code today regardless). The two hand-enumerated detector
+   lists derive from the per-directive axis declaration rather than becoming a fourth list.
 4. **"Unbound" stops being a demotion target.** The definition-keyed fact ("no column bound,
    attempted name X") stays on the carrier as a positive fact. The malformed-shape verdict
    (`@condition(override: false)` with no column) mints into `diagnostics` at classify time, with no
@@ -163,31 +232,72 @@ registry entries come out of validation and planning, never out of classifiers.
    two predicates gets exactly one evaluation site (today `FieldBuilder.rejectAtConsumer` and
    `GraphitronSchemaValidator.validateInputUnboundField` overlap). This subsumes the validator-mirror
    gap R221 (`validator-walks-plain-input-unbound-fields`) owns, or narrows it to a residue; settle
-   which at implementation and close or re-scope R221 accordingly.
+   which at implementation and close or re-scope R221 accordingly. The cascade half carries an
+   open question below: `rejectAtConsumer` reads `enclosingOverride`, a call-site cascade fact the
+   validator's model walk does not have.
 5. **The output-side projection preserves the claims.** A broken DELETE mutation still reads as a
-   DELETE mutation with its intended table on the LSP and MCP surfaces, sourced from the claims
-   relation, never from `UnclassifiedField.definition()` (a graphql-java node; reading applied
+   DELETE mutation with its intended table on the LSP and MCP surfaces, sourced from the claim
+   relations, never from `UnclassifiedField.definition()` (a graphql-java node; reading applied
    directives off it downstream would widen a parse-boundary containment exception into two more
-   consumers). Input-side projection is descoped: input fields have no coordinates in the projection
-   until the umbrella's input-member-coordinate work lands, and the dead `InputUnbound` arm stays
-   dead until then.
+   consumers). The projection arm splits instead of reusing `Unclassified(reason)`: unresolvable
+   (carrying the reason) and conflicted (carrying the claims), so fidelity has a type to land on.
+   The edge partition decides explicitly whether the conflicted arm is edge-bearing:
+   `EdgeProducer` buckets `Unclassified` under no-edge today, and without that decision the
+   motivating query ("which delete mutations target table X") still fails for exactly the broken
+   population. Input-side projection is descoped: input fields have no coordinates in the
+   projection until the umbrella's input-member-coordinate work lands, and the dead `InputUnbound`
+   arm stays dead until then.
 6. **A pilot classifier pair proves the guard discipline.** Extract the condition / lookup-key pair
    as pure classifiers with explicit mutual guards, end to end: claims gathered, violation on
    overlap, claims surviving to the projection. This is the vertical slice that validates the model
    before any arm-by-arm migration.
-7. **Enforcement is behavioural plus type-lift, not a census.** The acceptance fixture is
-   pipeline-tier: an SDL schema with a conflicting-directive DELETE mutation, asserted through the
-   projection to still report the DML kind and the intended table. Fidelity lifts into types where
-   the projected arm's components are the claim payload record. No reflection census of carrier
-   components against projection components; it cannot observe whether the projection read a
-   component, so it degenerates into two hand lists agreeing by convention.
+Enforcement across the slices is behavioural plus type-lift, not a census. The acceptance fixture
+is pipeline-tier: an SDL schema with a conflicting-directive DELETE mutation, asserted through the
+projection to still report the DML kind and the intended table. Fidelity lifts into types where
+the projected arm's components are a view record over the claim payload. No reflection census of
+carrier components against projection components; it cannot observe whether the projection read a
+component, so it degenerates into two hand lists agreeing by convention. Once slice 3 lands, the
+existing fixture corpus doubles as a guard-drift census for free: unchanged accept/reject over the
+corpus asserts that the reduced view is single-valued everywhere the corpus reaches.
+
+## User documentation (first-client check, draft)
+
+The MCP `schema(type:)` entry for a conflicted DELETE mutation. Today:
+
+```json
+{"kind": "Unclassified", "reason": "@mutation, @service are mutually exclusive"}
+```
+
+After slice 5 (shape illustrative; field names settle at implementation):
+
+```json
+{
+  "kind": "Conflicted",
+  "claims": [
+    {"classification": "DmlMutation", "dmlKind": "DELETE", "tableName": "film",
+     "trigger": "@mutation(typeName: \"DELETE\")", "line": 12},
+    {"classification": "MutationService", "methodClassName": "no.sikt.films.DeleteFilmService",
+     "trigger": "@service", "line": 12}
+  ],
+  "violation": "two directives claim the classification; pick one"
+}
+```
+
+The LSP hover header gains the same split: `Conflicted: DmlMutation (@mutation), MutationService
+(@service)` where today it renders `Unclassified`. This draft is the first client of the claim
+payload: everything in it must be renderable from decoded slot facts alone, and if it cannot be,
+the payload shape is wrong. This is the workflow's first-client rule applied to a changed wire
+shape rather than a new one; the MCP JSON and the hover header are agent- and author-facing
+surfaces, so the item does not qualify for the internal-refactor exemption.
 
 ## Relationships
 
-- **Umbrella (`coordinate-lowers-to-datafetcher-queryparts`, R333):** amended by slice 1. The claims
-  relation is a base relation the umbrella's current text lacks; the single-classification worldview
-  relocates to the planning stage instead of being abolished. The arm-by-arm migration of
-  `FieldBuilder` into independent classifiers is follow-up work under the umbrella, not this item.
+- **Umbrella (`coordinate-lowers-to-datafetcher-queryparts`, R333):** amended by slice 1. The claim
+  relations are base relations the umbrella's current text lacks; the single-classification
+  worldview relocates to the planning stage instead of being abolished, the commands become the
+  parse targets, and today's classification record hierarchy is named as the transitional producer
+  surface. The arm-by-arm migration of `FieldBuilder` into independent classifiers is follow-up
+  work under the umbrella, not this item.
 - **`input-field-resolution-typed-rejections` (R585):** overlaps on one carrier, and its one open
   design fork (fan many input-field failures into one prose rejection, or emit several) is decided
   by this item's doctrine: violations are facts, one per failure. Whichever lands first settles the
@@ -212,9 +322,36 @@ registry entries come out of validation and planning, never out of classifiers.
 - **New rejection causes**, and any move of the accept / reject line.
 - **Input-side projection**, per scope item 5.
 
+## Open questions (for the next design round)
+
+- **The zero-claims domain.** "Zero claims is unclassifiable" needs an explicit domain: which
+  coordinates *require* a claim. Today the walk defines that set implicitly; under scatter-gather
+  it has to be a fact or a rule of its own.
+- **Slice 4's cascade half.** `rejectAtConsumer` reads `enclosingOverride`, a call-site cascade
+  fact the validator's model walk does not have. Materialising it needs a use-site relation over
+  input carriers, which have no coordinates until the umbrella's input-member work; the
+  alternative is leaving the cascade predicate wholly to R221 and keeping only the
+  definition-keyed half here.
+- **Edge placement of the conflicted arm.** Edge-bearing in `EdgeProducer` (broken fields appear
+  in the graph agents traverse) or a separate broken-fields surface; `EdgeCoverageTest` pins
+  whichever answer.
+- **Slot-fact granularity and home.** Which slot facts ship in this item (the pilot pair's, plus
+  what the conflicted-DELETE fixture needs) versus staying inside the interim monolithic producer;
+  and where the relations live (components on `GraphitronSchema` beside the existing eight, or a
+  separate gathered-facts carrier).
+- **The axis declaration's home.** Where a directive declares the axis it binds, and what enforces
+  that every classification-claiming directive carries the declaration.
+- **Interim claim payload in slice 2.** The monolithic producer's minted record riding as the
+  payload, or a thinner kind-plus-provenance row until the pilot lands.
+- **Provenance shape for inferred claims.** What a structural trigger is as data (the resolving
+  column, the nesting edge), and whether one shape covers all structural classifiers.
+
 ## Retired vocabulary (expected; finalise at the Done gate)
 
 - `FieldBuilder.PairVerdict` / `pairVerdict` / `reduceDirectiveConflict`: the pairwise reduction,
-  replaced by derivations over the claiming-directive relation.
+  replaced by the authored-relation key constraint plus the recognized-combinations rule.
 - The three-cases-in-one-record reading of `InputField.UnboundField` and its `attemptedColumnName`
   null-as-discriminator semantics (the component itself may survive as an honest fact).
+- `UnclassifiedField.definition()` (candidate): the claim relations subsume the rich-error-context
+  role its javadoc claims; deleting it closes the parse-boundary containment exception the
+  projection slice protects.
