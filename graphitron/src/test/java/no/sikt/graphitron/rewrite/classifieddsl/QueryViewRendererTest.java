@@ -31,17 +31,17 @@ class QueryViewRendererTest {
 
     private static final String FIXTURE = """
         type Query {
-          film: Film @classified(source: Query, operation: Fetch, target: Single, targetShape: Table)
-          actor: Actor @classified(source: Query, operation: Fetch, target: Single, targetShape: Table)
+          film: Film @classified(source: Query, operation: Fetch, operations: [Select], target: Single, targetShape: Table)
+          actor: Actor @classified(source: Query, operation: Fetch, operations: [Select], target: Single, targetShape: Table)
         }
 
         type Film @table(name: "film") @classifiedType(as: TableType) {
-          title: String @classified(source: Child, operation: Fetch, target: Single, targetShape: Column)
-          releaseYear: Int @field(name: "release_year") @classified(source: Child, operation: Fetch, target: Single, targetShape: Column)
+          title: String @classified(source: Child, operation: Fetch, operations: [Select], target: Single, targetShape: Column)
+          releaseYear: Int @field(name: "release_year") @classified(source: Child, operation: Fetch, operations: [Select], target: Single, targetShape: Column)
         }
 
         type Actor @table(name: "actor") {
-          firstName: String @field(name: "first_name") @classified(source: Child, operation: Fetch, target: Single, targetShape: Column)
+          firstName: String @field(name: "first_name") @classified(source: Child, operation: Fetch, operations: [Select], target: Single, targetShape: Column)
         }
         """;
 

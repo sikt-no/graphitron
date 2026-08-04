@@ -9,6 +9,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.Operation;
+import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.model.OutputField;
 
 import java.util.Arrays;
@@ -172,6 +173,38 @@ public final class ExemptionRegistry {
         Operation.Upsert.class, UPSERT_RETIRED);
 
     /**
+     * {@link OperationMember} leaf arms no declared-and-agreeing {@code operations:} corpus row
+     * reaches: the member-grain successor of {@link #OPERATION_KNOWN_GAPS}, carrying the same
+     * blocker stories re-keyed onto the member vocabulary (the five modeled-but-unpopulated arms
+     * plus the retired UPSERT). An arm leaves this map the moment a fixture declares-and-agrees
+     * on it (the ratchet); an unreached arm not listed here fails the completeness check.
+     */
+    public static final Map<Class<?>, Exemption> MEMBER_KNOWN_GAPS = Map.of(
+        OperationMember.EntityResolve.class, new Exemption.Unimplemented(
+            "a federation _entities classification item",
+            "Federation _entities resolution is not a classified leaf yet, so no fixture can "
+            + "produce the member."),
+        OperationMember.Count.class, new Exemption.Unimplemented(
+            SYNTHESISED_CONNECTION_FIELDS_NOT_COORDINATES,
+            "A synthesised connection type's totalCount field is not a classified coordinate in "
+            + "the fact base, so no fixture can land a coordinate carrying the Count member; "
+            + "R562 owns the synthesised-fields-as-coordinates model question."),
+        OperationMember.Facet.class, new Exemption.Unimplemented(
+            SYNTHESISED_CONNECTION_FIELDS_NOT_COORDINATES,
+            "A synthesised connection type's facets field is not a classified coordinate in "
+            + "the fact base, so no fixture can land a coordinate carrying the Facet member; "
+            + "R562 owns the synthesised-fields-as-coordinates model question."),
+        OperationMember.Write.UpdateMatching.class, new Exemption.Unimplemented(
+            "condition-matched UPDATE",
+            "The condition-matched write verbs are declared ahead of implementation; the "
+            + "validator-mirror-gaps item owns the per-arm verdicts."),
+        OperationMember.Write.DeleteMatching.class, new Exemption.Unimplemented(
+            "condition-matched DELETE",
+            "The condition-matched write verbs are declared ahead of implementation; the "
+            + "validator-mirror-gaps item owns the per-arm verdicts."),
+        OperationMember.Write.Upsert.class, UPSERT_RETIRED);
+
+    /**
      * Concrete {@link ChildField} leaves the corpus source-shape walk (top-level coordinates
      * plus the ridden {@code NestingField.nestedFields()} / {@code PivotSpec.slots()} lists)
      * does not observe. Empty: the walk currently reaches every leaf.
@@ -284,6 +317,24 @@ public final class ExemptionRegistry {
     }
 
     /**
+     * The {@link OperationMember} leaf arms the corpus demonstrates at member grain: every arm
+     * in a declared {@code operations:} list that agrees with the produced member rows at its
+     * coordinate (the {@code corpusCommittedLauncherArms()} agreement-gate shape: declaration
+     * alone claims nothing, production alone claims nothing).
+     */
+    private static Set<Class<?>> corpusDeclaredMemberArms() {
+        var covered = new HashSet<Class<?>>();
+        for (var example : ClassifiedCorpus.examples()) {
+            for (var fc : ClassifiedHarness.classify(example.sdl()).fields()) {
+                if (fc.expected().operations().equals(fc.actual().operations())) {
+                    covered.addAll(fc.expected().operations());
+                }
+            }
+        }
+        return covered;
+    }
+
+    /**
      * The concrete {@link ChildField} leaf classes the corpus source-shape walk observes:
      * every classified child field in every fixture schema, descending the ridden lists
      * ({@code NestingField.nestedFields()}, {@code PivotSpec.slots()}).
@@ -367,6 +418,17 @@ public final class ExemptionRegistry {
         memo(ExemptionRegistry::corpusObservedOperations),
         OPERATION_KNOWN_GAPS);
 
+    /**
+     * The member-grain operation obligation, {@link #OPERATION_ARMS}' successor: every
+     * {@link OperationMember} leaf arm must be reached by a declared-and-agreeing
+     * {@code operations:} corpus row or carry a typed exemption.
+     */
+    public static final Obligation MEMBER_ARMS = new Obligation(
+        "classified-dsl: operation-member arms vs declared-and-agreeing member rows",
+        memo(() -> GeneratorCoverageTest.sealedLeaves(OperationMember.class)),
+        memo(ExemptionRegistry::corpusDeclaredMemberArms),
+        MEMBER_KNOWN_GAPS);
+
     public static final Obligation SOURCE_SHAPE_CORPUS = new Obligation(
         "source-shape projection: ChildField leaves vs the corpus walk",
         memo(() -> GeneratorCoverageTest.sealedLeaves(ChildField.class)),
@@ -407,13 +469,13 @@ public final class ExemptionRegistry {
      */
     public static List<Obligation> corpusObligations() {
         return List.of(VARIANT_COVERAGE_OUTPUT, VARIANT_COVERAGE_INPUT, OPERATION_ARMS,
-            SOURCE_SHAPE_CORPUS, LAUNCHER_COMMITMENT);
+            MEMBER_ARMS, SOURCE_SHAPE_CORPUS, LAUNCHER_COMMITMENT);
     }
 
     /** All rows, the discovery guard's registration authority. */
     public static List<Obligation> obligations() {
         return List.of(VARIANT_COVERAGE_OUTPUT, VARIANT_COVERAGE_INPUT, OPERATION_ARMS,
-            SOURCE_SHAPE_CORPUS, LAUNCHER_COMMITMENT, LSP_PROJECTION);
+            MEMBER_ARMS, SOURCE_SHAPE_CORPUS, LAUNCHER_COMMITMENT, LSP_PROJECTION);
     }
 
     private static <T> Supplier<T> memo(Supplier<T> s) {

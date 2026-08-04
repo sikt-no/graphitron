@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.classifieddsl;
 
 import graphql.language.Argument;
+import graphql.language.ArrayValue;
 import graphql.language.Directive;
 import graphql.language.EnumTypeDefinition;
 import graphql.language.EnumValue;
@@ -20,6 +21,7 @@ import no.sikt.graphitron.rewrite.generators.GeneratorCoverageTest;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.Operation;
+import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.model.OutputField;
 import no.sikt.graphitron.rewrite.model.Source;
 import no.sikt.graphitron.rewrite.model.SourceShape;
@@ -28,6 +30,7 @@ import no.sikt.graphitron.rewrite.model.TargetShape;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -273,10 +276,13 @@ public final class ClassifiedHarness {
                 + "OutputField (got " + (field == null ? "null" : field.getClass().getSimpleName())
                 + "); the corpus asserts successful classification only.");
         }
-        DimensionTuple expected = new DimensionTuple(sourceArg(d), operationArg(d), targetArg(d));
-        // The arrival arm is the parent-type ancestor-product fold, read through the schema's
-        // sourceOf seam (a leaf cannot compute its own arm). operation / target stay leaf-derived.
-        DimensionTuple actual = DimensionTuple.of(out, schema.sourceOf(parentType, fieldName));
+        DimensionTuple expected = new DimensionTuple(sourceArg(d), operationArg(d), operationsArg(d), targetArg(d));
+        // The arrival arm is the parent-type ancestor-product fold and the member rows are the
+        // minted relation's, both read through the schema seams every consumer reads (a leaf
+        // cannot compute its own arm, and the corpus asserts the production, not the leaf-derived
+        // comparison side). target stays leaf-derived.
+        DimensionTuple actual = DimensionTuple.of(out, schema.sourceOf(parentType, fieldName),
+            schema.operationMembersOf(parentType, fieldName));
         return new FieldCase(parentType, fieldName, expected, actual, out.getClass());
     }
 
@@ -330,6 +336,44 @@ public final class ClassifiedHarness {
     }
 
     /**
+ * The {@code operations:} member rows, as {@link OperationMember} arm type tokens sorted by
+     * simple name (the same canonical order {@code DimensionTuple.memberArmsOf} imposes on the
+     * produced side, so the SDL list order never matters). A multiset: a token may repeat, one
+     * entry per member row. Each token is resolved from the seal's recursive leaf set by simple
+     * name, so a directive value that names no arm fails.
+     */
+    private static List<Class<? extends OperationMember>> operationsArg(Directive d) {
+        var tokens = enumListArg(d, "operations");
+        var arms = new ArrayList<Class<? extends OperationMember>>();
+        for (String name : tokens) {
+            Class<? extends OperationMember> arm = MEMBER_ARMS.get(name);
+            if (arm == null) {
+                throw new AssertionError("@classified: unknown member arm '" + name + "'");
+            }
+            arms.add(arm);
+        }
+        arms.sort(Comparator.comparing(Class::getSimpleName));
+        return List.copyOf(arms);
+    }
+
+    /**
+     * The {@link OperationMember.Kind} column of a declared member arm, derived from the seal's
+     * own structure (the nested {@code Write} and {@code Condition} sub-seals name their kinds;
+     * every other leaf's simple name is its kind constant in upper snake case) rather than a
+     * second hand-maintained switch that could drift from {@link OperationMember#kind()}.
+     */
+    public static OperationMember.Kind kindOf(Class<? extends OperationMember> arm) {
+        if (OperationMember.Write.class.isAssignableFrom(arm)) {
+            return OperationMember.Kind.WRITE;
+        }
+        if (OperationMember.Condition.class.isAssignableFrom(arm)) {
+            return OperationMember.Kind.CONDITION;
+        }
+        return OperationMember.Kind.valueOf(
+            arm.getSimpleName().replaceAll("([a-z])([A-Z])", "$1_$2").toUpperCase(java.util.Locale.ROOT));
+    }
+
+    /**
  * The {@code target:} / {@code targetShape:} projection coordinate: the {@link Target} wrapper
      * arm token and the outer {@link TargetShape} arm token, both resolved from their seals' leaf sets by
      * simple name.
@@ -358,11 +402,22 @@ public final class ClassifiedHarness {
     }
 
     private static final Map<String, Class<? extends Operation>> OPERATION_ARMS = armsByName(Operation.class);
+    private static final Map<String, Class<? extends OperationMember>> MEMBER_ARMS = armsByName(OperationMember.class);
     private static final Map<String, Class<? extends Target>> TARGET_WRAPPERS = armsByName(Target.class);
     private static final Map<String, Class<? extends TargetShape>> TARGET_SHAPES = armsByName(TargetShape.class);
 
     private static String enumArg(Directive d, String argName) {
         return ((EnumValue) argValue(d, argName)).getName();
+    }
+
+    /** A required list-of-enum argument's value names, in SDL order. */
+    private static List<String> enumListArg(Directive d, String argName) {
+        var value = argValue(d, argName);
+        if (!(value instanceof ArrayValue array)) {
+            throw new AssertionError("@" + d.getName() + " argument '" + argName
+                + "' must be a list of enum values (got " + value.getClass().getSimpleName() + ")");
+        }
+        return array.getValues().stream().map(v -> ((EnumValue) v).getName()).toList();
     }
 
     private static Value<?> argValue(Directive d, String argName) {
@@ -434,6 +489,21 @@ public final class ClassifiedHarness {
      */
     public static List<String> operationArmSimpleNames() {
         return sealedLeafSimpleNames(Operation.class);
+    }
+
+    /** The {@code Member} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */
+    public static Set<String> memberEnumConstants() {
+        return preludeEnumConstants("Member");
+    }
+
+    /**
+     * The simple names of the sealed {@link OperationMember} leaves (the live member-arm
+     * vocabulary the {@code operations:} tokens resolve against). The recursive walker descends
+     * the nested {@code Write} and {@code Condition} sub-seals to their leaves, so the verb and
+     * condition arms appear individually.
+     */
+    public static List<String> memberArmSimpleNames() {
+        return sealedLeafSimpleNames(OperationMember.class);
     }
 
     /** The {@code TargetWrapper} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */

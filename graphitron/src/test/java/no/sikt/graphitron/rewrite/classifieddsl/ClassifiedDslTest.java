@@ -311,6 +311,106 @@ class ClassifiedDslTest {
         // (ExemptionRegistry.OPERATION_KNOWN_GAPS) is one registry obligation; the shared
         // assertion carries the exercised-must-be-removed ratchet this test used to state inline.
         ExemptionRegistry.assertHonoured(ExemptionRegistry.OPERATION_ARMS);
+
+        // Member arms: the operation axis at member grain, every OperationMember leaf reached by
+        // a declared-and-agreeing corpus row or exempt with a typed reason (the retiring
+        // single-token obligation's successor).
+        ExemptionRegistry.assertHonoured(ExemptionRegistry.MEMBER_ARMS);
+    }
+
+    /**
+     * The re-grain window's content-preservation bridge: the retiring single-token
+     * {@code operation:} column is a pure function of the declared member list and the declared
+     * target shape, so deleting it loses no asserted content. Checked over <em>declarations
+     * alone</em> (both sides of the equality are directive text, no production involved): the
+     * token-level restatement of {@code DimensionTuple.summaryArmOf}'s precedence fold, applied
+     * to the declared {@code operations:} tokens and the declared {@code targetShape:}, must
+     * reproduce the declared {@code operation:} token at every corpus coordinate. Retires with
+     * the {@code operation:} argument.
+     */
+    @Test
+    void declaredOperationTokenIsAFoldOfTheDeclaredMemberListAndTargetShape() {
+        for (var example : ClassifiedCorpus.examples()) {
+            for (var fc : ClassifiedHarness.classify(example.sdl()).fields()) {
+                var declaredArms = fc.expected().operations().stream()
+                    .map(Class::getSimpleName).toList();
+                var declaredShape = fc.expected().target().shape().getSimpleName();
+                assertThat(declaredFold(declaredArms, declaredShape))
+                    .as("declared operation: token at %s: %s.%s must equal the fold of the "
+                            + "declared operations: list %s and targetShape: %s",
+                        example.id(), fc.parentType(), fc.fieldName(), declaredArms, declaredShape)
+                    .isEqualTo(fc.expected().operation().getSimpleName());
+            }
+        }
+    }
+
+    private static String declaredFold(List<String> arms, String targetShape) {
+        for (var verb : List.of("Insert", "Upsert", "Update", "Delete", "RoutineWrite",
+                "UpdateMatching", "DeleteMatching")) {
+            if (arms.contains(verb)) {
+                return verb;
+            }
+        }
+        if (arms.contains("NodeResolve")) {
+            return "NodeResolve";
+        }
+        if (arms.contains("ServiceCall")) {
+            return "ServiceCall";
+        }
+        if (arms.contains("Lookup")) {
+            return "Lookup";
+        }
+        if (arms.contains("Pivot")) {
+            return "Pivot";
+        }
+        if (targetShape.equals("Connection")) {
+            return "Paginate";
+        }
+        if (arms.contains("Select")) {
+            return "Fetch";
+        }
+        return targetShape.equals("Table") ? "Nest" : "Fetch";
+    }
+
+    /**
+     * The declaration fence: every declared member list sits inside the coordinate's leaf-declared
+     * co-occurrence shape ({@code OperationMembers.DECLARED_SHAPES}), judged from the declaration
+     * and the classified leaf alone. This is the production-independent check on the authored
+     * {@code operations:} lists: the main corpus test asserts declared-equals-produced, which a
+     * declaration transcribed from the production satisfies by construction; this fence is the
+     * second judge (the grammar, not the producer), so a declared list the grammar rejects fails
+     * even when the production agrees with it. The two member vocabularies are bound here by the
+     * total {@code OperationMember.kind()} column ({@code ClassifiedHarness.kindOf} is its
+     * class-token restatement, derived from the seal's own structure).
+     */
+    @Test
+    void declaredMemberListsSitInsideTheLeafsDeclaredShape() {
+        for (var example : ClassifiedCorpus.examples()) {
+            for (var fc : ClassifiedHarness.classify(example.sdl()).fields()) {
+                @SuppressWarnings("unchecked")
+                var shape = OperationMembers.declaredShapeOf(
+                    (Class<? extends no.sikt.graphitron.rewrite.model.OutputField>) fc.leaf());
+                var declaredKinds = fc.expected().operations().stream()
+                    .map(ClassifiedHarness::kindOf)
+                    .collect(java.util.stream.Collectors.toCollection(
+                        () -> EnumSet.noneOf(OperationMember.Kind.class)));
+                var admitted = EnumSet.noneOf(OperationMember.Kind.class);
+                admitted.addAll(shape.required());
+                admitted.addAll(shape.optional());
+                assertThat(admitted)
+                    .as("declared operations: kinds at %s: %s.%s must sit inside the %s leaf's "
+                            + "declared shape (required %s, optional %s)",
+                        example.id(), fc.parentType(), fc.fieldName(), fc.leaf().getSimpleName(),
+                        shape.required(), shape.optional())
+                    .containsAll(declaredKinds);
+                assertThat(declaredKinds)
+                    .as("declared operations: kinds at %s: %s.%s must include the %s leaf's "
+                            + "required kinds %s",
+                        example.id(), fc.parentType(), fc.fieldName(), fc.leaf().getSimpleName(),
+                        shape.required())
+                    .containsAll(shape.required());
+            }
+        }
     }
 
     /**
@@ -474,6 +574,14 @@ class ClassifiedDslTest {
     }
 
     @Test
+    void memberMirrorsTheOperationMemberArms() {
+        assertThat(ClassifiedHarness.memberEnumConstants())
+            .as("the SDL Member enum must mirror the sealed OperationMember leaves; "
+                + "adding an arm to one side without the other fails here")
+            .containsExactlyInAnyOrderElementsOf(ClassifiedHarness.memberArmSimpleNames());
+    }
+
+    @Test
     void targetWrapperMirrorsAdapterValues() {
         assertThat(ClassifiedHarness.targetWrapperEnumConstants())
             .as("the SDL TargetWrapper enum must mirror the sealed Target wrapper arms; "
@@ -544,6 +652,7 @@ class ClassifiedDslTest {
         // and TargetShape is safe: the two seals are never folded into one name set.)
         assertThat(ClassifiedHarness.sourceWrapperArmSimpleNames()).as("Source arm names").doesNotHaveDuplicates();
         assertThat(ClassifiedHarness.operationArmSimpleNames()).as("Operation arm names").doesNotHaveDuplicates();
+        assertThat(ClassifiedHarness.memberArmSimpleNames()).as("OperationMember arm names").doesNotHaveDuplicates();
         assertThat(ClassifiedHarness.targetWrapperArmSimpleNames()).as("Target wrapper arm names").doesNotHaveDuplicates();
         assertThat(ClassifiedHarness.targetShapeArmSimpleNames()).as("TargetShape arm names").doesNotHaveDuplicates();
         assertThat(ClassifiedHarness.launchSourceArmSimpleNames()).as("LaunchSource arm names").doesNotHaveDuplicates();

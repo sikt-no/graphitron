@@ -12,11 +12,16 @@ package no.sikt.graphitron.rewrite.classifieddsl;
  * {@code target} value is a parse/assembly error graphql-java rejects before the harness runs.
  *
  * <ul>
- *   <li>{@code @classified} on output field definitions asserts the three-axis
- *       {@link DimensionTuple} the field classifies to; each endpoint is a wrapper plus a shape,
- *       and the enums mirror the field model's sealed-arm sets ({@code GraphitronSchema.sourceOf} /
- *       the member-derived summary fold {@code DimensionTuple.summaryArmOf} /
- *       {@code OutputField.target()}).</li>
+ *   <li>{@code @classified} on output field definitions asserts the {@link DimensionTuple} the
+ *       field classifies to; each endpoint is a wrapper plus a shape, and the enums mirror the
+ *       field model's sealed-arm sets ({@code GraphitronSchema.sourceOf} /
+ *       {@code GraphitronSchema.operationMembersOf} / {@code OutputField.target()}). The
+ *       {@code operations:} list asserts the coordinate's operation-member rows as a multiset of
+ *       sealed-arm tokens ({@code Member} mirrors the {@code OperationMember} leaves): arm
+ *       identity and row count, never payloads or the condition rows' table keys (the
+ *       {@code @commits} grammar applied to the member relation). During the re-grain window the
+ *       single-token {@code operation:} column rides beside it, held equal to the fold of the
+ *       declared list and target shape until it retires.</li>
  *   <li>{@code @classifiedType(as:)} asserts the {@code GraphitronType} sealed leaf a type
  *       classifies to; {@code TypeVerdict} enumerates those leaves minus the failure leaf
  *       {@code UnclassifiedType}, and {@link ClassifiedHarness} mirrors the enum against the live
@@ -68,6 +73,12 @@ public final class ClassifiedDsl {
           Insert Upsert Update UpdateMatching Delete DeleteMatching RoutineWrite
         }
 
+        enum Member {
+          Select Join OnReturnTable OnParticipant OrderBy Paginate Lookup ServiceCall
+          NodeResolve EntityResolve Count Facet Pivot Reentry
+          Insert Upsert Update Delete UpdateMatching DeleteMatching RoutineWrite
+        }
+
         enum TargetWrapper { Single List }
 
         enum SourceShape { Table Record }
@@ -96,7 +107,8 @@ public final class ClassifiedDsl {
         input Mint { name: String!, as: SynthesisedType! }
 
         directive @classified(
-          source: SourceWrapper!, operation: Operation!, target: TargetWrapper!, targetShape: TargetShape!
+          source: SourceWrapper!, operation: Operation!, operations: [Member!]!,
+          target: TargetWrapper!, targetShape: TargetShape!
           sourceShape: SourceShape
         ) on FIELD_DEFINITION
 
