@@ -81,6 +81,93 @@ The theoretical hazard is a legacy column-named `ID` field (`customerId: ID`) fl
 
 R34 (`nodeid-migration-quickfix`) ships LSP quick fixes that derive the `typeName:` value from the shim's own facts. It is Backlog and unstarted, and this item does not depend on it: the migration is ~25 fixture sites in-tree and, per the above, nothing out of tree. If a consumer does turn up, R34 becomes the humane path and the dependency turns real.
 
+## Spec review notes, 2026-08-04 (revisions requested, status stays Spec)
+
+Independent Spec -> Ready review. The grammar itself reads well and rules 3 and 5 check out
+against the tree; the blocking findings are all collisions with work that has moved since this
+body was written, plus three code claims that would send an implementer to the wrong place.
+
+**1. R580 is `Ready` and owns two of this item's implementation instructions.**
+`roadmap/infer-node-from-implements-node-and-metadata.md` (`Ready`, same `nodeid` theme, decision
+recorded 2026-08-04) makes `implements Node` + `__NODE_*` metadata mint a `NodeType` without
+`@node`, and its Phase 2 takes over the output-side `FieldBuilder` site. Neither item declares a
+dependency on the other, so the ordering is undeclared anywhere. Three concrete conflicts:
+
+* Rule 1's antecedent, "a type declared `implements Node @node`", stops being the right
+  condition once `@node` is no longer necessary to be a node type. R580's Reconciliation
+  section asks for exactly this edit: restate it as a type classified as a `NodeType`, however it
+  got there.
+* The "Flip and delete" list says to delete `FieldBuilder`'s output-side
+  bare-scalar-`ID`-on-a-`NodeType` branch. R580 Phase 2 says to *keep* that branch, drop its
+  WARN, narrow its predicate to the `Node`-interface `id` field, and make it the permanent rule-1
+  carrier. One of the two has to give; whichever way it lands, this item's shim inventory needs to
+  stop counting that site as one of three.
+* Rule 1's precedence against column resolution is unstated here and settled there. Today
+  `FieldBuilder.classifyChildFieldOnTableType` resolves the column before the `NodeType` arm, so
+  on a `@node` type over a table with a literal `id` column a bare `id: ID!` maps to the raw
+  column. Rule 4's "unless it is `Node.id` (rule 1)" reads as rule 1 pre-empting that, which is a
+  silent wire-format change and contradicts this item's "That is the only silent change in the
+  set". R580 Phase 3 owns that flip (warn-and-flip, 29 measured fixture sites). Either defer to
+  it explicitly or say rule 1 fires only on a column miss.
+
+**2. `validateNodeTypeIdUniqueness` is not in `GraphitronSchemaValidator`.** It is
+`TypeBuilder.validateNodeTypeIdUniqueness` (`TypeBuilder.java:475`), so the "alongside" anchor
+for placing rules 1-3 points at the wrong class. The placement conclusion still holds and is
+worth keeping: `GraphitronSchemaValidator.validate` takes the classified `GraphitronSchema`, and
+`GraphitronType.InputType` / `ObjectType` expose `schemaType()` while `GraphitronField` carries
+`definition`, so the SDL directive facts rules 1-3 need are all reachable without catalog or
+index state. Repoint the sentence at a real neighbour.
+
+**3. Rule 2 already exists as build behavior.** Bare `@nodeId` on an output field whose parent is
+not a `NodeType` is rejected today at `FieldBuilder.classifyChildFieldOnTableType`
+(`FieldBuilder.java:7201-7202`) with "@nodeId requires the containing type to be a node type (via
+@node or KjerneJooqGenerator metadata)". The spec's "today this reaches
+`FieldBuilder.classifyArgument`'s inference or falls through to a column miss" names the argument
+path, not the output path, and neither alternative is what happens. So rule 2's work is
+relocating an existing rejection for a source location and a better message, not adding a
+verdict. Say which, and say whether the classifier rejection stays as the mirror that
+"Rejections: validator mirrors classifier invariants" prescribes.
+
+**4. "The three deprecation WARNs and the two `*ShimWarnFormatTest` classes" is wrong on all
+three counts.** Exactly one class matches that pattern (`IdReferenceShimWarnFormatTest`); the
+other warn-format test is `AsConnectionSameTableWarnFormatTest`, which covers the
+`@asConnection` same-table warning and must not be deleted with these shims; and the output-side
+WARN (`FieldBuilder.java:7260`, "synthesizes an `@nodeId` carrier without the directive") has no
+test asserting its text at all. R580 states the same finding independently.
+
+Verified clean, for the record: the sakila-example de-scoping claim holds (all 17 bare `@nodeId`
+sites across the five `.graphqls` files are `id: ID!` on `type X implements Node ... @node`;
+`CreateKeyedNodeInput` does write `@nodeId(typeName: "KeyedNode")`, so the previous draft's
+INSERT-input claim was indeed stale). Both named argument fixtures exist as written, and
+`search(term: String @nodeId)` is the only non-`ID` one. All four `NodeIdPipelineTest.InputCase`
+names exist. Rule 4's `@reference` claim matches `BuildContext.java:2525-2528`
+(`InputField.ColumnBackedReferenceField` + `CallSiteExtraction.Direct()`). Rule 5's by-name view
+exists as `NodeIndex.forName` returning `Optional<NodeType>`. `@node` plus `implements Node` is
+today the only way to mint a `NodeType` (`TypeBuilder.java:1308-1311`), so rule 2's "not a
+`@node`" phrasing is precise on current trunk, which is exactly what finding 1 changes.
+
+Opportunities, author's call, not blocking:
+
+* The opt-in mechanism menu and the rejection tests interact. A package-private constant flipped
+  in the fixture-migration commit cannot be toggled per test, so the per-rule rejection cases
+  cannot land in the same commit as the rejection code, and commit 1 ships unreachable
+  unexercised branches. Worth naming as a constraint on the choice the spec asks the implementer
+  to make up front.
+* The existing rejection message at `FieldBuilder.java:7202` says "via @node or
+  KjerneJooqGenerator metadata", which is false on current trunk and becomes true only after
+  R580 Phase 1. This item rewrites that exact rejection, so it is well placed to leave the
+  message accurate for whichever ordering wins.
+* The LSP is a named beneficiary of the source locations but no LSP surface is listed.
+  `Diagnostics.validateNodeType` and `LspVocabulary`'s `@nodeId(typeName:)` completion binding
+  both assume the current grammar; worth a sentence on whether they need anything.
+* Input-field rejections reached through the registry walk (`validateInputType`) versus per
+  consuming field (`validateInputFieldRecursive`) differ in coverage for an input type that is
+  declared but never consumed. Probably fine, worth deciding rather than discovering.
+* The measured input-field count reads low. A rough re-scan puts bare `@nodeId` input-field sites
+  in `graphitron/src/test` above the stated ~23, and R580 records a comparable undercount from
+  single-line greps missing multi-line declarations. The spec already says to re-measure at
+  pickup, so this is a nudge to use a multi-line-aware scan when doing so.
+
 ## Provenance
 
 Supersedes, in stronger form, the discarded R263 (`decode-helper-typename-first-resolution`, see the 2026-07-13 changelog entry and its re-open trigger): R263 proposed a typeName-first *sibling* entry point for hypothetical future callers; the finding here is that existing callers already hold the type name and the resolution polarity is simply backwards. Grammar shape settled in design discussion on 2026-07-13.
