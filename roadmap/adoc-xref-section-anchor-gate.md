@@ -27,8 +27,8 @@ Asciidoctor's own documentation or from a habit formed outside this repo, and it
 
 Census over `docs/target/staging` (the tree the renderer is pointed at), resolving each anchored
 reference against the `id="..."` attributes in the page the build actually produced. 31 anchored
-references, **4 dangling, all four the same mistake**, and every one has an exact kebab-case sibling that
-exists:
+references (27 cross-file `xref:<file>.adoc#anchor`, 4 same-file `xref:#anchor`), **4 dangling, all four
+the same mistake**, and every one has an exact kebab-case sibling that exists:
 
 [cols="3,2"]
 |===
@@ -68,20 +68,33 @@ gate already won: a reference that names a live target should be build-enforced 
 **The rule: a cross-file anchored xref must target an explicit block anchor** (`[#id]` or `[[id]]`) on the
 target section, not an auto-generated heading id. The gate resolves against explicit anchors only.
 
-This is already the house convention, which is the main argument for it. Eight of the nine currently-working
-cross-file anchored references target an explicit `[#id]`: `diagnostics-glossary.adoc` carries
-`[#kind-author-error]`, `[#kind-invalid-schema]`, `[#kind-deferred]`; `dev-loop-internals.adoc` carries
-`[#dev-loop-detail]` and `[#native-runtime-dependency]`; plus `[#execute-tool]`, `[#compiled-classes]`,
-`[#hook-state-contract]`. Only `referenceFor.adoc:34` → `reference.adoc#schema-qualified-keys` leans on the
-auto-generated form, so adopting the rule costs exactly one added anchor and makes that target rename-safe
-too.
+This is already the house convention, which is the main argument for it. Of the 23 currently-working
+cross-file anchored references, 17 target an explicit `[#id]`, across 11 distinct anchors:
+`diagnostics-glossary.adoc` carries `[#kind-author-error]`, `[#kind-invalid-schema]`, `[#kind-deferred]`;
+`dev-loop-internals.adoc` carries `[#dev-loop-detail]`, `[#native-runtime-dependency]`,
+`[#federation-internals]`; plus `[#execute-tool]`, `[#compiled-classes]`, `[#hook-state-contract]`,
+`[#session-identity]`, `[#helper-locality]`.
+
+The remaining 6 lean on the auto-generated form, over 5 distinct anchors, and they are what the rule costs:
+
+* `referenceFor.adoc:34` → `reference.adoc#schema-qualified-keys`
+* `dispatch-axes.adoc:117` → `development-principles.adoc#sealed-hierarchies-over-enums-for-typed-information`
+* `typed-rejection.adoc:91` → `development-principles.adoc#acceptances-classifier-guarantees-shape-emitter-assumptions`
+* `typed-rejection.adoc:91` and `:196` → `development-principles.adoc#rejections-validator-mirrors-classifier-invariants`
+* `typed-rejection.adoc:195` → `development-principles.adoc#builder-step-results-are-sealed-not-strings-or-out-params`
+
+So adopting the rule costs **five added anchors across two files**, not one: one in `reference.adoc` and
+four in `development-principles.adoc`. No referencing site needs to change, because each of those five
+headings already slugs to exactly the id the references name, so an explicit `[#id]` repeating that id
+is a pure addition. Four of the five land on principle headings that are cited from other pages, which is
+precisely the population that should be rename-safe, so the cost buys the thing the rule is for.
 
 Checking explicit anchors only also means the gate does not reimplement Asciidoctor's id-generation
 algorithm, which would be a second source of truth free to drift from the renderer at every AsciidoctorJ
 upgrade. The permissive alternative (accept explicit anchors *or* headings slugged under the site's
-`idseparator`) needs that algorithm, buys no migration savings worth having at a one-file cost, and leaves
-authors writing references that work today and break on a heading reword. Recommend the strict rule; the
-alternative is the reviewer's to reopen.
+`idseparator`) needs that algorithm, buys no migration savings worth having against five one-line
+additions, and leaves authors writing references that work today and break on a heading reword. Recommend
+the strict rule; the alternative is the reviewer's to reopen.
 
 **Where it runs.** Implement as `AdocXrefAnchorCheck` in `roadmap-tool` beside `AdocMarkdownTableCheck`,
 with a `check-adoc-xrefs` mode in `Main` and a `AdocXrefAnchorCheckTest`, matching the shape of the three
@@ -100,26 +113,64 @@ resolution free and exact, because it is the same tree asciidoctor resolves agai
 Cost: the gate does not run under `-P!docs`. Acceptable and consistent, on the same footing as `-Pquick`
 skipping the javadoc reference gate.
 
+**Quoted xref syntax counts as a reference, and that is correct.** Staging includes `staging/roadmap/`, so
+roadmap prose is in the scan, and prose about xrefs quotes xref syntax. A single-backtick span applies
+AsciiDoc's normal substitution group, macros included, so wrapping an xref macro in backticks renders a
+live link, not literal text; only a plus-delimited passthrough inside the span suppresses it. The gate
+should therefore treat it as a reference and the *prose* is what gets fixed. This item's own body is the
+first instance: the
+deliberately-dangling illustration in "Why a gate and not just the sweep", plus the two `<file>`
+placeholders, stage as cross-file anchored references and will fail the gate on the commit that adds it.
+Rewrite them as passthrough rather than teaching the check to skip inline monospace, which would blind it
+to the same mistake in ordinary prose.
+
+Two things to keep straight about that. First, the alternative of scoping `staging/roadmap/` out of the
+scan is worse than it looks: roadmap items are published pages on the site, so their links rot like any
+other, and this item would have exempted the one page it was written about. Second, the general fix lives
+one level down and is filed separately: markdown code spans are literal by definition while AsciiDoc code
+spans are substituted, and the md-to-adoc render currently passes backticks straight through, so every
+roadmap author has to know AsciiDoc passthrough syntax to quote a macro safely. Emitting a passthrough
+span from the renderer would retire the whole class. This item does not wait on it; the three lines here
+are rewritten by hand, at the cost of literal plus signs in GitHub's markdown view of the item.
+
 ## Acceptance
 
 * The four dangling references above repointed to explicit `[#anchor]` block ids, with the anchors added
   to the three target sections (`node.adoc`, `error.adoc`, `05-mutations.adoc`).
-* `reference.adoc` gains `[#schema-qualified-keys]` so the ninth reference satisfies the rule too. Its
-  same-file `<<Schema-qualified keys>>` natural-language reference at `reference.adoc:38` keeps working
-  and needs no change.
+* The five auto-generated targets gain explicit anchors repeating the ids already in use, so the six
+  references leaning on them satisfy the rule without being edited: `[#schema-qualified-keys]` in
+  `reference.adoc`, and `[#sealed-hierarchies-over-enums-for-typed-information]`,
+  `[#acceptances-classifier-guarantees-shape-emitter-assumptions]`,
+  `[#rejections-validator-mirrors-classifier-invariants]`,
+  `[#builder-step-results-are-sealed-not-strings-or-out-params]` in `development-principles.adoc`.
+  `reference.adoc:38`'s same-file `<<Schema-qualified keys>>` natural-language reference keeps working and
+  needs no change.
+* This item's own quoted xref examples rewritten as passthroughs, so the gate passes on the tree that
+  contains the item specifying it.
 * `check-adoc-xrefs` fails the build on a dangling cross-file anchor, verified by planting one and
   observing the failure, not only by unit test.
+* The rule is written down where an author reads before the gate teaches it by failing:
+  `docs/README.adoc`'s "Authoring conventions" list gains the strict rule, and its "Errors-vs-warnings"
+  paragraph is corrected. That paragraph currently claims `failIf severity=WARN` (live at
+  `docs/pom.xml:362`) means "missing xrefs ... fail the build", which the census above disproves for the
+  cross-file anchored case: it is the one class that renders silent under exactly that setting.
 * The check reports a count of references it could not resolve to an authored `.adoc` rather than passing
   over them silently, so under-coverage is visible.
 * `AdocXrefAnchorCheckTest` covers: a resolving explicit anchor, a dangling anchor, the underscore-vs-kebab
   case specifically, an anchor inside a `----` listing or `////` comment block (must not count as a
-  reference), and a target page outside the tree (counted as unresolvable, not as a pass).
+  reference), a reference in a single-backtick span (*does* count, per the Design note above) versus one in
+  a plus-delimited passthrough (does not), and a target page outside the tree (counted as unresolvable, not
+  as a pass).
 
 ## Not in scope
 
 * Same-file `<<...>>` and `xref:#...` references. Asciidoctor already reports these at INFO and none are
   currently broken; promoting that INFO to a build failure is a separate argument about asciidoctor's log
   level, not about the unreported class this item exists for.
+* Following `include::` when collecting a page's anchors. A per-file scan is correct on today's tree: the
+  only real includes are `migrating-from-legacy.adoc:16,18` and nothing anchors into that page. If an
+  included fragment ever carries an xref target, the unresolvable-count criterion above is what surfaces
+  it.
 * Unanchored `xref:<file>.adoc[...]` path validity. A wrong *path* produces a visibly broken link and an
   asciidoctor complaint, so it is not the silent class.
 * Adopting Antora, which resolves cross-document xrefs natively as a side effect of its component model.
