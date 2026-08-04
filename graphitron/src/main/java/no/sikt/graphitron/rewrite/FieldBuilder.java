@@ -7144,7 +7144,7 @@ class FieldBuilder {
             if (externalPath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(externalPath.errorMessage()));
             }
-            return switch (externalFieldResolver.resolve(parentTypeName, fieldDef, tableType.table())) {
+            return switch (externalFieldResolver.resolve(fieldDef, tableType.table())) {
                 case ExternalFieldDirectiveResolver.Resolved.Rejected r ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());
                 case ExternalFieldDirectiveResolver.Resolved.Success s ->
@@ -7365,7 +7365,7 @@ class FieldBuilder {
      * configuration is not supported; see the {@code ExternalCodeReference} declaration in
      * {@code directives.graphqls}.
      */
-    ExternalRef parseExternalRef(String parentTypeName, GraphQLFieldDefinition fieldDef, String directiveName, String argName) {
+    ExternalRef parseExternalRef(GraphQLFieldDefinition fieldDef, String directiveName, String argName) {
         var dir = fieldDef.getAppliedDirective(directiveName);
         if (dir == null) return null;
         var arg = dir.getArgument(argName);

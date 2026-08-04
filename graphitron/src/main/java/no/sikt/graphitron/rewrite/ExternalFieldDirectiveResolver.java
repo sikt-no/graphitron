@@ -51,7 +51,7 @@ final class ExternalFieldDirectiveResolver {
      * type's resolved {@link TableRef}: its SQL name gates the alias-collision check, and its
      * Java class name gates the {@code reflectExternalField} parent-table-class invariant.
      */
-    Resolved resolve(String parentTypeName, GraphQLFieldDefinition fieldDef, TableRef parentTable) {
+    Resolved resolve(GraphQLFieldDefinition fieldDef, TableRef parentTable) {
         String name = fieldDef.getName();
 
         // Alias-collision check: the wiring side looks up the field by name via
@@ -64,7 +64,7 @@ final class ExternalFieldDirectiveResolver {
                     + "'; rename the GraphQL field or use @field(name: ...) to disambiguate"));
         }
 
-        FieldBuilder.ExternalRef extRef = fb.parseExternalRef(parentTypeName, fieldDef, DIR_EXTERNAL_FIELD, ARG_EXTERNAL_FIELD_REF);
+        FieldBuilder.ExternalRef extRef = fb.parseExternalRef(fieldDef, DIR_EXTERNAL_FIELD, ARG_EXTERNAL_FIELD_REF);
         if (extRef != null && extRef.argMappingError() != null) {
             return new Resolved.Rejected(Rejection.structural(extRef.argMappingError()));
         }
