@@ -25,6 +25,7 @@ import no.sikt.graphitron.rewrite.model.ErrorHandlerType;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.HelperRef;
+import no.sikt.graphitron.rewrite.model.NodeProvenance;
 import no.sikt.graphitron.rewrite.model.InputRecordShape;
 import no.sikt.graphitron.rewrite.model.InputRecordShape.InputComponent;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
@@ -482,17 +483,32 @@ class TypeBuilder {
         for (var entry : byTypeId.entrySet()) {
             if (entry.getValue().size() < 2) continue;
             String typeId = entry.getKey();
-            List<String> colliding = entry.getValue().stream().map(NodeType::name).sorted().toList();
-            String others = String.join(", ", colliding);
+            // "declared on" would be wrong for a typeId the author never wrote, which is the common
+            // shape once nodehood can be inferred: two types over tables that share
+            // `__NODE_TYPE_ID` collide without either one naming the value. Attribute each member to
+            // where its typeId actually came from, so the message points at the fact to change.
+            String others = entry.getValue().stream()
+                .sorted(java.util.Comparator.comparing(NodeType::name))
+                .map(TypeBuilder::describeTypeIdSource)
+                .collect(Collectors.joining(", "));
             for (var nt : entry.getValue()) {
                 // Register a diagnostic instead of demoting the NodeType; ValidationError.forType
                 // applies the standard "Type '<name>': " prefix.
                 ctx.addDiagnostic(ValidationError.forType(nt.name(),
-                    Rejection.structural("typeId '" + typeId + "' is declared on multiple types (" + others
+                    Rejection.structural("typeId '" + typeId + "' is used by multiple types (" + others
                     + ") — Query.node dispatch would be nondeterministic; pick one via @node(typeId:)"),
                     nt.location()));
             }
         }
+    }
+
+    /** {@code "Foo"} with the origin of its typeId appended, for the collision diagnostic above. */
+    private static String describeTypeIdSource(NodeType nt) {
+        return switch (nt.provenance().typeId()) {
+            case DECLARED -> nt.name() + " via @node(typeId:)";
+            case METADATA -> nt.name() + " via __NODE_TYPE_ID on table '" + nt.table().tableName() + "'";
+            case DEFAULTED -> nt.name() + " defaulted from the type name";
+        };
     }
 
     /**
@@ -505,14 +521,19 @@ class TypeBuilder {
      * table-interfaces, {@link #buildErrorType} for errors, {@link #classifyScalarType} for
      * scalars).
      *
-     * <p>All the indices are directive-scanned over <b>all</b> declared types (a superset of the
+     * <p>All the indices are built over <b>all</b> declared types (a superset of the
      * reachable set), which lets them be built before the walk, and are <b>pure</b>: no demotion,
      * no reachability prune, and no typeId-uniqueness exclusion
      * ({@link #validateNodeTypeIdUniqueness} is the sole owner of uniqueness, as a validation
      * reduction over the registry). The superset is sound because every type a field read actually
      * queries is already reachable; the extra entries are never read.
      *
-     * <p>Multiple {@code @node} types on one table is legitimate (distinct node ids over the same
+     * <p>Node membership in {@link BuildContext#nodes} is driven off the {@code classifyType}
+     * verdict ({@code tbt instanceof NodeType}), never off {@code @node} presence, so a node
+     * inferred from {@code implements Node} plus catalog metadata enters the index with no extra
+     * work here. {@link NodeDeclaration} is the predicate the promotion gate applies to get there.
+     *
+     * <p>Multiple node types on one table is legitimate (distinct node ids over the same
      * rows): {@code byTable} is one-to-many, the implicit "encoder for this table" lookup is
      * resolved at the call site (which rejects the zero and ambiguous cases), and {@code byName}
      * keys on the distinct type names so each node resolves independently through the explicit
@@ -1284,7 +1305,7 @@ class TypeBuilder {
     private GraphitronType buildTableType(GraphQLObjectType objType) {
         String name = objType.getName();
         SourceLocation location = locationOf(objType);
-        String tableName = argString(objType, DIR_TABLE, ARG_NAME).orElse(name.toLowerCase());
+        String tableName = NodeDeclaration.boundTableName(objType);
         Optional<TableRef> tableOpt = svc.resolveTable(tableName);
         if (tableOpt.isEmpty()) {
             return new UnclassifiedType(name, location, ctx.unknownTableRejection(tableName));
@@ -1293,10 +1314,6 @@ class TypeBuilder {
 
         // Platform-id synthesis. The malformed-metadata diagnostic runs unconditionally so SDL
         // authors see the issue even when they try to override values with explicit @node.
-        // Beyond that, NodeType promotion is opt-in via `implements Node @node`: a `@table` type
-        // without `@node` stays a TableType regardless of whether the backing jOOQ class carries
-        // node-id metadata (auto-promotion on metadata alone would silently collide typeIds across
-        // types whose backing tables share `__NODE_TYPE_ID`, with no SDL-side opt-out).
         Optional<String> metadataDiagnostic = ctx.catalog.nodeIdMetadataDiagnostic(tableRef.tableName());
         if (metadataDiagnostic.isPresent()) {
             return new UnclassifiedType(name, location, Rejection.structural(
@@ -1305,15 +1322,28 @@ class TypeBuilder {
         }
         Optional<JooqCatalog.NodeIdMetadata> metadata = ctx.catalog.nodeIdMetadata(tableRef.tableName());
 
+        // `implements Node` is the author's SDL-level declaration of nodehood; @node supplies or
+        // overrides the two identity parameters (typeId, keyColumns). When the backing jOOQ class
+        // has already published both, @node is redundant and the classifier takes them from the
+        // catalog — the same values-resolution the @node-with-no-arguments path below computes.
+        // NodeDeclaration is the shared predicate; keeping the gate on it is what stops the
+        // reachability seeds, the federation entity set and the LSP node view from disagreeing with
+        // this verdict. `@table` + metadata *without* `implements Node` stays a TableType: nesting
+        // projections over a node-bearing table must not become second nodes.
         boolean hasNode = objType.hasAppliedDirective(DIR_NODE);
         if (!hasNode) {
+            if (NodeDeclaration.implementsNode(objType) && metadata.isPresent()) {
+                var meta = metadata.get();
+                return buildNodeType(name, location, tableRef, meta.typeId(),
+                    List.copyOf(meta.keyColumns()), NodeProvenance.fromMetadata());
+            }
             return new TableType(name, location, tableRef);
         }
 
         // @node declared — the type must implement the Relay Node interface (id: ID!).
         // `implements Node` is a schema-level contract published to clients; we cannot promote
         // a type to NodeType without it.
-        if (!implementsNode(objType)) {
+        if (!NodeDeclaration.implementsNode(objType)) {
             return new UnclassifiedType(name, location, Rejection.structural(
                 "@node requires the type to implement the Relay Node interface — add 'implements Node' to the type declaration"));
         }
@@ -1340,6 +1370,9 @@ class TypeBuilder {
             // @node-only path: SDL values win verbatim on any declared axis; fill the omitted
             // ones from sensible defaults (docs: typeId defaults to type name, keyColumns to PK).
             String resolvedTypeId = sdlTypeId != null ? sdlTypeId : name;
+            var provenance = new NodeProvenance(
+                sdlTypeId != null ? NodeProvenance.Origin.DECLARED : NodeProvenance.Origin.DEFAULTED,
+                sdlKeyColumnNames.isEmpty() ? NodeProvenance.Origin.DEFAULTED : NodeProvenance.Origin.DECLARED);
             List<ColumnRef> resolvedKeyColumns;
             if (!sdlKeyColumnNames.isEmpty()) {
                 resolvedKeyColumns = List.copyOf(sdlKeyColumns);
@@ -1354,7 +1387,7 @@ class TypeBuilder {
                 }
                 resolvedKeyColumns = pk;
             }
-            return buildNodeType(name, location, tableRef, resolvedTypeId, resolvedKeyColumns);
+            return buildNodeType(name, location, tableRef, resolvedTypeId, resolvedKeyColumns, provenance);
         }
 
         // Both @node and metadata present. SDL wins — it is the author's published wire-format
@@ -1367,6 +1400,9 @@ class TypeBuilder {
         //  - Values omitted on an axis fall through to metadata.
         var meta = metadata.get();
         String resolvedTypeId = sdlTypeId != null ? sdlTypeId : meta.typeId();
+        var provenance = new NodeProvenance(
+            sdlTypeId != null ? NodeProvenance.Origin.DECLARED : NodeProvenance.Origin.METADATA,
+            sdlKeyColumnNames.isEmpty() ? NodeProvenance.Origin.METADATA : NodeProvenance.Origin.DECLARED);
         List<ColumnRef> resolvedKeyColumns;
         if (sdlKeyColumnNames.isEmpty()) {
             resolvedKeyColumns = List.copyOf(meta.keyColumns());
@@ -1384,7 +1420,7 @@ class TypeBuilder {
             }
             resolvedKeyColumns = List.copyOf(sdlKeyColumns);
         }
-        return buildNodeType(name, location, tableRef, resolvedTypeId, resolvedKeyColumns);
+        return buildNodeType(name, location, tableRef, resolvedTypeId, resolvedKeyColumns, provenance);
     }
 
     /**
@@ -1395,18 +1431,15 @@ class TypeBuilder {
      * name (not the {@code typeId}, which is the wire string and may differ).
      */
     private NodeType buildNodeType(String name, SourceLocation location, TableRef tableRef,
-                                   String typeId, List<ColumnRef> keyColumns) {
+                                   String typeId, List<ColumnRef> keyColumns,
+                                   NodeProvenance provenance) {
         ClassName encoderClass = ClassName.get(
             ctx.ctx.outputPackage() + ".util",
             NodeIdEncoderClassGenerator.CLASS_NAME);
         var encodeMethod = new HelperRef.Encode(encoderClass, "encode" + name, keyColumns);
         var decodeMethod = new HelperRef.Decode(encoderClass, "decode" + name, keyColumns, typeId);
-        return new NodeType(name, location, tableRef, typeId, keyColumns, encodeMethod, decodeMethod);
-    }
-
-    private static boolean implementsNode(GraphQLObjectType objType) {
-        return objType.getInterfaces().stream()
-            .anyMatch(i -> "Node".equals(((GraphQLNamedType) i).getName()));
+        return new NodeType(name, location, tableRef, typeId, keyColumns, encodeMethod, decodeMethod,
+            provenance);
     }
 
     private static boolean columnListsMatch(List<ColumnRef> a, List<ColumnRef> b) {

@@ -305,6 +305,14 @@ class BuildContext {
      */
     final no.sikt.graphitron.facts.GatheredFacts facts;
 
+    /**
+     * The build's single "is this object type a node?" predicate, shared by the classifier's
+     * promotion gate and the pre-classification consumers that used to read {@code @node} off SDL
+     * (reachability seeding, the arrival fold). One instance per build so the catalog's per-table
+     * metadata cache is warmed once.
+     */
+    final NodeDeclaration nodeDeclaration;
+
     BuildContext(GraphQLSchema schema, JooqCatalog catalog, RewriteContext ctx) {
         // schema and catalog stay nullable for tests that focus on plumbing the other half; ctx
         // is required because every classifier the BuildContext fans into reads at least one of
@@ -318,9 +326,11 @@ class BuildContext {
         this.tenantScopes = catalog == null
             ? no.sikt.graphitron.rewrite.model.TenantScopes.None.INSTANCE
             : TenantScopeClassifier.classify(catalog, ctx.tenantColumn());
+        this.nodeDeclaration = new NodeDeclaration(catalog);
         this.facts = schema == null
             ? no.sikt.graphitron.facts.GatheredFacts.empty()
-            : no.sikt.graphitron.facts.GatheredFacts.gather(schema, SchemaReachability::walk);
+            : no.sikt.graphitron.facts.GatheredFacts.gather(schema,
+                (s, v) -> SchemaReachability.walk(s, nodeDeclaration, v));
     }
 
     /**
@@ -2863,14 +2873,20 @@ class BuildContext {
      * {@code decode<TypeName>} helper. Three outcomes:
      *
      * <ul>
-     *   <li>Exactly one {@code @node} backs the table: return its {@code decodeMethod()}.</li>
-     *   <li>Two or more {@code @node} types back it and the call site could not name one: return
+     *   <li>Exactly one node type backs the table: return its {@code decodeMethod()}.</li>
+     *   <li>Two or more node types back it and the call site could not name one: return
      *       {@code null} so the caller emits a validate-time rejection rather than a
      *       {@code decode<typeId>} call the encoder never generates.</li>
-     *   <li>No {@code @node} backs it (orphan-input / synthesis-shim case): fall back to the
+     *   <li>No node type backs it (orphan-input / synthesis-shim case): fall back to the
      *       metadata's {@code typeId} as the helper suffix. Only reachable through the synthesis
      *       shim.</li>
      * </ul>
+     *
+     * <p>Both boundaries move when the node population widens, which is why inference is gated on
+     * {@code implements Node} rather than on metadata alone: promoting a type shifts its table from
+     * the third arm to the first (changing the emitted helper name from the typeId suffix to the
+     * type name) or from the first to the second (turning a resolved input site into a rejection).
+     * {@link no.sikt.graphitron.rewrite.NodeDeclaration} is the predicate that decides membership.
      */
     no.sikt.graphitron.rewrite.model.HelperRef.Decode resolveDecodeHelperForTable(
             String sqlTableName,
@@ -2914,10 +2930,14 @@ class BuildContext {
     record TargetKeys(String typeId, List<ColumnRef> keyColumns, String error) {}
 
     /**
-     * Resolves the target table's NodeType metadata: prefers catalog metadata, falls back to the
-     * {@link NodeIndex} entry, then to {@code @node} on the SDL with PK
-     * columns from the catalog. Returns an error message when none of those produce a usable
-     * {@code typeId} + {@code keyColumns} pair.
+     * Resolves the target table's NodeType metadata: prefers the {@link NodeIndex} entry, falls back
+     * to catalog metadata, then to {@code @node} on the SDL with PK columns from the catalog. Returns
+     * an error message when none of those produce a usable {@code typeId} + {@code keyColumns} pair.
+     *
+     * <p>The third arm is unreachable for a node whose {@code @node} was inferred, and stays a
+     * {@code @node}-only read for that reason: inference requires catalog metadata, so the second arm
+     * answers first whenever the index lookup misses. It survives for the shape it was written for, a
+     * {@code @node} type over a table the catalog carries no metadata for.
      */
     TargetKeys resolveTargetKeys(GraphQLObjectType targetObj, String refTypeName,
                                  String targetTableName) {

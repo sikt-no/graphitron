@@ -242,7 +242,7 @@ public class GraphitronSchemaBuilder {
         // (a ClassifyingVisitor with no FieldBuilder, so no field-classification side effects
         // and no connection synthesis), then the post-walk type-level work.
         typeBuilder.prepareForWalk();
-        SchemaReachability.walk(bctx.schema,
+        SchemaReachability.walk(bctx.schema, bctx.nodeDeclaration,
             new ClassifyingVisitor(bctx, typeBuilder, null, null));
         typeBuilder.finishTypeClassification();
         return bctx;
@@ -262,7 +262,7 @@ public class GraphitronSchemaBuilder {
         // records the walk's output but does not entail that ordering.
         typeBuilder.prepareForWalk();
         var synthesisAccumulator = new ConnectionSynthesisRelation.Builder();
-        SchemaReachability.walk(ctx.schema, new ClassifyingVisitor(
+        SchemaReachability.walk(ctx.schema, ctx.nodeDeclaration, new ClassifyingVisitor(
             ctx, typeBuilder, fieldBuilder, synthesisAccumulator));
         // The post-walk type-level work: the global validation reductions over the finished
         // registry. Field classification is registry-read-free, so running the reductions after
@@ -303,7 +303,7 @@ public class GraphitronSchemaBuilder {
         // promotion) SDL. Pure SDL fact (list-ness needs no classification), independent of walk
         // order; threaded onto the schema for OutputField.source(Arrival) consumers to read
         // through GraphitronSchema.sourceOf.
-        var arrivals = ArrivalIndex.compute(ctx.schema).byName();
+        var arrivals = ArrivalIndex.compute(ctx.schema, ctx.nodeDeclaration).byName();
         // The reachable-source-shape fold: per-coordinate source-shape union for every type
         // reached through more than one source shape (a directiveless type reached both as a
         // nesting projection and as a producer-backed result). Pure fold over the classified

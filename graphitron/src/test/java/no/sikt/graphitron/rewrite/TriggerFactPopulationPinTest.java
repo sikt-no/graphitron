@@ -22,7 +22,12 @@ class TriggerFactPopulationPinTest {
     private static final String STUB = "no.sikt.graphitron.rewrite.TestConditionStub";
 
     private static GatheredFacts gatherFixture() {
-        return GatheredFacts.gather(bundleFixture().assembled(), SchemaReachability::walk);
+        return gather(bundleFixture());
+    }
+
+    private static GatheredFacts gather(GraphitronSchemaBuilder.Bundle bundle) {
+        var nodes = TestSchemaHelper.nodeDeclaration();
+        return GatheredFacts.gather(bundle.assembled(), (s, v) -> SchemaReachability.walk(s, nodes, v));
     }
 
     private static GraphitronSchemaBuilder.Bundle bundleFixture() {
@@ -98,7 +103,7 @@ class TriggerFactPopulationPinTest {
     @Test
     void lookupSlotGathersArgumentInputFieldAndClosurePopulations() {
         var bundle = bundleFixture();
-        var facts = GatheredFacts.gather(bundle.assembled(), SchemaReachability::walk);
+        var facts = gather(bundle);
         assertThat(facts.lookup().rows())
             .extracting(r -> r.parentTypeName() + "." + r.fieldName() + ":" + r.lookupArgs())
             .containsExactlyInAnyOrder("Query.languagesByKey:[language_id]");

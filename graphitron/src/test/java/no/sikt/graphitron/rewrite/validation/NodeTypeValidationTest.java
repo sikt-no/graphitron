@@ -5,6 +5,7 @@ import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.HelperRef;
+import no.sikt.graphitron.rewrite.model.NodeProvenance;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
@@ -28,7 +29,8 @@ class NodeTypeValidationTest {
     private static NodeType node(String name, String typeId, List<ColumnRef> keys) {
         return new NodeType(name, null, RESOLVED_FILM, typeId, keys,
             new HelperRef.Encode(ENC, "encode" + name, keys),
-            new HelperRef.Decode(ENC, "decode" + name, keys, typeId));
+            new HelperRef.Decode(ENC, "decode" + name, keys, typeId),
+            NodeProvenance.fromMetadata());
     }
 
     enum Case implements TypeValidatorCase {

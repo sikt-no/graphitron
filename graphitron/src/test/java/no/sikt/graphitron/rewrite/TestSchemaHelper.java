@@ -45,6 +45,21 @@ public final class TestSchemaHelper {
     }
 
     /**
+     * The node predicate over the default test context's jOOQ catalog. Test sites that drive
+     * {@link SchemaReachability}, the fact traversal, or
+     * {@link no.sikt.graphitron.rewrite.schema.federation.KeyNodeSynthesiser} directly, rather than
+     * through {@link GraphitronSchemaBuilder}, pass this so their seed set matches production's.
+     */
+    public static NodeDeclaration nodeDeclaration() {
+        return nodeDeclaration(TestConfiguration.testContext());
+    }
+
+    /** {@link #nodeDeclaration()} against a caller-supplied context (a fixture jOOQ package). */
+    public static NodeDeclaration nodeDeclaration(RewriteContext ctx) {
+        return new NodeDeclaration(new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()));
+    }
+
+    /**
      * Parses {@code schemaText} into a {@link TypeDefinitionRegistry} after prepending the
      * directives prelude and the Relay {@code Node} interface (when not already declared).
      * Exposed so sibling test helpers (e.g. snapshot builders for the classification

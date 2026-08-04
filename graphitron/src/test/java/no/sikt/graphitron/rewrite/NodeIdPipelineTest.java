@@ -66,9 +66,10 @@ class NodeIdPipelineTest {
 
     enum TypeCase {
         METADATA_ONLY_NO_PROMOTION(
-            "`@table` on a metadata-carrying table without `implements Node @node` stays a TableType "
-                + "(NodeType promotion is opt-in; auto-promotion previously collided typeIds across "
-                + "tables that shared `__NODE_TYPE_ID`)",
+            "`@table` on a metadata-carrying table without `implements Node` stays a TableType. "
+                + "Publishing the Relay Node contract in SDL is the author's opt-in: metadata alone "
+                + "promotes nothing, which is what keeps a nesting projection over a node-bearing "
+                + "table from becoming a second node",
             """
             type Foo @table(name: "bar") { name: String }
             type Query { foo: Foo }
@@ -216,7 +217,9 @@ class NodeIdPipelineTest {
                 assertThat(new GraphitronSchemaValidator().validate(schema))
                     .extracting(ValidationError::message)
                     .anyMatch(m -> m.contains("typeId 'Shared'")
-                        && m.contains("Foo, Zed")
+                        // Each member is attributed to where its typeId came from, so the message
+                        // does not claim a value was "declared" when nothing declared it.
+                        && m.contains("Foo via @node(typeId:), Zed via @node(typeId:)")
                         && m.contains("nondeterministic"));
             }),
 
@@ -243,11 +246,13 @@ class NodeIdPipelineTest {
                 assertThat(((GraphitronType.NodeType) zed).typeId()).isEqualTo("Zed");
             }),
 
-        METADATA_ONLY_TYPES_DO_NOT_COLLIDE(
-            "two `@table`-only types backed by metadata-carrying tables stay TableType — no NodeType "
-                + "promotion, so no typeId collision even when the tables share `__NODE_TYPE_ID`-style "
-                + "metadata. Regression for the sis bug where ~200 `@table` event types were silently "
-                + "promoted and then mass-demoted via the registry-uniqueness check.",
+        METADATA_ONLY_TYPES_STAY_TABLE_TYPES(
+            "two `@table`-only types over metadata-carrying tables stay TableType: no Relay contract, "
+                + "no promotion. This is the `implements Node` gate, not collision avoidance — `bar` "
+                + "and `baz` publish distinct typeIds, so nothing here would collide even if both "
+                + "promoted. The rule that prevents a mass promotion from mass-failing is the "
+                + "typeId-uniqueness reduction, pinned over a genuinely shared `__NODE_TYPE_ID` by "
+                + "NodeInferencePipelineTest.",
             """
             type Foo @table(name: "bar") { name: String }
             type Zed @table(name: "baz") { name: String }

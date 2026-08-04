@@ -57,7 +57,7 @@ class LintRuleRegistryCoverageTest {
 
     @Test
     void everyClassifierAdvisoryRuleExists() {
-        // The three classifier-owned advisories are tagged onto BuildWarning.LintFinding at their
+        // The classifier-owned advisories are tagged onto BuildWarning.LintFinding at their
         // emit sites (TypeBuilder / FieldBuilder); this pins they remain enumerated as CLASSIFIER.
         var classifier = Arrays.stream(LintRule.values())
             .filter(r -> r.source() == LintRule.Source.CLASSIFIER)
@@ -66,7 +66,8 @@ class LintRuleRegistryCoverageTest {
         assertThat(classifier).containsExactlyInAnyOrder(
             "splitquery-redundant-on-record-parent",
             "redundant-record-directive",
-            "asconnection-same-table-pk-in");
+            "asconnection-same-table-pk-in",
+            "node-id-shadows-column");
     }
 
     @Test

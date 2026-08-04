@@ -51,16 +51,22 @@ public sealed interface GraphitronType
     ) implements TableBackedType {}
 
     /**
-     * A GraphQL object type annotated with both {@code @table} and {@code @node}.
-     * Full SQL generation applies, plus Relay Global Object Identification.
+     * A GraphQL object type carrying {@code @table} that has published the Relay {@code Node}
+     * contract. Full SQL generation applies, plus Relay Global Object Identification.
+     *
+     * <p>Two ways in, and {@code provenance} is the record of which: the author declared
+     * {@code @node}, or the type declared {@code implements Node} over a table whose backing jOOQ
+     * class publishes {@code __NODE_TYPE_ID} / {@code __NODE_KEY_COLUMNS} and the classifier took
+     * the two values from there. {@code no.sikt.graphitron.rewrite.NodeDeclaration} is the predicate
+     * both paths share.
      *
      * <p>{@code typeId} is the resolved NodeId wire prefix: the {@code typeId} argument of the
-     * {@code @node} directive, defaulted to the type name when the argument is omitted. Never
+     * {@code @node} directive, else the catalog metadata's value, else the type name. Never
      * {@code null} on a classified {@code NodeType}.
      *
-     * <p>{@code nodeKeyColumns} is the resolved list of {@code keyColumns} argument entries.
-     * An empty list means the argument was omitted; the primary key is used at
-     * code-generation time.
+     * <p>{@code nodeKeyColumns} is the resolved key column list: the {@code keyColumns} argument
+     * entries, else the catalog metadata's columns. An empty list means neither source supplied
+     * one; the primary key is used at code-generation time.
      *
      * <p>{@code encodeMethod} / {@code decodeMethod} are pre-resolved references to the per-type
      * {@code encode<TypeName>} / {@code decode<TypeName>} helpers emitted by
@@ -78,7 +84,8 @@ public sealed interface GraphitronType
         String typeId,
         List<ColumnRef> nodeKeyColumns,
         HelperRef.Encode encodeMethod,
-        HelperRef.Decode decodeMethod
+        HelperRef.Decode decodeMethod,
+        NodeProvenance provenance
     ) implements TableBackedType {}
 
     /**

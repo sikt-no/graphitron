@@ -185,8 +185,9 @@ class OperationMemberMintPinTest {
             }
             """);
         var schema = bundle.model();
+        var nodes = TestSchemaHelper.nodeDeclaration();
         var facts = no.sikt.graphitron.facts.GatheredFacts.gather(
-            bundle.assembled(), SchemaReachability::walk);
+            bundle.assembled(), (s, v) -> SchemaReachability.walk(s, nodes, v));
         Set<String> serviceSlots = facts.service().rows().stream()
             .map(r -> r.parentTypeName() + "." + r.fieldName()).collect(Collectors.toSet());
         Set<String> writeSlots = facts.write().rows().stream()

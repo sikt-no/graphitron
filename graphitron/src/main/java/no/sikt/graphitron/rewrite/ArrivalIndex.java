@@ -30,8 +30,8 @@ import java.util.Set;
  * Arrival is the lattice {@code One < Many} with {@code Many} absorbing (the
  * {@link Arrival#tensor(Arrival)} monoid). For a composite type {@code T}:
  * <ul>
- *   <li><b>Many</b> if {@code T} carries a {@code @node} / {@code @key} seed (node and entity lookups
- *       arrive batched), or if more than one field edge reaches {@code T} through the structural
+ *   <li><b>Many</b> if {@code T} is a node type ({@link NodeDeclaration}) or carries a {@code @key}
+ *       directive (node and entity lookups arrive batched), or if more than one field edge reaches {@code T} through the structural
  *       closure (two coordinates can co-materialize {@code T} instances in one request). The
  *       multi-edge rule subsumes recursion (a reachable cycle implies a second reaching edge), so no
  *       fixed point is needed; the {@code One} verdicts form an acyclic tree hanging off the operation
@@ -52,7 +52,8 @@ import java.util.Set;
  * through it unchanged while still counting toward the multi-edge test.
  *
  * <p>Pure, no classification duty and no graphql-java types survive into the stored value (parse-boundary
- * containment): built once from the SDL before any consumer reads it.
+ * containment): built once from the SDL plus the jOOQ catalog fact {@link NodeDeclaration} reads,
+ * before any consumer reads it.
  */
 record ArrivalIndex(Map<String, Arrival> byName) {
 
@@ -78,10 +79,11 @@ record ArrivalIndex(Map<String, Arrival> byName) {
 
     /**
      * Folds arrival for every object and interface type in {@code schema} (the types that can be a
-     * field's parent). Computed from the assembled SDL alone; see the class javadoc for the fold.
+     * field's parent). Computed from the assembled SDL plus the node predicate; see the class javadoc
+     * for the fold.
      */
-    static ArrivalIndex compute(GraphQLSchema schema) {
-        var fold = new Fold(schema);
+    static ArrivalIndex compute(GraphQLSchema schema, NodeDeclaration nodes) {
+        var fold = new Fold(schema, nodes);
         var byName = new LinkedHashMap<String, Arrival>();
         for (var type : schema.getAllTypesAsList()) {
             if (type.getName().startsWith("__")) continue;
@@ -102,6 +104,7 @@ record ArrivalIndex(Map<String, Arrival> byName) {
      */
     private static final class Fold {
         private final GraphQLSchema schema;
+        private final NodeDeclaration nodes;
         private final Set<String> roots = new HashSet<>();
         private final Set<String> seeds = new HashSet<>();
         private final Map<String, List<Edge>> reachingEdges = new HashMap<>();
@@ -109,8 +112,9 @@ record ArrivalIndex(Map<String, Arrival> byName) {
         private final Set<String> inProgress = new HashSet<>();
         private final Map<String, Set<String>> closureCache = new HashMap<>();
 
-        Fold(GraphQLSchema schema) {
+        Fold(GraphQLSchema schema, NodeDeclaration nodes) {
             this.schema = schema;
+            this.nodes = nodes;
             recordRoot(schema.getQueryType());
             recordRoot(schema.getMutationType());
             recordRoot(schema.getSubscriptionType());
@@ -124,9 +128,11 @@ record ArrivalIndex(Map<String, Arrival> byName) {
         private void buildEdges() {
             for (var type : schema.getAllTypesAsList()) {
                 if (type.getName().startsWith("__")) continue;
-                // @node / @key seeds arrive batched; only object types carry these directives.
+                // Node / @key seeds arrive batched; only object types can be either. Nodehood is
+                // asked of NodeDeclaration, not read off @node, so an inferred node folds to Many
+                // exactly like a declared one.
                 if (type instanceof GraphQLObjectType obj
-                        && (!obj.getAppliedDirectives("node").isEmpty()
+                        && (nodes.isNodeType(obj)
                             || !obj.getAppliedDirectives("key").isEmpty())) {
                     seeds.add(obj.getName());
                 }

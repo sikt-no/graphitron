@@ -27,15 +27,21 @@ import java.util.function.Function;
  * {@link #walk} drives a classification visitor over the same traversal.
  *
  * <h3>Seeds</h3>
- * Query, Mutation and Subscription roots, plus every object type carrying an applied {@code @node}
- * or {@code @key} directive. The directive scan is load-bearing: federation entity types
- * ({@code _entities} / {@code _Entity} are injected post-build in
+ * Query, Mutation and Subscription roots, plus every node type ({@link NodeDeclaration}) and every
+ * object type carrying an applied {@code @key} directive. The seed scan is load-bearing: federation
+ * entity types ({@code _entities} / {@code _Entity} are injected post-build in
  * {@link no.sikt.graphitron.rewrite.generators.schema.GraphitronSchemaClassGenerator}) and a
- * {@code @node} type that no field returns are reachable through no field, so reachability cannot
- * hinge on a {@code Query.node} / {@code Query._entities} field being present. Both directive
- * names are scanned because the {@code @node} to {@code @key} synthesis
+ * node type that no field returns are reachable through no field, so reachability cannot
+ * hinge on a {@code Query.node} / {@code Query._entities} field being present. {@code @key} is
+ * scanned separately because the node-to-{@code @key} synthesis
  * ({@link no.sikt.graphitron.rewrite.schema.federation.KeyNodeSynthesiser}) runs only on the
  * production attributed-registry path, not on every classify.
+ *
+ * <p>Nodehood is asked of {@link NodeDeclaration} rather than read off {@code @node}, so a node
+ * inferred from {@code implements Node} plus catalog metadata self-seeds exactly like a declared
+ * one. That equality is load-bearing beyond reachability itself:
+ * {@code TypeBuilder.validateNodeTypeIdUniqueness} iterates the <em>pruned</em> registry, so a node
+ * that failed to seed and is reached through no field would escape the typeId-collision check.
  *
  * <h3>Descent edges</h3>
  * The walk follows the output-structure edges (field output target, union member, interface
@@ -65,15 +71,18 @@ public final class SchemaReachability {
     /**
      * Returns the names of all object / interface / union types reachable from the seeds, in
      * first-encounter order. Introspection types ({@code __*}) are excluded.
+     *
+     * @param nodes the node predicate the seed scan applies; pass the same instance the classifier
+     *              uses so the reachable set and the classified set agree on what a node is
      */
-    public static Set<String> reachableTypeNames(GraphQLSchema schema) {
+    public static Set<String> reachableTypeNames(GraphQLSchema schema, NodeDeclaration nodes) {
         var reachable = new LinkedHashSet<String>();
         var expanded = new HashSet<GraphQLSchemaElement>();
         Function<GraphQLSchemaElement, List<GraphQLSchemaElement>> children = element -> {
             recordIfNamedType(element, reachable);
             return childrenOf(schema, element, expanded);
         };
-        new SchemaTraverser(children).depthFirst(new GraphQLTypeVisitorStub(), seeds(schema));
+        new SchemaTraverser(children).depthFirst(new GraphQLTypeVisitorStub(), seeds(schema, nodes));
         return reachable;
     }
 
@@ -84,11 +93,11 @@ public final class SchemaReachability {
      * per node identity (graphql-java's {@code Traverser} routes re-encounters to {@code backRef}),
      * so the visitor needs no dedup of its own.
      */
-    public static void walk(GraphQLSchema schema, GraphQLTypeVisitor visitor) {
+    public static void walk(GraphQLSchema schema, NodeDeclaration nodes, GraphQLTypeVisitor visitor) {
         var expanded = new HashSet<GraphQLSchemaElement>();
         Function<GraphQLSchemaElement, List<GraphQLSchemaElement>> children =
             element -> childrenOf(schema, element, expanded);
-        new SchemaTraverser(children).depthFirst(visitor, seeds(schema));
+        new SchemaTraverser(children).depthFirst(visitor, seeds(schema, nodes));
     }
 
     /**
@@ -159,7 +168,7 @@ public final class SchemaReachability {
         return out;
     }
 
-    private static Collection<GraphQLSchemaElement> seeds(GraphQLSchema schema) {
+    private static Collection<GraphQLSchemaElement> seeds(GraphQLSchema schema, NodeDeclaration nodes) {
         var seeds = new ArrayList<GraphQLSchemaElement>();
         if (schema.getQueryType() != null) {
             seeds.add(schema.getQueryType());
@@ -176,7 +185,7 @@ public final class SchemaReachability {
         for (var type : schema.getAllTypesAsList()) {
             if (type instanceof GraphQLObjectType obj
                     && !obj.getName().startsWith("__")
-                    && (!obj.getAppliedDirectives("node").isEmpty()
+                    && (nodes.isNodeType(obj)
                         || !obj.getAppliedDirectives("key").isEmpty())) {
                 seeds.add(obj);
             }

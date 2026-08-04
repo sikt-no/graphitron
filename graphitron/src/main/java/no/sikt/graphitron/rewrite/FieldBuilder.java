@@ -41,6 +41,7 @@ import no.sikt.graphitron.rewrite.model.AccessorRef;
 import no.sikt.graphitron.rewrite.model.Arity;
 import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.NodeProvenance;
 import no.sikt.graphitron.rewrite.model.DialectRequirement;
 import no.sikt.graphitron.rewrite.model.DmlKind;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
@@ -162,6 +163,13 @@ import static no.sikt.graphitron.rewrite.BuildContext.locationOf;
 class FieldBuilder {
 
     private static final Logger LOG = LoggerFactory.getLogger(FieldBuilder.class);
+
+    /**
+     * The field name the Relay {@code Node} interface declares. A field by this name on a
+     * {@link NodeType} parent is the node's own global ID by construction, which is what
+     * {@link #classifyChildFieldOnTableType} resolves ahead of the column lookup.
+     */
+    private static final String NODE_INTERFACE_ID_FIELD = "id";
 
     /**
      * Deferral prose for a single-node {@code @routine} on a Mutation root field (no
@@ -7245,18 +7253,37 @@ class FieldBuilder {
                 crfParentCorrelation);
         }
 
+        boolean isScalarId = !(GraphQLTypeUtil.unwrapNonNull(fieldDef.getType()) instanceof GraphQLList)
+            && "ID".equals(((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(fieldDef.getType())).getName());
+
+        // The Node interface's own `id` field on a node type is a node ID by construction — the
+        // author published the Relay contract, and `Node.id` is what that contract names. So it is
+        // resolved *before* the column lookup below and takes precedence over a same-named column,
+        // which is the only way `implements Node @table` over a table with a literal `id` column can
+        // mean the same thing as the same declaration over a table without one. `@field` pins the
+        // column instead, and shadowing a real column warns; see warnShadowedIdColumn.
+        //
+        // This arm is deliberately narrower than the deprecated synthesis shim below: that one
+        // fires for *any* bare `ID` field on a node type, `externalId: ID` included. Hoisting that
+        // predicate above column resolution would reroute every such field from its column to a
+        // nodeId encode, so the permanent rule is pinned to `Node.id`.
+        if (tableType instanceof NodeType nodeType
+                && NODE_INTERFACE_ID_FIELD.equals(name)
+                && isScalarId
+                && !hasFieldDirective) {
+            svc.resolveColumn(columnName, tableType).ifPresent(shadowed ->
+                warnShadowedIdColumn(parentTypeName, name, location, nodeType, shadowed));
+            return buildNodeIdOutputCarrier(parentTypeName, name, location, nodeType);
+        }
+
         Optional<ColumnRef> column = svc.resolveColumn(columnName, tableType);
         if (column.isEmpty()) {
             String tableSqlName = tableType.table().tableName();
-            boolean isList = GraphQLTypeUtil.unwrapNonNull(fieldDef.getType()) instanceof GraphQLList;
-            String typeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(fieldDef.getType())).getName();
-            // Synthesis shim: a scalar ID field on a NodeType without `@nodeId`, `@reference`, or
-            // `@field` is treated as an implicit `@nodeId`. Fires a per-site deprecation diagnostic;
-            // the canonical form is to declare `@nodeId` explicitly.
-            if (tableType instanceof NodeType nodeType
-                    && "ID".equals(typeName)
-                    && !isList
-                    && !hasFieldDirective) {
+            // Synthesis shim: a non-`id` scalar ID field on a NodeType without `@nodeId`,
+            // `@reference`, or `@field` is treated as an implicit `@nodeId`. Fires a per-site
+            // deprecation diagnostic; the canonical form is to declare `@nodeId` explicitly.
+            // `Node.id` itself is handled by the permanent arm above and never reaches here.
+            if (tableType instanceof NodeType nodeType && isScalarId && !hasFieldDirective) {
                 LOG.warn("field '{}.{}' synthesizes an `@nodeId` carrier without the directive;"
                     + " declare `@nodeId` explicitly. The synthesis shim will be removed in a"
                     + " future release.",
@@ -7269,6 +7296,37 @@ class FieldBuilder {
         }
         return new ColumnBackedField(parentTypeName, name, location, List.of(column.get()),
             new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct());
+    }
+
+    /**
+     * Flags a {@code Node.id} field whose backing table also has a column of that name. The node ID
+     * wins (see the precedence arm in {@link #classifyChildFieldOnTableType}), so the field publishes
+     * the encoded global ID rather than the column value, and an author who meant the column would
+     * otherwise get the change silently.
+     *
+     * <p>The message names both ways to state the choice explicitly, because they are genuinely
+     * different intents rather than two spellings of one repair: {@code @nodeId} confirms the global
+     * ID, {@code @field} exposes the column. No {@link LintFix} is attached. Both fixes are
+     * directive insertions after the field's type, and graphql-java records a type node's start but
+     * not its end, so the insertion point for {@code id: ID!} (where the {@code !} may be separated
+     * by whitespace) is not derivable from source locations. Per {@link LintFix}'s own rule, a
+     * finding whose edit cannot be computed safely carries no fix.
+     */
+    private void warnShadowedIdColumn(String parentTypeName, String name,
+                                      graphql.language.SourceLocation location,
+                                      NodeType nodeType, ColumnRef shadowed) {
+        String tableSqlName = nodeType.table().tableName();
+        String because = nodeType.provenance().keyColumns() == NodeProvenance.Origin.METADATA
+            ? "table '" + tableSqlName + "' publishes node metadata and also has a column named '"
+                + shadowed.sqlName() + "'"
+            : "'" + parentTypeName + "' is a node type over table '" + tableSqlName
+                + "', which also has a column named '" + shadowed.sqlName() + "'";
+        ctx.addWarning(BuildWarning.LintFinding.of(
+            "field '" + parentTypeName + "." + name + "': " + because
+            + ". Graphitron is publishing the node ID, not the column value. Add `@nodeId` to"
+            + " confirm, or `@field(name: \"" + shadowed.sqlName() + "\")` to expose the raw column"
+            + " instead.",
+            location, LintRule.NODE_ID_SHADOWS_COLUMN));
     }
 
     /**

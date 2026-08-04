@@ -19,6 +19,7 @@ import graphql.schema.GraphQLSchema;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.JooqCatalog;
+import no.sikt.graphitron.rewrite.NodeDeclaration;
 import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
@@ -926,7 +927,7 @@ public final class CatalogBuilder {
             buildTables(jooq, keysClassFqn),
             buildScalars(assembled),
             buildExternalReferences(ctx),
-            buildNodeMetadata(assembled)
+            buildNodeMetadata(assembled, new NodeDeclaration(jooq))
         );
     }
 
@@ -1021,17 +1022,27 @@ public final class CatalogBuilder {
      * cases where {@code typeId} or {@code keyColumns} are deduced by the
      * classifier (containing-type / unique-table / PK inference) are invisible
      * to in-editor feedback by design.
+     *
+     * <p>Those two facts pull in opposite directions once nodehood can be inferred, so they are
+     * separated here: <em>presence</em> follows {@link NodeDeclaration}, so a node inferred from
+     * {@code implements Node} plus catalog metadata is a node to the LSP exactly as it is to the
+     * classifier, while the <em>values</em> stay author-supplied and both axes read null for it.
+     * Presence is the predicate; keeping it on the directive would make the editor reject
+     * {@code @nodeId(typeName:)} against a type the build accepts.
      */
-    private static Map<String, CompletionData.NodeMetadata> buildNodeMetadata(GraphQLSchema assembled) {
+    private static Map<String, CompletionData.NodeMetadata> buildNodeMetadata(
+        GraphQLSchema assembled, NodeDeclaration nodes
+    ) {
         var out = new LinkedHashMap<String, CompletionData.NodeMetadata>();
         for (var type : assembled.getAllTypesAsList()) {
             if (!(type instanceof GraphQLObjectType obj)) continue;
+            if (!nodes.isNodeType(obj)) continue;
             GraphQLAppliedDirective node = obj.getAppliedDirective("node");
-            if (node == null) continue;
-            out.put(obj.getName(), new CompletionData.NodeMetadata(
-                readStringArg(node, "typeId"),
-                readStringListArg(node, "keyColumns")
-            ));
+            out.put(obj.getName(), node == null
+                ? new CompletionData.NodeMetadata(null, null)
+                : new CompletionData.NodeMetadata(
+                    readStringArg(node, "typeId"),
+                    readStringListArg(node, "keyColumns")));
         }
         return Map.copyOf(out);
     }

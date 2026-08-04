@@ -758,6 +758,40 @@ CREATE TABLE nodeidfixture.shared_node (
     label varchar(50)
 );
 
+-- Shared-typeId pair. Both tables publish the same __NODE_TYPE_ID ("195"), modelling the
+-- production shape where a family of tables share one platform type id. Before nodehood could be
+-- inferred, a typeId collision could only be written with two explicit @node(typeId:)
+-- declarations; these two make the *inferred* collision expressible, which is the shape the
+-- uniqueness reduction has to catch on its own. Deliberately no column named `id`, so an
+-- `id: ID!` SDL field resolves as the node's global id with no column shadowing in the way.
+CREATE TABLE nodeidfixture.collide_a (
+    key_a varchar(50) PRIMARY KEY,
+    name  varchar(50)
+);
+
+CREATE TABLE nodeidfixture.collide_b (
+    key_b varchar(50) PRIMARY KEY,
+    name  varchar(50)
+);
+
+-- Shadowing shapes. A node's own `id` field publishes the encoded global id even when the backing
+-- table has a column of that name; these two tables make both halves of that rule testable.
+-- `plain_id` carries no metadata, so a node over it resolves its key columns from the primary key —
+-- the shadowing branch that has nothing to do with the jOOQ generator.
+CREATE TABLE nodeidfixture.plain_id (
+    id   varchar(50) PRIMARY KEY,
+    name varchar(50)
+);
+
+-- `keyed_elsewhere` publishes metadata keyed on `key_x` while also having an unrelated column
+-- literally named `id`, so the shadowed column is not the key column. The encoded id is over
+-- `key_x`; the `id` column is only exposable through @field.
+CREATE TABLE nodeidfixture.keyed_elsewhere (
+    key_x varchar(50) PRIMARY KEY,
+    id    varchar(50),
+    name  varchar(50)
+);
+
 -- R50 phase (g-B) rooted-at-parent fixture. Single-key NodeType `parent_node` whose
 -- __NODE_KEY_COLUMNS pin the encode/decode key as `pk_id`, plus a child table whose FK
 -- targets parent's *alternate* unique column `alt_key`. The FK column does not positionally

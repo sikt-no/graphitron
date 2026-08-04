@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.lint;
 
+import no.sikt.graphitron.rewrite.TestSchemaHelper;
+
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.rewrite.BuildWarning;
@@ -48,7 +50,7 @@ class LintInjectedFederationDefinitionsTest {
             .as("federation @link injects namespaced definitions")
             .anyMatch(n -> n.startsWith("federation__") || n.startsWith("link__"));
         // Mirror loadAttributedRegistry: synthesis decorates the author @node type in place.
-        KeyNodeSynthesiser.apply(registry);
+        KeyNodeSynthesiser.apply(registry, TestSchemaHelper.nodeDeclaration());
 
         List<BuildWarning.LintFinding> findings = LintEngine.builtIn().run(registry, injectedNames)
             .stream().map(BuildWarning.LintFinding.class::cast).toList();

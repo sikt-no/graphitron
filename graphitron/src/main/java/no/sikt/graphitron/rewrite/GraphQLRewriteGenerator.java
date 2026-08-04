@@ -279,7 +279,8 @@ public class GraphQLRewriteGenerator {
         TagLinkSynthesiser.apply(registry, bySource);
         var injectedNames = FederationLinkApplier.apply(registry);
         if (!injectedNames.isEmpty()) {
-            KeyNodeSynthesiser.apply(registry);
+            KeyNodeSynthesiser.apply(registry,
+                new NodeDeclaration(new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader())));
         }
         TagApplier.apply(registry, bySource);
         DescriptionNoteApplier.apply(registry, bySource);

@@ -74,7 +74,7 @@ class SchemaReachabilityTest {
     @Test
     void eachDescentEdgeAndSeedReachesItsType() {
         var bundle = TestSchemaHelper.buildBundle(SDL);
-        var reachable = SchemaReachability.reachableTypeNames(bundle.assembled());
+        var reachable = SchemaReachability.reachableTypeNames(bundle.assembled(), TestSchemaHelper.nodeDeclaration());
 
         assertThat(reachable)
             .as("field edge, union members, interface fan-out, @node seed, and synthesised "
@@ -94,7 +94,7 @@ class SchemaReachabilityTest {
     @Test
     void noClassifiedOutputCompositeIsUnreachable() {
         var bundle = TestSchemaHelper.buildBundle(SDL);
-        var reachable = SchemaReachability.reachableTypeNames(bundle.assembled());
+        var reachable = SchemaReachability.reachableTypeNames(bundle.assembled(), TestSchemaHelper.nodeDeclaration());
 
         // The orphan prune is now an invariant, not an observation: the field-first
         // walk is the sole classifier, so an output composite (object / interface / union) reached by
@@ -166,7 +166,7 @@ class SchemaReachabilityTest {
     }
 
     private static Set<String> reachableExcludingOperationRoots(GraphitronSchemaBuilder.Bundle bundle) {
-        var reachable = new LinkedHashSet<>(SchemaReachability.reachableTypeNames(bundle.assembled()));
+        var reachable = new LinkedHashSet<>(SchemaReachability.reachableTypeNames(bundle.assembled(), TestSchemaHelper.nodeDeclaration()));
         var schema = bundle.assembled();
         if (schema.getQueryType() != null) reachable.remove(schema.getQueryType().getName());
         if (schema.getMutationType() != null) reachable.remove(schema.getMutationType().getName());
