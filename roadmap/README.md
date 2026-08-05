@@ -15,7 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-08-01 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
-| `R582` | Gate dangling cross-file .adoc xref anchors, which render silently and rot invisibly | Spec | 2026-08-04 | [plan](adoc-xref-section-anchor-gate.md) |
+| `R582` | Gate dangling cross-file .adoc xref anchors, which render silently and rot invisibly | Spec | 2026-08-05 <sub>created 2026-08-04</sub> | [plan](adoc-xref-section-anchor-gate.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R583` | Pin the typeId axis of name-first resolveTargetKeys on both jOOQ-record decode arms | Spec | 2026-08-04 | [plan](nodeid-target-keys-typeid-axis-coverage.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-01 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |

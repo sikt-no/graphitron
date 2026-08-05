@@ -7,7 +7,7 @@ priority: 3
 theme: docs
 depends-on: []
 created: 2026-08-04
-last-updated: 2026-08-04
+last-updated: 2026-08-05
 ---
 
 # Gate dangling cross-file .adoc xref anchors, which render silently and rot invisibly
@@ -137,8 +137,10 @@ and the `zzz-nope` probe in the paragraph below. Both are live links on a publis
 generated HTML, which carries an `href` for each) and both should be rewritten as passthroughs on rendering
 grounds, but neither is what fails the gate: staged at `staging/roadmap/plans/`, their targets resolve to no
 file, so they land in the unresolvable count rather than the dangling-anchor failure. The class is real all
-the same, since a quoted example naming a page that does exist beside the item (`workflow.adoc`, say) would
-fail; this body simply does not instantiate it.
+the same, since a quoted example naming a page that does exist beside the item (another plan's
+`plans/<slug>.adoc`, say) would fail; this body simply does not instantiate it. Not every authored `.adoc`
+under `roadmap/` reaches staging, so a target being authored does not make it resolvable:
+`roadmap/workflow.adoc` is never staged, while `roadmap/inference-axis-coverage.adoc` is.
 
 **What counts as a reference is wider than the target's first character suggests.** The same probes settle
 it: `xref:../architecture/index.adoc#zzz-nope[label]` renders as a live link, silently, so a target opening
@@ -212,9 +214,15 @@ rewritten by hand, at the cost of literal plus signs in GitHub's markdown view o
   currently broken; promoting that INFO to a build failure is a separate argument about asciidoctor's log
   level, not about the unreported class this item exists for.
 * Following `include::` when collecting a page's anchors. A per-file scan is correct on today's tree: the
-  only real includes are `migrating-from-legacy.adoc:16,18` and nothing anchors into that page. If an
-  included fragment ever carries an xref target, the unresolvable-count criterion above is what surfaces
-  it.
+  only real includes are `migrating-from-legacy.adoc:16,18`, the two `manual/_generated/` fragments they
+  pull carry no anchors, and nothing xrefs into that page. Keep the failure mode straight if that ever
+  changes, because it is a *false failure* rather than an under-report, the direction this item elsewhere
+  treats as the worse one. The fragments are staged in their own right, so a reference straight at
+  `_generated/<fragment>.adoc#anchor` resolves and passes; a reference at
+  `migrating-from-legacy.adoc#anchor` finds the host page and not the anchor, and fails a link that
+  actually works. The unresolvable count does not surface that case, since it counts only references whose
+  target `.adoc` is absent from staging. The cheap fix when it fires is to fold each `include::`d file's
+  anchors into the including page's set; today there is nothing to fold.
 * Unanchored `xref:<file>.adoc[...]` path validity. A wrong *path* produces a visibly broken link and an
   asciidoctor complaint, so it is not the silent class.
 * Adopting Antora, which resolves cross-document xrefs natively as a side effect of its component model.
