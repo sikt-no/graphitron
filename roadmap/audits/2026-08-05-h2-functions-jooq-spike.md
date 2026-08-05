@@ -47,6 +47,7 @@ function registered only at runtime.
 | G4 | `DDLDatabase` over DDL whose view calls a runtime-registered function | **works**; the function-typed column degrades to `Object` bare, and is fully typed when wrapped in `CAST(... AS <type>)` |
 | G5a | `DDLDatabase` with `parseIgnoreComments` over one script holding tables, `CREATE ALIAS` inside `/* [jooq ignore start] */ ... /* [jooq ignore stop] */`, and a view calling the alias | **works**: the parser skips the block, the view generates as a typed table (`CAST` column comes out `String`) |
 | G5b | H2 `RunScript` executing that same single script | **works**: the alias registers, the view is created after it, and querying the view runs the real function |
+| R16/G1b | H2's own typing of an *uncast* function column in a view, and live-H2 codegen over it | H2 types it `CHARACTER VARYING` from the alias's Java signature, and live codegen emits `TableField<..., String>`; no cast needed on this path |
 
 ## What is "a bit special", pinned
 
@@ -64,9 +65,17 @@ function registered only at runtime.
    `/* [jooq ignore start] */ ... /* [jooq ignore stop] */` are invisible to jOOQ's parser and
    ordinary statements to H2 executing the same file (G5). The aliases stay in the one DDL
    script, placed before the views that call them.
-4. **Views absorb the gap.** `DDLDatabase` happily interprets a view calling a function it has
-   never heard of, provided the column is `CAST`; and live codegen turns views into fully
-   typed tables. Views, not functions, are the typed surface.
+4. **Views absorb the gap, and the `CAST` blame lands on the simulation, not on H2.** Real H2
+   types an uncast function column from the alias's Java signature, and live-H2 codegen emits
+   the correct field type from it (R16/G1b); the `Object` degradation happens only in
+   `DDLDatabase`'s parse-and-simulate path, where the alias is invisible and jOOQ substitutes
+   `NULL` for the call. So the `CAST` discipline is the price of the hermetic
+   `DDLDatabase` build, not an H2 deficiency. The cast-free alternative is live-H2 codegen
+   over a store booted from the full script, where routine generation can genuinely be
+   filtered (exclusion works at the metadata layer); its cost is that the alias classes must
+   be compiled before codegen runs, and inside one module codegen (generate-sources) precedes
+   compilation, so it would take a functions sub-module or later-phase codegen. Not worth it
+   while the casts stay few; the escape hatch is proven if they multiply.
 
 ## Verdict for the derivation layer
 
