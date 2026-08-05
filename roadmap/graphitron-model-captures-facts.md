@@ -34,13 +34,16 @@ DDL, as a single SQL resource (`src/main/resources/no/sikt/graphitron/model/grap
 and two things generated from it:
 
 - **Compile-time surface.** Codegen is jOOQ's live H2 metadata generation over a real store
-  booted from the DDL, not `DDLDatabase` simulation, wired in one module: a maven-compiler
-  execution at generate-sources compiles only the module's function and build-driver
-  packages, then an `exec:java` execution runs the codegen driver on the project classpath,
-  which opens an in-memory H2, executes the DDL resource (so `CREATE ALIAS` resolves the
-  classes compiled a moment earlier), and points `GenerationTool` at the same database with
-  `includeRoutines=false`; build-helper adds the generated sources and the default compile
-  builds the rest against them. No external database process is involved (the
+  booted from the DDL, not `DDLDatabase` simulation. In the single-module wiring: a
+  maven-compiler execution at generate-sources compiles only the module's function and
+  build-driver packages, then an `exec:java` execution runs the codegen driver on the project
+  classpath, which opens an in-memory H2, executes the DDL resource (so `CREATE ALIAS`
+  resolves the classes compiled a moment earlier), and points `GenerationTool` at the same
+  database with `includeRoutines=false`; build-helper adds the generated sources and the
+  default compile builds the rest against them. (The functions-sibling alternative below
+  replaces the two in-module steps with stock plugin configuration riding the sibling's
+  artifact; live-H2 codegen and everything downstream of it hold either way.) No external
+  database process is involved (the
   `graphitron-sakila-db` contrast); the build's H2 is the same embedded engine the runtime
   store uses, so codegen is a rehearsal of boot, and a view calling a missing or mistyped
   function fails the build with a real H2 error. Generated classes land in
@@ -54,7 +57,7 @@ and two things generated from it:
   generator run, created at startup, populated by capture, dead with the process. No
   migrations exist because no persisted state exists.
 
-The model's Java functions live in this module too. H2 functions are `CREATE ALIAS` bindings
+The model's Java functions belong to this module's delivery too. H2 functions are `CREATE ALIAS` bindings
 to static methods, and the statements sit plainly in the same DDL script, before the views
 that call them; the live-codegen path executes the script with real H2, so nothing needs
 hiding from a parser, function-typed view columns come out typed from the alias's Java
@@ -749,8 +752,9 @@ not an author error, per the constraint split R589 fixes.
   consistent with `type_sdl` where SQL can express the correspondence).
 - All tests live in `graphitron` at the appropriate tier (the tier meta-annotations live in
   core's test root and the module order forbids the reverse dependency); `graphitron-model`
-  hosts model code only: the DDL, the codegen output, the bootstrap, and in later increments
-  the model's function aliases, never tests.
+  hosts model code only: the DDL, the codegen output, the bootstrap, the codegen driver when
+  the single-module wiring is chosen, and in later increments the model's function aliases
+  (here or in the functions sibling, per the settled either-way placement), never tests.
 - Ride-alongs land: root pom module list, CLAUDE.md and `docs/architecture/reference/modules.adoc`
   enumeration (the `check-module-enumeration` gate holds), H2 version pinned in the root pom.
 
@@ -776,3 +780,6 @@ not an author error, per the constraint split R589 fixes.
 - **`roadmap/audits/2026-08-05-fact-base-h2-spike.md`:** the dated spike record grounding the
   H2-through-jOOQ stack, the latency envelope, and the rich-value encoding patterns the DDL
   above uses.
+- **`roadmap/audits/2026-08-05-h2-functions-jooq-spike.md`:** the dated spike record grounding
+  the function surface: the live-H2 codegen decision, the single-module build wiring, the
+  scalar-bridge shape, and the table-valued-function ruling.

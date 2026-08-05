@@ -5,7 +5,7 @@ status: Spec
 bucket: architecture
 priority: 4
 theme: classification-model
-depends-on: []
+depends-on: [graphitron-model-captures-facts]
 created: 2026-08-04
 last-updated: 2026-08-05
 ---
@@ -280,9 +280,10 @@ normalised data model reified as a SQL schema. The database is created at startu
 during a run; it lives and dies with the process, so there are no migrations and no persisted
 state anywhere. The DDL is source, and its home is a new reactor module, `graphitron-model`,
 which holds the DDL, runs jOOQ codegen over it (live H2 metadata over a store a build driver
-boots from the DDL, no external database process; `DDLDatabase` was tried and dropped, see the
-functions audit below), and builds before core: the `graphitron-sakila-db` shape made hermetic. The module name is the
-reification read literally, the module holding the DDL is the model. The ordering turns schema
+boots from the DDL, no external database process; `DDLDatabase` was tried and dropped, per the
+functions spike below), and builds before core: the `graphitron-sakila-db` shape made
+hermetic. The module name is the reification read literally, the module holding the DDL is the
+model. The ordering turns schema
 evolution into a compiler conversation: drop a column and every derivation, detection, and
 consumer that touched it fails javac in core before anything runs, and since no persisted state
 exists, compile-time is the only compatibility surface the schema has. Changing the model is
@@ -298,8 +299,9 @@ stratification above assumes. Where a derivation needs parse-boundary knowledge 
 express (graphql-java literal decoding), the bridge is a scalar or array-returning function
 shipped as `CREATE ALIAS` in the model's own DDL, before the views that call it; row explosion
 over a decoded array is a `SYSTEM_RANGE` join with `CARDINALITY` and `ARRAY_GET`. The alias
-methods are part of the model and ship with `graphitron-model`, so any process booting the store
-gets working views from the module alone.
+methods are part of the model and travel with `graphitron-model` (directly or via the
+compile-scope functions sibling whose either-way placement R595 records), so any process
+booting the store gets working views from the model dependency alone.
 
 ## Scope
 

@@ -95,7 +95,9 @@ function registered only at runtime.
   bootstrap; row explosion is `SYSTEM_RANGE` + `CARDINALITY` + `ARRAY_GET` (R10/R13), with
   parallel array functions sharing one range index when a decode yields several columns.
   Simple delimiter shapes need no function at all (R11).
-- **The functions are part of the model, so they live in `graphitron-model`.** The DDL's
+- **The functions are part of the model, so they travel with `graphitron-model`.** (A later
+  round relaxed the exact placement to a settled either-way choice, this module or a
+  compile-scope `graphitron-model-functions` sibling; R595 records it.) The DDL's
   derivation views call them, and H2 refuses to create a view over an unregistered function,
   so the `CREATE ALIAS` statements sit plainly in the same DDL script, before the views that
   call them; the bootstrap is just "execute the script", and the DDL stays the single source,
