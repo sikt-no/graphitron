@@ -7,7 +7,7 @@ priority: 4
 theme: classification-model
 depends-on: []
 created: 2026-08-04
-last-updated: 2026-08-04
+last-updated: 2026-08-05
 ---
 
 # Classification is a relation; validation adds facts
@@ -66,7 +66,13 @@ rejection; the classifications they would have produced do not. The machinery is
 that one of its own rows is dead: the `Composes` verdict (`@routine` with `@splitQuery`) can never
 fire, because neither detector list ever passes `@splitQuery`, and the live routine-and-splitQuery
 interaction is a conditional conflict minted mid-arm against a resolution result (an empty derived
-batch key), not against co-occurrence.
+batch key), not against co-occurrence. The registry already contains this item's key constraint
+in embryonic form: `FieldRegistry.classify` detects the same coordinate classified twice and
+replaces the second write with a synthetic `UnclassifiedField` whose rejection is a
+generator-internal-conflict string, indistinguishable at the view from an author error. Under
+keyed claims the two cases separate mechanically: a second claim from the same classifier
+violates the base relation's key (a purity bug), claims from different classifiers are the
+ordinary conflict rule.
 
 **A failed bind is laundered as a successful one.** `InputField.UnboundField` should be a positive
 fact: this field binds no SQL column. Instead it doubles as the demotion target for column-miss, and
@@ -206,6 +212,61 @@ purity hazard to retire: it reads the accumulator to dedupe the shared-nesting c
 coordinate-keyed claims that dedup is structural, per the key above; violations and registry
 entries come out of validation and planning, never out of classifiers.
 
+## Capture and derivation: two loads, then a stack of views
+
+Simulating the target pipeline collapses it further than the stage vocabulary above suggests. Two
+capture steps, neither of which can fail, load the base relations. The SDL traversal (the
+graphql-java visitor already in use) records existence and application facts: the type exists, the
+directive is applied at this location with these raw arguments, the field exists at this
+coordinate, the argument uses this input type, the input type's definition facts on first visit.
+None of that is interpretation; graphql-java has already validated directive arguments against
+their definitions before we see the schema, so raw capture cannot fail, and source locations ride
+the raw facts so every later diagnostic inherits its location without re-walking SDL. The catalog
+scans (jOOQ, services) load the other base relations the same way. Capture is total: everything in
+the SDL is recorded, with no reachability pruning at capture time.
+
+Everything after capture is derivation, and classification stops being a phase. An authored claim
+is the join of the applied-directive relation with the axis declarations; the classifier column in
+the key falls out of the join. An inferred claim is the same shape with catalog facts on the right
+side (a field fact whose parent binds a table, a catalog column matching the name). Reachability
+is a derived relation too (root seeds plus transitive closure over captured edges), and with it
+the zero-claims domain becomes explicit: a demand relation, reachable coordinates intersected with
+requiring rules, each row carrying *why* a claim is required. Today's implicit skips (connection
+and pageInfo machinery never enters the registry, a DELETE-carrier's data field is silently
+filtered, `Subscription` fields are demanded and then unconditionally deferred) become visible
+exemption and rule rows, and unclassifiable is the anti-join of demand against the reduced claim
+view.
+
+Diagnostics enter wherever a constraint's inputs are complete, which stratifies into three groups
+without anyone scheduling it. SDL-only constraints (authored conflict, recognized combinations)
+fire after the first load, computable with no catalog on the classpath, which is exactly the
+latency class the LSP wants. Resolution constraints (a directive naming no catalog row, key
+columns absent) fire after the second load, each an inclusion constraint whose violation names the
+missing fact. Assembly constraints fire at planning, where the uncorrelated-routine `@splitQuery`
+check above is the type specimen, expressible only once the split-source slot fact exists.
+Planning itself never re-checks: a coordinate that tripped an earlier constraint has no row to
+join, so absence manifests as no command. Each stratum only ever adds rows, which is this item's
+title read as an evaluation order.
+
+The input side falls out of the same picture. Use-site facts live on the argument edge, so the
+occurrence path (this argument, then this nesting field, then this one) is derivable data: the
+transitive closure of argument-use over input-object field edges, keyed by the path value itself.
+The cascade fact slice 4 flags (`enclosingOverride`) is then a predicate over path prefixes, not a
+fact waiting for input carriers to get minted coordinates; the open question below narrows
+accordingly.
+
+**Materialization is the one unforced choice in this picture**, and it stays deliberately open:
+the relations and views above can live as coordinate-keyed Java (the existing eight components on
+`GraphitronSchema` are already this shape) or in an embedded relational store, candidate stack H2
+in-memory queried through jOOQ codegen over the fact DDL. The store makes the constraint split
+mechanical (the base-relation key is a literal `PRIMARY KEY`, and throwing on a duplicate is
+right because that is a generator bug; the author-error rules are detection queries whose result
+sets mint diagnostics), dogfoods the stack the generator emits for consumers, and opens a
+read-only SQL surface for agents; it costs a new dependency, a rich-value encoding tax, and an
+`ORDER BY` discipline that generator determinism cannot do without. Those three costs are
+empirical, and `roadmap/audits/2026-08-05-fact-base-h2-spike.md` is the spike that measures them;
+its verdict feeds the materialization question below.
+
 ## Scope
 
 1. **Amend the umbrella.** Add the claim base relations, the stage vocabulary (classification
@@ -324,27 +385,48 @@ surfaces, so the item does not qualify for the internal-refactor exemption.
 
 ## Open questions (for the next design round)
 
-- **The zero-claims domain.** "Zero claims is unclassifiable" needs an explicit domain: which
-  coordinates *require* a claim. Today the walk defines that set implicitly; under scatter-gather
-  it has to be a fact or a rule of its own.
-- **Slice 4's cascade half.** `rejectAtConsumer` reads `enclosingOverride`, a call-site cascade
-  fact the validator's model walk does not have. Materialising it needs a use-site relation over
-  input carriers, which have no coordinates until the umbrella's input-member work; the
-  alternative is leaving the cascade predicate wholly to R221 and keeping only the
-  definition-keyed half here.
-- **Edge placement of the conflicted arm.** Edge-bearing in `EdgeProducer` (broken fields appear
-  in the graph agents traverse) or a separate broken-fields surface; `EdgeCoverageTest` pins
-  whichever answer.
-- **Slot-fact granularity and home.** Which slot facts ship in this item (the pilot pair's, plus
-  what the conflicted-DELETE fixture needs) versus staying inside the interim monolithic producer;
-  and where the relations live (components on `GraphitronSchema` beside the existing eight, or a
-  separate gathered-facts carrier).
+- **The demand relation's rules and exemption census.** The zero-claims domain is settled in
+  shape (demand derives from reachability intersected with requiring rules; today's skips become
+  exemption rows) but not in content: the census of the implicit exemptions (connection and
+  pageInfo machinery, the DELETE-carrier data-field filter, directiveless nesting targets) and of
+  the requiring rules, including whether `Subscription`'s unconditional deferral is a demand rule
+  or a recognized capability gap. Two incidental dead finds from that census belong to whichever
+  slice touches the walk: `classifyFieldsOfObject` computes a `skipForUnifiedPath` local nothing
+  reads, and the `TableInterfaceType` exclusion in `classifyFieldInner`'s table-backed dispatch
+  arm looks unreachable (the type is keyed by an interface name, the lookup always by an object
+  name).
+- **Slice 4's cascade half: is a path-valued key acceptable?** The predicate splits cleanly. The
+  definition-keyed disjunct (`@condition(override: false)` with no column) is exactly
+  `GraphitronSchemaValidator.validateInputUnboundField`'s existing predicate, and R221 as filed
+  is precisely "make that disjunct reachable for plain inputs". The cascade disjunct (no
+  condition, no ancestor override) is irreducibly a fact about an occurrence path, and under
+  capture-and-derive the path is derivable data keyed by its own value, so the question stops
+  being "wait for input-carrier coordinates" and becomes whether a path-valued derived key is an
+  acceptable relation shape, and whether its implementation lands here or stays consumer-side
+  until the umbrella's input-member work.
+- **Edge placement of the conflicted arm.** Narrowed by research, still open as a decision.
+  Discoverability is not at stake: the MCP `schema` tool lists broken fields inline with their
+  reason regardless of edges, so `NO_EDGE_FIELDS` membership governs traversal reach only, and
+  multi-edge-per-field is established pattern (composite columns and polymorphic participants
+  loop the same builders). The case for edge-bearing is the item's own thesis: `Unclassified` is
+  rightly no-edge because nothing resolved, a conflicted coordinate differs precisely because its
+  claims' slot facts survived, and the reverse index is what answers "what touches table X" with
+  the broken DELETE included. `EdgeCoverageTest` pins whichever answer.
+- **Materialization of the fact base.** Grown from slot-fact home: components on
+  `GraphitronSchema` beside the existing eight, or the embedded relational store; the spike
+  (`roadmap/audits/2026-08-05-fact-base-h2-spike.md`) measures the store's three empirical costs
+  and its verdict feeds this question. Granularity is unchanged as a question: which slot facts
+  ship in this item (the pilot pair's, plus what the conflicted-DELETE fixture needs) versus
+  staying inside the interim monolithic producer.
 - **The axis declaration's home.** Where a directive declares the axis it binds, and what enforces
   that every classification-claiming directive carries the declaration.
 - **Interim claim payload in slice 2.** The monolithic producer's minted record riding as the
-  payload, or a thinner kind-plus-provenance row until the pilot lands.
+  payload, or a thinner kind-plus-provenance row until the pilot lands. Leaning thin: the minted
+  record would put the transitional hierarchy inside a relation the containment line keeps clean,
+  and the payload would be built only to be deleted.
 - **Provenance shape for inferred claims.** What a structural trigger is as data (the resolving
-  column, the nesting edge), and whether one shape covers all structural classifiers.
+  column, the nesting edge), and whether one shape covers all structural classifiers; wants an
+  enumeration of the actual structural classifiers before proposing a shape.
 
 ## Retired vocabulary (expected; finalise at the Done gate)
 
