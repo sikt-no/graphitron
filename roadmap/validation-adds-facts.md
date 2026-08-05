@@ -279,13 +279,27 @@ What the store materializes deserves naming precisely: the fact schema DDL is th
 normalised data model reified as a SQL schema. The database is created at startup and populated
 during a run; it lives and dies with the process, so there are no migrations and no persisted
 state anywhere. The DDL is source, and its home is a new reactor module, `graphitron-model`,
-which holds the DDL, runs jOOQ codegen over it (`DDLDatabase`, no live database at build time),
-and builds before core: the `graphitron-sakila-db` shape made hermetic. The module name is the
+which holds the DDL, runs jOOQ codegen over it (live H2 metadata over a store a build driver
+boots from the DDL, no external database process; `DDLDatabase` was tried and dropped, see the
+functions audit below), and builds before core: the `graphitron-sakila-db` shape made hermetic. The module name is the
 reification read literally, the module holding the DDL is the model. The ordering turns schema
 evolution into a compiler conversation: drop a column and every derivation, detection, and
 consumer that touched it fails javac in core before anything runs, and since no persisted state
 exists, compile-time is the only compatibility surface the schema has. Changing the model is
 editing the DDL and following the compiler.
+
+The derivation vehicle is settled too, by a second spike
+(`roadmap/audits/2026-08-05-h2-functions-jooq-spike.md`). Table-valued functions are not it: H2
+pre-evaluates table functions, so their arguments cannot reference columns of the surrounding
+query, there is no `LATERAL` to rescue the correlated join a TVF-based derivation layer would be
+built from, and the generated binding is untyped besides. Derivations stay SQL statements, views
+and `INSERT..SELECT` strata with recursive CTEs where closure is needed, exactly the shape the
+stratification above assumes. Where a derivation needs parse-boundary knowledge SQL cannot
+express (graphql-java literal decoding), the bridge is a scalar or array-returning function
+shipped as `CREATE ALIAS` in the model's own DDL, before the views that call it; row explosion
+over a decoded array is a `SYSTEM_RANGE` join with `CARDINALITY` and `ARRAY_GET`. The alias
+methods are part of the model and ship with `graphitron-model`, so any process booting the store
+gets working views from the module alone.
 
 ## Scope
 
@@ -459,11 +473,12 @@ those pieces.
   rightly no-edge because nothing resolved, a conflicted coordinate differs precisely because its
   claims' slot facts survived, and the reverse index is what answers "what touches table X" with
   the broken DELETE included. `EdgeCoverageTest` pins whichever answer.
-- **Slot-fact granularity.** Materialization itself is decided (the store, the
-  `graphitron-model` module; see the capture-and-derivation section), which reduces this
-  question to its original core: which slot facts ship in which increment (the pilot pair's,
-  plus what the conflicted-DELETE fixture needs) versus staying inside the interim monolithic
-  producer.
+- **Slot-fact granularity.** Materialization is decided (the store, the `graphitron-model`
+  module) and so is the mechanism: a slot-fact derivation is an `INSERT..SELECT` calling a
+  decode alias where the value needs the graphql-java parser, per the functions spike; not a
+  Java loop. What remains is purely sequencing: which slot facts, and so which decode functions
+  and strata, ship in which increment (the pilot pair's, plus what the conflicted-DELETE
+  fixture needs) versus staying inside the interim monolithic producer.
 - **The axis declaration's home.** Where a directive declares the axis it binds, and what enforces
   that every classification-claiming directive carries the declaration.
 - **Interim claim payload in slice 2.** The monolithic producer's minted record riding as the
