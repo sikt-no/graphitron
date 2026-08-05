@@ -62,9 +62,17 @@ signatures with no `CAST` discipline, and the DDL stays the single source with f
 included while the bootstrap stays "execute the script". The alias methods ship with the
 module, which makes the store whole from this module alone: any process that boots it gets
 working views without core on the classpath, and the module carries a graphql-java dependency
-for the literal decoders. No functions ship in this increment; the first bridge decoders
-arrive with the derivations that need them. The spike record grounding all of this, including
-the single-module build wiring, is `roadmap/audits/2026-08-05-h2-functions-jooq-spike.md`.
+for the literal decoders. Where the function classes sit is a settled either-way choice: the
+single-module wiring above, or a `graphitron-model-functions` sibling that builds first and
+rides the codegen plugin's classpath, letting the codegen run as stock plugin configuration
+(the jOOQ-mcve shape). The single-module form keeps the model one artifact; the sub-module
+form keeps the build orthodox; both keep the store whole (the sub-module is a compile-scope
+dependency of `graphitron-model`, so consumers get it transitively). Implementation picks
+whichever fits the reactor's build conventions better, and if the sub-module is chosen it
+joins the module-enumeration ride-alongs below. No functions ship in this increment; the
+first bridge decoders arrive with the derivations that need them. The spike record grounding
+all of this, including the single-module build wiring, is
+`roadmap/audits/2026-08-05-h2-functions-jooq-spike.md`.
 
 Mechanical ride-alongs: the root pom module list, the module enumeration in CLAUDE.md and
 `docs/architecture/reference/modules.adoc` (the `check-module-enumeration` gate), and the H2
