@@ -83,22 +83,39 @@ These bind the DDL below and every relation added to it later.
 - **Only values are stored**: strings, booleans, integers. This mirrors the documented
   `CatalogFacts` invariant (never a live `Table<?>`, `ForeignKey`, or `Class<?>`, because the
   codegen classloader closes per pass); a SQL store enforces it structurally.
+- **Decode at capture exactly when the decode needs parse-boundary knowledge SQL cannot
+  express** (the graphql-java AST, a JVM descriptor); anything computable as a query over
+  captured columns is derivation and stays out. This rule is why the type-wrapping decode and
+  `returns_condition` are columns while reference-path and error-handler decoding are not.
+- **Constraint violations are generator bugs, never author errors.** Every key and `CHECK`
+  below ranges over a domain capture controls (closed classfile forms, graphql-java's kind
+  vocabulary) or an identity graphql-java guarantees unique in an assembled schema (it rejects
+  a repeated non-repeatable directive before capture runs). An author mistake becomes a
+  diagnostic row in the derived stratum; it never surfaces as a constraint violation here.
+  Cross-relation invariants plain DDL cannot state (at most one primary key per table, defaults
+  only on input-object fields, ordinal zero unless repeatable) get gate queries as their named
+  enforcers, siblings of the comment-coverage gate.
 
 ## The fact schema, first iteration
 
 Base relations only: what the two capture loads fill. The derived stratum (claims, reachability,
 demand, occurrence paths, diagnostics, commands) is deliberately absent; see the leave-outs
-section. Three families, prefixed by origin: `graphql_` for SDL facts, `catalog_` for jOOQ
-catalog facts, `extension_` for the consumer's compiled extension classes.
+section. Three families, prefixed by origin: `graphql_` and `applied_` for SDL facts,
+`catalog_` for jOOQ catalog facts, `extension_` for the consumer's compiled extension classes.
 
 Two representation choices up front. First, output fields and input-object fields share one
 table: a field's identity is `(type_name, field_name)` in both cases and the owning type's
 `kind` distinguishes them, so the SDL location kind of a directive application falls out of a
-join instead of duplicating the table. Second, type wrapping is captured with the rendered type
-expression as the authoritative column (`type_sdl`, faithful to arbitrary nesting) plus three
-decoded convenience columns covering the wrapping depth the generator supports; this keeps the
-input side's list-item nullability, which the current model's boolean pair loses. An ordered
-wrapping child table can follow if a consumer ever needs depth beyond the decode.
+join instead of duplicating the table. Second, type wrapping is two columns with distinct jobs:
+`type_sdl` is the captured literal, the type expression as the author wrote it, and the three
+decoded columns (`non_null`, `is_list`, `item_non_null`) are the capture-time decode the decode
+rule admits, covering the single-level wrapping the generator supports and keeping the input
+side's list-item nullability, which the current model's boolean pair loses. Both are written
+from the same AST in the same insert, so divergence between them is a capture bug, and a gate
+query checks the correspondences SQL can express. Deeper nesting (a list of lists) keeps a
+faithful `type_sdl` while the decode describes the outermost list and innermost item; whether
+the generator accepts such a shape is a detection's business, not capture's. An ordered
+wrapping child table can follow if a consumer ever needs the interior levels relationally.
 
 Today's model has no argument coordinate and no enum-value coordinate (`FieldCoordinates` is
 two-part), and stores the object-to-interface edge only inverted (interface to participants).
@@ -133,7 +150,7 @@ CREATE TABLE graphql_type (
 CREATE TABLE graphql_field (
   type_name         VARCHAR NOT NULL, -- owning type
   field_name        VARCHAR NOT NULL,
-  ordinal           INT     NOT NULL, -- declaration order within the type; source order is a captured fact
+  ordinal           INT     NOT NULL, -- order in the effective assembled type (base declaration, then extensions in document order)
   type_sdl          VARCHAR NOT NULL, -- the rendered type expression, e.g. '[Film!]!'; authoritative for wrapping fidelity
   named_type        VARCHAR NOT NULL, -- the named type the expression bottoms out in
   non_null          BOOLEAN NOT NULL, -- outermost non-null wrapper present
@@ -178,7 +195,7 @@ CREATE TABLE graphql_argument (
 CREATE TABLE graphql_enum_value (
   type_name     VARCHAR NOT NULL, -- the owning ENUM type
   value_name    VARCHAR NOT NULL,
-  ordinal       INT     NOT NULL, -- declaration order within the enum
+  ordinal       INT     NOT NULL, -- order in the effective assembled enum (base declaration, then extensions)
   description   VARCHAR,
   source_name   VARCHAR,
   source_line   INT,
@@ -208,6 +225,16 @@ CREATE TABLE graphql_implements (
   FOREIGN KEY (interface_name) REFERENCES graphql_type (type_name)
 );
 
+-- The schema definition names a root operation type. These rows are the
+-- seeds the reachability derivation grows from.
+CREATE TABLE graphql_root_operation (
+  operation VARCHAR NOT NULL, -- which root slot
+  type_name VARCHAR NOT NULL, -- the object type serving it
+  PRIMARY KEY (operation),
+  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
+  CHECK (operation IN ('QUERY', 'MUTATION', 'SUBSCRIPTION'))
+);
+
 -- ==== Directive definitions ==================================================
 -- The definition side of the directive surface: what a directive is, where it
 -- may sit, what arguments it declares. Bundled, user-authored, and
@@ -232,42 +259,79 @@ CREATE TABLE graphql_directive_location (
   FOREIGN KEY (directive_name) REFERENCES graphql_directive (directive_name)
 );
 
--- A directive definition declares a formal argument.
+-- A directive definition declares a formal argument. Carries the same
+-- wrapping decode as graphql_field, so list-ness of a directive argument is
+-- a column read, not a string parse.
 CREATE TABLE graphql_directive_argument (
   directive_name    VARCHAR NOT NULL,
   argument_name     VARCHAR NOT NULL,
   ordinal           INT     NOT NULL, -- declaration order in the definition
   type_sdl          VARCHAR NOT NULL, -- rendered argument type, e.g. '[ReferenceElement!]!'
+  named_type        VARCHAR NOT NULL,
+  non_null          BOOLEAN NOT NULL,
+  is_list           BOOLEAN NOT NULL,
+  item_non_null     BOOLEAN,
   default_value_sdl VARCHAR,          -- rendered default; the value an application inherits when it omits the argument
   description       VARCHAR,
   PRIMARY KEY (directive_name, argument_name),
-  FOREIGN KEY (directive_name) REFERENCES graphql_directive (directive_name)
+  FOREIGN KEY (directive_name) REFERENCES graphql_directive (directive_name),
+  FOREIGN KEY (named_type) REFERENCES graphql_type (type_name),
+  CHECK (is_list OR item_non_null IS NULL)
 );
 ```
 
 Directive applications are one table per element family rather than one generic table, because a
 generic table would need nullable key parts (an argument application has a three-part element
-coordinate, a type application a one-part one) and a key with holes stops being a natural key.
-The union view is one `UNION ALL` away when a consumer wants all applications regardless of
-site. Repeatable directives (`@reference`, `@referenceFor`, `@routine`) put an `ordinal` in the
-application key, numbered in document order; that order is semantics, not bookkeeping, because
-`@reference` applications concatenate into one chain. Raw argument values ride in a child table
-per family, keyed by the application plus the formal argument name.
+coordinate, a schema application a zero-part one) and a key with holes stops being a natural
+key. Five families: the four element sites plus the schema definition itself, whose `@link`
+application is the federation opt-in and would otherwise have no home in a store claiming total
+capture. Every application key carries an `ordinal`, 0 for the single application of a
+non-repeatable directive and numbered in document order for repeats. The ordinal is uniform
+across all families because repeatability is a property of arbitrary SDL, not of today's
+bundled inventory: federation's `@key` is repeatable on OBJECT and the sakila federated fixture
+already applies it twice to one type, so a type-level key without an ordinal collides on the
+existing corpus. Where order is semantics it is captured order: `@reference` applications
+concatenate into one chain. Raw argument values ride in a child table per family, keyed by the
+application plus the formal argument name, and the DDL ships the union view over all five
+families so no consumer hand-writes the five-arm `UNION ALL`.
 
 ```sql
 -- ==== Directive applications =================================================
 -- One row per application the author wrote, one child row per argument the
 -- author passed. Values are the rendered SDL literal; decoding is derivation.
 
+-- A directive is applied to the schema definition (@link lives here).
+CREATE TABLE applied_schema_directive (
+  directive_name VARCHAR NOT NULL,
+  ordinal        INT     NOT NULL, -- 0 unless the directive is repeatable; repeats number in document order
+  source_name    VARCHAR,          -- position of the application site
+  source_line    INT,
+  source_column  INT,
+  PRIMARY KEY (directive_name, ordinal),
+  FOREIGN KEY (directive_name) REFERENCES graphql_directive (directive_name)
+);
+
+-- An argument the author passed to a schema-level application.
+CREATE TABLE applied_schema_directive_arg (
+  directive_name          VARCHAR NOT NULL,
+  ordinal                 INT     NOT NULL,
+  directive_argument_name VARCHAR NOT NULL, -- the definition's formal argument this value binds
+  value_sdl               VARCHAR NOT NULL, -- the value as written, rendered from the AST; omitted arguments are absent rows
+  PRIMARY KEY (directive_name, ordinal, directive_argument_name),
+  FOREIGN KEY (directive_name, ordinal)
+    REFERENCES applied_schema_directive (directive_name, ordinal)
+);
+
 -- A directive is applied to a type (OBJECT, INTERFACE, UNION, ENUM,
 -- INPUT_OBJECT, or SCALAR; the parent kind is a join away).
 CREATE TABLE applied_type_directive (
   type_name      VARCHAR NOT NULL,
   directive_name VARCHAR NOT NULL,
-  source_name    VARCHAR,          -- position of the application site
+  ordinal        INT     NOT NULL, -- as on applied_schema_directive; federation's @key repeats here
+  source_name    VARCHAR,
   source_line    INT,
   source_column  INT,
-  PRIMARY KEY (type_name, directive_name),
+  PRIMARY KEY (type_name, directive_name, ordinal),
   FOREIGN KEY (type_name)      REFERENCES graphql_type (type_name),
   FOREIGN KEY (directive_name) REFERENCES graphql_directive (directive_name)
 );
@@ -276,11 +340,12 @@ CREATE TABLE applied_type_directive (
 CREATE TABLE applied_type_directive_arg (
   type_name               VARCHAR NOT NULL,
   directive_name          VARCHAR NOT NULL,
-  directive_argument_name VARCHAR NOT NULL, -- the definition's formal argument this value binds
-  value_sdl               VARCHAR NOT NULL, -- the value as written, rendered from the AST; omitted arguments are absent rows
-  PRIMARY KEY (type_name, directive_name, directive_argument_name),
-  FOREIGN KEY (type_name, directive_name)
-    REFERENCES applied_type_directive (type_name, directive_name)
+  ordinal                 INT     NOT NULL,
+  directive_argument_name VARCHAR NOT NULL,
+  value_sdl               VARCHAR NOT NULL,
+  PRIMARY KEY (type_name, directive_name, ordinal, directive_argument_name),
+  FOREIGN KEY (type_name, directive_name, ordinal)
+    REFERENCES applied_type_directive (type_name, directive_name, ordinal)
 );
 
 -- A directive is applied to a field (output or input-object; the parent
@@ -347,10 +412,11 @@ CREATE TABLE applied_enum_value_directive (
   type_name      VARCHAR NOT NULL,
   value_name     VARCHAR NOT NULL,
   directive_name VARCHAR NOT NULL,
+  ordinal        INT     NOT NULL, -- as on applied_schema_directive
   source_name    VARCHAR,
   source_line    INT,
   source_column  INT,
-  PRIMARY KEY (type_name, value_name, directive_name),
+  PRIMARY KEY (type_name, value_name, directive_name, ordinal),
   FOREIGN KEY (type_name, value_name) REFERENCES graphql_enum_value (type_name, value_name),
   FOREIGN KEY (directive_name)        REFERENCES graphql_directive (directive_name)
 );
@@ -360,12 +426,37 @@ CREATE TABLE applied_enum_value_directive_arg (
   type_name               VARCHAR NOT NULL,
   value_name              VARCHAR NOT NULL,
   directive_name          VARCHAR NOT NULL,
+  ordinal                 INT     NOT NULL,
   directive_argument_name VARCHAR NOT NULL,
   value_sdl               VARCHAR NOT NULL,
-  PRIMARY KEY (type_name, value_name, directive_name, directive_argument_name),
-  FOREIGN KEY (type_name, value_name, directive_name)
-    REFERENCES applied_enum_value_directive (type_name, value_name, directive_name)
+  PRIMARY KEY (type_name, value_name, directive_name, ordinal, directive_argument_name),
+  FOREIGN KEY (type_name, value_name, directive_name, ordinal)
+    REFERENCES applied_enum_value_directive (type_name, value_name, directive_name, ordinal)
 );
+
+-- The one view the DDL ships: every application regardless of site, so a
+-- consumer that wants "all applications of @x" reads one relation.
+CREATE VIEW applied_directive_site AS
+SELECT 'SCHEMA' AS site_kind, CAST(NULL AS VARCHAR) AS type_name,
+       CAST(NULL AS VARCHAR) AS member_name, CAST(NULL AS VARCHAR) AS argument_name,
+       directive_name, ordinal, source_name, source_line, source_column
+  FROM applied_schema_directive
+UNION ALL
+SELECT 'TYPE', type_name, NULL, NULL,
+       directive_name, ordinal, source_name, source_line, source_column
+  FROM applied_type_directive
+UNION ALL
+SELECT 'FIELD', type_name, field_name, NULL,
+       directive_name, ordinal, source_name, source_line, source_column
+  FROM applied_field_directive
+UNION ALL
+SELECT 'ARGUMENT', type_name, field_name, argument_name,
+       directive_name, ordinal, source_name, source_line, source_column
+  FROM applied_argument_directive
+UNION ALL
+SELECT 'ENUM_VALUE', type_name, value_name, NULL,
+       directive_name, ordinal, source_name, source_line, source_column
+  FROM applied_enum_value_directive;
 ```
 
 Catalog facts are keyed `(table_schema, table_name)` end to end, matching `CatalogFacts`'
@@ -498,9 +589,9 @@ identity, which is exactly what an identity-carrying key is for.
 -- A class exists on the consumer's extension classpath.
 CREATE TABLE extension_class (
   class_name VARCHAR NOT NULL, -- fully qualified binary name
-  class_kind VARCHAR NOT NULL, -- what the classfile declares
+  class_kind VARCHAR NOT NULL, -- the classfile's declared form; the domain is closed over classfile shapes, so a violation is a capture bug
   PRIMARY KEY (class_name),
-  CHECK (class_kind IN ('CLASS', 'INTERFACE', 'ENUM', 'RECORD'))
+  CHECK (class_kind IN ('CLASS', 'INTERFACE', 'ENUM', 'RECORD', 'ANNOTATION'))
 );
 
 -- A public method exists on an extension class.
@@ -514,15 +605,17 @@ CREATE TABLE extension_method (
   FOREIGN KEY (class_name) REFERENCES extension_class (class_name)
 );
 
--- An ordered parameter of an extension method.
+-- An ordered parameter of an extension method. Deliberately no
+-- parameter-source column: which ParamSource a parameter binds to is decided
+-- per directive application, not per method, so it is a derived relation
+-- keyed by the application coordinate and lands with its first consumer.
 CREATE TABLE extension_method_parameter (
-  class_name       VARCHAR NOT NULL,
-  method_name      VARCHAR NOT NULL,
-  descriptor       VARCHAR NOT NULL,
-  position         INT     NOT NULL, -- 0-based parameter position
-  parameter_name   VARCHAR,          -- NULL when the consumer compiled without -parameters
-  parameter_type   VARCHAR NOT NULL, -- erased source-form parameter type
-  parameter_source VARCHAR,          -- the scanner's ParamSource mirror (ARG, CONTEXT, SOURCES, DSL_CONTEXT, TABLE, SOURCE_TABLE), when classified
+  class_name     VARCHAR NOT NULL,
+  method_name    VARCHAR NOT NULL,
+  descriptor     VARCHAR NOT NULL,
+  position       INT     NOT NULL, -- 0-based parameter position
+  parameter_name VARCHAR,          -- NULL when the consumer compiled without -parameters
+  parameter_type VARCHAR NOT NULL, -- erased source-form parameter type
   PRIMARY KEY (class_name, method_name, descriptor, position),
   FOREIGN KEY (class_name, method_name, descriptor)
     REFERENCES extension_method (class_name, method_name, descriptor)
@@ -554,12 +647,18 @@ Both loads are infallible by construction: they record what is there, and graphq
 already validated directive arguments against their definitions before we see the schema, so raw
 capture cannot reject. Capture is total, with no reachability pruning.
 
-- **SDL load.** One visitor pass over the registry fills the `graphql_` and `applied_` families.
-  The reactor already owns a sealed SDL fact-gathering dispatch (the `no.sikt.graphitron.facts`
-  package: `FactVisitor`, `FactSubjectKind`, `GatheredFacts`); that dispatch gathers decoded,
-  typed slots, which sits closer to derivation than to raw capture, but the walk is the same
-  walk. The implementation decides whether the capture load rides that traversal or precedes it;
-  the constraint is a single pass over the SDL, not two parallel walkers drifting apart.
+- **SDL load.** One pass fills the `graphql_` and `applied_` families, reading the **assembled
+  `GraphQLSchema`**, and that source is decided here, not at implementation: assembly is what
+  guarantees every type reference resolves (so the `named_type` FK cannot dangle) and every
+  directive application has been validated (so raw capture cannot reject); neither holds of the
+  raw registry. One named carve-out: `makeExecutableSchema` drops applied directives targeting
+  built-in scalar names, the loss `GraphitronSchemaBuilder.recordSdlScalarDirectives` exists to
+  patch, so the load captures exactly those from the registry in the same pass, and that
+  pre-pass can retire when its consumer migrates. The capture writer gets its own package in
+  core, importing the module's generated classes; it does not live inside
+  `no.sikt.graphitron.facts`, whose import-direction allowance ("reads the assembled schema,
+  imports nothing else of the tree") stays intact. The walk constraint stands regardless of
+  placement: a single pass over the schema, not two parallel walkers drifting apart.
 - **Catalog load.** Fills the `catalog_` family from the same jOOQ catalog walk that builds
   `CatalogFacts` today, and the `extension_` family from the `ClasspathScanner` emission. Runs
   inside the codegen classloader scope; only values cross out, which the store enforces.
@@ -576,18 +675,25 @@ not an author error, per the constraint split R589 fixes.
   (the axis declaration's home, inferred-claim provenance, slot-fact granularity, the
   path-valued key). The spike DDL in
   `roadmap/audits/2026-08-05-fact-base-h2-spike.md` is the standing sketch for that stratum.
-- **Routines.** The catalog has table-valued functions and `@routine` consumers will need their
-  census, but the resolution taxonomy is derivation and the base census is cheap to add when
-  that consumer migrates; inventing its columns now would be speculation.
+- **Routines.** A routine census is capture by the decode rule and cheap to load, but its
+  identity is not settled: routines overload, carry parameter modes, and split table-valued
+  from scalar, so the key needs the same inventory-grounded design the relations above got.
+  Guessing the key is the speculation; the census lands with the `@routine` consumer whose
+  queries fix its shape.
+- **Per-extension declaration sites.** All five type-extension kinds are live today, so a type
+  may be declared across several sources; `graphql_type` keeps one site (the base declaration)
+  and the `ordinal` columns mean order in the effective assembled type. A declaration-site
+  relation keyed `(type_name, source_name, source_line)` lands when a consumer needs
+  per-extension sites; the description-note appliers are the known candidate.
 - **Javadoc and Java source positions.** The request-time join against `SourceWalker` is a
   deliberate cadence separation (a `.java` edit is visible without a rebuild) and stays outside
   the store.
 - **Derived `GraphitronSchema` components.** Arrivals, reachable source shapes, tenant scopes
   and bindings, connection synthesis, operation members, and delivery facts are derivations over
   the base facts above; none of them is capture, so none of them is a table here.
-- **Decoded slot facts.** The only decode capture performs is the type-wrapping convenience
-  columns; everything else (reference paths, error handlers, mutation kinds) stays a rendered
-  literal until a consumer's derivation decodes it.
+- **Decoded slot facts.** Capture decodes only what the decode rule admits (type wrapping,
+  `returns_condition`, the erased display types); everything else (reference paths, error
+  handlers, mutation kinds) stays a rendered literal until a consumer's derivation decodes it.
 
 ## Acceptance
 
@@ -597,13 +703,23 @@ not an author error, per the constraint split R589 fixes.
   executed from the same resource the codegen read.
 - Both capture loads run inside the standard build; the full fixture corpus shows generated-output
   identity, and no diagnostic text changes.
-- Agreement tests pin the shadow copy to the live pipeline: type census against
-  `GraphitronSchema.types`, per-coordinate applied-directive counts against the SDL, catalog
-  table and column census against `CatalogFacts`, extension method census against the scanner's
-  `CompletionData` view. They are the shadow period's honesty check and retire as consumers
-  migrate.
-- A comment-coverage gate queries `INFORMATION_SCHEMA` and fails on any table or column in the
-  model schema without a non-blank comment.
+- Agreement tests pin the shadow copy to the live pipeline through one mechanical driver: it
+  enumerates the generated jOOQ tables and fails on any relation without a registered agreement
+  source, so a new relation cannot arrive unchecked. Each registration declares its direction:
+  containment for the SDL side (capture is total, `GraphitronSchema` is reachability-pruned, so
+  the store contains the model), equality for the `CatalogFacts` and scanner censuses. The
+  anchor checks: type census against `GraphitronSchema.types`, per-coordinate applied-directive
+  counts against the SDL, catalog table and column census against `CatalogFacts`, extension
+  method census against the scanner's `CompletionData` view. They are the shadow period's
+  honesty check and retire as consumers migrate.
+- The gate family runs against the bootstrapped store: comment coverage (every table and column
+  commented, checked via `INFORMATION_SCHEMA`) and one query per cross-relation invariant the
+  DDL cannot state (at most one `is_primary` row per catalog table, `default_value_sdl` only
+  under INPUT_OBJECT parents, `ordinal` 0 unless the directive is repeatable, wrapping decode
+  consistent with `type_sdl` where SQL can express the correspondence).
+- All tests live in `graphitron` at the appropriate tier (the tier meta-annotations live in
+  core's test root and the module order forbids the reverse dependency); `graphitron-model`
+  itself stays DDL, codegen, and bootstrap only.
 - Ride-alongs land: root pom module list, CLAUDE.md and `docs/architecture/reference/modules.adoc`
   enumeration (the `check-module-enumeration` gate holds), H2 version pinned in the root pom.
 
@@ -614,7 +730,9 @@ not an author error, per the constraint split R589 fixes.
   the tests.
 - **Any behavior change.** What the build accepts, rejects, emits, and reports is byte-identical.
 - **Touching `GraphitronSchema`.** The surface being strangled is not extended and not shrunk
-  here; both models simply coexist, with the store as the only place new facts land from now on.
+  here; both models simply coexist, with the store as the only place new facts land from now
+  on. That landing rule is review-only and named as such: no mechanical guard fails when a
+  fact is added to `GraphitronSchema` instead, so reviewers hold the line.
 
 ## Relationships
 
