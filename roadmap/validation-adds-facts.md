@@ -389,6 +389,11 @@ surfaces, so the item does not qualify for the internal-refactor exemption.
 
 ## Relationships
 
+- **`graphitron-model-captures-facts` (R595):** the substrate this architecture runs on; ships
+  first per the strangler frame above, which is what the front-matter dependency encodes. It
+  carries the fact-schema DDL, the `graphitron-model` module, the two capture loads, and the
+  agreement tests; this item's expected narrowing (the classification-stage migration) is
+  planned as the store's first reader.
 - **Umbrella (`coordinate-lowers-to-datafetcher-queryparts`, R333):** amended by slice 1. The claim
   relations are base relations the umbrella's current text lacks; the single-classification
   worldview relocates to the planning stage instead of being abolished, the commands become the

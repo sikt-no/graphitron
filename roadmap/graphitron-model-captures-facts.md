@@ -20,7 +20,9 @@ the SDL visitor records existence and application facts, and the jOOQ and classp
 the catalog and extension facts. Nobody reads the store yet. Agreement tests are the shadow
 period's honesty check and retire as consumers migrate off `GraphitronSchema` piece by piece
 (the strangler frame recorded in R589); while both models are live, new facts land only in the
-store. The spike grounding the stack choice is `roadmap/audits/2026-08-05-fact-base-h2-spike.md`.
+store. Two spikes ground the stack: `roadmap/audits/2026-08-05-fact-base-h2-spike.md` (the
+store itself) and `roadmap/audits/2026-08-05-h2-functions-jooq-spike.md` (the function surface
+and the codegen path).
 
 The main delivery of this spec is the target model itself: the first iteration of the fact
 schema below. The module and the loads exist to make that schema real, compiled against, and
@@ -35,18 +37,21 @@ and two things generated from it:
 
 - **Compile-time surface.** Codegen is jOOQ's live H2 metadata generation over a real store
   booted from the DDL, not `DDLDatabase` simulation. In the single-module wiring: a
-  maven-compiler execution at generate-sources compiles only the module's function and
-  build-driver packages, then an `exec:java` execution runs the codegen driver on the project
-  classpath, which opens an in-memory H2, executes the DDL resource (so `CREATE ALIAS`
-  resolves the classes compiled a moment earlier), and points `GenerationTool` at the same
-  database with `includeRoutines=false`; build-helper adds the generated sources and the
-  default compile builds the rest against them. (The functions-sibling alternative below
-  replaces the two in-module steps with stock plugin configuration riding the sibling's
-  artifact; live-H2 codegen and everything downstream of it hold either way.) No external
-  database process is involved (the
-  `graphitron-sakila-db` contrast); the build's H2 is the same embedded engine the runtime
-  store uses, so codegen is a rehearsal of boot, and a view calling a missing or mistyped
-  function fails the build with a real H2 error. Generated classes land in
+  maven-compiler execution at generate-sources compiles the module's bootstrap, build-driver,
+  and function packages, then an `exec:java` execution runs the codegen driver on the project
+  classpath. The driver does not restate boot, it performs it: it calls the run-time bootstrap
+  entry point below (which needs no generated classes), so the DDL executes against the same
+  embedded engine the runtime uses and `CREATE ALIAS` resolves the classes compiled a moment
+  earlier, then it points `GenerationTool` at the store the bootstrap handed back, with
+  `includeRoutines=false`; build-helper adds the generated sources and the default compile
+  builds the rest against them. Codegen is thereby a rehearsal of boot as a call, not as two
+  procedures kept similar by hand: a bootstrap regression fails codegen before it can fail a
+  generator run, and a view calling a missing or mistyped function fails the build with a
+  real H2 error. (The functions-sibling alternative below keeps this driver wiring available
+  unchanged; what the sibling adds is the option of stock plugin configuration, at the price
+  of a file-based H2 for cross-plugin visibility. Live-H2 codegen and everything downstream
+  hold under every combination.) No external database process is involved (the
+  `graphitron-sakila-db` contrast). Generated classes land in
   `target/generated-sources/jooq` under package `no.sikt.graphitron.model` and are never
   committed; the DDL is the single source. Because the module builds before core, editing the
   DDL fails javac in every consumer that touched the changed relation, and with no persisted
@@ -70,17 +75,27 @@ single-module wiring above, or a `graphitron-model-functions` sibling that build
 rides the codegen plugin's classpath, letting the codegen run as stock plugin configuration
 (the jOOQ-mcve shape). The single-module form keeps the model one artifact; the sub-module
 form keeps the build orthodox; both keep the store whole (the sub-module is a compile-scope
-dependency of `graphitron-model`, so consumers get it transitively). Implementation picks
-whichever fits the reactor's build conventions better, and if the sub-module is chosen it
-joins the module-enumeration ride-alongs below. No functions ship in this increment; the
-first bridge decoders arrive with the derivations that need them. The spike record grounding
+dependency of `graphitron-model`, so consumers get it transitively). Both arms are
+precedented in the reactor: `graphitron-mcp`'s docs-index builder is an `exec:java` build
+driver living in main sources, and `graphitron-fixtures-codegen` exists as a sibling module
+precisely because the jOOQ codegen plugin runs before the consuming module's own classes
+compile, which is this exact problem and the reactor's documented answer to it.
+Implementation picks whichever fits better, and if the sub-module is chosen it joins the
+module-enumeration ride-alongs below. No functions ship in this increment; the first bridge
+decoders arrive with the derivations that need them. Until one does, the alias half of the
+wiring is dormant, nothing in this increment exercises the function-package compile or the
+alias-resolution property, so implementation may land that half now (accepting that its
+first real test arrives with the first decoder) or defer it whole to the increment that
+ships one; the bootstrap-calling driver and the live-H2 codegen it feeds are exercised
+either way. The spike record grounding
 all of this, including the single-module build wiring, is
 `roadmap/audits/2026-08-05-h2-functions-jooq-spike.md`.
 
 Mechanical ride-alongs: the root pom module list, the module enumeration in CLAUDE.md and
-`docs/architecture/reference/modules.adoc` (the `check-module-enumeration` gate), and the H2
-version pinned in the root pom (the same embedded H2 serves the build-time codegen store and
-the run-time store).
+`docs/architecture/reference/modules.adoc` (the `check-module-enumeration` gate checks the
+backticked names; that file's prose module count is not gate-read and moves by hand), and the
+H2 version pinned in the root pom (the same embedded H2 serves the build-time codegen store
+and the run-time store).
 
 ## Schema conventions
 
@@ -240,7 +255,10 @@ CREATE TABLE graphql_enum_value (
 CREATE TABLE graphql_union_member (
   union_name       VARCHAR NOT NULL,
   member_type_name VARCHAR NOT NULL,
-  ordinal          INT     NOT NULL, -- position in the member list
+  ordinal          INT     NOT NULL, -- position in the effective member list
+  source_name      VARCHAR,          -- SDL source declaring this membership; a union extension's site, not the base union's
+  source_line      INT,
+  source_column    INT,
   PRIMARY KEY (union_name, member_type_name),
   FOREIGN KEY (union_name)       REFERENCES graphql_type (type_name),
   FOREIGN KEY (member_type_name) REFERENCES graphql_type (type_name)
@@ -252,6 +270,9 @@ CREATE TABLE graphql_union_member (
 CREATE TABLE graphql_implements (
   type_name      VARCHAR NOT NULL, -- the implementing OBJECT or INTERFACE
   interface_name VARCHAR NOT NULL,
+  source_name    VARCHAR,          -- SDL source declaring this edge; a type extension's site when the extension added it
+  source_line    INT,
+  source_column  INT,
   PRIMARY KEY (type_name, interface_name),
   FOREIGN KEY (type_name)      REFERENCES graphql_type (type_name),
   FOREIGN KEY (interface_name) REFERENCES graphql_type (type_name)
@@ -305,6 +326,9 @@ CREATE TABLE graphql_directive_argument (
   item_non_null     BOOLEAN,
   default_value_sdl VARCHAR,          -- rendered default; the value an application inherits when it omits the argument
   description       VARCHAR,
+  source_name       VARCHAR,          -- position of the formal argument in the definition
+  source_line       INT,
+  source_column     INT,
   PRIMARY KEY (directive_name, argument_name),
   FOREIGN KEY (directive_name) REFERENCES graphql_directive (directive_name),
   FOREIGN KEY (named_type) REFERENCES graphql_type (type_name),
@@ -738,9 +762,13 @@ not an author error, per the constraint split R589 fixes.
   identity, and no diagnostic text changes.
 - Agreement tests pin the shadow copy to the live pipeline through one mechanical driver: it
   enumerates the generated jOOQ tables and fails on any relation without a registered agreement
-  source, so a new relation cannot arrive unchecked. Each registration declares its direction:
+  source, so a new relation cannot arrive unchecked. Registrations form a closed set of three
+  arms, so every enumerated relation has a declared answer and there is no skip list:
   containment for the SDL side (capture is total, `GraphitronSchema` is reachability-pruned, so
-  the store contains the model), equality for the `CatalogFacts` and scanner censuses. The
+  the store contains the model), equality for the `CatalogFacts` and scanner censuses, and
+  derived for shipped views, which register the base relations they project so their agreement
+  is vacuous by construction (`applied_directive_site` is the first derived registrant, and the
+  later strata land as registrations, not exemptions). The
   anchor checks: type census against `GraphitronSchema.types`, per-coordinate applied-directive
   counts against the SDL, catalog table and column census against `CatalogFacts`, extension
   method census against the scanner's `CompletionData` view. They are the shadow period's
