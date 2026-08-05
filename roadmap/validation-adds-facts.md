@@ -255,26 +255,37 @@ The cascade fact slice 4 flags (`enclosingOverride`) is then a predicate over pa
 fact waiting for input carriers to get minted coordinates; the open question below narrows
 accordingly.
 
-**Materialization is the one unforced choice in this picture**, and it stays deliberately open:
-the relations and views above can live as coordinate-keyed Java (the existing eight components on
-`GraphitronSchema` are already this shape) or in an embedded relational store, candidate stack H2
-in-memory queried through jOOQ codegen over the fact DDL. The store makes the constraint split
-mechanical (the base-relation key is a literal `PRIMARY KEY`, and throwing on a duplicate is
-right because that is a generator bug; the author-error rules are detection queries whose result
-sets mint diagnostics), dogfoods the stack the generator emits for consumers, and opens a
-read-only SQL surface for agents; it costs a new dependency, a rich-value encoding tax, and an
-`ORDER BY` discipline that generator determinism cannot do without. Those three costs were
-empirical, and the spike (`roadmap/audits/2026-08-05-fact-base-h2-spike.md`) measured them:
-encoding clean with no blobs, the ordering discipline real but concentratable at a single typed
-facade, latency comfortable for build and on-save loops. Its verdict is adopt-leaning hybrid:
-the store behind the `GraphitronSchema` component seam, the facade owning ordering,
-relations-as-Java a drop-in fallback behind the same signature.
+**Materialization is decided: the store is adopted.** The relations and views above live in an
+embedded relational store, H2 in-memory queried through jOOQ codegen over the fact DDL. The
+store makes the constraint split mechanical (the base-relation key is a literal `PRIMARY KEY`,
+and throwing on a duplicate is right because that is a generator bug; the author-error rules are
+detection queries whose result sets mint diagnostics), dogfoods the stack the generator emits
+for consumers, and opens a read-only SQL surface for agents. Its three empirical costs were
+measured by the spike (`roadmap/audits/2026-08-05-fact-base-h2-spike.md`): encoding clean with
+no blobs, latency comfortable for build and on-save loops, and an ordering discipline whose
+violation the fixture corpus catches as an output diff. The spike's verdict leaned to a hybrid
+with a typed facade owning `ORDER BY`; the round after it rejected the facade. Mediating all
+access would reconstruct the fixed method vocabulary the store was chosen to escape and
+duplicate every relation into a second hand-written surface, while the jOOQ generated classes
+already are the containment (typed access, no strings, no JDBC), and once the module ordering
+below lands, relations-as-Java is a rewrite with or without a seam, so the facade buys a
+retreat nobody would take. The residue is one rule: determinism is owned at the emission
+boundary, "whatever crosses into emission or diagnostics output is sorted at the crossing", so
+planning orders command records by coordinate, the diagnostics drain sorts by location, interior
+query order stays free, and an engine upgrade's corpus diff has a suspect list of a few
+crossings rather than every query.
 
-What the store would materialize deserves naming precisely: the fact schema DDL is the
-umbrella's normalised data model reified as a SQL schema. The database is created at startup and
-populated during a run; it lives and dies with the process, so there are no migrations and no
-persisted state anywhere. The DDL is source, versioned in the repo like any other file, and
-changing the model is editing it.
+What the store materializes deserves naming precisely: the fact schema DDL is the umbrella's
+normalised data model reified as a SQL schema. The database is created at startup and populated
+during a run; it lives and dies with the process, so there are no migrations and no persisted
+state anywhere. The DDL is source, and its home is a new reactor module, `graphitron-model`,
+which holds the DDL, runs jOOQ codegen over it (`DDLDatabase`, no live database at build time),
+and builds before core: the `graphitron-sakila-db` shape made hermetic. The module name is the
+reification read literally, the module holding the DDL is the model. The ordering turns schema
+evolution into a compiler conversation: drop a column and every derivation, detection, and
+consumer that touched it fails javac in core before anything runs, and since no persisted state
+exists, compile-time is the only compatibility surface the schema has. Changing the model is
+editing the DDL and following the compiler.
 
 ## Scope
 
@@ -367,9 +378,9 @@ surfaces, so the item does not qualify for the internal-refactor exemption.
   worldview relocates to the planning stage instead of being abolished, the commands become the
   parse targets, and today's classification record hierarchy is named as the transitional producer
   surface. The arm-by-arm migration of `FieldBuilder` into independent classifiers is follow-up
-  work under the umbrella, not this item. If the store lands, the fact schema DDL is the
-  umbrella's normalised data model reified as SQL: created at startup, populated during a run,
-  never migrated.
+  work under the umbrella, not this item. With the store adopted, the fact schema DDL (the
+  `graphitron-model` module) is the umbrella's normalised data model reified as SQL: created at
+  startup, populated during a run, never migrated.
 - **`input-field-resolution-typed-rejections` (R585):** overlaps on one carrier, and its one open
   design fork (fan many input-field failures into one prose rejection, or emit several) is decided
   by this item's doctrine: violations are facts, one per failure. Whichever lands first settles the
@@ -396,10 +407,11 @@ surfaces, so the item does not qualify for the internal-refactor exemption.
 
 ## Where the design rounds landed: the scope has outgrown this item's slices
 
-Three design rounds took this item from a projection-fidelity fix to a pipeline architecture:
+Four design rounds took this item from a projection-fidelity fix to a pipeline architecture:
 capture as two infallible loads, classification and reachability and demand as derivations,
-diagnostics as strata, the occurrence path as a derived key, and a measured materialization
-candidate that reifies the umbrella's normalised model as a startup-created SQL schema. The
+diagnostics as strata, the occurrence path as a derived key, and an adopted materialization
+that reifies the umbrella's normalised model as a startup-created SQL schema in a new upstream
+module. The
 scope slices above predate most of that picture; they slice the item's original shape, not the
 architecture the rounds arrived at. The next design round therefore starts from a fresh angle:
 re-slicing the whole into shippable increments, likely into more than one item, rather than
@@ -435,12 +447,11 @@ stay recorded because the re-slicing has to place each of them somewhere.
   rightly no-edge because nothing resolved, a conflicted coordinate differs precisely because its
   claims' slot facts survived, and the reverse index is what answers "what touches table X" with
   the broken DELETE included. `EdgeCoverageTest` pins whichever answer.
-- **Materialization of the fact base.** Grown from slot-fact home: components on
-  `GraphitronSchema` beside the existing eight, or the embedded relational store; the spike
-  (`roadmap/audits/2026-08-05-fact-base-h2-spike.md`) measures the store's three empirical costs
-  and its verdict feeds this question. Granularity is unchanged as a question: which slot facts
-  ship in this item (the pilot pair's, plus what the conflicted-DELETE fixture needs) versus
-  staying inside the interim monolithic producer.
+- **Slot-fact granularity.** Materialization itself is decided (the store, the
+  `graphitron-model` module; see the capture-and-derivation section), which reduces this
+  question to its original core: which slot facts ship in which increment (the pilot pair's,
+  plus what the conflicted-DELETE fixture needs) versus staying inside the interim monolithic
+  producer.
 - **The axis declaration's home.** Where a directive declares the axis it binds, and what enforces
   that every classification-claiming directive carries the declaration.
 - **Interim claim payload in slice 2.** The monolithic producer's minted record riding as the
