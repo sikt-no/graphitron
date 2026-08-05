@@ -232,9 +232,14 @@ base arm; the composed arm wants its own case asserting the tail appears exactly
 - `graphitron-mcp/src/main/resources/mcp/instructions-execute.txt`: new, the conditional tail.
 - `GraphitronMcpServer`: the only main-code change, appending the tail to the loaded instructions when
   `executeConfig != null`. Two or three lines beside the existing `loadResource` calls.
-- `graphitron-mcp/src/test/java/no/sikt/graphitron/mcp/` gains the coverage pin (new test class;
-  `GraphitronMcpServerTest` is already 1200+ lines and its subject is the transport contract, not the
-  bundled prose). Naming follows `EdgeCoverageTest`.
+- `graphitron-mcp/src/test/java/no/sikt/graphitron/mcp/ServerInstructionsTest.java`: new, and it holds
+  all three assertions this item adds (the advertised-surface coverage pin, the summary-line pin under
+  convention 1, and the size ceiling). One class because they share one subject, the bundled prose and
+  the claims it makes, and one fixture, a booted server. The name is deliberately not
+  `...CoverageTest`: the coverage pin's *partition* shape follows `EdgeCoverageTest`, but two of the
+  three assertions are not coverage, and a name that promised coverage would make the size ceiling and
+  the summary-line pin look misfiled. `GraphitronMcpServerTest` is the wrong home for any of them: it
+  is already 1200+ lines and its subject is the transport contract, not the bundled prose.
 - `GraphitronMcpServerTest`: one case for the composed-arm tail. Its existing
   `initializeReturnsBundledInstructions` needs no change.
 - The tool descriptions are deliberately untouched. The item cuts duplication out of the ambient file,
@@ -258,6 +263,17 @@ list would drift the same way the instructions drifted; deriving from the booted
 registered tool fails this test on the commit that registers it. Because the ambient string is composed
 per boot, the assertion runs **per boot** rather than over a union: the no-database boot must not
 mention `execute`, and the configured boot must.
+
+*Derived* does not mean the one restated list in the tree should go.
+`GraphitronMcpServerTest.statusToolIsAdvertisedAndReportsUnavailableByDefault` carries a literal
+`containsExactlyInAnyOrder("status", "catalog.tables", …)` over the eleven unconditional tools, and
+`mcp-aggregated-diagnostics` already leans on it ("fails until updated"). Keep it, because the two pins
+catch disjoint failures and neither subsumes the other. The derived pin compares the booted server
+against the prose, so a rename applied consistently to both passes it silently; the literal list is the
+only thing that makes a rename or a removal stop the build and demand a human confirm it was intended.
+Put the other way: the literal list anchors *what is registered*, the derived pin anchors *that the
+prose agrees with whatever is registered*. Deriving is the right rule for the new pin precisely because
+its subject is agreement between two surfaces, not the identity of either one.
 
 The three namespaces stay distinct. A flat `Set<String>` would report "unrouted:
 graphitron://directives" without saying which surface that is, and would make a per-surface exemption
@@ -388,6 +404,13 @@ item is the one reaching Spec with the file as its subject:
   no tool prefix, which is one of the two reasons convention 1 is scoped to paged tools. Making it
   uniform is a small main-code change with its own reasoning, filed separately rather than folded in
   to widen one assertion.
+- **The snapshot axis key names.** Convention 3 tells an agent that four tools report whether the build
+  behind their answer is current, and they do, but under two different key spellings:
+  `snapshotAvailability` / `snapshotFreshness` from `McpWire.writeSnapshotAxes` for `diagnostics` and
+  `edges`, bare `availability` / `freshness` from the hand-rolled switches in `status` and `schema`. The
+  ambient sentence names the *values* rather than a key, so it is true as written and this item needs no
+  change on account of it. Harmonising the keys is main-code work with a wire-visible effect, filed as
+  `mcp-snapshot-axis-key-naming`.
 - **The classification gap behind the second episode.** For fields that failed classification the
   snapshot carries `Unclassified` plus a prose reason and no `dmlKind` / `tableName`, so an agent
   repairing broken delete mutations genuinely cannot get the DELETE-intent population out of
