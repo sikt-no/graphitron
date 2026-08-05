@@ -48,6 +48,7 @@ function registered only at runtime.
 | G5a | `DDLDatabase` with `parseIgnoreComments` over one script holding tables, `CREATE ALIAS` inside `/* [jooq ignore start] */ ... /* [jooq ignore stop] */`, and a view calling the alias | **works**: the parser skips the block, the view generates as a typed table (`CAST` column comes out `String`) |
 | G5b | H2 `RunScript` executing that same single script | **works**: the alias registers, the view is created after it, and querying the view runs the real function |
 | R16/G1b | H2's own typing of an *uncast* function column in a view, and live-H2 codegen over it | H2 types it `CHARACTER VARYING` from the alias's Java signature, and live codegen emits `TableField<..., String>`; no cast needed on this path |
+| G6 | Single-module Maven wiring: extra compiler execution at generate-sources compiling only the function and build-driver packages, then an `exec:java` codegen driver (project classpath) booting in-memory H2, running the full DDL (plain `CREATE ALIAS`, uncast views), then live-H2 `GenerationTool` with `includeRoutines=false` | **works end to end**: `mvn package` green, uncast view column generated as `String`, no routine classes generated, ordinary module code referencing the generated classes compiles in the default pass |
 
 ## What is "a bit special", pinned
 
@@ -63,8 +64,9 @@ function registered only at runtime.
    include/exclude filtering could apply, so "just don't generate routines" is not available.
    What is available is `parseIgnoreComments`: statements wrapped in
    `/* [jooq ignore start] */ ... /* [jooq ignore stop] */` are invisible to jOOQ's parser and
-   ordinary statements to H2 executing the same file (G5). The aliases stay in the one DDL
-   script, placed before the views that call them.
+   ordinary statements to H2 executing the same file (G5). That was the `DDLDatabase`-era
+   mitigation; dropping `DDLDatabase` (see the verdict) makes the ignore blocks unnecessary,
+   and the aliases sit plainly in the one script, before the views that call them.
 4. **Views absorb the gap, and the `CAST` blame lands on the simulation, not on H2.** Real H2
    types an uncast function column from the alias's Java signature, and live-H2 codegen emits
    the correct field type from it (R16/G1b); the `Object` degradation happens only in
@@ -72,10 +74,12 @@ function registered only at runtime.
    `NULL` for the call. So the `CAST` discipline is the price of the hermetic
    `DDLDatabase` build, not an H2 deficiency. The cast-free alternative is live-H2 codegen
    over a store booted from the full script, where routine generation can genuinely be
-   filtered (exclusion works at the metadata layer); its cost is that the alias classes must
-   be compiled before codegen runs, and inside one module codegen (generate-sources) precedes
-   compilation, so it would take a functions sub-module or later-phase codegen. Not worth it
-   while the casts stay few; the escape hatch is proven if they multiply.
+   filtered (exclusion works at the metadata layer). Its apparent cost, alias classes compiled
+   before codegen inside one module, dissolved under test: plugin classloaders cannot see
+   `target/classes` (which is why the jOOQ-mcve reference shape pairs `sql-maven-plugin` with
+   a *file-based* H2 and would force a functions sub-module), but an `exec:java` codegen
+   driver runs on the project classpath, where H2 loads the just-compiled classes (G6). The
+   decision landed there: `DDLDatabase` is dropped.
 
 ## Verdict for the derivation layer
 
@@ -93,13 +97,24 @@ function registered only at runtime.
   Simple delimiter shapes need no function at all (R11).
 - **The functions are part of the model, so they live in `graphitron-model`.** The DDL's
   derivation views call them, and H2 refuses to create a view over an unregistered function,
-  so the `CREATE ALIAS` statements sit in the same DDL script inside jOOQ ignore blocks,
-  before the views that call them (G5); the bootstrap is just "execute the script", and the
-  DDL stays the single source, functions included. The alias methods ship with the module
-  (they must be on the classpath when the script runs), which makes the store whole from the
-  module alone: any process booting it gets working views without core on the classpath. The
-  module gains a graphql-java dependency for the literal decoders. Codegen never executes the
-  ignored blocks, so no-live-database builds are preserved, and derivation views calling
-  bridge functions come out typed under a `CAST` discipline on every function-derived column.
+  so the `CREATE ALIAS` statements sit plainly in the same DDL script, before the views that
+  call them; the bootstrap is just "execute the script", and the DDL stays the single source,
+  functions included. The alias methods ship with the module (they must be on the classpath
+  when the script runs), which makes the store whole from the module alone: any process
+  booting it gets working views without core on the classpath. The module gains a
+  graphql-java dependency for the literal decoders.
+- **Codegen is live-H2 through a build driver; `DDLDatabase` is dropped.** The wiring G6
+  proved, all in one module: a maven-compiler execution at generate-sources compiles only the
+  function and build-driver packages; an `exec:java` execution runs the codegen driver on the
+  project classpath, which boots an in-memory H2, executes the full DDL (aliases resolve
+  against the classes compiled a moment earlier), and points jOOQ's live H2 metadata
+  generation at the same database with `includeRoutines=false`; build-helper adds the
+  generated sources, and the default compile builds everything else against them. No ignore
+  blocks, no `CAST` discipline, no routine classes, no external database process; the build
+  executes the same script through the same engine the runtime bootstrap uses, so a view
+  calling a missing function fails the build with a real H2 error instead of passing a
+  simulation. The jOOQ-mcve template's `sql-maven-plugin`-plus-file-H2 shape is the
+  plugin-only equivalent and would need a functions sub-module; the driver supersedes it
+  here.
 - **Procedures are a non-topic.** `CALL` on void aliases exists; nothing in the architecture
   wants it.

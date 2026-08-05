@@ -33,35 +33,43 @@ builds it first and core depends on its artifact. It contains one source of trut
 DDL, as a single SQL resource (`src/main/resources/no/sikt/graphitron/model/graphitron-model.sql`),
 and two things generated from it:
 
-- **Compile-time surface.** `jooq-codegen-maven` runs `org.jooq.meta.extensions.ddl.DDLDatabase`
-  over the DDL resource: no live database at build time, the `graphitron-sakila-db` shape made
-  hermetic. Generated classes land in `target/generated-sources/jooq` under package
-  `no.sikt.graphitron.model` and are never committed; the DDL is the single source. Because the
-  module builds before core, editing the DDL fails javac in every consumer that touched the
-  changed relation, and with no persisted state anywhere, compile-time is the schema's only
-  compatibility surface. Changing the model is editing the DDL and following the compiler.
+- **Compile-time surface.** Codegen is jOOQ's live H2 metadata generation over a real store
+  booted from the DDL, not `DDLDatabase` simulation, wired in one module: a maven-compiler
+  execution at generate-sources compiles only the module's function and build-driver
+  packages, then an `exec:java` execution runs the codegen driver on the project classpath,
+  which opens an in-memory H2, executes the DDL resource (so `CREATE ALIAS` resolves the
+  classes compiled a moment earlier), and points `GenerationTool` at the same database with
+  `includeRoutines=false`; build-helper adds the generated sources and the default compile
+  builds the rest against them. No external database process is involved (the
+  `graphitron-sakila-db` contrast); the build's H2 is the same embedded engine the runtime
+  store uses, so codegen is a rehearsal of boot, and a view calling a missing or mistyped
+  function fails the build with a real H2 error. Generated classes land in
+  `target/generated-sources/jooq` under package `no.sikt.graphitron.model` and are never
+  committed; the DDL is the single source. Because the module builds before core, editing the
+  DDL fails javac in every consumer that touched the changed relation, and with no persisted
+  state anywhere, compile-time is the schema's only compatibility surface. Changing the model
+  is editing the DDL and following the compiler.
 - **Run-time store.** A small bootstrap entry point opens a fresh H2 in-memory database,
   executes the same DDL resource, and hands back a jOOQ `DSLContext` over it. One database per
   generator run, created at startup, populated by capture, dead with the process. No
   migrations exist because no persisted state exists.
 
 The model's Java functions live in this module too. H2 functions are `CREATE ALIAS` bindings
-to static methods, and the statements sit in the same DDL script inside jOOQ ignore blocks
-(`/* [jooq ignore start] */ ... /* [jooq ignore stop] */`, with `parseIgnoreComments` on the
-codegen), placed before the views that call them: jOOQ's parser never sees them (it rejects
-`CREATE ALIAS` as a pro-edition feature), while H2 executing the script registers them as
-ordinary statements, so the DDL stays the single source with functions included and the
-bootstrap stays "execute the script". The alias methods ship with the module, which makes the
-store whole from this module alone: any process that boots it gets working views without core
-on the classpath, and the module carries a graphql-java dependency for the literal decoders.
-No functions ship in this increment; the first bridge decoders arrive with the derivations
-that need them. The spike record grounding all of this is
-`roadmap/audits/2026-08-05-h2-functions-jooq-spike.md`.
+to static methods, and the statements sit plainly in the same DDL script, before the views
+that call them; the live-codegen path executes the script with real H2, so nothing needs
+hiding from a parser, function-typed view columns come out typed from the alias's Java
+signatures with no `CAST` discipline, and the DDL stays the single source with functions
+included while the bootstrap stays "execute the script". The alias methods ship with the
+module, which makes the store whole from this module alone: any process that boots it gets
+working views without core on the classpath, and the module carries a graphql-java dependency
+for the literal decoders. No functions ship in this increment; the first bridge decoders
+arrive with the derivations that need them. The spike record grounding all of this, including
+the single-module build wiring, is `roadmap/audits/2026-08-05-h2-functions-jooq-spike.md`.
 
 Mechanical ride-alongs: the root pom module list, the module enumeration in CLAUDE.md and
 `docs/architecture/reference/modules.adoc` (the `check-module-enumeration` gate), and the H2
-version pinned in the root pom (H2 serves both `DDLDatabase` parsing at build time and the
-in-memory store at run time).
+version pinned in the root pom (the same embedded H2 serves the build-time codegen store and
+the run-time store).
 
 ## Schema conventions
 
@@ -710,8 +718,9 @@ not an author error, per the constraint split R589 fixes.
 
 ## Acceptance
 
-- `graphitron-model` builds before core; its jOOQ classes are generated from the DDL resource
-  alone (no live database, nothing generated is committed) and core compiles against them.
+- `graphitron-model` builds before core; its jOOQ classes are generated by the live-H2
+  metadata path from a store booted from the DDL resource alone (no external database
+  process, nothing generated is committed) and core compiles against them.
 - The generator bootstraps the store at startup: fresh H2 in-memory database per run, DDL
   executed from the same resource the codegen read.
 - Both capture loads run inside the standard build; the full fixture corpus shows generated-output
