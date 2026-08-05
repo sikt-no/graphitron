@@ -1,13 +1,13 @@
 ---
 id: R584
 title: "MCP server instructions route agents to every tool family"
-status: Spec
+status: Ready
 bucket: feature
 priority: 5
 theme: tooling
 depends-on: []
 created: 2026-08-04
-last-updated: 2026-08-04
+last-updated: 2026-08-05
 ---
 
 # MCP server instructions route agents to every tool family

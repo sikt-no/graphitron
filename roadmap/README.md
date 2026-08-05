@@ -23,12 +23,12 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R569` | Aggregated diagnostics commands for the MCP server <sub>blocked by: [input-field-resolution-typed-rejections](input-field-resolution-typed-rejections.md)</sub> | Spec | 2026-08-04 <sub>created 2026-08-03</sub> | [plan](mcp-aggregated-diagnostics.md) |
 | `R473` | Explicit @nodeId grammar: Node.id is the only implicit nodeId; typeName-first decode resolution | Spec | 2026-08-04 <sub>created 2026-07-13</sub> | [plan](explicit-nodeid-grammar.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
-| `R584` | MCP server instructions route agents to every tool family | Spec | 2026-08-04 | [plan](mcp-server-instruction-routing.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
 | `R585` | Typed rejections on the input-field resolution path | Spec | 2026-08-04 | [plan](input-field-resolution-typed-rejections.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Spec | 2026-08-03 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
 | `R572` | Warn at build time when consumer graphql-java / jOOQ versions lag | Spec | 2026-08-03 | [plan](consumer-dependency-version-warning.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-07-28 | [plan](deprecate-externalfield-fold-into-service.md) |
+| `R584` | MCP server instructions route agents to every tool family | Ready | 2026-08-05 <sub>created 2026-08-04</sub> | [plan](mcp-server-instruction-routing.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-07-15 | [plan](catalog-check-constraint-validation.md) |
 | `R427` | Type-ahead search backed by native database indexes | Ready | 2026-07-17 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
@@ -421,7 +421,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R593` [**Fail CI loudly when init.sql seeding fails**](ci-init-sql-error-stop.md) — Backlog, dx
 - `R133` [**Flip leaf-coverage profile activation to opt-in**](leaf-coverage-profile-opt-in.md) — Backlog, cleanup
 - `R568` [**Javadoc reference gate skips silently on rebuilds: the plugin up-to-date check compares options and file list, not source content**](javadoc-gate-incremental-skip.md) — Backlog, bug
-- `R584` [**MCP server instructions route agents to every tool family**](mcp-server-instruction-routing.md) — Spec, feature
+- `R584` [**MCP server instructions route agents to every tool family**](mcp-server-instruction-routing.md) — Ready, feature
 - `R573` [**graphitron-tree-sitter-natives keeps the maven-archiver 3.6.4 hard-fail: it is deliberately not a child of the parent pom, so the pluginManagement override does not reach it**](natives-module-archiver-override.md) — Backlog, cleanup
 - `R553` [**srp resolves one disqualified session where the guard means every session with a trail on the draft**](srp-disqualified-session-set.md) — Backlog, improvement
 - `R506` [**Roadmap tool as statechart driver, items as machine instances**](roadmap-tool-statechart-driver.md) — Backlog, architecture
