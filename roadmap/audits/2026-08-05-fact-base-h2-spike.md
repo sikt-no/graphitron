@@ -97,4 +97,56 @@ materialization; the decision itself is made in that item's design dialogue, not
 
 ## Findings
 
-Pending; filled by the spike run.
+Run 2026-08-05, H2 2.3.232 + jOOQ 3.20.11, codegen via `DDLDatabase` over the fact DDL, Java 25,
+fresh in-memory database per iteration, warm-JVM medians. The prototype implemented the full
+slice: both capture loads, claims as `INSERT .. SELECT` joins, provenance variants, reachability
+and demand, occurrence paths, all detections across the three strata, and the DML command join.
+Every synthetic defect population was recovered at exactly its constructed count at both scales.
+
+**1. Rich-value encoding: passed, no escape hatches.** The join path landed as an ordered child
+table (`fk_step`, keyed `(fk_name, position)`) and reconstructs with
+`LISTAGG(...) WITHIN GROUP (ORDER BY position)`; no blob. Sealed provenance variants landed as
+one table per variant (`inferred_trigger_column`, `inferred_trigger_nesting`) with a foreign key
+to the claim row; no kind-dependent nullability anywhere, so the flattening pressure enforced the
+decoded-slot-facts discipline rather than fighting it. The occurrence path worked as a
+`VARCHAR` canonical encoding minted by the recursive CTE and used directly as the primary key;
+the key held including the shared-input-type case (one definition reached under two use-site
+paths yields two rows, distinct keys). One coordination footgun surfaced and cost minutes, not
+hours: the codegen's identifier case must agree with the runtime URL's case folding (the
+`defaultNameCase=as_is` property did not take effect against `DATABASE_TO_LOWER=TRUE`; H2's
+default upper folding on both sides resolved it).
+
+**2. Deterministic ordering: the discipline is real and its violation is silent.** The fully
+`ORDER BY`-ed canonical dump was byte-stable across every iteration at both scales. The
+deliberately unordered dump was *also* byte-stable across every iteration at both scales: in
+single-threaded embedded H2, dropping an `ORDER BY` produces no observable drift until some
+unrelated change reorders a scan. Nothing catches the violation by testing; the discipline has
+to be a mechanism, most plausibly a query seam that refuses to iterate an unordered result set
+into emission. This is the strongest argument the spike found for hiding the store behind a
+typed facade rather than handing `DSLContext` around.
+
+**3. Latency: comfortable for build and on-save, not keystroke-grade.** Total medians,
+capture through planning: **~60 ms** at 100 types / ~1,300 fields / ~1,200 claims, **~578 ms**
+at 1,000 types / ~13,000 fields (linear; per-phase at scale 1: DDL 3.6, SDL capture 8.9,
+catalog capture 4.1, claim derivation 9.0, reachability + demand 19.6, occurrences 3.1,
+detection 7.2, planning 0.7). The heaviest phase is the reachability recursion plus the demand
+join, with obvious untouched headroom (no secondary indexes, naive path multiplicity in the
+recursive CTE). Verdict against the budgets: well inside a build, fine for an on-save dev loop
+at realistic schema sizes, and an editor keystroke loop would want the SDL-only stratum alone
+(capture plus authored-claim derivation plus SDL detections is under 20 ms at scale 1) or
+incremental work the store does not provide.
+
+**Incidental confirmations.** The purity key is mechanical: a duplicate
+`(coordinate, classifier)` insert into the authored relation throws, while the author-error
+rules detect through queries, exactly the constraint split the design predicted. The typed
+jOOQ loop works end to end: the conflict detection (grouping, `LISTAGG`, having) ran against
+codegen classes generated from the fact DDL. And the demand anti-join caught a modeling gap in
+the spike's own synthetic data (block-end nesting fields returning a scalar acquired no claim
+and surfaced as unclassifiable), which is the zero-claims rule doing in the spike precisely
+the job R589 wants it to do in production.
+
+**Verdict.** Adopt-leaning: the three empirical costs came in low (encoding clean, ordering
+real but mechanizable, latency comfortable for the loops that matter). Recommended shape is
+the hybrid: the store lives behind the `GraphitronSchema` component seam with a typed facade
+owning the `ORDER BY` mechanism, so the model stays engine-agnostic and relations-as-Java
+remains a drop-in fallback. The decision itself goes back to R589's materialization question.
