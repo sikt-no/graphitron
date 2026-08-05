@@ -45,6 +45,8 @@ function registered only at runtime.
 | G1 | Live `H2Database` codegen over aliases | every alias becomes a `Routine`; the `ResultSet` one is `AbstractRoutine<Result<Record>>`, untyped rows, **not** a table-valued-function `Table`; scalar ones are typed and DSL-usable; a view over a constant-arg table function becomes a full typed `Table` + record |
 | G2/G3 | `DDLDatabase` over DDL containing `CREATE ALIAS` (either form) | **fails**: the open-source jOOQ parser rejects `CREATE ALIAS` as a pro-edition feature |
 | G4 | `DDLDatabase` over DDL whose view calls a runtime-registered function | **works**; the function-typed column degrades to `Object` bare, and is fully typed when wrapped in `CAST(... AS <type>)` |
+| G5a | `DDLDatabase` with `parseIgnoreComments` over one script holding tables, `CREATE ALIAS` inside `/* [jooq ignore start] */ ... /* [jooq ignore stop] */`, and a view calling the alias | **works**: the parser skips the block, the view generates as a typed table (`CAST` column comes out `String`) |
+| G5b | H2 `RunScript` executing that same single script | **works**: the alias registers, the view is created after it, and querying the view runs the real function |
 
 ## What is "a bit special", pinned
 
@@ -55,9 +57,13 @@ function registered only at runtime.
 2. **The metadata handshake.** A `ResultSet`-returning alias is invoked at parse time with a
    connection whose URL starts with `jdbc:columnlist:`, expecting a columns-only result;
    arguments may be null during that call. Every table function must implement this protocol.
-3. **The open-source parser gate.** `CREATE ALIAS` cannot appear in the codegen DDL because
-   jOOQ's parser reserves it for the pro edition. Function registration is therefore a
-   bootstrap concern, permanently separated from the codegen schema.
+3. **The open-source parser gate, and its sanctioned bypass.** jOOQ's parser reserves
+   `CREATE ALIAS` for the pro edition, and the failure is at parse time, before any
+   include/exclude filtering could apply, so "just don't generate routines" is not available.
+   What is available is `parseIgnoreComments`: statements wrapped in
+   `/* [jooq ignore start] */ ... /* [jooq ignore stop] */` are invisible to jOOQ's parser and
+   ordinary statements to H2 executing the same file (G5). The aliases stay in the one DDL
+   script, placed before the views that call them.
 4. **Views absorb the gap.** `DDLDatabase` happily interprets a view calling a function it has
    never heard of, provided the column is `CAST`; and live codegen turns views into fully
    typed tables. Views, not functions, are the typed surface.
@@ -78,13 +84,13 @@ function registered only at runtime.
   Simple delimiter shapes need no function at all (R11).
 - **The functions are part of the model, so they live in `graphitron-model`.** The DDL's
   derivation views call them, and H2 refuses to create a view over an unregistered function,
-  so the bootstrap must register the module's aliases and then execute the DDL; that ordering
-  is only possible when the alias methods ship with the module, and it makes the store whole
-  from the module alone (any process booting it gets working views without core on the
-  classpath). The module gains a graphql-java dependency for the literal decoders. The codegen
-  side is unaffected: the parser gate keeps `CREATE ALIAS` out of the codegen script, so the
-  DDL as `DDLDatabase` sees it stays pure tables and views, preserving no-live-database
-  builds, and derivation views calling bridge functions come out typed under a `CAST`
-  discipline on every function-derived column.
+  so the `CREATE ALIAS` statements sit in the same DDL script inside jOOQ ignore blocks,
+  before the views that call them (G5); the bootstrap is just "execute the script", and the
+  DDL stays the single source, functions included. The alias methods ship with the module
+  (they must be on the classpath when the script runs), which makes the store whole from the
+  module alone: any process booting it gets working views without core on the classpath. The
+  module gains a graphql-java dependency for the literal decoders. Codegen never executes the
+  ignored blocks, so no-live-database builds are preserved, and derivation views calling
+  bridge functions come out typed under a `CAST` discipline on every function-derived column.
 - **Procedures are a non-topic.** `CALL` on void aliases exists; nothing in the architecture
   wants it.

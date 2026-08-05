@@ -41,18 +41,21 @@ and two things generated from it:
   changed relation, and with no persisted state anywhere, compile-time is the schema's only
   compatibility surface. Changing the model is editing the DDL and following the compiler.
 - **Run-time store.** A small bootstrap entry point opens a fresh H2 in-memory database,
-  registers the module's function aliases, executes the same DDL resource, and hands back a
-  jOOQ `DSLContext` over it. One database per generator run, created at startup, populated by
-  capture, dead with the process. No migrations exist because no persisted state exists.
+  executes the same DDL resource, and hands back a jOOQ `DSLContext` over it. One database per
+  generator run, created at startup, populated by capture, dead with the process. No
+  migrations exist because no persisted state exists.
 
 The model's Java functions live in this module too. H2 functions are `CREATE ALIAS` bindings
-to static methods; jOOQ's open-source parser keeps `CREATE ALIAS` out of the codegen DDL, and
-H2 refuses to create a view over an unregistered function, so the bootstrap registers aliases
-before the DDL runs, which is only possible when the methods ship with the module. That makes
-the store whole from this module alone: any process that boots it gets working views without
-core on the classpath, and the module carries a graphql-java dependency for the literal
-decoders. No functions ship in this increment; the first bridge decoders arrive with the
-derivations that need them. The spike record grounding all of this is
+to static methods, and the statements sit in the same DDL script inside jOOQ ignore blocks
+(`/* [jooq ignore start] */ ... /* [jooq ignore stop] */`, with `parseIgnoreComments` on the
+codegen), placed before the views that call them: jOOQ's parser never sees them (it rejects
+`CREATE ALIAS` as a pro-edition feature), while H2 executing the script registers them as
+ordinary statements, so the DDL stays the single source with functions included and the
+bootstrap stays "execute the script". The alias methods ship with the module, which makes the
+store whole from this module alone: any process that boots it gets working views without core
+on the classpath, and the module carries a graphql-java dependency for the literal decoders.
+No functions ship in this increment; the first bridge decoders arrive with the derivations
+that need them. The spike record grounding all of this is
 `roadmap/audits/2026-08-05-h2-functions-jooq-spike.md`.
 
 Mechanical ride-alongs: the root pom module list, the module enumeration in CLAUDE.md and
