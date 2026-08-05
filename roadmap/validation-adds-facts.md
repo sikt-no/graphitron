@@ -413,10 +413,22 @@ diagnostics as strata, the occurrence path as a derived key, and an adopted mate
 that reifies the umbrella's normalised model as a startup-created SQL schema in a new upstream
 module. The
 scope slices above predate most of that picture; they slice the item's original shape, not the
-architecture the rounds arrived at. The next design round therefore starts from a fresh angle:
-re-slicing the whole into shippable increments, likely into more than one item, rather than
-answering the open questions below one at a time inside the current slice list. The questions
-stay recorded because the re-slicing has to place each of them somewhere.
+architecture the rounds arrived at.
+
+The re-slicing frame is settled: a strangler migration keyed by consumer, not by derivation
+layer. The substrate ships first (`graphitron-model-captures-facts`, R595): the module, the two
+capture loads running beside the working pipeline and changing no behavior, agreement tests as
+the shadow period's honesty check. After that, downstream code migrates off `GraphitronSchema`
+onto the store piece by piece, in whatever order pays best rather than pipeline order, each
+piece gated on generated-output identity; a derivation is built when the first consumer needing
+it migrates, never speculatively. While both models are live, new facts land only in the store,
+so the two-model window shrinks monotonically. `GraphitronSchema` is the surface being
+strangled, not extended, which is the umbrella's arm-by-arm migration language given a
+substrate. This item is expected to narrow to the classification-stage migration piece (the
+claim derivations, the conflict rule, the Conflicted projection), which is what its title,
+fixture, and motivating example already describe; the remaining migration pieces get their own
+items as they are cut. The open questions below stay recorded because each must land in one of
+those pieces.
 
 ## Open questions (for the next design round)
 
