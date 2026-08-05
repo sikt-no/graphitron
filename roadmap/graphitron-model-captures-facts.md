@@ -40,10 +40,20 @@ and two things generated from it:
   module builds before core, editing the DDL fails javac in every consumer that touched the
   changed relation, and with no persisted state anywhere, compile-time is the schema's only
   compatibility surface. Changing the model is editing the DDL and following the compiler.
-- **Run-time store.** A small bootstrap entry point opens a fresh H2 in-memory database, executes
-  the same DDL resource, and hands back a jOOQ `DSLContext` over it. One database per generator
-  run, created at startup, populated by capture, dead with the process. No migrations exist
-  because no persisted state exists.
+- **Run-time store.** A small bootstrap entry point opens a fresh H2 in-memory database,
+  registers the module's function aliases, executes the same DDL resource, and hands back a
+  jOOQ `DSLContext` over it. One database per generator run, created at startup, populated by
+  capture, dead with the process. No migrations exist because no persisted state exists.
+
+The model's Java functions live in this module too. H2 functions are `CREATE ALIAS` bindings
+to static methods; jOOQ's open-source parser keeps `CREATE ALIAS` out of the codegen DDL, and
+H2 refuses to create a view over an unregistered function, so the bootstrap registers aliases
+before the DDL runs, which is only possible when the methods ship with the module. That makes
+the store whole from this module alone: any process that boots it gets working views without
+core on the classpath, and the module carries a graphql-java dependency for the literal
+decoders. No functions ship in this increment; the first bridge decoders arrive with the
+derivations that need them. The spike record grounding all of this is
+`roadmap/audits/2026-08-05-h2-functions-jooq-spike.md`.
 
 Mechanical ride-alongs: the root pom module list, the module enumeration in CLAUDE.md and
 `docs/architecture/reference/modules.adoc` (the `check-module-enumeration` gate), and the H2
@@ -719,7 +729,8 @@ not an author error, per the constraint split R589 fixes.
   consistent with `type_sdl` where SQL can express the correspondence).
 - All tests live in `graphitron` at the appropriate tier (the tier meta-annotations live in
   core's test root and the module order forbids the reverse dependency); `graphitron-model`
-  itself stays DDL, codegen, and bootstrap only.
+  hosts model code only: the DDL, the codegen output, the bootstrap, and in later increments
+  the model's function aliases, never tests.
 - Ride-alongs land: root pom module list, CLAUDE.md and `docs/architecture/reference/modules.adoc`
   enumeration (the `check-module-enumeration` gate holds), H2 version pinned in the root pom.
 

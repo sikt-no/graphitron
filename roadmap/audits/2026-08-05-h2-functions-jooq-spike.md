@@ -76,10 +76,15 @@ function registered only at runtime.
   bootstrap; row explosion is `SYSTEM_RANGE` + `CARDINALITY` + `ARRAY_GET` (R10/R13), with
   parallel array functions sharing one range index when a decode yields several columns.
   Simple delimiter shapes need no function at all (R11).
-- **The module fork resolves cleanly.** Alias methods need the graphql-java parser, so they
-  live in core and are registered at bootstrap, after the DDL runs. `graphitron-model`'s DDL
-  stays pure tables and views and stays `DDLDatabase`-clean, preserving no-live-database
-  builds; derivation views that call bridge functions may still live in that DDL and come out
-  typed, under a `CAST` discipline on every function-derived column.
+- **The functions are part of the model, so they live in `graphitron-model`.** The DDL's
+  derivation views call them, and H2 refuses to create a view over an unregistered function,
+  so the bootstrap must register the module's aliases and then execute the DDL; that ordering
+  is only possible when the alias methods ship with the module, and it makes the store whole
+  from the module alone (any process booting it gets working views without core on the
+  classpath). The module gains a graphql-java dependency for the literal decoders. The codegen
+  side is unaffected: the parser gate keeps `CREATE ALIAS` out of the codegen script, so the
+  DDL as `DDLDatabase` sees it stays pure tables and views, preserving no-live-database
+  builds, and derivation views calling bridge functions come out typed under a `CAST`
+  discipline on every function-derived column.
 - **Procedures are a non-topic.** `CALL` on void aliases exists; nothing in the architecture
   wants it.
