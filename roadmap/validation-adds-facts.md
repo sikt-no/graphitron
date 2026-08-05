@@ -263,9 +263,18 @@ mechanical (the base-relation key is a literal `PRIMARY KEY`, and throwing on a 
 right because that is a generator bug; the author-error rules are detection queries whose result
 sets mint diagnostics), dogfoods the stack the generator emits for consumers, and opens a
 read-only SQL surface for agents; it costs a new dependency, a rich-value encoding tax, and an
-`ORDER BY` discipline that generator determinism cannot do without. Those three costs are
-empirical, and `roadmap/audits/2026-08-05-fact-base-h2-spike.md` is the spike that measures them;
-its verdict feeds the materialization question below.
+`ORDER BY` discipline that generator determinism cannot do without. Those three costs were
+empirical, and the spike (`roadmap/audits/2026-08-05-fact-base-h2-spike.md`) measured them:
+encoding clean with no blobs, the ordering discipline real but concentratable at a single typed
+facade, latency comfortable for build and on-save loops. Its verdict is adopt-leaning hybrid:
+the store behind the `GraphitronSchema` component seam, the facade owning ordering,
+relations-as-Java a drop-in fallback behind the same signature.
+
+What the store would materialize deserves naming precisely: the fact schema DDL is the
+umbrella's normalised data model reified as a SQL schema. The database is created at startup and
+populated during a run; it lives and dies with the process, so there are no migrations and no
+persisted state anywhere. The DDL is source, versioned in the repo like any other file, and
+changing the model is editing it.
 
 ## Scope
 
@@ -358,7 +367,9 @@ surfaces, so the item does not qualify for the internal-refactor exemption.
   worldview relocates to the planning stage instead of being abolished, the commands become the
   parse targets, and today's classification record hierarchy is named as the transitional producer
   surface. The arm-by-arm migration of `FieldBuilder` into independent classifiers is follow-up
-  work under the umbrella, not this item.
+  work under the umbrella, not this item. If the store lands, the fact schema DDL is the
+  umbrella's normalised data model reified as SQL: created at startup, populated during a run,
+  never migrated.
 - **`input-field-resolution-typed-rejections` (R585):** overlaps on one carrier, and its one open
   design fork (fan many input-field failures into one prose rejection, or emit several) is decided
   by this item's doctrine: violations are facts, one per failure. Whichever lands first settles the
@@ -382,6 +393,18 @@ surfaces, so the item does not qualify for the internal-refactor exemption.
   generates nothing; retained claims feed the read-side views, not partial code generation.
 - **New rejection causes**, and any move of the accept / reject line.
 - **Input-side projection**, per scope item 5.
+
+## Where the design rounds landed: the scope has outgrown this item's slices
+
+Three design rounds took this item from a projection-fidelity fix to a pipeline architecture:
+capture as two infallible loads, classification and reachability and demand as derivations,
+diagnostics as strata, the occurrence path as a derived key, and a measured materialization
+candidate that reifies the umbrella's normalised model as a startup-created SQL schema. The
+scope slices above predate most of that picture; they slice the item's original shape, not the
+architecture the rounds arrived at. The next design round therefore starts from a fresh angle:
+re-slicing the whole into shippable increments, likely into more than one item, rather than
+answering the open questions below one at a time inside the current slice list. The questions
+stay recorded because the re-slicing has to place each of them somewhere.
 
 ## Open questions (for the next design round)
 
