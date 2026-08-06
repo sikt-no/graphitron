@@ -243,9 +243,10 @@ is a derived relation too (root seeds plus transitive closure over captured edge
 the zero-claims domain becomes explicit: a demand relation, reachable coordinates intersected with
 requiring rules, each row carrying *why* a claim is required. Today's implicit skips (connection
 and pageInfo machinery never enters the registry, a DELETE-carrier's data field is silently
-filtered, `Subscription` fields are demanded and then unconditionally deferred) become visible
-exemption and rule rows, and unclassifiable is the anti-join of demand against the reduced claim
-view.
+filtered, every interface field is skipped wholesale, `Subscription` fields are demanded and
+then unconditionally deferred) become visible exemption and rule rows, censused in
+`roadmap/audits/2026-08-06-demand-exemption-census.md`, and unclassifiable is the anti-join of
+demand against the reduced claim view.
 
 Diagnostics enter wherever a constraint's inputs are complete, which stratifies into three groups
 without anyone scheduling it. SDL-only constraints (authored conflict, recognized combinations)
@@ -466,16 +467,23 @@ those pieces.
 
 ## Open questions (for the next design round)
 
-- **The demand relation's rules and exemption census.** The zero-claims domain is settled in
-  shape (demand derives from reachability intersected with requiring rules; today's skips become
-  exemption rows) but not in content: the census of the implicit exemptions (connection and
-  pageInfo machinery, the DELETE-carrier data-field filter, directiveless nesting targets) and of
-  the requiring rules, including whether `Subscription`'s unconditional deferral is a demand rule
-  or a recognized capability gap. Two incidental dead finds from that census belong to whichever
-  slice touches the walk: `classifyFieldsOfObject` computes a `skipForUnifiedPath` local nothing
-  reads, and the `TableInterfaceType` exclusion in `classifyFieldInner`'s table-backed dispatch
-  arm looks unreachable (the type is keyed by an interface name, the lookup always by an object
-  name).
+- **The demand relation's rules and exemption census: closed by census**
+  (`roadmap/audits/2026-08-06-demand-exemption-census.md`). Today there is no demand predicate
+  at all: "requires a classification" is the negative space of `classifyFieldsOfObject`'s early
+  returns, the validator sees only produced verdicts, and the reachable-implies-classified
+  invariant is asserted in tests only, at type grain. The census enumerates thirteen exemption
+  populations that become explicit rows, the largest undocumented one being every field of
+  every interface type (no interface ever gets a `classifyFieldsOfObject` call). `Subscription`
+  is answered: its fields are demanded and receive a Deferred verdict, so it is a requiring
+  rule satisfied by a recognized capability gap, not an exemption; the dispatch being
+  name-keyed rather than root-keyed is a hole the demand rule closes (a renamed subscription
+  root's fields silently take the nesting-target exemption today). Two demand-shaped defects
+  the relation makes visible: the DELETE carrier's data field gets no verdict at all whenever
+  `classifyDeletePayloadField` bails before its `IdElement` arm, and mixed-source nesting
+  targets are classified twice through two paths, which the coordinate-keyed claim relation
+  collapses structurally. Both suspected dead finds are confirmed, plus a second unreachable
+  `TableInterfaceType` exclusion in `classifyChildRoutineChain`; they belong to whichever slice
+  touches the walk.
 - **Slice 4's cascade half: closed, the path-valued key is adopted.** The predicate splits
   cleanly: the definition-keyed disjunct (`@condition(override: false)` with no column) is
   exactly `GraphitronSchemaValidator.validateInputUnboundField`'s existing predicate, and the
