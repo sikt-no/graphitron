@@ -342,6 +342,14 @@ and uniform about absence. The design already imposes all three (single-valued e
 `Optional<String>` for not-applicable, the `directives` canonical render); that they survive
 the substrate swap is why they were the right rules, not three unrelated tidinesses.
 
+Two sibling items narrow the seam from opposite ends, neither a dependency:
+`unified-diagnostic-stream` (R601) collapses the schema-side channels (errors, warnings, the
+never-added walker slot) into one located-violation stream, shrinking the row's union to two
+sources; `pipeline-output-facts-family` (R603) gives the compile channel its store home, after
+which the seam becomes a store view. Whichever of the two has landed at implementation time,
+the row unions what remains. The whole-board context is
+`roadmap/audits/2026-08-06-fact-base-impact-sweep.md`.
+
 Two boundary notes, so a reviewer does not re-derive them. The store's landing rule ("new
 facts land only in the store") does not bind here: this item mints no facts, it projects
 diagnostics the pipeline already minted. And a read-only SQL surface over the whole fact
@@ -626,8 +634,3 @@ is supposed to produce.
   `nodeid-migration-quickfix`'s to decide.
 - Aggregation over anything but the two channels `diagnostics` already unions (validator
   output and `graphitron:dev` compile diagnostics).
-
-## Fact-base note (2026-08-06)
-
-Forward note only, per R589's Relationships (this item stays a consumer and does not grow to anticipate): when violations become located fact rows, the pivot dimensions here become columns of the violation relation and the aggregation becomes a GROUP BY; re-source the grouping when the migration reaches diagnostics. R601 (`unified-diagnostic-stream`) separately collapses the three report channels this tool would otherwise drain.
-Context and the whole-board picture: `roadmap/audits/2026-08-06-fact-base-impact-sweep.md`.

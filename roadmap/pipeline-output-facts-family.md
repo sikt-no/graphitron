@@ -25,10 +25,11 @@ files a run wrote, from which coordinates), which today exists only as filesyste
 
 Why it matters: as long as run-output facts live outside the store, every consumer that spans
 input and output channels has to build a union seam in Java. The concrete cost is recorded in
-`mcp-aggregated-diagnostics` (R569): its `DiagnosticRow` union over three channels stays
-permanent precisely because the compile channel has no store home, and its aggregate cannot
-become a single relational read even after R589's violation relation lands. With an output
-family, the cross-channel union becomes a store view and the seam dissolves.
+`mcp-aggregated-diagnostics` (R569): its `DiagnosticRow` union stays a Java seam precisely
+because the compile channel has no store home (`unified-diagnostic-stream`, R601, collapses
+the schema-side channels but leaves compile untouched), so its aggregate cannot become a
+single relational read even after R589's violation relation lands. With an output family, the
+cross-channel union becomes a store view and the seam dissolves.
 
 Why this is not an R595 amendment: the write cadence is different in kind, not in detail.
 R595's two capture loads run at startup, and the store is "populated by capture"; compile
