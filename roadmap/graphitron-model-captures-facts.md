@@ -649,8 +649,9 @@ consumer surface is `BuildContext`'s name constants, the `no.sikt.graphitron.fac
 and the shared pair-grammar decoder). Grounding is load-bearing in both directions: it added
 relations the declarations alone would not suggest (application-level `@reference` rows,
 because an empty path means FK auto-discovery and is a fact about one application) and it
-removed speculation (`@experimental_constructType(selection:)` has no consumer anywhere, so
-its raw column gets no decoded child until a consumer lands). The `intent_` prefix names what
+removed speculation outright: `@experimental_constructType` has no consumer anywhere in the
+pipeline, so it gets no relation at all; an unhandled directive is not exposed as store
+surface. The `intent_` prefix names what
 a row is: the author's decoded intent at a coordinate.
 
 ```sql
@@ -1331,20 +1332,11 @@ CREATE TABLE intent_routine_column_mapping_pair (
     REFERENCES intent_routine (type_name, field_name, ordinal)
 );
 
--- @experimental_constructType on a field. The selection stays a raw column
--- with no decoded child: the census found no consumer anywhere in the
--- pipeline, so the entry decode would be speculation; it lands with the
--- first consumer, through the shared pair-grammar parser.
-CREATE TABLE intent_construct_type (
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  selection     VARCHAR, -- as written; the declaration leaves it optional
-  PRIMARY KEY (type_name, field_name),
-  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
-);
+-- @experimental_constructType deliberately has no relation. The census found
+-- no consumer anywhere in the pipeline (applications are silently dropped at
+-- emit), so the directive is unhandled, and an unhandled directive is not
+-- exposed as store surface: a relation would harden a contract nobody
+-- implements. Its relation lands with its first consumer, if one ever comes.
 
 -- @discriminate on an interface or union: the discriminator column.
 CREATE TABLE intent_discriminate (
@@ -1844,12 +1836,21 @@ the one file to its own registry fragment, delete the partition (the synthesis p
 relations make orphan cleanup exact, shared machinery types refcounting by carrier row),
 re-walk it, and re-run the derivation strata, which the first spike priced under 20 ms for the
 SDL stratum (synthesized sites are stamped with their carrier's file, so synthesized types sit
-in the same declaration index as everything else). No diffing is involved, and unchanged
+in the same declaration index as everything else). The strata re-run over the whole store,
+never scoped to the changed partition, because classification is inherently cross-file: a
+field's verdict reads its named type's kind, its arguments' types, and the tables they bind,
+all free to live in files the edit never touched, so an edit to one file can flip verdicts on
+types it never mentions. That is the deeper reason no classification happens during a file's
+parse (the file in hand simply does not contain the facts a verdict needs), the same
+observation the FK doctrine makes about cross-file references; per-file scope belongs to
+capture alone, and the derivations stay cheap enough to re-run whole. No diffing is involved,
+and unchanged
 files are never re-read; the store itself
 is the accumulated registry, and with the R597 cache an editor session boots warm and
 refreshes per file from there. The refresh mechanics land with the LSP consumer migration,
 not here; this increment only refuses to break type-locality, which is a review rule on
-capture code: nothing at capture reads across types.
+capture code: nothing at capture reads across types, and no verdict is computed during a
+file's parse.
 
 ## What this iteration deliberately leaves out
 

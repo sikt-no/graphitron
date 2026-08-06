@@ -61,7 +61,7 @@ does not declare it.
 | `@node` | `TypeBuilder`, `NodeDeclaration` | `typeId`, `keyColumns` (both) | keyColumns resolved per column with candidate hints; SDL wins over jOOQ metadata, different column sets reject |
 | `@nodeId` | `NodeIdLeafResolver.inferTypeName` and ~10 sites | `typeName` | explicit value wins; inference by table mapping, ambiguity rejects |
 | `@routine` | `RoutineDirectiveResolver`, `FieldBuilder.walkRoutineChain` | `name`, `argMapping`, `columnMapping` (all) | repeatable; composes one chain with `@reference` in written order; more than one routine node defers |
-| `@experimental_constructType` | none | none (`selection` never read) | no consumer exists anywhere in the pipeline; applications are silently dropped at emit |
+| `@experimental_constructType` | none | none (`selection` never read) | no consumer exists anywhere in the pipeline; applications are silently dropped at emit; deliberately no intent relation |
 
 Federation (from the sibling federation census): `@key` is the only federation directive with
 real downstream semantics (`fields` and `resolvable` read; flat field-set parse, nested
@@ -82,8 +82,9 @@ re-emitted via the survivor rule.
   must be recoverable; and the graphitron namespace has no `applied_` twin, so the intent row
   is the only record of where the author wrote the application. Detections mint located
   diagnostics from these columns.
-- **No decoded child for `@experimental_constructType`.** The selection grammar has a shared
-  parser but no consumer; the decode lands when a consumer does.
+- **No relation for `@experimental_constructType`.** The selection grammar has a shared
+  parser but the directive has no consumer at all, so it gets no store surface; an unhandled
+  directive is not exposed, and its relation lands with its first consumer.
 - **Pair children only where a consumer binds pairs.** The shared decoder's live sites get
   ordered pair relations; inert sites (`@externalField`, `@enum`) keep the raw column, since
   their only consumer is a presence-triggered rejection.
