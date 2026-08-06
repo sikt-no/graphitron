@@ -133,3 +133,8 @@ Current definition anchors: `record ParsedPath(..., String errorMessage, ...)` a
   classification, not field classification); same shape-pattern but different producer set.
 - `BuildWarning.message`. Single producer site; premature.
 - Renaming `RejectionKind`. Same deferral as R58.
+
+## Fact-base note (2026-08-06)
+
+Split the phases by survivorship before spending effort: several carriers here (`Unresolved`, `UnboundArg`) sit on the surface the strangler frame retires, where the typed payload becomes columns on a violation row, so widening them is work against a dissolving surface. Widen only the carriers whose consumers survive the migration.
+Context and the whole-board picture: `roadmap/audits/2026-08-06-fact-base-impact-sweep.md`.

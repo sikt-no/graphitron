@@ -7,7 +7,7 @@ priority: 5
 theme: service
 depends-on: []
 created: 2026-07-28
-last-updated: 2026-07-28
+last-updated: 2026-08-06
 ---
 
 # Deprecate `@externalField`: fold the computed-field shape into `@service`
@@ -543,3 +543,8 @@ In order:
 - Removing `@externalField` outright. It stays accepted for the migration
   window with a deprecation warning; removal is a follow-up gated on the
   window decision inherited from R54.
+
+## Fact-base note (2026-08-06)
+
+Merging `@externalField` into `@service` is also a DDL edit once R595 ships: one `intent_` relation absorbs the other (applications of the deprecated name still capture), and the claim view's arm list, the classification-axis declaration R589 defines, changes with the merge. A ride-along consideration, not new scope.
+Context and the whole-board picture: `roadmap/audits/2026-08-06-fact-base-impact-sweep.md`.

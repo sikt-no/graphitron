@@ -7,7 +7,7 @@ priority: 5
 theme: classification-model
 depends-on: []
 created: 2026-07-24
-last-updated: 2026-07-24
+last-updated: 2026-08-06
 ---
 
 # Meta-test: no registry reads in the classify-time set
@@ -27,3 +27,8 @@ style as `RoadmapReferenceGuardTest`, scanning the classify-time set for `ctx.ty
 `typeRegistry.entries()` / `typeRegistry.get` reads, with an explicit allow-list for the
 deliberate post-walk readers (validator, index folds, `GraphitronSchemaBuilder`'s post-walk
 reductions and the visitor's own sibling-independent `parentType` read).
+
+## Fact-base note (2026-08-06)
+
+The read-free invariant is structural for consumers migrated onto the store: capture-then-derive has no classify-time registry to read. Scope the meta-test to the shrinking un-migrated set with an explicit retirement gate, or fold it into the shadow window's agreement tests.
+Context and the whole-board picture: `roadmap/audits/2026-08-06-fact-base-impact-sweep.md`.

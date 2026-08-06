@@ -623,3 +623,7 @@ is supposed to produce.
 - Aggregation over anything but the two channels `diagnostics` already unions (validator
   output and `graphitron:dev` compile diagnostics).
 
+## Fact-base note (2026-08-06)
+
+Forward note only, per R589's Relationships (this item stays a consumer and does not grow to anticipate): when violations become located fact rows, the pivot dimensions here become columns of the violation relation and the aggregation becomes a GROUP BY; re-source the grouping when the migration reaches diagnostics. R601 (`unified-diagnostic-stream`) separately collapses the three report channels this tool would otherwise drain.
+Context and the whole-board picture: `roadmap/audits/2026-08-06-fact-base-impact-sweep.md`.

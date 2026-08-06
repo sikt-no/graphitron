@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 theme: tooling
 depends-on: []
-last-updated: 2026-07-14
+last-updated: 2026-08-06
 ---
 
 # Graphitron knowledge base programme: DuckDB as queryable model
@@ -74,3 +74,8 @@ A dev-facing query surface over the KB (free-form SQL over the joined dimensions
 ## Out of scope for this item
 
 Authoring code or schema directly — this item ships as a navigational artefact whose Done state is reached only when the programme it frames feels complete (which may be never; programmes outlive sprints). The reviewer-rule gates still apply to per-dimension items underneath; this item itself moves through Backlog → Spec → Ready when the programme framing is signed off, and probably stays in Ready indefinitely. Choosing the next dimension to absorb (that's a prioritisation call made when the next dimension's payoff becomes concrete; this item just lists the candidate set). The MCP server (shipped as a live-workspace server, not a KB consumer; a KB-backed query tool would be its own item, see "Consumers").
+
+## Fact-base note (2026-08-06)
+
+Reconciled: the model store is the store of record, and the knowledge base becomes a projection or export of it, never a second relational model of the same facts; two stores of record is the one thing the strangler frame forbids. The programme's charter (a queryable, naturally-keyed model of everything graphitron knows, the store a projection) is delivered for the build-time half by `graphitron-model`; what remains here is the corpus and run-time dimensions (R104/R112) and any export surface over the model store.
+Context and the whole-board picture: `roadmap/audits/2026-08-06-fact-base-impact-sweep.md`.

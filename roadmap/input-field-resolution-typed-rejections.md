@@ -307,3 +307,8 @@ and the consumers of `GraphitronSchemaValidator.collectInputFieldRejections`. Sp
 plus `graphitron-lsp` if the new arms take `lspCode()`s. Note that `UnknownName` publishes no
 `lspCode()` today, so no editor behaviour rides on the typed shape yet; its consumers are the message
 render and the pipeline tests.
+
+## Fact-base note (2026-08-06)
+
+Sequencing: R589's doctrine (violations are facts, one per failure) settles this item's fan-out fork, and R589's Relationships section asks this item to land first if both are In Progress together. Do not harden the `Resolved` wrapper while here; that carrier sits on the surface the strangler frame retires.
+Context and the whole-board picture: `roadmap/audits/2026-08-06-fact-base-impact-sweep.md`.

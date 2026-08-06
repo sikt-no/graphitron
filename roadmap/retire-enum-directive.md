@@ -7,7 +7,7 @@ priority: 3
 theme: legacy-migration
 depends-on: []
 created: 2026-06-23
-last-updated: 2026-06-23
+last-updated: 2026-08-06
 ---
 
 # Retire the @enum directive; infer enum Java backing from producers
@@ -28,3 +28,8 @@ generalizes over `backingType`, not just jOOQ-generated enum classes.
 Model decided in R333 (*Enum facts*); this item is the code retirement and the producer-inference path
 that replaces the directive. Coordinate with R261 (wire-coercion cast guard), which already owns the
 enum-name-divergence rejection at the column-binding site.
+
+## Fact-base note (2026-08-06)
+
+Producer-derived backing is an inferred claim with the producer as its witness, and the reject-on-use arm is a detection. Re-point the model reference from R333's prose roll-up to the enum relations in the fact schema once R595 ships.
+Context and the whole-board picture: `roadmap/audits/2026-08-06-fact-base-impact-sweep.md`.

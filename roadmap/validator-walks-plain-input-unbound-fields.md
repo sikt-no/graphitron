@@ -6,7 +6,7 @@ theme: diagnostics
 bucket: architecture
 depends-on: []
 created: 2026-05-21
-last-updated: 2026-07-15
+last-updated: 2026-08-06
 ---
 
 # Validator walks PlainInputArg.fields() for UnboundField rejection
@@ -27,3 +27,8 @@ Surfaced by the R215 self-review: alf flagged that the architect's brief glossed
 - `docs/manual/how-to/migrating-from-legacy.adoc:179-191` — the cascade-divergence doc the validator gap currently lets schemas violate at runtime.
 - R215 (`column-binding-at-classification-not-usage.md`) — the parent work; the validator rule lives there but is reachable only for `@table` inputs.
 - R245 (`wire-condition-emit-on-mutations`): adjacent on the same `@condition`-on-input admission surface in `MutationInputResolver`. R245 broadens what non-`override` `@condition` admits; this item tightens rejection of the malformed unbound `@condition(override:false)` case. R245's broadened admission must not re-open the hole this item closes (not a hard dependency).
+
+## Fact-base note (2026-08-06)
+
+Subsumed: R589 slice 5 delivers exactly this reachability (the definition-keyed disjunct is `validateInputUnboundField`'s existing predicate; the cascade disjunct evaluates over the derived occurrence path). This item closes as subsumed when that slice lands; do not build a second walker entry point in the meantime.
+Context and the whole-board picture: `roadmap/audits/2026-08-06-fact-base-impact-sweep.md`.

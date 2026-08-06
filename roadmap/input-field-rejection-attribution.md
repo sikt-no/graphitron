@@ -6,7 +6,7 @@ theme: diagnostics
 bucket: bugs
 depends-on: []
 created: 2026-05-21
-last-updated: 2026-07-15
+last-updated: 2026-08-06
 ---
 
 # Plain-input field rejections attributed to consumer field, losing input-field source location
@@ -74,3 +74,8 @@ The change touches the rejection/diagnostic shape across three resolvers and the
 - R211 (`condition-override-true-misleading-column-miss-message.md`) — narrower companion fix, same `opptak-subgraph` source schema.
 - R215 (`column-binding-at-classification-not-usage.md`) — the cascade-aware classification restructure. R215's direction §2 (defer `@table` column-coverage to consumption) makes attribution natural: rejections fire at the field's source location by construction. R213 may merge into R215 if both land together, or stay as the sibling that handles the plain-input override:false-on-non-binding-field case the classifier still rejects directly.
 - Surfaced by alf's production `opptak-subgraph` schema; same investigation pass as R211.
+
+## Fact-base note (2026-08-06)
+
+Largely subsumed: capture keeps source locations on the raw facts, and the occurrence-path derivation models the attribution split this item asks for (definition-keyed violations locate at the input field's own location, use-keyed ones at the occurrence path). Re-check what remains after R589 slice 5; the residue may be empty.
+Context and the whole-board picture: `roadmap/audits/2026-08-06-fact-base-impact-sweep.md`.

@@ -6,7 +6,7 @@ bucket: architecture
 priority: 6
 theme: lsp
 depends-on: []
-last-updated: 2026-07-15
+last-updated: 2026-08-06
 ---
 
 # Parent-context-aware schema coordinates for per-directive Behavior policy
@@ -93,3 +93,8 @@ Alternative shape worth considering: drop `InputField(type, field)` entirely and
 ## Surfaced from
 
 R119 phase 3 self-review (architect agent pass on commit `4ae827d`). Findings #1 and #2 from that review fold into this single item. The architect's stronger-shape recommendation: option A (extend `SchemaCoordinate`).
+
+## Fact-base note (2026-08-06)
+
+Fork A's surviving ask (the parent-context policy carried on the model so no consumer re-derives it by directive name) is store-delivered: `applied_` and `intent_` rows key by coordinate with the parent in the key, so the policy read becomes a join rather than a name lookup. Close as delivered when the capture relations are consumable from the LSP, or re-scope to that read.
+Context and the whole-board picture: `roadmap/audits/2026-08-06-fact-base-impact-sweep.md`.

@@ -5,7 +5,7 @@ status: Spec
 bucket: architecture
 theme: tooling
 depends-on: [capability-catalog]
-last-updated: 2026-07-14
+last-updated: 2026-08-06
 ---
 
 # Operation-driven test corpus, capability catalog, and runtime trace
@@ -141,3 +141,8 @@ The user-facing payoff is a gap diagnostic on the inference-axis-coverage page. 
 Subsequent items convert additional execution-tier tests one at a time (`DmlBulkMutationsExecutionTest`, `FederationEntitiesDispatchTest`, `AddressOccupantsListBatchingTest`, ...) and add capability tags + `.adoc` files as new surfaces become testable; the machinery doesn't change.
 
 Out of scope for this item: changing how classifications are produced at codegen time (this item only adds emission of the `generated_fetcher` co-stream and renames existing schema vocabulary); converting existing imperative execution-tier tests in bulk (an opt-in migration follows once the machinery lands); a `generated_type` table for the type-axis intersection (V0's four-quadrant report only needs the field axis; types are still classified and visible in `classifier_call`, but the codegen-output side is deferred until a report wants it); enumerating the capability-catalog itself (R115 ships the slug list and one-sentence definitions; this item consumes that catalog and adds the directive, tables, views, and render); long-form preamble prose for each capability (R115 produces one-sentence stubs; preamble grows over time as capabilities surface in worked examples); curating worked examples across all capabilities (R112 ships the *machinery* — the `@exemplifies` directive, integrity check, render — and pilots one example for `pagination`; populating examples for the rest of the catalog is an ongoing curation pass that follows in its own item, where each operation author registers their operation as it lands). Explicitly, no GraphQL directives that influence codegen or fetching are introduced; `@capability` is metadata read at SDL-parse time by the report tool and the AsciiDoctor extension only. Future axes that want to log semi-structured payloads (variable bindings per execution, fetcher arguments per call, GraphQL errors) can use DuckDB's `VARIANT` type, so we don't reflexively flatten everything when the time comes. If another future need surfaces (an N+1 budget per operation, a SQL-capture binding, a snapshot helper) it gets its own roadmap item with its own justification rather than riding on this one. This item lays the foundation; subsequent items adopt it scenario by scenario.
+
+## Fact-base note (2026-08-06)
+
+The classification and classifier-call dimensions re-source off the model store once the claim relations land: the claim views carry verdicts and their witnesses relationally, and `ClassificationTrace` JSONL (verdict class name, no trigger data) stops being their source. The operation, runtime, and capability dimensions are unaffected. See also R117's reconciliation: the knowledge-base store is a projection of the model store, never a second store of record.
+Context and the whole-board picture: `roadmap/audits/2026-08-06-fact-base-impact-sweep.md`.

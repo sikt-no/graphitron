@@ -7,7 +7,7 @@ priority: 8
 theme: search
 depends-on: []
 created: 2026-07-02
-last-updated: 2026-07-17
+last-updated: 2026-08-06
 ---
 
 # Type-ahead search backed by native database indexes
@@ -1186,3 +1186,8 @@ load-bearing for the fulltext case.
   a jOOQ license, so Oracle codegen support is committed; test placement
   (internal GitLab pipelines worst case, possibly a CI license via Lukas)
   is a logistics question inside the Spec, not a gate on it.
+
+## Fact-base note (2026-08-06)
+
+The supply side this item adds lands in the model store if R595 has shipped by pickup: a new region of catalog facts is a `catalog_` relation filled by the catalog capture load, a decoded graphitron directive is an `intent_` relation, and resolution failures are detection queries, because new facts land only in the store during the two-model window. Nothing else in the plan moves.
+Context and the whole-board picture: `roadmap/audits/2026-08-06-fact-base-impact-sweep.md`.

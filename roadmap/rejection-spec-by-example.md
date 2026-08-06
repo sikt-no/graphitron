@@ -6,7 +6,7 @@ bucket: testing
 theme: testing
 depends-on: []
 created: 2026-07-26
-last-updated: 2026-07-26
+last-updated: 2026-08-06
 ---
 
 # Declarative mechanism for the rejection rows the classified corpus cannot hold
@@ -20,3 +20,8 @@ The obvious shape to evaluate first is the symmetric one: a test-only `@rejects(
 Worth deciding at Spec whether the mechanism also renders, the way `ClassifiedDocTest` renders the success corpus into `code-generation-triggers.adoc`. A rejection catalog generated from the same fixtures would give the user manual a shape-to-diagnostic reference it currently lacks.
 
 Out of scope: changing any rejection's code, message, or location; the input-side rows; the success-side vocabulary widening (its own item).
+
+## Fact-base note (2026-08-06)
+
+The direction-of-travel paragraph this item carries (classification failure as a `WalkerResult.Err`) is superseded: failure is an added located violation fact (R589), and a rejection's identity is a row with cause, coordinate, and location. The mechanism's assertion target is the violation relation, which also answers the non-coordinate-scoped worry: a schema-wide violation is a row with no coordinate, not a different channel.
+Context and the whole-board picture: `roadmap/audits/2026-08-06-fact-base-impact-sweep.md`.

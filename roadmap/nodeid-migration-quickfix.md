@@ -6,7 +6,7 @@ bucket: feature
 priority: 13
 theme: lsp
 depends-on: []
-last-updated: 2026-07-14
+last-updated: 2026-08-06
 ---
 
 # LSP quick fixes for the @node/@nodeId migration, driven by shim facts
@@ -50,3 +50,8 @@ Follow the shipped `LintQuickFixes` pattern (R398; the same generator-computes/L
 - The sis-side execution itself (running the quick fixes over sis-graphql-spec); that happens in the sis repo once this ships.
 - The old plan's Phase 2 (filter inputs missing `@table`) and Phase 3 (author-error `@node`/`@nodeId` cleanup): those already surface as ordinary validator errors with locations, so they are visible in-editor today; whether any deserve their own quick fixes is a separate question to file per finding kind if wanted.
 - Deleting the shims (R27) and enforcing the grammar (R473).
+
+## Fact-base note (2026-08-06)
+
+The three synthesis shims derive everything the quick-fix needs and throw it away, which is the fact-base thesis at the WARN grain. Once inferred claims carry join witnesses (R589), the quick-fix text is selectable from the claim row; re-anchor the deliverable on reading that relation rather than adding `BuildWarning` calls at the shim sites.
+Context and the whole-board picture: `roadmap/audits/2026-08-06-fact-base-impact-sweep.md`.

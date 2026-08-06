@@ -7,7 +7,7 @@ priority: 5
 theme: lsp
 depends-on: []
 created: 2026-06-19
-last-updated: 2026-07-01
+last-updated: 2026-08-06
 ---
 
 # Consolidate graphitron-lsp navigation, dispatch, and result-building
@@ -288,3 +288,8 @@ Surfaced 2026-06-19 from a structural code review of `graphitron-lsp` requested 
 maintenance. The review walked all ~7700 lines of main source and grouped the findings into the
 duplication axes tabulated above; this item slices those findings into behaviour-preserving,
 independently shippable consolidations.
+
+## Fact-base note (2026-08-06)
+
+Slice 5 only. The atomically-swapped holder that slice bundles (`catalog` / `catalogFacts` / `sourceIndex` / `snapshot` / `validationReport`) is the store handle once R595 ships: one stamped snapshot is what the store gives by construction, so specify the holder as the handle rather than a five-field record if the substrate has landed by then. Separately, slice 4's result builder should not hard-code the hover header text: R589's projection slice changes `Unclassified` to a `Conflicted: ...` split.
+Context and the whole-board picture: `roadmap/audits/2026-08-06-fact-base-impact-sweep.md`.

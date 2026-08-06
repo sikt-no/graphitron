@@ -7,7 +7,7 @@ priority: 5
 theme: lsp
 depends-on: []
 created: 2026-06-25
-last-updated: 2026-07-14
+last-updated: 2026-08-06
 ---
 
 # LSP-guided @reference path authoring
@@ -262,3 +262,8 @@ carry `@UnitTier`.
 - **R233 / R224** (LSP column-dispatch projection) and **R119** (directive-surface
   drift containment): the two precedents this item's substrate follows, projection
   sharing and a drift test, respectively.
+
+## Fact-base note (2026-08-06)
+
+The two planned hop implementations (live catalog, snapshot) collapse to one relation once catalog facts are captured: completion walks the captured `catalog_` FK facts, and the occurrence-path relation R589 adopts is the derived form of the authored path. The parsePath-drift test survives but narrows to what capture does not cover.
+Context and the whole-board picture: `roadmap/audits/2026-08-06-fact-base-impact-sweep.md`.

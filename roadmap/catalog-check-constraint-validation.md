@@ -6,7 +6,7 @@ bucket: architecture
 priority: 8
 theme: mutation-write
 depends-on: []
-last-updated: 2026-07-15
+last-updated: 2026-08-06
 ---
 
 # Surface database CHECK constraints as Jakarta validation rules
@@ -806,3 +806,8 @@ against a principle; each is settled here so the implementer doesn't relitigate.
   the database side and surfaced via R12's existing path. R92 is purely
   additive: it shrinks the set of CHECKs that reach R12's
   `SqlStateHandler` arm without removing the arm.
+
+## Fact-base note (2026-08-06)
+
+The check-constraint scan is a `catalog_` relation filled by the catalog capture load once R595 ships, with the expression-shape recognition a derivation over it and an unrecognized expression a detection row; new facts land only in the store during the two-model window.
+Context and the whole-board picture: `roadmap/audits/2026-08-06-fact-base-impact-sweep.md`.

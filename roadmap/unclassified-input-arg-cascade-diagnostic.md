@@ -7,7 +7,7 @@ priority: 5
 theme: classification-model
 depends-on: []
 created: 2026-08-03
-last-updated: 2026-08-03
+last-updated: 2026-08-06
 ---
 
 # @table-on-input rejection cascades into a misleading @mutation arg-shape error
@@ -46,3 +46,8 @@ case, either suppress the field-level error (the type-level rejection already
 names the fix and the coordinate) or surface the input type's own rejection so
 the two errors agree. Worth checking whether the same conflation reaches the
 other `lookAheadVerdict`-guarded field paths and the LSP diagnostics projector.
+
+## Fact-base note (2026-08-06)
+
+The cascade exists because failure is replacement: the consuming arm reads a tombstoned `lookAheadVerdict`. Under R589 the input type keeps its claims and the arg-shape detection joins the claim view, so the second error cannot mint. If picked up before that lands, the residual question is suppress-or-pair for the field-level error; after it lands, verify the cascade is structurally gone and close.
+Context and the whole-board picture: `roadmap/audits/2026-08-06-fact-base-impact-sweep.md`.

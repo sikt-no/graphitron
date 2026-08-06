@@ -6,7 +6,7 @@ bucket: cleanup
 priority: 10
 theme: pagination
 depends-on: []
-last-updated: 2026-07-30
+last-updated: 2026-08-06
 ---
 
 # Drop the assembled-schema rebuild in favour of per-variant graphql-java forms
@@ -18,3 +18,8 @@ Alternative: skip the rebuild; rebuild each carrier's parent `GraphQLObjectType`
 *Saves* the two-step `additionalType + SchemaTransformer` dance (~80 lines of classifier code) and the bundle-coherence overhead. *Costs* the bundle's "every type reference resolves on `assembled.getType()`" invariant: any future build-time consumer that wants a coherent `GraphQLSchema` (SDL printer for client schemas, an introspection-based validator, federation manifest emitter) would have to be re-engineered.
 
 Worth picking up when a concrete signal pushes the trade, e.g. an emitter explicitly preferring per-variant graphql-java forms over name-keyed `assembled.getType()` lookups, or schema-rebuild edge cases turning into recurring debugging cost. Until then, the rebuild is paying its rent and `rebuildAssembledForConnections` stays.
+
+## Fact-base note (2026-08-06)
+
+The awaited concrete signal arrived: capture walks the type-definition registry (assembly is the superlinear half capture never pays) and owns macro expansion with synthesis provenance, so the coherent assembled `GraphQLSchema` stops being the model. Re-evaluate around which un-migrated consumers still need `assembled.getType()`; the rebuild retires with them.
+Context and the whole-board picture: `roadmap/audits/2026-08-06-fact-base-impact-sweep.md`.

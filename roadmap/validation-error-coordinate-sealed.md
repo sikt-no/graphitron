@@ -7,7 +7,7 @@ priority: 5
 theme: diagnostics
 depends-on: []
 created: 2026-08-03
-last-updated: 2026-08-03
+last-updated: 2026-08-06
 ---
 
 # Sealed Coordinate component on ValidationError
@@ -31,3 +31,8 @@ Blast radius, measured at carve-out (re-measure at pickup): `WatchErrorFormatter
 `ConditionCommandsPipelineTest`, `ConnectionTypeValidationTest`, `TenantScopeValidationTest`,
 `NodeIdPipelineTest`, and the typed-rejection pipeline test). Spans `graphitron`,
 `graphitron-maven-plugin`, and `graphitron-mcp`.
+
+## Fact-base note (2026-08-06)
+
+Sequence against the store's coordinate key columns so the lift happens once: violations become located rows keyed by natural coordinate columns, and the sealed `Coordinate` lift should be specified as the Java view over that key shape rather than an independent record change.
+Context and the whole-board picture: `roadmap/audits/2026-08-06-fact-base-impact-sweep.md`.

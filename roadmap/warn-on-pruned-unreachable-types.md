@@ -7,7 +7,7 @@ priority: 5
 theme: diagnostics
 depends-on: []
 created: 2026-06-17
-last-updated: 2026-06-17
+last-updated: 2026-08-06
 ---
 
 # Warn on pruned unreachable output types instead of dropping them silently
@@ -22,3 +22,8 @@ build warning naming each pruned unreachable output type (and ideally why it is 
 dead schema surfaces without failing an otherwise sound build. Small, additive, and orthogonal to
 R317's classification rework; it rides best on top of the single-pass walk R317 lands (R317 slice 3
 shifts unreachable output types from classified to pruned; this item adds the warning).
+
+## Fact-base note (2026-08-06)
+
+Mechanism subsumed: capture is total (no reachability pruning) and reachability is a derived relation, so the pruned set is an anti-join over captured types and the warning can carry *why* the type is unreachable, which this item could only wish for. The deliverable survives as a detection query over that relation.
+Context and the whole-board picture: `roadmap/audits/2026-08-06-fact-base-impact-sweep.md`.
