@@ -191,12 +191,17 @@ directly addressable, and `graphql_implements` states the edge the declaring typ
 -- user-authored declarations filter on it, as
 -- CatalogBuilder.projectTypeDefinitionLocations does today.
 
--- A named type exists in the schema. Where it was declared, base definition
--- and extensions alike, is graphql_type_declaration's business.
+-- A named type is declared or extended in the schema; this row is the name's
+-- existence, written by capture from whichever site it meets first, and
+-- graphql_type_declaration carries every site. The declared-or-extended
+-- reading is load-bearing: it is what makes the site rows' FK structural
+-- (capture writes this row before any site row), and on a base-less
+-- extension chain (an author error a detection reports) the row still
+-- exists, anchored by the extension sites.
 CREATE TABLE graphql_type (
   type_name     VARCHAR NOT NULL, -- the GraphQL type name; the coordinate every other SDL fact hangs off
-  kind          VARCHAR NOT NULL, -- the base definition's declaration form (first-wins on an ill-formed schema); per-site forms live on the declaration rows
-  description   VARCHAR,          -- SDL description string; net-new as a persisted fact (today read live off retained graphql-java objects). Extensions cannot carry descriptions, so this is the base definition's
+  kind          VARCHAR NOT NULL, -- the first declaration site's form in merge order (the base definition's, on a well-formed schema)
+  description   VARCHAR,          -- SDL description string; net-new as a persisted fact (today read live off retained graphql-java objects). Extensions cannot carry descriptions, so this is the base definition's when one exists
   PRIMARY KEY (type_name),
   CHECK (kind IN ('OBJECT', 'INTERFACE', 'UNION', 'ENUM', 'INPUT_OBJECT', 'SCALAR'))
 );
@@ -208,7 +213,7 @@ CREATE TABLE graphql_type (
 -- touch"). Engine-provided types (built-in scalars) have no declaration rows.
 CREATE TABLE graphql_type_declaration (
   type_name     VARCHAR NOT NULL,
-  ordinal       INT     NOT NULL, -- 0 for the base definition, then extensions in document order; the merge order behind every element ordinal
+  ordinal       INT     NOT NULL, -- position in merge order: the base definition, then extensions in document order; on a base-less chain the first extension holds 0. The merge order behind every element ordinal
   is_extension  BOOLEAN NOT NULL, -- FALSE exactly at ordinal 0 on a well-formed schema; a base-less extension chain or a second base definition is an author error a detection reports, never a constraint
   kind          VARCHAR NOT NULL, -- the declaration form written at this site; a mismatch against the type row's kind is a detection
   source_name   VARCHAR,
@@ -948,7 +953,22 @@ capture cannot reject. Capture is total, with no reachability pruning.
   run. The walk reads the registry after the loading rewrites (federation `@link` imports,
   `@oneOf` support, the bundled definitions) and before the synthesis rewrites, and is plain
   iteration over definitions and extensions in document order, no graphql-java visitor
-  machinery; effective-type merging is the ordinal rule the schema section states. Four jobs
+  machinery; effective-type merging is the ordinal rule the schema section states. The
+  registry's API is congruent with the schema families, so the walk transcribes rather than
+  translates: `types()` is the type rows plus their definition sites, the per-kind
+  `*TypeExtensions()` maps arrive pre-grouped by type name, `getParseOrder()` is the
+  document-order oracle behind the ordinals, `scalars()` includes the built-ins that seed the
+  engine-provided rows, and every node underneath is AST (source locations throughout, the
+  three-node type tree for the wrapping decode, applied argument values rendering to
+  `value_sdl` and walking into the semantic decode with no coerced runtime values to undo).
+  One divergence from the API's shape is deliberate: the registry keeps definitions and
+  extensions in separate per-kind maps because its consumer patches them differently at
+  assembly, while the store's six element families each need one monomorphic contributed-by
+  reference, which only the unified declaration relation gives them (split site tables would
+  polymorph that reference across every element family; the unified key is uniform merge
+  position, and `is_extension` states the site's written form, a fact, not a key hole).
+  Transcribing the two maps into the one relation is the same two loops the merge runs
+  anyway. Four jobs
   in one pass: existence rows, fidelity rows for non-graphitron applications, semantic decode
   of graphitron and federation applications (federation dual-written to both strata), and
   macro expansion with its provenance rows. Capture never throws, even on schemas assembly
