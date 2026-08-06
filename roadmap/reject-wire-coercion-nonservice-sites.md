@@ -5,9 +5,9 @@ status: Backlog
 bucket: architecture
 priority: 2
 theme: diagnostics
-depends-on: [dimensional-model-pivot]
+depends-on: []
 created: 2026-07-01
-last-updated: 2026-07-01
+last-updated: 2026-08-06
 ---
 
 # Wire-coercion cast guard for @condition and @externalField (R261 Slice 2)
@@ -32,11 +32,14 @@ same defect on the two non-`@service` arg-classification sites the Slice 1 spec 
 ## Why deferred from R261
 
 Slice 1 rode R256's landed typed-rejection channel (Done). Sites C/D consume the *same* Slice 1
-predicate unchanged, but their channel is R222's (`dimensional-model-pivot`) dimensional
-`ConditionCall` / `ExternalFieldCall` siblings, which R222 has not yet pinned (R222 is `Spec`, and
-its body notes it "added no per-leaf wire-coercion check"). Per the R261 Sequencing section's
-reviewer recommendation, C/D were carved here so R261 could close on the `@service` slice alone and
-drop `dimensional-model-pivot` from its `depends-on`.
+predicate unchanged. At carve-out time their channel was expected to be the dimensional-model
+umbrella's `ConditionCall` / `ExternalFieldCall` carrier siblings; that umbrella has since been
+retired (see `roadmap/audits/2026-08-06-r222-lineage.md`) and those carriers will never be built,
+because the fact-base architecture captures `@condition` / `@externalField` content as decoded
+relations instead. The dependency is therefore dropped: sites C/D ride the same typed-rejection
+channel Slice 1 used, at whatever classification site holds them when this item is picked up. Per
+the R261 Sequencing section's reviewer recommendation, C/D were carved here so R261 could close on
+the `@service` slice alone.
 
 ## Constraint
 

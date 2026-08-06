@@ -1650,6 +1650,35 @@ The address unifies composite and split: composite's column QueryParts are addre
   leaf variant in the first place, it was already the `target` `List` wrapper, which is the tell that
   this is the right cut.
 
+### Legacy permit deletion inventory (migrated from the dimensional-model umbrella)
+
+The retired R222 umbrella tracked the legacy-permit retirements as its Stage 5/6 sync points; the
+inventory now lives here, since the strangler frame (not a stage plan) is what discharges it: a permit
+retires when its last consumer migrates onto the store, not at a synchronized deletion pass. Status at
+the 2026-08-06 migration:
+
+- `GraphitronType.InputType` four-arm permit: **live** (`GraphitronType.java:365`); its sibling root
+  `TableInputType` retired (R519).
+- `ArgumentRef.InputTypeArg.TableInputArg` / `PlainInputArg`: **live**.
+- The `InputField` sealed family (`ColumnBackedField`, `ColumnBackedReferenceField`, `NestingField`,
+  `UnboundField`): **live**; R589 retires `UnboundField`'s demotion-target reading, the carriers
+  dissolve with the input-side migration.
+- `HasInputRecordShape` capability marker: **live**.
+- `RootField` intermediate sub-seal: **live**.
+- Cross-product field permits: partially discharged. R563's dissolution slices took the operation
+  axis's leaf multiplication (51 to 40 at its close); the remainder dissolves arm by arm as
+  classification migrates to claim derivations.
+- `TypeBuilder.findReturnTablesForInput`: retired (deleted ahead of any sync point).
+- `UnclassifiedType` / `UnclassifiedField` and their validator walks: retire per R589 (tombstoning
+  replaced by violation facts; `UnclassifiedField` survives only as the slot value at a coordinate
+  with no resolvable verdict, until planning joins facts directly).
+- `MethodBackedField`: its old retirement trigger ("once every per-directive sibling has landed")
+  can never fire, because the `ConditionCall` / `ExternalFieldCall` siblings will never be built;
+  capture supplies their content as decoded relations. It retires when its remaining readers migrate.
+- The `GraphitronField` sealed parent: the end state is **deletion of the hierarchy**, not the
+  umbrella's planned rename of `OutputField` to `GraphitronField`; under commands-as-parse-targets
+  there is no unified field type at the end of the road.
+
 ## Discovery: walking the emitters to the method-call-graph
 
 This section is the derivation of the lead model above, not a refinement bolted onto a different one. The
