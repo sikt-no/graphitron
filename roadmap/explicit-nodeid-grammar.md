@@ -7,12 +7,14 @@ priority: 5
 theme: nodeid
 depends-on: []
 created: 2026-07-13
-last-updated: 2026-08-04
+last-updated: 2026-08-06
 ---
 
 # Explicit @nodeId grammar: Node.id is the only implicit nodeId; typeName-first decode resolution
 
 An `ID`-typed field can still acquire node semantics implicitly, with the node identity derived from *table* facts (the catalog's `__NODE_TYPE_ID` / `__NODE_KEY_COLUMNS` constants) rather than from what the schema author declared. Three sites still carry that inversion, each firing a per-site deprecation WARN and each answering "which node is this" from the backing table: the two input-side arms in `BuildContext.classifyInputField` (the qualifier-reverse-map arm and the bare same-table arm), and the surviving half of one output-side site in `FieldBuilder`.
+
+A fourth site carries the same inversion and is *not* in this item's scope as written: the directive-less implicit scalar-`ID` **argument** arm in `FieldBuilder.classifyArgument` (the block its own comment calls "the implicit scalar-ID arm below, which owns synthesised paths (no @nodeId declared, parent table has nodeId metadata)"). R273 (`bare-scalar-id-arm-modernisation`, Backlog, `depends-on: [explicit-nodeid-grammar]`) owns it and says it "may collapse into R473's implementation if the reviewer prefers one motion". That call is unmade here and it is load-bearing; see the pass-3 review notes.
 
 That output-side site (a scalar `ID` on a `NodeType` parent with no directive at all) used to be a whole shim. R580 split it in two. The `Node.id` half was adopted as rule 1's permanent carrier: it resolves ahead of the column lookup, carries no deprecation, and is documented behaviour rather than a shim awaiting deletion. What remains a shim there is the *non-`id`* half, a bare `ID` field on a node type that is not the one satisfying the `Node` interface (`externalId: ID`), which still synthesises a nodeId from table facts and still warns. That half is rule 4's business and is still in this item's scope; the `Node.id` half is not.
 
@@ -32,7 +34,7 @@ The grammar below closes that by making the implicit reading available in exactl
 
 ## Phase 1: shipped as R581
 
-The type-bearing callers (`BuildContext.buildInputNodeIdReference`, `NodeIdLeafResolver.resolve`) route through `BuildContext.resolveDecodeHelperForType`, and `resolveTargetKeys` reads the `NodeIndex` by-name entry ahead of the table's metadata. That was carved out and shipped ahead of this plan because a field report made it urgent: a second `@node` over one table broke every already-declared `@nodeId(typeName:)` leaf on that table. `resolveDecodeHelperForTable` survives in the synthesis shims and in the bare-`@nodeId` argument arm of `FieldBuilder.classifyArgument`, which holds no type name to key on.
+The type-bearing callers (`BuildContext.buildInputNodeIdReference`, `NodeIdLeafResolver.resolve`) route through `BuildContext.resolveDecodeHelperForType`, and `resolveTargetKeys` reads the `NodeIndex` by-name entry ahead of the table's metadata. That was carved out and shipped ahead of this plan because a field report made it urgent: a second `@node` over one table broke every already-declared `@nodeId(typeName:)` leaf on that table. `resolveDecodeHelperForTable` survives in the synthesis shims and in the *directive-less* implicit scalar-`ID` argument arm of `FieldBuilder.classifyArgument` (`FieldBuilder.java:1580-1609`), which holds no type name to key on. Note that arm is reached only when the argument carries **no** `@nodeId`: a bare `@nodeId` argument is routed at `FieldBuilder.java:1508` through `NodeIdLeafResolver.resolve`, which reaches `inferTypeName`, not `resolveDecodeHelperForTable`. An earlier draft called this "the bare-`@nodeId` argument arm", which pointed an implementer at the wrong block.
 
 What remains for this item is the grammar itself: rules 1-4 as build behavior, and the deletion of the table-first helper.
 
@@ -71,7 +73,7 @@ Turn the opt-in on by default and delete it, then delete in one commit:
 
 * The surviving synthesis shims: `FieldBuilder`'s output-side bare-scalar-`ID`-on-a-`NodeType` branch, now narrowed to fields *other* than `Node.id` (the `Node.id` arm above it is permanent and must be left alone), and `BuildContext.classifyInputField`'s two input-side sites (the qualifier-reverse-map arm feeding `buildInputNodeIdReference`, and the bare same-table arm guarded by `catalog.nodeIdMetadata`).
 * `BuildContext.resolveDecodeHelperForTable` with them, which leaves `resolveDecodeHelperForType`'s fallback arm dead; collapse that method to the `NodeIndex.forName` lookup and let it return the `Optional` rather than `null`.
-* `NodeIdLeafResolver.inferTypeName`'s table-lookup arm and `BuildContext.findGraphQLTypeForTable` (the singular, shim-only helper). `findGraphQLTypesForTable` (plural) has other callers; check before touching it.
+* `NodeIdLeafResolver.inferTypeName`'s table-lookup arm and `BuildContext.findGraphQLTypeForTable` (the singular, shim-only helper). `findGraphQLTypesForTable` (plural) has exactly two callers today: the singular helper above, and `NodeIdLeafResolver.inferTypeName`'s table-lookup arm. This commit deletes both, so the plural helper goes dead in the same motion and should be deleted with them rather than preserved.
 * The three deprecation WARNs at those sites: `FieldBuilder`'s "synthesizes an `@nodeId` carrier without the directive", and `BuildContext`'s two (`ID_REF_SHIM_LOGGER`, `NODE_ID_SHIM_LOGGER`). **Leave `warnShadowedIdColumn` alone.** It sits in the same method, immediately above the surviving shim arm, and it is not a deprecation: it is the permanent `LintRule.NODE_ID_SHADOWS_COLUMN` finding that rule 1's column precedence requires. A sweep of "the warnings at this site" would take it out.
 * `IdReferenceShimWarnFormatTest`, which pins the qualifier-arm WARN's text. It is the only warn-format test in scope. **`AsConnectionSameTableWarnFormatTest` is not**, despite the similar name: it covers the `@asConnection` same-table warning and has nothing to do with these shims. No test asserts the `FieldBuilder` WARN's text at all, so that one needs no test change.
 
@@ -139,6 +141,68 @@ claims were checked against the tree at this commit, not at an open question lis
 
 Because this pass edited the item, the Spec -> Ready sign-off needs a third session: not the
 original author, and not this reviewer.
+
+**Pass 3, 2026-08-06 (revisions requested).** Independent Spec -> Ready review by a third session.
+Everything pass 2 re-measured still holds: the sakila census is exactly 16 bare `@nodeId` sites
+across the five `.graphqls` files and every one is `Node.id`-shaped; the output-side precedence
+asymmetry is real (`FieldBuilder.java:7270` resolves `Node.id` before the column lookup at 7279,
+the non-`id` shim at 7286 fires only on a column miss); the input-side qualifier arm does run ahead
+of its column lookup (`BuildContext.java:2617-2665` vs 2669) and the same-table arm fires on a miss
+(2692); rule 2's existing rejection message is verbatim as quoted at `FieldBuilder.java:7210`;
+`validateNodeTypeIdUniqueness` is in `TypeBuilder` and `validateConnectionType` in
+`GraphitronSchemaValidator`; `warnShadowedIdColumn` / `LintRule.NODE_ID_SHADOWS_COLUMN` sit exactly
+where the fence says; `IdReferenceShimWarnFormatTest` and `AsConnectionSameTableWarnFormatTest` are
+correctly characterised; the `NodeIndex` record shape, `forName`, the two `NodeIdLeafResolver`
+diagnostics, all four named `NodeIdPipelineTest.InputCase` members, both argument fixtures, and
+sakila's `FilmActor` / `CreateKeyedNodeInput` / `GraphQLQueryTest.filmActorByNodeId` all exist as
+named. Two straight factual corrections were applied above (the Phase 1 arm misnomer, and
+`findGraphQLTypesForTable`'s caller set).
+
+One blocking finding remains, and it is a scope decision the author has to make rather than
+something a reviewer should settle unilaterally.
+
+**The directive-less implicit scalar-`ID` argument arm is unresolved, and the plan is internally
+inconsistent without it.** `FieldBuilder.java:1580-1609` synthesises node-decode semantics for an
+`ID`-typed argument carrying no `@nodeId` at all, keyed off `catalog.nodeIdMetadata(rt.tableName())`,
+and calls `resolveDecodeHelperForTable`. It is a fourth implicit-nodeId coordinate: it fires no
+deprecation WARN, and it runs ahead of column-name resolution (the `list && arity-1 && !@lookupKey`
+guard at 1594 explicitly falls through to it). Three consequences:
+
+* **The deletion commit will not compile as written.** Rule 5 deletes `resolveDecodeHelperForTable`
+  outright, but this arm is a live caller that the "Flip and delete" list never mentions. Either
+  R473 absorbs the arm (R273 explicitly offers that: "may collapse into R473's implementation if the
+  reviewer prefers one motion") or the helper cannot be deleted in this item, which would gut rule
+  5. Pick one and write it down.
+* **"`graphitron-sakila-example`: no migration needed" is false.**
+  `schema.graphqls:163`, `filmActorByNodeId(id: [ID!]! @lookupKey): [FilmActor!]!`, carries no
+  `@nodeId` on the argument. `film_actor` publishes `__NODE_TYPE_ID`/`__NODE_KEY_COLUMNS` with a
+  two-column key, so the argument routes straight through this arm to a `ThrowOnMismatch` decode.
+  Under rule 3 as stated ("input fields, arguments, anything crossing to another type") it needs
+  `@nodeId(typeName: "FilmActor")` added, and `film_actor` has no `id` column, so leaving it alone
+  turns the field into an `unknownColumn` rejection. This is the same `GraphQLQueryTest` round-trip
+  the fixture-migration section names as rule 1's execution-tier proof that "must stay green through
+  the flip", so the item currently both depends on it and would break it.
+* **The silent-change analysis is incomplete.** "It is the only silent change left in this item's
+  set", said of the input-side qualifier arm, does not hold: because this arm also precedes column
+  resolution, a directive-less `ID` argument whose name matches a real column flips from decode to
+  plain column mapping with no build error. Whether that matters depends on the scope call above.
+
+Coverage the census does not count, for whichever item takes the arm: `NodeIdPipelineTest`'s
+`LookupKeyCase.SCALAR_NODEID_LOOKUP_COMPOSITE_PK` (`barById(id: ID @lookupKey)`),
+`LIST_NODEID_LOOKUP_COMPOSITE_PK` (`barsByIds(ids: [ID!] @lookupKey)`) and
+`SCALAR_NODEID_NON_LOOKUP_COMPOSITE_PK_DEFERRED` (`bar(id: ID)`) all reach it with no `@nodeId`
+anywhere in the fixture, and all three have verdicts rule 4 inverts. The fixture-migration section
+counts only sites that carry the directive, so the directive-less inversion set is currently
+measured at four `InputCase` members and nothing else.
+
+Two non-blocking notes. R580 is `status: Ready`, not Done: it was bounced from In Review over a
+single user-manual finding, so its *code* is in trunk and every claim this item makes about live
+behaviour was verified directly against the tree; "R580 shipped" is loose but not misleading. And
+rule 5 writes `NodeIndex.byName.get(typeName)` where the accessor is `forName`; the deletion bullet
+already uses the right name.
+
+Status stays Spec. This pass edited the item, so the sign-off needs a session that is neither the
+original author, nor the pass-2 reviewer, nor this one.
 
 ## Provenance
 
