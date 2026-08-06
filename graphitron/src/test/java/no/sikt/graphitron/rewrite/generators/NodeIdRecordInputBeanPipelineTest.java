@@ -47,6 +47,9 @@ class NodeIdRecordInputBeanPipelineTest {
     private static final String RECORD_TYPE_FQN =
         "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord";
 
+    private static final String COMPOSITE_RECORD_TYPE_FQN =
+        "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmActorRecord";
+
     @Test
     void recordMember_withNodeId_emitsDecodeHelperOnFetchersClass() {
         // The decode helper's presence is the structural signal that the record member classified to
@@ -174,6 +177,31 @@ class NodeIdRecordInputBeanPipelineTest {
         }
         """;
 
+    /** Same shape as {@link #COMPOSITE_SDL}, but the SDL pins a typeId the table's metadata disagrees with. */
+    private static final String TYPE_ID_OVERRIDE_SDL = """
+        type FilmActor implements Node @table(name: "film_actor") @node(typeId: "FA46") { id: ID! }
+        input AssignFilmActorInput {
+            filmActor: ID! @nodeId(typeName: "FilmActor")
+        }
+        type Query {
+            assignFilmActor(in: AssignFilmActorInput!): String
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "assignFilmActor"})
+        }
+        """;
+
+    /** Two {@code @node} types over one table, the member naming the second. */
+    private static final String SIBLING_NODE_SDL = """
+        type FilmActor implements Node @table(name: "film_actor") @node { id: ID! }
+        type FilmActorFed implements Node @table(name: "film_actor") @node(typeId: "46") { id: ID! }
+        input AssignFilmActorInput {
+            filmActor: ID! @nodeId(typeName: "FilmActorFed")
+        }
+        type Query {
+            assignFilmActor(in: AssignFilmActorInput!): String
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "assignFilmActor"})
+        }
+        """;
+
     @Test
     void compositeKeyRecordMember_emitsCompositeDecodeHelper() {
         var fetchers = findSpec("QueryFetchers", COMPOSITE_SDL);
@@ -218,6 +246,41 @@ class NodeIdRecordInputBeanPipelineTest {
         var leaf = decodeRecordLeaf(LIST_COMPOSITE_SDL, "assignFilmActorList", true);
         assertThat(leaf.typeId()).isEqualTo("FilmActor");
         assertThat(leaf.keyColumns()).hasSize(2);
+    }
+
+    @Test
+    void sdlTypeIdOverridingMetadata_readsTheNamedNodesTypeId_notTheTablesMetadata() {
+        // film_actor's KjerneJooqGenerator metadata publishes typeId "FilmActor"; this SDL pins "FA46"
+        // instead, and BuildContext.resolveTargetKeys must return the reconciled answer the named
+        // NodeType carries rather than the table fact underneath it. The distinction is not cosmetic:
+        // the typeId is baked into the emitted decodeValues(typeId, nodeId) argument, and the encoder
+        // returns null on a prefix mismatch, so the wrong one makes the generated helper throw on
+        // every well-formed client id — on an input that builds green. Every other typeId assertion
+        // in this class is on a table whose metadata typeId equals its type name (or carries none at
+        // all), which is why this shape is the one that discriminates.
+        var leaf = decodeRecordLeaf(TYPE_ID_OVERRIDE_SDL, "assignFilmActor", false);
+        assertThat(leaf.typeId())
+            .as("@node(typeId:) wins over the table's __NODE_TYPE_ID, and the decode arm reads that")
+            .isEqualTo("FA46");
+        assertThat(leaf.keyColumns())
+            .as("the key-column axis rides the same named-node read")
+            .extracting(c -> c.sqlName())
+            .containsExactly("actor_id", "film_id");
+    }
+
+    @Test
+    void siblingNodeTypesOverOneTable_readTheNamedOnesTypeId() {
+        // Two @node types over film_actor, each publishing its own typeId — the federation shape. The
+        // table fact cannot answer which one a @nodeId(typeName:) meant, so the read has to go through
+        // the name. Here the member names the sibling, whose "46" differs from the "FilmActor" the
+        // first type inherited from metadata.
+        var leaf = decodeRecordLeaf(SIBLING_NODE_SDL, "assignFilmActor", false);
+        assertThat(leaf.typeId())
+            .as("the named sibling's typeId, not the metadata typeId its neighbour inherited")
+            .isEqualTo("46");
+        assertThat(leaf.table().recordClass().toString())
+            .as("both siblings are backed by film_actor, so the target record is unchanged")
+            .isEqualTo(COMPOSITE_RECORD_TYPE_FQN);
     }
 
     // ===== Helpers =====

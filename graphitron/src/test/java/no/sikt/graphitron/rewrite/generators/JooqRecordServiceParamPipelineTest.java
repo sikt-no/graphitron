@@ -68,6 +68,18 @@ class JooqRecordServiceParamPipelineTest {
         }
         """;
 
+    /** Same shape as {@link #COMPOSITE_KEY_SDL}, but the SDL pins a typeId the table's metadata disagrees with. */
+    private static final String TYPE_ID_OVERRIDE_SDL = """
+        type FilmActor implements Node @table(name: "film_actor") @node(typeId: "FA46") { id: ID! }
+        input ModifyFilmActorInput {
+            id: ID! @nodeId(typeName: "FilmActor")
+        }
+        type Query {
+            modifyFilmActor(in: ModifyFilmActorInput!): String
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmActorRecord"})
+        }
+        """;
+
     private static final String LIST_SDL = """
         type Film implements Node @table(name: "film") @node { id: ID! title: String }
         input ModifyFilmInput {
@@ -124,6 +136,26 @@ class JooqRecordServiceParamPipelineTest {
         assertThat(findSpec("QueryFetchers", COMPOSITE_KEY_SDL).methodSpecs())
             .extracting(MethodSpec::name)
             .contains("createFilmActorRecord");
+    }
+
+    @Test
+    void sdlTypeIdOverridingMetadata_readsTheNamedNodesTypeId_notTheTablesMetadata() {
+        // The second consumer of BuildContext.resolveTargetKeys' typeId. film_actor's metadata
+        // publishes "FilmActor" and this SDL pins "FA46"; the RecordKeyDecode must carry the named
+        // NodeType's reconciled answer, because that string becomes the decodeValues(typeId, nodeId)
+        // argument the emitted create<Record> bakes in, and the encoder returns null on a prefix
+        // mismatch — rejecting every well-formed client id at runtime rather than corrupting a value.
+        // Pinned on this arm in its own right so it does not rest on the input-bean arm's coverage:
+        // the two are distinct CallSiteExtraction carriers emitted by different emitters.
+        var jr = carrier(TYPE_ID_OVERRIDE_SDL, "modifyFilmActor", false);
+        assertThat(jr.keyDecodes()).hasSize(1);
+        assertThat(jr.keyDecodes().get(0).typeId())
+            .as("@node(typeId:) wins over the table's __NODE_TYPE_ID, and the key decode reads that")
+            .isEqualTo("FA46");
+        assertThat(jr.keyDecodes().get(0).targetColumns())
+            .as("the target-column axis rides the same named-node read")
+            .extracting(c -> c.sqlName())
+            .containsExactly("actor_id", "film_id");
     }
 
     @Test

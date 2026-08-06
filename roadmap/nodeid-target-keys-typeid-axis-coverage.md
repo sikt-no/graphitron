@@ -21,35 +21,41 @@ tests, so a regression on the other axis would ship silently.
 
 ## Why no existing test catches it
 
-Four assertions on the resolved `typeId` already exist. None of them discriminates, because no fixture
-pairs a metadata-carrying table with a *differing* SDL `typeId`, which is the only shape where the two read
-orders disagree:
+Six assertions on the resolved `typeId` already exist, in four shapes. None of them discriminates,
+because no fixture *reachable from them* pairs a metadata-carrying table with a differing SDL `typeId`,
+which is the only shape where the two read orders disagree. (Such a pairing does exist elsewhere in the
+tree: `NodeIdPipelineTest`'s `BarRev` declares `@node(typeId: "BarRev")` over `bar`, whose metadata says
+`"Bar"`. That case asserts key-column order and the decode-helper name, never the `typeId`, so it pins
+the other axis only.)
 
 [cols="2,2,3"]
 |===
 | Assertion | Asserts | Why it cannot discriminate
 
-| `NodeIdRecordInputBeanPipelineTest:68`, `:205`
+| `NodeIdRecordInputBeanPipelineTest.recordMember_classifiesToNodeIdDecodeRecordLeaf_notDirect`,
+  `.listRecordMember_emitsListDecodeHelper`
 | `"Film"`
 | `film` carries no `__NODE_TYPE_ID`, so metadata-first falls through to the by-name arm anyway.
 
-| `NodeIdRecordInputBeanPipelineTest:185`, `:219`
+| `NodeIdRecordInputBeanPipelineTest.compositeKeyRecordMember_emitsCompositeDecodeHelper`,
+  `.listOfCompositeRecordMember_exercisesBothDimensions`
 | `"FilmActor"`
 | `film_actor`'s metadata `typeId` is `"FilmActor"`, identical to the type name the by-name arm yields.
 
-| `JooqRecordServiceParamPipelineTest:97`
+| `JooqRecordServiceParamPipelineTest.singularRecordParam_classifiesToJooqRecord_withColumnsAndKeyDecode`
 | `"Film"`
 | As above; `film` has no metadata.
 
-| `JooqRecordServiceParamPipelineTest:514`
+| `JooqRecordServiceParamPipelineTest.selfFkReferenceOnSameTableNodeId_admits_targetsSelfFkChildColumns`
 | `"Email"`
 | `email` carries no metadata either.
 |===
 
 The fixture metadata map is `NodeIdFixtureGenerator.METADATA`; the tables in it are `bar`, `baz`,
-`shared_node`, `studieprogram`, `film_actor`, `parent_node`, `too_wide`, `level_a`, `lift_fail_a`,
-`reordered_pk_parent`. Only `film_actor` is reachable from the two record tests, and its metadata `typeId`
-happens to equal its type name, which is precisely what makes the coverage look present and be absent.
+`shared_node`, `collide_a`, `collide_b`, `keyed_elsewhere`, `studieprogram`, `film_actor`, `parent_node`,
+`too_wide`, `level_a`, `lift_fail_a`, `reordered_pk_parent`. Only `film_actor` is reachable from the two
+record tests, and its metadata `typeId` happens to equal its type name, which is precisely what makes the
+coverage look present and be absent.
 
 ## What is at stake
 
@@ -107,6 +113,21 @@ entry is needed.
   failure, not merely by observing a green run. A non-discriminating assertion is the exact defect this
   item exists to correct, so shipping one would be self-defeating.
 * No code-string assertions on generated method bodies.
+
+## Outcome
+
+All three landed as designed, no production change:
+
+* `NodeIdRecordInputBeanPipelineTest.sdlTypeIdOverridingMetadata_readsTheNamedNodesTypeId_notTheTablesMetadata`
+  and `.siblingNodeTypesOverOneTable_readTheNamedOnesTypeId`, off the `TYPE_ID_OVERRIDE_SDL` and
+  `SIBLING_NODE_SDL` fixtures.
+* `JooqRecordServiceParamPipelineTest.sdlTypeIdOverridingMetadata_readsTheNamedNodesTypeId_notTheTablesMetadata`
+  on the `RecordKeyDecode` arm.
+
+The discrimination check ran as specified: with `resolveTargetKeys` reverted to metadata-first, exactly
+these three fail (`expected: "FA46"`/`"46"` but was `"FilmActor"`) and nothing else in either class does.
+That last clause is the load-bearing half, since it is the same observation that showed the pre-existing
+six assertions to be blind: before this item, reverting the read order left both classes fully green.
 
 ## Not in scope
 
