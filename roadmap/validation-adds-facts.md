@@ -262,7 +262,7 @@ title read as an evaluation order.
 The input side falls out of the same picture. Use-site facts live on the argument edge, so the
 occurrence path (this argument, then this nesting field, then this one) is derivable data: the
 transitive closure of argument-use over input-object field edges, keyed by the path value itself.
-The cascade fact slice 4 flags (`enclosingOverride`) is then a predicate over path prefixes, not a
+The cascade fact slice 5 flags (`enclosingOverride`) is then a predicate over path prefixes, not a
 fact waiting for input carriers to get minted coordinates; the open question below narrows
 accordingly.
 
@@ -317,57 +317,70 @@ parse SQL cannot express, with the spike's wiring as the recipe.
 
 ## Scope
 
-1. **Amend the umbrella.** Add the claim base relations, the stage vocabulary (classification
-   gathers, validation derives, planning joins facts into commands), and the
-   commands-as-parse-targets end state to R333's model text. First slice, reviewed through this
-   item's gates; R333 does not leave Ready.
-2. **The claim relations ship.** `authoredClaims` and `inferredClaims`, keyed
-   `(coordinate, classifier)`, payloads as decoded slot facts. The existing monolithic classifier
-   participates as the single claim producer in the interim, and planning reads the reduced view.
-   Acceptance is projection and generated-output identity on the fixture corpus; the relations are
-   single-claim by construction here, so the key-constraint rules are vacuous by design until
-   slice 3, and the guard mechanism is exercised in slice 6.
-3. **Conflicts record instead of reduce.** `reduceDirectiveConflict` stops reducing to a verdict
-   and starts recording claim rows and one violation. The `Conflict` default becomes the
-   authored-relation key constraint; the `Deferred` row survives as the recognized-combinations
-   refinement (cause identity pinned: `@routine` with `@lookupKey` stays a capability-gap
-   rejection); the `Composes` row dissolves because `@splitQuery` is a delivery-axis directive
-   that never claims (the row is dead code today regardless). The two hand-enumerated detector
-   lists dissolve into the claim view's arm list (the axis declaration's home, closed below)
-   rather than becoming a fourth list.
-4. **"Unbound" stops being a demotion target.** The definition-keyed fact ("no column bound,
+The slices are cut on the strangler frame: R595's substrate ships first, and this item is the
+store's first reader, migrating the classification stage. Generated output is identical
+throughout; what moves is where verdicts come from and what survives a failure.
+
+1. **Amend the umbrella.** The single-pass R333 refresh: the materialization section re-argued
+   to the adopted store, the claim base relations and stage vocabulary (classification gathers,
+   validation derives, planning joins facts into commands) and commands-as-parse-targets end
+   state added, the three-consumer re-sourcing mechanism replaced by the strangler frame, the
+   location rule split by namespace, the input side re-keyed onto the derived occurrence path,
+   with the staleness audit's symbol refresh folded into the same pass (region list in
+   `roadmap/audits/2026-08-06-fact-base-impact-sweep.md`). Reviewed through this item's gates;
+   R333 does not leave Ready.
+2. **The authored claim view ships, and the conflict rule reads it.** The view unions one arm
+   per claiming `intent_` relation at both grains, classifier column a literal per arm; the arm
+   list is the axis declaration. The conflict detection groups the view by coordinate; the
+   recognized-combinations rule refines `@routine` with `@lookupKey` to the Deferred kind (cause
+   identity pinned: it stays a capability-gap rejection); and the four conflict sites dissolve
+   into the one detection: the two hand-enumerated detector lists behind
+   `reduceDirectiveConflict`, the ad hoc `@service` with `@mutation` check, and the type-level
+   `@table` with `@error` check. Violations mint into `diagnostics`; the claims stay; a
+   conflicted coordinate stops tombstoning. The `Composes` row dies with the pairwise table
+   (`@splitQuery` is a delivery-axis directive that never claims; the row is dead code today
+   regardless).
+3. **One inferred classifier proves the witness model.** The column-match classifier (a field
+   name resolving against the parent's table) ships as a derivation view whose row carries its
+   join witnesses, masked by the authored-coverage anti-join. Acceptance is agreement with the
+   legacy arm over the fixture corpus; this is the vertical slice that validates inferred claims
+   before any arm-by-arm migration.
+4. **Demand and exemptions become rows, in shadow.** The demand relation (reachable coordinates
+   intersected with requiring rules) and the censused exemption populations land as derivations
+   with agreement instrumentation against the legacy registry's verdict population. They gate
+   nothing here: flipping the demand anti-join to a build-failing rule changes what the build
+   accepts (the DELETE-carrier hole, the renamed subscription root) and is follow-up work with
+   its own item.
+5. **"Unbound" stops being a demotion target.** The definition-keyed fact ("no column bound,
    attempted name X") stays on the carrier as a positive fact. The malformed-shape verdict
-   (`@condition(override: false)` with no column) mints into `diagnostics` at classify time, with no
-   later retraction. The cascade verdict is use-keyed and mints once per use-site join; each of the
-   two predicates gets exactly one evaluation site (today `FieldBuilder.rejectAtConsumer` and
-   `GraphitronSchemaValidator.validateInputUnboundField` overlap). This subsumes the
-   validator-mirror gap R221 (`validator-walks-plain-input-unbound-fields`) owns in full: the
-   definition-keyed disjunct is exactly the reachability R221 asks for, and the cascade disjunct
-   gets its evaluation site from the occurrence-path derivation (closed below), so R221 closes as
-   subsumed when this slice lands. The cascade fact `rejectAtConsumer` reads
-   (`enclosingOverride`) becomes a predicate over path prefixes rather than a call-site local.
-5. **The output-side projection preserves the claims.** A broken DELETE mutation still reads as a
+   (`@condition(override: false)` with no column) mints into `diagnostics` as a definition-keyed
+   detection, with no later retraction. The cascade verdict is use-keyed and mints once per
+   use-site join; each of the two predicates gets exactly one evaluation site (today
+   `FieldBuilder.rejectAtConsumer` and `GraphitronSchemaValidator.validateInputUnboundField`
+   overlap). This subsumes the validator-mirror gap R221
+   (`validator-walks-plain-input-unbound-fields`) owns in full: the definition-keyed disjunct is
+   exactly the reachability R221 asks for, and the cascade disjunct gets its evaluation site
+   from the occurrence-path derivation (closed below), so R221 closes as subsumed when this
+   slice lands. The cascade fact `rejectAtConsumer` reads (`enclosingOverride`) becomes a
+   predicate over path prefixes rather than a call-site local.
+6. **The output-side projection preserves the claims.** A broken DELETE mutation still reads as a
    DELETE mutation with its intended table on the LSP and MCP surfaces, sourced from the claim
    relations, never from `UnclassifiedField.definition()` (a graphql-java node; reading applied
    directives off it downstream would widen a parse-boundary containment exception into two more
    consumers). The projection arm splits instead of reusing `Unclassified(reason)`: unresolvable
    (carrying the reason) and conflicted (carrying the claims), so fidelity has a type to land on.
-   The edge partition decides explicitly whether the conflicted arm is edge-bearing:
-   `EdgeProducer` buckets `Unclassified` under no-edge today, and without that decision the
-   motivating query ("which delete mutations target table X") still fails for exactly the broken
-   population. Input-side projection is descoped: input fields have no coordinates in the
-   projection until the umbrella's input-member-coordinate work lands, and the dead `InputUnbound`
-   arm stays dead until then.
-6. **A pilot classifier pair proves the guard discipline.** Extract the condition / lookup-key pair
-   as pure classifiers with explicit mutual guards, end to end: claims gathered, violation on
-   overlap, claims surviving to the projection. This is the vertical slice that validates the model
-   before any arm-by-arm migration.
+   The conflicted arm is edge-bearing (closed below): one edge per claim whose slot facts
+   resolved a table, `EdgeProducer` declares it and `EdgeCoverageTest` pins it, so the motivating
+   query ("which delete mutations target table X") includes exactly the broken population.
+   Input-side projection is descoped: input fields have no coordinates in the projection until
+   the umbrella's input-member-coordinate work lands, and the dead `InputUnbound` arm stays dead
+   until then.
 Enforcement across the slices is behavioural plus type-lift, not a census. The acceptance fixture
 is pipeline-tier: an SDL schema with a conflicting-directive DELETE mutation, asserted through the
 projection to still report the DML kind and the intended table. Fidelity lifts into types where
 the projected arm's components are a view record over the claim payload. No reflection census of
 carrier components against projection components; it cannot observe whether the projection read a
-component, so it degenerates into two hand lists agreeing by convention. Once slice 3 lands, the
+component, so it degenerates into two hand lists agreeing by convention. Once slice 2 lands, the
 existing fixture corpus doubles as a guard-drift census for free: unchanged accept/reject over the
 corpus asserts that the reduced view is single-valued everywhere the corpus reaches.
 
@@ -379,7 +392,7 @@ The MCP `schema(type:)` entry for a conflicted DELETE mutation. Today:
 {"kind": "Unclassified", "reason": "@mutation, @service are mutually exclusive"}
 ```
 
-After slice 5 (shape illustrative; field names settle at implementation):
+After slice 6 (shape illustrative; field names settle at implementation):
 
 ```json
 {
@@ -406,8 +419,8 @@ surfaces, so the item does not qualify for the internal-refactor exemption.
 - **`graphitron-model-captures-facts` (R595):** the substrate this architecture runs on; ships
   first per the strangler frame above, which is what the front-matter dependency encodes. It
   carries the fact-schema DDL, the `graphitron-model` module, the two capture loads, and the
-  agreement tests; this item's expected narrowing (the classification-stage migration) is
-  planned as the store's first reader.
+  agreement tests; this item, the classification-stage migration, is the store's first
+  reader.
 - **Umbrella (`coordinate-lowers-to-datafetcher-queryparts`, R333):** amended by slice 1. The claim
   relations are base relations the umbrella's current text lacks; the single-classification
   worldview relocates to the planning stage instead of being abolished, the commands become the
@@ -421,7 +434,7 @@ surfaces, so the item does not qualify for the internal-refactor exemption.
   by this item's doctrine: violations are facts, one per failure. Whichever lands first settles the
   fork once; let that item land first if both reach In Progress together (it is smaller and already
   scoped).
-- **`validator-walks-plain-input-unbound-fields` (R221):** subsumed or narrowed by slice 4; see
+- **`validator-walks-plain-input-unbound-fields` (R221):** subsumed or narrowed by slice 5; see
   there.
 - **`mcp-aggregated-diagnostics` (R569):** a consumer, and the reason this surfaced. Every fact that
   survives a rejection becomes a candidate pivot dimension; that item should not grow to anticipate
@@ -438,32 +451,32 @@ surfaces, so the item does not qualify for the internal-refactor exemption.
 - **The emit side.** A coordinate whose claim count is wrong generates nothing today and still
   generates nothing; retained claims feed the read-side views, not partial code generation.
 - **New rejection causes**, and any move of the accept / reject line.
-- **Input-side projection**, per scope item 5.
+- **Flipping demand to a gate.** The demand and exemption derivations land in shadow; making
+  the anti-join fail the build changes what the build accepts and is its own follow-up item.
+- **Input-side projection**, per the projection slice.
 
-## Where the design rounds landed: the scope has outgrown this item's slices
+## Where the design rounds landed: the strangler frame
 
 Four design rounds took this item from a projection-fidelity fix to a pipeline architecture:
 capture as two infallible loads, classification and reachability and demand as derivations,
 diagnostics as strata, the occurrence path as a derived key, and an adopted materialization
 that reifies the umbrella's normalised model as a startup-created SQL schema in a new upstream
-module. The
-scope slices above predate most of that picture; they slice the item's original shape, not the
-architecture the rounds arrived at.
+module. The scope above is cut on that picture.
 
-The re-slicing frame is settled: a strangler migration keyed by consumer, not by derivation
-layer. The substrate ships first (`graphitron-model-captures-facts`, R595): the module, the two
-capture loads running beside the working pipeline and changing no behavior, agreement tests as
-the shadow period's honesty check. After that, downstream code migrates off `GraphitronSchema`
-onto the store piece by piece, in whatever order pays best rather than pipeline order, each
-piece gated on generated-output identity; a derivation is built when the first consumer needing
-it migrates, never speculatively. While both models are live, new facts land only in the store,
+The frame is a strangler migration keyed by consumer, not by derivation layer. The substrate
+ships first (`graphitron-model-captures-facts`, R595): the module, the two capture loads
+running beside the working pipeline and changing no behavior, agreement tests as the shadow
+period's honesty check. After that, downstream code migrates off `GraphitronSchema` onto the
+store piece by piece, in whatever order pays best rather than pipeline order, each piece gated
+on generated-output identity; a derivation is built when the first consumer needing it
+migrates, never speculatively. While both models are live, new facts land only in the store,
 so the two-model window shrinks monotonically. `GraphitronSchema` is the surface being
 strangled, not extended, which is the umbrella's arm-by-arm migration language given a
-substrate. This item is expected to narrow to the classification-stage migration piece (the
-claim derivations, the conflict rule, the Conflicted projection), which is what its title,
-fixture, and motivating example already describe; the remaining migration pieces get their own
-items as they are cut. The design questions below are all closed; each closure stays recorded
-because its answer must land in one of those pieces.
+substrate. This item is the classification-stage migration piece (the claim derivations, the
+conflict rule, the Conflicted projection), which is what its title, fixture, and motivating
+example describe; the remaining migration pieces get their own items as they are cut. The
+design questions below are all closed; each closure stays recorded because its answer must
+land in one of the scope's pieces.
 
 ## Design questions, all closed
 
@@ -484,7 +497,7 @@ because its answer must land in one of those pieces.
   collapses structurally. Both suspected dead finds are confirmed, plus a second unreachable
   `TableInterfaceType` exclusion in `classifyChildRoutineChain`; they belong to whichever slice
   touches the walk.
-- **Slice 4's cascade half: closed, the path-valued key is adopted.** The predicate splits
+- **Slice 5's cascade half: closed, the path-valued key is adopted.** The predicate splits
   cleanly: the definition-keyed disjunct (`@condition(override: false)` with no column) is
   exactly `GraphitronSchemaValidator.validateInputUnboundField`'s existing predicate, and the
   cascade disjunct (no condition, no ancestor override) is irreducibly a fact about an
@@ -526,8 +539,9 @@ because its answer must land in one of those pieces.
   surfaces as conflict rows wherever it co-occurs with the real claimant. The generated
   directives reference renders the axis from the store rather than from a Java-side list; the
   render mechanism is implementation detail.
-- **Interim claim payload in slice 2: mooted by the strangler frame.** The slice's interim (the
-  monolithic classifier minting claim rows) belonged to the pre-store shape. Under the store the
+- **Interim claim payload in the original slice 2: mooted by the strangler frame.** That
+  slice's interim (the monolithic classifier minting claim rows) belonged to the pre-store
+  shape and is gone from the scope above. Under the store the
   authored claim relation is a view over the captured semantic relations; nothing mints claim
   rows, so there is no interim payload to choose. The residue is the view's column shape, and
   the first-client draft above already constrains it: whatever the MCP JSON and hover header
