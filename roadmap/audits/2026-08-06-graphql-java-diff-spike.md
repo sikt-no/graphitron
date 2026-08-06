@@ -54,6 +54,11 @@ scale 2; SDL capture alone is 8.9 ms at scale 1.
   measurement shows parse-to-registry is the linear half and assembly the superlinear
   remainder, which motivated moving capture's source from the assembled schema to the
   `TypeDefinitionRegistry` (recorded in R595): capture then never pays the wall at all.
+- **Incrementality returned through a different door.** The registry pivot this spike
+  motivated makes capture source-partitioned and type-local (R595), so a changed schema file
+  refreshes only the types it declares or extends: parse one file, replace one partition,
+  re-run the derivation strata. No diffing involved; the store itself is the accumulated
+  registry, and unchanged files are never re-read.
 - **Where the tools do fit is diagnostics, not speed.** `diffAndAnalyze` produces structured
   differences at negligible cost at real scale (~25 ms), which suits the round-trip gate
   (when store-reconstructed SDL diverges from the emitted schema, report *what* differs

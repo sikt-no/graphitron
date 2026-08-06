@@ -924,7 +924,23 @@ capture cannot reject. Capture is total, with no reachability pruning.
 
 Insertion through the module's own generated jOOQ classes, so capture dogfoods the surface every
 later consumer uses. A duplicate primary key on any base relation throws: that is a capture bug,
-not an author error, per the constraint split R589 fixes.
+not an author error, per the constraint split R589 fixes. One author-reachable duplication is
+named and handled above the constraint: a type declared in two files (an editing transient the
+LSP will see constantly) is first-wins plus a located detection, never a primary-key throw.
+
+Incremental refresh falls out of this design, and the substrate protects the property now so a
+later consumer can buy it. Capture is *type-local*: every SDL row's content is a function of
+its own type's declaration sites (base plus extensions, the ordinal rule's merge) and nothing
+else, because everything cross-element is derivation. When one schema file changes, the
+refresh unit is therefore the types that file declares or extends, old version and new: parse
+the one file to its own registry fragment, delete the partition (the synthesis provenance
+relations make orphan cleanup exact, shared machinery types refcounting by carrier row),
+re-walk it, and re-run the derivation strata, which the first spike priced under 20 ms for the
+SDL stratum. No diffing is involved, and unchanged files are never re-read; the store itself
+is the accumulated registry, and with the R597 cache an editor session boots warm and
+refreshes per file from there. The refresh mechanics land with the LSP consumer migration,
+not here; this increment only refuses to break type-locality, which is a review rule on
+capture code: nothing at capture reads across types.
 
 ## What this iteration deliberately leaves out
 

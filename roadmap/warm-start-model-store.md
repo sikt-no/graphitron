@@ -16,7 +16,8 @@ capture pipeline before it can answer anything, so the LSP and MCP server boot c
 generator persists the populated store to an H2 file under `target/` at the end of each run,
 a surface can open the previous run's facts almost as soon as the JVM has booted and serve
 completions, schema queries, and the read-only SQL surface immediately, refreshing when its
-own run completes; a plain SQL client (an agent) can query the fact base as a build artifact
+own run completes (with registry capture, R595, that refresh is per-file incremental after
+boot, not a full pipeline); a plain SQL client (an agent) can query the fact base as a build artifact
 without booting graphitron at all.
 
 The cache preserves the substrate's invariants rather than bending them: it is persisted
