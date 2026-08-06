@@ -150,10 +150,14 @@ These bind the DDL below and every relation added to it later.
   denote a real one) and effective-value defaulting are not.
 - **Constraint violations are generator bugs, never author errors.** Every key and `CHECK`
   below ranges over a domain capture controls (closed classfile forms, graphql-java's kind
-  vocabulary) or an identity capture itself constructs (the ordinal keys absorb even an
-  author's repeated application of a non-repeatable directive; the repeat surfaces as a
-  detection, not a collision). An author mistake becomes a diagnostic row in the derived
-  stratum; it never surfaces as a constraint violation here.
+  vocabulary) or an identity capture itself constructs, and two mechanisms construct the
+  natural-key identities, because the registry retains what an author duplicates. Where the
+  key carries an ordinal (the `applied_` families), every occurrence is captured and a repeat
+  of a non-repeatable directive is a detection over ordinals. Everywhere else capture is
+  first-wins in merge order, and the losing occurrence quarantines rendered and located in
+  `graphql_duplicate_declaration`, where the duplicate-declaration detection reads it. An
+  author mistake becomes a diagnostic row in the derived stratum; it never surfaces as a
+  constraint violation here.
   Cross-relation invariants plain DDL cannot state (at most one primary key per table, defaults
   only on input-object fields, ordinal zero unless repeatable) get gate queries as their named
   enforcers, siblings of the comment-coverage gate.
@@ -231,12 +235,12 @@ CREATE TABLE graphql_type (
 CREATE TABLE graphql_type_declaration (
   type_name     VARCHAR NOT NULL,
   source_name   VARCHAR NOT NULL, -- the site's file; a site is a syntactic occurrence, so its location is its identity
-  source_line   INT     NOT NULL, -- disambiguates two sites of one type in one file
-  source_column INT,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL, -- in the key because a line does not identify a site: two extensions of one type can share a line in minified SDL
   merge_ordinal INT     NOT NULL, -- capture-assigned position in merge order: the base definition, then extensions in document order; on a base-less chain the first extension holds 0. Dense per type (a gate), and the order behind every element ordinal
-  is_extension  BOOLEAN NOT NULL, -- FALSE exactly at merge_ordinal 0 on a well-formed schema; a base-less extension chain or a second base definition is an author error a detection reports, never a constraint
+  is_extension  BOOLEAN NOT NULL, -- FALSE exactly at merge_ordinal 0 on a well-formed schema; a base-less extension chain is an author error a detection reports, never a constraint
   kind          VARCHAR NOT NULL, -- the declaration form written at this site; a mismatch against the type row's kind is a detection
-  PRIMARY KEY (type_name, source_name, source_line),
+  PRIMARY KEY (type_name, source_name, source_line, source_column),
   FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
   CHECK (kind IN ('OBJECT', 'INTERFACE', 'UNION', 'ENUM', 'INPUT_OBJECT', 'SCALAR'))
 );
@@ -248,6 +252,7 @@ CREATE TABLE graphql_field (
   field_name          VARCHAR NOT NULL,
   ordinal             INT     NOT NULL, -- order in the effective type: base declaration, then extensions in document order (capture merges them from the registry)
   declaration_line    INT     NOT NULL, -- the contributing declaration site, keyed with this row's own source_name (an authored row sits lexically inside its site; a synthesized row shares its synthesized site's inherited position)
+  declaration_column  INT     NOT NULL, -- the site key's fourth part, as on graphql_type_declaration
   type_sdl          VARCHAR NOT NULL, -- the rendered type expression, e.g. '[Film!]!'; authoritative for wrapping fidelity
   named_type        VARCHAR NOT NULL, -- the named type the expression bottoms out in; author-spelled, no FK, integrity is a detection
   non_null          BOOLEAN NOT NULL, -- outermost non-null wrapper present
@@ -255,13 +260,13 @@ CREATE TABLE graphql_field (
   item_non_null     BOOLEAN,          -- item-level non-null when is_list; NULL otherwise
   default_value_sdl VARCHAR,          -- rendered default value; input-object fields only
   description       VARCHAR,
-  source_name       VARCHAR,
+  source_name       VARCHAR NOT NULL, -- every field row comes from an SDL site (built-in scalars declare none), and a NULL here would silently disable the site FK under MATCH SIMPLE
   source_line       INT,
   source_column     INT,
   PRIMARY KEY (type_name, field_name),
   FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (type_name, source_name, declaration_line)
-    REFERENCES graphql_type_declaration (type_name, source_name, source_line),
+  FOREIGN KEY (type_name, source_name, declaration_line, declaration_column)
+    REFERENCES graphql_type_declaration (type_name, source_name, source_line, source_column),
   CHECK (is_list OR item_non_null IS NULL)
 );
 
@@ -294,14 +299,15 @@ CREATE TABLE graphql_enum_value (
   value_name          VARCHAR NOT NULL,
   ordinal             INT     NOT NULL, -- order in the effective enum: base declaration, then extensions
   declaration_line    INT     NOT NULL, -- the contributing site, as on graphql_field
+  declaration_column  INT     NOT NULL,
   description         VARCHAR,
-  source_name         VARCHAR,
+  source_name         VARCHAR NOT NULL, -- NOT NULL for the same reason as on graphql_field: half of the site FK
   source_line         INT,
   source_column       INT,
   PRIMARY KEY (type_name, value_name),
   FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (type_name, source_name, declaration_line)
-    REFERENCES graphql_type_declaration (type_name, source_name, source_line)
+  FOREIGN KEY (type_name, source_name, declaration_line, declaration_column)
+    REFERENCES graphql_type_declaration (type_name, source_name, source_line, source_column)
 );
 
 -- A union lists a member type.
@@ -310,13 +316,14 @@ CREATE TABLE graphql_union_member (
   member_type_name    VARCHAR NOT NULL,
   ordinal             INT     NOT NULL, -- position in the effective member list
   declaration_line    INT     NOT NULL, -- the contributing site, as on graphql_field
-  source_name         VARCHAR,          -- position of the member token itself
+  declaration_column  INT     NOT NULL,
+  source_name         VARCHAR NOT NULL, -- position of the member token itself; NOT NULL as on graphql_field
   source_line         INT,
   source_column       INT,
   PRIMARY KEY (union_name, member_type_name),
   FOREIGN KEY (union_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (union_name, source_name, declaration_line)
-    REFERENCES graphql_type_declaration (type_name, source_name, source_line)
+  FOREIGN KEY (union_name, source_name, declaration_line, declaration_column)
+    REFERENCES graphql_type_declaration (type_name, source_name, source_line, source_column)
 );
 
 -- A type declares that it implements an interface. Stored in declaration
@@ -326,22 +333,53 @@ CREATE TABLE graphql_implements (
   type_name           VARCHAR NOT NULL, -- the implementing OBJECT or INTERFACE
   interface_name      VARCHAR NOT NULL,
   declaration_line    INT     NOT NULL, -- the contributing site, as on graphql_field
-  source_name         VARCHAR,          -- position of the interface token itself
+  declaration_column  INT     NOT NULL,
+  source_name         VARCHAR NOT NULL, -- position of the interface token itself; NOT NULL as on graphql_field
   source_line         INT,
   source_column       INT,
   PRIMARY KEY (type_name, interface_name),
   FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (type_name, source_name, declaration_line)
-    REFERENCES graphql_type_declaration (type_name, source_name, source_line)
+  FOREIGN KEY (type_name, source_name, declaration_line, declaration_column)
+    REFERENCES graphql_type_declaration (type_name, source_name, source_line, source_column)
 );
 
 -- The schema definition names a root operation type. These rows are the
--- seeds the reachability derivation grows from.
+-- seeds the reachability derivation grows from. The binding is an
+-- author-spelled reference, so its dangling case mints a located diagnostic;
+-- the position columns are what it locates from. (A double binding cannot
+-- reach capture: a schema extension re-binding an operation throws at parse.)
 CREATE TABLE graphql_root_operation (
-  operation VARCHAR NOT NULL, -- which root slot
-  type_name VARCHAR NOT NULL, -- the object type serving it
+  operation     VARCHAR NOT NULL, -- which root slot
+  type_name     VARCHAR NOT NULL, -- the object type serving it
+  source_name   VARCHAR,          -- position of the binding inside the schema { } block; all three NULL exactly when the binding is the name-convention default no SDL line spells
+  source_line   INT,
+  source_column INT,
   PRIMARY KEY (operation),
   CHECK (operation IN ('QUERY', 'MUTATION', 'SUBSCRIPTION'))
+);
+
+-- The duplicate-declaration overflow, sibling of the semantic stratum's
+-- undecoded-argument relation. The registry retains element-level duplicates
+-- without error (a field declared twice in one body or re-declared by an
+-- extension, a repeated argument, enum value, union member, or implements
+-- entry, a second application of a single-application graphitron directive),
+-- so every element-level natural key in this schema is author-reachable.
+-- Capture is first-wins in merge order; the losing occurrence records here,
+-- rendered and located, so no authored text is lost and the
+-- duplicate-declaration detection has its row. Empty while assembly runs
+-- upstream (assembly rejects these schemas first). A second base definition
+-- of a type is the one duplication the registry itself rejects at parse, so
+-- the TYPE kind is reachable only through the LSP's per-file fragment path.
+CREATE TABLE graphql_duplicate_declaration (
+  source_name   VARCHAR NOT NULL, -- the losing occurrence's own position identifies the row
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  element_kind  VARCHAR NOT NULL, -- which family's natural key collided
+  coordinate    VARCHAR NOT NULL, -- the colliding key, rendered (e.g. 'Q.title')
+  value_sdl     VARCHAR NOT NULL, -- the losing occurrence as written, rendered from the AST; children ride inside it, so a losing field keeps its arguments
+  PRIMARY KEY (source_name, source_line, source_column),
+  CHECK (element_kind IN ('TYPE', 'FIELD', 'ARGUMENT', 'ENUM_VALUE',
+                          'UNION_MEMBER', 'IMPLEMENTS', 'DIRECTIVE_APPLICATION'))
 );
 
 -- ==== Directive definitions ==================================================
@@ -453,13 +491,14 @@ CREATE TABLE applied_type_directive (
   directive_name      VARCHAR NOT NULL,
   ordinal             INT     NOT NULL, -- as on applied_schema_directive; federation's @key repeats here
   declaration_line    INT     NOT NULL, -- the applying site (extensions apply type directives too); a synthesized @key hangs off the type's causing authored site, per its own provenance relation below
-  source_name         VARCHAR,
+  declaration_column  INT     NOT NULL,
+  source_name         VARCHAR NOT NULL, -- NOT NULL as on graphql_field: half of the site FK
   source_line         INT,
   source_column       INT,
   PRIMARY KEY (type_name, directive_name, ordinal),
   FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (type_name, source_name, declaration_line)
-    REFERENCES graphql_type_declaration (type_name, source_name, source_line)
+  FOREIGN KEY (type_name, source_name, declaration_line, declaration_column)
+    REFERENCES graphql_type_declaration (type_name, source_name, source_line, source_column)
 );
 
 -- An argument the author passed to a type-level application.
@@ -665,15 +704,16 @@ a row is: the author's decoded intent at a coordinate.
 -- warned status of that site is a detection.
 CREATE TABLE intent_table (
   type_name        VARCHAR NOT NULL, -- the OBJECT, INPUT_OBJECT, or INTERFACE carrying @table
-  source_name      VARCHAR,          -- the applying declaration site (file + line pair below); doubles as the file of the position columns
+  source_name      VARCHAR NOT NULL, -- the applying declaration site (keyed with the line and column below); doubles as the file of the position columns
   declaration_line INT     NOT NULL,
+  declaration_column INT   NOT NULL,
   source_line      INT,              -- the application's own position
   source_column    INT,
   table_ref        VARCHAR,          -- the name argument as written (may carry a schema qualifier); NULL when omitted, the type-name fallback is a derivation
   PRIMARY KEY (type_name),
   FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (type_name, source_name, declaration_line)
-    REFERENCES graphql_type_declaration (type_name, source_name, source_line)
+  FOREIGN KEY (type_name, source_name, declaration_line, declaration_column)
+    REFERENCES graphql_type_declaration (type_name, source_name, source_line, source_column)
 );
 
 -- @field on an output or input-object field: the slot's bound name. A column,
@@ -724,15 +764,16 @@ CREATE TABLE intent_enum_value_binding (
 -- redeclarations) dies with the assembled source.
 CREATE TABLE intent_scalar_type (
   type_name        VARCHAR NOT NULL,
-  source_name      VARCHAR,
+  source_name      VARCHAR NOT NULL, -- half of the site FK, so NOT NULL; a graphitron application always has an SDL position
   declaration_line INT     NOT NULL,
+  declaration_column INT   NOT NULL,
   source_line      INT,
   source_column    INT,
   scalar_ref       VARCHAR NOT NULL, -- the fully-qualified Java constant reference as written
   PRIMARY KEY (type_name),
   FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (type_name, source_name, declaration_line)
-    REFERENCES graphql_type_declaration (type_name, source_name, source_line)
+  FOREIGN KEY (type_name, source_name, declaration_line, declaration_column)
+    REFERENCES graphql_type_declaration (type_name, source_name, source_line, source_column)
 );
 
 -- @enum on an enum type. The full ExternalCodeReference is captured as
@@ -741,8 +782,9 @@ CREATE TABLE intent_scalar_type (
 -- comes from intent_enum_value_binding).
 CREATE TABLE intent_enum (
   type_name        VARCHAR NOT NULL,
-  source_name      VARCHAR,
+  source_name      VARCHAR NOT NULL, -- half of the site FK, so NOT NULL; a graphitron application always has an SDL position
   declaration_line INT     NOT NULL,
+  declaration_column INT   NOT NULL,
   source_line      INT,
   source_column    INT,
   class_name       VARCHAR, -- enumReference.className as written
@@ -750,8 +792,8 @@ CREATE TABLE intent_enum (
   arg_mapping      VARCHAR, -- structurally inert here; raw column only, no pair child
   PRIMARY KEY (type_name),
   FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (type_name, source_name, declaration_line)
-    REFERENCES graphql_type_declaration (type_name, source_name, source_line)
+  FOREIGN KEY (type_name, source_name, declaration_line, declaration_column)
+    REFERENCES graphql_type_declaration (type_name, source_name, source_line, source_column)
 );
 
 -- @condition on a field or input field (shared coordinate; the parent kind
@@ -1157,14 +1199,15 @@ CREATE TABLE intent_mutation (
 -- ordered child, and every cross-field handler rule is a detection.
 CREATE TABLE intent_error (
   type_name        VARCHAR NOT NULL,
-  source_name      VARCHAR,
+  source_name      VARCHAR NOT NULL, -- half of the site FK, so NOT NULL; a graphitron application always has an SDL position
   declaration_line INT     NOT NULL,
+  declaration_column INT   NOT NULL,
   source_line      INT,
   source_column    INT,
   PRIMARY KEY (type_name),
   FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (type_name, source_name, declaration_line)
-    REFERENCES graphql_type_declaration (type_name, source_name, source_line)
+  FOREIGN KEY (type_name, source_name, declaration_line, declaration_column)
+    REFERENCES graphql_type_declaration (type_name, source_name, source_line, source_column)
 );
 
 -- An ordered ErrorHandler of an @error application.
@@ -1186,15 +1229,16 @@ CREATE TABLE intent_error_handler (
 -- SDL-versus-jOOQ-metadata precedence rules are detections.
 CREATE TABLE intent_node (
   type_name        VARCHAR NOT NULL,
-  source_name      VARCHAR,
+  source_name      VARCHAR NOT NULL, -- half of the site FK, so NOT NULL; a graphitron application always has an SDL position
   declaration_line INT     NOT NULL,
+  declaration_column INT   NOT NULL,
   source_line      INT,
   source_column    INT,
   type_id          VARCHAR, -- as written
   PRIMARY KEY (type_name),
   FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (type_name, source_name, declaration_line)
-    REFERENCES graphql_type_declaration (type_name, source_name, source_line)
+  FOREIGN KEY (type_name, source_name, declaration_line, declaration_column)
+    REFERENCES graphql_type_declaration (type_name, source_name, source_line, source_column)
 );
 
 -- An ordered keyColumns entry of an @node.
@@ -1347,29 +1391,31 @@ CREATE TABLE intent_routine_column_mapping_pair (
 -- @discriminate on an interface or union: the discriminator column.
 CREATE TABLE intent_discriminate (
   type_name        VARCHAR NOT NULL,
-  source_name      VARCHAR,
+  source_name      VARCHAR NOT NULL, -- half of the site FK, so NOT NULL; a graphitron application always has an SDL position
   declaration_line INT     NOT NULL,
+  declaration_column INT   NOT NULL,
   source_line      INT,
   source_column    INT,
   on_column        VARCHAR NOT NULL, -- the on: argument as written; catalog resolution is a derivation
   PRIMARY KEY (type_name),
   FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (type_name, source_name, declaration_line)
-    REFERENCES graphql_type_declaration (type_name, source_name, source_line)
+  FOREIGN KEY (type_name, source_name, declaration_line, declaration_column)
+    REFERENCES graphql_type_declaration (type_name, source_name, source_line, source_column)
 );
 
 -- @discriminator on an object type: the participant's discriminator value.
 CREATE TABLE intent_discriminator (
   type_name           VARCHAR NOT NULL,
-  source_name         VARCHAR,
+  source_name         VARCHAR NOT NULL, -- half of the site FK, so NOT NULL
   declaration_line    INT     NOT NULL,
+  declaration_column  INT     NOT NULL,
   source_line         INT,
   source_column       INT,
   discriminator_value VARCHAR NOT NULL, -- the value: argument as written (VALUE alone is an H2 reserved word)
   PRIMARY KEY (type_name),
   FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (type_name, source_name, declaration_line)
-    REFERENCES graphql_type_declaration (type_name, source_name, source_line)
+  FOREIGN KEY (type_name, source_name, declaration_line, declaration_column)
+    REFERENCES graphql_type_declaration (type_name, source_name, source_line, source_column)
 );
 
 -- Federation @key, decoded for consumption (its verbatim twin lives in
@@ -1377,16 +1423,17 @@ CREATE TABLE intent_discriminator (
 CREATE TABLE intent_federation_key (
   type_name        VARCHAR NOT NULL,
   ordinal          INT     NOT NULL, -- @key is repeatable; document order
-  source_name      VARCHAR,          -- the applying declaration site; a synthesized key inherits the causing authored site of the same type, so the reference holds for it too
+  source_name      VARCHAR NOT NULL, -- the applying declaration site; a synthesized key inherits the causing authored site of the same type, so the reference holds for it too
   declaration_line INT     NOT NULL,
+  declaration_column INT   NOT NULL,
   source_line      INT,
   source_column    INT,
   fields_sdl       VARCHAR NOT NULL, -- the field-set literal as written
   resolvable       BOOLEAN,          -- as written; NULL when omitted
   PRIMARY KEY (type_name, ordinal),
   FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (type_name, source_name, declaration_line)
-    REFERENCES graphql_type_declaration (type_name, source_name, source_line)
+  FOREIGN KEY (type_name, source_name, declaration_line, declaration_column)
+    REFERENCES graphql_type_declaration (type_name, source_name, source_line, source_column)
 );
 
 -- An ordered element of a @key field set (the field-set grammar is a parse
@@ -1455,15 +1502,16 @@ CREATE TABLE intent_multitable_reference (
 -- against the reflected backing class.
 CREATE TABLE intent_record (
   type_name        VARCHAR NOT NULL,
-  source_name      VARCHAR,
+  source_name      VARCHAR NOT NULL, -- half of the site FK, so NOT NULL; a graphitron application always has an SDL position
   declaration_line INT     NOT NULL,
+  declaration_column INT   NOT NULL,
   source_line      INT,
   source_column    INT,
   class_name       VARCHAR, -- record.className as written
   PRIMARY KEY (type_name),
   FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (type_name, source_name, declaration_line)
-    REFERENCES graphql_type_declaration (type_name, source_name, source_line)
+  FOREIGN KEY (type_name, source_name, declaration_line, declaration_column)
+    REFERENCES graphql_type_declaration (type_name, source_name, source_line, source_column)
 );
 
 -- The tolerant-decode overflow: a graphitron application argument whose
@@ -1523,12 +1571,13 @@ CREATE TABLE graphql_type_declaration_synthesis (
   type_name          VARCHAR NOT NULL,
   source_name        VARCHAR NOT NULL, -- the causing application's position, which is the site's identity
   source_line        INT     NOT NULL,
+  source_column      INT     NOT NULL, -- the site key's fourth part, as on graphql_type_declaration
   macro              VARCHAR NOT NULL, -- which expansion contributed the site
   carrier_type_name  VARCHAR,          -- the causing coordinate; NULL for schema-level causes (@link)
   carrier_field_name VARCHAR,
-  PRIMARY KEY (type_name, source_name, source_line),
-  FOREIGN KEY (type_name, source_name, source_line)
-    REFERENCES graphql_type_declaration (type_name, source_name, source_line),
+  PRIMARY KEY (type_name, source_name, source_line, source_column),
+  FOREIGN KEY (type_name, source_name, source_line, source_column)
+    REFERENCES graphql_type_declaration (type_name, source_name, source_line, source_column),
   CHECK (macro IN ('CONNECTION', 'FACET', 'FEDERATION'))
 );
 
@@ -1744,9 +1793,11 @@ CREATE TABLE extension_scalar_constant (
 
 ## The capture loads
 
-Both loads are infallible by construction: they record what is there, and graphql-java has
-already validated directive arguments against their definitions before we see the schema, so raw
-capture cannot reject. Capture is total, with no reachability pruning.
+Both loads are infallible by construction, and construction is the only guarantee in play: the
+registry validates nothing (it retains undeclared directives, unknown argument names,
+wrong-typed literals, missing required arguments, and duplicate declarations without error),
+which is exactly why every capture path is tolerant, recording what does not fit raw and
+located instead of throwing. Capture is total, with no reachability pruning.
 
 - **SDL load.** One walk fills the `graphql_`, `applied_`, and `intent_` families, reading the
   **`TypeDefinitionRegistry`**, not the assembled schema, and that source is decided here.
@@ -1783,7 +1834,8 @@ capture cannot reject. Capture is total, with no reachability pruning.
   of graphitron and federation applications (federation dual-written to both strata), and
   macro expansion with its provenance rows. Capture never throws, even on schemas assembly
   would reject; while the shadow window lasts, assembly still runs upstream and rejects
-  invalid schemas first, so the tolerant paths (dangling references, undecodable argument
+  invalid schemas first, so the tolerant paths (dangling references, duplicate declarations
+  quarantined in `graphql_duplicate_declaration`, undecodable argument
   literals quarantined raw with their location in `intent_undecoded_argument`) stay dormant
   until the LSP consumer arrives, and the
   agreement tests see only valid input. The capture writer gets its own package in core,
@@ -1797,11 +1849,17 @@ capture cannot reject. Capture is total, with no reachability pruning.
 
 Insertion through the module's own generated jOOQ classes, so capture dogfoods the surface every
 later consumer uses. A duplicate primary key on any base relation throws: that is a capture bug,
-not an author error, per the constraint split R589 fixes. One author-reachable duplication is
-named and handled above the constraint: a second base *definition* of a type is first-wins
-plus a located detection, never a primary-key throw (an extension is the ordinary path and
-gets its own declaration row; the editing transient the LSP will constantly see is exactly
-the accidental second definition).
+not an author error, per the constraint split R589 fixes, and it stays a capture bug only
+because first-wins runs in front of every element-level natural key. The registry retains a
+duplicated field (in one body or via an extension), a repeated argument, enum value, union
+member, and implements entry, and a second application of a single-application graphitron
+directive, all without error, so each of those keys is author-reachable; capture writes the
+first occurrence in merge order and quarantines the losers in `graphql_duplicate_declaration`,
+never throwing on `enum E { A A }`. The one duplication the registry itself rejects at parse
+is a second base *definition* of a type, so the TYPE case is reachable only on the LSP's
+per-file fragment path, where the same first-wins rule covers it (an extension is the
+ordinary path and gets its own declaration row; the editing transient the LSP will constantly
+see is exactly the accidental second definition).
 
 Incremental refresh falls out of this design, and the substrate protects the property now so a
 later consumer can buy it. Capture is *type-local*: every SDL row's content is a function of
@@ -1879,7 +1937,11 @@ file's parse.
   counts against the SDL, the semantic relations against the minted model components and
   directive-resolver outputs they shadow, synthesis provenance against the
   `connectionSynthesis` component, catalog table and column census against `CatalogFacts`,
-  extension method census against the scanner's `CompletionData` view. They are the shadow
+  extension method census against the scanner's `CompletionData` view. Two census comparisons
+  are projections rather than mirrors, and the driver compares them as such: `catalog_key`
+  folds to `CatalogFacts`' uniqueKeys view before comparing (that view excludes the primary
+  key and dedupes on column set), and `extension_method` compares descriptor-erased, because
+  `CompletionData.Method` carries no descriptor. They are the shadow
   period's honesty check and retire as consumers migrate.
 - The gate family runs against the bootstrapped store: comment coverage (every table and column
   commented, checked via `INFORMATION_SCHEMA`) and one query per cross-relation invariant the
