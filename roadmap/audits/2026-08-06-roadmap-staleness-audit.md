@@ -1,8 +1,8 @@
-# Roadmap staleness audit: 2026-08-05
+# Roadmap staleness audit: 2026-08-06
 
 A point-in-time review of every active roadmap item under [`roadmap/`](../)
 against the **current** state of the codebase on `claude/graphitron-rewrite`
-(HEAD `fda241e`, committed 2026-08-04 21:12, audited 2026-08-05). The goal is to
+(HEAD `96346c7`, committed 2026-08-05, audited 2026-08-06). The goal is to
 find items whose premise no longer holds: work already shipped, constructs
 renamed or removed, dependencies that have since landed, or specs grown stale
 enough to mislead an implementer.
@@ -12,8 +12,8 @@ subdirectory so the roadmap-tool (which scans `roadmap/*.md` non-recursively and
 requires `id:` front-matter on each) ignores it, and it is Markdown so the
 `check-adoc-tables` build step (which scans `.adoc` only) leaves it alone.
 
-This audit supersedes the `2026-08-04` staleness audit, which has been deleted;
-only the latest staleness audit is retained. Five siblings in this directory are
+This audit supersedes the `2026-08-05` staleness audit, which has been deleted;
+only the latest staleness audit is retained. Six siblings in this directory are
 **not** staleness audits and are left in place:
 
 - `2026-06-16-source-operation-target-reframe.md` is the `(source, operation,
@@ -28,160 +28,139 @@ only the latest staleness audit is retained. Five siblings in this directory are
 - `2026-07-26-fcis-command-layer-distance.md` is the FCIS command-layer distance
   analysis, a symbol-anchored snapshot with a stated re-derivation method, not a
   staleness review; left in place, not a flag target.
+- `2026-08-05-fact-base-h2-spike.md` and `2026-08-05-h2-functions-jooq-spike.md`
+  are the two grounding spikes for the fact-base architecture (R589 / R595): the
+  H2 in-memory store, and the H2 function surface + jOOQ codegen path. Both are
+  spike-execution records that R595's body cites by path, not point-in-time
+  staleness reviews; left in place, not flag targets.
 
 `classification-test-dsl-inventory.md` is the permanent corpus-retirement
 inventory; its "closed and historical" banner is intact. No action; it stays as
 lineage.
 
-## Headline: the operation-relation programme finished (R563 In Progress -> Done, landing slices 7 and 8), retiring the entire 17-arm `Operation` seal and inverting the prior audit's own §C.0 premise that "the `Operation` seal and its arms are live"; three items reached Done and one is In Review, the node-identity work shipped without roadmap drift, one new flag enters §C, and four already-flagged items pick up Operation-seal drift
+## Headline: a roadmap-only window (22 commits, zero main-source change), so the entire drift set is frozen; the 30 flags from the prior audit carry verbatim and were re-verified at the symbol, and the window's activity is board churn (three born-current items filed, R589's fact-base spec matured, R584 -> Ready) plus two grounding spike-audit records
 
-The window was dominated by **R563 reaching Done**: the operation-relation
-programme that had been landing slices for several windows finished, taking its
-last two slices with it and retiring the construct several items still cite as
-live.
+Every one of the **22 commits** between the prior audit's HEAD (`fda241e`,
+2026-08-04 21:12) and this HEAD (`96346c7`, 2026-08-05) touched **only files
+under `roadmap/`**. A `git diff --name-only fda241e..HEAD` filtered to exclude
+`roadmap/` returns nothing: no generator source, no test source, no fixture, no
+build config moved. That single fact determines this audit's shape.
 
-- **R563** (`operation-relation`) went **In Progress -> In Review -> Ready
-  (gate rework) -> In Progress -> In Review -> Done**. Slice 7 re-grained the
-  corpus voice to member-list assertions and **retired the 17-arm `Operation`
-  seal outright** (`@classified(operation:)` became a required arm-grain
-  `operations:` multiset); slice 8 re-typed the obligation. Output leaves fell
-  51 -> 40. This is the window's principal drift driver: the prior audit's §C.0
-  explicitly rested on "the `Operation` seal and its arms are live, so an item
-  citing an `Operation.<Arm>` **type** is correct", and that premise is now
-  false.
-- **R581** (`nodeid-typename-first-decode`) went to **Done**: `@nodeId(typeName:)`
-  now resolves off the named type via `BuildContext.resolveDecodeHelperForType`
-  instead of reverse-mapping the backing table. Carved out of R473 as phase 1
-  under a federation field report.
-- **R579** (`parse-external-ref-unused-parent-type`) went to **Done**, dropping
-  the dead `parentTypeName` parameter from `FieldBuilder.parseExternalRef` and
-  `ExternalFieldDirectiveResolver.resolve`.
-- **R580** (`infer-node-from-implements-node-and-metadata`) went **Spec -> Ready
-  -> In Progress -> In Review**: node identity is now inferred from `implements
-  Node` plus catalog metadata. Still open (In Review), so its file stays on the
-  board and its prose is the work, not drift.
+- **The staleness drift set is frozen.** Every §B / §C flag is a claim about a
+  main-source symbol being retired with a live successor. No main source moved,
+  so no such claim can have changed. The 30 flags carry **verbatim** from the
+  2026-08-05 audit; the tables below are reproduced unchanged, with each driving
+  symbol re-verified `grep` = 0 in main this pass (see Scope and method).
+- **No prior flag was fixed or resolved.** None of the flagged item files was
+  edited this window, so no stale-live cite was repointed in place and none
+  leaves §B or §C.
+- **The board grew by three.** R594 (`mcp-snapshot-axis-key-naming`, Backlog),
+  R595 (`graphitron-model-captures-facts`, Spec) and R596
+  (`dangling-plan-page-xref-paths`, Backlog) were filed. All three are
+  **born-current** (read against the post-R563 model; scanned clean of every
+  retired symbol) and **none is flagged**. R595 is the fact-base substrate item
+  (a new `graphitron-model` module) that R589's architecture calls for; R594 and
+  R596 are small self-contained cleanups (MCP snapshot-axis key naming; 9 dangling
+  cross-file `xref:` paths in the published docs).
+- **R589's fact-base spec matured in place.** R589 (`validation-adds-facts`,
+  Spec) took the largest single-item revision of the window (+192 lines):
+  materialization decided, the store adopted in a `graphitron-model` module, the
+  strangler frame and capture/derive stratification recorded. It is still Spec
+  and actively being drafted, so its prose **is the work**, not consumer-facing
+  stale-live; not a flag target. R582 (`adoc-xref-section-anchor-gate`) saw two
+  Spec revisions; R584 (`mcp-server-instruction-routing`) went **Spec -> Ready**.
+- **Two grounding spikes were recorded.** `2026-08-05-fact-base-h2-spike.md` and
+  `2026-08-05-h2-functions-jooq-spike.md` were added as spike-execution records
+  for the fact-base stack; R595's body cites both by path. Non-staleness
+  siblings, left in place.
 
-The retirement that drives drift, verified at the symbol:
-
-- **Slice 7 (`Operation` seal).** The `Operation` sealed interface and every
-  arm reference (`Operation.Facet`, `Operation.Fetch`, `Operation.Count`,
-  `Operation.Lookup`, `Operation.Paginate`, ...) are **all `grep` = 0** in main.
-  The successor is `OperationMember` (a sealed interface with a per-coordinate
-  **multiset** of member arms: `Select`, `Join`, `Condition`, `OrderBy`,
-  `Paginate`, `Lookup`, `ServiceCall`, `Count`, `Facet`, `Pivot`, `Reentry`,
-  `Write.Dml.{Insert,Upsert,Update,Delete}`, ...), consumed across
-  `plan/ConditionCommands`, `plan/ProjectionCommands`, `plan/LauncherCommands`,
-  and the model classes. The test-side obligation moved too: `OPERATION_ARMS` ->
-  `MEMBER_ARMS`, `OPERATION_KNOWN_GAPS` -> `MEMBER_KNOWN_GAPS`, both keyed on
-  `OperationMember.*` classes (`ExemptionRegistry.java:157`, `:384`). This drives
-  **§C.0** (rewritten) and layers fresh drift onto **§C.6** (R222) and **§C.7**
-  (R333).
-
-The three node-identity Done items produced **no roadmap drift**, verified:
-
-- **R581.** `resolveDecodeHelperForTable` **survives** for the orphan / bare-scalar
-  arm; R581 only reordered decode resolution to be name-first and added
-  `resolveDecodeHelperForType`. Every item citing `resolveDecodeHelperForTable`
-  (R273, R473, R27, R580, R583) treats it correctly, as either the live table-keyed
-  helper or a symbol R473's phase 2 is scheduled to delete. No item cites the old
-  reverse-map order as the live mechanism.
-- **R579.** `parentTypeName` is `grep` = 0 only on `parseExternalRef` /
-  `ExternalFieldDirectiveResolver.resolve`; it stays live in
-  `ServiceDirectiveResolver.resolve` and `FieldBuilder.classifyChildFieldOnTableType`.
-  The four items that mention `parentTypeName` (R333, R222, R462, R54) all cite it
-  as an `OutputField` **identity component** or as `addConditionsEdge` context
-  (R462's own already-flagged `CompileDependencyGraphBuilder` surface), not as the
-  removed `parseExternalRef` parameter. No drift.
-
-Net: **0 §A / 5 §B / 25 §C**, §D empty. Flag total moves to **30**, up one from
-the prior window's 29. Composition: **§B carries R462, R545, R85, R221, R71
+Net: **0 §A / 5 §B / 25 §C**, §D empty. Flag total holds at **30**, unchanged
+from the prior window. Composition: **§B carries R462, R545, R85, R221, R71
 unchanged** (all re-verified, premise-targets still `grep` = 0 with live successors);
-**§C carries all 24 prior flags** (none fixed, none resurrected) and **gains R562**
-on the `Operation`-seal retirement, with fresh Operation-seal drift layered onto
-four already-flagged items (R427, R382, R333, R222). R427's prior re-anchor
-**target** (a line-number fix on `Operation.Facet`) is itself superseded: that arm
-type no longer exists.
+**§C carries all 25 prior flags** unchanged (none fixed, none resurrected, none
+added: no construct was retired this window because no code moved). The
+`Operation`-seal drift that drove the prior audit (R427, R382, R562, R333, R222)
+is unchanged and still open, because the successors (`OperationMember`,
+`MEMBER_ARMS`, `MEMBER_KNOWN_GAPS`) are exactly as the prior audit left them.
 
-## Changes since the 2026-08-04 audit
+## Changes since the 2026-08-05 audit
 
-**50 commits** landed between the prior audit's HEAD (`d1e4151`, 2026-08-03 17:17)
-and this HEAD (`fda241e`, 2026-08-04 21:12).
+**22 commits** landed between the prior audit's HEAD (`fda241e`, 2026-08-04 21:12)
+and this HEAD (`96346c7`, 2026-08-05). One of those commits (`d222512`) is the
+prior audit itself; the other 21 are roadmap edits. **Every commit touched only
+files under `roadmap/`** (verified: `git diff --name-only fda241e..HEAD` filtered
+against `roadmap/` is empty).
 
-**Three items ran to Done:** R563 (`operation-relation`), R581
-(`nodeid-typename-first-decode`), R579 (`parse-external-ref-unused-parent-type`).
-R563 was the long-running In-Progress programme; R581 and R579 were both filed and
-completed inside this window (Backlog/Spec -> In Review -> Done, spec file deleted,
-changelog entry appended). None was a flag carrier.
+**No item ran to Done.** In Progress holds R347 alone and In Review holds R580
+alone, both unchanged from the prior audit. The non-recursive `^status: Done`
+grep over `roadmap/*.md` still returns nothing.
 
-**No prior flagged item was discarded or resolved this window.** No prior flag's
-stale cite was fixed in place, so none leaves §B or §C.
+**No prior flagged item was discarded, resolved, or edited this window.** None of
+the 30 flag-carrying files appears in the window's diff, so no stale cite was
+fixed in place and none leaves §B or §C.
 
-**Twelve new items filed and still on the board** (all read against the current,
-post-R563 model; all born-current): R582 (`adoc-xref-section-anchor-gate`, Spec),
-R583 (`nodeid-target-keys-typeid-axis-coverage`, Spec), R584
-(`mcp-server-instruction-routing`, Spec), R585 (`input-field-resolution-typed-rejections`,
-Spec), R586 (`exemption-taxonomy-arm-census`), R587 (`md-code-span-passthrough-render`),
-R588 (`node-without-metadata-diagnostics`), R589 (`validation-adds-facts`, Spec),
-R590 (`leaf-coverage-migration-verify-gate`), R591 (`member-payload-storage-home`),
-R592 (`lint-rule-reference-page`), R593 (`ci-init-sql-error-stop`). R590 and R591 are
-R563's own filed residuals (migration `--verify` gate; the member-vs-leaf storage
-home); R586 is the R563 exemption-taxonomy census carve-out; all three correctly
-anchor on the post-dissolution model. R583 and R588 anchor on the shipped node
-work (R581 / R580).
+**Three new items filed and still on the board** (all read against the current,
+post-R563 model; all born-current; all scanned clean of every retired symbol):
 
-**Other transitions:** R580 Spec -> Ready -> In Progress -> In Review; R563 cycled
-In Review -> Ready (gate rework) -> In Progress -> In Review -> Done; R473, R569,
-R582, R584, R589 saw Spec revisions; R585 and R589 Backlog -> Spec. Ready set
-unchanged in membership (R333, R427, R555); In Progress now holds R347 alone
-(R563 departed to Done).
+- **R594** (`mcp-snapshot-axis-key-naming`, Backlog, `cleanup`): four snapshot-reporting
+  MCP tools spell the availability/freshness axis keys two ways (`snapshotAvailability`
+  / `snapshotFreshness` via `McpWire.writeSnapshotAxes` vs bare `availability` /
+  `freshness` hand-rolled in `status` / `schema`); consistency cleanup.
+- **R595** (`graphitron-model-captures-facts`, Spec, `architecture`): the fact-base
+  substrate R589 needs, a new `graphitron-model` reactor module holding the
+  fact-schema DDL, jOOQ codegen over it, an H2 bootstrap, and two infallible capture
+  loads that change no behavior. Cites the two new spike audits by path.
+- **R596** (`dangling-plan-page-xref-paths`, Backlog, `cleanup`): 9 cross-file `xref:`
+  links in the published site name deleted plan pages and 404 on click; Asciidoctor
+  never resolves a cross-document target, so the miss is build-silent. Docs cleanup.
 
-**Board accounting.** **172 item files** today (`roadmap/*.md` carrying `id:`), up
-ten net from the prior audit's 162: thirteen ids allocated this window (R581-R593),
-of which R581 was filed and Done in-window (net 0 on the board) and R582-R593 stay
-(+12); R563 and R579 left to Done (-2). Net +10. Status distribution: **147 Backlog,
-20 Spec, 3 Ready, 1 In Progress, 1 In Review, 0 Done**. A non-recursive
-`^status: Done` grep over `roadmap/*.md` returns nothing (tombstone-free for the
-twenty-sixth window running). No duplicate `id:`; max allocated id **R593**, and
-`changelog.md` carries `next-id: R594`, clearing it. The R575/R576 (folded prior
-window) and R579/R581 (Done this window) numbering gaps are all benign. A
-`depends-on:` sweep over all 172 item files resolves every edge (all are slug-based)
-to a present file. The board is structurally clean; the only nit is four **legacy**
-items missing a `bucket:` key (§D), all pre-dating this window.
+**Other transitions:** R584 (`mcp-server-instruction-routing`) **Spec -> Ready**
+(independent sign-off); R582 (`adoc-xref-section-anchor-gate`) and R589
+(`validation-adds-facts`) saw Spec revisions (R589's the window's largest single
+edit, +192 lines, folding in the materialization decision and strangler frame).
+Ready set gains R584 (now R333, R427, R555, R584); Spec set holds at 20 in count
+(R584 departs to Ready, R595 enters).
 
-**Net effect on flag counts: 30 flagged, 142 current.** 0 §A, 5 §B, 25 §C, 0 §D.
+**Board accounting.** **175 item files** today (`roadmap/*.md` carrying `id:`), up
+three net from the prior audit's 172: three ids allocated this window (R594-R596),
+all still on the board (+3); none left to Done. Status distribution: **149 Backlog,
+20 Spec, 4 Ready, 1 In Progress, 1 In Review, 0 Done**. Tombstone-free for the
+twenty-seventh window running. No duplicate `id:`; max allocated id **R596**, and
+`changelog.md` carries `next-id: R597`, clearing it. The numbering gaps from prior
+windows (R575/R576 folded; R563/R579/R581 Done) are all benign. A `depends-on:`
+sweep over all 175 item files resolves every edge (all are slug-based) to a present
+file, including the one new edge introduced this window (`graphitron-model-captures-facts`,
+R595's slug, cited by a dependent). The board is structurally clean; the only nit
+is four **legacy** items missing a `bucket:` key (§D), all pre-dating this window.
+
+**Net effect on flag counts: 30 flagged, 145 current.** 0 §A, 5 §B, 25 §C, 0 §D.
 
 ## Scope and method
 
-All **172** `R<n>` item files were reviewed (plus the non-item placeholders
+All **175** `R<n>` item files were reviewed (plus the non-item placeholders
 `inference-axis-coverage.adoc`, `relevance-ranked-search-howto.adoc`,
 `relevance-ranked-search-oracle-howto.adoc` and the permanent `workflow.adoc`, all
-correctly excluded: no `R<n>`, and `.adoc` besides). Because this window retired a
-widely-cited construct (the `Operation` seal, R563 slice 7), every stale-live cite
-below was re-checked against a fresh `grep` of the main sources rather than carried
-on the prior audit's word; that re-verification confirmed the prior audit's own
-§C.0 re-anchor **target** (`Operation.Facet` at a fixed line) had itself been
-retired.
+correctly excluded: no `R<n>`, and `.adoc` besides). Because this window changed
+**no main source**, no construct was retired or renamed, so the driving symbols of
+the carried flags cannot have moved; nonetheless every stale-live cite below was
+re-checked against a fresh `grep` of the main sources this pass rather than carried
+on the prior audit's word, and each was confirmed `grep` = 0 with its successor
+live. The three new items (R594-R596) and the three edited items (R582, R584, R589)
+were additionally scanned for any retired-symbol cite; all six are clean.
 
-**This window's symbol changes, verified at the symbol:**
+**This window's symbol changes: none.** The generator sources, tests, and fixtures
+are byte-identical to the prior audit's HEAD. Every symbol the carried flags
+depend on is exactly as the prior audit recorded it, re-verified below.
 
-- **`Operation` seal + all arm references, RETIRED (R563 slice 7,
-  `850ba5f`/`ea5f9db`).** The sealed interface and every `Operation.<Arm>`
-  reference are `grep` = 0 in main. Successor: `OperationMember` (sealed, a
-  per-coordinate member multiset). The test-side obligation is `MEMBER_ARMS` /
-  `MEMBER_KNOWN_GAPS`, keyed on `OperationMember.*` (`ExemptionRegistry.java:157`,
-  `:384`). Drives §C.0 (rewritten) and layers onto §C.6 (R222) and §C.7 (R333).
-- **`@nodeId(typeName:)` decode resolution, REORDERED name-first (R581,
-  `c87667b`); `resolveDecodeHelperForTable`, still LIVE.** New name-first entry
-  `resolveDecodeHelperForType`; the table-keyed helper survives for the orphan /
-  bare-scalar arm. No roadmap drift.
-- **`parentTypeName` parameter on `parseExternalRef` /
-  `ExternalFieldDirectiveResolver.resolve`, REMOVED (R579, `59313d7`).** `grep` = 0
-  on those two frames; live on `ServiceDirectiveResolver.resolve` and
-  `classifyChildFieldOnTableType`. No item cites the removed parameter as live. No
-  roadmap drift.
-
-**Retired symbols from prior windows, re-verified still retired (no
-resurrections):** `OutputField.operation()` accessor, the lookup triplet
+**Retired symbols, re-verified still retired at this HEAD (no resurrections, no
+new retirements):** the `Operation` seal and every `Operation.<Arm>` reference
+(successor `OperationMember`; obligation `MEMBER_ARMS` / `MEMBER_KNOWN_GAPS` keyed
+on `OperationMember.*`, `ExemptionRegistry.java:157`, `:384`); the `parentTypeName`
+parameter on `parseExternalRef` / `ExternalFieldDirectiveResolver.resolve` (live on
+`ServiceDirectiveResolver.resolve` / `classifyChildFieldOnTableType`);
+`resolveDecodeHelperForTable` still **live** for the orphan / bare-scalar arm
+alongside the name-first `resolveDecodeHelperForType`; the `OutputField.operation()`
+accessor, the lookup triplet
 (`LookupTableField` / `BatchedLookupTableField` / `QueryLookupTableField`),
 `LookupField` / `LookupValuesJoinEmitter`, `DeleteRowsField` / `UpdateRowsField`,
 `RoutineChainField`, `TableOnInputRejection` / `buildNonTableInputType`,
@@ -210,10 +189,9 @@ coherent deliberately-deferred docs tail, not obsolete.
 ## B. Outdated: needs re-spec (premise or targets materially changed) (5)
 
 All five carried from the prior window, re-verified at the symbol: each item's
-premise-target is still `grep` = 0 in main with a live successor, and none of this
-window's changes altered the set. Prior recommended actions all still hold; this
-window adds only a confirmation that none of the node-identity retirements
-(R581/R579) touched these targets.
+premise-target is still `grep` = 0 in main with a live successor. No main source
+moved this window, so the set is unchanged and every prior recommended action
+still holds verbatim; the re-verification below is a confirmation, not a revision.
 
 | Item | Status | What changed | Recommended action |
 |---|---|---|---|
@@ -225,27 +203,27 @@ window adds only a confirmation that none of the node-identity retirements
 
 ## C. Outdated: update references only (work valid, refs stale) (25)
 
-Substance intact; names and line numbers drifted. All 24 prior flags carried (every
-driving symbol re-verified still `grep` = 0, none fixed in place); **R562 enters** on
-this window's `Operation`-seal retirement; four carried items (R427, R382, R333,
-R222) pick up **additional** Operation-seal drift on top of their existing flag, and
-R427's prior re-anchor target is itself superseded.
+Substance intact; names and line numbers drifted. All 25 flags carried verbatim
+from the 2026-08-05 audit (every driving symbol re-verified still `grep` = 0, none
+fixed in place, none added: no construct was retired this window). The
+`Operation`-seal group (R427, R382, R562) and the two carried items that additionally
+lean on the seal (R333, R222) are unchanged, because no code moved.
 
-### C.0 `Operation` seal fully retired (rewritten this window; R563 slice 7)
+### C.0 `Operation` seal fully retired (carried; R563 slice 7, retired the prior window)
 
-The prior audit's §C.0 read: "the `operation()` leaf accessor is retired but the
-`Operation` seal and its arms are live, so an item citing an `Operation.<Arm>`
-**type** is correct". **Slice 7 retired the seal itself:** the `Operation` sealed
-interface and every `Operation.<Arm>` reference are `grep` = 0 in main. A cite of
-an `Operation` arm **type** is now as stale as the accessor was. The durable
-successor is `OperationMember` (a per-coordinate member multiset); the paired
-test obligation is `MEMBER_ARMS` / `MEMBER_KNOWN_GAPS`.
+The `Operation` seal was retired one window before this one (R563 slice 7): the
+`Operation` sealed interface and every `Operation.<Arm>` reference are `grep` = 0
+in main, re-confirmed at this HEAD. A cite of an `Operation` arm **type** is stale.
+The durable successor is `OperationMember` (a per-coordinate member multiset); the
+paired test obligation is `MEMBER_ARMS` / `MEMBER_KNOWN_GAPS`
+(`ExemptionRegistry.java:157`, `:384`). These three flags are unchanged from the
+prior audit.
 
 | Item | Status | Stale reference | Recommended action |
 |---|---|---|---|
 | **R427** relevance-ranked-search | Ready | `:335` "`operation()` stays `Fetch`" cites the retired accessor; `:339`/`:1162` cite `Operation.Facet` as a live precedent **type**. The prior audit told this item to fix the `Operation.Facet` **line number** to `:72`; that arm type is now `grep` = 0, so the line-fix advice is void. | **Re-anchor (target changed since prior audit).** Restate "`operation()` stays `Fetch`" against the member-derived summary fold (a `Fetch` coordinate carries no DML/Facet member); repoint the `Operation.Facet` precedent onto `OperationMember.Facet` (or the `MEMBER_KNOWN_GAPS` census that now carries the modeled-but-unpopulated Facet arm). A **Ready** item; refresh before pickup. |
 | **R382** multitable-interface-query-orderby-lowering | Backlog | `:19` cites `operation()` as the live mechanism hardcoding `new OrderBySpec.None()` for both interface/union arms. Accessor retired (prior window); the seal that backed it is now gone too. | **Re-anchor** the mechanism cite to where the hardcoded `OrderBySpec.None` now lives (the member/fact layer, `OperationMember.OrderBy` sourcing, or `MultiTablePolymorphicEmitter`); verify the ordering gap still reproduces. |
-| **R562** synthesised-connection-fields-as-coordinates | Backlog | **New flag.** `:18` names "the `Operation.Count` and `Operation.Facet` arms of the `OPERATION_ARMS` obligation (`ExemptionRegistry.OPERATION_KNOWN_GAPS`)" as the observable gap. All three names retired this window (arms -> `OperationMember.Count` / `OperationMember.Facet`; obligation `OPERATION_ARMS` -> `MEMBER_ARMS`; map `OPERATION_KNOWN_GAPS` -> `MEMBER_KNOWN_GAPS`). The cite was correct until slice 7. | **Re-anchor** the three names to their `OperationMember` / `MEMBER_ARMS` / `MEMBER_KNOWN_GAPS` successors. The model question (should the synthesis step register the minted connection type's `totalCount`/`facets` as classified coordinates so a fact carries the count/facet) is intact and still owns both exemption reason strings; note the successor `OperationMember.Count` / `Facet` arms are explicitly "modeled-but-unpopulated", which is exactly this item's subject. |
+| **R562** synthesised-connection-fields-as-coordinates | Backlog | Carried. `:18` names "the `Operation.Count` and `Operation.Facet` arms of the `OPERATION_ARMS` obligation (`ExemptionRegistry.OPERATION_KNOWN_GAPS`)" as the observable gap. All three names were retired the prior window (arms -> `OperationMember.Count` / `OperationMember.Facet`; obligation `OPERATION_ARMS` -> `MEMBER_ARMS`; map `OPERATION_KNOWN_GAPS` -> `MEMBER_KNOWN_GAPS`), and the item file is unedited since. | **Re-anchor** the three names to their `OperationMember` / `MEMBER_ARMS` / `MEMBER_KNOWN_GAPS` successors. The model question (should the synthesis step register the minted connection type's `totalCount`/`facets` as classified coordinates so a fact carries the count/facet) is intact and still owns both exemption reason strings; note the successor `OperationMember.Count` / `Facet` arms are explicitly "modeled-but-unpopulated", which is exactly this item's subject. |
 
 ### C.1 Lookup-triplet dissolution drift (carried; R563 slice 6a)
 
@@ -318,7 +296,7 @@ to `admitMutationInputFields` (live).
 
 | Item | Status | Stale reference | Recommended action |
 |---|---|---|---|
-| **R222** dimensional-model-pivot | Spec | `:15`/`:60`/`:442` still name `GraphitronType.TableInputType` as a live sibling root that R519 collapsed; `:62` cites the `LookupField` mixin overlay (folded slice 6a). **New this window**, `:157` proposes "the verb: a **sealed interface `Operation` with `record` arms** (replacing the flat...)", a model R563 in fact delivered differently, as the `OperationMember` member multiset, not a single sealed arm. | **Re-baseline the input-side section** as delivered by R519; **re-baseline the operation-axis section** (`:157`) as delivered by R563 (`OperationMember`, arm-grain `operations:` multiset), narrowing the umbrella to the still-open field-side and `Unclassified*` organs; re-anchor the `LookupField` mixin cite. Per the R563 changelog, R222's operation-axis content is discharged, so this section is now a delivered-model rewrite, not open design. |
+| **R222** dimensional-model-pivot | Spec | `:15`/`:60`/`:442` still name `GraphitronType.TableInputType` as a live sibling root that R519 collapsed; `:62` cites the `LookupField` mixin overlay (folded slice 6a). `:157` proposes "the verb: a **sealed interface `Operation` with `record` arms** (replacing the flat...)", a model R563 in fact delivered differently, as the `OperationMember` member multiset, not a single sealed arm. | **Re-baseline the input-side section** as delivered by R519; **re-baseline the operation-axis section** (`:157`) as delivered by R563 (`OperationMember`, arm-grain `operations:` multiset), narrowing the umbrella to the still-open field-side and `Unclassified*` organs; re-anchor the `LookupField` mixin cite. Per the R563 changelog, R222's operation-axis content is discharged, so this section is now a delivered-model rewrite, not open design. |
 | **R213** input-field-rejection-attribution | Backlog | `:64` scope note: "`@table` input types route through `TableInputType` classification ... `UnclassifiedType`". Both gone (and, per R566, `@table`-input no longer rejects at all). | **Re-anchor** the one scope-note sentence to per-consumer resolution; state the `@table`-input out-of-scope boundary without the retired path. Core subject and `InputFieldResolver` cites valid. |
 | **R234** jooq-embedded-and-udt-input-backings | Spec | `:15` cites `TypeBuilder.buildNonTableInputType` (`grep` = 0) as the live dispatch to extend; the sibling arms it extends (`JooqRecordInputType` / `JooqTableRecordInputType`) are live. | **Re-anchor** the dispatch site to the current `TypeBuilder` input-classification path (`buildInputType`); the design is intact. |
 | **R257** updaterows-walker-sdl-substrate | Backlog | `:17` calls `resolveInput` "the legacy resolver" (gone R515); `:15`/`:19` reach the admitted carriers "via `TableInputType.inputFields()`" (gone R519). | **Re-anchor** both dead names: `resolveInput` to `admitMutationInputFields`, `TableInputType.inputFields()` to per-consumer input resolution. |
@@ -334,17 +312,17 @@ projection is `render/ProjectionUnitRenderer`.
 
 | Item | Status | Stale reference | Recommended action |
 |---|---|---|---|
-| **R333** coordinate-lowers-to-datafetcher-queryparts | Ready | **Refresh still incomplete, and it grew this window.** Crosswalk rows are current, but prose and the baseline table are not: `:529` names `TypeConditionsGenerator`; `:1605`/`:1626`/`:1628`/`:1681`/`:1749`/`:1963`/`:1987` name `TypeClassGenerator` / `collectRequiredProjection`; `:1674` cites `BatchKeyField.rowsMethodName()`; `:341` cites `OutputField.operation()`; `:1791` cites `ParentProjectionContainmentCheck`; `:1826`/`:2054`/`:2058`/`:2064` cite `methodgraph`; `:1754`/`:1775` cite `LookupValuesJoinEmitter`; and **new this window** `:157` names the `Operation` **seal** as a live sealed interface and `:1512` cites "the shipped 17-arm `Operation` seal the classifier computes today". | **Finish the refresh in one pass** (this row + §C.0 + §C.5 + §C.6): repoint `TypeClassGenerator` / `collectRequiredProjection` to `ProjectionUnitRenderer` / `ProjectionCommands`; drop the `TypeConditionsGenerator`, `BatchKeyField.rowsMethodName`, `OutputField.operation()`, `ParentProjectionContainmentCheck` and `methodgraph` cites; re-anchor `LookupValuesJoinEmitter` to the render lookup family; and re-anchor the `Operation` seal / "17-arm" cites to `OperationMember`. Rows citing `SplitRowsMethodEmitter` stay (live). |
+| **R333** coordinate-lowers-to-datafetcher-queryparts | Ready | **Refresh still incomplete** (unchanged from the prior audit; the item file was not edited this window). Crosswalk rows are current, but prose and the baseline table are not: `:529` names `TypeConditionsGenerator`; `:1605`/`:1626`/`:1628`/`:1681`/`:1749`/`:1963`/`:1987` name `TypeClassGenerator` / `collectRequiredProjection`; `:1674` cites `BatchKeyField.rowsMethodName()`; `:341` cites `OutputField.operation()`; `:1791` cites `ParentProjectionContainmentCheck`; `:1826`/`:2054`/`:2058`/`:2064` cite `methodgraph`; `:1754`/`:1775` cite `LookupValuesJoinEmitter`; `:157` names the `Operation` **seal** as a live sealed interface and `:1512` cites "the shipped 17-arm `Operation` seal the classifier computes today". | **Finish the refresh in one pass** (this row + §C.0 + §C.5 + §C.6): repoint `TypeClassGenerator` / `collectRequiredProjection` to `ProjectionUnitRenderer` / `ProjectionCommands`; drop the `TypeConditionsGenerator`, `BatchKeyField.rowsMethodName`, `OutputField.operation()`, `ParentProjectionContainmentCheck` and `methodgraph` cites; re-anchor `LookupValuesJoinEmitter` to the render lookup family; and re-anchor the `Operation` seal / "17-arm" cites to `OperationMember`. Rows citing `SplitRowsMethodEmitter` stay (live). |
 | **R231** emit-text-mapped-enum-fields-as-enum-type | Backlog | `:39` locates "the field-type-emit fork (likely in `TypeClassGenerator` or ...)"; deleted by R549 slice 3.1. | **Re-anchor** the investigation locus to `ProjectionUnitRenderer` / `plan/ProjectionCommands`. |
 | **R35** source-orientation-javadocs | Backlog | `:42` enumerates classes needing a class-level javadoc sweep, including `TypeClassGenerator` and `TypeConditionsGenerator`, both deleted. | **Re-anchor** the enumeration: drop the two deleted names, optionally adding the successor renderers. Low priority; the sweep scope is illustrative. |
 
 ## D. Structural: (0)
 
-Empty of blocking defects. `changelog.md` carries `next-id: R594`, clearing the max
-allocated id (R593). No duplicate `id:`, no `status: Done` tombstones in
-`roadmap/*.md`, and a `depends-on:` sweep over all 172 item files resolves every
-edge (all slug-based) to a present file. The twelve items filed this window carry
-well-formed front-matter and were read against the current model.
+Empty of blocking defects. `changelog.md` carries `next-id: R597`, clearing the max
+allocated id (R596). No duplicate `id:`, no `status: Done` tombstones in
+`roadmap/*.md`, and a `depends-on:` sweep over all 175 item files resolves every
+edge (all slug-based) to a present file. The three items filed this window (R594-R596)
+carry well-formed front-matter and were read against the current model.
 
 One **pre-existing, non-blocking** hygiene nit: four **legacy** items lack a
 `bucket:` key, all pre-dating this window: R242 (`dml-payload-positional-alignment`),
@@ -355,45 +333,50 @@ note, not a §D blocker; fold a `bucket:` in whenever each item is next edited.
 
 ## Cross-cutting observations
 
-1. **A programme completing invalidated an audit premise, not just an item cite.**
-   The prior audit's §C.0 was built on a stated invariant, "the `Operation` seal
-   and its arms are live, so an item citing an `Operation.<Arm>` **type** is
-   correct", and used it to keep several re-anchor targets pointed at live arm
-   types. R563 slice 7 then retired the seal itself, so the audit's own framing,
-   not just an item's cite, went stale. The lesson repeats last window's
-   `BatchedLookupTableField` miss one level up: when a programme is mid-dissolution,
-   even an audit's structural assumptions have a shelf life, and a re-anchor should
-   name the durable successor axis (`OperationMember` and its member multiset)
-   rather than an intermediate construct the same programme is still dismantling.
+1. **A roadmap-only window freezes the drift set, and the audit's job narrows to
+   proving it.** The single determining fact this window is that no main source
+   moved: `git diff --name-only fda241e..HEAD` is entirely under `roadmap/`. Every
+   §B / §C flag is a claim about a retired main-source symbol, so none can have
+   changed, and the audit reduces to (a) confirming each driving symbol is still
+   `grep` = 0 with its successor live, (b) confirming no flagged item file was
+   edited into or out of a fix, and (c) classifying what the window *did* add:
+   new items and in-place spec revisions. All three were done; the 30 flags carry
+   verbatim. The value of a quiet window is that it is cheap to certify and lets
+   the next active window start from a known-clean baseline.
 
-2. **A finished programme is a bigger drift event than a slice.** Prior windows
-   flagged R563 slices individually as they landed; the seal retirement in the
-   final slices touched five items at once (R427, R382, R562, R333, R222) because
-   the `Operation` arm names had leaked into precedent citations, obligation
-   references and design docs across the board. As before, the tell of blast radius
-   is not the size of the retirement but how many specs already lean on the retired
-   name; the `Operation` seal was a heavily-cited classification primitive.
+2. **Born-current items are the cheap case, and this window produced three of
+   them.** R594, R595 and R596 were all filed after the R563 dissolution, read
+   against the post-dissolution model, and scanned clean of every retired symbol.
+   A born-current item costs the audit only a classification pass (none flagged);
+   the expensive items are always the ones filed *before* a programme retired the
+   name they hold. The lesson from the prior window's `Operation`-seal blast radius
+   is the mirror of this: drift is a function of when an item was written relative
+   to the retirements it cites, so items written into a stable model stay clean.
 
-3. **The node-identity cutovers were self-contained.** R581 (name-first decode) and
-   R579 (dead parameter) shipped with **zero** external roadmap drift: R581 kept the
-   table-keyed helper live for the cases that need it, so every citing item still
-   reads true, and R579's removed parameter was never cited as live anywhere. The
-   contrast with the `Operation` seal is instructive: a retirement drifts specs only
-   when the retired name was the one the specs held.
+3. **A spec maturing in place is not drift, even a large one.** R589
+   (`validation-adds-facts`, Spec) took the window's largest single edit (+192
+   lines) and spun out its substrate as R595, yet neither is flagged: R589 is
+   actively-drafted Spec prose describing the fact-base it is designing, and R595
+   describes the module it mints. Their prose **is the work**, the same reason
+   R580 (In Review) and R347 (In Progress) are never flagged. The two spike-audit
+   siblings they cite are grounding records, not staleness reviews, and stay in
+   place.
 
-4. **R333's mid-programme refresh now spans five drivers and is still partial.** Its
-   crosswalk rows track the renderers, but its prose and baseline table lag across
-   §C.0 (operation, now the seal itself), §C.5 (column), §C.6 (input), §C.7
-   (condition/projection) and §C.1 (lookup). The item is internally inconsistent and
-   should be refreshed in a single pass before pickup, not incrementally at each
-   neighbouring gate. It is **Ready**, so the refresh is due now.
+4. **R333's mid-programme refresh spans five drivers and is still partial,
+   unchanged from the prior audit.** Its crosswalk rows track the renderers, but
+   its prose and baseline table lag across §C.0 (the `Operation` seal), §C.5
+   (column), §C.6 (input), §C.7 (condition/projection) and §C.1 (lookup). Nothing
+   this window touched it, so it is exactly as internally inconsistent as it was,
+   and should be refreshed in a single pass before pickup. It is **Ready**, so the
+   refresh is overdue.
 
-5. **A programme's own prose is not drift.** R580 (`infer-node-from-implements-node-and-metadata`,
-   In Review) and R347 (`lsp-structural-consolidation`, In Progress) describe the
-   subjects they mint and consolidate; their prose is the work, not consumer-facing
-   stale-live, and they are not flagged. R563's newly-Done retirements surface, as
-   expected, only in `changelog.md` and the items that leaned on the retired names.
+5. **The Ready set is where stale prose bites soonest.** R333, R427, R555 and
+   now R584 are the items an implementer picks up next, so their stale cites (R333
+   across five drivers, R427's superseded `Operation.Facet` precedent) are the
+   highest-leverage refreshes on the board even in a window that added no new
+   drift. R584 arrived at Ready this window born-current, so it does not add to
+   that debt; R333 and R427 remain the two Ready items carrying flags.
 
 ---
 
-_Review date: 2026-08-05._
+_Review date: 2026-08-06._
