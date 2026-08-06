@@ -458,7 +458,7 @@ class NodeIdPipelineTest {
                 + "GraphQL type name, matching the encoder), NOT the typeId fallback decode10154 the old "
                 + "all-@table findGraphQLTypeForTable detour produced when two object types backed the table.",
             """
-            type SharedNode implements Node @table(name: "shared_node") @node(typeId: "10154") { id: ID! }
+            type SharedNode implements Node @table(name: "shared_node") @node(typeId: "10154") { id: ID! @nodeId }
             type SharedNodeProjection @table(name: "shared_node") { label: String }
             input SharedSelector { id: ID! @nodeId(typeName: "SharedNode") }
             type Query { shared(in: SharedSelector): SharedNode }
@@ -816,7 +816,7 @@ class NodeIdPipelineTest {
         SAME_TABLE_SINGLE_PK(
             "single-PK same-table case → In predicate with NodeIdDecodeKeys leaf over the one key column",
             """
-            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
             input BazFilterInput {
               ids: [ID!] @nodeId(typeName: "Baz")
             }
@@ -1161,7 +1161,7 @@ class NodeIdPipelineTest {
                 + "QueryTableField with BodyParam.Eq over baz.id (R106: same-table @nodeId lifts "
                 + "to filter, not lookup)",
             """
-            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
             type Query { bazById(id: ID! @nodeId(typeName: "Baz")): Baz }
             """,
             schema -> {
@@ -1187,8 +1187,8 @@ class NodeIdPipelineTest {
                 + "still resolves decodeBaz. Models adding a federation entity over a table an "
                 + "existing type already covers.",
             """
-            type Baz implements Node @table(name: "baz") @node { id: ID! }
-            type BazEntity implements Node @table(name: "baz") @node(typeId: "46") { id: ID! }
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
+            type BazEntity implements Node @table(name: "baz") @node(typeId: "46") { id: ID! @nodeId }
             type Query { bazById(id: ID! @nodeId(typeName: "Baz")): Baz }
             """,
             schema -> {
@@ -1237,7 +1237,7 @@ class NodeIdPipelineTest {
             "list `ids: [ID!]! @nodeId(typeName: \"Baz\")` arg → "
                 + "QueryTableField with BodyParam.In over baz.id (R106: filter lift)",
             """
-            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
             type Query { bazByIds(ids: [ID!]! @nodeId(typeName: "Baz")): [Baz!]! }
             """,
             schema -> {
@@ -1301,7 +1301,7 @@ class NodeIdPipelineTest {
         T_NOT_IN_SCHEMA(
             "@nodeId(typeName: \"DoesNotExist\") → UnclassifiedField (target type not in schema)",
             """
-            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
             type Query { bazById(id: ID @nodeId(typeName: "DoesNotExist")): Baz }
             """,
             schema -> {
@@ -1312,7 +1312,7 @@ class NodeIdPipelineTest {
         T_NOT_TABLE_ANNOTATED(
             "@nodeId(typeName: T) where T is not @table-annotated → UnclassifiedField",
             """
-            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
             type Plain { name: String }
             type Query { bazById(id: ID @nodeId(typeName: "Plain")): Baz }
             """,
@@ -1355,7 +1355,7 @@ class NodeIdPipelineTest {
                 + "(R106: same-table @nodeId now defaults to filter; @lookupKey is the deliberate "
                 + "opt-in for the lookup shape)",
             """
-            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
             type Query { bazByIds(ids: [ID!]! @nodeId(typeName: "Baz") @lookupKey): [Baz!]! }
             """,
             schema -> {
@@ -1374,7 +1374,7 @@ class NodeIdPipelineTest {
                 + "filter, not a lookup, so @lookupKey is meaningless)",
             """
             type Bar implements Node @table(name: "bar") @node { id: ID! }
-            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
             type Query { barsByBaz(bazIds: [ID!]! @nodeId(typeName: "Baz") @lookupKey): [Bar!]! }
             """,
             schema -> {
@@ -1387,7 +1387,7 @@ class NodeIdPipelineTest {
             "@nodeId @field(name:) on the same arg → UnclassifiedField (the directives target "
                 + "different binding axes — key columns come from the resolved NodeType)",
             """
-            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
             type Query { bazById(id: ID @nodeId(typeName: "Baz") @field(name: "id")): Baz }
             """,
             schema -> {
@@ -1418,7 +1418,7 @@ class NodeIdPipelineTest {
                 + "against bar.id_1 (the FK source column on the field's own table)",
             """
             type Bar implements Node @table(name: "bar") @node { id: ID! }
-            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
             type Query { barsByBaz(bazIds: [ID!]! @nodeId(typeName: "Baz")): [Bar!]! }
             """,
             schema -> {
@@ -1441,7 +1441,7 @@ class NodeIdPipelineTest {
             "scalar `bazId: ID! @nodeId(typeName: \"Baz\")` → BodyParam.Eq against bar.id_1",
             """
             type Bar implements Node @table(name: "bar") @node { id: ID! }
-            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
             type Query { barByBaz(bazId: ID! @nodeId(typeName: "Baz")): Bar }
             """,
             schema -> {
@@ -1697,7 +1697,7 @@ class NodeIdPipelineTest {
                 + "case (mirrors opptak-subgraph's Query.kompetanseregelverkGittIdV2). Warn fires "
                 + "at LOG.warn — the surface is covered in AsConnectionSameTableWarnFormatTest.",
             """
-            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
             """ + CONNECTION_DECLS + """
             type Query {
                 bazByIds(ids: [ID!]! @nodeId(typeName: "Baz")): BazConnection @asConnection
@@ -1709,7 +1709,7 @@ class NodeIdPipelineTest {
             "@asConnection field with an optional (nullable outer) top-level same-table @nodeId arg "
                 + "→ classifies normally; warn does NOT fire (∃-required predicate is False here)",
             """
-            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
             """ + CONNECTION_DECLS + """
             type Query {
                 bazes(ids: [ID!] @nodeId(typeName: "Baz")): BazConnection @asConnection
@@ -1721,7 +1721,7 @@ class NodeIdPipelineTest {
             "@asConnection field whose required input arg carries a required same-table @nodeId "
                 + "leaf (every wrapper non-null) → classifies normally; warn fires",
             """
-            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
             """ + CONNECTION_DECLS + """
             input BazFilter {
                 ids: [ID!]! @nodeId(typeName: "Baz")
@@ -1741,7 +1741,7 @@ class NodeIdPipelineTest {
             "@asConnection field whose nullable input arg carries a nullable same-table @nodeId "
                 + "leaf (legacy R50 input-field shape) → classifies normally; warn does NOT fire",
             """
-            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
             """ + CONNECTION_DECLS + """
             input BazFilter {
                 ids: [ID!] @nodeId(typeName: "Baz")
@@ -1762,7 +1762,7 @@ class NodeIdPipelineTest {
                 + "leaf → conjunctive rule: outer nullable ⇒ path nullable ⇒ classifies normally; "
                 + "warn does NOT fire (pins the conjunctive rule, not per-step)",
             """
-            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
             """ + CONNECTION_DECLS + """
             input BazFilter {
                 ids: [ID!]! @nodeId(typeName: "Baz")
@@ -1782,7 +1782,7 @@ class NodeIdPipelineTest {
             "two same-table @nodeId args, required declared first then optional → classifies "
                 + "normally (∃-required predicate is True; warn fires regardless of SDL position)",
             """
-            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
             """ + CONNECTION_DECLS + """
             type Query {
                 bazes(
@@ -1802,7 +1802,7 @@ class NodeIdPipelineTest {
             "two same-table @nodeId args, optional declared first then required → classifies "
                 + "normally (∃-required is order-independent; warn fires either way)",
             """
-            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
             """ + CONNECTION_DECLS + """
             type Query {
                 bazes(
@@ -1823,7 +1823,7 @@ class NodeIdPipelineTest {
                 + "(filter narrows the result; seek paginates within the filtered set; warn never fires)",
             """
             type Bar implements Node @table(name: "bar") @node { id: ID! }
-            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
             type BarConnection { edges: [BarEdge!]! pageInfo: PageInfo! }
             type BarEdge { node: Bar! cursor: String! }
             type PageInfo { hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String }

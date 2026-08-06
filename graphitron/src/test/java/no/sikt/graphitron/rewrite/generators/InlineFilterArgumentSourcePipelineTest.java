@@ -89,7 +89,7 @@ class InlineFilterArgumentSourcePipelineTest {
     private static final String LIST_FILTER_SDL = LIST_FILTER_INPUT + """
         type Bar implements Node @table(name: "bar") @node { id: ID! name: String }
         type Baz implements Node @table(name: "baz") @node {
-            id: ID!
+            id: ID! @nodeId
             bars(filter: BarListFilter): [Bar!] @reference(path: [{key: "bar_id_1_fkey"}])
         }
         type Query { baz: Baz }
@@ -115,7 +115,7 @@ class InlineFilterArgumentSourcePipelineTest {
         var method = glueMethod(SCALAR_FILTER_INPUT + """
             type Bar implements Node @table(name: "bar") @node { id: ID! name: String }
             type Baz implements Node @table(name: "baz") @node {
-                id: ID!
+                id: ID! @nodeId
                 bars(filter: BarScalarFilter): [Bar!] @reference(path: [{key: "bar_id_1_fkey"}])
             }
             type Query { baz: Baz }

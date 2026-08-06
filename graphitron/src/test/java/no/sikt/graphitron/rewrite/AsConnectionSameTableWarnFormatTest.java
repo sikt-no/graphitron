@@ -56,7 +56,7 @@ class AsConnectionSameTableWarnFormatTest {
         // bits migration tooling can grep for: field name, leaf name, typeName, headline
         // diagnostic, advisory hint.
         var schema = buildSchema("""
-            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
             """ + CONNECTION_DECLS + """
             type Query {
                 bazByIds(ids: [ID!]! @nodeId(typeName: "Baz")): BazConnection @asConnection

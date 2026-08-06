@@ -128,22 +128,31 @@ Two boundaries are worth knowing:
 
 === When the table has its own `id` column
 
-A table can publish node metadata *and* have a column literally named `id`. The node ID wins: the field publishes the encoded global ID, not the raw column value, and the build warns that the column is shadowed. Silence it by stating the choice:
+A table can publish node metadata *and* have a column literally named `id`. Graphitron will not choose for you: `id` could mean the encoded global ID or the column's own value, both are legitimate, and the two are different values on the wire. The build fails until you say which:
 
 [source,graphql]
 ----
-type Doc implements Node @table(name: "doc") { id: ID! @nodeId }             # the global ID (default)
+type Doc implements Node @table(name: "doc") { id: ID! @nodeId }             # the global ID
 type Doc implements Node @table(name: "doc") { id: ID! @field(name: "id") }  # the raw column
 ----
 
-xref:field.adoc[`@field`] is the escape hatch for exposing the column itself. Note that a type whose `Node.id` is a raw column cannot round-trip through `Query.node(id:)`.
+This applies wherever a node's own `id` names a column that exists, whether the identity parameters were inferred or written in `@node`. xref:field.adoc[`@field`] is the escape hatch for exposing the column itself; note that a type whose `Node.id` is a raw column cannot round-trip through `Query.node(id:)`.
+
+The error names both remedies, so you do not need this page to resolve it:
+
+[source]
+----
+[author-error] field 'Doc.id': table 'doc' has a column named 'id' and also publishes node
+metadata, so 'id' is ambiguous. Add `@nodeId` to publish the global ID, or `@field(name: "id")`
+to expose the raw column.
+----
 
 == Constraints
 
 * The decorated type must also carry xref:table.adoc[`@table`]; the bound table supplies the columns to embed.
 * The type must implement the `Node` interface (`type X implements Node ...`). Without the interface, `Query.node(id:)` cannot return the type, and `@node` alone is rejected.
 * `@node` itself is *optional* when the bound jOOQ class publishes node metadata. `implements Node @table(name: "x")` is then a complete node declaration and takes both values from the catalog; see <<Inferring the identity parameters>>. Write `@node` when the generator has published nothing, or to override either value.
-* The node's own `id: ID!` field does not need xref:nodeId.adoc[`@nodeId`]. The `id` field satisfying the `Node` interface on a node type is a node ID by construction. Other `ID` slots still require the directive.
+* The node's own `id: ID!` field does not need xref:nodeId.adoc[`@nodeId`]. The `id` field satisfying the `Node` interface on a node type is a node ID by construction. Other `ID` slots still require the directive. The one exception is a bound table that also has a column named `id`: there the field is ambiguous and the build fails until you write `@nodeId` or `@field`; see <<When the table has its own `id` column>>.
 * `keyColumns` must form a primary key or another unique key on the bound table. The build fails if the columns don't form a unique constraint.
 * `keyColumns` ordering matters and is part of the ID's wire format; reordering breaks already-issued IDs.
 * `typeId` collisions across types are rejected at build time, whether the `typeId` is written, defaulted, or taken from catalog metadata. If two types share a `typeId`, `Query.node(id:)` cannot dispatch unambiguously.

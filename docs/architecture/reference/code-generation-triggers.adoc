@@ -139,9 +139,11 @@ verdicts not yet migrated to a worked example.
 
 === `@table` type → `TableType`
 
-A type carrying `@table(name:)` (without `@node` or `@discriminate`) classifies as `TableType`, the
-pivot for SQL generation. A root field returning it enters a new query scope rooted in that table, and
-a scalar child whose name matches a column projects inline.
+A type carrying `@table(name:)` classifies as `TableType`, the pivot for SQL generation, unless a
+nodehood or discrimination trigger takes precedence: `@node`, `@discriminate`, or `implements Node`
+over a table whose jOOQ class publishes `__NODE_TYPE_ID` / `__NODE_KEY_COLUMNS`. A root field
+returning a `TableType` enters a new query scope rooted in that table, and a scalar child whose name
+matches a column projects inline.
 
 [source,graphql]
 ----
@@ -166,7 +168,7 @@ example's projection query, rendered as SDL descriptions by `QueryViewRenderer`.
 |===
 | Classification Trigger on Type | `GraphitronType` Variant | Generator Output
 
-| `@table` + `@node` | `NodeType` | `*Fetchers` class + `*` class (with Relay ID handling)
+| `@table` + `@node`, or `@table` + `implements Node` over a table publishing node metadata | `NodeType` | `*Fetchers` class + `*` class (with Relay ID handling)
 | Producer's reflected return is a Java/jOOQ class (a `@service` return or a parent-accessor chain) | `ResultType`* | `*Fetchers` class only (no SQL scope of its own). The backing class is reflection-derived, not declared.
 | `Query` or `Mutation` root type | `RootType` | `*Fetchers` class only
 | Interface with `@table` + `@discriminate` | `TableInterfaceType` | `*Fetchers` class

@@ -7256,23 +7256,28 @@ class FieldBuilder {
         boolean isScalarId = !(GraphQLTypeUtil.unwrapNonNull(fieldDef.getType()) instanceof GraphQLList)
             && "ID".equals(((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(fieldDef.getType())).getName());
 
-        // The Node interface's own `id` field on a node type is a node ID by construction — the
+        // The Node interface's own `id` field on a node type is a node ID by construction: the
         // author published the Relay contract, and `Node.id` is what that contract names. So it is
-        // resolved *before* the column lookup below and takes precedence over a same-named column,
-        // which is the only way `implements Node @table` over a table with a literal `id` column can
-        // mean the same thing as the same declaration over a table without one. `@field` pins the
-        // column instead, and shadowing a real column warns; see warnShadowedIdColumn.
+        // resolved *before* the column lookup below, which is the only way `implements Node @table`
+        // can mean the same thing over a table with a literal `id` column as over a table without
+        // one. When the table does have that column the two readings are different values on the
+        // wire and neither is obviously meant, so the build refuses instead of picking; see
+        // rejectShadowedIdColumn. Both silencers reach this method earlier: `@nodeId` in the
+        // directive arm above, `@field` through hasFieldDirective.
         //
         // This arm is deliberately narrower than the deprecated synthesis shim below: that one
-        // fires for *any* bare `ID` field on a node type, `externalId: ID` included. Hoisting that
-        // predicate above column resolution would reroute every such field from its column to a
-        // nodeId encode, so the permanent rule is pinned to `Node.id`.
+        // fires for *any* bare `ID` field on a node type, `externalId: ID` included. Applying that
+        // predicate here would reroute every such field from its column to a nodeId encode, so the
+        // permanent rule is pinned to `Node.id`.
         if (tableType instanceof NodeType nodeType
                 && NODE_INTERFACE_ID_FIELD.equals(name)
                 && isScalarId
                 && !hasFieldDirective) {
-            svc.resolveColumn(columnName, tableType).ifPresent(shadowed ->
-                warnShadowedIdColumn(parentTypeName, name, location, nodeType, shadowed));
+            Optional<ColumnRef> shadowed = svc.resolveColumn(columnName, tableType);
+            if (shadowed.isPresent()) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    rejectShadowedIdColumn(parentTypeName, name, nodeType, shadowed.get()));
+            }
             return buildNodeIdOutputCarrier(parentTypeName, name, location, nodeType);
         }
 
@@ -7299,34 +7304,31 @@ class FieldBuilder {
     }
 
     /**
-     * Flags a {@code Node.id} field whose backing table also has a column of that name. The node ID
-     * wins (see the precedence arm in {@link #classifyChildFieldOnTableType}), so the field publishes
-     * the encoded global ID rather than the column value, and an author who meant the column would
-     * otherwise get the change silently.
+     * Rejects a {@code Node.id} field whose backing table also has a column of that name. Both
+     * readings are legitimate and they are different values on the wire, so the author has to say
+     * which one they meant rather than inheriting a default: {@code @nodeId} publishes the encoded
+     * global ID, {@code @field} exposes the column.
      *
-     * <p>The message names both ways to state the choice explicitly, because they are genuinely
-     * different intents rather than two spellings of one repair: {@code @nodeId} confirms the global
-     * ID, {@code @field} exposes the column. No {@link LintFix} is attached. Both fixes are
-     * directive insertions after the field's type, and graphql-java records a type node's start but
-     * not its end, so the insertion point for {@code id: ID!} (where the {@code !} may be separated
-     * by whitespace) is not derivable from source locations. Per {@link LintFix}'s own rule, a
-     * finding whose edit cannot be computed safely carries no fix.
+     * <p>Naming both remedies in the message is what makes the rejection actionable without the
+     * manual, and it matters more here than it would for an advisory: an author who meets this
+     * cannot proceed until they resolve it. The rejection carries prose rather than a structured
+     * repair for the same reason no {@link LintFix} was attachable while this was a warning: both
+     * remedies are directive insertions after the field's type, and graphql-java records a type
+     * node's start location but not its end, so the insertion point for {@code id: ID!} (where the
+     * {@code !} may be separated by whitespace) is not derivable from source locations.
      */
-    private void warnShadowedIdColumn(String parentTypeName, String name,
-                                      graphql.language.SourceLocation location,
-                                      NodeType nodeType, ColumnRef shadowed) {
+    private Rejection rejectShadowedIdColumn(String parentTypeName, String name,
+                                             NodeType nodeType, ColumnRef shadowed) {
         String tableSqlName = nodeType.table().tableName();
         String because = nodeType.provenance().keyColumns() == NodeProvenance.Origin.METADATA
-            ? "table '" + tableSqlName + "' publishes node metadata and also has a column named '"
-                + shadowed.sqlName() + "'"
+            ? "table '" + tableSqlName + "' has a column named '" + shadowed.sqlName()
+                + "' and also publishes node metadata"
             : "'" + parentTypeName + "' is a node type over table '" + tableSqlName
                 + "', which also has a column named '" + shadowed.sqlName() + "'";
-        ctx.addWarning(BuildWarning.LintFinding.of(
+        return Rejection.structural(
             "field '" + parentTypeName + "." + name + "': " + because
-            + ". Graphitron is publishing the node ID, not the column value. Add `@nodeId` to"
-            + " confirm, or `@field(name: \"" + shadowed.sqlName() + "\")` to expose the raw column"
-            + " instead.",
-            location, LintRule.NODE_ID_SHADOWS_COLUMN));
+            + ", so '" + name + "' is ambiguous. Add `@nodeId` to publish the global ID, or"
+            + " `@field(name: \"" + shadowed.sqlName() + "\")` to expose the raw column.");
     }
 
     /**

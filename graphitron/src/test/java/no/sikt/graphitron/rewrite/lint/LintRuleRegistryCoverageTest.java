@@ -66,8 +66,7 @@ class LintRuleRegistryCoverageTest {
         assertThat(classifier).containsExactlyInAnyOrder(
             "splitquery-redundant-on-record-parent",
             "redundant-record-directive",
-            "asconnection-same-table-pk-in",
-            "node-id-shadows-column");
+            "asconnection-same-table-pk-in");
     }
 
     @Test

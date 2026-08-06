@@ -157,11 +157,15 @@ input CustomerFilter {
 
 When the FK is ambiguous (more than one path from the consuming field's table to the target), add an explicit `@reference(path: [{key: "fk_constraint_name"}])` alongside the `@nodeId`. The xref:join-with-references.adoc[`@reference` recipe] covers the FK-disambiguation mechanics; the migration is otherwise mechanical.
 
-=== `@table` no longer auto-promotes to `NodeType`
+=== `@table` alone no longer auto-promotes to `NodeType`
 
-Historical only: legacy versions of the rewrite would silently promote any `@table` SDL type to `NodeType` if its backing jOOQ class carried `__NODE_TYPE_ID` / `__NODE_KEY_COLUMNS` metadata, even without `implements Node @node`. This behavior was retired (the synthesis shim plan documents the trigger: a mass typeId collision between ~200 backing types each carrying `__NODE_TYPE_ID = "195"` produced a symmetric demotion to `UnclassifiedType`).
+Historical only: legacy versions of the rewrite would silently promote any `@table` SDL type to `NodeType` if its backing jOOQ class carried `__NODE_TYPE_ID` / `__NODE_KEY_COLUMNS` metadata, even without `implements Node`. This behavior was retired (the synthesis shim plan documents the trigger: a mass typeId collision between ~200 backing types each carrying `__NODE_TYPE_ID = "195"` produced a symmetric demotion to `UnclassifiedType`).
 
-The current rule: a `@table` type without `implements Node @node` is a regular `TableType`, regardless of catalog metadata. If a schema relied on the auto-promotion (the type was reachable via `Query.node` or carried `@nodeId` fields), add the explicit `implements Node @node` declaration. The fields inside the type that *do* depend on node behavior (the `@nodeId` synthesis shim from the previous section) will still warn until they're explicit.
+The current rule: metadata alone promotes nothing, and `implements Node` is the opt-in. A `@table` type that does *not* declare the interface is a regular `TableType` no matter what its jOOQ class publishes, which is what keeps a nesting projection over a node-bearing table from becoming a second node. A `@table` type that *does* declare `implements Node` over a table publishing that metadata is a node, and takes `typeId` and `keyColumns` from the catalog.
+
+So if a schema relied on the auto-promotion (the type was reachable via `Query.node` or carried `@nodeId` fields), add `implements Node` to the declaration. You need `@node` as well only when the backing jOOQ class publishes no metadata, or when you want to override a published value; the xref:../reference/directives/node.adoc[`@node` reference] covers both. The fields inside the type that *do* depend on node behavior (the `@nodeId` synthesis shim from the previous section) will still warn until they're explicit.
+
+One case to expect on this path: if the table also has a column literally named `id`, the type's `id` field is ambiguous between the encoded global ID and that column, and the build fails until you write `@nodeId` or `@field(name: "id")` on it. The error names both remedies.
 
 === `@record` is now a no-op
 
@@ -264,7 +268,7 @@ Step 1 is non-optional and comes first (the schema does not load at all). Step 2
 
 * *`@notGenerated` is parsed but always rejected.* Removing the directive is the only fix; there is no warn-only mode and no migration shim. Schemas that still carry it will not compile.
 * *Synthesis shims run silently in IDE / language server contexts.* The WARN is a build-time log line; an IDE that loads the schema for completion may not surface it. Periodically grep your build logs for `synthesizes an` to catch shim-bearing fields.
-* *`@table` no longer auto-promotes to `NodeType`.* If a previously-promoted type breaks under the rewrite (typically: `Query.node` returns `null` for what used to resolve, or `@nodeId` synthesis stops firing), add `implements Node @node` to opt in explicitly.
+* *`@table` alone no longer auto-promotes to `NodeType`.* If a previously-promoted type breaks under the rewrite (typically: `Query.node` returns `null` for what used to resolve, or `@nodeId` synthesis stops firing), add `implements Node` to opt in. Add `@node` on top of that only if the backing jOOQ class publishes no `__NODE_*` metadata.
 * *Deprecated arguments still work; removed ones do not.* A deprecation notice from graphql-java is informational, not blocking, so those migrations are your call until the deprecation flips to removal in a future release. `ExternalCodeReference.name:` has already made that flip: it is undeclared, and a schema carrying it does not load.
 * *The `@condition` cascade divergence is a real SQL change.* Schemas that relied on legacy "outer owns everything" semantics produce different result sets under the rewrite, not different errors. Audit `override: true` sites with nested-input `@condition` annotations before promoting the rewrite to production.
 * *The rewrite is directive-compatible, not field-classifier-compatible.* A schema that compiled under legacy may surface new diagnostics under the rewrite (stricter classification for shapes the legacy generator silently accepted). The diagnostic always names the field; treat each as the rewrite's stricter-shape analysis catching what legacy would have produced as a runtime error.

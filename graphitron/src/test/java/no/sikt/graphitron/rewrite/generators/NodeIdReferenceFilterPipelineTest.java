@@ -58,7 +58,7 @@ class NodeIdReferenceFilterPipelineTest {
         var schema = TestSchemaHelper.buildSchema(MIXED_FILTER_INPUT + """
             type Bar implements Node @table(name: "bar") @node { id: ID! name: String }
             type Baz implements Node @table(name: "baz") @node {
-                id: ID!
+                id: ID! @nodeId
                 bars(filter: BarFilter): [Bar!] @reference(path: [{key: "bar_id_1_fkey"}])
             }
             type Query { baz: Baz }
@@ -76,7 +76,7 @@ class NodeIdReferenceFilterPipelineTest {
         var schema = TestSchemaHelper.buildSchema(MIXED_FILTER_INPUT + """
             type Bar implements Node @table(name: "bar") @node { id: ID! name: String }
             type Baz implements Node @table(name: "baz") @node {
-                id: ID!
+                id: ID! @nodeId
                 bars(filter: BarFilter): [Bar!] @splitQuery @reference(path: [{key: "bar_id_1_fkey"}])
             }
             type Query { baz: Baz }
@@ -109,7 +109,7 @@ class NodeIdReferenceFilterPipelineTest {
         var schema = TestSchemaHelper.buildSchema(CONDITION_ONLY_INPUT + """
             type Bar implements Node @table(name: "bar") @node { id: ID! name: String }
             type Baz implements Node @table(name: "baz") @node {
-                id: ID!
+                id: ID! @nodeId
                 bars(filter: BarFilter): [Bar!] @reference(path: [{key: "bar_id_1_fkey"}])
             }
             type Query { baz: Baz }

@@ -48,7 +48,7 @@ class NodeIdOverrideConditionFkTargetPipelineTest {
     void singleColumnFkTarget_nodeIdWithOverrideCondition_carriesFkCorrelation() {
         var schema = TestSchemaHelper.buildSchema("""
             type Bar implements Node @table(name: "bar") @node { id: ID! name: String }
-            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
             input BarFilter {
                 bazId: ID! @nodeId(typeName: "Baz") @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "argConditionTypeUnique"}, override: true)
             }

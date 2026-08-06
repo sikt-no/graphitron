@@ -2,7 +2,6 @@ package no.sikt.graphitron.rewrite;
 
 import graphql.schema.GraphQLObjectType;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
-import no.sikt.graphitron.rewrite.lint.LintRule;
 import no.sikt.graphitron.rewrite.model.Arrival;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.ChildField;
@@ -125,7 +124,7 @@ class NodeInferencePipelineTest {
         // The gate's other half, and what keeps a nesting projection over a node-bearing table from
         // becoming a second node. Publishing the Relay contract is the author's opt-in.
         var schema = schema("""
-            type SharedNode implements Node @table(name: "shared_node") { id: ID! }
+            type SharedNode implements Node @table(name: "shared_node") { id: ID! @nodeId }
             type SharedNodeProjection @table(name: "shared_node") { label: String }
             type Query { shared: SharedNode projection: SharedNodeProjection }
             """);
@@ -320,7 +319,7 @@ class NodeInferencePipelineTest {
     @Test
     void theLspStillOmitsATableTypeOverANodeBearingTable() {
         var bundle = bundle("""
-            type SharedNode implements Node @table(name: "shared_node") { id: ID! }
+            type SharedNode implements Node @table(name: "shared_node") { id: ID! @nodeId }
             type SharedNodeProjection @table(name: "shared_node") { label: String }
             type Query { shared: SharedNode projection: SharedNodeProjection }
             """);
@@ -333,36 +332,33 @@ class NodeInferencePipelineTest {
 
     // ===== The shadowed `id` column =====
     //
-    // Five rows, all over metadata-carrying tables. Rows 1 and 4 are the behaviour change: a
-    // `Node.id` over a table that also has an `id` column used to publish the raw column value.
+    // Five rows, all over metadata-carrying tables. Rows 1 and 4 are the rejection: a `Node.id`
+    // over a table that also has an `id` column names two different wire values, and the SDL does
+    // not choose between them, so the build refuses instead of picking. Rows 2 and 3 are the two
+    // ways to choose, and both already worked before this rule existed.
 
     @Test
-    void row1_bazBareIdPublishesTheNodeIdAndWarnsAboutTheShadowedColumn() {
+    void row1_bazBareIdIsAmbiguousAndRejects() {
         var schema = schema("""
             type Baz implements Node @table(name: "baz") @node { id: ID! }
             type Query { baz: Baz }
             """);
 
-        var id = (ChildField.ColumnBackedField) schema.field("Baz", "id");
-        assertThat(id.compaction()).isInstanceOf(CallSiteCompaction.NodeIdEncodeKeys.class);
-        // Pinned in the same assertion as the flip, so the migration reads as one fact: the value
-        // changed *and* the build says so.
-        assertThat(schema.warnings())
-            .filteredOn(w -> w instanceof BuildWarning.LintFinding f
-                && f.rule() == LintRule.NODE_ID_SHADOWS_COLUMN)
-            .singleElement()
-            .extracting(BuildWarning::message, org.assertj.core.api.InstanceOfAssertFactories.STRING)
-            .satisfies(m -> assertThat(m)
-                .contains("field 'Baz.id'")
-                .contains("table 'baz' publishes node metadata and also has a column named 'id'")
-                .contains("publishing the node ID, not the column value")
-                // Both silencers named, so the finding is actionable without the manual.
-                .contains("@nodeId")
-                .contains("@field(name: \"id\")"));
+        assertThat(((GraphitronField.UnclassifiedField) schema.field("Baz", "id")).reason())
+            .contains("field 'Baz.id'")
+            .contains("table 'baz' has a column named 'id' and also publishes node metadata")
+            .contains("'id' is ambiguous")
+            // Both remedies named, so the rejection is actionable without the manual. An author
+            // who meets this cannot proceed until they resolve it, which is the whole point.
+            .contains("`@nodeId`")
+            .contains("`@field(name: \"id\")`");
+        assertThat(new GraphitronSchemaValidator().validate(schema))
+            .as("a rejected field must fail the build, not ride through it")
+            .isNotEmpty();
     }
 
     @Test
-    void row2_nodeIdOnTheShadowingShapeIsTheSameVerdictWithNoWarning() {
+    void row2_nodeIdPublishesTheGlobalId() {
         var schema = schema("""
             type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
             type Query { baz: Baz }
@@ -370,13 +366,13 @@ class NodeInferencePipelineTest {
 
         assertThat(((ChildField.ColumnBackedField) schema.field("Baz", "id")).compaction())
             .isInstanceOf(CallSiteCompaction.NodeIdEncodeKeys.class);
-        assertThat(shadowFindings(schema))
-            .as("the author stated the choice; nothing to advise")
+        assertThat(new GraphitronSchemaValidator().validate(schema))
+            .as("the author stated the choice; nothing left to reject")
             .isEmpty();
     }
 
     @Test
-    void row3_fieldDirectivePinsTheRawColumnAndSilencesTheWarning() {
+    void row3_fieldDirectiveExposesTheRawColumn() {
         var schema = schema("""
             type Baz implements Node @table(name: "baz") @node { id: ID! @field(name: "id") }
             type Query { baz: Baz }
@@ -385,32 +381,41 @@ class NodeInferencePipelineTest {
         var id = (ChildField.ColumnBackedField) schema.field("Baz", "id");
         assertThat(id.compaction()).isInstanceOf(CallSiteCompaction.Direct.class);
         assertThat(id.columns()).extracting(ColumnRef::sqlName).containsExactly("id");
-        assertThat(shadowFindings(schema)).isEmpty();
+        assertThat(new GraphitronSchemaValidator().validate(schema)).isEmpty();
     }
 
     @Test
-    void row4_sharedNodeFlipsToTheEncodedFormWithoutDisturbingTheDecodeHelperName() {
+    void row4_sharedNodeRejectsWithoutDisturbingTheDecodeHelperName() {
         // The non-degenerate shadowing row: typeId "10154" differs from the type name, so this is
         // the case where the raw column value and the encoded global ID are visibly different
         // things, and the one where the typeId-suffixed decode fallback could have crept in.
-        var schema = schema("""
+        var bare = schema("""
             type SharedNode implements Node @table(name: "shared_node") @node(typeId: "10154") { id: ID! }
             input SharedSelector { id: ID! @nodeId(typeName: "SharedNode") }
             type Query { shared(in: SharedSelector): SharedNode }
             """);
+        assertThat(((GraphitronField.UnclassifiedField) bare.field("SharedNode", "id")).reason())
+            .contains("'id' is ambiguous");
 
-        var id = (ChildField.ColumnBackedField) schema.field("SharedNode", "id");
+        // Resolving the ambiguity leaves helper naming exactly where it was: still keyed on the
+        // type name rather than the typeId, which is the axis this fixture exists to hold open.
+        var pinned = schema("""
+            type SharedNode implements Node @table(name: "shared_node") @node(typeId: "10154") { id: ID! @nodeId }
+            input SharedSelector { id: ID! @nodeId(typeName: "SharedNode") }
+            type Query { shared(in: SharedSelector): SharedNode }
+            """);
+        var id = (ChildField.ColumnBackedField) pinned.field("SharedNode", "id");
         assertThat(((CallSiteCompaction.NodeIdEncodeKeys) id.compaction()).encodeMethod().methodName())
             .isEqualTo("encodeSharedNode");
-        var node = (GraphitronType.NodeType) schema.type("SharedNode");
-        assertThat(node.decodeMethod().methodName())
+        assertThat(((GraphitronType.NodeType) pinned.type("SharedNode")).decodeMethod().methodName())
             .as("the decode helper is still keyed on the type name, not the typeId")
             .isEqualTo("decodeSharedNode");
-        assertThat(shadowFindings(schema)).hasSize(1);
     }
 
     @Test
-    void row5_aNodeOverATableWithNoIdColumnIsUnchangedAndSilent() {
+    void row5_aNodeOverATableWithNoIdColumnNeedsNoDisambiguation() {
+        // Nothing is shadowed, so `Node.id` has only one reading and the author is not asked to
+        // restate it. This is the row that keeps the rejection scoped to genuine ambiguity.
         var schema = schema("""
             type Foo implements Node @table(name: "bar") @node { id: ID! }
             type Query { foo: Foo }
@@ -418,9 +423,7 @@ class NodeInferencePipelineTest {
 
         assertThat(((ChildField.ColumnBackedField) schema.field("Foo", "id")).compaction())
             .isInstanceOf(CallSiteCompaction.NodeIdEncodeKeys.class);
-        assertThat(shadowFindings(schema))
-            .as("nothing was shadowed, so nothing to warn about")
-            .isEmpty();
+        assertThat(new GraphitronSchemaValidator().validate(schema)).isEmpty();
     }
 
     @Test
@@ -430,7 +433,7 @@ class NodeInferencePipelineTest {
         // would have rerouted every such field from its column to a nodeId encode. Only `Node.id`
         // is hoisted, so an `ID` field that resolves to a column still gets the column.
         var schema = schema("""
-            type Doc implements Node @table(name: "plain_id") @node { id: ID! name: ID! }
+            type Doc implements Node @table(name: "plain_id") @node { id: ID! @nodeId name: ID! }
             type Query { doc: Doc }
             """);
 
@@ -465,29 +468,31 @@ class NodeInferencePipelineTest {
             type Query { doc: Doc }
             """);
 
-        assertThat(((ChildField.ColumnBackedField) schema.field("Doc", "id")).compaction())
-            .isInstanceOf(CallSiteCompaction.NodeIdEncodeKeys.class);
-        assertThat(shadowFindings(schema))
-            .singleElement()
-            .satisfies(m -> assertThat(m)
-                .contains("'Doc' is a node type over table 'plain_id', which also has a column named 'id'")
-                .doesNotContain("publishes node metadata"));
+        assertThat(((GraphitronField.UnclassifiedField) schema.field("Doc", "id")).reason())
+            .contains("'Doc' is a node type over table 'plain_id', which also has a column named 'id'")
+            .contains("'id' is ambiguous")
+            .doesNotContain("publishes node metadata");
     }
 
     @Test
     void theShadowedColumnNeedNotBeAKeyColumn() {
-        // `keyed_elsewhere` keys its node id on `key_x` and separately has a column named `id`. The
-        // encoded value is over the key column; the same-named column is simply not what `Node.id`
-        // means, and @field is the only way to reach it.
-        var schema = schema("""
+        // `keyed_elsewhere` keys its node id on `key_x` and separately has a column named `id`, so
+        // the two readings are different columns rather than two encodings of one. Same rejection,
+        // and both remedies resolve it to visibly different values.
+        var ambiguous = schema("""
             type Ke implements Node @table(name: "keyed_elsewhere") { id: ID! name: String }
             type Query { ke: Ke }
             """);
+        assertThat(((GraphitronField.UnclassifiedField) ambiguous.field("Ke", "id")).reason())
+            .contains("'id' is ambiguous");
 
-        var id = (ChildField.ColumnBackedField) schema.field("Ke", "id");
-        assertThat(id.compaction()).isInstanceOf(CallSiteCompaction.NodeIdEncodeKeys.class);
-        assertThat(id.columns()).extracting(ColumnRef::sqlName).containsExactly("key_x");
-        assertThat(shadowFindings(schema)).hasSize(1);
+        var encoded = schema("""
+            type Ke implements Node @table(name: "keyed_elsewhere") { id: ID! @nodeId name: String }
+            type Query { ke: Ke }
+            """);
+        var enc = (ChildField.ColumnBackedField) encoded.field("Ke", "id");
+        assertThat(enc.compaction()).isInstanceOf(CallSiteCompaction.NodeIdEncodeKeys.class);
+        assertThat(enc.columns()).extracting(ColumnRef::sqlName).containsExactly("key_x");
 
         var pinned = schema("""
             type Ke implements Node @table(name: "keyed_elsewhere") { id: ID! @field(name: "id") name: String }
@@ -496,14 +501,6 @@ class NodeInferencePipelineTest {
         var raw = (ChildField.ColumnBackedField) pinned.field("Ke", "id");
         assertThat(raw.compaction()).isInstanceOf(CallSiteCompaction.Direct.class);
         assertThat(raw.columns()).extracting(ColumnRef::sqlName).containsExactly("id");
-    }
-
-    private static List<String> shadowFindings(GraphitronSchema schema) {
-        return schema.warnings().stream()
-            .filter(w -> w instanceof BuildWarning.LintFinding f
-                && f.rule() == LintRule.NODE_ID_SHADOWS_COLUMN)
-            .map(BuildWarning::message)
-            .toList();
     }
 
     // ===== The non-goal: no metadata, no inference =====

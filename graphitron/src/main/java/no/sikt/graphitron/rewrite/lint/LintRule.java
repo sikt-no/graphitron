@@ -36,7 +36,6 @@ public enum LintRule {
     SPLITQUERY_REDUNDANT_ON_RECORD_PARENT("splitquery-redundant-on-record-parent", Source.CLASSIFIER),
     REDUNDANT_RECORD_DIRECTIVE("redundant-record-directive", Source.CLASSIFIER),
     ASCONNECTION_SAME_TABLE_PK_IN("asconnection-same-table-pk-in", Source.CLASSIFIER),
-    NODE_ID_SHADOWS_COLUMN("node-id-shadows-column", Source.CLASSIFIER),
 
     // Codegen-config advisories: derived from the Mojo <sessionState> config at report assembly,
     // not from the AST and not from a per-field classifier verdict, so neither an engine visitor nor a

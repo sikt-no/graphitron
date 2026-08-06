@@ -60,7 +60,7 @@ class NodeIdLeafResolverTest {
         // positionally matches NodeType key {id} → DirectFk.
         String sdl = """
             type Bar implements Node @table(name: "bar") @node { id: ID! }
-            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
             type Query {
                 barsByBaz(bazIds: [ID!]! @nodeId(typeName: "Baz")): [Bar!]!
             }
@@ -282,7 +282,7 @@ class NodeIdLeafResolverTest {
         // input-field leaf and assert it lands in the DirectFk arm.
         String sdl = """
             type Bar implements Node @table(name: "bar") @node { id: ID! }
-            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
             input BarFilterInput {
                 bazIds: [ID!] @nodeId(typeName: "Baz")
             }

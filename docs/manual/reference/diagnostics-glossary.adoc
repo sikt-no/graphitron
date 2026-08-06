@@ -2,7 +2,7 @@
 :description: Every closed-set diagnostic code the rewrite validator emits, with a sample message line and the next concrete step for each one.
 :!toc:
 
-You probably arrived here because the build failed with a `[<kind>] <message>` line and you searched for it. The rest of this page is organised so the line you saw is the entry point: top-level kinds first, then the nine `unknown-name` attempt kinds (the most common shape), then the four `deferred` emit-block reasons. Each entry leads with a sample line you can grep for.
+You probably arrived here because the build failed with a `[<kind>] <message>` line and you searched for it. The rest of this page is organised so the line you saw is the entry point: top-level kinds first, then the nine `unknown-name` attempt kinds (the most common shape), then the four `deferred` emit-block reasons, and finally the handful of structural errors common enough to be worth naming individually. Each entry leads with a sample line you can grep for.
 
 == Reading an error line
 
@@ -140,11 +140,24 @@ When `[author-error]` carries an `UnknownName` variant (a closed-set name lookup
 
 *Next step.* Use one of the supported values (`INSERT`, `UPDATE`, `DELETE`, `UPSERT`). xref:directives/mutation.adoc[`@mutation` directive reference] covers the supported kinds.
 
+== Named structural errors
+
+Structural `[author-error]` messages are written at the classifier site and are mostly not enumerable, as the kind entry above says. The one below is listed anyway because it is the error a schema meets by writing the *obvious* thing rather than a wrong thing, and because both of its remedies are fixed directives rather than a rename you have to work out.
+
+[#shadowed-node-id]
+=== A node's `id` field shadowing a column named `id`
+
+*Sample line.* `[author-error] field 'Doc.id': table 'doc' has a column named 'id' and also publishes node metadata, so 'id' is ambiguous. Add ``@nodeId`` to publish the global ID, or ``@field(name: "id")`` to expose the raw column.`
+
+*Cause.* The type is a node, so its `id` field is a candidate for the encoded global ID; the bound table also has a column of that name, so it is equally a candidate for that column's value. Both readings are legitimate and they are different values on the wire, so the classifier refuses to pick one for you. The wording of the first clause varies with where the node identity came from: a table publishing `\\__NODE_TYPE_ID` / `\\__NODE_KEY_COLUMNS` is named as such, and a type that declared `@node` explicitly is named as a node type over its table.
+
+*Next step.* Write the reading you meant on the field. `@nodeId` publishes the encoded global ID; `xref:directives/field.adoc[@field(name: "id")]` exposes the raw column, at the cost of that type no longer round-tripping through `Query.node(id:)`. The xref:directives/node.adoc[`@node` reference] covers both.
+
 == Drift protection
 
 `DiagnosticsDocCoverageTest` asserts every value of `RejectionKind` and `Rejection.AttemptKind` has an anchored `=== <kebab-case-name>` heading on this page, and every such heading corresponds to an enum value. A new diagnostic added to one of these enums cannot land green without a doc paragraph; an obsolete code's removal forces the heading's removal.
 
-Structural variants (`AuthorError.Structural`, `InvalidSchema.Structural`, `InvalidSchema.DirectiveConflict`) carry ad-hoc messages produced at the classifier site and are not enumerable; the kind-level entries above describe how to read those.
+Structural variants (`AuthorError.Structural`, `InvalidSchema.Structural`, `InvalidSchema.DirectiveConflict`) carry ad-hoc messages produced at the classifier site and are not enumerable; the kind-level entries above describe how to read those. <<Named structural errors>> is outside the test's scope for the same reason: those entries are chosen editorially, so nothing forces one to exist and nothing forces one to be removed.
 
 == See also
 
