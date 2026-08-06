@@ -66,9 +66,11 @@ pattern `graphitron-mcp`'s docs-index builder already uses), or a
 `graphitron-model-functions` sibling on the codegen plugin's classpath (the reason
 `graphitron-fixtures-codegen` exists as a sibling). With structured directive arguments
 decoded at capture (see the conventions below), no known derivation needs a SQL-side parse,
-so no functions ship and none are planned; if one ever appears, the spike's wiring is the
-recipe, the module or its sibling is the home, and the sibling would join the
-module-enumeration ride-alongs below.
+so no functions ship and none are planned. The contingency's home is decided anyway, since
+deciding is cheapest here: if a function ever appears it lives in this module under the
+single-module driver wiring (the driver already exists for codegen, and a contingency does
+not justify reactor module churn); the sibling arm stays documented in the audit as the
+fallback if plugin-classpath constraints ever force it.
 
 Mechanical ride-alongs: the root pom module list, the module enumeration in CLAUDE.md and
 `docs/architecture/reference/modules.adoc` (the `check-module-enumeration` gate checks the
@@ -565,7 +567,7 @@ CREATE TABLE intent_field_condition (
   field_name  VARCHAR NOT NULL,
   class_name  VARCHAR, -- ExternalCodeReference.className as written
   method      VARCHAR, -- ExternalCodeReference.method as written
-  arg_mapping VARCHAR, -- ExternalCodeReference.argMapping as written; its pair grammar decodes to a child relation if a consumer needs it relationally
+  arg_mapping VARCHAR, -- ExternalCodeReference.argMapping as written; its pair grammar additionally decodes at capture into an ordered child relation (drawn in the inventory round), the type_sdl-plus-decode pattern
   override    BOOLEAN, -- as written; NULL when omitted (the FALSE default is derivable)
   PRIMARY KEY (type_name, field_name),
   FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
@@ -645,11 +647,15 @@ authored picture is the anti-join; the effective picture is the tables as they s
 round trip emits the effective picture minus the graphitron namespace. Name collision is
 author-reachable (an author can declare the type a macro would synthesize), so the visitor
 resolves collisions before inserting, following the current synthesis semantics; the
-primary-key constraint stays a capture-bug detector, never an author-triggerable throw. One
-known caveat rides along: federation's `@key` synthesis currently runs pre-assembly
-(`KeyNodeSynthesiser` rewrites the registry), so the walk sees its output as if authored;
-end state it becomes a visitor macro like the others, and until then its rows carry no
-synthesis provenance.
+primary-key constraint stays a capture-bug detector, never an author-triggerable throw.
+Federation's `@key` synthesis is decided into the same shape now, not eventually: it is a
+visitor macro, and its synthesized applications carry provenance like every other macro
+output. During the shadow window the registry rewrite (`KeyNodeSynthesiser`) keeps running
+for the legacy pipeline, so the walk sees its output in the assembled schema; the
+synthesizer records what it added, the capture walk turns that record into provenance rows,
+and the store never mistakes a synthesized key for an authored one. When the last legacy
+consumer migrates, the registry rewrite folds into the walk and the interim record
+disappears.
 
 ```sql
 -- ==== Macro synthesis provenance =============================================
@@ -681,6 +687,21 @@ CREATE TABLE graphql_field_synthesis (
   PRIMARY KEY (type_name, field_name),
   FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name),
   CHECK (macro IN ('CONNECTION', 'FACET'))
+);
+
+-- A type-level directive application was synthesized rather than authored
+-- (federation key synthesis; the application itself sits in
+-- applied_type_directive and intent_federation_key like any other, and must
+-- re-emit, so provenance is this relation, not exclusion).
+CREATE TABLE applied_type_directive_synthesis (
+  type_name      VARCHAR NOT NULL,
+  directive_name VARCHAR NOT NULL,
+  ordinal        INT     NOT NULL,
+  macro          VARCHAR NOT NULL,
+  PRIMARY KEY (type_name, directive_name, ordinal),
+  FOREIGN KEY (type_name, directive_name, ordinal)
+    REFERENCES applied_type_directive (type_name, directive_name, ordinal),
+  CHECK (macro IN ('FEDERATION_KEY'))
 );
 ```
 
