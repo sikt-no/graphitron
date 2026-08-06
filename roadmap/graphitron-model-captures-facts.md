@@ -635,11 +635,13 @@ directive, filled by the same capture walk. Its rules:
   position keys deliberately preserve an author's duplicate parameter so the duplicate
   detection can see it. Inert sites (`@externalField`, `@enum`) keep only the raw column,
   because their sole consumer is a presence-triggered rejection.
-- **Retired directives capture existence, not payload.** For `@notGenerated` and
-  `@multitableReference` the only consumer is the located rejection, so the relation is the
+- **Retired directives capture existence, not payload.** For `@multitableReference` the only
+  consumer is the located rejection, so the relation is the
   coordinate alone; `@record` keeps its `className` because the warning arms compare the
   declared class against the reflected backing. Payload nobody reads is not a fact worth
-  columns; if a consumer ever appears, the decode lands with it.
+  columns; if a consumer ever appears, the decode lands with it. (`@notGenerated` is not in
+  this set: it is not a graphitron directive at all, and its stray declaration is a bug the
+  DDL notes in place.)
 
 The inventory below is the full census: every directive `directives.graphqls` declares, plus
 the two federation applications the pipeline decodes (`@key`, `@link`), each relation grounded
@@ -1429,42 +1431,13 @@ CREATE TABLE intent_link_import (
 
 -- Retired directives: existence only, per the rules above.
 
--- @notGenerated (removed) on a field or input field.
-CREATE TABLE intent_not_generated_field (
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  PRIMARY KEY (type_name, field_name),
-  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
-);
-
--- @notGenerated (removed) on an argument.
-CREATE TABLE intent_not_generated_argument (
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  argument_name VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  PRIMARY KEY (type_name, field_name, argument_name),
-  FOREIGN KEY (type_name, field_name, argument_name)
-    REFERENCES graphql_argument (type_name, field_name, argument_name)
-);
-
--- @notGenerated (removed) on an interface or union.
-CREATE TABLE intent_not_generated_type (
-  type_name        VARCHAR NOT NULL,
-  source_name      VARCHAR,
-  declaration_line INT     NOT NULL,
-  source_line      INT,
-  source_column    INT,
-  PRIMARY KEY (type_name),
-  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (type_name, source_name, declaration_line)
-    REFERENCES graphql_type_declaration (type_name, source_name, source_line)
-);
+-- @notGenerated, like @experimental_constructType above, is not a graphitron
+-- directive and its declaration in directives.graphqls is a bug, so it gets
+-- no relations. Once the stray declaration is removed its applications take
+-- the applied_ fidelity path, and the current hard rejection ("no longer
+-- supported") becomes, if it is kept at all, a detection over the directive
+-- name in the applied_ rows; whether to keep steering on a name graphitron
+-- does not own is a directive-lifecycle question outside this spec.
 
 -- @multitableReference (removed) on a field; routes is never read.
 CREATE TABLE intent_multitable_reference (

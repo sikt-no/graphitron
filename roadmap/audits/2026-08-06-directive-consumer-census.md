@@ -33,7 +33,7 @@ does not declare it.
 |---|---|---|---|
 | `@splitQuery` | `DeliveryFactVisitor`, `FieldBuilder` | (none) | warn + delete-fix on record-backed parents; conflicts with `@routine` |
 | `@pivot` | `FieldBuilder.classifyPivot` region | `on`, `value`, `vocabulary` (all) | vocabulary resolves an enum whose values' `@field(name:)` map slots to tokens |
-| `@notGenerated` | reject sites only | (none) | removed; hard reject on field and input-field sites |
+| `@notGenerated` | reject sites only | (none) | not a graphitron directive; the declaration in `directives.graphqls` is a bug; hard reject on field and input-field sites today; no intent relations |
 | `@table` | `BuildContext`, `TypeBuilder`, resolvers | `name` (OBJECT/INTERFACE) | INPUT_OBJECT: ignored, `name` never read, per-usage warning |
 | `@scalarType` | `TypeBuilder.classifyScalarType`, `ScalarTypeResolver` | `scalar` | presence read via an SDL pre-pass because assembly strips built-in redeclarations; registry capture removes that carve-out |
 | `@field` | `FieldSourceSigil` sites plus ~15 plain `argString` sites | `name` | `$source` / `$errors` sigil forms; plain sites default to the SDL name |
@@ -90,9 +90,11 @@ re-emitted via the survivor rule.
 - **Pair children only where a consumer binds pairs.** The shared decoder's live sites get
   ordered pair relations; inert sites (`@externalField`, `@enum`) keep the raw column, since
   their only consumer is a presence-triggered rejection.
-- **Retired directives capture existence, not payload** (`@notGenerated`,
-  `@multitableReference`), except where a warning arm reads a payload value (`@record`'s
-  `className`, compared against the reflected backing class).
+- **Retired directives capture existence, not payload** (`@multitableReference`), except
+  where a warning arm reads a payload value (`@record`'s
+  `className`, compared against the reflected backing class). `@notGenerated` left the set:
+  like `@experimental_constructType` it is not a graphitron directive, its declaration is a
+  bug, and its applications belong on the `applied_` fidelity path once the declaration goes.
 - **No CHECK constraints on author-spelled enum literals** (`MutationType`,
   `ErrorHandlerType`, `SortDirection`): the consumers' own coercers tolerate malformed forms
   and reject in classification, confirming vocabulary membership as detection business.
