@@ -7,7 +7,7 @@ priority: 4
 theme: classification-model
 depends-on: [graphitron-model-captures-facts]
 created: 2026-08-04
-last-updated: 2026-08-05
+last-updated: 2026-08-06
 ---
 
 # Classification is a relation; validation adds facts
@@ -150,10 +150,11 @@ derived, not because anything specially preserved it.
 
 **Claims cover the classification axis only.** Delivery (`@splitQuery`), reachable source shapes,
 and the other gathered axes stay their own coordinate-keyed relations; `GraphitronSchema` already
-carries eight, and the claim relations join that family rather than swallowing it. Which axis a
-directive binds is declared at the directive definition and rendered into the generated directives
-reference, so "classification-claiming" stops being a hand-enumerated list; `@splitQuery` never
-claims, and the `Composes` verdict dissolves rather than migrates.
+carries eight, and the claim relations join that family rather than swallowing it. Which
+directives claim is declared where the claim view is defined: the view unions one arm per
+claiming semantic relation, so "classification-claiming" is data a query can answer rather than
+a hand-enumerated Java list; `@splitQuery`'s relation contributes no arm, and the `Composes`
+verdict dissolves rather than migrates.
 
 **Resolution is a relational expression, not a tag filter.** The view planning reads is the
 authored relation unioned with the inferred rows at coordinates the authored relation does not
@@ -331,17 +332,19 @@ parse SQL cannot express, with the spike's wiring as the recipe.
    refinement (cause identity pinned: `@routine` with `@lookupKey` stays a capability-gap
    rejection); the `Composes` row dissolves because `@splitQuery` is a delivery-axis directive
    that never claims (the row is dead code today regardless). The two hand-enumerated detector
-   lists derive from the per-directive axis declaration rather than becoming a fourth list.
+   lists dissolve into the claim view's arm list (the axis declaration's home, closed below)
+   rather than becoming a fourth list.
 4. **"Unbound" stops being a demotion target.** The definition-keyed fact ("no column bound,
    attempted name X") stays on the carrier as a positive fact. The malformed-shape verdict
    (`@condition(override: false)` with no column) mints into `diagnostics` at classify time, with no
    later retraction. The cascade verdict is use-keyed and mints once per use-site join; each of the
    two predicates gets exactly one evaluation site (today `FieldBuilder.rejectAtConsumer` and
-   `GraphitronSchemaValidator.validateInputUnboundField` overlap). This subsumes the validator-mirror
-   gap R221 (`validator-walks-plain-input-unbound-fields`) owns, or narrows it to a residue; settle
-   which at implementation and close or re-scope R221 accordingly. The cascade half carries an
-   open question below: `rejectAtConsumer` reads `enclosingOverride`, a call-site cascade fact the
-   validator's model walk does not have.
+   `GraphitronSchemaValidator.validateInputUnboundField` overlap). This subsumes the
+   validator-mirror gap R221 (`validator-walks-plain-input-unbound-fields`) owns in full: the
+   definition-keyed disjunct is exactly the reachability R221 asks for, and the cascade disjunct
+   gets its evaluation site from the occurrence-path derivation (closed below), so R221 closes as
+   subsumed when this slice lands. The cascade fact `rejectAtConsumer` reads
+   (`enclosingOverride`) becomes a predicate over path prefixes rather than a call-site local.
 5. **The output-side projection preserves the claims.** A broken DELETE mutation still reads as a
    DELETE mutation with its intended table on the LSP and MCP surfaces, sourced from the claim
    relations, never from `UnclassifiedField.definition()` (a graphql-java node; reading applied
@@ -473,34 +476,54 @@ those pieces.
   reads, and the `TableInterfaceType` exclusion in `classifyFieldInner`'s table-backed dispatch
   arm looks unreachable (the type is keyed by an interface name, the lookup always by an object
   name).
-- **Slice 4's cascade half: is a path-valued key acceptable?** The predicate splits cleanly. The
-  definition-keyed disjunct (`@condition(override: false)` with no column) is exactly
-  `GraphitronSchemaValidator.validateInputUnboundField`'s existing predicate, and R221 as filed
-  is precisely "make that disjunct reachable for plain inputs". The cascade disjunct (no
-  condition, no ancestor override) is irreducibly a fact about an occurrence path, and under
-  capture-and-derive the path is derivable data keyed by its own value, so the question stops
-  being "wait for input-carrier coordinates" and becomes whether a path-valued derived key is an
-  acceptable relation shape, and whether its implementation lands here or stays consumer-side
-  until the umbrella's input-member work.
-- **Edge placement of the conflicted arm.** Narrowed by research, still open as a decision.
-  Discoverability is not at stake: the MCP `schema` tool lists broken fields inline with their
-  reason regardless of edges, so `NO_EDGE_FIELDS` membership governs traversal reach only, and
-  multi-edge-per-field is established pattern (composite columns and polymorphic participants
-  loop the same builders). The case for edge-bearing is the item's own thesis: `Unclassified` is
-  rightly no-edge because nothing resolved, a conflicted coordinate differs precisely because its
-  claims' slot facts survived, and the reverse index is what answers "what touches table X" with
-  the broken DELETE included. `EdgeCoverageTest` pins whichever answer.
+- **Slice 4's cascade half: closed, the path-valued key is adopted.** The predicate splits
+  cleanly: the definition-keyed disjunct (`@condition(override: false)` with no column) is
+  exactly `GraphitronSchemaValidator.validateInputUnboundField`'s existing predicate, and the
+  cascade disjunct (no condition, no ancestor override) is irreducibly a fact about an
+  occurrence path. The path relation is derived and value-keyed like everything else in the
+  store: the parent row's key is the serialized path, ordinal-keyed step rows carry the same
+  data relationally so no consumer parses the key. A derived relation is re-derived each run
+  and never migrated, so the value key costs nothing and keeps re-derivation deterministic; no
+  surrogate ids enter the schema. It lands with this item's classification-migration piece,
+  not behind the umbrella's input-member coordinate work, because the derivation needs no
+  minted coordinates; the path is its own identity. `rejectAtConsumer`'s consumer-side
+  re-derivation retires when the cascade predicate reads the derived relation.
+- **Edge placement of the conflicted arm: closed, edge-bearing.** Discoverability was never at
+  stake (the MCP `schema` tool lists broken fields inline with their reason regardless of
+  edges), so `NO_EDGE_FIELDS` membership governs traversal reach only, and the item's own
+  thesis decides it: `Unclassified` is rightly no-edge because nothing resolved, and a
+  conflicted coordinate differs precisely because its claims' slot facts survived. The
+  conflicted arm derives one edge per claim whose slot facts resolved a table, so the reverse
+  index answers "which delete mutations target table X" with the broken population included,
+  which is the motivating query. Multi-edge-per-field is established pattern (composite columns
+  and polymorphic participants loop the same builders); `EdgeProducer` declares the arm
+  edge-bearing and `EdgeCoverageTest` pins it.
 - **Slot-fact granularity: closed.** The semantic-capture pivot recorded in R595 answers it:
   the graphitron directive inventory decodes at capture into per-directive semantic relations
   that ship with the substrate, so no increment mints decoded shapes later; what an increment
   adds is its detections and resolution derivations. The bullet stays only to record the
   closure.
-- **The axis declaration's home.** Where a directive declares the axis it binds, and what enforces
-  that every classification-claiming directive carries the declaration.
-- **Interim claim payload in slice 2.** The monolithic producer's minted record riding as the
-  payload, or a thinner kind-plus-provenance row until the pilot lands. Leaning thin: the minted
-  record would put the transitional hierarchy inside a relation the containment line keeps clean,
-  and the payload would be built only to be deleted.
+- **The axis declaration's home: closed by the store.** A directive's axis is which derivation
+  views read its semantic relation, and the classification axis's declaration is literal: the
+  claim view unions one arm per claiming `intent_` relation, classifier column a literal per
+  arm, at both grains, since types claim too. Today's four conflict sites all dissolve into the
+  same grouping detection over that view: the two hand-enumerated detector lists behind
+  `FieldBuilder.reduceDirectiveConflict` (child fields: `@service`, `@externalField`, `@nodeId`,
+  `@routine`; root query fields: `@service`, `@lookupKey` anywhere on the argument surface,
+  `@routine`), the ad hoc `@service` with `@mutation` check in the mutation-field arm, and the
+  type-level `@table` with `@error` check in `TypeBuilder`. Drift is loud in both directions: a
+  claiming relation left out of the view produces zero claims and lands as unclassifiable
+  through the demand anti-join, and a non-claiming relation wired in must invent a
+  classification kind for its arm, one planning has no parse target for, and additionally
+  surfaces as conflict rows wherever it co-occurs with the real claimant. The generated
+  directives reference renders the axis from the store rather than from a Java-side list; the
+  render mechanism is implementation detail.
+- **Interim claim payload in slice 2: mooted by the strangler frame.** The slice's interim (the
+  monolithic classifier minting claim rows) belonged to the pre-store shape. Under the store the
+  authored claim relation is a view over the captured semantic relations; nothing mints claim
+  rows, so there is no interim payload to choose. The residue is the view's column shape, and
+  the first-client draft above already constrains it: whatever the MCP JSON and hover header
+  render must be selectable from the claiming relation's decoded columns.
 - **Provenance shape for inferred claims.** What a structural trigger is as data (the resolving
   column, the nesting edge), and whether one shape covers all structural classifiers; wants an
   enumeration of the actual structural classifiers before proposing a shape.
