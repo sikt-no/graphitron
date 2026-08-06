@@ -1911,6 +1911,13 @@ file's parse.
 - **Javadoc and Java source positions.** The request-time join against `SourceWalker` is a
   deliberate cadence separation (a `.java` edit is visible without a rebuild) and stays outside
   the store.
+- **Pipeline-output facts.** What a run *produced*, reported by oracles that run after
+  capture: generated-code compile diagnostics (javac output the dev loop collects per
+  compile round; the batch pipeline never sees it at all), and the emitted-file inventory.
+  These are facts and they belong in the store eventually, but they cannot be filled by this
+  item's capture loads (they do not exist at capture time) and need a writer with its own
+  lifecycle, so the family lands as its own item with its first consumer:
+  `pipeline-output-facts-family`.
 - **Derived `GraphitronSchema` components.** Arrivals, reachable source shapes, tenant scopes
   and bindings, connection synthesis, operation members, and delivery facts are derivations over
   the base facts above; none of them is capture, so none of them is a table here.

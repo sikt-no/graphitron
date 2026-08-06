@@ -319,12 +319,15 @@ sharper than "the store has not landed yet":
   `validation-adds-facts`'s decision, not this item's. The migration criterion is therefore:
   this item's aggregate migrates when it selects from the violation relation, not when it
   happens to run SQL.
-- **The compile channel never becomes store facts.** `CompileDiagnostic` is javac output over
-  generated Java sources, exactly the Java-side surface the store leaves out on cadence
-  grounds, so no detection will ever mint it. `DiagnosticRow` is therefore not interim
-  scaffolding: it is the permanent union seam over channels of permanently different
-  provenance. Post-migration the schema channels re-point at store queries and the hand-built
-  grouping engine retires; the row and the wire contract stay.
+- **The compile channel is outside capture's reach.** `CompileDiagnostic` is javac output over
+  generated Java sources, produced after capture has finished, so no capture load fills it and
+  no detection will ever mint it; if it enters the store at all it enters through the
+  pipeline-output family filed as `pipeline-output-facts-family`. Until that item lands,
+  `DiagnosticRow` is not interim scaffolding but the union seam over channels of different
+  provenance: post-migration the schema channels re-point at store queries and the hand-built
+  grouping engine retires, while the row and the wire contract stay. If the output family does
+  land, the seam becomes a store view and the row dissolves too; either way the contract and
+  the tests are untouched, which is what the axis separation below is for.
 - **The wire contract and the evaluation mechanism are separable axes, and this Spec now says
   so.** The contract (the closed dimension set, the zero-argument triage preset, exact counts,
   tail honesty, the single-valued grain) is fixed and substrate-independent. The evaluator
@@ -390,7 +393,8 @@ dimension set on its own: every fact that survives a rejection becomes a candida
 and the pivot a measured session actually wanted ("the diagnostics on my DELETE mutations")
 becomes expressible. It is not a prerequisite, and neither is the store module: the fact-base
 section above carries the full argument (rows loaded from `ValidationReport` are not facts,
-the compile channel never enters the store, the wire contract is substrate-independent).
+the compile channel reaches the store only through `pipeline-output-facts-family`, the wire
+contract is substrate-independent).
 Nothing here reads a classification today, it does not touch `ValidationError` and so leaves
 `DiagnosticRow`'s shape alone, and no dimension already in the enum changes meaning when it
 lands, so the growth is one enum value plus one extractor, which is the case the dimension
