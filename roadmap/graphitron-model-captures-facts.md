@@ -120,10 +120,13 @@ These bind the DDL below and every relation added to it later.
   rather than the author wrote are marked by the synthesis provenance relations; the authored
   picture is the anti-join. Synthesized rows inherit the causing application's source
   position (the compiler convention for macro expansion: the location shown is the one the
-  author can edit), so every SDL row carries an actionable location; what they do not inherit
-  is a declaration-site reference, whose NULL is the honest statement that no authored site
-  contributed the row, except where the causing site is a declaration site of the same type
-  (a synthesized federation key), where the reference simply holds.
+  author can edit), and a macro's contribution enters through the same door as authored
+  text: it contributes a declaration site at that position, a definition site when it
+  creates the type, an extension site when it adds members to an existing one, marked in the
+  site-synthesis provenance relation. Every synthesized element hangs off its synthesized
+  site through the ordinary declaration reference, so the site linkage is total (never
+  NULL), additions need no per-element marking, and the authored picture is the rows whose
+  sites are authored.
 - **Source order is a captured fact.** Where declaration order is meaningful (fields, arguments,
   enum values, union members, key and index columns) it is an explicit ordinal column, so an
   `ORDER BY` reproduces it; iteration order is never load-bearing, per the determinism rule R589
@@ -197,8 +200,9 @@ directly addressable, and `graphql_implements` states the edge the declaring typ
 -- CatalogBuilder.projectTypeDefinitionLocations does today.
 
 -- A named type is declared or extended in the schema; this row is the name's
--- existence, written by capture from whichever site it meets first, and
--- graphql_type_declaration carries every site. The declared-or-extended
+-- existence, written by capture from whichever site it meets first (macro-
+-- contributed sites included), and graphql_type_declaration carries every
+-- site. The declared-or-extended
 -- reading is load-bearing: it is what makes the site rows' FK structural
 -- (capture writes this row before any site row), and on a base-less
 -- extension chain (an author error a detection reports) the row still
@@ -235,7 +239,7 @@ CREATE TABLE graphql_field (
   type_name           VARCHAR NOT NULL, -- owning type
   field_name          VARCHAR NOT NULL,
   ordinal             INT     NOT NULL, -- order in the effective type: base declaration, then extensions in document order (capture merges them from the registry)
-  declaration_line    INT,              -- the contributing declaration site, keyed with this row's own source_name (a site's elements are lexically inside it); NULL exactly for macro-synthesized rows, whose origin the provenance relations state
+  declaration_line    INT     NOT NULL, -- the contributing declaration site, keyed with this row's own source_name (an authored row sits lexically inside its site; a synthesized row shares its synthesized site's inherited position)
   type_sdl          VARCHAR NOT NULL, -- the rendered type expression, e.g. '[Film!]!'; authoritative for wrapping fidelity
   named_type        VARCHAR NOT NULL, -- the named type the expression bottoms out in; author-spelled, no FK, integrity is a detection
   non_null          BOOLEAN NOT NULL, -- outermost non-null wrapper present
@@ -281,7 +285,7 @@ CREATE TABLE graphql_enum_value (
   type_name           VARCHAR NOT NULL, -- the owning ENUM type
   value_name          VARCHAR NOT NULL,
   ordinal             INT     NOT NULL, -- order in the effective enum: base declaration, then extensions
-  declaration_line    INT,              -- the contributing site, as on graphql_field
+  declaration_line    INT     NOT NULL, -- the contributing site, as on graphql_field
   description         VARCHAR,
   source_name         VARCHAR,
   source_line         INT,
@@ -297,7 +301,7 @@ CREATE TABLE graphql_union_member (
   union_name          VARCHAR NOT NULL,
   member_type_name    VARCHAR NOT NULL,
   ordinal             INT     NOT NULL, -- position in the effective member list
-  declaration_line    INT,              -- the contributing site, as on graphql_field
+  declaration_line    INT     NOT NULL, -- the contributing site, as on graphql_field
   source_name         VARCHAR,          -- position of the member token itself
   source_line         INT,
   source_column       INT,
@@ -313,7 +317,7 @@ CREATE TABLE graphql_union_member (
 CREATE TABLE graphql_implements (
   type_name           VARCHAR NOT NULL, -- the implementing OBJECT or INTERFACE
   interface_name      VARCHAR NOT NULL,
-  declaration_line    INT,              -- the contributing site, as on graphql_field
+  declaration_line    INT     NOT NULL, -- the contributing site, as on graphql_field
   source_name         VARCHAR,          -- position of the interface token itself
   source_line         INT,
   source_column       INT,
@@ -440,7 +444,7 @@ CREATE TABLE applied_type_directive (
   type_name           VARCHAR NOT NULL,
   directive_name      VARCHAR NOT NULL,
   ordinal             INT     NOT NULL, -- as on applied_schema_directive; federation's @key repeats here
-  declaration_line    INT,              -- the applying site (extensions apply type directives too); NULL for synthesized applications, as on graphql_field
+  declaration_line    INT     NOT NULL, -- the applying site (extensions apply type directives too); a synthesized @key hangs off the type's causing authored site, per its own provenance relation below
   source_name         VARCHAR,
   source_line         INT,
   source_column       INT,
@@ -603,7 +607,7 @@ is: the author's decoded intent at a coordinate.
 CREATE TABLE intent_table (
   type_name        VARCHAR NOT NULL, -- the OBJECT, INPUT_OBJECT, or INTERFACE carrying @table
   source_name      VARCHAR,          -- the applying declaration site (file + line pair below)
-  declaration_line INT,
+  declaration_line INT     NOT NULL,
   table_ref        VARCHAR,          -- the name argument as written (may carry a schema qualifier); NULL when omitted, the type-name fallback is a derivation
   PRIMARY KEY (type_name),
   FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
@@ -670,8 +674,8 @@ CREATE TABLE intent_connection (
 CREATE TABLE intent_federation_key (
   type_name        VARCHAR NOT NULL,
   ordinal          INT     NOT NULL, -- @key is repeatable; document order
-  source_name      VARCHAR,          -- the applying declaration site; a synthesized key inherits the causing declaration site of the same type, so the reference holds for it too
-  declaration_line INT,
+  source_name      VARCHAR,          -- the applying declaration site; a synthesized key inherits the causing authored site of the same type, so the reference holds for it too
+  declaration_line INT     NOT NULL,
   fields_sdl       VARCHAR NOT NULL, -- the field-set literal as written
   resolvable       BOOLEAN,          -- as written; NULL when omitted
   PRIMARY KEY (type_name, ordinal),
@@ -696,10 +700,13 @@ CREATE TABLE intent_federation_key_field (
 Macros expand during the same capture walk. `@asConnection` and `@asFacet` are schema
 construction, not questions over facts, and the visitor holds everything construction needs
 (the AST, the wrapping decode, the naming conventions), so the walk expands them inline:
-synthesized types and fields land as ordinary `graphql_` rows, and the provenance relations
-below record which rows the expansion added and what the author's text was before it. The
-authored picture is the anti-join; the effective picture is the tables as they stand; the
-round trip emits the effective picture minus the graphitron namespace. Name collision is
+a macro's contribution enters as declaration sites at the causing position (a definition
+site for each type it creates, an extension site where it adds members to an existing type),
+its element rows hang off those sites through the ordinary declaration reference, and the
+provenance relations below mark the sites, the synthesized applications, and the rewrites.
+The authored picture is the rows whose sites are authored; the effective picture is the
+tables as they stand; the round trip emits the effective picture minus the graphitron
+namespace. Name collision is
 author-reachable (an author can declare the type a macro would synthesize), so the visitor
 resolves collisions before inserting, following the current synthesis semantics; the
 primary-key constraint stays a capture-bug detector, never an author-triggerable throw.
@@ -718,19 +725,26 @@ rewrite retires with its last legacy consumer.
 -- causing application's source position; these relations are what say a
 -- position means "caused here" rather than "written here".
 
--- A type row was synthesized by a macro for a carrier coordinate. Shared
--- machinery types (PageInfo) get one row per carrier; the first carrier's
--- expansion inserts the graphql_type row, later carriers add provenance only.
-CREATE TABLE graphql_type_synthesis (
-  type_name          VARCHAR NOT NULL, -- the synthesized type (Connection, Edge, PageInfo, facet shapes)
-  carrier_type_name  VARCHAR NOT NULL, -- the coordinate whose application triggered the expansion
-  carrier_field_name VARCHAR NOT NULL,
-  macro              VARCHAR NOT NULL, -- which expansion produced it
-  PRIMARY KEY (type_name, carrier_type_name, carrier_field_name),
-  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (carrier_type_name, carrier_field_name)
-    REFERENCES graphql_field (type_name, field_name),
-  CHECK (macro IN ('CONNECTION', 'FACET'))
+-- A declaration site was contributed by a macro rather than the author: a
+-- definition site when the macro creates the type (Connection, Edge, facet
+-- shapes, at merge_ordinal 0), an extension site when it adds members to an
+-- existing type (the Query fields federation adds from @link), and an empty
+-- extension site when a later carrier touches a shared machinery type
+-- (PageInfo), so carrier multiplicity is the site count. Synthesized element
+-- rows hang off these sites through the ordinary declaration reference,
+-- which is what marks additions without per-element provenance; a type is
+-- synthesized exactly when its merge_ordinal-0 site is.
+CREATE TABLE graphql_type_declaration_synthesis (
+  type_name          VARCHAR NOT NULL,
+  source_name        VARCHAR NOT NULL, -- the causing application's position, which is the site's identity
+  source_line        INT     NOT NULL,
+  macro              VARCHAR NOT NULL, -- which expansion contributed the site
+  carrier_type_name  VARCHAR,          -- the causing coordinate; NULL for schema-level causes (@link)
+  carrier_field_name VARCHAR,
+  PRIMARY KEY (type_name, source_name, source_line),
+  FOREIGN KEY (type_name, source_name, source_line)
+    REFERENCES graphql_type_declaration (type_name, source_name, source_line),
+  CHECK (macro IN ('CONNECTION', 'FACET', 'FEDERATION'))
 );
 
 -- A field's type expression was rewritten by a macro; the authored expression
@@ -1012,8 +1026,9 @@ declaration relation is the index that answers which types a file touches): pars
 the one file to its own registry fragment, delete the partition (the synthesis provenance
 relations make orphan cleanup exact, shared machinery types refcounting by carrier row),
 re-walk it, and re-run the derivation strata, which the first spike priced under 20 ms for the
-SDL stratum (synthesized types enter the refresh set through their carriers' provenance rows,
-not the declaration index). No diffing is involved, and unchanged files are never re-read; the store itself
+SDL stratum (synthesized sites are stamped with their carrier's file, so synthesized types sit
+in the same declaration index as everything else). No diffing is involved, and unchanged
+files are never re-read; the store itself
 is the accumulated registry, and with the R597 cache an editor session boots warm and
 refreshes per file from there. The refresh mechanics land with the LSP consumer migration,
 not here; this increment only refuses to break type-locality, which is a review rule on
