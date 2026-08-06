@@ -1,6 +1,6 @@
 ---
 id: R273
-title: "Align the bare scalar-ID argument arm with the R473 grammar; land or retire R265's deferred compile-tier guard"
+title: "Land or retire R265's deferred compile-tier guard"
 status: Backlog
 bucket: architecture
 priority: 5
@@ -10,7 +10,7 @@ created: 2026-06-02
 last-updated: 2026-07-14
 ---
 
-# Align the bare scalar-ID argument arm with the R473 grammar; land or retire R265's deferred compile-tier guard
+# Land or retire R265's deferred compile-tier guard
 
 Re-scoped 2026-07-14 (file renamed from `nodeid-skip-mismatch-error-surfacing.md`; the original Spec body is in git history). The item was written 2026-06-02 as a merged policy decision (skip vs throw on NodeId mismatch) plus a five-site metadata-sourcing refactor. Both halves have since been settled or claimed elsewhere:
 
@@ -18,15 +18,17 @@ Re-scoped 2026-07-14 (file renamed from `nodeid-skip-mismatch-error-surfacing.md
 - **The "infer `@node` from `implements Node` + `__NODE_*` metadata" deliverable has shipped, and this bullet's earlier reading of it was wrong.** It was recorded as contradicted-not-pending on the grounds that R473 makes the explicit `implements Node @node` pair the source of node identity, that R34 replaces silent promotion with an LSP hint, and that R27 records metadata-based auto-promotion as deliberately removed. That conflated two axes. R473 closes off a *field* acquiring node semantics from table facts, and inference does not reopen it: inputs, arguments and cross-type references still require `@nodeId(typeName:)`. What shipped is a *type* that has already published nodehood in SDL (`implements Node`) getting its two identity parameters filled in from the catalog that owns them. The declaration of nodehood stays in SDL, where R473 wants it. The retired shim R27 records promoted on metadata alone, with no SDL-side opt-in at all, which is the part that caused the incident. This item's own surviving scope, the bare-`ID` argument arm below, is unaffected either way.
 - **The `__NODE_*` purge deliverables are subsumed.** R473 makes decode resolution typeName-first via `NodeIndex.byName` and deletes `resolveDecodeHelperForTable` together with the shims; R27 is the deletion vehicle for the shim reads in `BuildContext` (the FK-qualifier id-reference gate and the input-scalar arm). Those sites are no longer this item's to refactor.
 
-## What survives: the bare scalar-ID argument arm
+## The argument arm moved to R473
 
-One classification site remains unclaimed by R473/R27/R34: the bare-`ID` argument arm in `FieldBuilder` (the block its own comment calls "the legacy implicit scalar-ID arm"). A bare `id:` argument with no `@nodeId` and no `@lookupKey` that resolves to the table PK is treated as an authored NodeId key: the arm reads `ctx.catalog.nodeIdMetadata(...)` *directly* (bypassing `resolveTargetKeys` and its modern `@node` + `catalog.findPkColumns` tier) and calls `resolveDecodeHelperForTable` to build a `ThrowOnMismatch` decode.
+**Settled at R473's pass-3 Spec gate, 2026-08-06: the arm is R473's, and this item no longer owns it.** It offered the collapse ("may collapse into R473's implementation if the reviewer prefers one motion") and R473 took it, because R473's own thesis requires it: while a directive-less `ID` can mean "node identity, resolved from the table", `resolveDecodeHelperForTable` cannot be deleted, and this arm was its last caller once the three synthesis shims go.
 
-Under R473's grammar this arm is nonconforming twice over: rule-wise, a directive-less `ID` is a plain column-mapped scalar (only `Node.id` itself carries implicit nodeId semantics), so the arm's implicit decode should not exist; mechanically, both things it leans on (`nodeIdMetadata` as a direct source, `resolveDecodeHelperForTable`) are scheduled for deletion. The work:
+R473 does not simply retire the arm, which is where the expected outcome recorded here turned out to be wrong. Its new rule 6 replaces the arm with a narrower, SDL-derived one: an argument named for the return type's `Node.id` field, on a field returning a node type, is that nodeId implicitly, resolved through `NodeIndex.forName` rather than `catalog.nodeIdMetadata`. A name mismatch requires `@nodeId(typeName: T)`. So a bare `id:` argument does *not* universally become a plain column-mapped scalar; that happens only where the name does not match or the return type is not a node type. See R473's rule 6 and its "Flip and delete" section for the replacement's shape and coverage.
 
-1. **Settle the arm's fate under the R473 grammar at Spec time.** The expected outcome is that the implicit-decode behaviour is retired: a bare `id: ID!` argument binds as a plain column-mapped scalar, and a consumer who wants global-id semantics writes `@nodeId` explicitly (R34's quick fixes make that migration cheap). If a live consumer schema depends on the implicit decode, that surfaces through R27's migration gate, not by keeping this arm.
-2. **Land or retire R265's deferred compile-tier guard.** R265 fixed the non-compiling `GraphqlErrorException(String)` construction in the `ThrowOnMismatch` helpers and deferred its compilation-tier regression guard to this item, because the scalar throw arm was reachable only via the legacy `__NODE_*` path. If the arm is retired (expected), the deferral resolves by deletion and the registry's remaining throw arms are already covered by R378's execution-tier tests; if the arm survives in some explicit form, the guard is a `graphitron-sakila-example` fixture compiling the generated decode helper against the real graphql-java API.
-3. **Sequence behind R473.** This item is a consumer of R473's grammar decision and shares its deletion targets; it should not start before R473 leaves Backlog, and may collapse into R473's implementation if the reviewer prefers one motion.
+## What survives: R265's deferred compile-tier guard
+
+**Land or retire R265's deferred compile-tier guard.** R265 fixed the non-compiling `GraphqlErrorException(String)` construction in the `ThrowOnMismatch` helpers and deferred its compilation-tier regression guard to this item, because the scalar throw arm was reachable only via the legacy `__NODE_*` path. R473's rule 6 keeps a `ThrowOnMismatch` argument arm alive in explicit form rather than deleting the shape outright, so the deferral does *not* resolve by deletion the way this item once expected: the guard is a `graphitron-sakila-example` fixture compiling the generated decode helper against the real graphql-java API. Re-check that against R473's landed implementation before starting, since the reachability argument is what the deferral rested on.
+
+**Sequence behind R473.** This item is a consumer of R473's grammar decision; it should not start before R473 lands.
 
 ## Out of scope
 
