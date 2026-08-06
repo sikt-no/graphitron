@@ -18,7 +18,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R582` | Gate dangling cross-file .adoc xref anchors, which render silently and rot invisibly | Spec | 2026-08-06 <sub>created 2026-08-04</sub> | [plan](adoc-xref-section-anchor-gate.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-01 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
-| `R583` | Pin the typeId axis of name-first resolveTargetKeys on both jOOQ-record decode arms | In Progress | 2026-08-06 <sub>created 2026-08-04</sub> | [plan](nodeid-target-keys-typeid-axis-coverage.md) |
+| `R583` | Pin the typeId axis of name-first resolveTargetKeys on both jOOQ-record decode arms | In Review | 2026-08-06 <sub>created 2026-08-04</sub> | [plan](nodeid-target-keys-typeid-axis-coverage.md) |
 | `R589` | Classification is a relation; validation adds facts <sub>blocked by: [graphitron-model-captures-facts](graphitron-model-captures-facts.md)</sub> | Spec | 2026-08-05 <sub>created 2026-08-04</sub> | [plan](validation-adds-facts.md) |
 | `R595` | The graphitron-model module exists and capture fills it | Spec | 2026-08-05 | [plan](graphitron-model-captures-facts.md) |
 | `R569` | Aggregated diagnostics commands for the MCP server <sub>blocked by: [input-field-resolution-typed-rejections](input-field-resolution-typed-rejections.md)</sub> | Spec | 2026-08-04 <sub>created 2026-08-03</sub> | [plan](mcp-aggregated-diagnostics.md) |
@@ -280,7 +280,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### nodeid
 
-- `R583` [**Pin the typeId axis of name-first resolveTargetKeys on both jOOQ-record decode arms**](nodeid-target-keys-typeid-axis-coverage.md) — In Progress, cleanup
+- `R583` [**Pin the typeId axis of name-first resolveTargetKeys on both jOOQ-record decode arms**](nodeid-target-keys-typeid-axis-coverage.md) — In Review, cleanup
 - `R588` [**Diagnostics for `implements Node @table` over a table with no node metadata**](node-without-metadata-diagnostics.md) — Backlog, dx
 - `R267` [**Replace deprecated-for-removal DataType.convert(Object) in NodeIdEncoder.decode<Type>**](nodeid-encoder-deprecated-convert.md) — Backlog, tech-debt
 - `R273` [**Align the bare scalar-ID argument arm with the R473 grammar; land or retire R265's deferred compile-tier guard**](bare-scalar-id-arm-modernisation.md) — Backlog, architecture, blocked by [explicit-nodeid-grammar](explicit-nodeid-grammar.md)

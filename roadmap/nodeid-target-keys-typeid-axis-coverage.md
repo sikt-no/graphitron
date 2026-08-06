@@ -1,7 +1,7 @@
 ---
 id: R583
 title: "Pin the typeId axis of name-first resolveTargetKeys on both jOOQ-record decode arms"
-status: In Progress
+status: In Review
 bucket: cleanup
 priority: 3
 theme: nodeid
@@ -15,9 +15,10 @@ last-updated: 2026-08-06
 `BuildContext.resolveTargetKeys` reads the `NodeIndex` by-name entry ahead of the backing table's
 `KjerneJooqGenerator` metadata, so a `@nodeId(typeName:)` target takes both `typeId` and `keyColumns` from
 the named type's own reconciled `@node`. The `keyColumns` axis is pinned
-(`NodeIdPipelineTest.InputCase.EXPLICIT_TYPENAME_TAKES_KEY_ORDER_FROM_THE_NAMED_NODE`). The `typeId` axis is
-not: reverting the read order and running the whole `graphitron` module breaks that one case out of 3120
-tests, so a regression on the other axis would ship silently.
+(`NodeIdPipelineTest.InputCase.EXPLICIT_TYPENAME_TAKES_KEY_ORDER_FROM_THE_NAMED_NODE`). The `typeId` axis was
+not: before this item, reverting the read order and running the whole `graphitron` module broke that one
+case and nothing else, so a regression on the other axis would have shipped silently. Everything below
+describes that starting state; the Outcome section below records what closed it.
 
 ## Why no existing test catches it
 
