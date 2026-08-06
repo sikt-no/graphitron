@@ -362,14 +362,16 @@ CREATE TABLE graphql_root_operation (
 -- undecoded-argument relation. The registry retains element-level duplicates
 -- without error (a field declared twice in one body or re-declared by an
 -- extension, a repeated argument, enum value, union member, or implements
--- entry, a second application of a single-application graphitron directive),
--- so every element-level natural key in this schema is author-reachable.
+-- entry, a second application of a single-application graphitron directive,
+-- a repeated location or formal argument in a directive definition), so
+-- every element-level natural key in this schema is author-reachable.
 -- Capture is first-wins in merge order; the losing occurrence records here,
 -- rendered and located, so no authored text is lost and the
 -- duplicate-declaration detection has its row. Empty while assembly runs
--- upstream (assembly rejects these schemas first). A second base definition
--- of a type is the one duplication the registry itself rejects at parse, so
--- the TYPE kind is reachable only through the LSP's per-file fragment path.
+-- upstream (assembly rejects these schemas first). A second base definition,
+-- of a type or of a directive, is the duplication family the registry itself
+-- rejects at parse, so the TYPE kind is reachable only through the LSP's
+-- per-file fragment path.
 CREATE TABLE graphql_duplicate_declaration (
   source_name   VARCHAR NOT NULL, -- the losing occurrence's own position identifies the row
   source_line   INT     NOT NULL,
@@ -379,7 +381,8 @@ CREATE TABLE graphql_duplicate_declaration (
   value_sdl     VARCHAR NOT NULL, -- the losing occurrence as written, rendered from the AST; children ride inside it, so a losing field keeps its arguments
   PRIMARY KEY (source_name, source_line, source_column),
   CHECK (element_kind IN ('TYPE', 'FIELD', 'ARGUMENT', 'ENUM_VALUE',
-                          'UNION_MEMBER', 'IMPLEMENTS', 'DIRECTIVE_APPLICATION'))
+                          'UNION_MEMBER', 'IMPLEMENTS', 'DIRECTIVE_APPLICATION',
+                          'DIRECTIVE_LOCATION', 'DIRECTIVE_ARGUMENT'))
 );
 
 -- ==== Directive definitions ==================================================
@@ -1852,12 +1855,14 @@ later consumer uses. A duplicate primary key on any base relation throws: that i
 not an author error, per the constraint split R589 fixes, and it stays a capture bug only
 because first-wins runs in front of every element-level natural key. The registry retains a
 duplicated field (in one body or via an extension), a repeated argument, enum value, union
-member, and implements entry, and a second application of a single-application graphitron
-directive, all without error, so each of those keys is author-reachable; capture writes the
-first occurrence in merge order and quarantines the losers in `graphql_duplicate_declaration`,
-never throwing on `enum E { A A }`. The one duplication the registry itself rejects at parse
-is a second base *definition* of a type, so the TYPE case is reachable only on the LSP's
-per-file fragment path, where the same first-wins rule covers it (an extension is the
+member, and implements entry, a second application of a single-application graphitron
+directive, and a repeated location or formal argument in a directive definition
+(`directive @foo on OBJECT | OBJECT`, `directive @foo(x: Int, x: String)`), all without
+error, so each of those keys is author-reachable; capture writes the first occurrence in
+merge order and quarantines the losers in `graphql_duplicate_declaration`, never throwing
+on `enum E { A A }`. The duplication family the registry itself rejects at parse is a
+second base *definition*, of a type or of a directive, so the TYPE case is reachable only
+on the LSP's per-file fragment path, where the same first-wins rule covers it (an extension is the
 ordinary path and gets its own declaration row; the editing transient the LSP will constantly
 see is exactly the accidental second definition).
 
