@@ -118,7 +118,12 @@ These bind the DDL below and every relation added to it later.
   and ordered child relations: the AST value is in hand during the walk and graphql-java has
   already validated its structure, so the decode cannot reject. Rows a macro synthesized
   rather than the author wrote are marked by the synthesis provenance relations; the authored
-  picture is the anti-join.
+  picture is the anti-join. Synthesized rows inherit the causing application's source
+  position (the compiler convention for macro expansion: the location shown is the one the
+  author can edit), so every SDL row carries an actionable location; what they do not inherit
+  is a declaration-site reference, whose NULL is the honest statement that no authored site
+  contributed the row, except where the causing site is a declaration site of the same type
+  (a synthesized federation key), where the reference simply holds.
 - **Source order is a captured fact.** Where declaration order is meaningful (fields, arguments,
   enum values, union members, key and index columns) it is an explicit ordinal column, so an
   `ORDER BY` reproduces it; iteration order is never load-bearing, per the determinism rule R589
@@ -665,7 +670,7 @@ CREATE TABLE intent_connection (
 CREATE TABLE intent_federation_key (
   type_name        VARCHAR NOT NULL,
   ordinal          INT     NOT NULL, -- @key is repeatable; document order
-  source_name      VARCHAR,          -- the applying declaration site; NULL for synthesized keys, whose origin is the provenance relation
+  source_name      VARCHAR,          -- the applying declaration site; a synthesized key inherits the causing declaration site of the same type, so the reference holds for it too
   declaration_line INT,
   fields_sdl       VARCHAR NOT NULL, -- the field-set literal as written
   resolvable       BOOLEAN,          -- as written; NULL when omitted
@@ -709,7 +714,9 @@ rewrite retires with its last legacy consumer.
 ```sql
 -- ==== Macro synthesis provenance =============================================
 -- The expansion's own record: which graphql_ rows a macro added, and the
--- authored text where the macro rewrote it.
+-- authored text where the macro rewrote it. Synthesized rows inherit the
+-- causing application's source position; these relations are what say a
+-- position means "caused here" rather than "written here".
 
 -- A type row was synthesized by a macro for a carrier coordinate. Shared
 -- machinery types (PageInfo) get one row per carrier; the first carrier's
@@ -1005,7 +1012,8 @@ declaration relation is the index that answers which types a file touches): pars
 the one file to its own registry fragment, delete the partition (the synthesis provenance
 relations make orphan cleanup exact, shared machinery types refcounting by carrier row),
 re-walk it, and re-run the derivation strata, which the first spike priced under 20 ms for the
-SDL stratum. No diffing is involved, and unchanged files are never re-read; the store itself
+SDL stratum (synthesized types enter the refresh set through their carriers' provenance rows,
+not the declaration index). No diffing is involved, and unchanged files are never re-read; the store itself
 is the accumulated registry, and with the R597 cache an editor session boots warm and
 refreshes per file from there. The refresh mechanics land with the LSP consumer migration,
 not here; this increment only refuses to break type-locality, which is a review rule on
