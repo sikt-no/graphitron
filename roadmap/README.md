@@ -20,7 +20,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R333` | The Graphitron data model | Ready | 2026-08-01 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R583` | Pin the typeId axis of name-first resolveTargetKeys on both jOOQ-record decode arms | In Review | 2026-08-06 <sub>created 2026-08-04</sub> | [plan](nodeid-target-keys-typeid-axis-coverage.md) |
 | `R589` | Classification is a relation; validation adds facts <sub>blocked by: [graphitron-model-captures-facts](graphitron-model-captures-facts.md)</sub> | Spec | 2026-08-05 <sub>created 2026-08-04</sub> | [plan](validation-adds-facts.md) |
-| `R595` | The graphitron-model module exists and capture fills it | Spec | 2026-08-05 | [plan](graphitron-model-captures-facts.md) |
+| `R595` | The graphitron-model module exists and capture fills it | Spec | 2026-08-06 <sub>created 2026-08-05</sub> | [plan](graphitron-model-captures-facts.md) |
 | `R569` | Aggregated diagnostics commands for the MCP server <sub>blocked by: [input-field-resolution-typed-rejections](input-field-resolution-typed-rejections.md)</sub> | Spec | 2026-08-04 <sub>created 2026-08-03</sub> | [plan](mcp-aggregated-diagnostics.md) |
 | `R473` | Explicit @nodeId grammar: Node.id is the only implicit nodeId; typeName-first decode resolution | Spec | 2026-08-06 <sub>created 2026-07-13</sub> | [plan](explicit-nodeid-grammar.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |

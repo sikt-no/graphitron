@@ -7,7 +7,7 @@ priority: 4
 theme: classification-model
 depends-on: []
 created: 2026-08-05
-last-updated: 2026-08-05
+last-updated: 2026-08-06
 ---
 
 # The graphitron-model module exists and capture fills it
@@ -121,8 +121,10 @@ These bind the DDL below and every relation added to it later.
   an absent row, never a default-filled one; effective values are derivation views (for the
   graphitron namespace the defaults are generator constants, not captured facts). Structured
   values (reference paths, error handlers, field sets) decode at capture into typed columns
-  and ordered child relations: the AST value is in hand during the walk and graphql-java has
-  already validated its structure, so the decode cannot reject. Rows a macro synthesized
+  and ordered child relations: the AST value is in hand during the walk, and the decode never
+  rejects; while assembly runs upstream it has already validated the structure, and once
+  capture stands alone a literal that does not fit its declared shape quarantines raw in the
+  semantic stratum's undecoded-argument relation instead of throwing. Rows a macro synthesized
   rather than the author wrote are marked by the synthesis provenance relations; the authored
   picture is the anti-join. Synthesized rows inherit the causing application's source
   position (the compiler convention for macro expansion: the location shown is the one the
@@ -600,21 +602,148 @@ directive, filled by the same capture walk. Its rules:
   `@key` as readily as a base definition), and a repeated application of a non-repeatable
   directive at one coordinate keeps the first row and mints a located detection; the walk
   never throws on author input.
+- **Every application-level relation carries the application's own source position.** The
+  graphitron namespace has no `applied_` twin (it is stripped, not re-emitted), so the intent
+  row is the only record of where the author wrote the application; detections mint located
+  diagnostics from these columns, and document order between applications is recoverable
+  where it is load-bearing (a field's `@routine` and `@reference` applications compose one
+  table chain in written order, so the chain is an ORDER BY over positions). Child relations
+  locate through their parent. On type-coordinate relations the position columns sit beside
+  the declaration-site reference, the `graphql_field` pattern: `source_name` doubles as the
+  site key part, `source_line` and `source_column` are the application's own.
+- **Repeatable applications key by capture-assigned ordinal in document order**, as in the
+  `applied_` families. This also covers repetition the directive's own semantics key
+  differently: `@referenceFor` applications are keyed by participant in consumption, but the
+  relation keys by ordinal and keeps the participant as a column, so an author repeating a
+  participant produces two rows and a detection, never a key collision.
+- **Author-spelled enum literals are open columns, not CHECKs.** A `MutationType`,
+  `ErrorHandlerType`, or `SortDirection` value arrives as a token the author typed; under
+  registry capture nothing upstream has validated it, so a CHECK would turn a typo into a
+  constraint violation. The column stores the token as written and vocabulary membership is
+  a detection. (The `kind` CHECKs on the existence family are different: their domain is
+  graphql-java's parser vocabulary, which capture controls.)
+- **A literal that does not fit its declared shape quarantines raw.** A typed column
+  (an Int, a Boolean, a structured input object) captures the decoded value; when the
+  authored literal does not have the declared shape, the column stays NULL and the raw
+  literal lands in `intent_undecoded_argument` with its location, so the authored text is
+  never lost and the malformed-literal detection has its row. Dormant while assembly still
+  runs upstream and rejects such schemas first, live when the tolerant path is the only one.
+- **Pair-grammar strings keep the raw column and add an ordered pair child exactly where a
+  consumer binds pairs.** One shared decoder serves every `argMapping`-shaped value today
+  (`ArgBindingMap.parseArgMapping`), and its live sites (`@service`, `@condition` at every
+  site, path-step conditions, `@routine`'s two mappings) get position-keyed pair relations;
+  position keys deliberately preserve an author's duplicate parameter so the duplicate
+  detection can see it. Inert sites (`@externalField`, `@enum`) keep only the raw column,
+  because their sole consumer is a presence-triggered rejection.
+- **Retired directives capture existence, not payload.** For `@notGenerated` and
+  `@multitableReference` the only consumer is the located rejection, so the relation is the
+  coordinate alone; `@record` keeps its `className` because the warning arms compare the
+  declared class against the reflected backing. Payload nobody reads is not a fact worth
+  columns; if a consumer ever appears, the decode lands with it.
 
-The representative first draw below fixes the pattern; the full inventory (about thirty
-directives) is the next authoring round, each table grounded in its directive's declared
-arguments and actual consumers the same way these were. The `intent_` prefix names what a row
-is: the author's decoded intent at a coordinate.
+The inventory below is the full census: every directive `directives.graphqls` declares, plus
+the two federation applications the pipeline decodes (`@key`, `@link`), each relation grounded
+in the directive's declared arguments and its actual consumers
+(`roadmap/audits/2026-08-06-directive-consumer-census.md` records the census; today's
+consumer surface is `BuildContext`'s name constants, the `no.sikt.graphitron.facts` visitors,
+and the shared pair-grammar decoder). Grounding is load-bearing in both directions: it added
+relations the declarations alone would not suggest (application-level `@reference` rows,
+because an empty path means FK auto-discovery and is a fact about one application) and it
+removed speculation (`@experimental_constructType(selection:)` has no consumer anywhere, so
+its raw column gets no decoded child until a consumer lands). The `intent_` prefix names what
+a row is: the author's decoded intent at a coordinate.
 
 ```sql
--- ==== Semantic stratum (representative draw; inventory completes next round) =
+-- ==== Semantic stratum ======================================================
 
--- @table on a type: the author binds the type to a database table.
+-- @table on a type: the author binds the type to a database table. On an
+-- INPUT_OBJECT the application is captured like any other; the ignored-and-
+-- warned status of that site is a detection.
 CREATE TABLE intent_table (
   type_name        VARCHAR NOT NULL, -- the OBJECT, INPUT_OBJECT, or INTERFACE carrying @table
-  source_name      VARCHAR,          -- the applying declaration site (file + line pair below)
+  source_name      VARCHAR,          -- the applying declaration site (file + line pair below); doubles as the file of the position columns
   declaration_line INT     NOT NULL,
+  source_line      INT,              -- the application's own position
+  source_column    INT,
   table_ref        VARCHAR,          -- the name argument as written (may carry a schema qualifier); NULL when omitted, the type-name fallback is a derivation
+  PRIMARY KEY (type_name),
+  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
+  FOREIGN KEY (type_name, source_name, declaration_line)
+    REFERENCES graphql_type_declaration (type_name, source_name, source_line)
+);
+
+-- @field on an output or input-object field: the slot's bound name. A column,
+-- a Java accessor, or a Java member depending on the backing, which is
+-- classification's business; the $source / $errors sigil forms are stored as
+-- written, their recognition being a prefix test SQL can express.
+CREATE TABLE intent_field_binding (
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  source_name   VARCHAR, -- the application's own position, here and below
+  source_line   INT,
+  source_column INT,
+  name_ref      VARCHAR NOT NULL, -- the name argument as written
+  PRIMARY KEY (type_name, field_name),
+  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
+);
+
+-- @field on an argument: the filter argument's bound column.
+CREATE TABLE intent_argument_binding (
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  argument_name VARCHAR NOT NULL,
+  source_name   VARCHAR,
+  source_line   INT,
+  source_column INT,
+  name_ref      VARCHAR NOT NULL,
+  PRIMARY KEY (type_name, field_name, argument_name),
+  FOREIGN KEY (type_name, field_name, argument_name)
+    REFERENCES graphql_argument (type_name, field_name, argument_name)
+);
+
+-- @field on an enum value: the database string (or Java constant) the value
+-- maps to. The pivot vocabulary decode reads this relation too.
+CREATE TABLE intent_enum_value_binding (
+  type_name     VARCHAR NOT NULL,
+  value_name    VARCHAR NOT NULL,
+  source_name   VARCHAR,
+  source_line   INT,
+  source_column INT,
+  name_ref      VARCHAR NOT NULL,
+  PRIMARY KEY (type_name, value_name),
+  FOREIGN KEY (type_name, value_name) REFERENCES graphql_enum_value (type_name, value_name)
+);
+
+-- @scalarType on a scalar: the Java constant backing it. Under registry
+-- capture the application is read like any other; the SDL pre-pass the
+-- current consumer needs (assembly strips directives off spec built-in
+-- redeclarations) dies with the assembled source.
+CREATE TABLE intent_scalar_type (
+  type_name        VARCHAR NOT NULL,
+  source_name      VARCHAR,
+  declaration_line INT     NOT NULL,
+  source_line      INT,
+  source_column    INT,
+  scalar_ref       VARCHAR NOT NULL, -- the fully-qualified Java constant reference as written
+  PRIMARY KEY (type_name),
+  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
+  FOREIGN KEY (type_name, source_name, declaration_line)
+    REFERENCES graphql_type_declaration (type_name, source_name, source_line)
+);
+
+-- @enum on an enum type. The full ExternalCodeReference is captured as
+-- written, though today only arg_mapping is consumed (to reject a non-blank
+-- value; the Java binding is derived by reflection and the per-value mapping
+-- comes from intent_enum_value_binding).
+CREATE TABLE intent_enum (
+  type_name        VARCHAR NOT NULL,
+  source_name      VARCHAR,
+  declaration_line INT     NOT NULL,
+  source_line      INT,
+  source_column    INT,
+  class_name       VARCHAR, -- enumReference.className as written
+  method           VARCHAR,
+  arg_mapping      VARCHAR, -- structurally inert here; raw column only, no pair child
   PRIMARY KEY (type_name),
   FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
   FOREIGN KEY (type_name, source_name, declaration_line)
@@ -624,12 +753,15 @@ CREATE TABLE intent_table (
 -- @condition on a field or input field (shared coordinate; the parent kind
 -- decides which SDL site this was).
 CREATE TABLE intent_field_condition (
-  type_name   VARCHAR NOT NULL,
-  field_name  VARCHAR NOT NULL,
-  class_name  VARCHAR, -- ExternalCodeReference.className as written
-  method      VARCHAR, -- ExternalCodeReference.method as written
-  arg_mapping VARCHAR, -- ExternalCodeReference.argMapping as written; its pair grammar additionally decodes at capture into an ordered child relation (drawn in the inventory round), the type_sdl-plus-decode pattern
-  override    BOOLEAN, -- as written; NULL when omitted (the FALSE default is derivable)
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  source_name   VARCHAR,
+  source_line   INT,
+  source_column INT,
+  class_name    VARCHAR, -- ExternalCodeReference.className as written
+  method        VARCHAR, -- ExternalCodeReference.method as written
+  arg_mapping   VARCHAR, -- ExternalCodeReference.argMapping as written; the pair child below is its decode, the type_sdl-plus-decode pattern
+  override      BOOLEAN, -- as written; NULL when omitted (the FALSE default is derivable)
   PRIMARY KEY (type_name, field_name),
   FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
 );
@@ -645,22 +777,257 @@ CREATE TABLE intent_field_condition_context_arg (
     REFERENCES intent_field_condition (type_name, field_name)
 );
 
--- intent_argument_condition mirrors intent_field_condition over the
--- graphql_argument coordinate; drawn in the inventory round.
+-- An ordered pair of a field-site @condition's argMapping. Position-keyed so
+-- an author's duplicate parameter survives for the duplicate detection.
+CREATE TABLE intent_field_condition_arg_mapping_pair (
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  position      INT     NOT NULL,
+  param_name    VARCHAR NOT NULL, -- the Java parameter (left side)
+  argument_path VARCHAR NOT NULL, -- the right side as written: a GraphQL argument name or dotted input path
+  PRIMARY KEY (type_name, field_name, position),
+  FOREIGN KEY (type_name, field_name)
+    REFERENCES intent_field_condition (type_name, field_name)
+);
 
--- @reference on a field or input field: the ordered step chain. Repeatable
--- applications concatenate; position runs across the whole chain in document
--- order, and each step's ExternalCodeReference condition flattens in place.
+-- @condition on an argument: the same decode over the three-part coordinate.
+CREATE TABLE intent_argument_condition (
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  argument_name VARCHAR NOT NULL,
+  source_name   VARCHAR,
+  source_line   INT,
+  source_column INT,
+  class_name    VARCHAR,
+  method        VARCHAR,
+  arg_mapping   VARCHAR,
+  override      BOOLEAN,
+  PRIMARY KEY (type_name, field_name, argument_name),
+  FOREIGN KEY (type_name, field_name, argument_name)
+    REFERENCES graphql_argument (type_name, field_name, argument_name)
+);
+
+CREATE TABLE intent_argument_condition_context_arg (
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  argument_name VARCHAR NOT NULL,
+  position      INT     NOT NULL,
+  name          VARCHAR NOT NULL,
+  PRIMARY KEY (type_name, field_name, argument_name, position),
+  FOREIGN KEY (type_name, field_name, argument_name)
+    REFERENCES intent_argument_condition (type_name, field_name, argument_name)
+);
+
+CREATE TABLE intent_argument_condition_arg_mapping_pair (
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  argument_name VARCHAR NOT NULL,
+  position      INT     NOT NULL,
+  param_name    VARCHAR NOT NULL,
+  argument_path VARCHAR NOT NULL,
+  PRIMARY KEY (type_name, field_name, argument_name, position),
+  FOREIGN KEY (type_name, field_name, argument_name)
+    REFERENCES intent_argument_condition (type_name, field_name, argument_name)
+);
+
+-- @reference on a field or input field: one row per application, because an
+-- application is a fact of its own. An empty path means FK auto-discovery
+-- between the endpoints, and the rule that every application in a
+-- multi-application chain must carry an element is per-application; both are
+-- invisible in a flat concatenated chain. The effective chain the consumers
+-- read is the steps ordered by (ordinal, position), and the written-order
+-- interleaving with @routine applications on the same field is an ORDER BY
+-- over the two relations' source positions.
+CREATE TABLE intent_field_reference (
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  ordinal       INT     NOT NULL, -- repeatable; document order
+  source_name   VARCHAR,
+  source_line   INT,
+  source_column INT,
+  PRIMARY KEY (type_name, field_name, ordinal),
+  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
+);
+
+-- An ordered path element of one @reference application; the step's
+-- ExternalCodeReference condition flattens in place.
 CREATE TABLE intent_field_reference_step (
   type_name   VARCHAR NOT NULL,
   field_name  VARCHAR NOT NULL,
-  position    INT     NOT NULL, -- 0-based across the concatenated chain
+  ordinal     INT     NOT NULL,
+  position    INT     NOT NULL, -- 0-based within the application's path
   table_ref   VARCHAR,          -- ReferenceElement.table as written
   key_ref     VARCHAR,          -- ReferenceElement.key as written (may carry a schema qualifier)
   class_name  VARCHAR,
   method      VARCHAR,
   arg_mapping VARCHAR,
+  PRIMARY KEY (type_name, field_name, ordinal, position),
+  FOREIGN KEY (type_name, field_name, ordinal)
+    REFERENCES intent_field_reference (type_name, field_name, ordinal)
+);
+
+-- An ordered pair of a step condition's argMapping.
+CREATE TABLE intent_field_reference_step_arg_mapping_pair (
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  ordinal       INT     NOT NULL,
+  step_position INT     NOT NULL,
+  position      INT     NOT NULL,
+  param_name    VARCHAR NOT NULL,
+  argument_path VARCHAR NOT NULL,
+  PRIMARY KEY (type_name, field_name, ordinal, step_position, position),
+  FOREIGN KEY (type_name, field_name, ordinal, step_position)
+    REFERENCES intent_field_reference_step (type_name, field_name, ordinal, position)
+);
+
+-- @reference on an argument: the same family over the three-part coordinate.
+CREATE TABLE intent_argument_reference (
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  argument_name VARCHAR NOT NULL,
+  ordinal       INT     NOT NULL,
+  source_name   VARCHAR,
+  source_line   INT,
+  source_column INT,
+  PRIMARY KEY (type_name, field_name, argument_name, ordinal),
+  FOREIGN KEY (type_name, field_name, argument_name)
+    REFERENCES graphql_argument (type_name, field_name, argument_name)
+);
+
+CREATE TABLE intent_argument_reference_step (
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  argument_name VARCHAR NOT NULL,
+  ordinal       INT     NOT NULL,
+  position      INT     NOT NULL,
+  table_ref     VARCHAR,
+  key_ref       VARCHAR,
+  class_name    VARCHAR,
+  method        VARCHAR,
+  arg_mapping   VARCHAR,
+  PRIMARY KEY (type_name, field_name, argument_name, ordinal, position),
+  FOREIGN KEY (type_name, field_name, argument_name, ordinal)
+    REFERENCES intent_argument_reference (type_name, field_name, argument_name, ordinal)
+);
+
+CREATE TABLE intent_argument_reference_step_arg_mapping_pair (
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  argument_name VARCHAR NOT NULL,
+  ordinal       INT     NOT NULL,
+  step_position INT     NOT NULL,
+  position      INT     NOT NULL,
+  param_name    VARCHAR NOT NULL,
+  argument_path VARCHAR NOT NULL,
+  PRIMARY KEY (type_name, field_name, argument_name, ordinal, step_position, position),
+  FOREIGN KEY (type_name, field_name, argument_name, ordinal, step_position)
+    REFERENCES intent_argument_reference_step (type_name, field_name, argument_name, ordinal, position)
+);
+
+-- @referenceFor on a field: an explicit join path for one participant of a
+-- multi-table interface or union child. Keyed by ordinal per the repeatable
+-- rule; the consumption-side keying by participant makes a repeated
+-- participant a detection, never a collision.
+CREATE TABLE intent_reference_for (
+  type_name            VARCHAR NOT NULL,
+  field_name           VARCHAR NOT NULL,
+  ordinal              INT     NOT NULL,
+  source_name          VARCHAR,
+  source_line          INT,
+  source_column        INT,
+  participant_type_ref VARCHAR NOT NULL, -- the type argument as written; author-spelled, no FK
+  PRIMARY KEY (type_name, field_name, ordinal),
+  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
+);
+
+CREATE TABLE intent_reference_for_step (
+  type_name   VARCHAR NOT NULL,
+  field_name  VARCHAR NOT NULL,
+  ordinal     INT     NOT NULL,
+  position    INT     NOT NULL,
+  table_ref   VARCHAR,
+  key_ref     VARCHAR,
+  class_name  VARCHAR,
+  method      VARCHAR,
+  arg_mapping VARCHAR,
+  PRIMARY KEY (type_name, field_name, ordinal, position),
+  FOREIGN KEY (type_name, field_name, ordinal)
+    REFERENCES intent_reference_for (type_name, field_name, ordinal)
+);
+
+CREATE TABLE intent_reference_for_step_arg_mapping_pair (
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  ordinal       INT     NOT NULL,
+  step_position INT     NOT NULL,
+  position      INT     NOT NULL,
+  param_name    VARCHAR NOT NULL,
+  argument_path VARCHAR NOT NULL,
+  PRIMARY KEY (type_name, field_name, ordinal, step_position, position),
+  FOREIGN KEY (type_name, field_name, ordinal, step_position)
+    REFERENCES intent_reference_for_step (type_name, field_name, ordinal, position)
+);
+
+-- @service on a field: the external service reference.
+CREATE TABLE intent_service (
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  source_name   VARCHAR,
+  source_line   INT,
+  source_column INT,
+  class_name    VARCHAR,
+  method        VARCHAR,
+  arg_mapping   VARCHAR,
+  PRIMARY KEY (type_name, field_name),
+  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
+);
+
+CREATE TABLE intent_service_context_arg (
+  type_name  VARCHAR NOT NULL,
+  field_name VARCHAR NOT NULL,
+  position   INT     NOT NULL,
+  name       VARCHAR NOT NULL,
   PRIMARY KEY (type_name, field_name, position),
+  FOREIGN KEY (type_name, field_name) REFERENCES intent_service (type_name, field_name)
+);
+
+CREATE TABLE intent_service_arg_mapping_pair (
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  position      INT     NOT NULL,
+  param_name    VARCHAR NOT NULL,
+  argument_path VARCHAR NOT NULL,
+  PRIMARY KEY (type_name, field_name, position),
+  FOREIGN KEY (type_name, field_name) REFERENCES intent_service (type_name, field_name)
+);
+
+-- @externalField on a field: the static jOOQ-Field method. The omitted-method
+-- fallback (the field name) is a derivation; arg_mapping is inert here (raw
+-- column only, its rejection is presence-triggered).
+CREATE TABLE intent_external_field (
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  source_name   VARCHAR,
+  source_line   INT,
+  source_column INT,
+  class_name    VARCHAR,
+  method        VARCHAR,
+  arg_mapping   VARCHAR,
+  PRIMARY KEY (type_name, field_name),
+  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
+);
+
+-- @sourceRow on a field: the parent-side join-key lifter. Flat arguments by
+-- declaration, not an ExternalCodeReference.
+CREATE TABLE intent_source_row (
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  source_name   VARCHAR,
+  source_line   INT,
+  source_column INT,
+  class_name    VARCHAR NOT NULL,
+  method        VARCHAR NOT NULL,
+  PRIMARY KEY (type_name, field_name),
   FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
 );
 
@@ -669,10 +1036,342 @@ CREATE TABLE intent_field_reference_step (
 CREATE TABLE intent_connection (
   type_name           VARCHAR NOT NULL,
   field_name          VARCHAR NOT NULL,
+  source_name         VARCHAR,
+  source_line         INT,
+  source_column       INT,
   default_first_value INT,     -- as written; NULL when omitted
-  connection_name     VARCHAR, -- the deprecated shared-type override, as written
+  connection_name     VARCHAR, -- the deprecated shared-type override, as written; honoured by the expansion, deprecation is a lint detection
   PRIMARY KEY (type_name, field_name),
   FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
+);
+
+-- @asFacet on an input field: a marker; the bound column comes from
+-- intent_field_binding, and every misuse arm is a detection.
+CREATE TABLE intent_facet (
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  source_name   VARCHAR,
+  source_line   INT,
+  source_column INT,
+  PRIMARY KEY (type_name, field_name),
+  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
+);
+
+-- @orderBy on an argument: a marker; the input shape rules are detections.
+CREATE TABLE intent_order_by (
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  argument_name VARCHAR NOT NULL,
+  source_name   VARCHAR,
+  source_line   INT,
+  source_column INT,
+  PRIMARY KEY (type_name, field_name, argument_name),
+  FOREIGN KEY (type_name, field_name, argument_name)
+    REFERENCES graphql_argument (type_name, field_name, argument_name)
+);
+
+-- @order on an enum value: a sorting specification. The exactly-one-of rule
+-- over index, fields, and primaryKey is a detection.
+CREATE TABLE intent_order (
+  type_name     VARCHAR NOT NULL,
+  value_name    VARCHAR NOT NULL,
+  source_name   VARCHAR,
+  source_line   INT,
+  source_column INT,
+  index_ref     VARCHAR, -- database index name as written
+  primary_key   BOOLEAN, -- as written; NULL when omitted
+  PRIMARY KEY (type_name, value_name),
+  FOREIGN KEY (type_name, value_name) REFERENCES graphql_enum_value (type_name, value_name)
+);
+
+-- An ordered FieldSort entry of an @order.
+CREATE TABLE intent_order_field (
+  type_name  VARCHAR NOT NULL,
+  value_name VARCHAR NOT NULL,
+  position   INT     NOT NULL,
+  name_ref   VARCHAR NOT NULL, -- FieldSort.name, a column reference as written
+  collate    VARCHAR,
+  direction  VARCHAR, -- as written; author-spelled enum literal, open column
+  PRIMARY KEY (type_name, value_name, position),
+  FOREIGN KEY (type_name, value_name) REFERENCES intent_order (type_name, value_name)
+);
+
+-- @index on an enum value: the deprecated alias of @order(index:), still
+-- honoured when @order is absent; the deprecation is a lint detection.
+CREATE TABLE intent_index (
+  type_name     VARCHAR NOT NULL,
+  value_name    VARCHAR NOT NULL,
+  source_name   VARCHAR,
+  source_line   INT,
+  source_column INT,
+  index_ref     VARCHAR, -- the name argument, which the declaration leaves optional
+  PRIMARY KEY (type_name, value_name),
+  FOREIGN KEY (type_name, value_name) REFERENCES graphql_enum_value (type_name, value_name)
+);
+
+-- @defaultOrder on a field: the same specification shape plus the
+-- directive-level direction that serves as the per-entry fallback.
+CREATE TABLE intent_default_order (
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  source_name   VARCHAR,
+  source_line   INT,
+  source_column INT,
+  index_ref     VARCHAR,
+  primary_key   BOOLEAN,
+  direction     VARCHAR, -- as written; open column, the ASC default is a derivation
+  PRIMARY KEY (type_name, field_name),
+  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
+);
+
+CREATE TABLE intent_default_order_field (
+  type_name  VARCHAR NOT NULL,
+  field_name VARCHAR NOT NULL,
+  position   INT     NOT NULL,
+  name_ref   VARCHAR NOT NULL,
+  collate    VARCHAR,
+  direction  VARCHAR,
+  PRIMARY KEY (type_name, field_name, position),
+  FOREIGN KEY (type_name, field_name) REFERENCES intent_default_order (type_name, field_name)
+);
+
+-- @mutation on a field: the DML statement spec.
+CREATE TABLE intent_mutation (
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  source_name   VARCHAR,
+  source_line   INT,
+  source_column INT,
+  operation     VARCHAR NOT NULL, -- the typeName argument as written (INSERT / UPDATE / DELETE / UPSERT); open column per the enum-literal rule
+  multi_row     BOOLEAN, -- as written; NULL when omitted
+  table_ref     VARCHAR, -- the DELETE write target as written
+  PRIMARY KEY (type_name, field_name),
+  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
+);
+
+-- @error on an object type: presence; the handlers list decodes into the
+-- ordered child, and every cross-field handler rule is a detection.
+CREATE TABLE intent_error (
+  type_name        VARCHAR NOT NULL,
+  source_name      VARCHAR,
+  declaration_line INT     NOT NULL,
+  source_line      INT,
+  source_column    INT,
+  PRIMARY KEY (type_name),
+  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
+  FOREIGN KEY (type_name, source_name, declaration_line)
+    REFERENCES graphql_type_declaration (type_name, source_name, source_line)
+);
+
+-- An ordered ErrorHandler of an @error application.
+CREATE TABLE intent_error_handler (
+  type_name   VARCHAR NOT NULL,
+  position    INT     NOT NULL,
+  handler     VARCHAR NOT NULL, -- GENERIC / DATABASE / VALIDATION as written; open column
+  class_name  VARCHAR,
+  code        VARCHAR,
+  sql_state   VARCHAR,
+  matches     VARCHAR,
+  description VARCHAR,
+  PRIMARY KEY (type_name, position),
+  FOREIGN KEY (type_name) REFERENCES intent_error (type_name)
+);
+
+-- @node on an object type: node identity. The type-name fallback for typeId
+-- and the catalog-PK fallback for key columns are derivations; the
+-- SDL-versus-jOOQ-metadata precedence rules are detections.
+CREATE TABLE intent_node (
+  type_name        VARCHAR NOT NULL,
+  source_name      VARCHAR,
+  declaration_line INT     NOT NULL,
+  source_line      INT,
+  source_column    INT,
+  type_id          VARCHAR, -- as written
+  PRIMARY KEY (type_name),
+  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
+  FOREIGN KEY (type_name, source_name, declaration_line)
+    REFERENCES graphql_type_declaration (type_name, source_name, source_line)
+);
+
+-- An ordered keyColumns entry of an @node.
+CREATE TABLE intent_node_key_column (
+  type_name  VARCHAR NOT NULL,
+  position   INT     NOT NULL,
+  column_ref VARCHAR NOT NULL,
+  PRIMARY KEY (type_name, position),
+  FOREIGN KEY (type_name) REFERENCES intent_node (type_name)
+);
+
+-- @nodeId on a field or input field.
+CREATE TABLE intent_field_node_id (
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  source_name   VARCHAR,
+  source_line   INT,
+  source_column INT,
+  node_type_ref VARCHAR, -- typeName as written; author-spelled type reference, no FK, inference when NULL is a derivation
+  PRIMARY KEY (type_name, field_name),
+  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
+);
+
+-- @nodeId on an argument.
+CREATE TABLE intent_argument_node_id (
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  argument_name VARCHAR NOT NULL,
+  source_name   VARCHAR,
+  source_line   INT,
+  source_column INT,
+  node_type_ref VARCHAR,
+  PRIMARY KEY (type_name, field_name, argument_name),
+  FOREIGN KEY (type_name, field_name, argument_name)
+    REFERENCES graphql_argument (type_name, field_name, argument_name)
+);
+
+-- @lookupKey on an argument: the live site, a marker.
+CREATE TABLE intent_argument_lookup_key (
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  argument_name VARCHAR NOT NULL,
+  source_name   VARCHAR,
+  source_line   INT,
+  source_column INT,
+  PRIMARY KEY (type_name, field_name, argument_name),
+  FOREIGN KEY (type_name, field_name, argument_name)
+    REFERENCES graphql_argument (type_name, field_name, argument_name)
+);
+
+-- @lookupKey on an input field: the retired site; the sole consumer is the
+-- located migration rejection.
+CREATE TABLE intent_field_lookup_key (
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  source_name   VARCHAR,
+  source_line   INT,
+  source_column INT,
+  PRIMARY KEY (type_name, field_name),
+  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
+);
+
+-- @splitQuery on a field: a marker.
+CREATE TABLE intent_split_query (
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  source_name   VARCHAR,
+  source_line   INT,
+  source_column INT,
+  PRIMARY KEY (type_name, field_name),
+  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
+);
+
+-- @tenantFanOut on a field: a marker; its many conflict arms are detections.
+CREATE TABLE intent_tenant_fan_out (
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  source_name   VARCHAR,
+  source_line   INT,
+  source_column INT,
+  PRIMARY KEY (type_name, field_name),
+  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
+);
+
+-- @pivot on a field: the aggregate-projection spec.
+CREATE TABLE intent_pivot (
+  type_name      VARCHAR NOT NULL,
+  field_name     VARCHAR NOT NULL,
+  source_name    VARCHAR,
+  source_line    INT,
+  source_column  INT,
+  on_column      VARCHAR NOT NULL, -- the on: argument, the discriminator column as written
+  value_column   VARCHAR NOT NULL, -- the value: argument as written
+  vocabulary_ref VARCHAR, -- names an enum type; author-spelled, no FK
+  PRIMARY KEY (type_name, field_name),
+  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
+);
+
+-- @routine on a field: one row per application (repeatable). The table chain
+-- interleaves these with intent_field_reference rows in written order.
+CREATE TABLE intent_routine (
+  type_name      VARCHAR NOT NULL,
+  field_name     VARCHAR NOT NULL,
+  ordinal        INT     NOT NULL,
+  source_name    VARCHAR,
+  source_line    INT,
+  source_column  INT,
+  routine_ref    VARCHAR NOT NULL, -- the routine name as written (may carry a schema qualifier)
+  arg_mapping    VARCHAR,
+  column_mapping VARCHAR,
+  PRIMARY KEY (type_name, field_name, ordinal),
+  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
+);
+
+CREATE TABLE intent_routine_arg_mapping_pair (
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  ordinal       INT     NOT NULL,
+  position      INT     NOT NULL,
+  param_name    VARCHAR NOT NULL,
+  argument_path VARCHAR NOT NULL,
+  PRIMARY KEY (type_name, field_name, ordinal, position),
+  FOREIGN KEY (type_name, field_name, ordinal)
+    REFERENCES intent_routine (type_name, field_name, ordinal)
+);
+
+-- columnMapping pairs bind routine parameters to previous-node columns; a
+-- dotted right side is captured as written and rejected by detection.
+CREATE TABLE intent_routine_column_mapping_pair (
+  type_name  VARCHAR NOT NULL,
+  field_name VARCHAR NOT NULL,
+  ordinal    INT     NOT NULL,
+  position   INT     NOT NULL,
+  param_name VARCHAR NOT NULL,
+  column_ref VARCHAR NOT NULL,
+  PRIMARY KEY (type_name, field_name, ordinal, position),
+  FOREIGN KEY (type_name, field_name, ordinal)
+    REFERENCES intent_routine (type_name, field_name, ordinal)
+);
+
+-- @experimental_constructType on a field. The selection stays a raw column
+-- with no decoded child: the census found no consumer anywhere in the
+-- pipeline, so the entry decode would be speculation; it lands with the
+-- first consumer, through the shared pair-grammar parser.
+CREATE TABLE intent_construct_type (
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  source_name   VARCHAR,
+  source_line   INT,
+  source_column INT,
+  selection     VARCHAR, -- as written; the declaration leaves it optional
+  PRIMARY KEY (type_name, field_name),
+  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
+);
+
+-- @discriminate on an interface or union: the discriminator column.
+CREATE TABLE intent_discriminate (
+  type_name        VARCHAR NOT NULL,
+  source_name      VARCHAR,
+  declaration_line INT     NOT NULL,
+  source_line      INT,
+  source_column    INT,
+  on_column        VARCHAR NOT NULL, -- the on: argument as written; catalog resolution is a derivation
+  PRIMARY KEY (type_name),
+  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
+  FOREIGN KEY (type_name, source_name, declaration_line)
+    REFERENCES graphql_type_declaration (type_name, source_name, source_line)
+);
+
+-- @discriminator on an object type: the participant's discriminator value.
+CREATE TABLE intent_discriminator (
+  type_name           VARCHAR NOT NULL,
+  source_name         VARCHAR,
+  declaration_line    INT     NOT NULL,
+  source_line         INT,
+  source_column       INT,
+  discriminator_value VARCHAR NOT NULL, -- the value: argument as written (VALUE alone is an H2 reserved word)
+  PRIMARY KEY (type_name),
+  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
+  FOREIGN KEY (type_name, source_name, declaration_line)
+    REFERENCES graphql_type_declaration (type_name, source_name, source_line)
 );
 
 -- Federation @key, decoded for consumption (its verbatim twin lives in
@@ -682,6 +1381,8 @@ CREATE TABLE intent_federation_key (
   ordinal          INT     NOT NULL, -- @key is repeatable; document order
   source_name      VARCHAR,          -- the applying declaration site; a synthesized key inherits the causing authored site of the same type, so the reference holds for it too
   declaration_line INT     NOT NULL,
+  source_line      INT,
+  source_column    INT,
   fields_sdl       VARCHAR NOT NULL, -- the field-set literal as written
   resolvable       BOOLEAN,          -- as written; NULL when omitted
   PRIMARY KEY (type_name, ordinal),
@@ -691,7 +1392,9 @@ CREATE TABLE intent_federation_key (
 );
 
 -- An ordered element of a @key field set (the field-set grammar is a parse
--- boundary, so the decode happens at capture).
+-- boundary, so the decode happens at capture). The grammar admits nested
+-- selections as dotted paths; that today's consumer rejects nesting is a
+-- detection, not a capture limit.
 CREATE TABLE intent_federation_key_field (
   type_name  VARCHAR NOT NULL,
   ordinal    INT     NOT NULL,
@@ -700,6 +1403,113 @@ CREATE TABLE intent_federation_key_field (
   PRIMARY KEY (type_name, ordinal, position),
   FOREIGN KEY (type_name, ordinal)
     REFERENCES intent_federation_key (type_name, ordinal)
+);
+
+-- @link on the schema definition, decoded. All @link applications decode
+-- here (the verbatim twin sits in applied_schema_directive); whether a link
+-- is the federation opt-in is a predicate over url, a derivation. @tag and
+-- @shareable get no decoded relations: their only readers are the expansion
+-- machinery itself, which is the capture walk with the AST in hand, so
+-- downstream consumers see them only as fidelity rows for re-emission.
+CREATE TABLE intent_link (
+  ordinal       INT     NOT NULL, -- @link is repeatable; document order
+  source_name   VARCHAR,
+  source_line   INT,
+  source_column INT,
+  url           VARCHAR, -- as written
+  PRIMARY KEY (ordinal)
+);
+
+-- An ordered import entry of an @link, covering both the string form and the
+-- object form.
+CREATE TABLE intent_link_import (
+  link_ordinal INT     NOT NULL,
+  position     INT     NOT NULL,
+  name         VARCHAR NOT NULL, -- the imported name (the object form's name:)
+  alias        VARCHAR,          -- the object form's as:, when written
+  PRIMARY KEY (link_ordinal, position),
+  FOREIGN KEY (link_ordinal) REFERENCES intent_link (ordinal)
+);
+
+-- Retired directives: existence only, per the rules above.
+
+-- @notGenerated (removed) on a field or input field.
+CREATE TABLE intent_not_generated_field (
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  source_name   VARCHAR,
+  source_line   INT,
+  source_column INT,
+  PRIMARY KEY (type_name, field_name),
+  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
+);
+
+-- @notGenerated (removed) on an argument.
+CREATE TABLE intent_not_generated_argument (
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  argument_name VARCHAR NOT NULL,
+  source_name   VARCHAR,
+  source_line   INT,
+  source_column INT,
+  PRIMARY KEY (type_name, field_name, argument_name),
+  FOREIGN KEY (type_name, field_name, argument_name)
+    REFERENCES graphql_argument (type_name, field_name, argument_name)
+);
+
+-- @notGenerated (removed) on an interface or union.
+CREATE TABLE intent_not_generated_type (
+  type_name        VARCHAR NOT NULL,
+  source_name      VARCHAR,
+  declaration_line INT     NOT NULL,
+  source_line      INT,
+  source_column    INT,
+  PRIMARY KEY (type_name),
+  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
+  FOREIGN KEY (type_name, source_name, declaration_line)
+    REFERENCES graphql_type_declaration (type_name, source_name, source_line)
+);
+
+-- @multitableReference (removed) on a field; routes is never read.
+CREATE TABLE intent_multitable_reference (
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  source_name   VARCHAR,
+  source_line   INT,
+  source_column INT,
+  PRIMARY KEY (type_name, field_name),
+  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
+);
+
+-- @record (deprecated, ignored) on an object or input type. class_name is
+-- the one payload value a consumer reads: the warning arms compare it
+-- against the reflected backing class.
+CREATE TABLE intent_record (
+  type_name        VARCHAR NOT NULL,
+  source_name      VARCHAR,
+  declaration_line INT     NOT NULL,
+  source_line      INT,
+  source_column    INT,
+  class_name       VARCHAR, -- record.className as written
+  PRIMARY KEY (type_name),
+  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
+  FOREIGN KEY (type_name, source_name, declaration_line)
+    REFERENCES graphql_type_declaration (type_name, source_name, source_line)
+);
+
+-- The tolerant-decode overflow: a graphitron application argument whose
+-- literal does not fit the declared shape decodes to NULL in its typed
+-- column and quarantines its raw text here, so the authored value is never
+-- lost and the malformed-literal detection has its row. Empty while assembly
+-- runs upstream.
+CREATE TABLE intent_undecoded_argument (
+  source_name             VARCHAR NOT NULL, -- the application's position identifies the row; authored applications always have one
+  source_line             INT     NOT NULL,
+  source_column           INT     NOT NULL,
+  directive_name          VARCHAR NOT NULL,
+  directive_argument_name VARCHAR NOT NULL,
+  value_sdl               VARCHAR NOT NULL, -- the literal as written, rendered from the AST
+  PRIMARY KEY (source_name, source_line, source_column, directive_name, directive_argument_name)
 );
 ```
 
@@ -1004,8 +1814,9 @@ capture cannot reject. Capture is total, with no reachability pruning.
   of graphitron and federation applications (federation dual-written to both strata), and
   macro expansion with its provenance rows. Capture never throws, even on schemas assembly
   would reject; while the shadow window lasts, assembly still runs upstream and rejects
-  invalid schemas first, so the tolerant paths (dangling references, undecodable applications
-  quarantined raw with their location) stay dormant until the LSP consumer arrives, and the
+  invalid schemas first, so the tolerant paths (dangling references, undecodable argument
+  literals quarantined raw with their location in `intent_undecoded_argument`) stay dormant
+  until the LSP consumer arrives, and the
   agreement tests see only valid input. The capture writer gets its own package in core,
   importing the module's generated classes; it does not live inside
   `no.sikt.graphitron.facts`, whose import-direction allowance stays intact for the legacy
@@ -1049,8 +1860,10 @@ capture code: nothing at capture reads across types.
   path-valued key; slot-fact granularity left the list when the semantic stratum moved the
   decoded shapes into capture). The spike DDL in
   `roadmap/audits/2026-08-05-fact-base-h2-spike.md` is the standing sketch for that stratum.
-- **Routines.** A routine census is capture by the decode rule and cheap to load, but its
-  identity is not settled: routines overload, carry parameter modes, and split table-valued
+- **Routines.** A catalog-side routine census is capture by the decode rule and cheap to
+  load (the `@routine` applications themselves are already captured in the semantic
+  stratum), but the catalog routine's identity is not settled: routines overload, carry
+  parameter modes, and split table-valued
   from scalar, so the key needs the same inventory-grounded design the relations above got.
   Guessing the key is the speculation; the census lands with the `@routine` consumer whose
   queries fix its shape.
