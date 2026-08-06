@@ -16,8 +16,10 @@ The fact-base architecture R589 (`validation-adds-facts`) arrived at needs its s
 reactor module, `graphitron-model`, holding the fact-schema DDL (the umbrella's normalised data
 model reified as SQL; R333), jOOQ codegen over it, and an H2 in-memory bootstrap. On top of the
 module, two infallible capture loads run beside the existing pipeline and change no behavior:
-the SDL visitor records existence and application facts, and the jOOQ and classpath scans record
-the catalog and extension facts. Nobody reads the store yet. Agreement tests are the shadow
+the SDL visitor records existence facts, expands the macro directives, stores foreign directive
+applications verbatim for round-trip fidelity, and decodes the graphitron directive inventory
+into semantic relations; the jOOQ and classpath scans record the catalog and extension facts.
+Nobody reads the store yet. Agreement tests are the shadow
 period's honesty check and retire as consumers migrate off `GraphitronSchema` piece by piece
 (the strangler frame recorded in R589); while both models are live, new facts land only in the
 store. Two spikes ground the stack: `roadmap/audits/2026-08-05-fact-base-h2-spike.md` (the
@@ -36,21 +38,15 @@ DDL, as a single SQL resource (`src/main/resources/no/sikt/graphitron/model/grap
 and two things generated from it:
 
 - **Compile-time surface.** Codegen is jOOQ's live H2 metadata generation over a real store
-  booted from the DDL, not `DDLDatabase` simulation. In the single-module wiring: a
-  maven-compiler execution at generate-sources compiles the module's bootstrap, build-driver,
-  and function packages, then an `exec:java` execution runs the codegen driver on the project
-  classpath. The driver does not restate boot, it performs it: it calls the run-time bootstrap
-  entry point below (which needs no generated classes), so the DDL executes against the same
-  embedded engine the runtime uses and `CREATE ALIAS` resolves the classes compiled a moment
-  earlier, then it points `GenerationTool` at the store the bootstrap handed back, with
-  `includeRoutines=false`; build-helper adds the generated sources and the default compile
-  builds the rest against them. Codegen is thereby a rehearsal of boot as a call, not as two
-  procedures kept similar by hand: a bootstrap regression fails codegen before it can fail a
-  generator run, and a view calling a missing or mistyped function fails the build with a
-  real H2 error. (The functions-sibling alternative below keeps this driver wiring available
-  unchanged; what the sibling adds is the option of stock plugin configuration, at the price
-  of a file-based H2 for cross-plugin visibility. Live-H2 codegen and everything downstream
-  hold under every combination.) No external database process is involved (the
+  booted from the DDL, not `DDLDatabase` simulation: a maven-compiler execution at
+  generate-sources compiles the module's bootstrap and build-driver packages, then an
+  `exec:java` execution runs the codegen driver on the project classpath. The driver does not
+  restate boot, it performs it: it calls the run-time bootstrap entry point below (which
+  needs no generated classes) and points `GenerationTool` at the store the bootstrap handed
+  back; build-helper adds the generated sources and the default compile builds the rest
+  against them. Codegen is thereby a rehearsal of boot as a call, not as two procedures kept
+  similar by hand: a bootstrap regression or a DDL error fails codegen with a real H2 error
+  before it can fail a generator run. No external database process is involved (the
   `graphitron-sakila-db` contrast). Generated classes land in
   `target/generated-sources/jooq` under package `no.sikt.graphitron.model` and are never
   committed; the DDL is the single source. Because the module builds before core, editing the
@@ -62,34 +58,17 @@ and two things generated from it:
   generator run, created at startup, populated by capture, dead with the process. No
   migrations exist because no persisted state exists.
 
-The model's Java functions belong to this module's delivery too. H2 functions are `CREATE ALIAS` bindings
-to static methods, and the statements sit plainly in the same DDL script, before the views
-that call them; the live-codegen path executes the script with real H2, so nothing needs
-hiding from a parser, function-typed view columns come out typed from the alias's Java
-signatures with no `CAST` discipline, and the DDL stays the single source with functions
-included while the bootstrap stays "execute the script". The alias methods ship with the
-module, which makes the store whole from this module alone: any process that boots it gets
-working views without core on the classpath, and the module carries a graphql-java dependency
-for the literal decoders. Where the function classes sit is a settled either-way choice: the
-single-module wiring above, or a `graphitron-model-functions` sibling that builds first and
-rides the codegen plugin's classpath, letting the codegen run as stock plugin configuration
-(the jOOQ-mcve shape). The single-module form keeps the model one artifact; the sub-module
-form keeps the build orthodox; both keep the store whole (the sub-module is a compile-scope
-dependency of `graphitron-model`, so consumers get it transitively). Both arms are
-precedented in the reactor: `graphitron-mcp`'s docs-index builder is an `exec:java` build
-driver living in main sources, and `graphitron-fixtures-codegen` exists as a sibling module
-precisely because the jOOQ codegen plugin runs before the consuming module's own classes
-compile, which is this exact problem and the reactor's documented answer to it.
-Implementation picks whichever fits better, and if the sub-module is chosen it joins the
-module-enumeration ride-alongs below. No functions ship in this increment; the first bridge
-decoders arrive with the derivations that need them. Until one does, the alias half of the
-wiring is dormant, nothing in this increment exercises the function-package compile or the
-alias-resolution property, so implementation may land that half now (accepting that its
-first real test arrives with the first decoder) or defer it whole to the increment that
-ships one; the bootstrap-calling driver and the live-H2 codegen it feeds are exercised
-either way. The spike record grounding
-all of this, including the single-module build wiring, is
-`roadmap/audits/2026-08-05-h2-functions-jooq-spike.md`.
+A Java function surface stays available as a contingency, not a plan. The functions spike
+(`roadmap/audits/2026-08-05-h2-functions-jooq-spike.md`) proved H2 `CREATE ALIAS` scalar
+functions workable end to end, in two build shapes that are both precedented in the reactor:
+alias classes compiled inside this module before codegen runs (the `exec:java` driver
+pattern `graphitron-mcp`'s docs-index builder already uses), or a
+`graphitron-model-functions` sibling on the codegen plugin's classpath (the reason
+`graphitron-fixtures-codegen` exists as a sibling). With structured directive arguments
+decoded at capture (see the conventions below), no known derivation needs a SQL-side parse,
+so no functions ship and none are planned; if one ever appears, the spike's wiring is the
+recipe, the module or its sibling is the home, and the sibling would join the
+module-enumeration ride-alongs below.
 
 Mechanical ride-alongs: the root pom module list, the module enumeration in CLAUDE.md and
 `docs/architecture/reference/modules.adoc` (the `check-module-enumeration` gate checks the
@@ -119,10 +98,14 @@ These bind the DDL below and every relation added to it later.
   model does not know.
 - **`VARCHAR` is unbounded.** Length limits tune storage; this store has none, and semantics
   live in keys and constraints, not in column widths.
-- **Capture stores what the author wrote.** A directive argument the author omitted is an absent
-  row, not a default-filled one; defaults are derivable by joining the definition's
-  `default_value_sdl`. Structured values (reference paths, error handlers) are captured as the
-  rendered SDL literal; decoding them into slot facts is derivation and lands with consumers.
+- **Capture stores what the author wrote.** An omitted directive argument is a NULL column or
+  an absent row, never a default-filled one; effective values are derivation views (for the
+  graphitron namespace the defaults are generator constants, not captured facts). Structured
+  values (reference paths, error handlers, field sets) decode at capture into typed columns
+  and ordered child relations: the AST value is in hand during the walk and graphql-java has
+  already validated its structure, so the decode cannot reject. Rows a macro synthesized
+  rather than the author wrote are marked by the synthesis provenance relations; the authored
+  picture is the anti-join.
 - **Source order is a captured fact.** Where declaration order is meaningful (fields, arguments,
   enum values, union members, key and index columns) it is an explicit ordinal column, so an
   `ORDER BY` reproduces it; iteration order is never load-bearing, per the determinism rule R589
@@ -131,9 +114,11 @@ These bind the DDL below and every relation added to it later.
   `CatalogFacts` invariant (never a live `Table<?>`, `ForeignKey`, or `Class<?>`, because the
   codegen classloader closes per pass); a SQL store enforces it structurally.
 - **Decode at capture exactly when the decode needs parse-boundary knowledge SQL cannot
-  express** (the graphql-java AST, a JVM descriptor); anything computable as a query over
-  captured columns is derivation and stays out. This rule is why the type-wrapping decode and
-  `returns_condition` are columns while reference-path and error-handler decoding are not.
+  express** (the graphql-java AST, a JVM descriptor, federation's field-set grammar);
+  anything computable as a query over captured columns is derivation and stays out. This
+  rule is why type wrapping, structured directive arguments, and `returns_condition` are
+  columns and child relations, while name resolution (does a written table or class name
+  denote a real one) and effective-value defaulting are not.
 - **Constraint violations are generator bugs, never author errors.** Every key and `CHECK`
   below ranges over a domain capture controls (closed classfile forms, graphql-java's kind
   vocabulary) or an identity graphql-java guarantees unique in an assembled schema (it rejects
@@ -147,8 +132,19 @@ These bind the DDL below and every relation added to it later.
 
 Base relations only: what the two capture loads fill. The derived stratum (claims, reachability,
 demand, occurrence paths, diagnostics, commands) is deliberately absent; see the leave-outs
-section. Three families, prefixed by origin: `graphql_` and `applied_` for SDL facts,
-`catalog_` for jOOQ catalog facts, `extension_` for the consumer's compiled extension classes.
+section. Five families, prefixed by origin and job: `graphql_` existence and
+synthesis-provenance facts, `applied_` fidelity rows for the non-graphitron directive surface
+(re-emitted verbatim, never interpreted), `intent_` semantic relations for the graphitron and
+federation inventory (decoded at capture), `catalog_` for jOOQ catalog facts, `extension_` for
+the consumer's compiled extension classes.
+
+A round-trip constraint binds the SDL families: the emitted runtime schema must be
+reproducible from the store alone, the input schema minus the graphitron namespace plus the
+macro expansions. That is why the existence family carries full fidelity (descriptions,
+deprecations via applied rows, ordinals for stable output order, foreign directive
+definitions and applications), and it is what the schema-emission consumers migrate onto. The
+namespace strip itself becomes one predicate at emission instead of scattered knowledge of
+which directives are ours.
 
 Two representation choices up front. First, output fields and input-object fields share one
 table: a field's identity is `(type_name, field_name)` in both cases and the owning type's
@@ -290,8 +286,12 @@ CREATE TABLE graphql_root_operation (
 
 -- ==== Directive definitions ==================================================
 -- The definition side of the directive surface: what a directive is, where it
--- may sit, what arguments it declares. Bundled, user-authored, and
--- federation-imported definitions are all rows.
+-- may sit, what arguments it declares. User-authored, spec built-in, and
+-- federation-imported definitions are rows because the emitted runtime schema
+-- re-declares them (round trip). Graphitron's own bundled definitions are
+-- generator constants shipped in directives.graphqls, not author facts: they
+-- stay out, and their fact-roles (argument defaults, repeatability) are
+-- absorbed by the semantic stratum's shapes.
 
 -- A directive is defined.
 CREATE TABLE graphql_directive (
@@ -336,7 +336,16 @@ CREATE TABLE graphql_directive_argument (
 );
 ```
 
-Directive applications are one table per element family rather than one generic table, because a
+The `applied_` families are the fidelity stratum, and their scope is the round trip: every
+application that must survive into the emitted runtime schema verbatim lands here, which is
+everything *outside* the graphitron namespace (`@deprecated`, user-authored directives, and
+the federation surface). These rows are never interpreted; they are re-emitted. The
+graphitron namespace never lands here at all: its applications are stripped from the output
+and exist only decoded, in the semantic stratum below. Federation applications appear in
+both strata (verbatim here for re-emission, decoded there for consumption, written in the
+same pass; a gate query pins the two projections in agreement).
+
+Applications are one table per element family rather than one generic table, because a
 generic table would need nullable key parts (an argument application has a three-part element
 coordinate, a schema application a zero-part one) and a key with holes stops being a natural
 key. Five families: the four element sites plus the schema definition itself, whose `@link`
@@ -346,15 +355,16 @@ non-repeatable directive and numbered in document order for repeats. The ordinal
 across all families because repeatability is a property of arbitrary SDL, not of today's
 bundled inventory: federation's `@key` is repeatable on OBJECT and the sakila federated fixture
 already applies it twice to one type, so a type-level key without an ordinal collides on the
-existing corpus. Where order is semantics it is captured order: `@reference` applications
-concatenate into one chain. Raw argument values ride in a child table per family, keyed by the
+existing corpus. Raw argument values ride in a child table per family, keyed by the
 application plus the formal argument name, and the DDL ships the union view over all five
 families so no consumer hand-writes the five-arm `UNION ALL`.
 
 ```sql
 -- ==== Directive applications =================================================
 -- One row per application the author wrote, one child row per argument the
--- author passed. Values are the rendered SDL literal; decoding is derivation.
+-- author passed. Values are the rendered SDL literal; these rows are
+-- re-emitted verbatim, never decoded (the graphitron namespace never lands
+-- here; it is decoded into the semantic stratum instead).
 
 -- A directive is applied to the schema definition (@link lives here).
 CREATE TABLE applied_schema_directive (
@@ -438,7 +448,7 @@ CREATE TABLE applied_argument_directive (
   field_name     VARCHAR NOT NULL,
   argument_name  VARCHAR NOT NULL, -- the SDL argument the directive sits on
   directive_name VARCHAR NOT NULL,
-  ordinal        INT     NOT NULL, -- as on applied_field_directive; @reference is repeatable here too
+  ordinal        INT     NOT NULL, -- as on applied_field_directive
   source_name    VARCHAR,
   source_line    INT,
   source_column  INT,
@@ -462,8 +472,8 @@ CREATE TABLE applied_argument_directive_arg (
     REFERENCES applied_argument_directive (type_name, field_name, argument_name, directive_name, ordinal)
 );
 
--- A directive is applied to an enum value (@order, @index, @field,
--- @deprecated live here).
+-- A directive is applied to an enum value (@deprecated lives here; the
+-- graphitron enum-value directives land in the semantic stratum).
 CREATE TABLE applied_enum_value_directive (
   type_name      VARCHAR NOT NULL,
   value_name     VARCHAR NOT NULL,
@@ -513,6 +523,165 @@ UNION ALL
 SELECT 'ENUM_VALUE', type_name, value_name, NULL,
        directive_name, ordinal, source_name, source_line, source_column
   FROM applied_enum_value_directive;
+```
+
+The semantic stratum decodes the graphitron and federation inventory, one relation family per
+directive, filled by the same capture walk. Its rules:
+
+- **Tables follow the coordinate shape, not the SDL location list.** A directive permitted on
+  FIELD_DEFINITION and INPUT_FIELD_DEFINITION needs one table, because both sites share the
+  `(type_name, field_name)` coordinate and the parent kind is a join away, exactly as
+  `graphql_field` unifies the two; a directive that also sits on ARGUMENT_DEFINITION gets a
+  second table for the three-part coordinate. No nullable key parts, ever: a multi-site
+  directive gets one table per coordinate shape.
+- **Structured arguments flatten per the decode rule.** An `ExternalCodeReference` becomes
+  class, method, and arg-mapping columns; a list becomes an ordered child relation;
+  `@reference`'s repeatable applications concatenate into one position-keyed step relation in
+  document order.
+- **Authored values only**, per the conventions: omitted arguments are NULL columns or absent
+  rows, effective values are derivation views, and name resolution is a detection over the
+  catalog and extension families, never capture's business.
+
+The representative first draw below fixes the pattern; the full inventory (about thirty
+directives) is the next authoring round, each table grounded in its directive's declared
+arguments and actual consumers the same way these were. The `intent_` prefix names what a row
+is: the author's decoded intent at a coordinate.
+
+```sql
+-- ==== Semantic stratum (representative draw; inventory completes next round) =
+
+-- @table on a type: the author binds the type to a database table.
+CREATE TABLE intent_table (
+  type_name VARCHAR NOT NULL, -- the OBJECT, INPUT_OBJECT, or INTERFACE carrying @table
+  table_ref VARCHAR,          -- the name argument as written (may carry a schema qualifier); NULL when omitted, the type-name fallback is a derivation
+  PRIMARY KEY (type_name),
+  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name)
+);
+
+-- @condition on a field or input field (shared coordinate; the parent kind
+-- decides which SDL site this was).
+CREATE TABLE intent_field_condition (
+  type_name   VARCHAR NOT NULL,
+  field_name  VARCHAR NOT NULL,
+  class_name  VARCHAR, -- ExternalCodeReference.className as written
+  method      VARCHAR, -- ExternalCodeReference.method as written
+  arg_mapping VARCHAR, -- ExternalCodeReference.argMapping as written; its pair grammar decodes to a child relation if a consumer needs it relationally
+  override    BOOLEAN, -- as written; NULL when omitted (the FALSE default is derivable)
+  PRIMARY KEY (type_name, field_name),
+  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
+);
+
+-- An ordered context argument of a field-site @condition.
+CREATE TABLE intent_field_condition_context_arg (
+  type_name  VARCHAR NOT NULL,
+  field_name VARCHAR NOT NULL,
+  position   INT     NOT NULL, -- 0-based position in the contextArguments list
+  name       VARCHAR NOT NULL,
+  PRIMARY KEY (type_name, field_name, position),
+  FOREIGN KEY (type_name, field_name)
+    REFERENCES intent_field_condition (type_name, field_name)
+);
+
+-- intent_argument_condition mirrors intent_field_condition over the
+-- graphql_argument coordinate; drawn in the inventory round.
+
+-- @reference on a field or input field: the ordered step chain. Repeatable
+-- applications concatenate; position runs across the whole chain in document
+-- order, and each step's ExternalCodeReference condition flattens in place.
+CREATE TABLE intent_field_reference_step (
+  type_name   VARCHAR NOT NULL,
+  field_name  VARCHAR NOT NULL,
+  position    INT     NOT NULL, -- 0-based across the concatenated chain
+  table_ref   VARCHAR,          -- ReferenceElement.table as written
+  key_ref     VARCHAR,          -- ReferenceElement.key as written (may carry a schema qualifier)
+  class_name  VARCHAR,
+  method      VARCHAR,
+  arg_mapping VARCHAR,
+  PRIMARY KEY (type_name, field_name, position),
+  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
+);
+
+-- @asConnection on a field: the macro's spec, as authored. The expansion's
+-- output is provenance-marked rows in the graphql_ tables, below.
+CREATE TABLE intent_connection (
+  type_name           VARCHAR NOT NULL,
+  field_name          VARCHAR NOT NULL,
+  default_first_value INT,     -- as written; NULL when omitted
+  connection_name     VARCHAR, -- the deprecated shared-type override, as written
+  PRIMARY KEY (type_name, field_name),
+  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
+);
+
+-- Federation @key, decoded for consumption (its verbatim twin lives in
+-- applied_type_directive for re-emission; a gate query pins agreement).
+CREATE TABLE intent_federation_key (
+  type_name  VARCHAR NOT NULL,
+  ordinal    INT     NOT NULL, -- @key is repeatable; document order
+  fields_sdl VARCHAR NOT NULL, -- the field-set literal as written
+  resolvable BOOLEAN,          -- as written; NULL when omitted
+  PRIMARY KEY (type_name, ordinal),
+  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name)
+);
+
+-- An ordered element of a @key field set (the field-set grammar is a parse
+-- boundary, so the decode happens at capture).
+CREATE TABLE intent_federation_key_field (
+  type_name  VARCHAR NOT NULL,
+  ordinal    INT     NOT NULL,
+  position   INT     NOT NULL, -- 0-based within the field set
+  field_path VARCHAR NOT NULL, -- dotted path for nested selections
+  PRIMARY KEY (type_name, ordinal, position),
+  FOREIGN KEY (type_name, ordinal)
+    REFERENCES intent_federation_key (type_name, ordinal)
+);
+```
+
+Macros expand during the same capture walk. `@asConnection` and `@asFacet` are schema
+construction, not questions over facts, and the visitor holds everything construction needs
+(the AST, the wrapping decode, the naming conventions), so the walk expands them inline:
+synthesized types and fields land as ordinary `graphql_` rows, and the provenance relations
+below record which rows the expansion added and what the author's text was before it. The
+authored picture is the anti-join; the effective picture is the tables as they stand; the
+round trip emits the effective picture minus the graphitron namespace. Name collision is
+author-reachable (an author can declare the type a macro would synthesize), so the visitor
+resolves collisions before inserting, following the current synthesis semantics; the
+primary-key constraint stays a capture-bug detector, never an author-triggerable throw. One
+known caveat rides along: federation's `@key` synthesis currently runs pre-assembly
+(`KeyNodeSynthesiser` rewrites the registry), so the walk sees its output as if authored;
+end state it becomes a visitor macro like the others, and until then its rows carry no
+synthesis provenance.
+
+```sql
+-- ==== Macro synthesis provenance =============================================
+-- The expansion's own record: which graphql_ rows a macro added, and the
+-- authored text where the macro rewrote it.
+
+-- A type row was synthesized by a macro for a carrier coordinate. Shared
+-- machinery types (PageInfo) get one row per carrier; the first carrier's
+-- expansion inserts the graphql_type row, later carriers add provenance only.
+CREATE TABLE graphql_type_synthesis (
+  type_name          VARCHAR NOT NULL, -- the synthesized type (Connection, Edge, PageInfo, facet shapes)
+  carrier_type_name  VARCHAR NOT NULL, -- the coordinate whose application triggered the expansion
+  carrier_field_name VARCHAR NOT NULL,
+  macro              VARCHAR NOT NULL, -- which expansion produced it
+  PRIMARY KEY (type_name, carrier_type_name, carrier_field_name),
+  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
+  FOREIGN KEY (carrier_type_name, carrier_field_name)
+    REFERENCES graphql_field (type_name, field_name),
+  CHECK (macro IN ('CONNECTION', 'FACET'))
+);
+
+-- A field's type expression was rewritten by a macro; the authored expression
+-- survives here while the field's graphql_field row holds the effective one.
+CREATE TABLE graphql_field_synthesis (
+  type_name         VARCHAR NOT NULL,
+  field_name        VARCHAR NOT NULL,
+  macro             VARCHAR NOT NULL,
+  authored_type_sdl VARCHAR NOT NULL, -- the type expression as the author wrote it, pre-expansion
+  PRIMARY KEY (type_name, field_name),
+  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name),
+  CHECK (macro IN ('CONNECTION', 'FACET'))
+);
 ```
 
 Catalog facts are keyed `(table_schema, table_name)` end to end, matching `CatalogFacts`'
@@ -703,18 +872,22 @@ Both loads are infallible by construction: they record what is there, and graphq
 already validated directive arguments against their definitions before we see the schema, so raw
 capture cannot reject. Capture is total, with no reachability pruning.
 
-- **SDL load.** One pass fills the `graphql_` and `applied_` families, reading the **assembled
-  `GraphQLSchema`**, and that source is decided here, not at implementation: assembly is what
-  guarantees every type reference resolves (so the `named_type` FK cannot dangle) and every
-  directive application has been validated (so raw capture cannot reject); neither holds of the
-  raw registry. One named carve-out: `makeExecutableSchema` drops applied directives targeting
-  built-in scalar names, the loss `GraphitronSchemaBuilder.recordSdlScalarDirectives` exists to
-  patch, so the load captures exactly those from the registry in the same pass, and that
-  pre-pass can retire when its consumer migrates. The capture writer gets its own package in
-  core, importing the module's generated classes; it does not live inside
-  `no.sikt.graphitron.facts`, whose import-direction allowance ("reads the assembled schema,
-  imports nothing else of the tree") stays intact. The walk constraint stands regardless of
-  placement: a single pass over the schema, not two parallel walkers drifting apart.
+- **SDL load.** One pass fills the `graphql_`, `applied_`, and `intent_` families, reading the
+  **assembled `GraphQLSchema`**, and that source is decided here, not at implementation:
+  assembly is what guarantees every type reference resolves (so the `named_type` FK cannot
+  dangle) and every directive application has been validated (so raw capture cannot reject,
+  and the semantic decode of structured arguments cannot either); neither holds of the raw
+  registry. The one walk does four jobs: existence rows, fidelity rows for non-graphitron
+  applications, semantic decode of graphitron and federation applications (federation
+  dual-written to both strata), and macro expansion with its provenance rows. One named
+  carve-out: `makeExecutableSchema` drops applied directives targeting built-in scalar names,
+  the loss `GraphitronSchemaBuilder.recordSdlScalarDirectives` exists to patch, so the load
+  captures exactly those from the registry in the same pass, and that pre-pass can retire when
+  its consumer migrates. The capture writer gets its own package in core, importing the
+  module's generated classes; it does not live inside `no.sikt.graphitron.facts`, whose
+  import-direction allowance ("reads the assembled schema, imports nothing else of the tree")
+  stays intact. The walk constraint stands regardless of placement: a single pass over the
+  schema, not two parallel walkers drifting apart.
 - **Catalog load.** Fills the `catalog_` family from the same jOOQ catalog walk that builds
   `CatalogFacts` today, and the `extension_` family from the `ClasspathScanner` emission. Runs
   inside the codegen classloader scope; only values cross out, which the store enforces.
@@ -729,7 +902,8 @@ not an author error, per the constraint split R589 fixes.
   command relations are absent by design: per the strangler frame, a derivation's DDL lands with
   the first consumer that migrates onto it, and several shapes hang on R589's open questions
   (the axis declaration's home, inferred-claim provenance, slot-fact granularity, the
-  path-valued key). The spike DDL in
+  path-valued key; slot-fact granularity left the list when the semantic stratum moved the
+  decoded shapes into capture). The spike DDL in
   `roadmap/audits/2026-08-05-fact-base-h2-spike.md` is the standing sketch for that stratum.
 - **Routines.** A routine census is capture by the decode rule and cheap to load, but its
   identity is not settled: routines overload, carry parameter modes, and split table-valued
@@ -747,9 +921,11 @@ not an author error, per the constraint split R589 fixes.
 - **Derived `GraphitronSchema` components.** Arrivals, reachable source shapes, tenant scopes
   and bindings, connection synthesis, operation members, and delivery facts are derivations over
   the base facts above; none of them is capture, so none of them is a table here.
-- **Decoded slot facts.** Capture decodes only what the decode rule admits (type wrapping,
-  `returns_condition`, the erased display types); everything else (reference paths, error
-  handlers, mutation kinds) stays a rendered literal until a consumer's derivation decodes it.
+- **Resolution facts and effective values.** Capture decodes structure (type wrapping,
+  structured directive arguments, field sets, descriptors) but resolves nothing: whether a
+  written table, constraint, or class name denotes a real one is a detection over the catalog
+  and extension families, and effective values (defaults applied, fallback names filled) are
+  derivation views; both land with consumers.
 
 ## Acceptance
 
@@ -770,19 +946,22 @@ not an author error, per the constraint split R589 fixes.
   is vacuous by construction (`applied_directive_site` is the first derived registrant, and the
   later strata land as registrations, not exemptions). The
   anchor checks: type census against `GraphitronSchema.types`, per-coordinate applied-directive
-  counts against the SDL, catalog table and column census against `CatalogFacts`, extension
-  method census against the scanner's `CompletionData` view. They are the shadow period's
-  honesty check and retire as consumers migrate.
+  counts against the SDL, the semantic relations against the minted model components and
+  directive-resolver outputs they shadow, synthesis provenance against the
+  `connectionSynthesis` component, catalog table and column census against `CatalogFacts`,
+  extension method census against the scanner's `CompletionData` view. They are the shadow
+  period's honesty check and retire as consumers migrate.
 - The gate family runs against the bootstrapped store: comment coverage (every table and column
   commented, checked via `INFORMATION_SCHEMA`) and one query per cross-relation invariant the
   DDL cannot state (at most one `is_primary` row per catalog table, `default_value_sdl` only
   under INPUT_OBJECT parents, `ordinal` 0 unless the directive is repeatable, wrapping decode
-  consistent with `type_sdl` where SQL can express the correspondence).
+  consistent with `type_sdl` where SQL can express the correspondence, no graphitron-namespace
+  row in any `applied_` family, the federation dual projection in agreement).
 - All tests live in `graphitron` at the appropriate tier (the tier meta-annotations live in
   core's test root and the module order forbids the reverse dependency); `graphitron-model`
-  hosts model code only: the DDL, the codegen output, the bootstrap, the codegen driver when
-  the single-module wiring is chosen, and in later increments the model's function aliases
-  (here or in the functions sibling, per the settled either-way placement), never tests.
+  hosts model code only: the DDL, the codegen output, the bootstrap, and the codegen driver,
+  never tests. (Function aliases are a contingency; if one ever ships it lives here or in the
+  functions sibling, per the module section.)
 - Ride-alongs land: root pom module list, CLAUDE.md and `docs/architecture/reference/modules.adoc`
   enumeration (the `check-module-enumeration` gate holds), H2 version pinned in the root pom.
 

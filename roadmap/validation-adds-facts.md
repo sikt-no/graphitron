@@ -216,19 +216,24 @@ entries come out of validation and planning, never out of classifiers.
 
 Simulating the target pipeline collapses it further than the stage vocabulary above suggests. Two
 capture steps, neither of which can fail, load the base relations. The SDL traversal (the
-graphql-java visitor already in use) records existence and application facts: the type exists, the
-directive is applied at this location with these raw arguments, the field exists at this
-coordinate, the argument uses this input type, the input type's definition facts on first visit.
-None of that is interpretation; graphql-java has already validated directive arguments against
-their definitions before we see the schema, so raw capture cannot fail, and source locations ride
-the raw facts so every later diagnostic inherits its location without re-walking SDL. The catalog
+graphql-java visitor already in use) records existence facts and directive applications: the
+type exists, the field exists at this coordinate, the argument uses this input type. A
+graphitron directive application lands decoded in its per-directive semantic relation (the
+structural decode cannot reject: graphql-java has already validated every argument against its
+definition before we see the schema), a foreign application lands verbatim for round-trip
+re-emission, and the macro directives (`@asConnection`, `@asFacet`) expand during the same
+walk, their synthesized rows marked by provenance relations so the authored picture stays the
+anti-join. Source locations ride the raw facts so every later diagnostic inherits its location
+without re-walking SDL. The catalog
 scans (jOOQ, services) load the other base relations the same way. Capture is total: everything in
 the SDL is recorded, with no reachability pruning at capture time.
 
-Everything after capture is derivation, and classification stops being a phase. An authored claim
-is the join of the applied-directive relation with the axis declarations; the classifier column in
-the key falls out of the join. An inferred claim is the same shape with catalog facts on the right
-side (a field fact whose parent binds a table, a catalog column matching the name). Reachability
+Everything after capture is derivation, and classification stops being a phase. An authored
+claim is captured, not assembled: the visitor decodes each graphitron application into its
+semantic relation, and the claim relation is a thin union view over the claiming relations,
+the classifier column a literal per arm; the conflict rule stays a detection query grouping by
+coordinate, per the constraint split below. An inferred claim is a join with catalog facts on
+the right side (a field fact whose parent binds a table, a catalog column matching the name). Reachability
 is a derived relation too (root seeds plus transitive closure over captured edges), and with it
 the zero-claims domain becomes explicit: a demand relation, reachable coordinates intersected with
 requiring rules, each row carrying *why* a claim is required. Today's implicit skips (connection
@@ -295,13 +300,13 @@ pre-evaluates table functions, so their arguments cannot reference columns of th
 query, there is no `LATERAL` to rescue the correlated join a TVF-based derivation layer would be
 built from, and the generated binding is untyped besides. Derivations stay SQL statements, views
 and `INSERT..SELECT` strata with recursive CTEs where closure is needed, exactly the shape the
-stratification above assumes. Where a derivation needs parse-boundary knowledge SQL cannot
-express (graphql-java literal decoding), the bridge is a scalar or array-returning function
-shipped as `CREATE ALIAS` in the model's own DDL, before the views that call it; row explosion
-over a decoded array is a `SYSTEM_RANGE` join with `CARDINALITY` and `ARRAY_GET`. The alias
-methods are part of the model and travel with `graphitron-model` (directly or via the
-compile-scope functions sibling whose either-way placement R595 records), so any process
-booting the store gets working views from the model dependency alone.
+stratification above assumes. A later round then moved structured-argument decoding into
+capture itself (R595's semantic stratum: the visitor holds the AST, so nothing re-parses at
+derivation time), which empties the known class of derivations needing a SQL-side parse. The
+scalar-alias bridge the spike proved (`CREATE ALIAS` functions in the model's DDL, row
+explosion via a `SYSTEM_RANGE` join with `CARDINALITY` and `ARRAY_GET`) is thereby a
+contingency, not a planned mechanism: adopted only if a derivation ever genuinely needs a
+parse SQL cannot express, with the spike's wiring as the recipe.
 
 ## Scope
 
@@ -480,12 +485,11 @@ those pieces.
   rightly no-edge because nothing resolved, a conflicted coordinate differs precisely because its
   claims' slot facts survived, and the reverse index is what answers "what touches table X" with
   the broken DELETE included. `EdgeCoverageTest` pins whichever answer.
-- **Slot-fact granularity.** Materialization is decided (the store, the `graphitron-model`
-  module) and so is the mechanism: a slot-fact derivation is an `INSERT..SELECT` calling a
-  decode alias where the value needs the graphql-java parser, per the functions spike; not a
-  Java loop. What remains is purely sequencing: which slot facts, and so which decode functions
-  and strata, ship in which increment (the pilot pair's, plus what the conflicted-DELETE
-  fixture needs) versus staying inside the interim monolithic producer.
+- **Slot-fact granularity: closed.** The semantic-capture pivot recorded in R595 answers it:
+  the graphitron directive inventory decodes at capture into per-directive semantic relations
+  that ship with the substrate, so no increment mints decoded shapes later; what an increment
+  adds is its detections and resolution derivations. The bullet stays only to record the
+  closure.
 - **The axis declaration's home.** Where a directive declares the axis it binds, and what enforces
   that every classification-claiming directive carries the declaration.
 - **Interim claim payload in slice 2.** The monolithic producer's minted record riding as the

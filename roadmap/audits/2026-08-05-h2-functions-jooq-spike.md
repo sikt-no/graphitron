@@ -94,7 +94,10 @@ function registered only at runtime.
   graphql-java parser ships as scalar aliases returning values or arrays, registered by the
   bootstrap; row explosion is `SYSTEM_RANGE` + `CARDINALITY` + `ARRAY_GET` (R10/R13), with
   parallel array functions sharing one range index when a decode yields several columns.
-  Simple delimiter shapes need no function at all (R11).
+  Simple delimiter shapes need no function at all (R11). (A later round moved
+  structured-argument decoding into capture itself, per R595's semantic stratum, emptying the
+  known class of decodes a derivation would need; the bridge is thereby a contingency rather
+  than a planned mechanism, and this bullet records its shape for whenever one appears.)
 - **The functions are part of the model, so they travel with `graphitron-model`.** (A later
   round relaxed the exact placement to a settled either-way choice, this module or a
   compile-scope `graphitron-model-functions` sibling; R595 records it.) The DDL's
