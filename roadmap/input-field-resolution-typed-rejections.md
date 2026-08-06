@@ -1,13 +1,13 @@
 ---
 id: R585
 title: "Typed rejections on the input-field resolution path"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 5
 theme: classification-model
 depends-on: []
 created: 2026-08-04
-last-updated: 2026-08-04
+last-updated: 2026-08-06
 ---
 
 # Typed rejections on the input-field resolution path
@@ -256,6 +256,33 @@ it is what makes slice 2's dedup possible.
 - `BuildContext.candidateHint`, if the folds prove to be its only callers.
 - The `List<String> errors` out-param on `BuildContext.buildInputFieldCondition` and
   `classifyInputField`.
+
+## Review notes (Spec → Ready sign-off)
+
+Every named symbol, count, and quotation was verified against the tree at sign-off: the sixteen
+producers, the five discarded rejections plus three out-param `.message()` calls, the eleven
+`directiveConflict` sites and the `@asConnection`/`splitQuery` anomaly, the sixteen
+`ctx.addDiagnostic` minting calls, the doubled `candidateHint`, the Java-vs-SQL candidate-space
+disagreement, and the two `getFirst()` drops all hold as written. Non-blocking notes for pickup,
+from an independent principles consult; each is the implementer's call:
+
+- **Dedup at the mint boundary, not the drain.** Making `BuildContext.addDiagnostic` idempotent by
+  value (ordered set behind the list) dedups once for every reader of `diagnostics()`, not only the
+  validator's drain, and lets `FieldBuilder`'s existing `contains`-guard delete. It also gives the
+  channel-javadoc widening its principled form: append-only, never read back.
+- **`InputFieldsResolution.Failed(Rejection)` re-introduces the cause/consequence polymorphism** the
+  boundary rule refuses for `Unresolved`. Carrying the consequence facts typed (input type name,
+  table, minted count) needs no LSP plumbing; only the related-information rendering is deferred.
+- **Name the sole producer per cause.** Slice 2's classify-time minting coexists with the
+  validator's `UnboundField` walks; value-equality dedup does not collapse the same fact built by
+  two passes. The dedup and location tests should assert counts, which the Tests section already
+  implies.
+- One stale cross-reference: R589 was re-sliced on trunk after this spec was written, so "R589's
+  slice 4" for the channel-javadoc widening now corresponds to R589's premise paragraph and
+  slice 5.
+- `BuildContext.candidateHint` has many callers outside the folds (EnumMappingResolver,
+  InputBeanResolver, ArgBindingMap, TypeBuilder, FieldBuilder), so the conditional deletion will
+  resolve to keep; the "measure at pickup" hedge already covers this.
 
 ## Relationships
 
