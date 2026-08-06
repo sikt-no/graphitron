@@ -1,7 +1,7 @@
 ---
 id: R580
 title: "Infer @node from `implements Node` + __NODE_* metadata"
-status: Ready
+status: In Review
 bucket: architecture
 priority: 8
 theme: nodeid
@@ -294,24 +294,24 @@ over a table with an `external_id` column from column-mapped to nodeId-encoded, 
 the intended blast radius. Pin the hoisted arm to the Node-interface `id` field specifically, and
 leave every other bare-`ID` field in the fall-through arm with its deprecation WARN intact for `R27`.
 
-**Hard error instead of a warning? Settled: warn-and-flip.** The question was raised because
-`buildTableType`, in the same file, faces a neighbouring ambiguity (SDL and metadata disagreeing
-about which columns identify the row) and refuses to pick a winner, rejecting with "the column sets
-are different; one side is wrong about the schema", whereas this rule picks a winner and changes the
-wire value of `Node.id` under existing green builds. Both the decision on record (2026-08-04) and
-the Spec review land on warn, for three reasons worth keeping:
+**Hard error instead of a warning? Settled 2026-08-04 as warn-and-flip, reversed 2026-08-06.** The
+question was raised because `buildTableType`, in the same file, faces a neighbouring ambiguity (SDL
+and metadata disagreeing about which columns identify the row) and refuses to pick a winner,
+rejecting with "the column sets are different; one side is wrong about the schema", whereas
+warn-and-flip picked a winner and changed the wire value of `Node.id` under existing green builds.
+The argument that carried the original decision was that the two cases differ in kind: in
+`buildTableType` both sides make a positive claim about row identity and either can be wrong, while
+here the metadata is the positive assertion and the identically-named column looked like an accident
+of the table's shape, so there was a right answer to pick.
 
-- The additive-then-cutover discipline in `roadmap/workflow.adoc` is scoped to "a widely-pinned type
-  or seam" and says outright that it is a technique, not a prescription. This is a value change at
-  one field.
-- The two cases are different in kind. In `buildTableType`, both sides make a positive claim about
-  row identity and either can be wrong. Here, the metadata is the positive assertion and the
-  identically-named column is an accident of the table's shape; there is a right answer.
-- Both silencers already work today, so an author who disagrees with the default is one directive
-  away, with no migration window needed to make that possible.
-
-Pin the warning's presence and the flipped compaction in the *same* pipeline case, so the migration
-reads as one fact rather than two coincidental assertions.
+That is the premise the revision rejects. The column is not an accident from the author's side: a
+schema exposing `id` over a table with an `id` column may well mean that column, and the encoded
+form and the raw form are simply two different values on the wire. Nothing in the SDL distinguishes
+them, so "there is a right answer" was a claim about the metadata's intent rather than about the
+author's. The other two reasons on record survive the reversal and now argue for it. The
+additive-then-cutover discipline was never engaged (this is a value change at one field, not a
+widely-pinned seam), and both silencers already work today, which is exactly what makes rejection
+cheap: the remedy is one directive away and no migration window is needed to make it available.
 
 **Measured blast radius.** Counts below are from a scan on 2026-08-04; re-measure at pickup with the
 script under Test surface rather than trusting the numbers.
@@ -507,6 +507,44 @@ body. `roadmap/workflow.adoc` § Item file conventions asks a shipped phase to c
 "shipped at `<sha>`" note. The "What shipped" section below carries the substance, so this is
 presentation, not a missing fact.
 
+## Review round 1 rework, shipped at `4065942`
+
+Both halves landed together: the shadowing revision and the doc finding.
+
+**The rejection.** `FieldBuilder`'s Node-interface-`id` arm still sits above the column lookup, but
+it now resolves the column itself and refuses when one exists, as an `AuthorError.Structural` naming
+both remedies. The arm did not need to stop outranking the column lookup, only to stop assuming a
+miss: keeping it in place means one site decides both readings, which is easier to read than a
+rejection bolted onto the `Direct` fall-through. `Rejection.structural` puts it under
+`[author-error]`, as the glossary draft asked. `LintRule.NODE_ID_SHADOWS_COLUMN` was **removed**
+rather than kept for the `Source.CLASSIFIER` census, which was the open question: `LintRule.ids()`
+is the namespace a consumer's `<lint>` config validates against, so keeping a rule that can never
+fire would let a config name a suppression that suppresses nothing. The census keeps three
+`CLASSIFIER` rules, so the partition stays non-empty and the coverage test still has something to
+assert over.
+
+**The fixture cost, re-measured at pickup as the plan asked.** 37 sites across 7 test classes, which
+is what the revision predicted. Enumerated by walking type declarations over the six fixture tables
+that have a literal `id` column, rather than grepping for `baz`, which is what turned up the two
+`InlineFilterArgumentSourcePipelineTest` sites and three in `NodeIdReferenceFilterPipelineTest` that
+a single-line grep had missed. Every edit is behaviour-preserving against the shipped warning: those
+sites already published the encoded form, so adding `@nodeId` states what was already happening. No
+`graphitron-sakila-example` site was affected, as predicted.
+
+**Docs.** `migrating-from-legacy.adoc` is the finding proper, and its section heading was wrong too,
+not just the rule under it (`@table` alone is what stopped auto-promoting). `global-id.adoc` also
+carried the warning text and needed the same edit; it was not in the review's list because the
+review found it already fixed for inference, and the shadowing sentence was added by that fix. That
+is the doc census being incomplete twice, in the same place, for the same reason: the census was
+written by grepping for `@node` rather than for the behaviour.
+
+The glossary entry needed a home the page did not have. It is error-only by construction but
+organised entirely around closed sets, and this is a structural message, which the page explicitly
+says it does not enumerate. Rather than force it into the attempt-kind list, it opens a
+`Named structural errors` section, with the drift-protection paragraph amended to say that section
+is outside `DiagnosticsDocCoverageTest`'s scope. That keeps the test's bidirectional guarantee
+honest and gives the next stable structural message somewhere to go.
+
 ## What shipped, and where it departed from this plan
 
 Implemented 2026-08-04, at `cefb16a` (classifier, predicate, fixtures, tests) and `8cf7766` (manual,
@@ -561,6 +599,12 @@ reads as a pre-rollout check rather than a pre-implementation one, and the mitig
 `@node(typeId:)` on one side of each group, which the collision message names.
 
 ## Implementation plan
+
+All four phases shipped at `cefb16a` / `8cf7766`, and Phase 3 was re-landed as a rejection at
+`4065942` after the 2026-08-06 revision. The phase text below is kept as authored, unexecuted
+tense and all, because the departures under "What shipped" and the revision under "The shadowed
+`id` column" are stated against it and would not read without it. Where a phase and one of those
+sections disagree, the later section is what happened.
 
 **Phase 1: inference, and the predicate it splits.** In `TypeBuilder.buildTableType`, replace the
 `hasNode` early return (`TypeBuilder.java:1308-1311`) with a gate that also admits
@@ -757,10 +801,13 @@ that changes wire output. Reviewer's call.
   pruning), arrival folding, federation `_Entity` membership or its documented absence, and the LSP
   node view.
 - The shadowing rule's five rows above, pinned on `baz` (three), `shared_node` (one) and `bar`
-  (one), plus the warning's presence and absence. Rows 1 and 4 are the behaviour change, so they are
-  the load-bearing assertions, and row 4 is the one that also proves the decode-helper name is
-  unaffected (`R377_DECODE_VIA_NODE_INDEX_NOT_TYPEID` already asserts `decodeSharedNode`, not
-  `decode10154`; that assertion must still hold after the flip).
+  (one). Rows 1 and 4 are the behaviour change, so they are the load-bearing assertions. Under the
+  2026-08-06 revision they assert the rejection and its message rather than a flipped compaction,
+  and they run the validator, since a rejected field rides through a green pipeline-bundle build
+  silently otherwise. Row 5 is what keeps the rejection scoped to genuine ambiguity. Row 4 still has
+  to prove the decode-helper name is unaffected (`R377_DECODE_VIA_NODE_INDEX_NOT_TYPEID` asserts
+  `decodeSharedNode`, not `decode10154`), which now needs the disambiguated spelling, since the bare
+  one no longer resolves to a helper at all.
 - Re-measure the fixture census at pickup rather than trusting the counts above. The scan that
   produced them walks `.java` and `.graphqls` sources for
   `type X implements Node @table(name: "baz") ... { ... }`, classifies the `id` field as bare,
