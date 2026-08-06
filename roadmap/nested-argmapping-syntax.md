@@ -31,7 +31,7 @@ The right-hand side is itself a `{ fieldName: <path>, ... }` mini-DSL. Each entr
 ## What exists already
 
 - **`graphql.schema.visitor.GraphQLSelectionParser`** in the `selection/` package already produces `ParsedValue.ObjectValue(List<ParsedArgument>)` for nested `{ key: value }` forms. The lexer and parser handle the syntax today; only the directive-side wiring is missing for `@argMapping`.
-- **R69 (`experimental-construct-type`)** is the architectural sibling on the output side: `@experimental_constructType(selection: "...")` uses the same parser to project DB columns onto non-table-backed GraphQL fields. This item is the input-side counterpart.
+- The former output-side sibling, an `@experimental_constructType` implementation plan, was discarded: the directive is not graphitron's, and its stray declaration is removed by R599 (`remove-stray-directive-declarations`). The `selection/` parser stands on its own and this item remains its live consumer.
 - **R238 (`methodcall-walker-carrier`)** lands the carrier model and walker spine. Its `CompleteArgMapping` / `MappingEntry` / `ValueShape` taxonomy represents default and scattered mappings uniformly; only the walker's Java-driven descent path (placeholder in R238) needs the real implementation.
 
 ## What's missing
@@ -43,5 +43,4 @@ The right-hand side is itself a `{ fieldName: <path>, ... }` mini-DSL. Each entr
 
 ## Out of scope for this item
 
-- Output-side `@experimental_constructType` (R69; sibling).
 - Removing the comma-separated dot-path form (kept as the common case; nested form is opt-in).
