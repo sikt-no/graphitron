@@ -56,7 +56,10 @@ and two things generated from it:
 - **Run-time store.** A small bootstrap entry point opens a fresh H2 in-memory database,
   executes the same DDL resource, and hands back a jOOQ `DSLContext` over it. One database per
   generator run, created at startup, populated by capture, dead with the process. No
-  migrations exist because no persisted state exists.
+  migrations exist because no persisted state *of record* exists: a warm-start cache under
+  `target/` (the populated store persisted at end of run, stamp-invalidated, discarded on any
+  mismatch, never migrated) is admitted and owned by `warm-start-model-store` (R597), and
+  changes neither property.
 
 A Java function surface stays available as a contingency, not a plan. The functions spike
 (`roadmap/audits/2026-08-05-h2-functions-jooq-spike.md`) proved H2 `CREATE ALIAS` scalar

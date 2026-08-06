@@ -283,7 +283,8 @@ crossings rather than every query.
 What the store materializes deserves naming precisely: the fact schema DDL is the umbrella's
 normalised data model reified as a SQL schema. The database is created at startup and populated
 during a run; it lives and dies with the process, so there are no migrations and no persisted
-state anywhere. The DDL is source, and its home is a new reactor module, `graphitron-model`,
+state of record anywhere (a stamp-invalidated warm-start cache under `target/` is R597's
+business and changes neither property). The DDL is source, and its home is a new reactor module, `graphitron-model`,
 which holds the DDL, runs jOOQ codegen over it (live H2 metadata over a store a build driver
 boots from the DDL, no external database process; `DDLDatabase` was tried and dropped, per the
 functions spike below), and builds before core: the `graphitron-sakila-db` shape made
