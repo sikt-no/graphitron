@@ -28,6 +28,8 @@ medians. Deltas exercised: identical pair, one field added, one type added.
 | operation | 100 types | 1,000 types |
 |---|---|---|
 | parse + assemble (the diff's admission price) | 31.7 ms | 2,734.8 ms |
+| ... of which parse-to-registry alone | 5.5 ms | 46.8 ms |
+| ... of which assembly on top of the registry | 28.3 ms | 2,468.1 ms |
 | GED diff, identical schemas | 51.7 ms | 5,201.0 ms |
 | GED diff, one field added | 22.4 ms | 2,164.5 ms |
 | GED diff, one type added | 22.3 ms | 1,973.5 ms |
@@ -48,7 +50,10 @@ scale 2; SDL capture alone is 8.9 ms at scale 1.
 - **The real incremental bottleneck is upstream of the store.** At stress scale,
   parse+assembly (2.7 s) dwarfs the store rebuild (578 ms) and is superlinear (~86x cost for
   10x size); any future incremental investment belongs at the graphql-java boundary, and no
-  diff tool avoids that cost, because diffing consumes assembled schemas.
+  diff tool avoids that cost, because diffing consumes assembled schemas. The split
+  measurement shows parse-to-registry is the linear half and assembly the superlinear
+  remainder, which motivated moving capture's source from the assembled schema to the
+  `TypeDefinitionRegistry` (recorded in R595): capture then never pays the wall at all.
 - **Where the tools do fit is diagnostics, not speed.** `diffAndAnalyze` produces structured
   differences at negligible cost at real scale (~25 ms), which suits the round-trip gate
   (when store-reconstructed SDL diverges from the emitted schema, report *what* differs

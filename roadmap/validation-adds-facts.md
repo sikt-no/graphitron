@@ -215,16 +215,20 @@ entries come out of validation and planning, never out of classifiers.
 ## Capture and derivation: two loads, then a stack of views
 
 Simulating the target pipeline collapses it further than the stage vocabulary above suggests. Two
-capture steps, neither of which can fail, load the base relations. The SDL traversal (the
-graphql-java visitor already in use) records existence facts and directive applications: the
-type exists, the field exists at this coordinate, the argument uses this input type. A
-graphitron directive application lands decoded in its per-directive semantic relation (the
-structural decode cannot reject: graphql-java has already validated every argument against its
-definition before we see the schema), a foreign application lands verbatim for round-trip
-re-emission, and the macro directives (`@asConnection`, `@asFacet`) expand during the same
-walk, their synthesized rows marked by provenance relations so the authored picture stays the
-anti-join. Source locations ride the raw facts so every later diagnostic inherits its location
-without re-walking SDL. The catalog
+capture steps, neither of which can fail, load the base relations. The SDL walk reads the
+type-definition registry, not the assembled schema: parse-to-registry is graphql-java's
+linear half, assembly is the superlinear half capture never pays, and the semantic validity
+assembly used to enforce becomes detections, this item's thesis applied at the parse boundary
+(a dangling author-spelled reference or malformed argument mints a located diagnostic instead
+of dying in graphql-java's throw). The walk records existence facts and directive
+applications: the type exists, the field exists at this coordinate, the argument uses this
+input type. A graphitron application lands decoded in its per-directive semantic relation
+(the decode never throws; while assembly still runs upstream, invalid input never reaches
+capture), a foreign application lands verbatim for round-trip re-emission, and the macros
+(`@asConnection`, `@asFacet`, federation key synthesis) expand during the same walk, their
+synthesized rows marked by provenance relations so the authored picture stays the anti-join.
+Source locations ride the raw facts so every later diagnostic inherits its location without
+re-walking SDL. The catalog
 scans (jOOQ, services) load the other base relations the same way. Capture is total: everything in
 the SDL is recorded, with no reachability pruning at capture time.
 

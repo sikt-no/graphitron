@@ -93,6 +93,14 @@ These bind the DDL below and every relation added to it later.
   application carries a five-part key), and that is accepted: jOOQ's path-based and on-key joins
   over the declared foreign keys absorb the width at query sites, so the unwieldiness stays in
   the DDL where it documents identity instead of leaking into every query.
+- **Foreign keys encode capture structure; author references are detections.** A
+  `FOREIGN KEY` appears only where the walk writes the child while standing on the parent, so
+  the referent's existence is structural. A reference the author spells by name (a field's
+  named type, a union member, an implements edge, an applied directive's name, a
+  root-operation binding) carries no FK: on a schema assembly would reject, the reference may
+  dangle, dangling is an author error, and author errors are detections minting located
+  diagnostics, never constraint violations. The cost is jOOQ's implicit path joins on exactly
+  those edges; explicit join conditions carry them.
 - **Every table and every column is commented.** The shipped DDL states them as `COMMENT ON`
   clauses so they land in `INFORMATION_SCHEMA` and jOOQ carries them into the generated classes'
   Javadoc; the schema is then self-describing at both the SQL prompt and the call site. A gate
@@ -126,9 +134,10 @@ These bind the DDL below and every relation added to it later.
   denote a real one) and effective-value defaulting are not.
 - **Constraint violations are generator bugs, never author errors.** Every key and `CHECK`
   below ranges over a domain capture controls (closed classfile forms, graphql-java's kind
-  vocabulary) or an identity graphql-java guarantees unique in an assembled schema (it rejects
-  a repeated non-repeatable directive before capture runs). An author mistake becomes a
-  diagnostic row in the derived stratum; it never surfaces as a constraint violation here.
+  vocabulary) or an identity capture itself constructs (the ordinal keys absorb even an
+  author's repeated application of a non-repeatable directive; the repeat surfaces as a
+  detection, not a collision). An author mistake becomes a diagnostic row in the derived
+  stratum; it never surfaces as a constraint violation here.
   Cross-relation invariants plain DDL cannot state (at most one primary key per table, defaults
   only on input-object fields, ordinal zero unless repeatable) get gate queries as their named
   enforcers, siblings of the comment-coverage gate.
@@ -198,9 +207,9 @@ CREATE TABLE graphql_type (
 CREATE TABLE graphql_field (
   type_name         VARCHAR NOT NULL, -- owning type
   field_name        VARCHAR NOT NULL,
-  ordinal           INT     NOT NULL, -- order in the effective assembled type (base declaration, then extensions in document order)
+  ordinal           INT     NOT NULL, -- order in the effective type: base declaration, then extensions in document order (capture merges them from the registry)
   type_sdl          VARCHAR NOT NULL, -- the rendered type expression, e.g. '[Film!]!'; authoritative for wrapping fidelity
-  named_type        VARCHAR NOT NULL, -- the named type the expression bottoms out in
+  named_type        VARCHAR NOT NULL, -- the named type the expression bottoms out in; author-spelled, no FK, integrity is a detection
   non_null          BOOLEAN NOT NULL, -- outermost non-null wrapper present
   is_list           BOOLEAN NOT NULL, -- a list wrapper is present
   item_non_null     BOOLEAN,          -- item-level non-null when is_list; NULL otherwise
@@ -210,8 +219,7 @@ CREATE TABLE graphql_field (
   source_line       INT,
   source_column     INT,
   PRIMARY KEY (type_name, field_name),
-  FOREIGN KEY (type_name)  REFERENCES graphql_type (type_name),
-  FOREIGN KEY (named_type) REFERENCES graphql_type (type_name),
+  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
   CHECK (is_list OR item_non_null IS NULL)
 );
 
@@ -234,7 +242,6 @@ CREATE TABLE graphql_argument (
   source_column     INT,
   PRIMARY KEY (type_name, field_name, argument_name),
   FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name),
-  FOREIGN KEY (named_type) REFERENCES graphql_type (type_name),
   CHECK (is_list OR item_non_null IS NULL)
 );
 
@@ -243,7 +250,7 @@ CREATE TABLE graphql_argument (
 CREATE TABLE graphql_enum_value (
   type_name     VARCHAR NOT NULL, -- the owning ENUM type
   value_name    VARCHAR NOT NULL,
-  ordinal       INT     NOT NULL, -- order in the effective assembled enum (base declaration, then extensions)
+  ordinal       INT     NOT NULL, -- order in the effective enum: base declaration, then extensions
   description   VARCHAR,
   source_name   VARCHAR,
   source_line   INT,
@@ -261,8 +268,7 @@ CREATE TABLE graphql_union_member (
   source_line      INT,
   source_column    INT,
   PRIMARY KEY (union_name, member_type_name),
-  FOREIGN KEY (union_name)       REFERENCES graphql_type (type_name),
-  FOREIGN KEY (member_type_name) REFERENCES graphql_type (type_name)
+  FOREIGN KEY (union_name) REFERENCES graphql_type (type_name)
 );
 
 -- A type declares that it implements an interface. Stored in declaration
@@ -275,8 +281,7 @@ CREATE TABLE graphql_implements (
   source_line    INT,
   source_column  INT,
   PRIMARY KEY (type_name, interface_name),
-  FOREIGN KEY (type_name)      REFERENCES graphql_type (type_name),
-  FOREIGN KEY (interface_name) REFERENCES graphql_type (type_name)
+  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name)
 );
 
 -- The schema definition names a root operation type. These rows are the
@@ -285,7 +290,6 @@ CREATE TABLE graphql_root_operation (
   operation VARCHAR NOT NULL, -- which root slot
   type_name VARCHAR NOT NULL, -- the object type serving it
   PRIMARY KEY (operation),
-  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
   CHECK (operation IN ('QUERY', 'MUTATION', 'SUBSCRIPTION'))
 );
 
@@ -336,7 +340,6 @@ CREATE TABLE graphql_directive_argument (
   source_column     INT,
   PRIMARY KEY (directive_name, argument_name),
   FOREIGN KEY (directive_name) REFERENCES graphql_directive (directive_name),
-  FOREIGN KEY (named_type) REFERENCES graphql_type (type_name),
   CHECK (is_list OR item_non_null IS NULL)
 );
 ```
@@ -378,8 +381,7 @@ CREATE TABLE applied_schema_directive (
   source_name    VARCHAR,          -- position of the application site
   source_line    INT,
   source_column  INT,
-  PRIMARY KEY (directive_name, ordinal),
-  FOREIGN KEY (directive_name) REFERENCES graphql_directive (directive_name)
+  PRIMARY KEY (directive_name, ordinal)
 );
 
 -- An argument the author passed to a schema-level application.
@@ -403,8 +405,7 @@ CREATE TABLE applied_type_directive (
   source_line    INT,
   source_column  INT,
   PRIMARY KEY (type_name, directive_name, ordinal),
-  FOREIGN KEY (type_name)      REFERENCES graphql_type (type_name),
-  FOREIGN KEY (directive_name) REFERENCES graphql_directive (directive_name)
+  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name)
 );
 
 -- An argument the author passed to a type-level application.
@@ -430,8 +431,7 @@ CREATE TABLE applied_field_directive (
   source_line    INT,
   source_column  INT,
   PRIMARY KEY (type_name, field_name, directive_name, ordinal),
-  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name),
-  FOREIGN KEY (directive_name)        REFERENCES graphql_directive (directive_name)
+  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
 );
 
 -- An argument the author passed to a field-level application.
@@ -459,8 +459,7 @@ CREATE TABLE applied_argument_directive (
   source_column  INT,
   PRIMARY KEY (type_name, field_name, argument_name, directive_name, ordinal),
   FOREIGN KEY (type_name, field_name, argument_name)
-    REFERENCES graphql_argument (type_name, field_name, argument_name),
-  FOREIGN KEY (directive_name) REFERENCES graphql_directive (directive_name)
+    REFERENCES graphql_argument (type_name, field_name, argument_name)
 );
 
 -- An argument the author passed to an argument-level application.
@@ -488,8 +487,7 @@ CREATE TABLE applied_enum_value_directive (
   source_line    INT,
   source_column  INT,
   PRIMARY KEY (type_name, value_name, directive_name, ordinal),
-  FOREIGN KEY (type_name, value_name) REFERENCES graphql_enum_value (type_name, value_name),
-  FOREIGN KEY (directive_name)        REFERENCES graphql_directive (directive_name)
+  FOREIGN KEY (type_name, value_name) REFERENCES graphql_enum_value (type_name, value_name)
 );
 
 -- An argument the author passed to an enum-value application.
@@ -651,14 +649,13 @@ round trip emits the effective picture minus the graphitron namespace. Name coll
 author-reachable (an author can declare the type a macro would synthesize), so the visitor
 resolves collisions before inserting, following the current synthesis semantics; the
 primary-key constraint stays a capture-bug detector, never an author-triggerable throw.
-Federation's `@key` synthesis is decided into the same shape now, not eventually: it is a
-visitor macro, and its synthesized applications carry provenance like every other macro
-output. During the shadow window the registry rewrite (`KeyNodeSynthesiser`) keeps running
-for the legacy pipeline, so the walk sees its output in the assembled schema; the
-synthesizer records what it added, the capture walk turns that record into provenance rows,
-and the store never mistakes a synthesized key for an authored one. When the last legacy
-consumer migrates, the registry rewrite folds into the walk and the interim record
-disappears.
+Federation's `@key` synthesis is a walk macro from day one, with no interim mechanics:
+because capture reads the registry *before* the synthesis rewrites, the walk runs the key
+synthesis itself and writes provenance directly, like every other macro. The registry
+rewrite (`KeyNodeSynthesiser`) keeps running for the legacy pipeline's assembly only; while
+both implementations of the rule are live, the agreement suite's applied-directive anchor
+pins them to each other (the store's `@key` rows against the assembled schema's), and the
+rewrite retires with its last legacy consumer.
 
 ```sql
 -- ==== Macro synthesis provenance =============================================
@@ -896,22 +893,31 @@ Both loads are infallible by construction: they record what is there, and graphq
 already validated directive arguments against their definitions before we see the schema, so raw
 capture cannot reject. Capture is total, with no reachability pruning.
 
-- **SDL load.** One pass fills the `graphql_`, `applied_`, and `intent_` families, reading the
-  **assembled `GraphQLSchema`**, and that source is decided here, not at implementation:
-  assembly is what guarantees every type reference resolves (so the `named_type` FK cannot
-  dangle) and every directive application has been validated (so raw capture cannot reject,
-  and the semantic decode of structured arguments cannot either); neither holds of the raw
-  registry. The one walk does four jobs: existence rows, fidelity rows for non-graphitron
-  applications, semantic decode of graphitron and federation applications (federation
-  dual-written to both strata), and macro expansion with its provenance rows. One named
-  carve-out: `makeExecutableSchema` drops applied directives targeting built-in scalar names,
-  the loss `GraphitronSchemaBuilder.recordSdlScalarDirectives` exists to patch, so the load
-  captures exactly those from the registry in the same pass, and that pre-pass can retire when
-  its consumer migrates. The capture writer gets its own package in core, importing the
-  module's generated classes; it does not live inside `no.sikt.graphitron.facts`, whose
-  import-direction allowance ("reads the assembled schema, imports nothing else of the tree")
-  stays intact. The walk constraint stands regardless of placement: a single pass over the
-  schema, not two parallel walkers drifting apart.
+- **SDL load.** One walk fills the `graphql_`, `applied_`, and `intent_` families, reading the
+  **`TypeDefinitionRegistry`**, not the assembled schema, and that source is decided here.
+  Three reasons. Parse-to-registry is graphql-java's linear half (5.5 ms at sakila scale,
+  46.8 ms at 10x) while assembly is the superlinear half (28 ms, 2.5 s; the diffing audit
+  carries the split), so capture never pays the wall. The registry holds what assembly drops
+  (applied directives on built-in scalar declarations), so the
+  `GraphitronSchemaBuilder.recordSdlScalarDirectives` carve-out dies with no replacement.
+  And the two guarantees assembly offered convert into store detections, R589's thesis
+  applied at the parse boundary: a dangling author-spelled reference or a malformed directive
+  argument is an author error that mints a located diagnostic, never a reason capture cannot
+  run. The walk reads the registry after the loading rewrites (federation `@link` imports,
+  `@oneOf` support, the bundled definitions) and before the synthesis rewrites, and is plain
+  iteration over definitions and extensions in document order, no graphql-java visitor
+  machinery; effective-type merging is the ordinal rule the schema section states. Four jobs
+  in one pass: existence rows, fidelity rows for non-graphitron applications, semantic decode
+  of graphitron and federation applications (federation dual-written to both strata), and
+  macro expansion with its provenance rows. Capture never throws, even on schemas assembly
+  would reject; while the shadow window lasts, assembly still runs upstream and rejects
+  invalid schemas first, so the tolerant paths (dangling references, undecodable applications
+  quarantined raw with their location) stay dormant until the LSP consumer arrives, and the
+  agreement tests see only valid input. The capture writer gets its own package in core,
+  importing the module's generated classes; it does not live inside
+  `no.sikt.graphitron.facts`, whose import-direction allowance stays intact for the legacy
+  side it serves. The walk constraint stands regardless of placement: a single pass over the
+  registry, not two parallel walkers drifting apart.
 - **Catalog load.** Fills the `catalog_` family from the same jOOQ catalog walk that builds
   `CatalogFacts` today, and the `extension_` family from the `ClasspathScanner` emission. Runs
   inside the codegen classloader scope; only values cross out, which the store enforces.
@@ -936,7 +942,7 @@ not an author error, per the constraint split R589 fixes.
   queries fix its shape.
 - **Per-extension declaration sites.** All five type-extension kinds are live today, so a type
   may be declared across several sources; `graphql_type` keeps one site (the base declaration)
-  and the `ordinal` columns mean order in the effective assembled type. A declaration-site
+  and the `ordinal` columns mean order in the effective type (base plus extensions). A declaration-site
   relation keyed `(type_name, source_name, source_line)` lands when a consumer needs
   per-extension sites; the description-note appliers are the known candidate.
 - **Javadoc and Java source positions.** The request-time join against `SourceWalker` is a
