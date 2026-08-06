@@ -1,13 +1,13 @@
 ---
 id: R580
 title: "Infer @node from `implements Node` + __NODE_* metadata"
-status: In Review
+status: Ready
 bucket: architecture
 priority: 8
 theme: nodeid
 depends-on: []
 created: 2026-08-03
-last-updated: 2026-08-04
+last-updated: 2026-08-06
 ---
 
 # Infer @node from `implements Node` + __NODE_* metadata
@@ -380,10 +380,67 @@ covering the fourteen existing rules (9 `ENGINE`, 3 `CLASSIFIER`, 2 `CODEGEN`) a
 Backlog item. Flagged here so the omission is
 a decision rather than an oversight.
 
+## Review round 1: rework, one finding
+
+In Review → Ready on 2026-08-06, independent reviewer session. Everything below the finding is
+clean, and the next pass should be short: the delivery is otherwise exactly what this plan asked
+for, the reactor is green under `mvn install -Plocal-db` (13 modules, 537 test classes, zero
+failures, including the sakila PostgreSQL execution tier), and no delivered test asserts on a
+generated method body.
+
+**The finding: the user manual still states the retired policy as current, on a third page the
+plan's docs census missed.** The User documentation section above says "the manual currently states
+the opposite in two places" and names `node.adoc` and `nodeId.adoc`. That census was incomplete.
+The implementation correctly fixed both, and found `global-id.adoc` on its own, but
+`docs/manual/how-to/migrating-from-legacy.adoc` still carries the pre-inference rule in two places:
+
+- **Line 164** asserts it as the live rule: "The current rule: a `@table` type without
+  `implements Node @node` is a regular `TableType`, regardless of catalog metadata. If a schema
+  relied on the auto-promotion ..., add the explicit `implements Node @node` declaration." The
+  first sentence is now the negation of what shipped, and the migration advice is over-prescriptive
+  (`implements Node` alone is the fix when the table publishes metadata).
+- **Line 267**, the section's summary checklist: "add `implements Node @node` to opt in explicitly."
+
+The blast radius is the worst available for this particular falsehood. That page is the migration
+guide, and its audience is precisely the legacy schema population whose jOOQ classes carry
+`__NODE_*` metadata, which is the population inference exists for. Line 162's historical paragraph
+is still accurate and should stay (metadata alone still promotes nothing); what needs rewriting is
+the "current rule" claim and the checklist entry, plus the section heading's implicit scope. The
+`docs/` module deploys to the public site on trunk push, so this ships as written.
+
+Secondary, same class and lower stakes, worth folding into the same pass:
+`docs/architecture/reference/code-generation-triggers.adoc` line 142 ("A type carrying
+`@table(name:)` (without `@node` or `@discriminate`) classifies as `TableType`") and line 169
+(the curated variant table's `` `@table` + `@node` | `NodeType` `` row) both enumerate the trigger
+as `@node` presence. These are hand-written prose and a curated table, not corpus-rendered, so the
+corpus drift gate does not catch them. Contributor-facing rather than author-facing, so imprecise
+rather than misleading, but it is the same edit.
+
+Nothing else in the delivery is held against this gate. Reviewed and found correct: the five
+predicate consumers (`NodeDeclaration` names the predicate once; reachability, the arrival fold,
+federation synthesis and the LSP node view all call it; `NodeIndex` needed only the javadoc rewrite
+the plan predicted; `resolveTargetKeys`' third arm is documented as unreachable-for-inferred rather
+than left open, and its javadoc's stale "prefers catalog metadata" ordering was corrected against
+the code while it was being touched); the per-axis `NodeProvenance` slot and its two live consumers;
+the `Node.id` hoist pinned to the interface field with the `externalId` trap pinned open in both
+directions; the shadowing rule's five rows with warning presence and absence asserted in the same
+case as the flip; both collision axes, including the zero-to-one decode-helper direction the plan
+did not require; the reachability hole closed and pinned by a case where no field returns either
+colliding type; and the whole roadmap reconciliation set. The execution-tier proof is better than
+the plan asked for: converting the sakila example's `FilmActor` to the inferred spelling, rather
+than adding a variant, makes the existing round-trip the proof.
+
+One non-blocking note on spec hygiene for the next pass: the Implementation plan's four phases are
+still written in the imperative present as if unexecuted, and no landing SHAs appear anywhere in the
+body. `roadmap/workflow.adoc` § Item file conventions asks a shipped phase to collapse to a one-line
+"shipped at `<sha>`" note. The "What shipped" section below carries the substance, so this is
+presentation, not a missing fact.
+
 ## What shipped, and where it departed from this plan
 
-Implemented 2026-08-04. The four phases landed as one change; the plan's own recommendation on
-splitting is under Sequencing and is unchanged by the outcome.
+Implemented 2026-08-04, at `cefb16a` (classifier, predicate, fixtures, tests) and `8cf7766` (manual,
+sakila example, roadmap reconciliation). The four phases landed as one change; the plan's own
+recommendation on splitting is under Sequencing and is unchanged by the outcome.
 
 Two departures worth reading, both narrower than the plan expected:
 
