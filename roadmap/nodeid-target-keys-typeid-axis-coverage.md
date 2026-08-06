@@ -1,13 +1,13 @@
 ---
 id: R583
 title: "Pin the typeId axis of name-first resolveTargetKeys on both jOOQ-record decode arms"
-status: Spec
+status: Ready
 bucket: cleanup
 priority: 3
 theme: nodeid
 depends-on: []
 created: 2026-08-04
-last-updated: 2026-08-04
+last-updated: 2026-08-06
 ---
 
 # Pin the typeId axis of name-first resolveTargetKeys on both jOOQ-record decode arms
