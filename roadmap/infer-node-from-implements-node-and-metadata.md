@@ -190,12 +190,48 @@ Reconciliation work this item owns at Spec time:
 - Rewrite the `TypeBuilder.buildTableType` comment; it states the retired policy and the stale
   rationale above.
 
+**Reconciliation added 2026-08-06, after `R473`'s pass-3 gate.** `R473` coined a rule covering the
+directive-less `ID` coordinate at arguments and input fields, resolved off the target rather than
+off a metadata read at the use site, and generalized bare `@nodeId` to inherit its target at every
+coordinate. Two consequences land on this item and the two must not ship disagreeing:
+
+- **Shadowing is one rule across all three coordinates, and it is an error.** This item owns the
+  decision and states it (see "The shadowed `id` column"); `R473` generalises it to input fields and
+  arguments without restating it. If either item is revised on this point, both change.
+- **This item's `id: ID! @nodeId` spelling stays exactly as documented.** `R473` rule 1 keeps the
+  directive redundant-but-legal on `Node.id`, and its rule 2 makes the bare form legal everywhere,
+  so nothing this item ships needs a `typeName:` migration afterwards.
+
 ## The shadowed `id` column
 
-A table can carry `__NODE_*` metadata *and* a column literally named `id`. Decided 2026-08-04: the
-node metadata wins, and the build emits a warning that the `id` column is being shadowed, naming the
-two ways the author silences it by stating the choice explicitly. `@nodeId` on the field pins the
-node interpretation; `@field` pins the column.
+A table can carry `__NODE_*` metadata *and* a column literally named `id`.
+
+**Decided 2026-08-04, revised 2026-08-06: the build fails and the author must disambiguate.**
+`@nodeId` on the field pins the node interpretation; `@field` pins the column. The original decision
+was that the node metadata wins and the build emits a *warning* naming those two silencers, and that
+is what shipped (see "What shipped"). It is superseded: a warning still picks one of two plausible
+readings the SDL does not choose between, it only narrates the pick, and the reading it picks
+changes the Relay global id on the wire. R473's grammar work made the same call at the input and
+argument coordinates and the two items must agree, so the rejection is stated here, at the item that
+owns the shadowing decision, and R473 generalises it outward rather than restating it.
+
+**This revision has an in-tree cost the warning did not, and it is worth seeing before implementing.**
+`baz` is the suite's generic node fixture table and is degenerate in exactly the shadowing way: one
+column, `ID`, which is also its node key. So `type Baz implements Node @table(name: "baz") @node
+{ id: ID! }` is a shadowing coordinate, and that spelling appears roughly 34 times across
+`graphitron/src/test`, mostly in classes with nothing to do with node ids
+(`InlineFilterArgumentSourcePipelineTest`, `ReferenceFilterRemoteColumnPipelineTest`,
+`AsConnectionSameTableWarnFormatTest`, many `NodeIdPipelineTest` cases). Three more sit on the
+inference path over `shared_node` and `keyed_elsewhere` in `NodeInferencePipelineTest`. Each is a
+one-word edit, adding `@nodeId` where the fixture wants the node or `@field(name: "id")` where it
+wants the column, and **no `graphitron-sakila-example` site is affected**: `film_actor` is the only
+sakila table publishing metadata and it has no `id` column. Re-measure at pickup.
+
+The residual concern is friction rather than effort: this makes the obvious spelling of the most
+reused node fixture in the suite a build error, so fixture authors will meet this message often.
+That is an argument for the message being excellent, not for softening the rule. If it proves
+intolerable, the fix is to move the generic node fixture onto a non-shadowing table such as `bar`,
+not to reintroduce the guess.
 
 This is not only a migration concern for inferred nodes. It is a live defect on the **explicit**
 `@node` path, which makes it a correctness fix this item carries rather than a compatibility rider.
@@ -223,19 +259,28 @@ whole point is decode-helper resolution, and `baz` is not the only affected fixt
 
 So a type that declares `@node` today, and whose table happens to have an `id` column, silently
 publishes the raw column value as its Relay global id, while the identical declaration over a table
-without that column collision publishes an encoded one. Nothing warns. The rule above corrects the
-default and surfaces the case.
+without that column collision publishes an encoded one. Nothing warns. The rule above surfaces the
+case instead of picking a default for it.
 
-The precedence the rule needs already exists and needs no new machinery: both silencers are live
-today (rows 2 and 3 above), so the work is flipping the default when metadata is present and adding
-the warning. Spec should also cover the variant with no fixture yet, a table whose metadata keys on
-columns *other* than a literal `id` column that also exists, where the same shadowing applies.
+Note the table's bare rows (1 and 4) describe the *pre-revision* verdicts. Under the revised rule
+neither resolves at all: both reject until the author adds `@nodeId` or `@field`. Rows 2, 3 and 5
+are unchanged, and rows 2 and 3 are exactly the two silencers, so both remedies are live today and
+need no new machinery. The variant the original spec asked for has since gained a fixture:
+`keyed_elsewhere` (`NodeIdFixtureGenerator`, metadata keyed on `KEY_X`) has columns `KEY_X`, `ID`,
+`NAME`, so the shadowed `id` column is *not* a key column and the two readings are different
+columns rather than two encodings of one. That shape rejects on the same terms.
 
 The single implementation site is the column-lookup-first ordering at `FieldBuilder.java:7247-7271`:
 `svc.resolveColumn(columnName, tableType)` runs before the `NodeType` arm, so a successful lookup
-short-circuits to `Direct` and the node interpretation never gets a turn. The fix is to give the
-`NodeType` + Node-interface-`id` + no-field-directive case precedence over the column hit, and warn
-when the column existed. `hasFieldDirective` (line 7208) is already the `@field` opt-out.
+short-circuits to `Direct` and the node interpretation never gets a turn. `hasFieldDirective`
+(line 7208) is already the `@field` opt-out. The shipped fix hoisted the `NodeType` +
+Node-interface-`id` + no-field-directive case above the column hit and warned when the column
+existed; the revision replaces that hoist with a rejection, so the arm no longer needs to outrank
+the column lookup at all, it needs to detect the collision and refuse. Keep the message, which
+already names both silencers, and move it from `BuildWarning.LintFinding` to the rejection channel.
+`LintRule.NODE_ID_SHADOWS_COLUMN` (`LintRule.java:39`, `Source.CLASSIFIER`) retires with it; check
+whether the enum entry is removed or kept for the `Source.CLASSIFIER` census, and note the MCP
+`diagnostics` tool projects that closed rule set onto the wire.
 
 **The implementation trap, and the easiest thing to get wrong here.** The arm being hoisted is the
 deprecated shim, and its predicate is broader than the rule being adopted:
@@ -340,26 +385,36 @@ Everything else follows from that one sentence, which is the sign the design is 
 
 ### Draft: `node.adoc`, new subsection "When the table has its own `id` column"
 
-> A table can publish node metadata *and* have a column literally named `id`. The node ID wins: the
-> field publishes the encoded global ID, not the raw column value, and the build warns that the
-> column is shadowed. Silence it by stating the choice:
+> A table can publish node metadata *and* have a column literally named `id`. Graphitron will not
+> choose for you: `id` could mean the encoded global ID or the column's own value, both are
+> legitimate, and the two are different values on the wire. The build fails until you say which:
 >
 > [source,graphql]
 > ----
-> type Doc implements Node @table(name: "doc") { id: ID! @nodeId }        # the global ID (default)
+> type Doc implements Node @table(name: "doc") { id: ID! @nodeId }             # the global ID
 > type Doc implements Node @table(name: "doc") { id: ID! @field(name: "id") }  # the raw column
 > ----
 >
-> `@field` is the escape hatch for exposing the column itself. Note that a type whose `Node.id` is
-> a raw column cannot round-trip through `Query.node(id:)`.
+> This applies wherever an `ID` is named for a node's `id`, on output fields, input fields and
+> arguments alike. Note that a type whose `Node.id` is a raw column cannot round-trip through
+> `Query.node(id:)`.
 
-### Draft: the warning text
+Neither spelling is presented as "the default". Under the shipped warning one of them was, and
+naming a default is what invites an author to skip the decision, which is the behaviour being
+retired.
 
-> `Doc.id`: the table `doc` has a column named `id` and also publishes node metadata. Graphitron is
-> using the node ID. Add `@nodeId` to confirm, or `@field(name: "id")` to expose the raw column
-> instead.
+### Draft: the error text
 
-Naming both silencers in the message is what makes the finding actionable without the manual.
+> `Doc.id`: the table `doc` has a column named `id` and also publishes node metadata, so `id` is
+> ambiguous. Add `@nodeId` to publish the global ID, or `@field(name: "id")` to expose the raw
+> column.
+
+Naming both remedies in the message is what makes the rejection actionable without the manual, and
+it matters more here than it did for the warning: fixture and schema authors now cannot proceed
+without reading it. Keep the source location, which the LSP surfaces. The `LintFix` reasoning on
+`warnShadowedIdColumn` (no fix attached, because graphql-java records a type node's start but not
+its end, so the insertion point after `id: ID!` is not derivable) survives the move to the rejection
+channel and should travel with the message rather than being dropped as lint-specific.
 
 ### Draft: `nodeId.adoc` Constraints, the one bullet that changes
 
@@ -373,12 +428,20 @@ Naming both silencers in the message is what makes the finding actionable withou
 three error prefixes (`[author-error]`, `[invalid-schema]`, `[deferred]`) and enumerates the
 `unknown-name` attempt kinds. It has no warnings section, and no page in the manual documents the
 `LintRule` ids at all, even though the enum is a closed set with stable kebab-case ids that the MCP
-`diagnostics` tool already projects onto the wire. The shadowing warning has no glossary-shaped home
-to go into. This item documents the warning where an author will actually hit it (the `node.adoc`
-subsection above) and does **not** grow a lint-rule inventory page, which is a separate deliverable
-covering the fourteen existing rules (9 `ENGINE`, 3 `CLASSIFIER`, 2 `CODEGEN`) and should be its own
-Backlog item. Flagged here so the omission is
-a decision rather than an oversight.
+`diagnostics` tool already projects onto the wire.
+
+**The 2026-08-06 revision closes this gap rather than recording it.** The original reasoning was
+that the shadowing *warning* had no glossary-shaped home, because the glossary admits errors only.
+As a rejection it has one, so this item now **adds a glossary entry** for the shadowing error
+alongside the `node.adoc` subsection. Pick the prefix deliberately: the schema is well-formed and
+the author's intent is genuinely undetermined, so `[author-error]` fits and `[invalid-schema]` does
+not.
+
+What stays out of scope is unchanged: this item does **not** grow a lint-rule inventory page, which
+is a separate deliverable covering the existing rules (9 `ENGINE`, 3 `CLASSIFIER` before this item's
+retirement of `NODE_ID_SHADOWS_COLUMN`, 2 `CODEGEN`) and should be its own Backlog item. Note the
+`CLASSIFIER` count moves when this rule retires, so whoever writes that page reads the enum rather
+than this sentence.
 
 ## Review round 1: rework, one finding
 
@@ -387,6 +450,14 @@ clean, and the next pass should be short: the delivery is otherwise exactly what
 for, the reactor is green under `mvn install -Plocal-db` (13 modules, 537 test classes, zero
 failures, including the sakila PostgreSQL execution tier), and no delivered test asserts on a
 generated method body.
+
+**The rework is no longer docs-only.** The shadowing decision was revised on 2026-08-06 (see "The
+shadowed `id` column"), after this review closed, so the next pass carries a behaviour change as
+well as the doc finding below: the shipped warning becomes a rejection, `LintRule.NODE_ID_SHADOWS_COLUMN`
+retires, the two assertions at `NodeInferencePipelineTest.java:352` and `:504` flip from a lint
+finding to a rejection, and roughly 37 fixture sites gain an explicit `@nodeId` or `@field`. Size
+the pass against both. The doc drafts above were rewritten for the rejection in the same revision,
+so the finding below and the revision land together rather than in sequence.
 
 **The finding: the user manual still states the retired policy as current, on a third page the
 plan's docs census missed.** The User documentation section above says "the manual currently states
