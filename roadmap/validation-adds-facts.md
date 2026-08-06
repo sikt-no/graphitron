@@ -462,10 +462,10 @@ strangled, not extended, which is the umbrella's arm-by-arm migration language g
 substrate. This item is expected to narrow to the classification-stage migration piece (the
 claim derivations, the conflict rule, the Conflicted projection), which is what its title,
 fixture, and motivating example already describe; the remaining migration pieces get their own
-items as they are cut. The open questions below stay recorded because each must land in one of
-those pieces.
+items as they are cut. The design questions below are all closed; each closure stays recorded
+because its answer must land in one of those pieces.
 
-## Open questions (for the next design round)
+## Design questions, all closed
 
 - **The demand relation's rules and exemption census: closed by census**
   (`roadmap/audits/2026-08-06-demand-exemption-census.md`). Today there is no demand predicate
@@ -532,9 +532,24 @@ those pieces.
   rows, so there is no interim payload to choose. The residue is the view's column shape, and
   the first-client draft above already constrains it: whatever the MCP JSON and hover header
   render must be selectable from the claiming relation's decoded columns.
-- **Provenance shape for inferred claims.** What a structural trigger is as data (the resolving
-  column, the nesting edge), and whether one shape covers all structural classifiers; wants an
-  enumeration of the actual structural classifiers before proposing a shape.
+- **Provenance shape for inferred claims: closed by census**
+  (`roadmap/audits/2026-08-06-structural-classifier-census.md`). The enumeration exists:
+  roughly twenty structural arms whose trigger vocabulary collapses into six families (name
+  resolution against the catalog, type-shape recognition, catalog key facts, catalog metadata
+  sentinels, reflection facts, cross-site agreement). One provenance record does not cover
+  them, and does not need to; the answer mirrors the authored side. Each structural classifier
+  is its own derivation view, and its claiming row's columns are that classifier's join
+  witnesses: the catalog column that matched the name, the unique FK between the table pair,
+  the membership set that proved the errors shape. Provenance is the witnesses, so no
+  component goes nullable by kind, and the claim view unions per-classifier relations with the
+  classifier column a literal per arm on both sides; the only universal part is the
+  `(coordinate, classifier)` key. Two census findings reinforce the model: every structural
+  arm already has an explicit directive mask upstream, so moving masking to the
+  authored-coverage anti-join invents no semantics, and cross-file triggers are the norm,
+  confirming that no verdict is computable during a file's parse. `ClassificationTrace`, the
+  only provenance-adjacent record today, carries the verdict's class name and no trigger data;
+  the witness evaporates at each arm's return, which is this item's thesis at the provenance
+  grain.
 
 ## Retired vocabulary (expected; finalise at the Done gate)
 
