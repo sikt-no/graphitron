@@ -7,7 +7,7 @@ priority: 5
 theme: diagnostics
 depends-on: [input-field-resolution-typed-rejections]
 created: 2026-08-03
-last-updated: 2026-08-04
+last-updated: 2026-08-06
 ---
 
 # Aggregated diagnostics commands for the MCP server
@@ -238,15 +238,24 @@ hierarchy buys nothing. Two constraints keep it from smuggling in a stringly sid
   dimension declared in exactly one bucket (typed-key / location-derived / prose-derived), which
   makes the wire contract's "which clusters are typed" claim a live partition instead of prose.
 
-**Why not a real query language.** A SQL-ish or CEL / JMESPath surface costs a grammar or a new
-pinned dependency, unbounded semantics to validate, error messages good enough to recover from,
-and a test surface that is the language rather than the data. It also spends the exact resource
-this item is meant to save: an agent has to guess syntax, get a parse error, and retry, whereas
-a closed enum is discoverable from the tool's input schema in one shot and cannot fail to parse.
-For an agent consumer the closed set is not the compromise, it is the better interface. The
-things a language would add that faceting does not (predicates over derived counts, arithmetic,
-regex over messages) reduce to one or two scalar parameters: `minCount` covers the `having`
-case, and a single optional `messageMatches` regex covers the rest if it proves necessary.
+**Why not a real query language.** The first draft of this section priced a query surface at
+a grammar or a new pinned dependency plus unbounded semantics to validate, and half of that
+pricing is now stale: the day `graphitron-model-captures-facts` lands, SQL arrives with H2 and
+jOOQ for free, no grammar to build and no new dependency to pin. What remains is the case
+that still decides it. A closed enum is discoverable from the tool's input schema in one
+shot and cannot fail to parse, whereas a query surface spends the exact resource this item is
+meant to save: an agent guesses syntax, gets a parse error, and retries. The server also owns
+the result shape only under the closed contract: exact counts, the stated tail rule, and the
+zero-argument triage preset are guarantees a raw query cannot be made to keep on the caller's
+behalf. And the boundary principle points the same way: this is a wire boundary whose job is
+to decode untrusted input into a typed closed vocabulary, and accepting a query string at it
+admits an untyped side-channel at exactly the point the design exists to type. For an agent
+consumer the closed set is not the compromise, it is the better interface. The things a
+language would add that faceting does not (predicates over derived counts, arithmetic, regex
+over messages) reduce to one or two scalar parameters: `minCount` covers the `having` case,
+and a single optional `messageMatches` regex covers the rest if it proves necessary. A
+read-only SQL surface over the fact store as a whole is a different tool with a different
+job, deferred to its own item; see the fact-base section below.
 
 **Enabling refactor.** `DiagnosticsTool` currently builds wire `LinkedHashMap`s inline from
 three sources (validator errors, build warnings, compile diagnostics) with no intermediate typed
@@ -282,6 +291,60 @@ groups as there are entries, so an unbounded aggregate can be *larger* than the 
 replaces. `limit` plus `minCount` handle it, but the response has to state how many groups were
 elided and their combined count, so the aggregate never reads as complete when it is truncated.
 Worth pinning as a test, because it is the failure mode that would quietly defeat the purpose.
+
+## What the fact base changes, and what it does not
+
+Between this item's Spec review and now, the substrate question moved:
+`graphitron-model-captures-facts` (R595, Ready) creates the fact store (the fact-schema DDL,
+jOOQ codegen over a live H2 bootstrap, one in-memory store per generator run), and
+`validation-adds-facts` (R589) makes validation detection queries minting located violation
+facts into that store's derived stratum, naming this item as "a consumer, and the reason this
+surfaced". Once the violation relation exists, everything this design hand-builds as
+evaluation machinery is native SQL: `groupBy` is `GROUP BY`, `where` is `WHERE` over the same
+columns, `minCount` is `HAVING`, and the tail accounting is a second aggregate over the elided
+remainder. In the target architecture, the aggregate this item wants is one jOOQ query.
+
+That reshapes this Spec's arguments without resubstrating the item, for three reasons, each
+sharper than "the store has not landed yet":
+
+- **Loading today's diagnostics into an H2 relation would be alignment in technology only.**
+  The store's diagnostics, when they arrive, are detections over captured facts. A loader that
+  writes `ValidationReport` entries into a relation produces a second population of diagnostic
+  rows with the same engine and a different provenance, which is the consumer-owned shadow
+  model the one-model-many-views principle names as the drift smell, not a migration. There is
+  also no clean home for such a relation: the model module's agreement driver enumerates every
+  generated table against a closed set of registration arms that a report-loaded relation fits
+  none of, and a private DDL inside `graphitron-mcp` would be a consumer owning a model. The
+  internally consistent version needs the diagnostics-stratum shape settled first, which is
+  `validation-adds-facts`'s decision, not this item's. The migration criterion is therefore:
+  this item's aggregate migrates when it selects from the violation relation, not when it
+  happens to run SQL.
+- **The compile channel never becomes store facts.** `CompileDiagnostic` is javac output over
+  generated Java sources, exactly the Java-side surface the store leaves out on cadence
+  grounds, so no detection will ever mint it. `DiagnosticRow` is therefore not interim
+  scaffolding: it is the permanent union seam over channels of permanently different
+  provenance. Post-migration the schema channels re-point at store queries and the hand-built
+  grouping engine retires; the row and the wire contract stay.
+- **The wire contract and the evaluation mechanism are separable axes, and this Spec now says
+  so.** The contract (the closed dimension set, the zero-argument triage preset, exact counts,
+  tail honesty, the single-valued grain) is fixed and substrate-independent. The evaluator
+  behind it (the extractors plus the grouping engine) is an implementation choice this item
+  makes one way and the migration remakes the other way. Every invariant pin in the Tests
+  section asserts on tool answers, never on engine internals, so the swap is invisible to the
+  suite.
+
+The store direction also restates three of this design's local rules as one shape constraint:
+every dimension must be nameable as a violation-relation column, hence single-valued, scalar,
+and uniform about absence. The design already imposes all three (single-valued extractors,
+`Optional<String>` for not-applicable, the `directives` canonical render); that they survive
+the substrate swap is why they were the right rules, not three unrelated tidinesses.
+
+Two boundary notes, so a reviewer does not re-derive them. The store's landing rule ("new
+facts land only in the store") does not bind here: this item mints no facts, it projects
+diagnostics the pipeline already minted. And a read-only SQL surface over the whole fact
+store, which the H2 spike floats as an agent capability, is real but is a separate future
+item on dependency grounds alone: it is not buildable until the derived stratum exists, and
+its design question is different in kind; see the re-argued query-language section above.
 
 ## Phasing
 
@@ -320,15 +383,20 @@ before the convergence would put a confidently wrong count in the very view this
 hedged counts. Nothing else in the design touches it, so the two can be worked in parallel provided the
 dependency lands first.
 
-**Related, and deliberately not a dependency: `validation-adds-facts`.** That item makes classification
-a relation and stops a failed coordinate from discarding what the classifier established, which widens
-this dimension set on its own: every fact that survives a rejection becomes a candidate dimension, and
-the pivot a measured session actually wanted ("the diagnostics on my DELETE mutations") becomes
-expressible. It is not a prerequisite. Nothing here reads a classification today, it does not touch
-`ValidationError` and so leaves `DiagnosticRow`'s shape alone, and no dimension already in the enum
-changes meaning when it lands, so the growth is one enum value plus one extractor, which is the case
-the dimension coverage pin exists to make safe. Every count this item reports is true on today's model;
-it is narrower, not wrong.
+**Related, and deliberately not a dependency: `validation-adds-facts` and the fact store.**
+That item makes classification a relation over the `graphitron-model-captures-facts` store and
+stops a failed coordinate from discarding what the classifier established, which widens this
+dimension set on its own: every fact that survives a rejection becomes a candidate dimension,
+and the pivot a measured session actually wanted ("the diagnostics on my DELETE mutations")
+becomes expressible. It is not a prerequisite, and neither is the store module: the fact-base
+section above carries the full argument (rows loaded from `ValidationReport` are not facts,
+the compile channel never enters the store, the wire contract is substrate-independent).
+Nothing here reads a classification today, it does not touch `ValidationError` and so leaves
+`DiagnosticRow`'s shape alone, and no dimension already in the enum changes meaning when it
+lands, so the growth is one enum value plus one extractor, which is the case the dimension
+coverage pin exists to make safe. When the violation relation does land, the schema channels
+migrate onto it and the grouping engine retires, per the migration criterion stated above.
+Every count this item reports is true on today's model; it is narrower, not wrong.
 
 **Carved out at review: the sealed `Coordinate` component.** A sealed
 `Coordinate { SchemaWide | TypeLevel | FieldLevel }` on `ValidationError`, deleting
@@ -358,7 +426,9 @@ projection.
 
 Unit tier in `graphitron-mcp`, following `DiagnosticsToolCompileSourceTest`, which calls
 `DiagnosticsTool.diagnosticsResult` directly with a hand-built `ValidationReport` and no live
-server. The tests that carry weight are the invariant pins, not per-dimension unit tests:
+server. The tests that carry weight are the invariant pins, not per-dimension unit tests. One
+rule binds them all: every pin asserts on tool answers, never on the engine's internals, so
+the post-migration substrate swap the fact-base section describes is invisible to this suite:
 
 - **Aggregate / drill-down parity.** Filtering `diagnostics` to a group's key returns exactly that
   group's count. This is the pin that makes the per-cluster examples a sample rather than a lossy
@@ -440,7 +510,10 @@ than leanings. Each takes the draft's leaning except where noted.
   `InvalidSchema.Structural` residue over the reactor's own fixture corpus. Ship `messageTemplate` only if that residue does not read usefully off `variant`
   alone; otherwise omit the dimension and let those rows cluster on `variant`. Either way the
   implementer records the measurement in the In Review note, so the Done reviewer can check the call
-  rather than re-derive it. Omitting is the default, not the exception.
+  rather than re-derive it. Omitting is the default, not the exception. The fact-base direction adds
+  a second, stronger argument for that default: rejections are facts rendered into views, never prose
+  composed at the detection site, and a message-template dimension groups on the rendering rather
+  than the fact, so its substrate is scheduled to shrink as the architecture deletes composed prose.
 - **Pure counts.** Ordering by count already surfaces the leverage; naming a fix strategy would be
   the server asserting the wrong layer.
 - **`directives` groups on the set, not on the individual directive.** The component is
