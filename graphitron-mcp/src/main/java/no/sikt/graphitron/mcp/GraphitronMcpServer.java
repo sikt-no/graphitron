@@ -39,14 +39,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * The MCP server embedded in the {@code graphitron:dev} JVM: hosts the MCP Java SDK's
  * servlet-based Streamable HTTP transport in an embedded Jetty {@link Server} bound on a
- * loopback address. It serves the static {@code instructions} string returned in the MCP
+ * loopback address. It serves the ambient {@code instructions} string returned in the MCP
  * {@code initialize} handshake, a single argument-less {@code about} prompt, and tools and
  * resources that read the live generator model.
  *
  * <p>Mirrors the sibling {@code DevServer}'s transport-glue shape: one instance per Mojo
  * invocation, {@link AutoCloseable}, constructed with an {@link InetSocketAddress} so production
  * passes {@code 127.0.0.1:8488} and tests bind an ephemeral port. The bundled prose is read once
- * at startup from jar resources under {@code /mcp/}; it is shape, not state.
+ * at startup from jar resources under {@code /mcp/}; it is shape, not state. The ambient
+ * instructions are composed from two of those resources so the {@code execute} routing sentence
+ * tracks that tool's conditional registration; the composition is fixed for the server's lifetime.
  *
  * <p>The server holds the same live {@link Workspace} handle the LSP {@code DevServer}
  * holds: the one instance {@code DevMojo} builds and the schema / classpath / source watchers
@@ -149,7 +151,15 @@ public final class GraphitronMcpServer implements AutoCloseable {
             ? new CatalogSearchIndex(workspace::catalogFacts, embedderWarm, ragConfig)
             : null;
 
-        String instructions = loadResource("/mcp/instructions.txt");
+        // The ambient instructions string is composed rather than one fixed resource, mirroring the
+        // conditional tool registration below: the execute tool exists exactly when a dev database is
+        // configured, so its routing sentence has to appear exactly then. A static line would advertise
+        // an absent tool to every project without a database; omitting it would leave the tool the
+        // instructions never route to. ServerInstructionsTest pins the agreement per boot.
+        String instructions = executeConfig == null
+            ? loadResource("/mcp/instructions.txt")
+            : loadResource("/mcp/instructions.txt").stripTrailing()
+                + "\n\n" + loadResource("/mcp/instructions-execute.txt");
         String aboutText = loadResource("/mcp/about.md");
 
         var transportProvider = HttpServletStreamableServerTransportProvider.builder()

@@ -2,6 +2,21 @@ You are connected to a live `mvn graphitron:dev` session for a graphitron projec
 
 graphitron is a code generator: it turns a GraphQL schema plus jOOQ-generated database models into Java resolvers. The developer authors `.graphqls` schema files and graphitron regenerates the Java sources on every save. Alongside this MCP server, the dev session runs a language server (LSP) on a loopback port that backs schema authoring in the editor: diagnostics, hover, completion, and go-to-definition between the schema and the generated Java.
 
-To discover the database the schema wires to, use the `catalog.tables` tool (list tables, with optional schema and SQL-name filters, paged via an opaque cursor) and the `catalog.describe` tool (one table's columns, keys, indexes, and foreign keys in and out). SQL names are the discovery keys, and tables are identified by their schema-qualified SQL name. Table and column comments surface only when the project's jOOQ codegen ran with comments enabled, so a name-only result reflects codegen configuration rather than a missing database comment.
+Ask these tools before grepping the schema or reading generated sources. They answer off the live build, so they carry the classifier's verdict and the resolved database binding, which the schema text alone does not.
+
+- What does a directive mean, how do I express something: `docs.search`, and the `directives` resource for the grammar itself.
+- Which tables exist, what is in one: `catalog.tables`, then `catalog.describe`.
+- Which table holds data I can only describe in words: `catalog.search`.
+- What is in my schema, what did graphitron make of a type or field, which table backs it, which mutations write and to what: `schema`. A field reported `Unclassified`, or a snapshot reported `Unavailable` or `Previous`, means graphitron could not read the intent you are asking about: go to `diagnostics` for why, rather than back to the schema text.
+- What is broken right now: `diagnostics`.
+- Which consumer Java the schema binds to: `services`, `conditions`, `records`.
+- What else touches this, what breaks if I change it: `edges`.
+- Is the dev session live, and is its answer current: `status`.
+
+Three things hold across these tools:
+
+- A paged result's first line summarises the whole set, including the total before paging. Read it before you page or post-process: the count you want is usually already there.
+- IDs are stable and shared. A schema-qualified SQL table name, a `Type.field` coordinate, and a `fqcn#method/arity` method ref select the same thing in every tool that takes one, so follow the ids out of one result into the next call instead of searching again by name.
+- Every tool reads the live build, and `schema`, `diagnostics`, `edges`, and `status` report whether the build behind their answer is current. After a save, re-call rather than reasoning about whether an earlier answer went stale.
 
 Run the `about` prompt for an explainer of the project and the dev loop. The graphitron documentation site is the reference for the directive vocabulary, the generation pipeline, and the schema conventions.

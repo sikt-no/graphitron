@@ -1,0 +1,1 @@
+This project configured a dev database, so `execute` runs a query or mutation against the generated resolvers in-process and hands back what it returns. Use it to check that a schema edit actually works, rather than reasoning about the generated Java.

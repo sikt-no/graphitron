@@ -139,18 +139,44 @@ class GraphitronMcpServerTest {
         // The degrade-gracefully posture, stronger than the RAG tools' advertised-but-degrading:
         // with no dev database the execute tool is simply absent (pinned by the containsExactlyInAnyOrder
         // in statusToolIsAdvertisedAndReportsUnavailableByDefault); with one configured it appears.
-        var executeConfig = new ExecuteTool.Config(
-            new DevQueryExecutor.Wiring("com.example", java.nio.file.Path.of("target/graphitron-classes"),
-                List.of()),
-            new DevQueryExecutor.DbConfig("jdbc:postgresql://localhost/dev", "dev", "dev", "POSTGRES", null),
-            false);
-        try (var server = new GraphitronMcpServer(loopback(0), new Workspace(), null, null, null, executeConfig);
+        try (var server = new GraphitronMcpServer(loopback(0), new Workspace(), null, null, null, executeConfig());
              var client = connect(server.port())) {
             client.initialize();
 
             var tools = client.listTools().tools();
             assertThat(tools).extracting(McpSchema.Tool::name).contains("execute");
         }
+    }
+
+    @Test
+    void instructionsCarryTheExecuteTailExactlyWhenTheToolIsRegistered() throws Exception {
+        // The ambient instructions are composed rather than read from one fixed resource, so the
+        // execute routing sentence tracks that tool's conditional registration. The sibling
+        // initializeReturnsBundledInstructions boots without a dev database and so pins the base arm
+        // verbatim; this is the composed arm. ServerInstructionsTest pins what the prose has to cover.
+        String tail = resource("/mcp/instructions-execute.txt").strip();
+
+        try (var server = new GraphitronMcpServer(loopback(0), new Workspace());
+             var client = connect(server.port())) {
+            assertThat(client.initialize().instructions())
+                .as("with no dev database the execute tail must not appear")
+                .doesNotContain(tail);
+        }
+        try (var server = new GraphitronMcpServer(loopback(0), new Workspace(), null, null, null, executeConfig());
+             var client = connect(server.port())) {
+            assertThat(client.initialize().instructions().strip())
+                .as("with a dev database configured the base block carries the execute tail")
+                .startsWith(resource("/mcp/instructions.txt").strip())
+                .endsWith(tail);
+        }
+    }
+
+    private static ExecuteTool.Config executeConfig() {
+        return new ExecuteTool.Config(
+            new DevQueryExecutor.Wiring("com.example", java.nio.file.Path.of("target/graphitron-classes"),
+                List.of()),
+            new DevQueryExecutor.DbConfig("jdbc:postgresql://localhost/dev", "dev", "dev", "POSTGRES", null),
+            false);
     }
 
     @Test
