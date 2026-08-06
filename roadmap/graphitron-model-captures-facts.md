@@ -99,8 +99,14 @@ These bind the DDL below and every relation added to it later.
   named type, a union member, an implements edge, an applied directive's name, a
   root-operation binding) carries no FK: on a schema assembly would reject, the reference may
   dangle, dangling is an author error, and author errors are detections minting located
-  diagnostics, never constraint violations. The cost is jOOQ's implicit path joins on exactly
-  those edges; explicit join conditions carry them.
+  diagnostics, never constraint violations. The same split is what keeps capture order-free:
+  every declared FK is satisfied within a single file's walk (the whichever-site-first
+  existence rule makes even the owning-type reference file-local when an extension's file
+  loads before the base's), so files load one at a time in any order and the incremental
+  refresh unit stays a single file, whereas an FK on a cross-file reference would force a
+  global definitions-before-uses parse order and destroy both. Cross-file integrity is
+  checked once, by detection queries over the collected facts. The cost is jOOQ's implicit
+  path joins on exactly those FK-free edges; explicit join conditions carry them.
 - **Every table and every column is commented.** The shipped DDL states them as `COMMENT ON`
   clauses so they land in `INFORMATION_SCHEMA` and jOOQ carries them into the generated classes'
   Javadoc; the schema is then self-describing at both the SQL prompt and the call site. A gate
