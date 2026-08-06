@@ -1,7 +1,7 @@
 ---
 id: R584
 title: "MCP server instructions route agents to every tool family"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 5
 theme: tooling
@@ -245,6 +245,30 @@ base arm; the composed arm wants its own case asserting the tail appears exactly
 - The tool descriptions are deliberately untouched. The item cuts duplication out of the ambient file,
   not out of the local descriptions, because the local one is the copy whose reader is looking at that
   tool.
+
+## Delivered
+
+Shipped at `076e9cc`, as planned above. Full reactor green (`mvn install -Plocal-db -P!docs -T 1C`).
+The rewritten `instructions.txt` runs 411 words / 2564 characters, the composed string 452 / 2817,
+against the 3600-character ceiling. Three plan clarifications the Spec review raised, settled during
+implementation rather than left to discovery:
+
+- **The reverse token rule is anchored on a leading lowercase letter**, `[a-z][a-z0-9]*(?:\.[a-z0-9]+)*`
+  matched in full. The Spec's sketch ("lowercase, optionally dotted, no spaces") would have matched
+  `` `.graphqls` `` in the prose; requiring a leading *letter* excludes it, alongside the uppercase
+  `` `Type.field` `` / `` `Unclassified` ``, the space-and-colon `` `mvn graphitron:dev` ``, and the
+  `#`-and-`/` bearing `` `fqcn#method/arity` ``. No ignore list.
+- **The manual is pinned against the configured boot**, not per boot. It is one static document that
+  carries `execute` unconditionally with an "appears only when a dev database is configured" note, so
+  a per-boot reading would fail on the no-database arm. Only the ambient assertion runs per boot.
+- **The summary-line pin carries its own fixture.** One workspace holding catalog facts, a built
+  snapshot, a validation report, and external references, each projection with at least two entries so
+  a `limit=1` call distinguishes the unpaged total from the page size. That keeps all three assertions
+  in `ServerInstructionsTest` as planned without extracting `GraphitronMcpServerTest`'s private
+  fixtures.
+
+Both pin directions were checked against a deliberate mutation (renaming `edges` to `edgez` in both
+views) rather than only observed green.
 
 ## Tests
 
