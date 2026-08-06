@@ -7,7 +7,7 @@ priority: 3
 theme: classification-model
 depends-on: []
 created: 2026-06-18
-last-updated: 2026-08-01
+last-updated: 2026-08-06
 ---
 
 # The Graphitron data model
@@ -41,7 +41,11 @@ together. Re-platforming the generator's emit onto the model was executed by the
 (`facts-and-commands`) programme (Done 2026-08-01; see `roadmap/changelog.md`), which consumed this
 model slice by slice after **R314** (Done) shipped its reentry beachhead; the front half (the
 `operation` relation materialized as walked facts, dissolving the classifier's operation-encoding
-leaves) is owned by the **R563** (`operation-relation`) programme. Suggested
+leaves) was delivered by the **R563** (`operation-relation`) programme (Done), as the
+`OperationMember` per-coordinate member multiset. The model now also has a second, executable home:
+the fact schema DDL in the `graphitron-model` module (R595) is this document's normalised data
+model reified as a SQL schema, and the classification-stage derivations over it are R589's subject
+(*What the model enables* carries the division of labour). Suggested
 reading order is this orientation, then *The model* (the ER diagram and the fact catalog) and *What the
 model enables*, then the detail: the front half (*The normalized schema: the coordinate and its facts*)
 and the back half (*Operations are realized by seams*). The lettered **Discovery** threads (A-K) at the
@@ -70,6 +74,8 @@ erDiagram
     COORDINATE }o--|| SOURCE_OBJECT : "cast target (type-level)"
     COORDINATE ||--o{ CAPABILITY_TAG : "@capability (reserved)"
     COORDINATE ||--o| SOURCE_LOCATION : "locate (joined at request time, not stored)"
+    COORDINATE ||--o{ AUTHORED_CLAIM : "classification claimed by directive"
+    COORDINATE ||--o{ INFERRED_CLAIM : "classification claimed by structure"
 
     REFERENCE ||--|| REFERENCED_TABLE : "destination"
     REFERENCE ||--|{ JOIN_STEP : "linearized join graph"
@@ -147,6 +153,14 @@ erDiagram
         int line
         int column
     }
+    AUTHORED_CLAIM {
+        key classifier PK "with the coordinate; one view arm per claiming intent_ relation"
+        payload slots "decoded slot facts; provenance is the application and its location"
+    }
+    INFERRED_CLAIM {
+        key classifier PK "with the coordinate; one derivation view per structural classifier"
+        payload witnesses "the join witnesses that proved the claim"
+    }
 ```
 
 The diagram is itself a denormalized view, the same move as *the leaf zoo is a denormalized view* below. A
@@ -154,7 +168,7 @@ discriminator marked **(sealed)** is a tagged union, not one relation with nulla
 variant carries only its own non-null columns (concrete-table inheritance, exactly like the coordinate key in
 *The natural keys*), and the per-variant columns are normalized in that fact's deep-dive below. Flattening a
 union into one box with a `kind` / `arm` / `domain` enum is the diagram's convenience, not the model's shape;
-in the type system each is a `sealed` interface (`Source`, `Operation`, `JoinStep`, `TargetShape`,
+in the type system each is a `sealed` interface (`Source`, `OperationMember`, `JoinStep`, `TargetShape`,
 `ErrorChannel`, the discrimination signal). The unmarked entities are genuine single relations.
 
 The catalog, each row a fact with its own deep-dive below:
@@ -177,11 +191,24 @@ The catalog, each row a fact with its own deep-dive below:
 | `errorGuard` | operation sub-fact | `@error` | on a throwing operation: a transport channel and an interned handler partition |
 | `capabilityTag` | 0..N (reserved) | `@capability` / `@exemplifies` | tags the coordinate with a stable slug from the capability catalog; knowledge-surface only, not yet shipped |
 | `sourceLocation` | 0..1, joined not stored | joined against `SourceWalker.Index` at request time | the `locate` value; a fact *about* the coordinate, keyed by the coordinate, never itself a key |
+| `authoredClaim` | 0..N, keyed `(coordinate, classifier)` | one view arm per claiming `intent_` relation | the classification axis's authored claims; the reduced view is the single-classification worldview planning reads (R589) |
+| `inferredClaim` | 0..N, keyed `(coordinate, classifier)` | one derivation view per structural classifier | the masked structural reading, payload the classifier's join witnesses; resolution unions authored with inferred at uncovered coordinates (R589) |
 
 **The model is closed.** Every active directive's effect has an owning fact in this catalog; the
 completeness audit, directive by directive, is *Directive coverage* near the end. The two halves of the
 lowering, these facts (front) and the method graph that consumes them (back), meet at the `operation`
 relation, detailed throughout the rest of this document.
+
+**The model has an executable home, and the division of labour is explicit.** The fact schema DDL in
+the `graphitron-model` module (R595) is this normalised model reified as SQL: the capture families
+(`graphql_` existence, `applied_` fidelity, `intent_` decoded directive semantics, `catalog_` jOOQ,
+`extension_` classpath) carry the base relations, and the derived stratum (the claim views, resolution,
+reachability, demand, the diagnostics relations) lands consumer by consumer per R589's strangler frame.
+This document keeps the *why*: the justifications, the alternatives rejected, the key discipline, the
+back half. The *what* migrates into the DDL relation by relation, and where the two disagree the DDL
+wins; the base families above that the first DDL iteration defers (routines, resolution facts,
+effective values, the whole derived stratum) are marked in R595's leave-outs, so a reader should not
+expect a relation per deep-dive yet.
 
 ## The natural keys
 
@@ -221,7 +248,12 @@ off it. The shared leading columns are real, `typeName` heads Type / Member / Ar
 heads Directive / DirectiveArgument, and that shared prefix is exactly what the prefix scans key on; it is
 shared structure across variants, not one flat row with holes. The ER diagram in *The model* draws the
 coordinate as a single keyed box because its subject is the facts that hang off the coordinate, not the key
-taxonomy; the decomposition lives here.
+taxonomy; the decomposition lives here. One reconciliation with the DDL: the capture schema stores output
+fields and input-object fields in a single `graphql_field` relation keyed `(type_name, field_name)`, with
+the owning type's kind distinguishing them by join. That is not the single-table inheritance this section
+argues against, because every key column is non-null and no column is populated-by-kind; the five-variant
+discipline governs the Java-side coordinate, while the capture relations key on the spec grammar directly
+and let the kind fall out of the type row.
 
 `MemberCoordinate` is a single key covering what earlier drafts split into three: an output field
 (`Film.language`), an input-object field (`FilmWhereInput.title`), and an **enum value** (`Color.RED`, the
@@ -288,7 +320,10 @@ name alone is not unique in a class (overloads) the way a column name is unique 
 of parameters) is a lossy projection of that signature and is not the key; a position join that comes back
 "ambiguous" is an artifact of keying on the projection rather than the signature, and it disappears once the
 signature is the key. Parameter names are not part of the identity (they cannot disambiguate overloads); they
-ride along as payload the model already carries for argument mapping and hover.
+ride along as payload the model already carries for argument mapping and hover. The DDL implements this as
+`extension_method`'s descriptor key (the JVM descriptor is the signature rendered canonically); the shipped
+`CompletionData.Method` still carries no descriptor, which is why the capture agreement test compares that
+projection descriptor-erased.
 
 ## What the model enables: three consumers
 
@@ -304,7 +339,9 @@ zoo dissolves.
   denormalized view over the facts (the argument of *Normalization: the leaf zoo is a denormalized view*).
   **Code generation reads it directly**: the `DataFetcher` joins `source` and `target` and dispatches the
   operation set, each operation rendering through a named seam, and thread I's referential-integrity closure
-  is the build's correctness test.
+  is the build's correctness test. Under the strangler frame this layer has a name and a fate: it is the
+  **transitional producer surface**, and it dissolves as consumers migrate onto the store rather than being
+  extended.
 - **The projections.** `FieldClassification`, `TypeClassification`, `TypeBackingShape`, `CompletionData`,
   `CatalogFacts`: a second view, built from the classifier by an exhaustive, compile-checked switch
   (`CatalogBuilder.projectFieldClassification` and its siblings) and sized to the questions the editor and
@@ -334,11 +371,15 @@ the code-generation side while the projections still need the old leaf permits, 
 as a shim purely to feed the editor and the agent, and the leaf zoo we set out to dissolve returns as a
 second model whose only job is the projection layer. Facts, revived leaves, and projections is three models.
 The fix is to point the projection seam at the facts and let its coverage switch fail to compile until every
-projection re-sources, the same falsifiable-closure discipline thread I applies to the emit.
+projection re-sources, the same falsifiable-closure discipline thread I applies to the emit. The *mechanism*
+for the re-sourcing is now the strangler frame (R589): the facts live in the store, consumers migrate off
+`GraphitronSchema` one by one in whatever order pays best, each migration gated on generated-output
+identity, and new facts land only in the store while both models are live, so the two-model window shrinks
+monotonically instead of fossilizing into the three-model failure above.
 
 **A fourth reader, test-side: the spec-by-example corpus.** The three consumers above are the shipped
 readers; the `@classified` corpus is a fourth reader of the same base, and it inherits the re-sourcing
-requirement verbatim. `ClassifiedHarness` builds its verdict from the leaf zoo (`OutputField.operation()`,
+requirement verbatim. `ClassifiedHarness` builds its verdict from the leaf zoo (`GraphitronSchema.operationMembersOf`,
 `OutputField.target()`, `GraphitronSchema.sourceOf`) and records `field.getClass()` as the coordinate's
 leaf; `ClassifiedCorpus.coveredLeaves()` and `VariantCoverageTest`'s corpus obligation are both stated over
 sealed leaf *classes*. So the failure mode this section warns about has a second entrance: if the harness is
@@ -349,10 +390,13 @@ of its coverage net, which cannot stay "every sealed leaf is demonstrated" once 
 Widening the corpus directive to the fact set is filed separately; this note only records that the harness is
 in scope for the re-sourcing, not something to migrate afterwards.
 
-The shared discipline is *We are data modeling*: the facts are typed, keyed relations in the type system,
-materialized as in-memory collections guarded by a referential-integrity check, not sat on a query-engine
-runtime. The three consumers read views over one base; the base carries every column some view needs, and no
-consumer owns a private model.
+Two more readers joined the family with the store: the **agreement tests** (the shadow window's honesty
+check, reading both models to hold capture faithful) and the **read-only SQL surface** the store opens for
+agents, which is the six reads served without a hand-written tool per question. The shared discipline is
+*We are data modeling*: the facts are typed, keyed relations, materialized in the `graphitron-model` store
+and read through its generated jOOQ classes, with capture-structural integrity as declared foreign keys and
+author-spelled references as detection queries. The consumers read views over one base; the base carries
+every column some view needs, and no consumer owns a private model.
 
 ## Provenance, description, and capability
 
@@ -375,7 +419,11 @@ shape varies with the source:
   facts. `reference` is "authored `@reference` *or* inferred unique FK", two populations of one 0..1 slot.
   `condition` is the cleanest case: `authored_condition` and `generated_condition` are genuinely separate
   relations, both multi-valued, both live, conjoined by union-then-suppress, and no provenance column could
-  hold them because a coordinate carries both at once.
+  hold them because a coordinate carries both at once. This pattern generalises into the claim relations
+  (R589): `authoredClaim` and `inferredClaim` are the same separate-relations move applied to the
+  classification axis itself, with resolution the union of authored with inferred at coordinates the
+  authored relation does not cover, so masking is the join's job and the masked structural reading survives
+  as data.
 - **A column** when there is one value in one slot. `@node(typeId:)` is a single value the author either
   wrote or let default to the type name; a provenance attribute on the one relation (equivalently, a sparse
   authored relation plus a default rule) suffices. The shipped `NodeMetadata` is exactly this: it stores the
@@ -427,7 +475,12 @@ derivation, do not store its result where the base belongs.
 
 Of the six reads in *The two referenced namespaces* (`resolve`, `validate`, `complete`, `describe`,
 `locate`, `invert`), only `describe` is a stored column (the argument of *Description*). The rest are views,
-and naming each keeps it from silting up as a redundant fact:
+and naming each keeps it from silting up as a redundant fact. The vehicle is settled (R589): derivations
+are SQL views and `INSERT..SELECT` strata over the store, with recursive CTEs where closure is needed;
+table-valued functions were spiked and rejected. Two derived relations this catalog did not originally
+name join it: **reachability** (root seeds plus transitive closure over captured edges; capture itself is
+total, with no pruning) and **demand** (reachable coordinates intersected with requiring rules, each row
+carrying why a claim is required, with today's implicit skips as explicit exemption rows).
 
 - **The candidate space is an unconstrained relation read.** `complete` (the editor's completion, the
   agent's enumeration) is a base relation projected with *no* key constraint: every column of the resolved
@@ -441,7 +494,9 @@ and naming each keeps it from silting up as a redundant fact:
   violation a relation and both surfaces are projections of it; bake it into one consumer's emit and the
   other has to recompute the rule. The wire `code` being a stable string written next to the producer, not
   derived from a Java identifier, is the same render-the-key discipline as the stable id below: the
-  identity survives a rename.
+  identity survives a rename. R589 extends this with the evaluation order: violations mint wherever a
+  constraint's inputs are complete, which stratifies into SDL-only, resolution, and assembly constraints
+  without anyone scheduling it, and each stratum only ever adds rows.
 - **Stable ids are rendered keys.** The canonical SchemaCoordinate string is the render of the decomposed
   key columns (*The natural keys*), and it doubles as the model-context server's stable id and the language
   server's per-coordinate key. The point for this catalog: the id is a *view* (a deterministic render of key
@@ -474,7 +529,10 @@ a per-consumer model:
 Freshness is a property of the base because both referenced namespaces lag the same way: the jOOQ catalog
 and the Java surface are each generated from source and complete only *within* a snapshot. So freshness is a
 column on the snapshot, the lifecycle is shared, and the consumer split is purely which precondition each
-read imposes on it.
+read imposes on it. The store gives the lifecycle its concrete form: the database is created at startup,
+populated during a run, and dies with the process, so there are no migrations and no persisted state of
+record anywhere, and the two snapshot axes describe the store handle a consumer holds. A stamp-invalidated
+warm-start cache under `target/` (R597) changes neither property.
 
 ### Location: a fact about an entity, joined not stored
 
@@ -494,6 +552,15 @@ catalog would freeze stale while the source kept moving. **Join, don't store.** 
   by position (the `invert` read) does not make position the entity's key; it is a spatial index over the
   locator relation, the reverse of `naturalKey -> SourceLocation`. A thing a reverse lookup can find is not
   thereby keyed by what the lookup hands back.
+
+The rule splits by namespace in the DDL, and the split is the cadence argument applied per source. Java
+and Javadoc positions stay out of the store for exactly the reason above: they ride the source-edit
+cadence. SDL positions are different: the SDL *is* what capture parses, so its positions arrive in the
+same pass as the facts they locate (the co-sourcing argument from *Description*), and the capture schema
+stores `source_name` / `source_line` / `source_column` as columns, in the declaration-site key even,
+because two extensions of one type on one line are two sites. "Joined, not stored" remains the law for
+positions that move on a cadence the fact does not; it was never a ban on positions that share the fact's
+own cadence.
 
 ## The unit is the emitted method
 
@@ -526,8 +593,8 @@ because it lets each node sit at its own granularity. Reading the current output
   `FetcherEmitter` binds exactly this. The resolve side genuinely *is* field-granular, so the R316 field
   model is correct here and stays.
 - **Argument/input-granular (finer than, and driven by something other than, the field).** A condition
-  method is the clean example. `TypeConditionsGenerator` emits one `<Type>Conditions` class per type, with
-  one method per `GeneratedConditionFilter`; each is a pure function of the field's *typed argument
+  method is the clean example. `ConditionGlueRenderer` emits one glue method per `(coordinate, table)`
+  command row, classes grouped per parent type; each is a pure function of the field's *typed argument
   values*, returning a jOOQ `Condition`, its body shape (`eq` / `in` / `row(...).eq` for composite) driven
   by the input surface, not by the field. One coordinate mints a method whose identity and body are a
   function of the inputs the field merely carries. No per-field model can express that; the method can.
@@ -567,10 +634,12 @@ unchanged by the sharpening. Folding the wording through is part of the systemat
 
 The leaf model is denormalized in textbook ways, and the pivot is its normalization:
 
-- `CompositeColumnField` / `CompositeColumnReferenceField` carry an arity-`N` `columns` list, a
+- `CompositeColumnField` / `CompositeColumnReferenceField` carried an arity-`N` `columns` list, a
   **repeating group** (a 1NF violation). Normalizing to atomic rows yields `N` single-column QueryParts
   under one coordinate. This is why composite "simplifies immensely": arity stops being a leaf dimension
-  and becomes the count of projected QueryParts.
+  and becomes the count of projected QueryParts. (R508 merged the pair into the `ColumnBackedField`
+  family, one carrier with `columns` 1..N; the per-column row normalization stays with this item, per
+  *What dissolves*.)
 - The split leaf welds on the parent-key projection, a fact that **functionally depends on the parent's
   query, not on the child coordinate** (a 3NF-style transitive dependency). Normalizing moves that
   QueryPart to the query it depends on.
@@ -619,7 +688,8 @@ with its facts, each its own functional dependency:
   column's owning table, or a nested field's rooted table). A priority coalesce over three facts:
   `referencedTable ?? source.table ?? target.table`. Present for every field that touches a table, absent
   for record / service fields. Detailed below in *The resolved table*.
-- **The same facts apply to input fields**, keyed `(coordinate, path)` (the dotted path to the input field),
+- **The same facts apply to input fields**, keyed `(coordinate, path)` (the dotted path to the input field,
+  a derived value key per *Input coordinates*),
   relative to the consuming output coordinate. Their facts roll up into the output coordinate's operation
   set. Detailed below in *Input coordinates*.
 - **Two further facts are *read-side*.** Every fact above is build-side, constructing the query or
@@ -691,7 +761,7 @@ of the 0..N operation set.
 
 A field whose value lives off the parent's own table, reaching either a **different table** (a nested table
 field) or a **column in a different table** (a column-reference field), carries a `reference` fact. Same-table
-fields (a plain `ColumnField`) carry none. So `reference` present is exactly the condition that a `join`
+fields (a plain `ColumnBackedField`) carry none. So `reference` present is exactly the condition that a `join`
 operation exists: the value's read-table differs from `source.table`.
 
 Naming the fact resolves the "alters the source / alters the path" puzzle, because it alters **neither
@@ -703,7 +773,7 @@ arrival (the model's `source`, untouched) versus the value's read-table (what `r
 A foreign-key traversal needs a **destination table** and a **path**; `reference` always supplies the
 traversal, and the two field kinds differ only in which the field's other facts had already pinned:
 
-- **Column target** (`ColumnReferenceField`): a scalar names no table, so `reference` supplies both. It
+- **Column target** (`ColumnBackedReferenceField`): a scalar names no table, so `reference` supplies both. It
   moves the read-table off the parent onto the destination. This is what reads as "altering the source".
 - **Table target** (`TableField` and kin): the destination is already pinned by the nested type's `@table`,
   so `reference` supplies only the path, disambiguating which FK route reaches it. This is what reads as
@@ -724,7 +794,7 @@ are orthogonal, a 2x2:
 | **Column** | `Single(Column)`, e.g. `film.originalLanguageName` | `List(Column)`, e.g. `film.actorNames: [String]` |
 | **Table** | `Single(Table)`, e.g. `film.language` | `List(Table)`, e.g. `actor.films` |
 
-Today's `ColumnReferenceField` is only the top-left corner (`OutputField.single(Column)`,
+Today's `ColumnBackedReferenceField` is only the top-left corner (`OutputField.single(Column)`,
 `ChildField.java:140`); **`List(Column)` is the missing corner**, a list of one scalar drawn from the
 to-many child rows. With it, column-ref and table-ref differ *only* in `target.shape`, and `Single` / `List`
 differ *only* in direction; `resolvedTable` is the destination table B in every cell. A `List(Column)` child
@@ -744,8 +814,8 @@ destination column) and the `join`'s path, and those must agree (the column's ta
 destination). That agreement is a referential-integrity check between the `target` fact and the `join`
 operation, the FK-as-join-graph point made concrete.
 
-The worked example is the additive proof, visible in the leaf records. `ColumnField` (`ChildField.java:275`)
-and `ColumnReferenceField` (`:301`) are component-identical except the reference variant adds `joinPath`
+The worked example is the additive proof, visible in the leaf records. `ColumnBackedField` (`ChildField.java:227`)
+and `ColumnBackedReferenceField` (`:277`) are component-identical except the reference variant adds `joinPath`
 (and `parentCorrelation`): same `source` (`Table`), same `target` (`Single(Column)`), same column and
 compaction. They are one `(source, target)` pair whose operation sets differ by exactly one `join` minted by
 the `reference` fact: `{select}` versus `{join, select}`. Not two leaf types: the same coordinate facts
@@ -795,8 +865,8 @@ destination (`referencedTable`) and the declared output type (`target.table`). T
 places, the foreign-key graph and the SDL return type, and must agree. A mismatch is an `AuthorError`
 ("`@reference` routes to X but the field returns Y"), not a silently accepted mismatch.
 
-Naming it lifts a derivation otherwise recovered three ways (today `source.table` for `ColumnField`, the
-`joinPath` terminus for `ColumnReferenceField`, `target.table` for table fields; `ColumnRef` deliberately
+Naming it lifts a derivation otherwise recovered three ways (today `source.table` for `ColumnBackedField`, the
+`joinPath` terminus for `ColumnBackedReferenceField`, `target.table` for table fields; `ColumnRef` deliberately
 omits the table because this fact owns it). Consumers then read one fact instead of each reconstructing it:
 
 - the `join` operation's **destination** is `resolvedTable` (when `reference` is present);
@@ -974,11 +1044,16 @@ it nulls rather than drops). Authored conditions carry no presence-gating; the a
 ### Input coordinates
 
 `@reference` and `@condition` apply to **input** fields too, so input fields are fact-bearers on the same
-footing as output fields, keyed `(coordinate, path)`: the consuming output coordinate plus the dotted `path`
-to the input field, rooted at the field's argument list (`where.title`, `filter.actor.lastName`). They key
-on the consuming coordinate, not on the GraphQL input type, for the same reason output facts do: the same
-`where` input resolves against `film` at one query and `actor` at another, so its bindings, inferred FKs, and
-`referencedTable` all depend on the use site.
+footing as output fields. The key splits along the authored / derived line *The natural keys* draws:
+authored facts (`@field`, `@reference`, `@condition` on an input field) live at the input type's own
+member coordinate, the definition site where the editor edits them, while **use-site resolution is keyed
+by the occurrence path**: the consuming output coordinate plus the traversal to the input field, rooted at
+the field's argument list (`where.title`, `filter.actor.lastName`). The path is not a coordinate and not a
+stored key; it is a **derived, value-keyed relation** (the transitive closure of argument-use over
+input-object field edges, the serialized path as the parent key with ordinal step rows carrying the same
+data relationally, per R589). Use-site facts key on it, not on the GraphQL input type, for the same reason
+output facts key on the coordinate: the same `where` input resolves against `film` at one query and
+`actor` at another, so its bindings, inferred FKs, and `referencedTable` all depend on the use site.
 
 An input coordinate carries the same fact vocabulary, `source`, `target` (shape × wrapper), `reference`,
 `referencedTable`, `resolvedTable`, and obeys the same nesting algebra: a path-internal input object is
@@ -1024,7 +1099,9 @@ where `P ⊑ p` means `P == p` or `P` is an ancestor of `p` in the dotted-path t
 suppressed iff consumed by **at least one** override condition. An `override: true` on a condition that
 consumes nothing is a no-op. The suppression is the same shape of declarative resolution as the
 `resolvedTable` coalesce: a function over the raw facts, computed once, not a special case threaded through
-emission.
+emission. Under the store the prefix predicate `P ⊑ p` is a join over the occurrence-path step rows, which
+is exactly the evaluation site R589 gives the unbound-cascade rule; the algebra above is unchanged, only
+its key stops pretending to be stored.
 
 ### Reading the source object
 
@@ -1109,7 +1186,7 @@ worked through after the locator arms below.
 
 - **typed jOOQ field**: the FQN of the `Field<T>` constant to extract. Provenance-blind: a jOOQ-generated
   `FILM.TITLE` and a graphitron-generated field read identically via `record.get(thatField)`, which collapses
-  the present `ColumnField`-read and `ComputedField` / `@externalField`-read into one arm and retires the
+  the present `ColumnBackedField`-read and `ComputedField` / `@externalField`-read into one arm and retires the
   `ColumnRef`-omits-its-table awkwardness (the accessor holds the table-qualified reference, so the read needs
   no table fact).
 - **Java record component** / **POJO getter** / **public-field read**: the resolved Java accessor (today's
@@ -1137,7 +1214,7 @@ carries:
   definition, nothing the field carries.
 
 So the read side is a **locator** plus references to `Column` and node facts; the `compaction` /
-`leafTransform` slots on today's carriers (`ColumnField.compaction`, `ValueShape.Scalar.leafTransform`) are
+`leafTransform` slots on today's carriers (`ColumnBackedField.compaction`, `ValueShape.Scalar.leafTransform`) are
 the conflation the normalized model takes apart, the locator is `column` / `sdlPath`, and `NodeId*` routes to
 node facts while `Direct` / `EnumValueOf` / `JooqConvert` carry no read-time step at all. A composite key is
 not a composite transform but an `N`-read locator feeding one node codec: the `N`-column repeating group
@@ -1397,42 +1474,42 @@ Everything above is data modeling, and it has quietly adopted the whole vocabula
 database: keyed relations, a foreign key (the coordinate), normalization (1NF on both repeating groups, the
 composite columns and the `operation` slot; 3NF on the split key-projection), and **referential integrity** (thread I's closure-under-reference is exactly that
 constraint on the edge relation). Taken to its end this looks like rebuilding a database, which raises the
-question honestly: should the generator just *use* one? The answer is a deliberate split. **Adopt the
-relational model as design discipline; do not adopt a relational runtime.** The decision and its reasoning:
+question honestly: should the generator just *use* one? This section originally answered no ("adopt the
+relational model as design discipline; do not adopt a relational runtime"), and that answer is
+**reversed**: the store is adopted (R595/R589), an embedded H2 in-memory database whose schema is this
+model's DDL, queried through jOOQ codegen over that DDL in the `graphitron-model` module. The reversal is
+recorded argument by argument, because each of the original three objections was answered by evidence
+rather than overruled:
 
-- **The vocabulary is the win, and it is free.** Keys, joins, normalization, and referential integrity are
-  what make the leaf zoo dissolve; they cost nothing but clear thinking and are already in this doc. Keep
-  taking the *modeling* all the way.
-- **A query-engine runtime is the wrong tool here, for three reasons.** (1) It inverts the project's
-  deepest commitment. `development-principles.adoc` is wall-to-wall *compile-time* typing of the model
-  (sealed hierarchies over enums, narrow component types, classification pinned at the parse boundary,
-  exhaustive switches that turn "added a variant" into a compile error). A SQL or Datalog layer makes the
-  model stringly-typed and moves exhaustiveness from `javac` to runtime, spending the central asset to buy
-  what the type system already gives. (2) It buys the wrong thing. A database earns its keep at *scale* and
-  on *large recursive fact sets*; a schema has hundreds to low-thousands of coordinates, so the value we
-  want is expressiveness and integrity-checking, not throughput, and both are available without a runtime.
-  (3) It would freeze a still-discovered model: R222 / R316 / R333 are mid-pivot, and committing an engine
-  substrate now pins a schema whose column set is not yet stable. Note also that the relational model only
-  ever described the classification (front) half; the emit (back) half is imperative JavaPoet rendering
-  that no engine makes easier, so even the maximal version "databases" only half the generator.
-- **The chosen materialization is typed relations in the type system.** The coordinate's facts are typed,
-  keyed collections of records (`Coordinate -> source` and `Coordinate -> target` as `Map<Coordinate, _>`,
-  `Coordinate -> operation*` as a one-to-many), with explicit indexes where a join is hot; the DataFetcher
-  and the QueryPart-methods are views computed over them. The sealed-variant field model already *is* a
-  denormalized materialized view over these facts; this decision keeps it that way and formalizes the
-  relations and the integrity check around it, rather than relocating them onto an external store.
-- **Referential integrity is a typed check, and it is thread I's test.** "Every method-name an edge
-  references resolves to a node in the node relation" is the closure invariant written as integrity
-  validation over the in-memory relations. This is the single highest-leverage database feature, it needs
-  no database, and it earns its place twice (the model's integrity constraint *is* the falsifiable test).
+- **The vocabulary is still the win.** Keys, joins, normalization, and referential integrity are what make
+  the leaf zoo dissolve; nothing in the reversal touches the modeling discipline. What changed is that the
+  discipline gained an executable form.
+- **"A SQL layer makes the model stringly-typed and moves exhaustiveness to runtime"** was answered by
+  codegen and module ordering: the generated jOOQ classes are the containment (typed access, no strings,
+  no JDBC), the module builds before core, and a DDL edit fails `javac` in every consumer that touched the
+  changed relation. Exhaustiveness stays with the compiler; the compiler just reads the DDL now.
+- **"A database buys throughput we don't need"** was conceded and made irrelevant: the store was chosen for
+  constraint mechanics (a base-relation key is a literal `PRIMARY KEY`, author-error rules are detection
+  queries), for dogfooding the stack the generator emits for consumers, and for the read-only SQL surface
+  it opens to agents. Latency was measured by the spike
+  (`roadmap/audits/2026-08-05-fact-base-h2-spike.md`) and is comfortable for build and on-save loops.
+- **"An engine freezes a still-discovered model"** inverted into the main benefit: since the database is
+  created at startup and dies with the process, there are no migrations and no persisted state of record,
+  so compile-time is the only compatibility surface the schema has. Changing the model is editing the DDL
+  and following the compiler, which is *more* fluid than editing a hand-rolled record web, not less.
+- **Referential integrity splits by what it can enforce.** Capture-structural edges (a field row's
+  declaration site, an application's host) are declared `FOREIGN KEY`s, order-free by the declared/spelled
+  split; author-spelled references deliberately carry no FK and are detection queries, because a dangling
+  author reference is a diagnostic, not a capture bug. Thread I's closure invariant is unchanged on the
+  emit side: it remains the falsifiable test over the method graph.
 
-**Reserved, and explicitly not "a database":** if a pull toward a real engine ever becomes acute it will be
-an *incremental, demand-driven memoized query* architecture (the salsa / rust-analyzer model: edit the
-schema, recompute only the affected classifications), not a relational store. Its one concrete future
-trigger is LSP performance: the LSP already does incremental parsing and marshals a `CatalogBuilder`
-snapshot to the editor, and incremental reclassification is the natural next want. That is a separate,
-later question tied to LSP perf, deliberately not conflated with "sit the generator on a database," and out
-of scope here.
+The back half remains outside the store's ambitions: the emit side is imperative JavaPoet rendering that
+no engine makes easier, so the store carries the classification (front) half and the command relations,
+and determinism is owned at the emission boundary (whatever crosses into emission or diagnostics output is
+sorted at the crossing). The salsa-style incremental-memoization architecture this section once reserved
+is the road not taken: capture reads the type-definition registry (the linear half of graphql-java, never
+the superlinear assembly), and the warm-start cache (R597) is the surviving concession to LSP startup
+latency, a stamp-invalidated cache under `target/` that changes neither lifecycle property.
 
 ## Seam worklist (living table)
 
@@ -1508,10 +1585,10 @@ The member-to-seam crosswalk (the column the worklist deferred to here):
 | `nest` (empty set) | non-table nesting | no seam; DataFetcher (1) regroups | n/a |
 
 (The naming-regime column was refreshed 2026-08-01 against the landed R549 state; every operation seam is
-now regime 1.) One debt this crosswalk still owes: its member vocabulary has no written mapping to the
-shipped 17-arm `Operation` seal the classifier computes today. Writing that mapping as code, a
-compile-total switch from the leaf model to member *sets*, is R563's slice-1 deliverable; it is reviewed
-there rather than derived here, and this table stays the vocabulary it maps onto.
+now regime 1.) The mapping debt this crosswalk once owed is paid: R563 (Done) delivered the member
+vocabulary as code, the `OperationMember` per-coordinate member multiset, with the `MEMBER_ARMS` /
+`MEMBER_KNOWN_GAPS` obligation pinning arm coverage; this table stays the seam vocabulary those members
+map onto.
 
 Two things the crosswalk makes visible. First, `select` lands on **two** seams (the projected column list in
 `$fields`, and the FROM/launch in the Query unit), the back-half echo of `target` being read by two views in
@@ -1566,7 +1643,8 @@ The address unifies composite and split: composite's column QueryParts are addre
   rather than overturns, R316's `SourceShape.Table` for `SplitTableField`: its held source object is a
   jOOQ record materialized by the parent's query (there is no liveness axis; see the re-query
   resolution in *Open questions*); the kinship with `RecordTableField` is at the keyed-re-query
-  QueryPart, not the source shape.
+  QueryPart, not the source shape. *(Shipped: R432 merged the pair to `BatchedTableField`; the
+  composed-emit-units reading is the live shape.)*
 - **The leaf cross-product**: every "multiplicity-as-a-leaf-variant" modifier becomes QueryPart
   multiplicity (composite), addressing (split / re-fetch), or shape, not a leaf type. `Bulk` was never a
   leaf variant in the first place, it was already the `target` `List` wrapper, which is the tell that
@@ -1581,7 +1659,16 @@ sharpened it to the model this spec now leads with: **the codegen command is the
 the full emit target is a referentially-closed graph of those methods.** The threads below record the
 chain; each is a claim grounded in a current emitter, with the code coordinate that pins it. The line
 numbers were measured 2026-06-18/19 and drift with trunk; the class and member names are the stable
-citations (all re-verified live 2026-07-13).
+citations (all re-verified live 2026-07-13). Since then the R549/R552/R563 programmes retired several of
+the walked emitters and carriers, so the threads and the baseline tables below are **lineage**, read with
+this mapping rather than re-anchored line by line: `TypeClassGenerator` and `collectRequiredProjection`
+became `render/ProjectionUnitRenderer` over `plan/ProjectionCommands`; `TypeConditionsGenerator` became
+`render/ConditionGlueRenderer`; `LookupValuesJoinEmitter` became the render values-join family
+(`LookupRows`); the main-source `methodgraph` package was deleted (the recompile graph is a typed
+projection over the plan; the test-side oracles survive); `ParentProjectionContainmentCheck` was deleted
+with it; `SplitTableField` / `RecordTableField` merged to `BatchedTableField` (R432) and the
+`ColumnField` family to `ColumnBackedField` (R508); the `Operation` seal became the `OperationMember`
+member multiset (R563). The claims the threads ground stand; the pinned coordinates are of their date.
 
 **A. `SplitTableField` and `RecordTableField` are component-identical (measured).** Both records carry
 the same eleven components (`parentTypeName, name, location, returnType, joinPath, filters, orderBy,
@@ -1839,17 +1926,25 @@ contribution.
   over, with the projection command as its keystone. The seam worklist above was this document's living
   table through that window: the rows were updated as each family's verdict landed, and the table plus
   the member-to-seam crosswalk were refreshed against the shipped state 2026-08-01.
-- **R563** (operation-relation, Spec): the front-half successor programme. It consumes this model's
+- **R563** (operation-relation, Done): the front-half programme of its window. It consumed this model's
   normalized schema, trigger rule, member-to-seam crosswalk and corpus resolution verbatim, and
-  materializes `coordinate -> operation` as walked trigger facts joined into a member view on the
-  schema, dissolving the classifier's operation-encoding leaves additively. Its slice 1 owes the one
-  crosswalk debt named above (the written mapping from the member vocabulary to the shipped seal, as
-  code). Its landing plausibly discharges this item's stay-Ready condition (the emit re-platforming no
-  longer consuming the document); that call belongs to this item's own gate.
-- **R222** (dimensional-model-pivot): the umbrella this model grew out of, and it keeps the
-  umbrella/stage-tracking role; slices keep filing under its stages. Where its sketches lag this
-  document (notably the Stage 3 destination sketch and the carrier table), **this document governs
-  the model**; R222 is being aligned incrementally rather than rewritten wholesale.
+  delivered `coordinate -> operation` as the `OperationMember` member multiset, dissolving the
+  classifier's operation-encoding leaves; the crosswalk debt named above is paid. The front-half
+  succession is now the R595/R589 pair below, and R589 explicitly holds this item in Ready.
+- **R595** (`graphitron-model-captures-facts`, the substrate): the `graphitron-model` module whose fact
+  schema DDL is this document's normalised data model reified as SQL, filled by two infallible capture
+  loads running beside the pipeline in a shadow window with agreement tests. The division of labour is
+  stated in *The model*: this document keeps the why, the DDL owns the what, and where they disagree the
+  DDL wins.
+- **R589** (`validation-adds-facts`): adds the claim base relations this model's catalog now carries,
+  relocates the single-classification worldview to planning (the reduced claim view), names the commands
+  as the parse targets, and sets the migration mechanism (the strangler frame in *What the model
+  enables*). Its slice 1 is the amendment pass that produced the current text of this document.
+- **R222** (dimensional-model-pivot): the umbrella this model grew out of, now retired to lineage. Its
+  slots-over-cross-product thesis won one layer below where it was looking (axes are per-directive
+  relations and the claim view's arm list), its stage machinery was replaced by the strangler frame,
+  and its legacy-permit deletion inventory migrated into *What dissolves* below. The disposition record
+  is `roadmap/audits/2026-08-06-fact-base-impact-sweep.md`; **this document governs the model**.
 
 ## Directive coverage
 
@@ -1960,7 +2055,8 @@ The gaps, in resolution order:
   ancestors transparent (a split grandchild under an inline child threading its key to the grandparent's
   SELECT)? **Partly resolved by threads F/H:** addressing is core-side name resolution, and the
   parent-key projection is already implemented as "opt these columns into the parent type's `$fields`"
-  (`collectRequiredProjection` in `TypeClassGenerator`). The open residue is the
+  (`collectRequiredProjection` in `TypeClassGenerator` at resolution time; since re-platformed onto
+  `plan/ProjectionCommands` rendered by `render/ProjectionUnitRenderer`). The open residue is the
   grandchild-through-inline-ancestor threading, not the primitive.
 - **Re-query unification. Resolved (2026-07-04): full merge, laundered key.** The keyed re-query is
   one primitive, `f(keys, correlation)`: `VALUES(idx, key...)` joined to the target over a
@@ -1984,8 +2080,9 @@ The gaps, in resolution order:
 - **DataFetcher totality vs synthetic nodes. Resolved (2026-07-04): confirmed against the emit.**
   Every coordinate has exactly one DataFetcher (an SDL field has one resolver), so there is no
   "synthetic DataFetcher"; and there is likewise no synthetic *coordinate* in the current emit: the
-  parent-key projection rides `collectRequiredProjection` into the parent type's `$fields`
-  (a QueryPart owned by the splitting coordinate, addressed to the enclosing anchor), and the
+  parent-key projection rides the projection opt-in into the parent type's `$fields`
+  (`collectRequiredProjection` at resolution time, now the `ProjectionCommands` opt-in rows;
+  a QueryPart owned by the splitting coordinate, addressed to the enclosing anchor), and the
   `__idx__` scatter column is a synthetic *column* inside one query scope, never a fabricated SDL
   field. The model asserts this as an invariant: coordinates come only from the SDL.
 - **Corpus assertion shape**: the `@classified` verdict generalizes from one triple to the
@@ -1994,19 +2091,20 @@ The gaps, in resolution order:
   assertable (an operation is a regime-1 seam by construction). This is the same set framing the leaf
   cross-product dissolves into; the residue is only the rendering of an operation set in the corpus, not
   whether it is one or many rows.
-- **Materialization: discipline vs runtime**. **Resolved (data-modeling section):** adopt the relational
-  model as design discipline, materialized as typed keyed relations in the type system, with referential
-  integrity as a typed check (thread I's closure invariant); do **not** adopt a query-engine runtime
-  (sealed-variant type safety, the model's still-discovered column set, and the small fact count all argue
-  against it). An incremental memoized-query engine for the LSP is reserved as a separate question, out of
-  scope here.
+- **Materialization: discipline vs runtime**. **Re-resolved (2026-08-06): the store is adopted.** The
+  first resolution ("discipline, not a runtime") was reversed by R595/R589 with each of its three
+  arguments answered by evidence; the data-modeling section carries the argument-by-argument record. The
+  relations materialize in the `graphitron-model` H2 store through jOOQ codegen over the model's own DDL;
+  integrity splits into declared FKs (capture-structural) and detection queries (author-spelled); thread
+  I's closure invariant is untouched on the emit side. The salsa-style incremental engine once reserved
+  is the road not taken; the warm-start cache (R597) is the surviving concession.
 - **Condition placement and the `Single` value-gating semantic**. **Resolved (the resolved-table section):**
   a `condition` keys on `resolvedTable`, and its semantic forks on `target.wrapper` (`List` = row-set
   filtering, `Single` = value-gating). **Open residue:** the `Single` value-gating semantic itself, the
   predicate's ON-clause placement under a `LEFT JOIN` and the parent-cardinality-preserved invariant. Owed
   for to-one table references regardless, so allowing column-reference conditions adds no new debt here.
 - **The `List(Column)` corner**: the to-many child column reference is named but unmodeled (today's
-  `ColumnReferenceField` is only `Single(Column)`). Settle whether it lands as a wrapper variant of the
+  `ColumnBackedReferenceField` is only `Single(Column)`). Settle whether it lands as a wrapper variant of the
   reference fact reusing the to-many table-field machinery (a `Child` source, an anchor, a rows-method,
   projecting one column instead of `$fields`), or as its own leaf, before it is implemented.
 - **Override suppression granularity**. **Started maximal:** `@condition(override: true)` blankets the
@@ -2030,19 +2128,21 @@ The gaps, in resolution order:
 In scope: the model (the lowering to a referentially-closed method-call-graph, the normalization, the
 natural keys, the anchor/address primitive, the node and edge relations, the coordinate-and-its-facts
 normalized schema (`source` / `target` / `operation` as independent functional dependencies, plus the
-`reference` / `referencedTable` / derived `resolvedTable` / `tableExpr` facts and the `(coordinate, path)` input-coordinate
-fact family whose facts roll up into the output operation set, the read-side **source object** (type-level
+`reference` / `referencedTable` / derived `resolvedTable` / `tableExpr` facts and the input-coordinate
+fact family (definition-keyed authored facts, use-site resolution over the derived occurrence path) whose
+facts roll up into the output operation set, the read-side **source object** (type-level
 cast target) and **accessor** (field-level locator, no transform axis) facts, the **node facts** (`NodeType` /
 `NodeKeyColumn` plus the per-coordinate key projections, with the codec entailed and identity-carrying paths
 deciding whether the read stays projection-only or rides a `join`), the **enum facts** (authored value set
 plus a derived `EnumBacking` backing-type roll-up driving a synthesis-time lift, `@enum` retirement decided,
 filed as R360), the DataFetcher
-and QueryPart-methods as views over them), the target seam topology and its placement rule, and the decision to materialize
-the relations as typed in-type collections with a referential-integrity check rather than on a query
-engine). Out of scope: the emit
+and QueryPart-methods as views over them), the target seam topology and its placement rule, and the
+materialization decision as re-resolved: the relations live in the `graphitron-model` store, reified from
+this model's DDL, with integrity split between declared FKs and detection queries). Out of scope: the emit
 re-platforming that consumes it (the R549 programme; R314 shipped its reentry slice), any rewrite of R316
 slices 1-4 (they are the valid
-denormalized projection), and any incremental-query engine for the LSP (a separate, later perf question).
+denormalized projection), the substrate itself (R595) and the classification-stage derivations over it
+(R589), and any incremental-query engine for the LSP (the road not taken; R597 is the concession).
 No code in this item beyond what is needed to make the model executable as
 tests, and that split is now decided (2026-07-04): the Ready code deliverable is **thread I's closure
 oracle at level 1**, a characterization harness over the *current* emit that walks the generated
@@ -2082,7 +2182,9 @@ whose specs cite its sections by name and whose `depends-on` names its slug; the
 a living table iterated as those slices land; and the body names its own remaining pass (folding
 the pre-sharpening "QueryPart" wording through the sections from *Normalization* to *What
 dissolves*). Done-and-delete follows when the emit re-platforming no longer consumes the document
-or the stabilized model migrates to `docs/architecture/`.
+or the stabilized model migrates out: to `docs/architecture/`, or into the `graphitron-model` DDL,
+the door R595 opened. The *what* is already migrating relation by relation; the *why* recorded here
+is the last content standing, and its eventual home is the architecture docs.
 
 ## Lineage
 
