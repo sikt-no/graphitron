@@ -186,28 +186,46 @@ directly addressable, and `graphql_implements` states the edge the declaring typ
 -- directives are ordinary rows. Source positions follow the 1-based
 -- graphql-java convention and are NULL only for engine-provided elements no
 -- SDL line declares (built-in scalars). Elements contributed by the bundled
--- directives.graphqls are stamped with that resource name as source_name;
--- consumers wanting user-authored declarations filter on it, as
+-- directives.graphqls are stamped with that resource name as source_name
+-- (for a type, the stamp sits on its declaration rows); consumers wanting
+-- user-authored declarations filter on it, as
 -- CatalogBuilder.projectTypeDefinitionLocations does today.
 
--- A named type exists in the schema.
+-- A named type exists in the schema. Where it was declared, base definition
+-- and extensions alike, is graphql_type_declaration's business.
 CREATE TABLE graphql_type (
   type_name     VARCHAR NOT NULL, -- the GraphQL type name; the coordinate every other SDL fact hangs off
-  kind          VARCHAR NOT NULL, -- which declaration form introduced the type
-  description   VARCHAR,          -- SDL description string; net-new as a persisted fact (today read live off retained graphql-java objects)
-  source_name   VARCHAR,          -- which SDL source declared it
+  kind          VARCHAR NOT NULL, -- the base definition's declaration form (first-wins on an ill-formed schema); per-site forms live on the declaration rows
+  description   VARCHAR,          -- SDL description string; net-new as a persisted fact (today read live off retained graphql-java objects). Extensions cannot carry descriptions, so this is the base definition's
+  PRIMARY KEY (type_name),
+  CHECK (kind IN ('OBJECT', 'INTERFACE', 'UNION', 'ENUM', 'INPUT_OBJECT', 'SCALAR'))
+);
+
+-- A declaration site of a type: the base definition or one extension. All
+-- five extension kinds are live today, so a type's effective shape may be
+-- assembled from several files; this relation records who contributed what
+-- and indexes the incremental-refresh unit ("which types does this file
+-- touch"). Engine-provided types (built-in scalars) have no declaration rows.
+CREATE TABLE graphql_type_declaration (
+  type_name     VARCHAR NOT NULL,
+  ordinal       INT     NOT NULL, -- 0 for the base definition, then extensions in document order; the merge order behind every element ordinal
+  is_extension  BOOLEAN NOT NULL, -- FALSE exactly at ordinal 0 on a well-formed schema; a base-less extension chain or a second base definition is an author error a detection reports, never a constraint
+  kind          VARCHAR NOT NULL, -- the declaration form written at this site; a mismatch against the type row's kind is a detection
+  source_name   VARCHAR,
   source_line   INT,
   source_column INT,
-  PRIMARY KEY (type_name),
+  PRIMARY KEY (type_name, ordinal),
+  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
   CHECK (kind IN ('OBJECT', 'INTERFACE', 'UNION', 'ENUM', 'INPUT_OBJECT', 'SCALAR'))
 );
 
 -- A field exists at a coordinate. OBJECT and INTERFACE parents make it an
 -- output field, INPUT_OBJECT parents an input field; the join decides.
 CREATE TABLE graphql_field (
-  type_name         VARCHAR NOT NULL, -- owning type
-  field_name        VARCHAR NOT NULL,
-  ordinal           INT     NOT NULL, -- order in the effective type: base declaration, then extensions in document order (capture merges them from the registry)
+  type_name           VARCHAR NOT NULL, -- owning type
+  field_name          VARCHAR NOT NULL,
+  ordinal             INT     NOT NULL, -- order in the effective type: base declaration, then extensions in document order (capture merges them from the registry)
+  declaration_ordinal INT     NOT NULL, -- which declaration site contributed this field; 0 = the base definition
   type_sdl          VARCHAR NOT NULL, -- the rendered type expression, e.g. '[Film!]!'; authoritative for wrapping fidelity
   named_type        VARCHAR NOT NULL, -- the named type the expression bottoms out in; author-spelled, no FK, integrity is a detection
   non_null          BOOLEAN NOT NULL, -- outermost non-null wrapper present
@@ -220,6 +238,8 @@ CREATE TABLE graphql_field (
   source_column     INT,
   PRIMARY KEY (type_name, field_name),
   FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
+  FOREIGN KEY (type_name, declaration_ordinal)
+    REFERENCES graphql_type_declaration (type_name, ordinal),
   CHECK (is_list OR item_non_null IS NULL)
 );
 
@@ -248,40 +268,49 @@ CREATE TABLE graphql_argument (
 -- An enum declares a value. Net-new coordinate; deprecation is not a column
 -- because @deprecated is an ordinary applied directive.
 CREATE TABLE graphql_enum_value (
-  type_name     VARCHAR NOT NULL, -- the owning ENUM type
-  value_name    VARCHAR NOT NULL,
-  ordinal       INT     NOT NULL, -- order in the effective enum: base declaration, then extensions
-  description   VARCHAR,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
+  type_name           VARCHAR NOT NULL, -- the owning ENUM type
+  value_name          VARCHAR NOT NULL,
+  ordinal             INT     NOT NULL, -- order in the effective enum: base declaration, then extensions
+  declaration_ordinal INT     NOT NULL, -- which declaration site contributed this value; 0 = the base definition
+  description         VARCHAR,
+  source_name         VARCHAR,
+  source_line         INT,
+  source_column       INT,
   PRIMARY KEY (type_name, value_name),
-  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name)
+  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
+  FOREIGN KEY (type_name, declaration_ordinal)
+    REFERENCES graphql_type_declaration (type_name, ordinal)
 );
 
 -- A union lists a member type.
 CREATE TABLE graphql_union_member (
-  union_name       VARCHAR NOT NULL,
-  member_type_name VARCHAR NOT NULL,
-  ordinal          INT     NOT NULL, -- position in the effective member list
-  source_name      VARCHAR,          -- SDL source declaring this membership; a union extension's site, not the base union's
-  source_line      INT,
-  source_column    INT,
+  union_name          VARCHAR NOT NULL,
+  member_type_name    VARCHAR NOT NULL,
+  ordinal             INT     NOT NULL, -- position in the effective member list
+  declaration_ordinal INT     NOT NULL, -- which declaration site listed this member; 0 = the base definition
+  source_name         VARCHAR,          -- position of the member token itself
+  source_line         INT,
+  source_column       INT,
   PRIMARY KEY (union_name, member_type_name),
-  FOREIGN KEY (union_name) REFERENCES graphql_type (type_name)
+  FOREIGN KEY (union_name) REFERENCES graphql_type (type_name),
+  FOREIGN KEY (union_name, declaration_ordinal)
+    REFERENCES graphql_type_declaration (type_name, ordinal)
 );
 
 -- A type declares that it implements an interface. Stored in declaration
 -- direction; today's model keeps only the inverted interface-to-participants
 -- list and reads this edge live off graphql-java.
 CREATE TABLE graphql_implements (
-  type_name      VARCHAR NOT NULL, -- the implementing OBJECT or INTERFACE
-  interface_name VARCHAR NOT NULL,
-  source_name    VARCHAR,          -- SDL source declaring this edge; a type extension's site when the extension added it
-  source_line    INT,
-  source_column  INT,
+  type_name           VARCHAR NOT NULL, -- the implementing OBJECT or INTERFACE
+  interface_name      VARCHAR NOT NULL,
+  declaration_ordinal INT     NOT NULL, -- which declaration site wrote this edge; 0 = the base definition
+  source_name         VARCHAR,          -- position of the interface token itself
+  source_line         INT,
+  source_column       INT,
   PRIMARY KEY (type_name, interface_name),
-  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name)
+  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
+  FOREIGN KEY (type_name, declaration_ordinal)
+    REFERENCES graphql_type_declaration (type_name, ordinal)
 );
 
 -- The schema definition names a root operation type. These rows are the
@@ -398,14 +427,17 @@ CREATE TABLE applied_schema_directive_arg (
 -- A directive is applied to a type (OBJECT, INTERFACE, UNION, ENUM,
 -- INPUT_OBJECT, or SCALAR; the parent kind is a join away).
 CREATE TABLE applied_type_directive (
-  type_name      VARCHAR NOT NULL,
-  directive_name VARCHAR NOT NULL,
-  ordinal        INT     NOT NULL, -- as on applied_schema_directive; federation's @key repeats here
-  source_name    VARCHAR,
-  source_line    INT,
-  source_column  INT,
+  type_name           VARCHAR NOT NULL,
+  directive_name      VARCHAR NOT NULL,
+  ordinal             INT     NOT NULL, -- as on applied_schema_directive; federation's @key repeats here
+  declaration_ordinal INT     NOT NULL, -- which declaration site applied it; extensions apply type directives too
+  source_name         VARCHAR,
+  source_line         INT,
+  source_column       INT,
   PRIMARY KEY (type_name, directive_name, ordinal),
-  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name)
+  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
+  FOREIGN KEY (type_name, declaration_ordinal)
+    REFERENCES graphql_type_declaration (type_name, ordinal)
 );
 
 -- An argument the author passed to a type-level application.
@@ -544,6 +576,10 @@ directive, filled by the same capture walk. Its rules:
 - **Authored values only**, per the conventions: omitted arguments are NULL columns or absent
   rows, effective values are derivation views, and name resolution is a detection over the
   catalog and extension families, never capture's business.
+- **Type-site relations carry the declaration ordinal** (an extension applies `@table` or
+  `@key` as readily as a base definition), and a repeated application of a non-repeatable
+  directive at one coordinate keeps the first row and mints a located detection; the walk
+  never throws on author input.
 
 The representative first draw below fixes the pattern; the full inventory (about thirty
 directives) is the next authoring round, each table grounded in its directive's declared
@@ -555,10 +591,13 @@ is: the author's decoded intent at a coordinate.
 
 -- @table on a type: the author binds the type to a database table.
 CREATE TABLE intent_table (
-  type_name VARCHAR NOT NULL, -- the OBJECT, INPUT_OBJECT, or INTERFACE carrying @table
-  table_ref VARCHAR,          -- the name argument as written (may carry a schema qualifier); NULL when omitted, the type-name fallback is a derivation
+  type_name           VARCHAR NOT NULL, -- the OBJECT, INPUT_OBJECT, or INTERFACE carrying @table
+  declaration_ordinal INT     NOT NULL, -- which declaration site applied it
+  table_ref           VARCHAR,          -- the name argument as written (may carry a schema qualifier); NULL when omitted, the type-name fallback is a derivation
   PRIMARY KEY (type_name),
-  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name)
+  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
+  FOREIGN KEY (type_name, declaration_ordinal)
+    REFERENCES graphql_type_declaration (type_name, ordinal)
 );
 
 -- @condition on a field or input field (shared coordinate; the parent kind
@@ -618,12 +657,15 @@ CREATE TABLE intent_connection (
 -- Federation @key, decoded for consumption (its verbatim twin lives in
 -- applied_type_directive for re-emission; a gate query pins agreement).
 CREATE TABLE intent_federation_key (
-  type_name  VARCHAR NOT NULL,
-  ordinal    INT     NOT NULL, -- @key is repeatable; document order
-  fields_sdl VARCHAR NOT NULL, -- the field-set literal as written
-  resolvable BOOLEAN,          -- as written; NULL when omitted
+  type_name           VARCHAR NOT NULL,
+  ordinal             INT     NOT NULL, -- @key is repeatable; document order
+  declaration_ordinal INT     NOT NULL, -- which declaration site applied it
+  fields_sdl          VARCHAR NOT NULL, -- the field-set literal as written
+  resolvable          BOOLEAN,          -- as written; NULL when omitted
   PRIMARY KEY (type_name, ordinal),
-  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name)
+  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
+  FOREIGN KEY (type_name, declaration_ordinal)
+    REFERENCES graphql_type_declaration (type_name, ordinal)
 );
 
 -- An ordered element of a @key field set (the field-set grammar is a parse
@@ -925,14 +967,17 @@ capture cannot reject. Capture is total, with no reachability pruning.
 Insertion through the module's own generated jOOQ classes, so capture dogfoods the surface every
 later consumer uses. A duplicate primary key on any base relation throws: that is a capture bug,
 not an author error, per the constraint split R589 fixes. One author-reachable duplication is
-named and handled above the constraint: a type declared in two files (an editing transient the
-LSP will see constantly) is first-wins plus a located detection, never a primary-key throw.
+named and handled above the constraint: a second base *definition* of a type is first-wins
+plus a located detection, never a primary-key throw (an extension is the ordinary path and
+gets its own declaration row; the editing transient the LSP will constantly see is exactly
+the accidental second definition).
 
 Incremental refresh falls out of this design, and the substrate protects the property now so a
 later consumer can buy it. Capture is *type-local*: every SDL row's content is a function of
 its own type's declaration sites (base plus extensions, the ordinal rule's merge) and nothing
 else, because everything cross-element is derivation. When one schema file changes, the
-refresh unit is therefore the types that file declares or extends, old version and new: parse
+refresh unit is therefore the types that file declares or extends, old version and new (the
+declaration relation is the index that answers which types a file touches): parse
 the one file to its own registry fragment, delete the partition (the synthesis provenance
 relations make orphan cleanup exact, shared machinery types refcounting by carrier row),
 re-walk it, and re-run the derivation strata, which the first spike priced under 20 ms for the
@@ -956,11 +1001,6 @@ capture code: nothing at capture reads across types.
   from scalar, so the key needs the same inventory-grounded design the relations above got.
   Guessing the key is the speculation; the census lands with the `@routine` consumer whose
   queries fix its shape.
-- **Per-extension declaration sites.** All five type-extension kinds are live today, so a type
-  may be declared across several sources; `graphql_type` keeps one site (the base declaration)
-  and the `ordinal` columns mean order in the effective type (base plus extensions). A declaration-site
-  relation keyed `(type_name, source_name, source_line)` lands when a consumer needs
-  per-extension sites; the description-note appliers are the known candidate.
 - **Javadoc and Java source positions.** The request-time join against `SourceWalker` is a
   deliberate cadence separation (a `.java` edit is visible without a rebuild) and stays outside
   the store.
