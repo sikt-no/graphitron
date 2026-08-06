@@ -213,13 +213,13 @@ CREATE TABLE graphql_type (
 -- touch"). Engine-provided types (built-in scalars) have no declaration rows.
 CREATE TABLE graphql_type_declaration (
   type_name     VARCHAR NOT NULL,
-  ordinal       INT     NOT NULL, -- position in merge order: the base definition, then extensions in document order; on a base-less chain the first extension holds 0. The merge order behind every element ordinal
-  is_extension  BOOLEAN NOT NULL, -- FALSE exactly at ordinal 0 on a well-formed schema; a base-less extension chain or a second base definition is an author error a detection reports, never a constraint
-  kind          VARCHAR NOT NULL, -- the declaration form written at this site; a mismatch against the type row's kind is a detection
-  source_name   VARCHAR,
-  source_line   INT,
+  source_name   VARCHAR NOT NULL, -- the site's file; a site is a syntactic occurrence, so its location is its identity
+  source_line   INT     NOT NULL, -- disambiguates two sites of one type in one file
   source_column INT,
-  PRIMARY KEY (type_name, ordinal),
+  merge_ordinal INT     NOT NULL, -- capture-assigned position in merge order: the base definition, then extensions in document order; on a base-less chain the first extension holds 0. Dense per type (a gate), and the order behind every element ordinal
+  is_extension  BOOLEAN NOT NULL, -- FALSE exactly at merge_ordinal 0 on a well-formed schema; a base-less extension chain or a second base definition is an author error a detection reports, never a constraint
+  kind          VARCHAR NOT NULL, -- the declaration form written at this site; a mismatch against the type row's kind is a detection
+  PRIMARY KEY (type_name, source_name, source_line),
   FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
   CHECK (kind IN ('OBJECT', 'INTERFACE', 'UNION', 'ENUM', 'INPUT_OBJECT', 'SCALAR'))
 );
@@ -230,7 +230,7 @@ CREATE TABLE graphql_field (
   type_name           VARCHAR NOT NULL, -- owning type
   field_name          VARCHAR NOT NULL,
   ordinal             INT     NOT NULL, -- order in the effective type: base declaration, then extensions in document order (capture merges them from the registry)
-  declaration_ordinal INT     NOT NULL, -- which declaration site contributed this field; 0 = the base definition
+  declaration_line    INT,              -- the contributing declaration site, keyed with this row's own source_name (a site's elements are lexically inside it); NULL exactly for macro-synthesized rows, whose origin the provenance relations state
   type_sdl          VARCHAR NOT NULL, -- the rendered type expression, e.g. '[Film!]!'; authoritative for wrapping fidelity
   named_type        VARCHAR NOT NULL, -- the named type the expression bottoms out in; author-spelled, no FK, integrity is a detection
   non_null          BOOLEAN NOT NULL, -- outermost non-null wrapper present
@@ -243,8 +243,8 @@ CREATE TABLE graphql_field (
   source_column     INT,
   PRIMARY KEY (type_name, field_name),
   FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (type_name, declaration_ordinal)
-    REFERENCES graphql_type_declaration (type_name, ordinal),
+  FOREIGN KEY (type_name, source_name, declaration_line)
+    REFERENCES graphql_type_declaration (type_name, source_name, source_line),
   CHECK (is_list OR item_non_null IS NULL)
 );
 
@@ -276,15 +276,15 @@ CREATE TABLE graphql_enum_value (
   type_name           VARCHAR NOT NULL, -- the owning ENUM type
   value_name          VARCHAR NOT NULL,
   ordinal             INT     NOT NULL, -- order in the effective enum: base declaration, then extensions
-  declaration_ordinal INT     NOT NULL, -- which declaration site contributed this value; 0 = the base definition
+  declaration_line    INT,              -- the contributing site, as on graphql_field
   description         VARCHAR,
   source_name         VARCHAR,
   source_line         INT,
   source_column       INT,
   PRIMARY KEY (type_name, value_name),
   FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (type_name, declaration_ordinal)
-    REFERENCES graphql_type_declaration (type_name, ordinal)
+  FOREIGN KEY (type_name, source_name, declaration_line)
+    REFERENCES graphql_type_declaration (type_name, source_name, source_line)
 );
 
 -- A union lists a member type.
@@ -292,14 +292,14 @@ CREATE TABLE graphql_union_member (
   union_name          VARCHAR NOT NULL,
   member_type_name    VARCHAR NOT NULL,
   ordinal             INT     NOT NULL, -- position in the effective member list
-  declaration_ordinal INT     NOT NULL, -- which declaration site listed this member; 0 = the base definition
+  declaration_line    INT,              -- the contributing site, as on graphql_field
   source_name         VARCHAR,          -- position of the member token itself
   source_line         INT,
   source_column       INT,
   PRIMARY KEY (union_name, member_type_name),
   FOREIGN KEY (union_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (union_name, declaration_ordinal)
-    REFERENCES graphql_type_declaration (type_name, ordinal)
+  FOREIGN KEY (union_name, source_name, declaration_line)
+    REFERENCES graphql_type_declaration (type_name, source_name, source_line)
 );
 
 -- A type declares that it implements an interface. Stored in declaration
@@ -308,14 +308,14 @@ CREATE TABLE graphql_union_member (
 CREATE TABLE graphql_implements (
   type_name           VARCHAR NOT NULL, -- the implementing OBJECT or INTERFACE
   interface_name      VARCHAR NOT NULL,
-  declaration_ordinal INT     NOT NULL, -- which declaration site wrote this edge; 0 = the base definition
+  declaration_line    INT,              -- the contributing site, as on graphql_field
   source_name         VARCHAR,          -- position of the interface token itself
   source_line         INT,
   source_column       INT,
   PRIMARY KEY (type_name, interface_name),
   FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (type_name, declaration_ordinal)
-    REFERENCES graphql_type_declaration (type_name, ordinal)
+  FOREIGN KEY (type_name, source_name, declaration_line)
+    REFERENCES graphql_type_declaration (type_name, source_name, source_line)
 );
 
 -- The schema definition names a root operation type. These rows are the
@@ -435,14 +435,14 @@ CREATE TABLE applied_type_directive (
   type_name           VARCHAR NOT NULL,
   directive_name      VARCHAR NOT NULL,
   ordinal             INT     NOT NULL, -- as on applied_schema_directive; federation's @key repeats here
-  declaration_ordinal INT     NOT NULL, -- which declaration site applied it; extensions apply type directives too
+  declaration_line    INT,              -- the applying site (extensions apply type directives too); NULL for synthesized applications, as on graphql_field
   source_name         VARCHAR,
   source_line         INT,
   source_column       INT,
   PRIMARY KEY (type_name, directive_name, ordinal),
   FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (type_name, declaration_ordinal)
-    REFERENCES graphql_type_declaration (type_name, ordinal)
+  FOREIGN KEY (type_name, source_name, declaration_line)
+    REFERENCES graphql_type_declaration (type_name, source_name, source_line)
 );
 
 -- An argument the author passed to a type-level application.
@@ -581,7 +581,7 @@ directive, filled by the same capture walk. Its rules:
 - **Authored values only**, per the conventions: omitted arguments are NULL columns or absent
   rows, effective values are derivation views, and name resolution is a detection over the
   catalog and extension families, never capture's business.
-- **Type-site relations carry the declaration ordinal** (an extension applies `@table` or
+- **Type-site relations carry the declaration-site reference** (an extension applies `@table` or
   `@key` as readily as a base definition), and a repeated application of a non-repeatable
   directive at one coordinate keeps the first row and mints a located detection; the walk
   never throws on author input.
@@ -596,13 +596,14 @@ is: the author's decoded intent at a coordinate.
 
 -- @table on a type: the author binds the type to a database table.
 CREATE TABLE intent_table (
-  type_name           VARCHAR NOT NULL, -- the OBJECT, INPUT_OBJECT, or INTERFACE carrying @table
-  declaration_ordinal INT     NOT NULL, -- which declaration site applied it
-  table_ref           VARCHAR,          -- the name argument as written (may carry a schema qualifier); NULL when omitted, the type-name fallback is a derivation
+  type_name        VARCHAR NOT NULL, -- the OBJECT, INPUT_OBJECT, or INTERFACE carrying @table
+  source_name      VARCHAR,          -- the applying declaration site (file + line pair below)
+  declaration_line INT,
+  table_ref        VARCHAR,          -- the name argument as written (may carry a schema qualifier); NULL when omitted, the type-name fallback is a derivation
   PRIMARY KEY (type_name),
   FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (type_name, declaration_ordinal)
-    REFERENCES graphql_type_declaration (type_name, ordinal)
+  FOREIGN KEY (type_name, source_name, declaration_line)
+    REFERENCES graphql_type_declaration (type_name, source_name, source_line)
 );
 
 -- @condition on a field or input field (shared coordinate; the parent kind
@@ -662,15 +663,16 @@ CREATE TABLE intent_connection (
 -- Federation @key, decoded for consumption (its verbatim twin lives in
 -- applied_type_directive for re-emission; a gate query pins agreement).
 CREATE TABLE intent_federation_key (
-  type_name           VARCHAR NOT NULL,
-  ordinal             INT     NOT NULL, -- @key is repeatable; document order
-  declaration_ordinal INT     NOT NULL, -- which declaration site applied it
-  fields_sdl          VARCHAR NOT NULL, -- the field-set literal as written
-  resolvable          BOOLEAN,          -- as written; NULL when omitted
+  type_name        VARCHAR NOT NULL,
+  ordinal          INT     NOT NULL, -- @key is repeatable; document order
+  source_name      VARCHAR,          -- the applying declaration site; NULL for synthesized keys, whose origin is the provenance relation
+  declaration_line INT,
+  fields_sdl       VARCHAR NOT NULL, -- the field-set literal as written
+  resolvable       BOOLEAN,          -- as written; NULL when omitted
   PRIMARY KEY (type_name, ordinal),
   FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (type_name, declaration_ordinal)
-    REFERENCES graphql_type_declaration (type_name, ordinal)
+  FOREIGN KEY (type_name, source_name, declaration_line)
+    REFERENCES graphql_type_declaration (type_name, source_name, source_line)
 );
 
 -- An ordered element of a @key field set (the field-set grammar is a parse
@@ -965,8 +967,10 @@ capture cannot reject. Capture is total, with no reachability pruning.
   extensions in separate per-kind maps because its consumer patches them differently at
   assembly, while the store's six element families each need one monomorphic contributed-by
   reference, which only the unified declaration relation gives them (split site tables would
-  polymorph that reference across every element family; the unified key is uniform merge
-  position, and `is_extension` states the site's written form, a fact, not a key hole).
+  polymorph that reference across every element family; the unified key is the site's
+  location, the identity a syntactic occurrence natively has, merge position is a
+  capture-assigned column, and `is_extension` states the site's written form, a fact, not a
+  key hole).
   Transcribing the two maps into the one relation is the same two loops the merge runs
   anyway. Four jobs
   in one pass: existence rows, fidelity rows for non-graphitron applications, semantic decode
@@ -1060,9 +1064,11 @@ capture code: nothing at capture reads across types.
 - The gate family runs against the bootstrapped store: comment coverage (every table and column
   commented, checked via `INFORMATION_SCHEMA`) and one query per cross-relation invariant the
   DDL cannot state (at most one `is_primary` row per catalog table, `default_value_sdl` only
-  under INPUT_OBJECT parents, `ordinal` 0 unless the directive is repeatable, wrapping decode
-  consistent with `type_sdl` where SQL can express the correspondence, no graphitron-namespace
-  row in any `applied_` family, the federation dual projection in agreement).
+  under INPUT_OBJECT parents, application ordinals and `merge_ordinal` dense from 0 per group,
+  wrapping decode consistent with `type_sdl` where SQL can express the correspondence, no
+  graphitron-namespace row in any `applied_` family, the federation dual projection in
+  agreement). A repeated application of a non-repeatable directive is deliberately not in
+  this list: under registry capture it is author-reachable, so it is a detection.
 - All tests live in `graphitron` at the appropriate tier (the tier meta-annotations live in
   core's test root and the module order forbids the reverse dependency); `graphitron-model`
   hosts model code only: the DDL, the codegen output, the bootstrap, and the codegen driver,
