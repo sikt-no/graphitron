@@ -649,9 +649,10 @@ consumer surface is `BuildContext`'s name constants, the `no.sikt.graphitron.fac
 and the shared pair-grammar decoder). Grounding is load-bearing in both directions: it added
 relations the declarations alone would not suggest (application-level `@reference` rows,
 because an empty path means FK auto-discovery and is a fact about one application) and it
-removed speculation outright: `@experimental_constructType` has no consumer anywhere in the
-pipeline, so it gets no relation at all; an unhandled directive is not exposed as store
-surface. The `intent_` prefix names what
+caught a bug: `@experimental_constructType` has no consumer anywhere in the pipeline and is
+not a graphitron directive at all, so its declaration in `directives.graphqls` is wrong; it
+gets no intent relation, and once the stray declaration is removed its applications are
+foreign and take the `applied_` fidelity path like any other. The `intent_` prefix names what
 a row is: the author's decoded intent at a coordinate.
 
 ```sql
@@ -1332,11 +1333,14 @@ CREATE TABLE intent_routine_column_mapping_pair (
     REFERENCES intent_routine (type_name, field_name, ordinal)
 );
 
--- @experimental_constructType deliberately has no relation. The census found
--- no consumer anywhere in the pipeline (applications are silently dropped at
--- emit), so the directive is unhandled, and an unhandled directive is not
--- exposed as store surface: a relation would harden a contract nobody
--- implements. Its relation lands with its first consumer, if one ever comes.
+-- @experimental_constructType has no relation, and unlike every other name
+-- in this stratum it is not a graphitron directive: its declaration in
+-- directives.graphqls is a bug (the census found no consumer anywhere; the
+-- declaration's only effect is that emission strips applications, silently
+-- swallowing a directive graphitron does not own). Once the stray
+-- declaration is removed the name is foreign like any user-authored
+-- directive and its applications land in the applied_ family as fidelity
+-- rows, re-emitted verbatim; the store needs no special case for it.
 
 -- @discriminate on an interface or union: the discriminator column.
 CREATE TABLE intent_discriminate (
