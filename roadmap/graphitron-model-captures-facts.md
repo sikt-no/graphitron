@@ -1985,12 +1985,27 @@ the facet arms are the derived stratum's business and the assertion names them a
 rewritten carriers against the same rows. PageInfo agrees on a count rather than a set, being
 schema-grain on the model and per-carrier in the store.
 
-Remaining, and the reason this item is not yet In Review: the acceptance list's one uncovered
-anchor, the semantic relations against the minted model components and the directive-resolver
-outputs they shadow. That is the widest of the six (the `graphitron_` family is 61 relations against
-a resolver surface that is not one component), so it wants a representative-subset design rather
-than a relation-by-relation sweep, and the mechanical driver already fails on any relation without a
-registration, which is what keeps a subset honest about what it does not cover.
+The semantic anchor is in, and it splits the `graphitron_` family's content in two before sampling
+it. A relation's coordinate half, which for a marker relation is the whole of it, is already pinned
+for every relation at once by the applied-directive anchor: that anchor equates the store's
+per-coordinate, per-directive application counts with the SDL's, which is exactly the claim a marker
+row makes. What the semantic anchor adds is the payload half, sampled by payload kind rather than by
+relation, because the decode reaches a kind through one shared helper and a relation not sampled is
+decoded by machinery a sampled one exercises. Four kinds carry a comparison: a scalar reference
+(`@table(name:)`, `@node(typeId:)`) against the resolved `TableRef` and typeId, a list-valued
+argument (`@node(keyColumns:)`) against the resolved column list compared in order, a flattened
+`ExternalCodeReference` (`@service`) against the coordinate's `MethodBackedField`, and an
+author-spelled enum literal (`@mutation(typeName:)`) against the DML arm the model lifted it into.
+Each was mutation-checked against a perturbed decode and fails on its own perturbation alone.
+
+The comparisons are conditional in one direction and containment in the other, and both are the
+decode rule showing through. Conditional, because capture stores what the author wrote while the
+model stores what resolution made of it: where an argument is omitted the store holds NULL and the
+model holds the fallback, and a fallback is a derivation with nothing to agree with. Containment,
+because the model is reachability-pruned and the store is total. What a subset does not buy is
+per-relation payload agreement, which arrives with the consumer that migrates onto a relation and
+brings its own tests; the mechanical driver is what keeps that honest, since a new relation still
+cannot arrive without a registration.
 
 ## Acceptance
 

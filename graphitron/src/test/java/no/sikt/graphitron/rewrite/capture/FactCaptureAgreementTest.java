@@ -18,6 +18,8 @@ import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.model.ConnectionSynthesis;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.MethodBackedField;
+import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.NodeDeclaration;
 import no.sikt.graphitron.rewrite.schema.federation.KeyNodeSynthesiser;
@@ -37,6 +39,11 @@ import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SYNTHESIS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_DECLARATION_SYNTHESIS;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_SITE;
@@ -183,6 +190,50 @@ class FactCaptureAgreementTest {
           id: ID!
           name: String
         }
+        """;
+
+    /**
+     * One carrier per sampled payload kind, over the sakila catalog the test context resolves
+     * against: a scalar reference ({@code @table(name:)}, {@code @node(typeId:)}), a list-valued
+     * argument ({@code @node(keyColumns:)}), a flattened code reference ({@code @service}), and an
+     * author-spelled enum literal ({@code @mutation(typeName:)}).
+     */
+    private static final String SEMANTIC_FIXTURE = """
+        interface Node { id: ID! }
+
+        type Query {
+          films: [Film!]!
+          actors: [Actor!]!
+          filmActors: [FilmActor!]!
+        }
+
+        type Mutation {
+          createFilm(in: FilmInput!): Film @mutation(typeName: INSERT)
+          deleteFilm(in: FilmKeyInput!): ID @mutation(typeName: DELETE, table: "film")
+        }
+
+        type Film @table(name: "film") {
+          title: String
+          languages: [Language!]! @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
+        }
+
+        type Actor implements Node @table(name: "actor") @node(typeId: "ACT", keyColumns: ["actor_id"]) {
+          id: ID!
+          actorId: Int @field(name: "actor_id")
+        }
+
+        type FilmActor implements Node @table(name: "film_actor") @node(typeId: "FA", keyColumns: ["actor_id", "film_id"]) {
+          id: ID!
+        }
+
+        type Language @table(name: "language") {
+          name: String
+          films: [Film!]! @service(
+            service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getFilmsMapped"})
+        }
+
+        input FilmInput { title: String }
+        input FilmKeyInput { filmId: Int! @field(name: "film_id") }
         """;
 
     @Test
@@ -350,6 +401,169 @@ class FactCaptureAgreementTest {
             assertThat(captured).as("the fixture applies foreign directives, so this pins something")
                 .isNotEmpty();
             assertThat(captured).containsExactlyInAnyOrderEntriesOf(sdlApplicationCounts(store));
+        }
+    }
+
+    /**
+     * The decode's payload against the model's resolved value, sampled by payload kind.
+     *
+     * <p>A scalar reference: the type site's {@code @table(name:)} and the {@code @node(typeId:)}
+     * beside it. The comparison is conditional in one direction and containment in the other,
+     * both for stated reasons. Conditional, because capture stores what the author wrote and the
+     * model stores what resolution made of it: where the argument is omitted the store holds NULL
+     * and the model holds the fallback, and a fallback is a derivation with nothing to agree with.
+     * Containment, because the model is reachability-pruned. Case is compared loosely: the store
+     * keeps the author's spelling and the model's value came back through catalog resolution.
+     */
+    @Test
+    @DisplayName("type-site scalar payloads agree with the model's resolved values")
+    void typeSiteScalarPayloadsAgreeWithTheModel(@TempDir Path tmp) {
+        try (var store = CapturedStore.of(tmp, SEMANTIC_FIXTURE)) {
+            var schema = GraphitronSchemaBuilder.build(store.registry(), testContext());
+
+            var tables = new LinkedHashMap<String, String>();
+            store.dsl().select(GRAPHITRON_TABLE.TYPE_NAME, GRAPHITRON_TABLE.TABLE_REF)
+                .from(GRAPHITRON_TABLE).where(GRAPHITRON_TABLE.TABLE_REF.isNotNull()).fetch()
+                .forEach(row -> tables.put(row.value1(), row.value2()));
+            assertThat(tables).as("the fixture writes @table(name:), so this pins something").isNotEmpty();
+
+            var typeIds = new LinkedHashMap<String, String>();
+            store.dsl().select(GRAPHITRON_NODE.TYPE_NAME, GRAPHITRON_NODE.TYPE_ID)
+                .from(GRAPHITRON_NODE).where(GRAPHITRON_NODE.TYPE_ID.isNotNull()).fetch()
+                .forEach(row -> typeIds.put(row.value1(), row.value2()));
+            assertThat(typeIds).as("the fixture writes @node(typeId:), so this pins something").isNotEmpty();
+
+            var compared = new LinkedHashSet<String>();
+            for (var type : schema.types().values()) {
+                if (type instanceof GraphitronType.TableBackedType backed) {
+                    String authored = tables.get(type.name());
+                    if (authored != null) {
+                        assertThat(backed.table().tableName())
+                            .as("@table(name:) on %s", type.name()).isEqualToIgnoringCase(authored);
+                        compared.add(type.name() + ".@table");
+                    }
+                }
+                if (type instanceof GraphitronType.NodeType node) {
+                    String authored = typeIds.get(type.name());
+                    if (authored != null) {
+                        assertThat(node.typeId()).as("@node(typeId:) on %s", type.name()).isEqualTo(authored);
+                        compared.add(type.name() + ".@node");
+                    }
+                }
+            }
+            assertThat(compared).as("the model reaches the fixture's carriers, so the loop compared something")
+                .isNotEmpty();
+        }
+    }
+
+    /**
+     * A list-valued argument decoded to positioned child rows, against the list the model resolved
+     * from it: {@code @node(keyColumns:)}. Position carries the meaning here, so the comparison is
+     * ordered, which is what separates this kind from the scalar one.
+     */
+    @Test
+    @DisplayName("ordered child rows agree with the model's resolved list, in order")
+    void orderedChildRowsAgreeWithTheModel(@TempDir Path tmp) {
+        try (var store = CapturedStore.of(tmp, SEMANTIC_FIXTURE)) {
+            var schema = GraphitronSchemaBuilder.build(store.registry(), testContext());
+
+            var captured = new LinkedHashMap<String, List<String>>();
+            store.dsl()
+                .select(GRAPHITRON_NODE_KEY_COLUMN.TYPE_NAME, GRAPHITRON_NODE_KEY_COLUMN.COLUMN_REF)
+                .from(GRAPHITRON_NODE_KEY_COLUMN)
+                .orderBy(GRAPHITRON_NODE_KEY_COLUMN.TYPE_NAME, GRAPHITRON_NODE_KEY_COLUMN.POSITION)
+                .fetch()
+                .forEach(row -> captured.computeIfAbsent(row.value1(), ignored -> new ArrayList<>())
+                    .add(row.value2()));
+            assertThat(captured).as("the fixture writes @node(keyColumns:), so this pins something")
+                .isNotEmpty();
+
+            int compared = 0;
+            for (var type : schema.types().values()) {
+                if (!(type instanceof GraphitronType.NodeType node)) {
+                    continue;
+                }
+                List<String> authored = captured.get(type.name());
+                if (authored == null) {
+                    continue;  // omitted: the model's list came from the catalog's primary key
+                }
+                assertThat(node.nodeKeyColumns().stream().map(column -> column.sqlName().toLowerCase(Locale.ROOT)))
+                    .as("@node(keyColumns:) on %s", type.name())
+                    .containsExactlyElementsOf(authored.stream().map(name -> name.toLowerCase(Locale.ROOT)).toList());
+                compared++;
+            }
+            assertThat(compared).as("the model reaches a keyColumns carrier").isPositive();
+        }
+    }
+
+    /**
+     * The flattened {@code ExternalCodeReference}: {@code @service}'s object-valued argument spread
+     * across columns, against the {@link MethodBackedField} the model classified the same
+     * coordinate into. One decode helper writes every relation of this kind, so a representative
+     * exercises the flattening the rest share.
+     */
+    @Test
+    @DisplayName("flattened code references agree with the model's method refs")
+    void flattenedCodeReferencesAgreeWithTheModel(@TempDir Path tmp) {
+        try (var store = CapturedStore.of(tmp, SEMANTIC_FIXTURE)) {
+            var schema = GraphitronSchemaBuilder.build(store.registry(), testContext());
+
+            var rows = store.dsl()
+                .select(GRAPHITRON_SERVICE.TYPE_NAME, GRAPHITRON_SERVICE.FIELD_NAME,
+                    GRAPHITRON_SERVICE.CLASS_NAME, GRAPHITRON_SERVICE.METHOD)
+                .from(GRAPHITRON_SERVICE).fetch();
+            assertThat(rows).as("the fixture applies @service, so this pins something").isNotEmpty();
+
+            int compared = 0;
+            for (var row : rows) {
+                var field = schema.field(row.value1(), row.value2());
+                if (field == null) {
+                    continue;  // pruned out of the model, so there is nothing to disagree with
+                }
+                assertThat(field)
+                    .as("the model classifies %s.%s as method-backed", row.value1(), row.value2())
+                    .isInstanceOf(MethodBackedField.class);
+                var method = ((MethodBackedField) field).method();
+                assertThat(method.className() + "#" + method.methodName())
+                    .as("@service(service:) on %s.%s", row.value1(), row.value2())
+                    .isEqualTo(row.value3() + "#" + row.value4());
+                compared++;
+            }
+            assertThat(compared).as("the model reaches a @service carrier").isPositive();
+        }
+    }
+
+    /**
+     * The author-spelled enum literal, stored as an open column per the conventions, against the
+     * arm the model lifted it into. The lift is total and injective, so the arm's own name is the
+     * literal and the agreement can be read off it.
+     */
+    @Test
+    @DisplayName("enum literals agree with the arm the model lifted them into")
+    void enumLiteralsAgreeWithTheModelsLiftedArm(@TempDir Path tmp) {
+        try (var store = CapturedStore.of(tmp, SEMANTIC_FIXTURE)) {
+            var schema = GraphitronSchemaBuilder.build(store.registry(), testContext());
+
+            var rows = store.dsl()
+                .select(GRAPHITRON_MUTATION.TYPE_NAME, GRAPHITRON_MUTATION.FIELD_NAME,
+                    GRAPHITRON_MUTATION.OPERATION)
+                .from(GRAPHITRON_MUTATION).fetch();
+            assertThat(rows).as("the fixture applies @mutation, so this pins something").isNotEmpty();
+
+            int compared = 0;
+            for (var row : rows) {
+                var lifted = schema.operationMembersOf(row.value1(), row.value2()).stream()
+                    .filter(OperationMember.Write.Dml.class::isInstance)
+                    .map(member -> member.getClass().getSimpleName().toUpperCase(Locale.ROOT))
+                    .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+                if (lifted.isEmpty()) {
+                    continue;  // pruned, or classified into a shape that mints no DML member
+                }
+                assertThat(lifted).as("@mutation(typeName:) on %s.%s", row.value1(), row.value2())
+                    .containsExactly(row.value3());
+                compared++;
+            }
+            assertThat(compared).as("the model reaches a @mutation carrier").isPositive();
         }
     }
 
