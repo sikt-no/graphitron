@@ -1,13 +1,13 @@
 ---
 id: R585
 title: "Typed rejections on the input-field resolution path"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 5
 theme: classification-model
 depends-on: []
 created: 2026-08-04
-last-updated: 2026-08-06
+last-updated: 2026-08-07
 ---
 
 # Typed rejections on the input-field resolution path
@@ -132,8 +132,10 @@ demoting a classified verdict", the validator drains it, and sixteen sites acros
 So no new `Rejection` composite arm and no new carrier: each failure becomes a `ValidationError` at the
 input field's own location, and the three folds stop composing prose. The channel's javadoc frames it as
 the *validate* phase's accumulator and will need widening to say classify-time minting is intended;
-`TypeBuilder` and `FieldBuilder` already mint from build paths, and R589's slice 4 proposes the same
-widening, so this is a documentation correction rather than a new liberty.
+`TypeBuilder` and `FieldBuilder` already mint from build paths, and `validation-adds-facts` proposes the
+same widening, so this is a documentation correction rather than a new liberty. The widening's principled
+form is *append-only, never read back*: see the dedup consequence below, which makes that phrasing
+enforceable rather than aspirational.
 
 Two consequences to hold onto, because they are what make the mechanism work rather than merely look
 tidy:
@@ -141,18 +143,38 @@ tidy:
 - **The consuming field keeps exactly one rejection, and it states the consequence, not the causes.**
   "Input type 'FilmInput' against table 'film': 2 fields could not be bound" belongs on the consuming
   coordinate; the two causes belong at the two input fields. An author sees three diagnostics where
-  they saw one, which is the shape a compiler uses for "cannot instantiate" plus two member errors. A
-  typed cascade arm carrying the count is deliberately deferred: it earns its keep only once the LSP
-  renders related-information links, and `Structural` is honest for a consequence.
+  they saw one, which is the shape a compiler uses for "cannot instantiate" plus two member errors.
+  The consequence's *facts* are typed even so, on the builder-step result rather than on the
+  `Rejection`: `InputFieldsResolution.Failed` carries the input type name, the table, and the minted
+  count as components, and the consuming coordinate's sentence is rendered from them at the
+  `FieldBuilder` sites. Widening `Failed` to a bare `Failed(Rejection)` would re-introduce exactly the
+  cause-versus-consequence polymorphism the boundary rule refuses for `Unresolved`, and would lose the
+  count that a related-information renderer will want. Only a `Rejection` *arm* for the cascade stays
+  deferred (it earns its keep once the LSP renders related-information links); `Structural` is honest
+  for the rendered consequence in the meantime.
 - **Per-field diagnostics must carry no consuming-coordinate prefix.** Input fields are resolved once
   per consuming field, never in a registry type walk, so one input type used by five mutations
-  classifies five times. `ValidationError` is a record and `Rejection` arms are records, so a
-  `distinct()` at the drain collapses repeats by structural equality, but only if the per-field
-  rejection is built from the input field's own facts. This is the mechanism's best property: when the
-  five uses resolve against the same table the fact is identical and dedup fires; when they resolve
-  against different tables the candidates differ, the rejections are unequal, and both survive. Value
-  equality dedups exactly when the fact is the same. Dedup is available only *because* the rejection is
-  typed, which is why the location move and the typing are one change rather than two.
+  classifies five times. `ValidationError` is a record and `Rejection` arms are records, so structural
+  equality collapses the repeats, but only if the per-field rejection is built from the input field's
+  own facts. This is the mechanism's best property: when the five uses resolve against the same table
+  the fact is identical and dedup fires; when they resolve against different tables the candidates
+  differ, the rejections are unequal, and both survive. Value equality dedups exactly when the fact is
+  the same. Dedup is available only *because* the rejection is typed, which is why the location move and
+  the typing are one change rather than two.
+
+  **Dedup belongs at the mint boundary, not at the drain.** Make `BuildContext.addDiagnostic`
+  idempotent by value (an insertion-ordered set behind the list, so `diagnostics()` keeps its order and
+  its `List` type). A `distinct()` in the validator's drain would fix only that one reader, while the
+  channel has others; idempotence at the mint fixes every reader at once, and it is what licenses the
+  javadoc's "append-only, never read back" framing. It also deletes an existing workaround:
+  `FieldBuilder`'s shared-nesting sweep guards its own mint with a `ctx.diagnostics().contains(...)`
+  check, which is precisely this dedup done once, by hand, by a caller reading the channel back.
+
+- **Name the sole producer per cause.** Slice 2's classify-time minting coexists with
+  `GraphitronSchemaValidator`'s own `UnboundField` walk, and value-equality dedup does *not* collapse
+  the same fact minted by two different passes with different coordinates or prefixes. Each cause needs
+  one nominated producer, and the dedup and location tests must assert counts rather than mere presence,
+  or a double-report passes them.
 
 **Retired-directive convergence.** Route `@notGenerated` and `@lookupKey` through
 `Rejection.directiveConflict` from all sites, so each cause has one identity carrying the directive
@@ -193,12 +215,21 @@ and R589's purity rule rejects a claim describing a counterfactual rather than t
 - `InputFieldResolver.resolve`: delete `canLiftToUnknownName` and the prose join; mint per failure. The
   `condErrors` buffer folds into the same accumulator.
 - `TypeBuilder.resolveInputFields`: same; `InputFieldsResolution.Failed(String)` becomes
-  `Failed(Rejection)`. Delete the `findFirst()` hint and the `BuildContext.candidateHint` call.
-- `FieldBuilder`: the three `Failed`-to-`structural` re-wraps become prefix applications on a typed
-  rejection (`Rejection.prefixedWith` already exists for this). The two
-  `collectInputFieldRejections(...).getFirst()` sites mint the tail instead of dropping it.
+  `Failed(String inputTypeName, TableRef tableRef, int mintedCount)`, the typed consequence facts. Its
+  two returns (unresolvable fields, bad `@condition`) both fit that shape once each failure is minted.
+  Delete the `findFirst()` hint and the `BuildContext.candidateHint` call.
+- `FieldBuilder`: the three `Failed`-to-`structural` re-wraps render the consequence sentence from
+  `Failed`'s typed components, applying their prefix with `Rejection.prefixedWith` where they carry one.
+  The two `collectInputFieldRejections(...).getFirst()` sites mint the tail instead of dropping it. The
+  `ctx.diagnostics().contains(...)` guard in the shared-nesting sweep deletes with `addDiagnostic`'s
+  idempotence.
+- `BuildContext.addDiagnostic`: idempotent by value, insertion-ordered. Widen the javadoc to say
+  classify-time minting is intended and the channel is append-only and never read back.
 - `MutationInputResolver.rejectInputFieldDirectives`: converge onto `directiveConflict`.
-- `BuildContext.candidateHint`: delete if the folds prove to be its only callers; measure at pickup.
+- `BuildContext.candidateHint`: measured at Ready. It has callers well outside the folds
+  (`EnumMappingResolver`, `InputBeanResolver`, `ArgBindingMap`, `TypeBuilder`, `FieldBuilder`), so it
+  stays; only the folds' calls to it go. Reconciling it against `Rejection`'s private twin is separate
+  work and not filed here.
 
 ## Tests
 
@@ -212,9 +243,11 @@ and R589's purity rule rejects a claim describing a counterfactual rather than t
 - **A `DirectiveConflict.directives` contract test**: every listed directive is applied at the
   rejection's declaration. Expected to fail on the `@asConnection` site until that site is settled.
 - **A dedup test**: one plain input type consumed by two fields resolving against the same table yields
-  one diagnostic per failing input field, not two; against different tables, two.
+  one diagnostic per failing input field, not two; against different tables, two. Assert exact counts,
+  not presence: a second producer for the same cause (the validator's own `UnboundField` walk) shows up
+  only in a count.
 - **Location assertions** on the per-field diagnostics, since moving them off the consuming field is the
-  author-visible half and nothing pins it today.
+  author-visible half and nothing pins it today. Count-asserted for the same reason.
 - Existing prose assertions churn in sixteen places across `GraphitronSchemaBuilderTest`,
   `NodeIdPipelineTest` and `MutationTableArgClassificationTest`. Most are `.contains(...)` on message
   text and survive if the typed arms render the same sentence, which the first slice should preserve
@@ -253,36 +286,20 @@ it is what makes slice 2's dedup possible.
 - `InputFieldResolution.Unresolved.reason` and `InputFieldResolution.Unresolved.lookupColumn`.
 - `InputFieldResolver.resolve`'s `canLiftToUnknownName` guard and its `condErrors` buffer.
 - `TypeBuilder.InputFieldsResolution.Failed(String)` as a prose carrier.
-- `BuildContext.candidateHint`, if the folds prove to be its only callers.
 - The `List<String> errors` out-param on `BuildContext.buildInputFieldCondition` and
   `classifyInputField`.
+- `FieldBuilder`'s `ctx.diagnostics().contains(...)` mint guard in the shared-nesting sweep.
 
-## Review notes (Spec → Ready sign-off)
+## Spec → Ready sign-off (2026-08-07)
 
-Every named symbol, count, and quotation was verified against the tree at sign-off: the sixteen
-producers, the five discarded rejections plus three out-param `.message()` calls, the eleven
-`directiveConflict` sites and the `@asConnection`/`splitQuery` anomaly, the sixteen
-`ctx.addDiagnostic` minting calls, the doubled `candidateHint`, the Java-vs-SQL candidate-space
-disagreement, and the two `getFirst()` drops all hold as written. Non-blocking notes for pickup,
-from an independent principles consult; each is the implementer's call:
-
-- **Dedup at the mint boundary, not the drain.** Making `BuildContext.addDiagnostic` idempotent by
-  value (ordered set behind the list) dedups once for every reader of `diagnostics()`, not only the
-  validator's drain, and lets `FieldBuilder`'s existing `contains`-guard delete. It also gives the
-  channel-javadoc widening its principled form: append-only, never read back.
-- **`InputFieldsResolution.Failed(Rejection)` re-introduces the cause/consequence polymorphism** the
-  boundary rule refuses for `Unresolved`. Carrying the consequence facts typed (input type name,
-  table, minted count) needs no LSP plumbing; only the related-information rendering is deferred.
-- **Name the sole producer per cause.** Slice 2's classify-time minting coexists with the
-  validator's `UnboundField` walks; value-equality dedup does not collapse the same fact built by
-  two passes. The dedup and location tests should assert counts, which the Tests section already
-  implies.
-- One stale cross-reference: R589 was re-sliced on trunk after this spec was written, so "R589's
-  slice 4" for the channel-javadoc widening now corresponds to R589's premise paragraph and
-  slice 5.
-- `BuildContext.candidateHint` has many callers outside the folds (EnumMappingResolver,
-  InputBeanResolver, ArgBindingMap, TypeBuilder, FieldBuilder), so the conditional deletion will
-  resolve to keep; the "measure at pickup" hedge already covers this.
+Every named symbol, count, and quotation was verified against the tree: the sixteen producers, the five
+discarded rejections plus three out-param `.message()` calls, the eleven `directiveConflict` sites and the
+`@asConnection`/`splitQuery` anomaly, the sixteen `ctx.addDiagnostic` minting calls, the doubled
+`candidateHint`, the Java-vs-SQL candidate-space disagreement, and the two `getFirst()` drops all hold as
+written. `classifyInputField` was confirmed unreachable from the memoized `lookAheadVerdict` type walk, so
+classify-time minting is never speculative. Four non-blocking opportunities raised at review are now
+folded into the sections above: mint-boundary dedup, `Failed`'s typed consequence components, the
+sole-producer-per-cause rule with count-asserted tests, and `candidateHint` measured and kept.
 
 ## Relationships
 
