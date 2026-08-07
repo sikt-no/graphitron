@@ -1,7 +1,7 @@
 ---
 id: R587
 title: "Roadmap markdown code spans render as substituting AsciiDoc spans, so quoted macros go live"
-status: In Review
+status: Ready
 bucket: cleanup
 priority: 3
 theme: docs
@@ -249,6 +249,72 @@ as a secondary signal.
 - The hand-written plus-delimited passthrough as an authoring convention in roadmap markdown. Authors
   write plain backticks; the emitter picks the form. A `` `+...+` `` in a `.md` body now means a literal
   plus on each side of the content, not a passthrough.
+
+## Review feedback, In Review to Ready rework (`be60eba`)
+
+Independent-session Done-gate review of `be60eba`. The mechanism ships correct and the acceptance holds:
+full reactor green under `-Plocal-db`, `GeneratedAdocSpanGateTest` (11) and `InlineCodeSpanToAdocTest` (18)
+both run in the base build, and the three render probes above are recorded with outcomes. Verified
+empirically against the staged corpus rather than taken on the commit message's word: no U+0001 or U+0002
+hold-placeholder leaks anywhere in `docs/target/staging/roadmap/`; zero surviving markdown-link shapes, so
+the carried-open-delimiter state did not cost any link rewrite; em dashes 700 in source to 9 staged, and
+every survivor sits inside a span or in the hand-authored `inference-axis-coverage.adoc` copy; bold 1665
+to 4 staged, all four inside spans (`` `+**FieldClassification.Column**+` ``), which is the stated
+"prose transforms stop reaching inside spans" consequence showing up as designed. Do not redo any of that.
+
+One blocking gap, and it is the retirement sweep rather than the code.
+
+**The R582 body reconciliation is incomplete, and the file now contradicts itself.** The spec put this
+in scope ("Reconcile R582's body where it reasons from the premise ...") and named its audience (R582 is
+in Spec, so its next Spec-to-Ready reviewer reads that body as current truth). The Design and Acceptance
+sections were reconciled well; three sites were not, in `roadmap/adoc-xref-section-anchor-gate.md`:
+
+- **Lines 197 to 202, the blocking one.** Every clause states the pre-R587 world in the present tense:
+  "the md-to-adoc render currently passes backticks straight through", "every roadmap author has to know
+  AsciiDoc passthrough syntax to quote a macro safely", "Emitting a passthrough span from the renderer
+  would retire the whole class. This item does not wait on it; the one line here is rewritten by hand, at
+  the cost of literal plus signs in GitHub's markdown view of the item." The hand-rewrite it describes was
+  reverted in this same commit, and the sentence states the retired authoring convention as live practice,
+  which is exactly what `roadmap/workflow.adoc`'s retirement sweep asks the Done-gate reviewer to catch
+  ("prose paraphrasing the retired mechanism, which a token grep cannot catch"). A reviewer reading this
+  paragraph reaches the opposite conclusion from the reconciled Design note three screens earlier.
+- **Line 187** and **line 244**, both phrased "once this item's own quoted examples become / are
+  passthroughs". The substance still holds (the count is zero on today's tree) but the mechanism named is
+  the retired one; the examples are plain backticks now and the emitter is what makes them inert.
+
+Not stale, deliberately: line 238's `docs/README.adoc` bullet keeps its plus-delimited passthroughs.
+That is hand-authored `.adoc` under `docs/`, this item's pinned non-goal, so the paragraph-scope rule
+still governs there. Leave it alone.
+
+Why this holds the gate rather than becoming a follow-up: the `Retired vocabulary` section above is the
+only grep handle a fresh reviewer has for the sweep, and it is deleted with this file at Done. Fixing the
+survivor after approval means fixing it with the declaration already gone, and R582's own Spec-to-Ready
+review may land first against a self-contradicting body.
+
+### Non-blocking, pick up in the same pass or leave
+
+None of these breaks the contract; they are in code this item already owns, so they are cheaper here than
+as separate Backlog stubs. The reviewer's call either way.
+
+- `Main.renderAdocByTheme` routes a tool-minted *attribute-entry* value through `InertSpans.monospace`,
+  so `docs/target/staging/roadmap/by-theme.adoc:2` now ends its `:description:` value with a
+  plus-delimited span around `theme:` where it used to carry a plain backtick one, and the published
+  `<meta name="description">` carries literal plus signs. An attribute entry value takes the header
+  substitution group, which has no macros, so no span was ever live there. The choke point is for flowed
+  prose; either drop the span from that string or keep attribute values out of the emitter.
+- The em-dash sweep in `inlineMdToAdoc` runs *after* `transformAdocLinks`, which releases a label's held
+  spans early through `InertSpans.label`. A span inside a markdown link label therefore loses the verbatim
+  guarantee for em dashes that a span in plain prose has. No corpus instance today; moving
+  `prose.replace("—", ";")` above the `transformAdocLinks` call closes it.
+- `titleLabel` applies `escapeAdocCell` on three non-cell surfaces (`appendBacklogAdocLine`, the deferred
+  backlog list, the by-theme list). Pre-existing, not introduced here, but it now escapes a pipe *inside*
+  an emitted passthrough on a list line, where no table parser consumes the backslash. No item title
+  carries a pipe today, so nothing renders wrong; the smell is that the cell escape outlived the cell.
+- The spec's title-label verification bullet promises "bare span **plus enforcement failure**".
+  `titleLabel_goesInertOnlyWhenTheAttrlistCanCarryIt` pins the bare-span half; nothing composes that bare
+  residue with `InertSpans.scan` to pin that the gate actually fails on it. One assertion.
+- `roadmap/adoc-xref-section-anchor-gate.md:166` picked up a 148-character line from the reconciliation
+  edit; rewrap to the file's width.
 
 ## Non-goals
 
