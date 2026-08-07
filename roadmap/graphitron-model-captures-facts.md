@@ -1953,14 +1953,31 @@ the pipeline, the gate family, the mechanical agreement driver with its type-cen
 applied-directive, catalog-census and extension-census anchors, and federation `@key` synthesis
 as a walk macro with its provenance rows and its anchor against `KeyNodeSynthesiser`.
 
-Remaining, and the reason this item is not yet In Review: `@asConnection` and `@asFacet` do not
-expand in the capture walk, so `graphitron_type_declaration_synthesis` and
-`graphitron_field_synthesis` stay empty and the synthesized Connection, Edge, PageInfo and facet
-types are absent from the SDL families. The two anchors that would pin them (synthesis provenance
-against the `connectionSynthesis` component, and the semantic relations against the minted model
-components) wait on the same work. The expansion is the substantial half: `ConnectionPromoter`
-carries the naming, shape and collision-resolution rules today and runs over the classified model,
-so the walk needs its own reading of them against the AST.
+`@asConnection` expands too: the directive-driven arm rewrites the carrier field to the Connection
+it mints (the authored expression surviving in `graphitron_field_synthesis`) and mints the
+Connection, Edge and shared PageInfo as ordinary declaration sites at the causing application's
+position, each provenance-marked. The structural arm rewrites and mints nothing, so its rows are
+the author's and the walk already had them.
+
+Remaining, and the reason this item is not yet In Review:
+
+- **The facets container is not minted**, and the plan should say so explicitly rather than list
+  `@asFacet` as a walk macro alongside `@asConnection`. The two are not alike. A Connection's
+  contribution is a function of the carrier field alone: the element type enters as a name and
+  nothing reads the type it names, so the expansion is type-local and the refresh unit stays the
+  carrier's file. The `<Conn>Facets` and `<Scalar>FacetValue` shapes are not: `facetSpecsFor` reads
+  through the carrier's arguments into the filter input type's fields, for the `@asFacet` marker,
+  the `@field(name:)` binding and the value's scalar and nullability. That input type is free to
+  live in another file, so an edit adding a facet there would leave the carrier's minted container
+  stale under the per-file refresh this plan specifies. The recommendation is to make the facets
+  container a derivation instead: the store already holds every input it needs (`graphitron_facet`
+  marks the fields, `graphitron_field_binding` gives the column, `graphql_argument` links carrier to
+  filter type, `graphql_field` gives the scalar and its nullability), so it computes as a query over
+  captured columns, which this plan's own decode rule says belongs outside capture. `@asFacet` stays
+  a marker relation either way; what moves is only where the container's shape is built.
+- **The two anchors that read the minted output**: synthesis provenance against the
+  `connectionSynthesis` component, and the semantic relations against the minted model components.
+  Both compare against arms carrying facet names, so both want the fork above settled first.
 
 ## Acceptance
 

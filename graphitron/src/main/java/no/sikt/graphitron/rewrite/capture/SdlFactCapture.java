@@ -104,11 +104,14 @@ public final class SdlFactCapture {
     private final Map<String, SiteRef> baseSites = new LinkedHashMap<>();
     private final Map<String, ElementOrdinals> ordinalsByType = new LinkedHashMap<>();
 
+    private final MacroCapture macros;
+
     private SdlFactCapture(FactSink sink, TypeDefinitionRegistry registry, NodeDeclaration nodes) {
         this.sink = sink;
         this.registry = registry;
         this.decode = new GraphitronFactCapture(sink);
         this.nodes = nodes;
+        this.macros = new MacroCapture(sink, registry, nodes, this);
     }
 
     /** Runs the walk, buffering into {@code sink}; the caller flushes. */
@@ -120,7 +123,7 @@ public final class SdlFactCapture {
         captureDirectiveDefinitions();
         captureSchema();
         captureTypes();
-        new MacroCapture(sink, registry, nodes, this).expand(baseSites, ordinalsByType);
+        macros.expand(baseSites, ordinalsByType);
     }
 
     // ---------------------------------------------------------------- directive definitions
@@ -421,7 +424,10 @@ public final class SdlFactCapture {
             record.setOrdinal(ordinals.field++);
             record.setDeclarationLine(site.location().getLine());
             record.setDeclarationColumn(site.location().getColumn());
-            var wrapping = Wrapping.of(field.getType());
+            // The effective type, not the authored one: a macro that rewrites a field's type
+            // expression records the authored form in its own provenance relation, so the store's
+            // picture is the schema consumers see and the authored one is the anti-join.
+            var wrapping = Wrapping.of(macros.effectiveFieldType(site.typeName(), field));
             record.setTypeSdl(wrapping.typeSdl());
             record.setNamedType(wrapping.namedType());
             record.setNonNull(wrapping.nonNull());
