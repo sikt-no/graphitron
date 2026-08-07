@@ -1,7 +1,7 @@
 ---
 id: R595
 title: "The graphitron-model module exists and capture fills it"
-status: In Review
+status: Ready
 bucket: architecture
 priority: 4
 theme: classification-model
@@ -2006,6 +2006,63 @@ because the model is reachability-pruned and the store is total. What a subset d
 per-relation payload agreement, which arrives with the consumer that migrates onto a relation and
 brings its own tests; the mechanical driver is what keeps that honest, since a new relation still
 cannot arrive without a registration.
+
+## Rework from the In Review gate (2026-08-07)
+
+Everything above shipped and `mvn install -Plocal-db` is green; the whole DDL matches this
+item's schema section column for column and constraint for constraint, the mechanical driver
+registers every generated relation, and the gate family covers the acceptance list (the
+`is_primary` count gate is homed in the agreement suite, which is where a real catalog exists
+to range over, and it says so). One blocker sends the item back.
+
+**The pipeline captures after the federation synthesis rewrite, so the walk macro is inert in
+production.** The item fixes the walk's reading position: "after the loading rewrites ... and
+before the synthesis rewrites", and `MacroCapture`'s own javadoc restates it. Both production
+call sites do the opposite. `GraphQLRewriteGenerator.loadAttributedRegistry` runs
+`KeyNodeSynthesiser.apply(registry, ...)` in place on the same registry object it returns, and
+both `buildOutput` and `runPipeline` hand that mutated registry to `FactCapture.run`. By the
+time `MacroCapture.expandFederationKeys` looks, `hasIdKey` is already true for exactly the
+types the rewrite touched (the two implementations gate on the same nodehood predicate and the
+same single-`id` field set), so the macro contributes nothing. Measured on a one-node federated
+fixture: capturing the pristine registry writes 1 `graphitron_type_directive_synthesis` row,
+capturing the post-`KeyNodeSynthesiser` registry writes 0.
+
+Three consequences, none of which a test currently sees:
+
+- The synthesized `@key` is captured as an authored application, so the authored picture is no
+  longer the anti-join against the provenance relations, which is the property the whole
+  provenance family exists to buy.
+- Its `graphql_type_directive.source_line` / `source_column` are NULL rather than the type's
+  declaration site, because a `Directive` the rewrite built carries no `SourceLocation`.
+- `federationKeySynthesisAgreesWithTheRewrite` passes because it captures a freshly parsed
+  registry and applies the rewrite to a second copy only to compute the expectation. It pins a
+  path the pipeline never takes, which is exactly the drift the shadow-period anchors exist to
+  catch.
+
+The fix is a placement decision, not a redesign: either capture the registry before
+`KeyNodeSynthesiser` runs (`loadAttributedRegistry` already builds the `JooqCatalog` the
+`NodeDeclaration` needs), or hand capture a pre-synthesis handle alongside the attributed one.
+Whichever way it goes, the anchor should exercise the registry the pipeline actually captures,
+so this cannot come back.
+
+While the placement is being settled, decide explicitly what the same ordering means for
+`TagApplier` and `DescriptionNoteApplier`, which also mutate the registry before capture. Their
+config-driven `@tag` applications and appended description notes land in the store as authored
+facts today. That may well be right, since the round-trip constraint wants the emitted schema
+reproducible and both are in it, but it is currently an accident of ordering rather than a
+recorded decision, and the item should say which it is.
+
+Two improvements the contract does not demand, noted so the next pass can take or leave them:
+
+- A decode arm that hits a missing required argument returns without writing either its
+  decoded row or a `graphitron_undecoded_argument` row (`GraphitronFactCapture`'s `sourceRow`,
+  `mutation` and `pivot` arms among others). The verbatim `graphql_` row survives, so a
+  detection can still find the application, but nothing in the semantic stratum records that
+  the decode declined. Worth either quarantining the application or naming the
+  "verbatim graphitron application with no decoded row" detection as the intended reading.
+- `captureFacts` builds a second `JooqCatalog` and re-walks the catalog and the classpath
+  (`GraphQLRewriteGenerator`), while `buildOutput` reuses the `catalogFacts` it already has.
+  Shadow-period cost only, and cheap to thread through.
 
 ## Acceptance
 
