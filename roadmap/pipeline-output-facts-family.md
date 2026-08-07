@@ -7,7 +7,7 @@ priority: 5
 theme: classification-model
 depends-on: [graphitron-model-captures-facts]
 created: 2026-08-06
-last-updated: 2026-08-06
+last-updated: 2026-08-07
 ---
 
 # A pipeline-output facts family in the model store
@@ -23,13 +23,16 @@ written per dev-loop compile round, and today it lives only in memory beside the
 instead of in it. Candidate siblings in the same family: the emitted-file inventory (which
 files a run wrote, from which coordinates), which today exists only as filesystem state.
 
-Why it matters: as long as run-output facts live outside the store, every consumer that spans
-input and output channels has to build a union seam in Java. The concrete cost is recorded in
-`mcp-aggregated-diagnostics` (R569): its `DiagnosticRow` union stays a Java seam precisely
-because the compile channel has no store home (`unified-diagnostic-stream`, R601, collapses
-the schema-side channels but leaves compile untouched), so its aggregate cannot become a
-single relational read even after R589's violation relation lands. With an output family, the
-cross-channel union becomes a store view and the seam dissolves.
+Why it matters, and the boundary with R569: `mcp-aggregated-diagnostics` (R569) is now the
+store's first reader and lands an interim compile *bridge* relation (javac output loaded per
+compile round, registered under the agreement driver's bridged arm) as one arm of its
+`diagnostic` union view. That bridge is a copy of legacy output with a read-side key; this
+item owns the real thing: the output family's prefix, its writer lifecycle, and the promotion
+of run-output facts to first-class citizens (compile results keyed to the emitted files that
+produced them, the emitted-file inventory itself). When this family lands it replaces the
+compile arm of R569's view (a dropped table and a one-line view edit, by that item's design),
+and it may adopt or supersede the bridge table's key; the bridge's shape is deliberately not
+binding here.
 
 Why this is not an R595 amendment: the write cadence is different in kind, not in detail.
 R595's two capture loads run at startup, and the store is "populated by capture"; compile
@@ -39,8 +42,10 @@ generation). So the family needs a third writer with its own lifecycle (per-roun
 delete-and-reload of the partition, interaction with the R597 warm-start stamp), which is a
 design of its own, and the relation would sit empty in exactly the batch runs R595's
 agreement tests exercise. Per the architecture's own rule that a relation's DDL lands with
-its first consumer, this family lands as its own item, with R569's aggregate (or the LSP
-diagnostics publisher) as the consumer that fixes its shape.
+its first consumer, this family lands as its own item. R569's bridge covers the diagnostics
+read surface in the meantime, so the consumer that fixes this family's shape is whichever
+first needs output facts as *facts* rather than as display rows: compile results joined to the
+emitted files that produced them, or the inventory itself.
 
 Spec-time questions: the family prefix and its boundary (output facts an oracle reports
 versus derived facts a detection computes; the two must not blur, or the detection doctrine

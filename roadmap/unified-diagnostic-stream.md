@@ -7,7 +7,7 @@ priority: 3
 theme: diagnostics
 depends-on: []
 created: 2026-08-06
-last-updated: 2026-08-06
+last-updated: 2026-08-07
 ---
 
 # The diagnostic stream unifies
@@ -31,5 +31,6 @@ diagnostic surface" without a delivery vehicle. It is deliberately independent o
 migration: R589 mints violations *into* the existing diagnostics channel and fixes only their
 ordering, and the model store leaves diagnostics out of its first iteration by design, so
 unifying the report surface neither waits for nor blocks that work. `mcp-aggregated-diagnostics`
-(R569) is the waiting consumer: aggregation over one stream is one query, over three channels it
-is three projections and a merge.
+(R569) is the waiting consumer, in its bridge loader rather than its aggregate now that the
+aggregate is a store query: loading one stream into the store's diagnostic bridge is one load,
+loading three channels is three loads kept honest by hand.
