@@ -33,11 +33,16 @@ render live. Fences are literal in both grammars.
 Census over the markdown corpus (roadmap item bodies plus `changelog.md`), grepping backtick spans for
 substitution triggers:
 
-- Dozens of spans carry live syntax: brace-delimited attribute references (six spans quoting the Maven
-  argLine property alone, plus placeholder vocabulary like the R560 body's message/table/select tokens and
-  the R372 body's UPSERT/INSERT markers), Maven property syntax with a dollar prefix, and bare xref
-  mentions. Each renders with the attribute-reference or macro substitution applied, or WARNs, instead of
-  showing as typed.
+- Dozens of spans carry live syntax: brace-delimited attribute references (five spans quoting the Maven
+  argLine property, all on one changelog line, plus placeholder vocabulary like the R560 body's
+  message/table/select tokens and the R372 body's UPSERT/INSERT markers), Maven property syntax with a
+  dollar prefix, and bare xref mentions. Each renders with the attribute-reference or macro substitution
+  applied, or WARNs, instead of showing as typed.
+- Three double-backtick spans, all carrying backticks in their content: the changelog's R331 entry quotes
+  a generic map type with a pipe in its type arguments, `infer-node-from-implements-node-and-metadata.md`
+  quotes a curated variant-table row mixing directive spans and a pipe, and
+  `leaf-coverage-mention-classification.md` quotes a single backticked symbol reference. These drive the
+  fallback-form trigger below: backtick content cannot sit inside a single-backtick wrapper at all.
 - The R223 changelog entry quotes the AsciiDoc passthrough block delimiter (four plus signs) in backticks.
   Asciidoctor parses the emitted span as an empty unconstrained passthrough pair inside a monospace span,
   so the published changelog renders an empty code span where the delimiter should show.
@@ -61,9 +66,12 @@ so the design below collapses them first.
 `Main` gains a single inline pipeline, `inlineMdToAdoc(String, ChangelogContext)`: split the text into
 code-span and prose segments (single- and double-backtick delimiters, spans within one line only), apply
 the existing prose transforms (bold, markdown-link rewrite via `LinkTarget`, em-dash sweep) to prose
-segments only, and emit span segments in an inert monospace form (below). All four surfaces call it;
-each keeps only its own structural post-step (the table cell's whole-cell pipe escape). The
-ordered-list-marker rewrite stays a body-line-level transform applied before the inline emitter.
+segments only, and emit span segments in an inert monospace form (below). The four chains call it, and so
+does the fifth md-sourced surface: front-matter titles, which reach adoc via `escapeAdocCell(i.title())`
+and are distinct from the markdown heading titles above (the label-emitter section below is about this
+fifth surface). Each surface keeps only its own structural post-step (the table cell's whole-cell pipe
+escape). The ordered-list-marker rewrite stays a body-line-level transform applied before the inline
+emitter.
 
 Stated consequences of the unification, decisions rather than by-products:
 
@@ -75,10 +83,21 @@ Stated consequences of the unification, decisions rather than by-products:
 
 ### Inert span emission, a total function of span content
 
+The segmenter first normalizes span content per CommonMark: a double-backtick span whose content starts
+and ends with a space and contains a non-space character loses one pad space from each end (the pad is
+delimiter syntax that lets content start with a backtick, not content). The emitter then picks the form
+from the normalized content:
+
 ```
-content without a plus sign   ->  `+content+`
-content with a plus sign      ->  `pass:c[content]`   (any ] escaped as \])
+content without +, backtick, or leading/trailing whitespace  ->  `+content+`
+content with any of those                                    ->  `pass:c[content]`   (any ] escaped as \])
 ```
+
+The fallback trigger is wider than "contains a plus sign" because the corpus's three double-backtick
+spans all carry backticks in their content: a backtick inside a single-backtick wrapper breaks the span,
+and the plus-delimited form additionally needs non-space-adjacent delimiters. The pass macro survives
+both because Asciidoctor extracts inline passthroughs before the quotes substitution pairs the wrapping
+backticks; that ordering claim is one of the render-level probes below.
 
 Uniform, not conditional on content looking macro-like: markdown already decided the span is literal at
 the parse boundary, and a macro-shape predicate would re-derive Asciidoctor's grammar apart from
@@ -123,11 +142,16 @@ INFO, no WARN, build success), so the WARN gate misses exactly the half of the c
 names. The invariant "generated roadmap adoc carries no substituting monospace span" gets a structural
 enforcer in the base build instead: a roadmap-tool test renders the real corpus (every item body, the
 changelog, the status board, the by-theme page) through the adoc renderers and fails on any monospace
-span not in an inert form. Because the emitters route all monospace output through `InertSpans`,
-including tool-minted spans such as the status board's item-id spans, the check needs no macro-shape
-heuristic: any bare backtick span in output means some surface bypassed the choke point, which is
-precisely the future regression (a later sixth surface forgetting to route through the emitter) this
-gate exists to catch.
+span, outside structural blocks, that is not in an inert form. The scanner tracks structural blocks and
+skips listing, literal, comment, and passthrough regions, because fenced-block lines copy verbatim into
+listing blocks where backticks are inert by block context, not by span form (the operation-driven test
+corpus item has four bare backtick spans inside a graphql fence today, and a scan without block tracking
+fails at landing on them). `AdocMarkdownTableCheck` already tracks exactly this block set and is the
+in-repo model; R582's collector plans the same exclusion. With blocks excluded, the check needs no
+macro-shape heuristic: the emitters route all flowed-prose monospace output through `InertSpans`,
+including tool-minted spans such as the status board's item-id spans, so any bare backtick span in flowed
+output means some surface bypassed the choke point, which is precisely the future regression (a later
+md-sourced surface forgetting to route through the emitter) this gate exists to catch.
 
 ## Migration and R582 coordination
 
@@ -154,20 +178,26 @@ Converter-level unit tests in roadmap-tool, `MdTableToAdocTest` conventions:
   likewise; both therefore render as typed.
 - A markdown link inside a span is not rewritten; the same link outside the span still is. An em dash
   inside a span is preserved; outside, swept.
-- Span content containing a plus sign emits the pass-macro form with `]` escaped.
-- A double-backtick span converts; a span opened on one line and closed on the next stays a bare backtick
-  pair (the pinned residual limit, asserted rather than only disclaimed; it is the one remnant of R582's
-  observed cross-span fusing case, which per-span passthrough otherwise kills for md-sourced pages).
+- Span content containing a plus sign, a backtick, or leading/trailing whitespace after pad
+  normalization emits the pass-macro form with `]` escaped; content clean of all three emits the
+  plus-delimited form. The three corpus double-backtick spans are the fixture cases, pinning both the
+  CommonMark pad strip and the fallback routing.
+- A span opened on one line and closed on the next stays a bare backtick pair (the pinned residual
+  limit, asserted rather than only disclaimed; it is the one remnant of R582's observed cross-span
+  fusing case, which per-span passthrough otherwise kills for md-sourced pages).
 - Table-cell spans compose with the whole-cell pipe escape; heading spans convert; fence lines are
   untouched.
 - Title label emitter: inert form when content is clean, bare span plus enforcement failure when content
   carries `]` or `+`.
-- The corpus enforcement test described above.
+- The corpus enforcement test described above. Harness: `TransientCitationCheckTest`'s pattern of
+  walking up from the module basedir to the reactor root to read the real corpus files
+  (`ModuleEnumerationCheckTest` and `CoverageAgentWiringCheckTest` do the same).
 
 Render-level claims (the plus-delimited form inside an xref attrlist; a pipe escaped inside a passthrough
-within a table cell) are verified empirically during implementation by planting probes and rendering,
-R582's method, with the outcome recorded in this body; roadmap-tool does not grow an AsciidoctorJ test
-dependency for this.
+within a table cell; the pass macro's extraction preceding the quotes substitution, which the
+backtick-content fallback relies on) are verified empirically during implementation by planting probes
+and rendering, R582's method, with the outcome recorded in this body; roadmap-tool does not grow an
+AsciidoctorJ test dependency for this.
 
 End-to-end: full reactor build green under `-Plocal-db`; the docs render under its WARN gate stays green
 as a secondary signal.
