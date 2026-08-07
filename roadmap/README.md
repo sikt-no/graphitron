@@ -16,7 +16,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R582` | Gate dangling cross-file .adoc xref anchors, which render silently and rot invisibly | Spec | 2026-08-06 <sub>created 2026-08-04</sub> | [plan](adoc-xref-section-anchor-gate.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
-| `R587` | Roadmap markdown code spans render as substituting AsciiDoc spans, so quoted macros go live | Spec | 2026-08-06 <sub>created 2026-08-04</sub> | [plan](md-code-span-passthrough-render.md) |
+| `R587` | Roadmap markdown code spans render as substituting AsciiDoc spans, so quoted macros go live | Ready | 2026-08-07 <sub>created 2026-08-04</sub> | [plan](md-code-span-passthrough-render.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-06 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R589` | Classification is a relation; validation adds facts <sub>blocked by: [graphitron-model-captures-facts](graphitron-model-captures-facts.md)</sub> | Spec | 2026-08-06 <sub>created 2026-08-04</sub> | [plan](validation-adds-facts.md) |
 | `R595` | The graphitron-model module exists and capture fills it | In Progress | 2026-08-07 <sub>created 2026-08-05</sub> | [plan](graphitron-model-captures-facts.md) |
@@ -413,7 +413,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R604` [**LeafCoverageReport carries a private escapeAdocCell duplicating Main's**](roadmap-tool-adoc-cell-escape-dedup.md) — Backlog, cleanup
 - `R348` [**Regenerate and guard the generated supported-schema-shapes migration doc against drift**](supported-schema-shapes-regen-guard.md) — Backlog, tech-debt
 - `R600` [**Retire the roadmap markdown-to-AsciiDoc translator by authoring plans in AsciiDoc**](roadmap-plans-authored-as-asciidoc.md) — Backlog, cleanup
-- `R587` [**Roadmap markdown code spans render as substituting AsciiDoc spans, so quoted macros go live**](md-code-span-passthrough-render.md) — Spec, cleanup
+- `R587` [**Roadmap markdown code spans render as substituting AsciiDoc spans, so quoted macros go live**](md-code-span-passthrough-render.md) — Ready, cleanup
 - `R530` [**Manual how-to: serve your schema over HTTP (the GraphitronApplication SPI adapter)**](manual-howto-serve-schema-over-http.md) — Backlog, cleanup
 - `R498` [**Restore or repoint the missing getting-started quieting-warnings doc referenced by the RAG dev-warm hint**](rag-log-quieting-getting-started-doc.md) — Backlog, docs
 - `R17` [**Annotated walkthrough of a generated file**](generated-output-walkthrough.md) — Backlog, cleanup
