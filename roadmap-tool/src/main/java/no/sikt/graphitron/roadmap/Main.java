@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.function.UnaryOperator;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
@@ -533,7 +534,8 @@ public final class Main {
         sb.append("= Rewrite Roadmap\n");
         sb.append(":description: Active and Backlog work on the Graphitron rewrite generator.\n\n");
         sb.append("This is the rendered roadmap. Plans are authored as markdown in ")
-          .append("`roadmap/`; this view derives from the per-item front-matter ")
+          .append(InertSpans.monospace("roadmap/"))
+          .append("; this view derives from the per-item front-matter ")
           .append("and the plan bodies. For the model taxonomy, see ")
           .append("xref:../architecture/reference/code-generation-triggers.adoc[Code Generation Triggers]. ")
           .append("For design principles, see ")
@@ -561,8 +563,8 @@ public final class Main {
             sb.append("| ID | Item | Status | Updated | Plan\n");
             for (Item i : active) {
                 String status = i.status() + (i.deferred() ? " (deferred)" : "");
-                sb.append("| `").append(i.id()).append("`\n");
-                sb.append("| ").append(escapeAdocCell(i.title()));
+                sb.append("| ").append(InertSpans.monospace(i.id())).append("\n");
+                sb.append("| ").append(titleCell(i.title()));
                 if (!i.dependsOn().isEmpty()) {
                     sb.append(" +\n_blocked by: ").append(linkAdocSlugs(i.dependsOn(), ChangelogContext.STANDALONE)).append("_");
                 }
@@ -608,14 +610,15 @@ public final class Main {
             if (!deferredBacklog.isEmpty()) {
                 sb.append("=== Deferred\n\n");
                 sb.append("Items parked until a blocking concern is resolved or re-prioritised. ");
-                sb.append("Set `deferred: false` (or remove the field) to return an item to the active backlog.\n\n");
+                sb.append("Set ").append(InertSpans.monospace("deferred: false"))
+                  .append(" (or remove the field) to return an item to the active backlog.\n\n");
                 deferredBacklog.stream()
                     .sorted(Comparator
                         .comparingInt((Item i) -> i.priority() == null ? Integer.MAX_VALUE : i.priority())
                         .thenComparing(Item::title))
                     .forEach(i -> {
-                        sb.append("* `").append(i.id()).append("` xref:plans/")
-                          .append(i.slug()).append(".adoc[").append(escapeAdocCell(i.title())).append("]");
+                        sb.append("* ").append(InertSpans.monospace(i.id())).append(" xref:plans/")
+                          .append(i.slug()).append(".adoc[").append(titleLabel(i.title())).append("]");
                         sb.append(adocExplainerParenthetical(concepts, i.id()));
                         if (i.notes() != null && !i.notes().isBlank()) {
                             sb.append(": _").append(i.notes().strip()).append("_");
@@ -632,11 +635,13 @@ public final class Main {
         if (!concepts.isEmpty()) {
             sb.append("== Concept explainers\n\n");
             sb.append("Intuition-first background pages for dense or recurring roadmap concepts, ");
-            sb.append("rendered as interactive HTML. Authored with the `explainer` skill; ");
-            sb.append("this listing derives from `roadmap/concepts/*.html`, never by hand.\n\n");
+            sb.append("rendered as interactive HTML. Authored with the ")
+              .append(InertSpans.monospace("explainer")).append(" skill; ");
+            sb.append("this listing derives from ")
+              .append(InertSpans.monospace("roadmap/concepts/*.html")).append(", never by hand.\n\n");
             concepts.pages().forEach((slug, page) -> {
                 sb.append("* link:concepts/").append(slug).append(".html[")
-                  .append(escapeAdocCell(page.title())).append("]")
+                  .append(titleLabel(page.title())).append("]")
                   .append(adocBacks(concepts.anchorsFor(slug)))
                   .append("\n");
             });
@@ -650,12 +655,12 @@ public final class Main {
     }
 
     private static void appendBacklogAdocLine(StringBuilder sb, Item i, ConceptIndex concepts) {
-        sb.append("* `").append(i.id()).append("` xref:plans/").append(i.slug()).append(".adoc[")
-          .append(escapeAdocCell(i.title())).append("]");
+        sb.append("* ").append(InertSpans.monospace(i.id())).append(" xref:plans/").append(i.slug()).append(".adoc[")
+          .append(titleLabel(i.title())).append("]");
         sb.append(adocExplainerParenthetical(concepts, i.id()));
         String description = firstNonHeadingParagraph(i.body());
         if (!description.isEmpty()) {
-            sb.append(": ").append(escapeAdocInline(description));
+            sb.append(": ").append(inlineMdToAdoc(description, ChangelogContext.STANDALONE));
         }
         String dateAnnotation = renderBacklogDateAnnotationAdoc(i);
         if (!dateAnnotation.isEmpty()) {
@@ -698,7 +703,8 @@ public final class Main {
     static String renderAdocByTheme(List<Item> items) {
         StringBuilder sb = new StringBuilder();
         sb.append("= Rewrite Roadmap, by theme\n");
-        sb.append(":description: Cross-cutting view of every Active and Backlog item by `theme:`.\n\n");
+        sb.append(":description: Cross-cutting view of every Active and Backlog item by ")
+          .append(InertSpans.monospace("theme:")).append(".\n\n");
         sb.append("Themes are a closed set; bucket and theme are orthogonal. ");
         sb.append("See xref:index.adoc[Roadmap] for the status board, ")
           .append("or back to xref:../index.adoc[home].\n\n");
@@ -718,8 +724,8 @@ public final class Main {
                     .comparingInt((Item i) -> i.priority() == null ? Integer.MAX_VALUE : i.priority())
                     .thenComparing(Item::title))
                 .forEach(i -> {
-                    sb.append("* `").append(i.id()).append("` xref:plans/")
-                      .append(i.slug()).append(".adoc[*").append(escapeAdocCell(i.title()))
+                    sb.append("* ").append(InertSpans.monospace(i.id())).append(" xref:plans/")
+                      .append(i.slug()).append(".adoc[*").append(titleLabel(i.title()))
                       .append("*]: ").append(i.status());
                     if (i.bucket() != null) sb.append(", ").append(i.bucket());
                     if (!i.dependsOn().isEmpty()) {
@@ -734,8 +740,8 @@ public final class Main {
             sb.append("== (untagged)\n\n");
             untagged.stream()
                 .sorted(Comparator.comparing(Item::title))
-                .forEach(i -> sb.append("* `").append(i.id()).append("` xref:plans/")
-                    .append(i.slug()).append(".adoc[*").append(escapeAdocCell(i.title()))
+                .forEach(i -> sb.append("* ").append(InertSpans.monospace(i.id())).append(" xref:plans/")
+                    .append(i.slug()).append(".adoc[*").append(titleLabel(i.title()))
                     .append("*]\n"));
             sb.append("\n");
         }
@@ -761,7 +767,7 @@ public final class Main {
     /** One plan page: header + attribute box + body (md→adoc). */
     static String renderAdocPlan(Item i) {
         StringBuilder sb = new StringBuilder();
-        sb.append("= ").append(i.title()).append("\n");
+        sb.append("= ").append(titleHeading(i.title())).append("\n");
         sb.append(":description: ").append(i.id()).append(" plan, ")
           .append(i.status().toLowerCase()).append(".\n");
         // book doctype: source plans freely skip heading levels (Markdown allows
@@ -771,7 +777,7 @@ public final class Main {
 
         sb.append("[cols=\"1h,3\", frame=ends, grid=rows]\n");
         sb.append("|===\n");
-        sb.append("| ID | `").append(i.id()).append("`\n");
+        sb.append("| ID | ").append(InertSpans.monospace(i.id())).append("\n");
         String status = i.status() + (i.deferred() ? " (deferred)" : "");
         sb.append("| Status | ").append(status).append("\n");
         if (i.bucket() != null) sb.append("| Bucket | ").append(i.bucket()).append("\n");
@@ -867,6 +873,11 @@ public final class Main {
         // emit-depth is the stack size after popping levels deeper than the
         // current source level and pushing the current source level.
         java.util.Deque<Integer> headingStack = new java.util.ArrayDeque<>();
+        // Delimiter length of a code span an earlier line of the current paragraph opened
+        // and has not closed. The sources are hard-wrapped, so this is ordinary; without it
+        // the converter would pair such a span's closing backtick with the next span's
+        // opening one and wrap the prose between them.
+        int openRun = 0;
         String[] lines = md.split("\n", -1);
         Pattern fence = Pattern.compile("^```(\\w*)\\s*$");
         Pattern heading = Pattern.compile("^(#+)\\s+(.*)$");
@@ -874,6 +885,7 @@ public final class Main {
             String raw = lines[idx];
             var fm = fence.matcher(raw);
             if (fm.matches()) {
+                openRun = 0;
                 if (!inFence) {
                     String lang = fm.group(1);
                     if (!lang.isEmpty()) out.append("[source,").append(lang).append("]\n");
@@ -899,9 +911,8 @@ public final class Main {
                 // Plus 1 because the page's own `= Title` is level 0; first body
                 // heading should be level 1 (`==`). Cap at AsciiDoc's max of 5.
                 int emitLevel = Math.min(headingStack.size() + 1, 5);
-                String title = hm.group(2);
-                title = transformAdocLinks(title, ctx);
-                title = title.replaceAll("\\*\\*([^*]+)\\*\\*", "*$1*");
+                openRun = 0;
+                String title = inlineMdToAdoc(hm.group(2), ctx);
                 out.append("=".repeat(emitLevel)).append(' ').append(title).append('\n');
                 continue;
             }
@@ -919,11 +930,19 @@ public final class Main {
                     body.add(parseMdTableCells(lines[idx]));
                 }
                 emitAdocTable(out, header, body, ctx);
+                openRun = 0;
                 continue;
             }
             String line = raw;
             if (line.equals("---")) {
                 out.append("'''\n");
+                openRun = 0;
+                continue;
+            }
+            if (line.isBlank()) {
+                // A code span cannot cross a paragraph break; an unclosed one ends here.
+                openRun = 0;
+                out.append(line).append('\n');
                 continue;
             }
             // Markdown ordered-list markers ("1. ", "2. ", "a. ", "b. ") -> AsciiDoc ". ":
@@ -932,12 +951,12 @@ public final class Main {
             // to the renderer and avoids "list item index: expected N, got M" /
             // "expected a, got c" warnings when intervening code blocks or
             // paragraphs break the run.
-            line = line.replaceAll("^(\\s*)(?:\\d+|[a-zA-Z])\\.\\s", "$1. ");
-            line = line.replaceAll("\\*\\*([^*]+)\\*\\*", "*$1*");
-            line = transformAdocLinks(line, ctx);
-            // Em-dash sweep: codebase rule.
-            line = line.replace("—", ";");
-            out.append(line).append('\n');
+            if (openRun == 0) {
+                line = line.replaceAll("^(\\s*)(?:\\d+|[a-zA-Z])\\.\\s", "$1. ");
+            }
+            Inline converted = inlineMdToAdoc(line, ctx, openRun);
+            openRun = converted.openRun();
+            out.append(converted.text()).append('\n');
         }
         return out.toString();
     }
@@ -1016,11 +1035,121 @@ public final class Main {
     }
 
     private static String transformAdocTableCell(String cell, ChangelogContext ctx) {
-        String c = cell.replaceAll("\\*\\*([^*]+)\\*\\*", "*$1*");
-        c = transformAdocLinks(c, ctx);
-        c = c.replace("—", ";");
-        c = c.replace("|", "\\|");
-        return c;
+        return escapeAdocCell(inlineMdToAdoc(cell, ctx));
+    }
+
+    /** One line converted, plus the code-span delimiter length it leaves open (0 when none). */
+    record Inline(String text, int openRun) {}
+
+    /**
+     * A stretch of a line held back from the prose transforms. A {@code Held} for span
+     * content releases through a span producer, so the same protected segment can come out
+     * as {@link InertSpans#monospace} in flowed prose and as {@link InertSpans#label} inside
+     * a macro attrlist; a verbatim one releases as typed.
+     */
+    private record Held(String content, boolean verbatim) {}
+
+    private static final char HOLD_OPEN = '\u0001';
+    private static final char HOLD_CLOSE = '\u0002';
+    private static final Pattern HOLD = Pattern.compile("\u0001(\\d+)\u0002");
+
+    private static String hold(List<Held> held, Held segment) {
+        held.add(segment);
+        return HOLD_OPEN + Integer.toString(held.size() - 1) + HOLD_CLOSE;
+    }
+
+    private static String release(String staged, List<Held> held, UnaryOperator<String> span) {
+        return HOLD.matcher(staged).replaceAll(m -> {
+            Held h = held.get(Integer.parseInt(m.group(1)));
+            return java.util.regex.Matcher.quoteReplacement(
+                h.verbatim() ? h.content() : span.apply(h.content()));
+        });
+    }
+
+    /** The inline pipeline for text with no code span left open by a previous line. */
+    static String inlineMdToAdoc(String text, ChangelogContext ctx) {
+        return inlineMdToAdoc(text, ctx, 0).text();
+    }
+
+    /**
+     * The one inline markdown-to-AsciiDoc pipeline every markdown-sourced surface routes
+     * through: heading titles, body lines, table cells, and the status board's backlog
+     * descriptions. Code spans are segmented out first and held back from the prose
+     * transforms, so bold, the markdown-link rewrite and the em-dash sweep apply to prose
+     * only and span content reaches the page verbatim. Holding rather than splitting is
+     * what lets a construct straddle a span: bold wrapping a span, or a link whose label
+     * carries one, still matches its pattern with the span standing in as one token.
+     *
+     * <p>{@code carriedOpen} is the delimiter length an earlier line of the same paragraph
+     * left open; the returned {@link Inline#openRun} is what this line leaves open in turn.
+     * Content up to the closing delimiter, and from an unclosed opener to end of line, is
+     * held verbatim: it is span content, whatever the prose patterns would otherwise make
+     * of it.
+     */
+    static Inline inlineMdToAdoc(String text, ChangelogContext ctx, int carriedOpen) {
+        List<Held> held = new ArrayList<>();
+        StringBuilder staged = new StringBuilder();
+        InertSpans.Pairing p = InertSpans.pair(text, carriedOpen);
+        int cursor = 0;
+        if (carriedOpen > 0) {
+            int closed = p.carriedCloser() == null ? text.length() : p.carriedCloser().end();
+            staged.append(hold(held, new Held(text.substring(0, closed), true)));
+            cursor = closed;
+        }
+        for (InertSpans.Span s : p.spans()) {
+            staged.append(text, cursor, s.open().start());
+            String content = text.substring(s.open().end(), s.close().start());
+            staged.append(hold(held, new Held(InertSpans.normalize(content), false)));
+            cursor = s.close().end();
+        }
+        if (p.carriedOpener() != null) {
+            staged.append(text, cursor, p.carriedOpener().start());
+            staged.append(hold(held, new Held(text.substring(p.carriedOpener().start()), true)));
+            cursor = text.length();
+        }
+        staged.append(text, cursor, text.length());
+
+        String prose = staged.toString();
+        prose = prose.replaceAll("\\*\\*([^*]+)\\*\\*", "*$1*");
+        prose = transformAdocLinks(prose, ctx, held);
+        // Em-dash sweep: codebase rule.
+        prose = prose.replace("—", ";");
+        return new Inline(release(prose, held, InertSpans::monospace), p.openRun());
+    }
+
+    /**
+     * Code-span emission without the prose transforms, for front-matter titles. Titles are
+     * the fifth markdown-sourced surface and reach adoc through their own sinks rather than
+     * through {@link #mdBodyToAdoc}; {@code producer} is what distinguishes those sinks,
+     * {@link InertSpans#label} for an xref label attrlist and {@link InertSpans#monospace}
+     * everywhere else.
+     */
+    private static String inlineSpansOnly(String text, UnaryOperator<String> producer) {
+        InertSpans.Pairing p = InertSpans.pair(text, 0);
+        StringBuilder out = new StringBuilder();
+        int cursor = 0;
+        for (InertSpans.Span s : p.spans()) {
+            out.append(text, cursor, s.open().start());
+            String content = text.substring(s.open().end(), s.close().start());
+            out.append(producer.apply(InertSpans.normalize(content)));
+            cursor = s.close().end();
+        }
+        return out.append(text, cursor, text.length()).toString();
+    }
+
+    /** A front-matter title bound for a plan page's own document title, where no escape applies. */
+    static String titleHeading(String title) {
+        return inlineSpansOnly(title, InertSpans::monospace);
+    }
+
+    /** A front-matter title bound for a table cell: inert spans, then the whole-cell pipe escape. */
+    static String titleCell(String title) {
+        return escapeAdocCell(inlineSpansOnly(title, InertSpans::monospace));
+    }
+
+    /** A front-matter title bound for the label attrlist of an {@code xref:} or {@code link:}. */
+    static String titleLabel(String title) {
+        return escapeAdocCell(inlineSpansOnly(title, InertSpans::label));
     }
 
     private static final Pattern MD_LINK = Pattern.compile("\\[([^\\]]+)\\]\\(([^)]+)\\)");
@@ -1033,7 +1162,7 @@ public final class Main {
      * links go to {@code plans/<slug>.adoc}. For PLAN context (under plans/),
      * sibling plan links resolve directly.
      */
-    private static String transformAdocLinks(String line, ChangelogContext ctx) {
+    private static String transformAdocLinks(String line, ChangelogContext ctx, List<Held> held) {
         return MD_LINK.matcher(line).replaceAll(m -> {
             String text = m.group(1);
             String target = m.group(2);
@@ -1044,8 +1173,15 @@ public final class Main {
                 target = target.substring(0, hash);
             }
             String mapped = mapAdocTarget(target, anchor, ctx);
+            if (mapped == null) {
+                // Unmapped: the label goes back into prose, so any held span in it stays
+                // held and releases with the rest of the line.
+                return java.util.regex.Matcher.quoteReplacement("[" + text + "](" + m.group(2) + ")");
+            }
+            // The label lands in a macro attrlist, where the pass macro is unsafe, so held
+            // spans release here rather than in the line-wide pass below.
             return java.util.regex.Matcher.quoteReplacement(
-                mapped == null ? "[" + text + "](" + m.group(2) + ")" : mapped.replace("$$TEXT$$", text));
+                mapped.replace("$$TEXT$$", release(text, held, InertSpans::label)));
         });
     }
 
@@ -1098,11 +1234,6 @@ public final class Main {
     /** Escape characters that confuse AsciiDoc table cells. */
     private static String escapeAdocCell(String s) {
         return s.replace("|", "\\|");
-    }
-
-    /** Light inline escape for non-cell contexts (currently a no-op stub). */
-    private static String escapeAdocInline(String s) {
-        return s;
     }
 
     private static Map<String, String> parseOptions(List<String> tokens) {

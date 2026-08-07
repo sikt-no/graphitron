@@ -588,13 +588,26 @@ final class LeafCoverageReport {
         return "";
     }
 
-    /** Strips Javadoc inline tags that confuse AsciiDoc rendering. */
+    private static final Pattern JAVADOC_CODE = Pattern.compile("\\{@code\\s+([^}]+)\\}");
+    private static final Pattern JAVADOC_LINK = Pattern.compile("\\{@link(?:plain)?\\s+([^}]+)\\}");
+
+    /**
+     * Turns Javadoc inline tags into monospace spans for the staged AsciiDoc. The payload of
+     * a {@code {@code}} or {@code {@link}} tag is literal by intent, exactly like a markdown
+     * code span, so it goes out through the shared producer rather than as a bare backtick
+     * span that would re-substitute whatever the payload happens to look like. The markdown
+     * segmentation stays out of this: javadoc input carries no author-written backtick
+     * grammar to parse.
+     */
     private static String cleanJavadocInline(String line) {
-        // {@code X} → `X`. {@link X} / {@linkplain X} → X. Strip the wrapping braces only;
-        // AsciiDoc handles backticks for code spans.
-        line = line.replaceAll("\\{@code\\s+([^}]+)\\}", "`$1`");
-        line = line.replaceAll("\\{@link(?:plain)?\\s+([^}]+)\\}", "`$1`");
+        line = inertTagPayload(line, JAVADOC_CODE);
+        line = inertTagPayload(line, JAVADOC_LINK);
         return line;
+    }
+
+    private static String inertTagPayload(String line, Pattern tag) {
+        return tag.matcher(line)
+            .replaceAll(m -> Matcher.quoteReplacement(InertSpans.monospace(m.group(1))));
     }
 
     private static ParsedFile parseSourceFile(String content) {

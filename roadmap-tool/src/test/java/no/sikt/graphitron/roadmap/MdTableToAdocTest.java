@@ -68,8 +68,10 @@ class MdTableToAdocTest {
             | map | `Map<K|V>` |
             """;
         String adoc = Main.mdBodyToAdoc(md, Main.ChangelogContext.PLAN);
-        // The pipe inside the code span must be preserved, escaped for AsciiDoc.
-        assertThat(adoc).contains("`Map<K\\|V>`");
+        // The pipe inside the code span must be preserved, escaped for AsciiDoc. The span
+        // itself goes out in an inert form, so the escape composes with the passthrough
+        // delimiters rather than with a bare backtick pair.
+        assertThat(adoc).contains("`+Map<K\\|V>+`");
     }
 
     @Test

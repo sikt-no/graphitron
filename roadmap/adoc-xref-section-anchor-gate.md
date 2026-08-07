@@ -12,7 +12,7 @@ last-updated: 2026-08-06
 
 # Gate dangling cross-file .adoc xref anchors, which render silently and rot invisibly
 
-A cross-file `+xref:<file>.adoc#anchor+` naming an anchor the target page does not publish renders as a
+A cross-file `xref:<file>.adoc#anchor` naming an anchor the target page does not publish renders as a
 working link that goes nowhere useful: the reader lands at the top of the right page instead of the
 section. Asciidoctor does not and cannot catch it, because the target is a separate document, so the
 mistake ships and reproduces.
@@ -27,7 +27,7 @@ Asciidoctor's own documentation or from a habit formed outside this repo, and it
 
 Census over `docs/target/staging` (the tree the renderer is pointed at), resolving each anchored
 reference against the `id="..."` attributes in the page the build actually produced. 31 anchored
-references (27 cross-file `+xref:<file>.adoc#anchor+`, 4 same-file `+xref:#anchor+`), **4 dangling, all four
+references (27 cross-file `xref:<file>.adoc#anchor`, 4 same-file `xref:#anchor`), **4 dangling, all four
 the same mistake**, and every one has an exact kebab-case sibling that exists. The counts cover the
 authored docs; this item's own two illustration macros are staged and scanned too, and are accounted for
 separately below:
@@ -56,9 +56,9 @@ small: the sweep is four one-token substitutions and the gate has a single failu
 
 Established empirically rather than assumed, by planting both forms in `nodeId.adoc` and rendering:
 
-* Same-file `+<<zzz-no-such-anchor>>+` → `asciidoctor: INFO: possible invalid reference:
+* Same-file `<<zzz-no-such-anchor>>` → `asciidoctor: INFO: possible invalid reference:
   zzz-no-such-anchor`. Reported, but at INFO, and the build still succeeds.
-* Cross-file `+xref:node.adoc#zzz-no-such-cross-anchor[label]+` → **completely silent**. No INFO, no
+* Cross-file `xref:node.adoc#zzz-no-such-cross-anchor[label]` → **completely silent**. No INFO, no
   warning, `BUILD SUCCESS`.
 
 So the form that is impossible for the author to self-check is also the form nothing reports. This is the
@@ -67,7 +67,7 @@ gate already won: a reference that names a live target should be build-enforced 
 
 ## Design
 
-**The rule: a cross-file anchored xref must target an explicit block anchor** (`[#id]` or `+[[id]]+`) on the
+**The rule: a cross-file anchored xref must target an explicit block anchor** (`[#id]` or `[[id]]`) on the
 target section, not an auto-generated heading id. The gate resolves against explicit anchors only.
 
 This is already the house convention, which is the main argument for it. Of the 23 currently-working
@@ -123,37 +123,47 @@ too. A second `exec-maven-plugin` execution declared after `render-roadmap-adoc`
 therefore gates every build. The check reads staged `.adoc` sources rather than rendered HTML, so skipping
 the AsciiDoctor render costs it nothing.
 
-**Quoted xref syntax counts as a reference, and that is correct.** Staging includes `staging/roadmap/`, so
-roadmap prose is in the scan, and prose about xrefs quotes xref syntax. A single-backtick span applies
-AsciiDoc's normal substitution group, macros included, so wrapping an xref macro in backticks renders a
-live link, not literal text; only a plus-delimited passthrough inside the span suppresses it. The gate
-should therefore treat it as a reference and the *prose* is what gets fixed, rather than teaching the check
-to skip inline monospace, which would blind it to the same mistake in ordinary prose.
+**Quoted xref syntax counts as a reference in hand-authored `.adoc`, and that is correct.** Staging includes
+`staging/roadmap/`, so roadmap prose is in the scan, and prose about xrefs quotes xref syntax. In a page an
+author wrote as AsciiDoc, a single-backtick span applies the normal substitution group with macros included,
+so wrapping an xref macro in backticks renders a live link, not literal text; only a passthrough inside the
+span suppresses it. The gate should therefore treat it as a reference and the *prose* is what gets fixed,
+rather than teaching the check to skip inline monospace, which would blind it to the same mistake in
+ordinary prose.
 
-**So every quoted reference in this item's own body is a plus-delimited passthrough, because "no attrlist,
-therefore no macro" is paragraph-scoped rather than span-scoped.** Settled by rendering the site and reading
-this page's own HTML, not by probing the forms in isolation, and the isolated probes are what got it wrong:
-a bare `+xref:node.adoc#anchor+` is inert on its own, but the paragraph that quoted it also quoted a
-bracketed `+xref:<file>.adoc#anchor[label]+` two lines further down, and Asciidoctor's inline-xref match
-spanned the gap between the two code spans. It took the target from the first quote and the attrlist from
-the second, emitted a malformed anchor tag where the first placeholder stood, and left the closing tag's
-residue as literal text inside the second: one placeholder disappeared from the published prose, another
-gained garbage, and the render logged nothing. Neither backtick quoting nor the absence of an attrlist
-contains a macro; only a passthrough does. The anchor-declaration syntax the rule above names had the same
-problem for the same reason: backtick-quoted, the double-bracket form was substituted into a real empty
-anchor element, so the sentence defining the rule showed the reader nothing where the syntax should be and
-stamped the same `id` on the page twice. A passthrough fixes that too, but only one such quote per paragraph
-survives; a second identical one in the same paragraph makes Asciidoctor warn that the id is already in use
-and, under `failIf severity=WARN`, fails the build. So this paragraph names the form in words and the sites
-that show it literally do so once each. This body now uses a passthrough for every quoted reference and
-declaration, including the two illustration macros it used to publish live (the
-`zzz-no-such-cross-anchor` example above and the `zzz-nope` probe below), so nothing on this page reaches the
-gate at all.
+**On md-sourced pages that premise no longer holds, and the collector must read the emitter's definition
+rather than keep its own.** The roadmap renderer now emits every markdown code span in an inert form, so a
+backticked reference in a roadmap item body or in the changelog is literal by construction; the live-span
+class survives only where an author wrote AsciiDoc by hand, under `docs/`. The collector classifies span
+forms on exactly the pages that renderer generates, so it must ask `InertSpans` whether a form is inert
+instead of carrying a second list that drifts the next time the emitter gains a form. Concretely: a bare
+backtick span still counts as a reference (the hand-authored habitat), and both inert forms do not.
 
-That has one consequence for the gate itself: a check keying on `+xref:<target>[attrlist]+` within a single
-line is *not* Asciidoctor-faithful in this corner. On the paragraph above it would have flagged the bracketed
-placeholder, whose `<file>.adoc` target does not exist, and missed the reference Asciidoctor actually built a
-link from. Under-report there is the right trade (the same-line rule catches every reference an author writes
+**The paragraph, not the code span, is the unit of containment, and that is why "no attrlist, therefore no
+macro" is not a safe reading.** Settled by rendering the site and reading this page's own HTML, not by
+probing the forms in isolation, and the isolated probes are what got it wrong: a bare
+`xref:node.adoc#anchor` is inert on its own, but the paragraph that quoted it also quoted a bracketed
+`xref:<file>.adoc#anchor[label]` two lines further down, and Asciidoctor's inline-xref match spanned the gap
+between the two code spans. It took the target from the first quote and the attrlist from the second,
+emitted a malformed anchor tag where the first placeholder stood, and left the closing tag's residue as
+literal text inside the second: one placeholder disappeared from the published prose, another gained
+garbage, and the render logged nothing. Neither backtick quoting nor the absence of an attrlist contains a
+macro; only a passthrough does. The anchor-declaration syntax the rule above names had the same problem for
+the same reason: backtick-quoted, the double-bracket form was substituted into a real empty anchor element,
+so the sentence defining the rule showed the reader nothing where the syntax should be and stamped the same
+`id` on the page twice.
+
+This body used to hand-write a plus-delimited passthrough at each of those sites. It no longer does: the
+renderer emits one per span, so the quotes above are plain markdown backticks and nothing on this page
+reaches the gate. That also retires the one-per-paragraph hazard the hand-written form carried, where a
+second identical anchor-declaration quote in the same paragraph made Asciidoctor warn that the id was
+already in use and, under `failIf severity=WARN`, failed the build. The per-span passthrough is emitted for
+every span rather than for the ones an author remembered, so identical quotes no longer collide.
+
+That has one consequence for the gate itself: a check keying on `xref:<target>[attrlist]` within a single
+line is *not* Asciidoctor-faithful in this corner. On the paragraph that produced the observation above it
+would have flagged the bracketed placeholder, whose `<file>.adoc` target does not exist, and missed the
+reference Asciidoctor actually built a link from. Under-report there is the right trade (the same-line rule catches every reference an author writes
 on purpose, and modelling Asciidoctor's cross-span matching is the id-algorithm mistake in another costume),
 but the item should not claim a faithfulness it does not have. The dangling-anchor class in quoted prose is
 real all the same: a quoted example naming a page that does exist beside the item (another plan's
@@ -162,7 +172,7 @@ reaches staging, so a target being authored does not make it resolvable: `roadma
 staged, while `roadmap/inference-axis-coverage.adoc` is.
 
 **What counts as a reference is wider than the target's first character suggests.** The same probes settle
-it: `+xref:../architecture/index.adoc#zzz-nope[label]+` renders as a live link, silently, so a target opening
+it: `xref:../architecture/index.adoc#zzz-nope[label]` renders as a live link, silently, so a target opening
 on `.` is a macro like any other. 15 of the 27 cross-file references in the census above are `../`-relative,
 including the fourth dangling one (`mutation.adoc:30` → `../../tutorial/05-mutations.adoc`). Detection
 therefore keys on the bracketed attrlist and accepts any relative path; narrowing it by the target's opening
@@ -202,15 +212,15 @@ rewritten by hand, at the cost of literal plus signs in GitHub's markdown view o
   `[#acceptances-classifier-guarantees-shape-emitter-assumptions]`,
   `[#rejections-validator-mirrors-classifier-invariants]`,
   `[#builder-step-results-are-sealed-not-strings-or-out-params]` in `development-principles.adoc`.
-  `reference.adoc:38`'s same-file `+<<Schema-qualified keys>>+` natural-language reference keeps working and
+  `reference.adoc:38`'s same-file `<<Schema-qualified keys>>` natural-language reference keeps working and
   needs no change.
-* No `xref:`, `+<<...>>+` or `+[[id]]+` quoted in this item's body survives as markup on the published page. The
-  passthrough rewrite was applied while the item was in Spec (see the Design note on paragraph scope), so
-  this is the regression check, not new work: render the site and confirm
-  `docs/target/generated-docs/roadmap/plans/adoc-xref-section-anchor-gate.html` contains no `<a>` element
-  derived from an `xref:` in the body and no stray tag residue as literal text. Do not let an edit drop the
-  plus delimiters from any quoted reference, and do not assume a placeholder without an attrlist is safe;
-  the paragraph, not the code span, is the unit of containment. The site render currently emits no
+* No `xref:`, `<<...>>` or `[[id]]` quoted in this item's body survives as markup on the published page. The
+  renderer emits an inert form per span, so this is the regression check, not new work: render the site and
+  confirm `docs/target/generated-docs/roadmap/plans/adoc-xref-section-anchor-gate.html` contains no `<a>`
+  element derived from an `xref:` in the body and no stray tag residue as literal text. On this page the
+  invariant is now the emitter's to hold, and its own corpus gate holds it; what still needs the
+  rendered-HTML look is any hand-authored `.adoc` this item edits, where the paragraph, not the code span,
+  remains the unit of containment. The site render currently emits no
   `possible invalid reference` INFO lines at all, so that is the baseline to preserve rather than a count
   to reduce. The same check applies to every *other* page this item edits, not only to this one: any page
   that gains quoted reference or anchor syntax gets the same rendered-HTML inspection, because the trap is
@@ -245,20 +255,20 @@ rewritten by hand, at the cost of literal plus signs in GitHub's markdown view o
   in any of those five today, so this is a mapping to state, not a bug to chase; getting it wrong reports a
   path that does not exist, in the one criterion whose whole point is correct provenance.
 * `AdocXrefAnchorCheckTest` covers: a resolving explicit anchor in each of the two declaration forms
-  (`[#id]` and `+[[id]]+`, both live in the tree, the latter at `table.adoc:39` and `routine.adoc:75,110`, so
+  (`[#id]` and `[[id]]`, both live in the tree, the latter at `table.adoc:39` and `routine.adoc:75,110`, so
   a collector that reads only `[#id]` would false-fail rather than under-report), a dangling anchor, the
   underscore-vs-kebab case specifically, a `../`-relative target (15 of the 27 references, per the Design
   note), a reference inside a `|===` table cell (live at `mojo-configuration.adoc:117`), an anchor inside a
   `----` listing or `////` comment block (must not count as a reference), a reference in a single-backtick
-  span (*does* count, per the Design note above) versus one in a plus-delimited passthrough (does not), and
-  a target page outside the tree (counted as unresolvable, neither silently passed nor failed). Pin the
+  span (*does* count, per the Design note above) versus one in either inert form (does not, and the
+  collector asks `InertSpans` rather than matching the forms itself), and a target page outside the tree (counted as unresolvable, neither silently passed nor failed). Pin the
   known under-report too: a bare `xref:` target on one line whose activating attrlist sits on a later line
   is *not* collected, which Asciidoctor would nonetheless link, so the limit is asserted rather than
   discovered later.
 
 ## Not in scope
 
-* Same-file `+<<...>>+` and `+xref:#...+` references. Asciidoctor already reports these at INFO and none are
+* Same-file `<<...>>` and `xref:#...` references. Asciidoctor already reports these at INFO and none are
   currently broken; promoting that INFO to a build failure is a separate argument about asciidoctor's log
   level, not about the unreported class this item exists for.
 * Following `include::` when collecting a page's anchors. A per-file scan is correct on today's tree: the
@@ -272,7 +282,7 @@ rewritten by hand, at the cost of literal plus signs in GitHub's markdown view o
   actually works. The unresolvable count does not surface that case, since it counts only references whose
   target `.adoc` is absent from staging. The cheap fix when it fires is to fold the anchors of each
   `include::`-ed file into the including page's set; today there is nothing to fold.
-* Unanchored `+xref:<file>.adoc[...]+` path validity. A wrong *path* is silent at build time too, so the
+* Unanchored `xref:<file>.adoc[...]` path validity. A wrong *path* is silent at build time too, so the
   distinction is not silence: Asciidoctor never resolves a cross-document target at all, it only rewrites the
   extension, and a full site render with two references pointing at files that do not exist logged nothing.
   What separates the two classes is the reader's experience and the fix. A wrong path 404s on the first click,
