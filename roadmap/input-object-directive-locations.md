@@ -20,7 +20,7 @@ The shipped state says the opposite: `@table(name: String) on OBJECT | INPUT_OBJ
 (`directives.graphqls:38`) deliberately keeps the location under the retired-location convention
 (dropping it would make graphql-java fail authored schemas with a locationless grammar error
 instead of a graphitron diagnostic), the classify-time rejection was downgraded to
-ignored-and-warned, and the model store codifies that reading: `intent_table.type_name` is
+ignored-and-warned, and the model store codifies that reading: `graphitron_table.type_name` is
 documented as "the OBJECT, INPUT_OBJECT, or INTERFACE carrying @table", with the
 ignored-and-warned status a detection.
 
@@ -31,5 +31,5 @@ nothing documents whether its `INPUT_OBJECT` location is a live semantic, a reti
 awaiting the convention's treatment, or a declaration to drop. The outcome is either a one-line
 convention entry naming `@record`'s input location retired (plus the warning detection), or a
 narrowing with its fixture sweep. Either way the answer lands in the directives reference and,
-if the store has shipped, as a comment or detection beside `intent_record`, and the old
+if the store has shipped, as a comment or detection beside `graphitron_record`, and the old
 umbrella's narrowing stage closes with it.

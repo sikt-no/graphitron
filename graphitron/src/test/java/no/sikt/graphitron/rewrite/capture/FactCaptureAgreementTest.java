@@ -16,7 +16,6 @@ import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.JooqCatalog;
-import no.sikt.graphitron.rewrite.schema.DeclaredDirectives;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -32,7 +31,7 @@ import java.util.Map;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
-import static no.sikt.graphitron.model.Tables.APPLIED_DIRECTIVE_SITE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_SITE;
 import static no.sikt.graphitron.model.Tables.CATALOG_COLUMN;
 import static no.sikt.graphitron.model.Tables.CATALOG_TABLE;
 import static no.sikt.graphitron.model.Tables.EXTENSION_METHOD;
@@ -73,33 +72,33 @@ class FactCaptureAgreementTest {
             "graphql_type", "graphql_type_declaration", "graphql_field", "graphql_argument",
             "graphql_enum_value", "graphql_union_member", "graphql_implements",
             "graphql_root_operation", "graphql_duplicate_declaration", "graphql_directive",
-            "graphql_directive_location", "graphql_directive_argument", "applied_schema_directive",
-            "applied_schema_directive_arg", "applied_type_directive", "applied_type_directive_arg",
-            "applied_field_directive", "applied_field_directive_arg", "applied_argument_directive",
-            "applied_argument_directive_arg", "applied_enum_value_directive",
-            "applied_enum_value_directive_arg", "intent_table", "intent_field_binding",
-            "intent_argument_binding", "intent_enum_value_binding", "intent_scalar_type",
-            "intent_enum", "intent_field_condition", "intent_field_condition_context_arg",
-            "intent_field_condition_arg_mapping_pair", "intent_argument_condition",
-            "intent_argument_condition_context_arg", "intent_argument_condition_arg_mapping_pair",
-            "intent_field_reference", "intent_field_reference_step",
-            "intent_field_reference_step_arg_mapping_pair", "intent_argument_reference",
-            "intent_argument_reference_step", "intent_argument_reference_step_arg_mapping_pair",
-            "intent_reference_for", "intent_reference_for_step",
-            "intent_reference_for_step_arg_mapping_pair", "intent_service",
-            "intent_service_context_arg", "intent_service_arg_mapping_pair",
-            "intent_external_field", "intent_source_row", "intent_connection", "intent_facet",
-            "intent_order_by", "intent_order", "intent_order_field", "intent_index",
-            "intent_default_order", "intent_default_order_field", "intent_mutation",
-            "intent_error", "intent_error_handler", "intent_node", "intent_node_key_column",
-            "intent_field_node_id", "intent_argument_node_id", "intent_argument_lookup_key",
-            "intent_field_lookup_key", "intent_split_query", "intent_tenant_fan_out",
-            "intent_pivot", "intent_routine", "intent_routine_arg_mapping_pair",
-            "intent_routine_column_mapping_pair", "intent_discriminate", "intent_discriminator",
-            "intent_federation_key", "intent_federation_key_field", "intent_link",
-            "intent_link_import", "intent_multitable_reference", "intent_record",
-            "intent_undecoded_argument", "graphql_type_declaration_synthesis",
-            "graphql_field_synthesis", "applied_type_directive_synthesis")) {
+            "graphql_directive_location", "graphql_directive_argument", "graphql_schema_directive",
+            "graphql_schema_directive_arg", "graphql_type_directive", "graphql_type_directive_arg",
+            "graphql_field_directive", "graphql_field_directive_arg", "graphql_argument_directive",
+            "graphql_argument_directive_arg", "graphql_enum_value_directive",
+            "graphql_enum_value_directive_arg", "graphitron_table", "graphitron_field_binding",
+            "graphitron_argument_binding", "graphitron_enum_value_binding", "graphitron_scalar_type",
+            "graphitron_enum", "graphitron_field_condition", "graphitron_field_condition_context_arg",
+            "graphitron_field_condition_arg_mapping_pair", "graphitron_argument_condition",
+            "graphitron_argument_condition_context_arg", "graphitron_argument_condition_arg_mapping_pair",
+            "graphitron_field_reference", "graphitron_field_reference_step",
+            "graphitron_field_reference_step_arg_mapping_pair", "graphitron_argument_reference",
+            "graphitron_argument_reference_step", "graphitron_argument_reference_step_arg_mapping_pair",
+            "graphitron_reference_for", "graphitron_reference_for_step",
+            "graphitron_reference_for_step_arg_mapping_pair", "graphitron_service",
+            "graphitron_service_context_arg", "graphitron_service_arg_mapping_pair",
+            "graphitron_external_field", "graphitron_source_row", "graphitron_connection", "graphitron_facet",
+            "graphitron_order_by", "graphitron_order", "graphitron_order_field", "graphitron_index",
+            "graphitron_default_order", "graphitron_default_order_field", "graphitron_mutation",
+            "graphitron_error", "graphitron_error_handler", "graphitron_node", "graphitron_node_key_column",
+            "graphitron_field_node_id", "graphitron_argument_node_id", "graphitron_argument_lookup_key",
+            "graphitron_field_lookup_key", "graphitron_split_query", "graphitron_tenant_fan_out",
+            "graphitron_pivot", "graphitron_routine", "graphitron_routine_arg_mapping_pair",
+            "graphitron_routine_column_mapping_pair", "graphitron_discriminate", "graphitron_discriminator",
+            "graphitron_federation_key", "graphitron_federation_key_field", "graphitron_link",
+            "graphitron_link_import", "graphitron_multitable_reference", "graphitron_record",
+            "graphitron_undecoded_argument", "graphitron_type_declaration_synthesis",
+            "graphitron_field_synthesis", "graphitron_type_directive_synthesis")) {
             registrations.put(relation, Arm.CONTAINMENT);
         }
         for (String relation : List.of(
@@ -110,7 +109,7 @@ class FactCaptureAgreementTest {
             "extension_scalar_constant")) {
             registrations.put(relation, Arm.EQUALITY);
         }
-        registrations.put("applied_directive_site", Arm.DERIVED);
+        registrations.put("graphql_directive_site", Arm.DERIVED);
         return Map.copyOf(registrations);
     }
 
@@ -176,10 +175,10 @@ class FactCaptureAgreementTest {
         try (var store = CapturedStore.of(tmp, FIXTURE)) {
             var captured = new LinkedHashMap<String, Integer>();
             store.dsl()
-                .select(APPLIED_DIRECTIVE_SITE.SITE_KIND, APPLIED_DIRECTIVE_SITE.TYPE_NAME,
-                    APPLIED_DIRECTIVE_SITE.MEMBER_NAME, APPLIED_DIRECTIVE_SITE.ARGUMENT_NAME,
-                    APPLIED_DIRECTIVE_SITE.DIRECTIVE_NAME)
-                .from(APPLIED_DIRECTIVE_SITE)
+                .select(GRAPHQL_DIRECTIVE_SITE.SITE_KIND, GRAPHQL_DIRECTIVE_SITE.TYPE_NAME,
+                    GRAPHQL_DIRECTIVE_SITE.MEMBER_NAME, GRAPHQL_DIRECTIVE_SITE.ARGUMENT_NAME,
+                    GRAPHQL_DIRECTIVE_SITE.DIRECTIVE_NAME)
+                .from(GRAPHQL_DIRECTIVE_SITE)
                 .fetch()
                 .forEach(row -> captured.merge(
                     String.join("|", String.valueOf(row.value1()), String.valueOf(row.value2()),
@@ -287,9 +286,6 @@ class FactCaptureAgreementTest {
     private static void count(Map<String, Integer> counts, List<Directive> directives,
                               String siteKind, String type, String member, String argument) {
         for (Directive directive : directives) {
-            if (DeclaredDirectives.names().contains(directive.getName())) {
-                continue;
-            }
             counts.merge(String.join("|", siteKind, String.valueOf(type), String.valueOf(member),
                 String.valueOf(argument), directive.getName()), 1, Integer::sum);
         }

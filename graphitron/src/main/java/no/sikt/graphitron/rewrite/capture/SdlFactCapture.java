@@ -23,8 +23,6 @@ import graphql.language.TypeName;
 import graphql.language.UnionTypeDefinition;
 import graphql.schema.idl.TypeDefinitionRegistry;
 
-import no.sikt.graphitron.rewrite.schema.DeclaredDirectives;
-
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -33,41 +31,47 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-import static no.sikt.graphitron.model.Tables.APPLIED_ARGUMENT_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.APPLIED_ARGUMENT_DIRECTIVE_ARG;
-import static no.sikt.graphitron.model.Tables.APPLIED_ENUM_VALUE_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.APPLIED_ENUM_VALUE_DIRECTIVE_ARG;
-import static no.sikt.graphitron.model.Tables.APPLIED_FIELD_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.APPLIED_FIELD_DIRECTIVE_ARG;
-import static no.sikt.graphitron.model.Tables.APPLIED_SCHEMA_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.APPLIED_SCHEMA_DIRECTIVE_ARG;
-import static no.sikt.graphitron.model.Tables.APPLIED_TYPE_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.APPLIED_TYPE_DIRECTIVE_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_DIRECTIVE_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_LOCATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DUPLICATE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_DIRECTIVE_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_IMPLEMENTS;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_DIRECTIVE_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_UNION_MEMBER;
 
 /**
- * The SDL capture load: one walk over the {@link TypeDefinitionRegistry} filling the existence
- * family, the fidelity rows for every non-graphitron directive application, and, through
- * {@link IntentCapture}, the decoded semantic relations for the graphitron and federation
- * inventory.
+ * The SDL capture load: one walk over the {@link TypeDefinitionRegistry} filling the {@code graphql_}
+ * family, and, through {@link GraphitronFactCapture}, the {@code graphitron_} relations decoded from
+ * the graphitron and federation directive inventory.
+ *
+ * <p>The {@code graphql_} family is a total transcription of the document. Every declaration, every
+ * directive definition, and every directive application is a row, graphitron's own namespace
+ * included; nothing is withheld on the grounds that an emitter will later strip it, because that is
+ * a question about {@code source_name} and belongs where the emitting happens. An application that
+ * also carries meaning gets a second, decoded row rather than moving families, which is why
+ * federation's {@code @key} needs no special case.
  *
  * <p>The registry, not the assembled schema, is the source, and that choice carries the load's
  * character. The registry validates nothing: it retains undeclared directives, unknown argument
  * names, wrong-typed literals, missing required arguments, and duplicate declarations without
  * error. Capture is therefore <em>tolerant by construction</em> and never throws on author input;
  * a duplicate element quarantines in {@code graphql_duplicate_declaration} and an undecodable
- * literal in {@code intent_undecoded_argument}, both rendered and located, so a detection has its
+ * literal in {@code graphitron_undecoded_argument}, both rendered and located, so a detection has its
  * row and no authored text is lost.
  *
  * <p>Capture is also <b>type-local</b>: every row's content is a function of its own type's
@@ -87,12 +91,12 @@ public final class SdlFactCapture {
 
     private final FactSink sink;
     private final TypeDefinitionRegistry registry;
-    private final IntentCapture intent;
+    private final GraphitronFactCapture decode;
 
     private SdlFactCapture(FactSink sink, TypeDefinitionRegistry registry) {
         this.sink = sink;
         this.registry = registry;
-        this.intent = new IntentCapture(sink);
+        this.decode = new GraphitronFactCapture(sink);
     }
 
     /** Runs the walk, buffering into {@code sink}; the caller flushes. */
@@ -109,17 +113,15 @@ public final class SdlFactCapture {
     // ---------------------------------------------------------------- directive definitions
 
     /**
-     * Records what each directive <em>is</em>. Graphitron's own bundled definitions stay out: they
-     * are generator constants, not author facts, and their fact-roles (argument defaults,
-     * repeatability) are absorbed by the semantic stratum's shapes. Everything else is a row,
-     * because the emitted runtime schema re-declares it.
+     * Records what each directive <em>is</em>, for every definition the registry holds. Graphitron's
+     * own bundled definitions are rows too, so an application's directive name always resolves to a
+     * definition and reading a repeatable flag or an argument default stays a join. Which
+     * definitions an emitter re-declares is a question about their {@code source_name}, answered
+     * where the emitting happens.
      */
     private void captureDirectiveDefinitions() {
         for (DirectiveDefinition definition : registry.getDirectiveDefinitions().values()) {
             String name = definition.getName();
-            if (DeclaredDirectives.names().contains(name)) {
-                continue;
-            }
             if (!sink.claim(GRAPHQL_DIRECTIVE, name)) {
                 quarantine("TYPE", "@" + name, definition);
                 continue;
@@ -205,27 +207,23 @@ public final class SdlFactCapture {
                 : ((graphql.language.SchemaExtensionDefinition) definition).getDirectives();
             for (Directive directive : directives) {
                 int ordinal = ordinals.merge(directive.getName(), 0, (old, ignored) -> old + 1);
-                if (isGraphitron(directive)) {
-                    intent.captureSchemaDirective(directive, ordinal);
-                    continue;
-                }
-                intent.captureSchemaDirective(directive, ordinal);
-                if (!sink.claim(APPLIED_SCHEMA_DIRECTIVE, directive.getName(), ordinal)) {
+                decode.captureSchemaDirective(directive, ordinal);
+                if (!sink.claim(GRAPHQL_SCHEMA_DIRECTIVE, directive.getName(), ordinal)) {
                     quarantine("DIRECTIVE_APPLICATION", "@" + directive.getName(), directive);
                     continue;
                 }
-                var record = sink.dsl().newRecord(APPLIED_SCHEMA_DIRECTIVE);
+                var record = sink.dsl().newRecord(GRAPHQL_SCHEMA_DIRECTIVE);
                 record.setDirectiveName(directive.getName());
                 record.setOrdinal(ordinal);
                 setPosition(directive.getSourceLocation(),
                     record::setSourceName, record::setSourceLine, record::setSourceColumn);
                 sink.add(record);
                 for (var argument : directive.getArguments()) {
-                    if (!sink.claim(APPLIED_SCHEMA_DIRECTIVE_ARG,
+                    if (!sink.claim(GRAPHQL_SCHEMA_DIRECTIVE_ARG,
                             directive.getName(), ordinal, argument.getName())) {
                         continue;
                     }
-                    var row = sink.dsl().newRecord(APPLIED_SCHEMA_DIRECTIVE_ARG);
+                    var row = sink.dsl().newRecord(GRAPHQL_SCHEMA_DIRECTIVE_ARG);
                     row.setDirectiveName(directive.getName());
                     row.setOrdinal(ordinal);
                     row.setDirectiveArgumentName(argument.getName());
@@ -484,15 +482,12 @@ public final class SdlFactCapture {
         var ordinals = new LinkedHashMap<String, Integer>();
         for (Directive directive : directives) {
             int ordinal = ordinals.merge(directive.getName(), 0, (old, ignored) -> old + 1);
-            intent.captureTypeDirective(site, directive, ordinal);
-            if (isGraphitron(directive)) {
-                continue;
-            }
-            if (!sink.claim(APPLIED_TYPE_DIRECTIVE, site.typeName(), directive.getName(), ordinal)) {
+            decode.captureTypeDirective(site, directive, ordinal);
+            if (!sink.claim(GRAPHQL_TYPE_DIRECTIVE, site.typeName(), directive.getName(), ordinal)) {
                 quarantine("DIRECTIVE_APPLICATION", site.typeName() + " @" + directive.getName(), directive);
                 continue;
             }
-            var record = sink.dsl().newRecord(APPLIED_TYPE_DIRECTIVE);
+            var record = sink.dsl().newRecord(GRAPHQL_TYPE_DIRECTIVE);
             record.setTypeName(site.typeName());
             record.setDirectiveName(directive.getName());
             record.setOrdinal(ordinal);
@@ -502,11 +497,11 @@ public final class SdlFactCapture {
             setOwnPosition(directive.getSourceLocation(), record::setSourceLine, record::setSourceColumn);
             sink.add(record);
             for (var argument : directive.getArguments()) {
-                if (!sink.claim(APPLIED_TYPE_DIRECTIVE_ARG,
+                if (!sink.claim(GRAPHQL_TYPE_DIRECTIVE_ARG,
                         site.typeName(), directive.getName(), ordinal, argument.getName())) {
                     continue;
                 }
-                var row = sink.dsl().newRecord(APPLIED_TYPE_DIRECTIVE_ARG);
+                var row = sink.dsl().newRecord(GRAPHQL_TYPE_DIRECTIVE_ARG);
                 row.setTypeName(site.typeName());
                 row.setDirectiveName(directive.getName());
                 row.setOrdinal(ordinal);
@@ -521,16 +516,13 @@ public final class SdlFactCapture {
         var ordinals = new LinkedHashMap<String, Integer>();
         for (Directive directive : directives) {
             int ordinal = ordinals.merge(directive.getName(), 0, (old, ignored) -> old + 1);
-            intent.captureFieldDirective(typeName, fieldName, directive, ordinal);
-            if (isGraphitron(directive)) {
-                continue;
-            }
-            if (!sink.claim(APPLIED_FIELD_DIRECTIVE, typeName, fieldName, directive.getName(), ordinal)) {
+            decode.captureFieldDirective(typeName, fieldName, directive, ordinal);
+            if (!sink.claim(GRAPHQL_FIELD_DIRECTIVE, typeName, fieldName, directive.getName(), ordinal)) {
                 quarantine("DIRECTIVE_APPLICATION",
                     typeName + "." + fieldName + " @" + directive.getName(), directive);
                 continue;
             }
-            var record = sink.dsl().newRecord(APPLIED_FIELD_DIRECTIVE);
+            var record = sink.dsl().newRecord(GRAPHQL_FIELD_DIRECTIVE);
             record.setTypeName(typeName);
             record.setFieldName(fieldName);
             record.setDirectiveName(directive.getName());
@@ -539,11 +531,11 @@ public final class SdlFactCapture {
                 record::setSourceName, record::setSourceLine, record::setSourceColumn);
             sink.add(record);
             for (var argument : directive.getArguments()) {
-                if (!sink.claim(APPLIED_FIELD_DIRECTIVE_ARG,
+                if (!sink.claim(GRAPHQL_FIELD_DIRECTIVE_ARG,
                         typeName, fieldName, directive.getName(), ordinal, argument.getName())) {
                     continue;
                 }
-                var row = sink.dsl().newRecord(APPLIED_FIELD_DIRECTIVE_ARG);
+                var row = sink.dsl().newRecord(GRAPHQL_FIELD_DIRECTIVE_ARG);
                 row.setTypeName(typeName);
                 row.setFieldName(fieldName);
                 row.setDirectiveName(directive.getName());
@@ -560,17 +552,14 @@ public final class SdlFactCapture {
         var ordinals = new LinkedHashMap<String, Integer>();
         for (Directive directive : directives) {
             int ordinal = ordinals.merge(directive.getName(), 0, (old, ignored) -> old + 1);
-            intent.captureArgumentDirective(typeName, fieldName, argumentName, directive, ordinal);
-            if (isGraphitron(directive)) {
-                continue;
-            }
-            if (!sink.claim(APPLIED_ARGUMENT_DIRECTIVE,
+            decode.captureArgumentDirective(typeName, fieldName, argumentName, directive, ordinal);
+            if (!sink.claim(GRAPHQL_ARGUMENT_DIRECTIVE,
                     typeName, fieldName, argumentName, directive.getName(), ordinal)) {
                 quarantine("DIRECTIVE_APPLICATION",
                     typeName + "." + fieldName + "(" + argumentName + ":) @" + directive.getName(), directive);
                 continue;
             }
-            var record = sink.dsl().newRecord(APPLIED_ARGUMENT_DIRECTIVE);
+            var record = sink.dsl().newRecord(GRAPHQL_ARGUMENT_DIRECTIVE);
             record.setTypeName(typeName);
             record.setFieldName(fieldName);
             record.setArgumentName(argumentName);
@@ -580,11 +569,11 @@ public final class SdlFactCapture {
                 record::setSourceName, record::setSourceLine, record::setSourceColumn);
             sink.add(record);
             for (var argument : directive.getArguments()) {
-                if (!sink.claim(APPLIED_ARGUMENT_DIRECTIVE_ARG, typeName, fieldName, argumentName,
+                if (!sink.claim(GRAPHQL_ARGUMENT_DIRECTIVE_ARG, typeName, fieldName, argumentName,
                         directive.getName(), ordinal, argument.getName())) {
                     continue;
                 }
-                var row = sink.dsl().newRecord(APPLIED_ARGUMENT_DIRECTIVE_ARG);
+                var row = sink.dsl().newRecord(GRAPHQL_ARGUMENT_DIRECTIVE_ARG);
                 row.setTypeName(typeName);
                 row.setFieldName(fieldName);
                 row.setArgumentName(argumentName);
@@ -601,16 +590,13 @@ public final class SdlFactCapture {
         var ordinals = new LinkedHashMap<String, Integer>();
         for (Directive directive : directives) {
             int ordinal = ordinals.merge(directive.getName(), 0, (old, ignored) -> old + 1);
-            intent.captureEnumValueDirective(typeName, valueName, directive, ordinal);
-            if (isGraphitron(directive)) {
-                continue;
-            }
-            if (!sink.claim(APPLIED_ENUM_VALUE_DIRECTIVE, typeName, valueName, directive.getName(), ordinal)) {
+            decode.captureEnumValueDirective(typeName, valueName, directive, ordinal);
+            if (!sink.claim(GRAPHQL_ENUM_VALUE_DIRECTIVE, typeName, valueName, directive.getName(), ordinal)) {
                 quarantine("DIRECTIVE_APPLICATION",
                     typeName + "." + valueName + " @" + directive.getName(), directive);
                 continue;
             }
-            var record = sink.dsl().newRecord(APPLIED_ENUM_VALUE_DIRECTIVE);
+            var record = sink.dsl().newRecord(GRAPHQL_ENUM_VALUE_DIRECTIVE);
             record.setTypeName(typeName);
             record.setValueName(valueName);
             record.setDirectiveName(directive.getName());
@@ -619,11 +605,11 @@ public final class SdlFactCapture {
                 record::setSourceName, record::setSourceLine, record::setSourceColumn);
             sink.add(record);
             for (var argument : directive.getArguments()) {
-                if (!sink.claim(APPLIED_ENUM_VALUE_DIRECTIVE_ARG,
+                if (!sink.claim(GRAPHQL_ENUM_VALUE_DIRECTIVE_ARG,
                         typeName, valueName, directive.getName(), ordinal, argument.getName())) {
                     continue;
                 }
-                var row = sink.dsl().newRecord(APPLIED_ENUM_VALUE_DIRECTIVE_ARG);
+                var row = sink.dsl().newRecord(GRAPHQL_ENUM_VALUE_DIRECTIVE_ARG);
                 row.setTypeName(typeName);
                 row.setValueName(valueName);
                 row.setDirectiveName(directive.getName());
@@ -714,10 +700,6 @@ public final class SdlFactCapture {
     }
 
     // ---------------------------------------------------------------- shared helpers
-
-    private static boolean isGraphitron(Directive directive) {
-        return DeclaredDirectives.names().contains(directive.getName());
-    }
 
     /**
      * Records a losing occurrence of an element-level natural key. The registry retains these
@@ -826,8 +808,4 @@ public final class SdlFactCapture {
         }
     }
 
-    /** Exposed for the gate tests, which assert the decode against {@code type_sdl}. */
-    public static Set<String> graphitronDirectiveNames() {
-        return DeclaredDirectives.names();
-    }
 }

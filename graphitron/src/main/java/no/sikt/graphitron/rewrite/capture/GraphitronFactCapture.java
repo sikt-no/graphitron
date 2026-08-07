@@ -21,68 +21,73 @@ import no.sikt.graphitron.rewrite.selection.ParsedEntry;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.INTENT_ARGUMENT_BINDING;
-import static no.sikt.graphitron.model.Tables.INTENT_ARGUMENT_CONDITION;
-import static no.sikt.graphitron.model.Tables.INTENT_ARGUMENT_CONDITION_ARG_MAPPING_PAIR;
-import static no.sikt.graphitron.model.Tables.INTENT_ARGUMENT_CONDITION_CONTEXT_ARG;
-import static no.sikt.graphitron.model.Tables.INTENT_ARGUMENT_LOOKUP_KEY;
-import static no.sikt.graphitron.model.Tables.INTENT_ARGUMENT_NODE_ID;
-import static no.sikt.graphitron.model.Tables.INTENT_ARGUMENT_REFERENCE;
-import static no.sikt.graphitron.model.Tables.INTENT_ARGUMENT_REFERENCE_STEP;
-import static no.sikt.graphitron.model.Tables.INTENT_ARGUMENT_REFERENCE_STEP_ARG_MAPPING_PAIR;
-import static no.sikt.graphitron.model.Tables.INTENT_CONNECTION;
-import static no.sikt.graphitron.model.Tables.INTENT_DEFAULT_ORDER;
-import static no.sikt.graphitron.model.Tables.INTENT_DEFAULT_ORDER_FIELD;
-import static no.sikt.graphitron.model.Tables.INTENT_DISCRIMINATE;
-import static no.sikt.graphitron.model.Tables.INTENT_DISCRIMINATOR;
-import static no.sikt.graphitron.model.Tables.INTENT_ENUM;
-import static no.sikt.graphitron.model.Tables.INTENT_ENUM_VALUE_BINDING;
-import static no.sikt.graphitron.model.Tables.INTENT_ERROR;
-import static no.sikt.graphitron.model.Tables.INTENT_ERROR_HANDLER;
-import static no.sikt.graphitron.model.Tables.INTENT_EXTERNAL_FIELD;
-import static no.sikt.graphitron.model.Tables.INTENT_FACET;
-import static no.sikt.graphitron.model.Tables.INTENT_FEDERATION_KEY;
-import static no.sikt.graphitron.model.Tables.INTENT_FEDERATION_KEY_FIELD;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_BINDING;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_CONDITION;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_CONDITION_ARG_MAPPING_PAIR;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_CONDITION_CONTEXT_ARG;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_LOOKUP_KEY;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_NODE_ID;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_REFERENCE;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_REFERENCE_STEP;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_REFERENCE_STEP_ARG_MAPPING_PAIR;
-import static no.sikt.graphitron.model.Tables.INTENT_INDEX;
-import static no.sikt.graphitron.model.Tables.INTENT_LINK;
-import static no.sikt.graphitron.model.Tables.INTENT_LINK_IMPORT;
-import static no.sikt.graphitron.model.Tables.INTENT_MULTITABLE_REFERENCE;
-import static no.sikt.graphitron.model.Tables.INTENT_MUTATION;
-import static no.sikt.graphitron.model.Tables.INTENT_NODE;
-import static no.sikt.graphitron.model.Tables.INTENT_NODE_KEY_COLUMN;
-import static no.sikt.graphitron.model.Tables.INTENT_ORDER;
-import static no.sikt.graphitron.model.Tables.INTENT_ORDER_BY;
-import static no.sikt.graphitron.model.Tables.INTENT_ORDER_FIELD;
-import static no.sikt.graphitron.model.Tables.INTENT_PIVOT;
-import static no.sikt.graphitron.model.Tables.INTENT_RECORD;
-import static no.sikt.graphitron.model.Tables.INTENT_REFERENCE_FOR;
-import static no.sikt.graphitron.model.Tables.INTENT_REFERENCE_FOR_STEP;
-import static no.sikt.graphitron.model.Tables.INTENT_REFERENCE_FOR_STEP_ARG_MAPPING_PAIR;
-import static no.sikt.graphitron.model.Tables.INTENT_ROUTINE;
-import static no.sikt.graphitron.model.Tables.INTENT_ROUTINE_ARG_MAPPING_PAIR;
-import static no.sikt.graphitron.model.Tables.INTENT_ROUTINE_COLUMN_MAPPING_PAIR;
-import static no.sikt.graphitron.model.Tables.INTENT_SCALAR_TYPE;
-import static no.sikt.graphitron.model.Tables.INTENT_SERVICE;
-import static no.sikt.graphitron.model.Tables.INTENT_SERVICE_ARG_MAPPING_PAIR;
-import static no.sikt.graphitron.model.Tables.INTENT_SERVICE_CONTEXT_ARG;
-import static no.sikt.graphitron.model.Tables.INTENT_SOURCE_ROW;
-import static no.sikt.graphitron.model.Tables.INTENT_SPLIT_QUERY;
-import static no.sikt.graphitron.model.Tables.INTENT_TABLE;
-import static no.sikt.graphitron.model.Tables.INTENT_TENANT_FAN_OUT;
-import static no.sikt.graphitron.model.Tables.INTENT_UNDECODED_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_BINDING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION_ARG_MAPPING_PAIR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_LOOKUP_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_NODE_ID;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP_ARG_MAPPING_PAIR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFAULT_ORDER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFAULT_ORDER_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DISCRIMINATE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DISCRIMINATOR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENUM;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENUM_VALUE_BINDING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR_HANDLER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_EXTERNAL_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FACET;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_BINDING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION_ARG_MAPPING_PAIR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_LOOKUP_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NODE_ID;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_ARG_MAPPING_PAIR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_INDEX;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_LINK;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_LINK_IMPORT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MULTITABLE_REFERENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_BY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PIVOT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_RECORD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_STEP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_STEP_ARG_MAPPING_PAIR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ARG_MAPPING_PAIR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SCALAR_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_ARG_MAPPING_PAIR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_CONTEXT_ARG;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SOURCE_ROW;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPLIT_QUERY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TENANT_FAN_OUT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_UNDECODED_ARGUMENT;
 
 /**
- * The semantic stratum's writer: decodes the graphitron and federation directive inventory into
- * typed relations while {@link SdlFactCapture} walks.
+ * The {@code graphitron_} family's writer: decodes the graphitron and federation directive inventory
+ * into typed relations while {@link SdlFactCapture} walks.
+ *
+ * <p>A row here is still a transcription, not a conclusion. It restates what an application spelled,
+ * in graphitron's vocabulary rather than the document's, so a reader gets typed columns instead of
+ * rendered SDL literals and nothing more. What the generator will actually do with those readings is
+ * a layer above this one, and the schema keeps the {@code intent_} prefix free for it.
  *
  * <p>What decodes here and what does not follows one rule: a decode happens at capture exactly
  * when it needs parse-boundary knowledge SQL cannot express (the graphql-java AST, federation's
@@ -92,7 +97,7 @@ import static no.sikt.graphitron.model.Tables.INTENT_UNDECODED_ARGUMENT;
  * and effective-value defaulting are not.
  *
  * <p>The decode never rejects. A literal that does not fit its declared shape leaves its typed
- * column NULL and quarantines raw in {@code intent_undecoded_argument} with its location, so the
+ * column NULL and quarantines raw in {@code graphitron_undecoded_argument} with its location, so the
  * authored text survives and the malformed-literal detection has its row. Those paths stay
  * dormant while schema assembly still runs upstream and rejects such schemas first.
  *
@@ -100,7 +105,7 @@ import static no.sikt.graphitron.model.Tables.INTENT_UNDECODED_ARGUMENT;
  * never a default-filled one. Effective values are derivation views, and for the graphitron
  * namespace the defaults are generator constants rather than captured facts.
  */
-final class IntentCapture {
+final class GraphitronFactCapture {
 
     /** Federation's two decoded applications; every other federation directive is fidelity only. */
     private static final String FEDERATION_KEY = "key";
@@ -108,7 +113,7 @@ final class IntentCapture {
 
     private final FactSink sink;
 
-    IntentCapture(FactSink sink) {
+    GraphitronFactCapture(FactSink sink) {
         this.sink = sink;
     }
 
@@ -118,10 +123,10 @@ final class IntentCapture {
         if (!FEDERATION_LINK.equals(directive.getName())) {
             return;
         }
-        if (!sink.claim(INTENT_LINK, ordinal)) {
+        if (!sink.claim(GRAPHITRON_LINK, ordinal)) {
             return;
         }
-        var record = sink.dsl().newRecord(INTENT_LINK);
+        var record = sink.dsl().newRecord(GRAPHITRON_LINK);
         record.setOrdinal(ordinal);
         SdlFactCapture.setPosition(directive.getSourceLocation(),
             record::setSourceName, record::setSourceLine, record::setSourceColumn);
@@ -141,7 +146,7 @@ final class IntentCapture {
             if (name == null) {
                 continue;
             }
-            var row = sink.dsl().newRecord(INTENT_LINK_IMPORT);
+            var row = sink.dsl().newRecord(GRAPHITRON_LINK_IMPORT);
             row.setLinkOrdinal(ordinal);
             row.setPosition(position++);
             row.setName(name);
@@ -162,8 +167,8 @@ final class IntentCapture {
         String type = site.typeName();
         switch (directive.getName()) {
             case "table" -> {
-                if (!sink.claim(INTENT_TABLE, type)) return;
-                var record = sink.dsl().newRecord(INTENT_TABLE);
+                if (!sink.claim(GRAPHITRON_TABLE, type)) return;
+                var record = sink.dsl().newRecord(GRAPHITRON_TABLE);
                 record.setTypeName(type);
                 site(site, directive, record::setSourceName, record::setDeclarationLine,
                     record::setDeclarationColumn, record::setSourceLine, record::setSourceColumn);
@@ -171,10 +176,10 @@ final class IntentCapture {
                 sink.add(record);
             }
             case "scalarType" -> {
-                if (!sink.claim(INTENT_SCALAR_TYPE, type)) return;
+                if (!sink.claim(GRAPHITRON_SCALAR_TYPE, type)) return;
                 String scalar = string(directive, "scalar");
                 if (scalar == null) return;
-                var record = sink.dsl().newRecord(INTENT_SCALAR_TYPE);
+                var record = sink.dsl().newRecord(GRAPHITRON_SCALAR_TYPE);
                 record.setTypeName(type);
                 site(site, directive, record::setSourceName, record::setDeclarationLine,
                     record::setDeclarationColumn, record::setSourceLine, record::setSourceColumn);
@@ -182,8 +187,8 @@ final class IntentCapture {
                 sink.add(record);
             }
             case "enum" -> {
-                if (!sink.claim(INTENT_ENUM, type)) return;
-                var record = sink.dsl().newRecord(INTENT_ENUM);
+                if (!sink.claim(GRAPHITRON_ENUM, type)) return;
+                var record = sink.dsl().newRecord(GRAPHITRON_ENUM);
                 record.setTypeName(type);
                 site(site, directive, record::setSourceName, record::setDeclarationLine,
                     record::setDeclarationColumn, record::setSourceLine, record::setSourceColumn);
@@ -194,8 +199,8 @@ final class IntentCapture {
                 sink.add(record);
             }
             case "record" -> {
-                if (!sink.claim(INTENT_RECORD, type)) return;
-                var record = sink.dsl().newRecord(INTENT_RECORD);
+                if (!sink.claim(GRAPHITRON_RECORD, type)) return;
+                var record = sink.dsl().newRecord(GRAPHITRON_RECORD);
                 record.setTypeName(type);
                 site(site, directive, record::setSourceName, record::setDeclarationLine,
                     record::setDeclarationColumn, record::setSourceLine, record::setSourceColumn);
@@ -203,8 +208,8 @@ final class IntentCapture {
                 sink.add(record);
             }
             case "error" -> {
-                if (!sink.claim(INTENT_ERROR, type)) return;
-                var record = sink.dsl().newRecord(INTENT_ERROR);
+                if (!sink.claim(GRAPHITRON_ERROR, type)) return;
+                var record = sink.dsl().newRecord(GRAPHITRON_ERROR);
                 record.setTypeName(type);
                 site(site, directive, record::setSourceName, record::setDeclarationLine,
                     record::setDeclarationColumn, record::setSourceLine, record::setSourceColumn);
@@ -215,7 +220,7 @@ final class IntentCapture {
                         undecoded(directive, "handlers", handler);
                         continue;
                     }
-                    var row = sink.dsl().newRecord(INTENT_ERROR_HANDLER);
+                    var row = sink.dsl().newRecord(GRAPHITRON_ERROR_HANDLER);
                     row.setTypeName(type);
                     row.setPosition(position++);
                     row.setHandler(tokenOf(field(object, "handler")));
@@ -228,8 +233,8 @@ final class IntentCapture {
                 }
             }
             case "node" -> {
-                if (!sink.claim(INTENT_NODE, type)) return;
-                var record = sink.dsl().newRecord(INTENT_NODE);
+                if (!sink.claim(GRAPHITRON_NODE, type)) return;
+                var record = sink.dsl().newRecord(GRAPHITRON_NODE);
                 record.setTypeName(type);
                 site(site, directive, record::setSourceName, record::setDeclarationLine,
                     record::setDeclarationColumn, record::setSourceLine, record::setSourceColumn);
@@ -239,7 +244,7 @@ final class IntentCapture {
                 for (Value<?> column : list(directive, "keyColumns")) {
                     String name = stringOf(column, directive, "keyColumns");
                     if (name == null) continue;
-                    var row = sink.dsl().newRecord(INTENT_NODE_KEY_COLUMN);
+                    var row = sink.dsl().newRecord(GRAPHITRON_NODE_KEY_COLUMN);
                     row.setTypeName(type);
                     row.setPosition(position++);
                     row.setColumnRef(name);
@@ -247,10 +252,10 @@ final class IntentCapture {
                 }
             }
             case "discriminate" -> {
-                if (!sink.claim(INTENT_DISCRIMINATE, type)) return;
+                if (!sink.claim(GRAPHITRON_DISCRIMINATE, type)) return;
                 String on = string(directive, "on");
                 if (on == null) return;
-                var record = sink.dsl().newRecord(INTENT_DISCRIMINATE);
+                var record = sink.dsl().newRecord(GRAPHITRON_DISCRIMINATE);
                 record.setTypeName(type);
                 site(site, directive, record::setSourceName, record::setDeclarationLine,
                     record::setDeclarationColumn, record::setSourceLine, record::setSourceColumn);
@@ -258,10 +263,10 @@ final class IntentCapture {
                 sink.add(record);
             }
             case "discriminator" -> {
-                if (!sink.claim(INTENT_DISCRIMINATOR, type)) return;
+                if (!sink.claim(GRAPHITRON_DISCRIMINATOR, type)) return;
                 String value = string(directive, "value");
                 if (value == null) return;
-                var record = sink.dsl().newRecord(INTENT_DISCRIMINATOR);
+                var record = sink.dsl().newRecord(GRAPHITRON_DISCRIMINATOR);
                 record.setTypeName(type);
                 site(site, directive, record::setSourceName, record::setDeclarationLine,
                     record::setDeclarationColumn, record::setSourceLine, record::setSourceColumn);
@@ -275,14 +280,14 @@ final class IntentCapture {
 
     /**
      * Federation's {@code @key}, decoded for consumption. Its verbatim twin lives in
-     * {@code applied_type_directive} for re-emission and both are written in the same pass, so a
+     * {@code graphql_type_directive} for re-emission and both are written in the same pass, so a
      * gate query can pin the two projections in agreement.
      */
     private void captureFederationKey(SiteRef site, Directive directive, int ordinal) {
-        if (!sink.claim(INTENT_FEDERATION_KEY, site.typeName(), ordinal)) return;
+        if (!sink.claim(GRAPHITRON_FEDERATION_KEY, site.typeName(), ordinal)) return;
         String fields = string(directive, "fields");
         if (fields == null) return;
-        var record = sink.dsl().newRecord(INTENT_FEDERATION_KEY);
+        var record = sink.dsl().newRecord(GRAPHITRON_FEDERATION_KEY);
         record.setTypeName(site.typeName());
         record.setOrdinal(ordinal);
         site(site, directive, record::setSourceName, record::setDeclarationLine,
@@ -293,7 +298,7 @@ final class IntentCapture {
 
         int position = 0;
         for (String path : FieldSetGrammar.paths(fields)) {
-            var row = sink.dsl().newRecord(INTENT_FEDERATION_KEY_FIELD);
+            var row = sink.dsl().newRecord(GRAPHITRON_FEDERATION_KEY_FIELD);
             row.setTypeName(site.typeName());
             row.setOrdinal(ordinal);
             row.setPosition(position++);
@@ -307,10 +312,10 @@ final class IntentCapture {
     void captureFieldDirective(String type, String field, Directive directive, int ordinal) {
         switch (directive.getName()) {
             case "field" -> {
-                if (!sink.claim(INTENT_FIELD_BINDING, type, field)) return;
+                if (!sink.claim(GRAPHITRON_FIELD_BINDING, type, field)) return;
                 String name = string(directive, "name");
                 if (name == null) return;
-                var record = sink.dsl().newRecord(INTENT_FIELD_BINDING);
+                var record = sink.dsl().newRecord(GRAPHITRON_FIELD_BINDING);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
@@ -318,9 +323,9 @@ final class IntentCapture {
                 sink.add(record);
             }
             case "condition" -> {
-                if (!sink.claim(INTENT_FIELD_CONDITION, type, field)) return;
+                if (!sink.claim(GRAPHITRON_FIELD_CONDITION, type, field)) return;
                 var reference = codeReference(directive, "condition");
-                var record = sink.dsl().newRecord(INTENT_FIELD_CONDITION);
+                var record = sink.dsl().newRecord(GRAPHITRON_FIELD_CONDITION);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
@@ -333,7 +338,7 @@ final class IntentCapture {
                 for (Value<?> context : list(directive, "contextArguments")) {
                     String name = stringOf(context, directive, "contextArguments");
                     if (name == null) continue;
-                    var row = sink.dsl().newRecord(INTENT_FIELD_CONDITION_CONTEXT_ARG);
+                    var row = sink.dsl().newRecord(GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG);
                     row.setTypeName(type);
                     row.setFieldName(field);
                     row.setPosition(position++);
@@ -342,7 +347,7 @@ final class IntentCapture {
                 }
                 int pair = 0;
                 for (ParsedEntry entry : pairs(reference.argMapping(), directive, "condition")) {
-                    var row = sink.dsl().newRecord(INTENT_FIELD_CONDITION_ARG_MAPPING_PAIR);
+                    var row = sink.dsl().newRecord(GRAPHITRON_FIELD_CONDITION_ARG_MAPPING_PAIR);
                     row.setTypeName(type);
                     row.setFieldName(field);
                     row.setPosition(pair++);
@@ -352,8 +357,8 @@ final class IntentCapture {
                 }
             }
             case "reference" -> {
-                if (!sink.claim(INTENT_FIELD_REFERENCE, type, field, ordinal)) return;
-                var record = sink.dsl().newRecord(INTENT_FIELD_REFERENCE);
+                if (!sink.claim(GRAPHITRON_FIELD_REFERENCE, type, field, ordinal)) return;
+                var record = sink.dsl().newRecord(GRAPHITRON_FIELD_REFERENCE);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 record.setOrdinal(ordinal);
@@ -363,7 +368,7 @@ final class IntentCapture {
                 for (Value<?> element : list(directive, "path")) {
                     var step = referenceElement(element, directive);
                     if (step == null) continue;
-                    var row = sink.dsl().newRecord(INTENT_FIELD_REFERENCE_STEP);
+                    var row = sink.dsl().newRecord(GRAPHITRON_FIELD_REFERENCE_STEP);
                     row.setTypeName(type);
                     row.setFieldName(field);
                     row.setOrdinal(ordinal);
@@ -376,7 +381,7 @@ final class IntentCapture {
                     sink.add(row);
                     int pair = 0;
                     for (ParsedEntry entry : pairs(step.argMapping(), directive, "path")) {
-                        var pairRow = sink.dsl().newRecord(INTENT_FIELD_REFERENCE_STEP_ARG_MAPPING_PAIR);
+                        var pairRow = sink.dsl().newRecord(GRAPHITRON_FIELD_REFERENCE_STEP_ARG_MAPPING_PAIR);
                         pairRow.setTypeName(type);
                         pairRow.setFieldName(field);
                         pairRow.setOrdinal(ordinal);
@@ -390,10 +395,10 @@ final class IntentCapture {
                 }
             }
             case "referenceFor" -> {
-                if (!sink.claim(INTENT_REFERENCE_FOR, type, field, ordinal)) return;
+                if (!sink.claim(GRAPHITRON_REFERENCE_FOR, type, field, ordinal)) return;
                 String participant = string(directive, "type");
                 if (participant == null) return;
-                var record = sink.dsl().newRecord(INTENT_REFERENCE_FOR);
+                var record = sink.dsl().newRecord(GRAPHITRON_REFERENCE_FOR);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 record.setOrdinal(ordinal);
@@ -404,7 +409,7 @@ final class IntentCapture {
                 for (Value<?> element : list(directive, "path")) {
                     var step = referenceElement(element, directive);
                     if (step == null) continue;
-                    var row = sink.dsl().newRecord(INTENT_REFERENCE_FOR_STEP);
+                    var row = sink.dsl().newRecord(GRAPHITRON_REFERENCE_FOR_STEP);
                     row.setTypeName(type);
                     row.setFieldName(field);
                     row.setOrdinal(ordinal);
@@ -417,7 +422,7 @@ final class IntentCapture {
                     sink.add(row);
                     int pair = 0;
                     for (ParsedEntry entry : pairs(step.argMapping(), directive, "path")) {
-                        var pairRow = sink.dsl().newRecord(INTENT_REFERENCE_FOR_STEP_ARG_MAPPING_PAIR);
+                        var pairRow = sink.dsl().newRecord(GRAPHITRON_REFERENCE_FOR_STEP_ARG_MAPPING_PAIR);
                         pairRow.setTypeName(type);
                         pairRow.setFieldName(field);
                         pairRow.setOrdinal(ordinal);
@@ -431,9 +436,9 @@ final class IntentCapture {
                 }
             }
             case "service" -> {
-                if (!sink.claim(INTENT_SERVICE, type, field)) return;
+                if (!sink.claim(GRAPHITRON_SERVICE, type, field)) return;
                 var reference = codeReference(directive, "service");
-                var record = sink.dsl().newRecord(INTENT_SERVICE);
+                var record = sink.dsl().newRecord(GRAPHITRON_SERVICE);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
@@ -445,7 +450,7 @@ final class IntentCapture {
                 for (Value<?> context : list(directive, "contextArguments")) {
                     String name = stringOf(context, directive, "contextArguments");
                     if (name == null) continue;
-                    var row = sink.dsl().newRecord(INTENT_SERVICE_CONTEXT_ARG);
+                    var row = sink.dsl().newRecord(GRAPHITRON_SERVICE_CONTEXT_ARG);
                     row.setTypeName(type);
                     row.setFieldName(field);
                     row.setPosition(position++);
@@ -454,7 +459,7 @@ final class IntentCapture {
                 }
                 int pair = 0;
                 for (ParsedEntry entry : pairs(reference.argMapping(), directive, "service")) {
-                    var row = sink.dsl().newRecord(INTENT_SERVICE_ARG_MAPPING_PAIR);
+                    var row = sink.dsl().newRecord(GRAPHITRON_SERVICE_ARG_MAPPING_PAIR);
                     row.setTypeName(type);
                     row.setFieldName(field);
                     row.setPosition(pair++);
@@ -464,9 +469,9 @@ final class IntentCapture {
                 }
             }
             case "externalField" -> {
-                if (!sink.claim(INTENT_EXTERNAL_FIELD, type, field)) return;
+                if (!sink.claim(GRAPHITRON_EXTERNAL_FIELD, type, field)) return;
                 var reference = codeReference(directive, "reference");
-                var record = sink.dsl().newRecord(INTENT_EXTERNAL_FIELD);
+                var record = sink.dsl().newRecord(GRAPHITRON_EXTERNAL_FIELD);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
@@ -476,11 +481,11 @@ final class IntentCapture {
                 sink.add(record);
             }
             case "sourceRow" -> {
-                if (!sink.claim(INTENT_SOURCE_ROW, type, field)) return;
+                if (!sink.claim(GRAPHITRON_SOURCE_ROW, type, field)) return;
                 String className = string(directive, "className");
                 String method = string(directive, "method");
                 if (className == null || method == null) return;
-                var record = sink.dsl().newRecord(INTENT_SOURCE_ROW);
+                var record = sink.dsl().newRecord(GRAPHITRON_SOURCE_ROW);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
@@ -489,8 +494,8 @@ final class IntentCapture {
                 sink.add(record);
             }
             case "asConnection" -> {
-                if (!sink.claim(INTENT_CONNECTION, type, field)) return;
-                var record = sink.dsl().newRecord(INTENT_CONNECTION);
+                if (!sink.claim(GRAPHITRON_CONNECTION, type, field)) return;
+                var record = sink.dsl().newRecord(GRAPHITRON_CONNECTION);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
@@ -498,14 +503,14 @@ final class IntentCapture {
                 record.setConnectionName(string(directive, "connectionName"));
                 sink.add(record);
             }
-            case "asFacet" -> marker(INTENT_FACET, type, field, directive);
-            case "splitQuery" -> marker(INTENT_SPLIT_QUERY, type, field, directive);
-            case "tenantFanOut" -> marker(INTENT_TENANT_FAN_OUT, type, field, directive);
-            case "multitableReference" -> marker(INTENT_MULTITABLE_REFERENCE, type, field, directive);
-            case "lookupKey" -> marker(INTENT_FIELD_LOOKUP_KEY, type, field, directive);
+            case "asFacet" -> marker(GRAPHITRON_FACET, type, field, directive);
+            case "splitQuery" -> marker(GRAPHITRON_SPLIT_QUERY, type, field, directive);
+            case "tenantFanOut" -> marker(GRAPHITRON_TENANT_FAN_OUT, type, field, directive);
+            case "multitableReference" -> marker(GRAPHITRON_MULTITABLE_REFERENCE, type, field, directive);
+            case "lookupKey" -> marker(GRAPHITRON_FIELD_LOOKUP_KEY, type, field, directive);
             case "nodeId" -> {
-                if (!sink.claim(INTENT_FIELD_NODE_ID, type, field)) return;
-                var record = sink.dsl().newRecord(INTENT_FIELD_NODE_ID);
+                if (!sink.claim(GRAPHITRON_FIELD_NODE_ID, type, field)) return;
+                var record = sink.dsl().newRecord(GRAPHITRON_FIELD_NODE_ID);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
@@ -513,10 +518,10 @@ final class IntentCapture {
                 sink.add(record);
             }
             case "mutation" -> {
-                if (!sink.claim(INTENT_MUTATION, type, field)) return;
+                if (!sink.claim(GRAPHITRON_MUTATION, type, field)) return;
                 String operation = tokenOf(argument(directive, "typeName"));
                 if (operation == null) return;
-                var record = sink.dsl().newRecord(INTENT_MUTATION);
+                var record = sink.dsl().newRecord(GRAPHITRON_MUTATION);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
@@ -526,11 +531,11 @@ final class IntentCapture {
                 sink.add(record);
             }
             case "pivot" -> {
-                if (!sink.claim(INTENT_PIVOT, type, field)) return;
+                if (!sink.claim(GRAPHITRON_PIVOT, type, field)) return;
                 String on = string(directive, "on");
                 String value = string(directive, "value");
                 if (on == null || value == null) return;
-                var record = sink.dsl().newRecord(INTENT_PIVOT);
+                var record = sink.dsl().newRecord(GRAPHITRON_PIVOT);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
@@ -540,8 +545,8 @@ final class IntentCapture {
                 sink.add(record);
             }
             case "defaultOrder" -> {
-                if (!sink.claim(INTENT_DEFAULT_ORDER, type, field)) return;
-                var record = sink.dsl().newRecord(INTENT_DEFAULT_ORDER);
+                if (!sink.claim(GRAPHITRON_DEFAULT_ORDER, type, field)) return;
+                var record = sink.dsl().newRecord(GRAPHITRON_DEFAULT_ORDER);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
@@ -557,7 +562,7 @@ final class IntentCapture {
                     }
                     String name = stringOf(field(object, "name"), directive, "fields");
                     if (name == null) continue;
-                    var row = sink.dsl().newRecord(INTENT_DEFAULT_ORDER_FIELD);
+                    var row = sink.dsl().newRecord(GRAPHITRON_DEFAULT_ORDER_FIELD);
                     row.setTypeName(type);
                     row.setFieldName(field);
                     row.setPosition(position++);
@@ -568,12 +573,12 @@ final class IntentCapture {
                 }
             }
             case "routine" -> {
-                if (!sink.claim(INTENT_ROUTINE, type, field, ordinal)) return;
+                if (!sink.claim(GRAPHITRON_ROUTINE, type, field, ordinal)) return;
                 String name = string(directive, "name");
                 if (name == null) return;
                 String argMapping = string(directive, "argMapping");
                 String columnMapping = string(directive, "columnMapping");
-                var record = sink.dsl().newRecord(INTENT_ROUTINE);
+                var record = sink.dsl().newRecord(GRAPHITRON_ROUTINE);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 record.setOrdinal(ordinal);
@@ -584,7 +589,7 @@ final class IntentCapture {
                 sink.add(record);
                 int pair = 0;
                 for (ParsedEntry entry : pairs(argMapping, directive, "argMapping")) {
-                    var row = sink.dsl().newRecord(INTENT_ROUTINE_ARG_MAPPING_PAIR);
+                    var row = sink.dsl().newRecord(GRAPHITRON_ROUTINE_ARG_MAPPING_PAIR);
                     row.setTypeName(type);
                     row.setFieldName(field);
                     row.setOrdinal(ordinal);
@@ -595,7 +600,7 @@ final class IntentCapture {
                 }
                 int column = 0;
                 for (ParsedEntry entry : pairs(columnMapping, directive, "columnMapping")) {
-                    var row = sink.dsl().newRecord(INTENT_ROUTINE_COLUMN_MAPPING_PAIR);
+                    var row = sink.dsl().newRecord(GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR);
                     row.setTypeName(type);
                     row.setFieldName(field);
                     row.setOrdinal(ordinal);
@@ -615,10 +620,10 @@ final class IntentCapture {
                                   Directive directive, int ordinal) {
         switch (directive.getName()) {
             case "field" -> {
-                if (!sink.claim(INTENT_ARGUMENT_BINDING, type, field, argument)) return;
+                if (!sink.claim(GRAPHITRON_ARGUMENT_BINDING, type, field, argument)) return;
                 String name = string(directive, "name");
                 if (name == null) return;
-                var record = sink.dsl().newRecord(INTENT_ARGUMENT_BINDING);
+                var record = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_BINDING);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 record.setArgumentName(argument);
@@ -627,9 +632,9 @@ final class IntentCapture {
                 sink.add(record);
             }
             case "condition" -> {
-                if (!sink.claim(INTENT_ARGUMENT_CONDITION, type, field, argument)) return;
+                if (!sink.claim(GRAPHITRON_ARGUMENT_CONDITION, type, field, argument)) return;
                 var reference = codeReference(directive, "condition");
-                var record = sink.dsl().newRecord(INTENT_ARGUMENT_CONDITION);
+                var record = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_CONDITION);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 record.setArgumentName(argument);
@@ -643,7 +648,7 @@ final class IntentCapture {
                 for (Value<?> context : list(directive, "contextArguments")) {
                     String name = stringOf(context, directive, "contextArguments");
                     if (name == null) continue;
-                    var row = sink.dsl().newRecord(INTENT_ARGUMENT_CONDITION_CONTEXT_ARG);
+                    var row = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG);
                     row.setTypeName(type);
                     row.setFieldName(field);
                     row.setArgumentName(argument);
@@ -653,7 +658,7 @@ final class IntentCapture {
                 }
                 int pair = 0;
                 for (ParsedEntry entry : pairs(reference.argMapping(), directive, "condition")) {
-                    var row = sink.dsl().newRecord(INTENT_ARGUMENT_CONDITION_ARG_MAPPING_PAIR);
+                    var row = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_CONDITION_ARG_MAPPING_PAIR);
                     row.setTypeName(type);
                     row.setFieldName(field);
                     row.setArgumentName(argument);
@@ -664,8 +669,8 @@ final class IntentCapture {
                 }
             }
             case "reference" -> {
-                if (!sink.claim(INTENT_ARGUMENT_REFERENCE, type, field, argument, ordinal)) return;
-                var record = sink.dsl().newRecord(INTENT_ARGUMENT_REFERENCE);
+                if (!sink.claim(GRAPHITRON_ARGUMENT_REFERENCE, type, field, argument, ordinal)) return;
+                var record = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_REFERENCE);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 record.setArgumentName(argument);
@@ -676,7 +681,7 @@ final class IntentCapture {
                 for (Value<?> element : list(directive, "path")) {
                     var step = referenceElement(element, directive);
                     if (step == null) continue;
-                    var row = sink.dsl().newRecord(INTENT_ARGUMENT_REFERENCE_STEP);
+                    var row = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_REFERENCE_STEP);
                     row.setTypeName(type);
                     row.setFieldName(field);
                     row.setArgumentName(argument);
@@ -690,7 +695,7 @@ final class IntentCapture {
                     sink.add(row);
                     int pair = 0;
                     for (ParsedEntry entry : pairs(step.argMapping(), directive, "path")) {
-                        var pairRow = sink.dsl().newRecord(INTENT_ARGUMENT_REFERENCE_STEP_ARG_MAPPING_PAIR);
+                        var pairRow = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ARG_MAPPING_PAIR);
                         pairRow.setTypeName(type);
                         pairRow.setFieldName(field);
                         pairRow.setArgumentName(argument);
@@ -705,8 +710,8 @@ final class IntentCapture {
                 }
             }
             case "nodeId" -> {
-                if (!sink.claim(INTENT_ARGUMENT_NODE_ID, type, field, argument)) return;
-                var record = sink.dsl().newRecord(INTENT_ARGUMENT_NODE_ID);
+                if (!sink.claim(GRAPHITRON_ARGUMENT_NODE_ID, type, field, argument)) return;
+                var record = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_NODE_ID);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 record.setArgumentName(argument);
@@ -715,8 +720,8 @@ final class IntentCapture {
                 sink.add(record);
             }
             case "lookupKey" -> {
-                if (!sink.claim(INTENT_ARGUMENT_LOOKUP_KEY, type, field, argument)) return;
-                var record = sink.dsl().newRecord(INTENT_ARGUMENT_LOOKUP_KEY);
+                if (!sink.claim(GRAPHITRON_ARGUMENT_LOOKUP_KEY, type, field, argument)) return;
+                var record = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_LOOKUP_KEY);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 record.setArgumentName(argument);
@@ -724,8 +729,8 @@ final class IntentCapture {
                 sink.add(record);
             }
             case "orderBy" -> {
-                if (!sink.claim(INTENT_ORDER_BY, type, field, argument)) return;
-                var record = sink.dsl().newRecord(INTENT_ORDER_BY);
+                if (!sink.claim(GRAPHITRON_ORDER_BY, type, field, argument)) return;
+                var record = sink.dsl().newRecord(GRAPHITRON_ORDER_BY);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 record.setArgumentName(argument);
@@ -741,10 +746,10 @@ final class IntentCapture {
     void captureEnumValueDirective(String type, String value, Directive directive, int ordinal) {
         switch (directive.getName()) {
             case "field" -> {
-                if (!sink.claim(INTENT_ENUM_VALUE_BINDING, type, value)) return;
+                if (!sink.claim(GRAPHITRON_ENUM_VALUE_BINDING, type, value)) return;
                 String name = string(directive, "name");
                 if (name == null) return;
-                var record = sink.dsl().newRecord(INTENT_ENUM_VALUE_BINDING);
+                var record = sink.dsl().newRecord(GRAPHITRON_ENUM_VALUE_BINDING);
                 record.setTypeName(type);
                 record.setValueName(value);
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
@@ -752,8 +757,8 @@ final class IntentCapture {
                 sink.add(record);
             }
             case "index" -> {
-                if (!sink.claim(INTENT_INDEX, type, value)) return;
-                var record = sink.dsl().newRecord(INTENT_INDEX);
+                if (!sink.claim(GRAPHITRON_INDEX, type, value)) return;
+                var record = sink.dsl().newRecord(GRAPHITRON_INDEX);
                 record.setTypeName(type);
                 record.setValueName(value);
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
@@ -761,8 +766,8 @@ final class IntentCapture {
                 sink.add(record);
             }
             case "order" -> {
-                if (!sink.claim(INTENT_ORDER, type, value)) return;
-                var record = sink.dsl().newRecord(INTENT_ORDER);
+                if (!sink.claim(GRAPHITRON_ORDER, type, value)) return;
+                var record = sink.dsl().newRecord(GRAPHITRON_ORDER);
                 record.setTypeName(type);
                 record.setValueName(value);
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
@@ -777,7 +782,7 @@ final class IntentCapture {
                     }
                     String name = stringOf(field(object, "name"), directive, "fields");
                     if (name == null) continue;
-                    var row = sink.dsl().newRecord(INTENT_ORDER_FIELD);
+                    var row = sink.dsl().newRecord(GRAPHITRON_ORDER_FIELD);
                     row.setTypeName(type);
                     row.setValueName(value);
                     row.setPosition(position++);
@@ -981,11 +986,11 @@ final class IntentCapture {
         if (location == null || location.getSourceName() == null) {
             return;
         }
-        if (!sink.claim(INTENT_UNDECODED_ARGUMENT, location.getSourceName(), location.getLine(),
+        if (!sink.claim(GRAPHITRON_UNDECODED_ARGUMENT, location.getSourceName(), location.getLine(),
                 location.getColumn(), directive.getName(), argumentName)) {
             return;
         }
-        var record = sink.dsl().newRecord(INTENT_UNDECODED_ARGUMENT);
+        var record = sink.dsl().newRecord(GRAPHITRON_UNDECODED_ARGUMENT);
         record.setSourceName(location.getSourceName());
         record.setSourceLine(location.getLine());
         record.setSourceColumn(location.getColumn());

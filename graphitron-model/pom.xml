@@ -109,6 +109,40 @@
                     </execution>
                 </executions>
             </plugin>
+            <!--
+                Renaming or dropping a relation deletes its generated source, but the class compiled
+                from it survives in target/classes and still resolves, so a stale jar installs and
+                the failure surfaces as "cannot find symbol" in a downstream module. Wiping the
+                output between codegen and the compile that follows keeps the promise the DDL header
+                makes, that editing the schema and following the compiler is the whole procedure.
+
+                The phase is load-bearing. The javadoc reference gate forks generate-sources at
+                verify, which re-runs everything bound at or before that phase; a clean bound there
+                would fire again after packaging and strip target/classes of the classes the run had
+                already compiled. process-sources is past the fork's reach and still ahead of
+                compile, which recompiles both source roots from scratch.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-clean-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>drop-stale-generated-classes</id>
+                        <phase>process-sources</phase>
+                        <goals>
+                            <goal>clean</goal>
+                        </goals>
+                        <configuration>
+                            <excludeDefaultDirectories>true</excludeDefaultDirectories>
+                            <filesets>
+                                <fileset>
+                                    <directory>${project.build.outputDirectory}/no/sikt/graphitron/model</directory>
+                                </fileset>
+                            </filesets>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>build-helper-maven-plugin</artifactId>

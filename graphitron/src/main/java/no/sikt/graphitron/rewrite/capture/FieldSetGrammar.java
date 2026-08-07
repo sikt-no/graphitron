@@ -7,7 +7,7 @@ import java.util.List;
 
 /**
  * Decodes federation's field-set grammar, the string form {@code @key(fields:)} carries, into the
- * ordered dotted paths {@code intent_federation_key_field} stores.
+ * ordered dotted paths {@code graphitron_federation_key_field} stores.
  *
  * <p>The grammar is a parse boundary SQL cannot express, so it decodes at capture. Nesting is part
  * of the grammar and is decoded as a dotted path ({@code "a { b c }"} yields {@code a.b} and

@@ -152,7 +152,7 @@ These bind the DDL below and every relation added to it later.
   below ranges over a domain capture controls (closed classfile forms, graphql-java's kind
   vocabulary) or an identity capture itself constructs, and two mechanisms construct the
   natural-key identities, because the registry retains what an author duplicates. Where the
-  key carries an ordinal (the `applied_` families), every occurrence is captured and a repeat
+  key carries an ordinal (the `graphql_` families), every occurrence is captured and a repeat
   of a non-repeatable directive is a detection over ordinals. Everywhere else capture is
   first-wins in merge order, and the losing occurrence quarantines rendered and located in
   `graphql_duplicate_declaration`, where the duplicate-declaration detection reads it. An
@@ -166,24 +166,28 @@ These bind the DDL below and every relation added to it later.
 
 Base relations only: what the two capture loads fill. The derived stratum (claims, reachability,
 demand, occurrence paths, diagnostics, commands) is deliberately absent; see the leave-outs
-section. Five families. The two non-SDL ones take their prefix from where the facts come from:
-`catalog_` for jOOQ catalog facts, `extension_` for the consumer's compiled extension classes.
-The three SDL families share an origin and are split by **how a row is treated**, which is the
-distinction a reader actually needs at a query site: `graphql_` for what exists and is read,
-`applied_` for what is carried verbatim into the emitted schema and interpreted by nobody,
-`intent_` for what is decoded into meaning. That is why the graphitron namespace can be
-forbidden from every `applied_` relation by a single gate, and why `applied_` and `intent_` are
-prefix-siblings rather than one being nested under the other: they are the two halves of the
-one directive-application surface, split by treatment, and federation's `@key` writes to both
-in the same pass.
+section. Four families, each named for **whose vocabulary a row is written in**. `graphql_` is
+reserved for generic GraphQL: a row any SDL reader could produce from the document without
+knowing graphitron exists, which is every declaration, every directive definition, and every
+directive application. `graphitron_` is what graphitron makes of that document: the decoded
+directives, and the provenance of the rows macro expansion mints. `catalog_` is jOOQ catalog
+facts and `extension_` the consumer's compiled extension classes.
 
-Two consequences of preferring treatment over origin here, both deliberate. The directive
-*definition* relations are `graphql_` while the *application* relations are `applied_`, because
-a definition is read (its `repeatable` flag governs what a repeated application means) while an
-application is only carried. And a synthesis-provenance relation is named after the relation it
-annotates, not after the family whose job it does, so `graphql_type_declaration_synthesis` and
-`applied_type_directive_synthesis` sit under different prefixes; finding the provenance beside
-the rows it explains is worth more than a uniform prefix for provenance.
+The SDL families stack, `graphql_` under `graphitron_` under a third name, `intent_`, held in
+reserve and filled by nothing here. A `graphitron_` row is still a transcription: it restates
+what an application spelled, in graphitron's vocabulary instead of the document's, which is why
+`graphitron_field_condition_context_arg` is a decode of an argument and not a claim about
+anyone's intent. `intent_` is for the layer that resolves and combines those readings into what
+the generator will do, and a new derived stratum is its own change rather than something a
+relation drifts into.
+
+Two consequences of naming families by vocabulary rather than by treatment. The `graphql_`
+family is a **total transcription** with no hole where graphitron's namespace was: whether an
+application survives into the emitted schema is a `source_name` question answered at emission,
+not something capture decides by choosing a table, and a directive that is both re-emitted and
+decoded (federation's `@key`) is simply a row in each family rather than a special case. And
+all three synthesis-provenance relations are `graphitron_`, because macro expansion is
+graphitron's doing however generic the relation it annotates.
 
 A round-trip constraint binds the SDL families: the emitted runtime schema must be
 reproducible from the store alone, the input schema minus the graphitron namespace plus the
@@ -400,12 +404,13 @@ CREATE TABLE graphql_duplicate_declaration (
 
 -- ==== Directive definitions ==================================================
 -- The definition side of the directive surface: what a directive is, where it
--- may sit, what arguments it declares. User-authored, spec built-in, and
--- federation-imported definitions are rows because the emitted runtime schema
--- re-declares them (round trip). Graphitron's own bundled definitions are
--- generator constants shipped in directives.graphqls, not author facts: they
--- stay out, and their fact-roles (argument defaults, repeatability) are
--- absorbed by the semantic stratum's shapes.
+-- may sit, what arguments it declares. Capture is total over the registry, so
+-- user-authored, spec built-in, federation-imported, and graphitron's own
+-- bundled definitions are all rows. An emitter re-declares the first three and
+-- strips the fourth, telling them apart by source_name; the family does not
+-- encode the answer. Totality is what makes every application's directive name
+-- resolve to a definition, so reading a repeatable flag or an argument default
+-- stays a join rather than a namespace case.
 
 -- A directive is defined.
 CREATE TABLE graphql_directive (
@@ -449,14 +454,13 @@ CREATE TABLE graphql_directive_argument (
 );
 ```
 
-The `applied_` families are the fidelity stratum, and their scope is the round trip: every
-application that must survive into the emitted runtime schema verbatim lands here, which is
-everything *outside* the graphitron namespace (`@deprecated`, user-authored directives, and
-the federation surface). These rows are never interpreted; they are re-emitted. The
-graphitron namespace never lands here at all: its applications are stripped from the output
-and exist only decoded, in the semantic stratum below. Federation applications appear in
-both strata (verbatim here for re-emission, decoded there for consumption, written in the
-same pass; a gate query pins the two projections in agreement).
+The `graphql_` families transcribe the application surface, and the transcription is total:
+every application the author wrote is a row, graphitron's namespace included. The round trip
+reads them by filtering rather than by trusting the family to have pre-filtered, because which
+applications survive into the emitted runtime schema is a `source_name` question and belongs at
+emission. An application that also carries meaning gets a second, decoded row in the
+`graphitron_` family instead of moving out of this one, so graphitron's own directives and
+federation's `@key` take the same shape and a gate query pins the two projections in agreement.
 
 Applications are one table per element family rather than one generic table, because a
 generic table would need nullable key parts (an argument application has a three-part element
@@ -475,12 +479,13 @@ families so no consumer hand-writes the five-arm `UNION ALL`.
 ```sql
 -- ==== Directive applications =================================================
 -- One row per application the author wrote, one child row per argument the
--- author passed. Values are the rendered SDL literal; these rows are
--- re-emitted verbatim, never decoded (the graphitron namespace never lands
--- here; it is decoded into the semantic stratum instead).
+-- author passed. Values are the rendered SDL literal, so an application is
+-- legible here without knowing what the directive means. Capture is total:
+-- graphitron's own applications are rows like any other, and the ones that
+-- carry meaning additionally get a decoded row in the semantic stratum.
 
 -- A directive is applied to the schema definition (@link lives here).
-CREATE TABLE applied_schema_directive (
+CREATE TABLE graphql_schema_directive (
   directive_name VARCHAR NOT NULL,
   ordinal        INT     NOT NULL, -- 0 unless the directive is repeatable; repeats number in document order
   source_name    VARCHAR,          -- position of the application site
@@ -490,22 +495,22 @@ CREATE TABLE applied_schema_directive (
 );
 
 -- An argument the author passed to a schema-level application.
-CREATE TABLE applied_schema_directive_arg (
+CREATE TABLE graphql_schema_directive_arg (
   directive_name          VARCHAR NOT NULL,
   ordinal                 INT     NOT NULL,
   directive_argument_name VARCHAR NOT NULL, -- the definition's formal argument this value binds
   value_sdl               VARCHAR NOT NULL, -- the value as written, rendered from the AST; omitted arguments are absent rows
   PRIMARY KEY (directive_name, ordinal, directive_argument_name),
   FOREIGN KEY (directive_name, ordinal)
-    REFERENCES applied_schema_directive (directive_name, ordinal)
+    REFERENCES graphql_schema_directive (directive_name, ordinal)
 );
 
 -- A directive is applied to a type (OBJECT, INTERFACE, UNION, ENUM,
 -- INPUT_OBJECT, or SCALAR; the parent kind is a join away).
-CREATE TABLE applied_type_directive (
+CREATE TABLE graphql_type_directive (
   type_name           VARCHAR NOT NULL,
   directive_name      VARCHAR NOT NULL,
-  ordinal             INT     NOT NULL, -- as on applied_schema_directive; federation's @key repeats here
+  ordinal             INT     NOT NULL, -- as on graphql_schema_directive; federation's @key repeats here
   declaration_line    INT     NOT NULL, -- the applying site (extensions apply type directives too); a synthesized @key hangs off the type's causing authored site, per its own provenance relation below
   declaration_column  INT     NOT NULL,
   source_name         VARCHAR NOT NULL, -- NOT NULL as on graphql_field: half of the site FK
@@ -518,7 +523,7 @@ CREATE TABLE applied_type_directive (
 );
 
 -- An argument the author passed to a type-level application.
-CREATE TABLE applied_type_directive_arg (
+CREATE TABLE graphql_type_directive_arg (
   type_name               VARCHAR NOT NULL,
   directive_name          VARCHAR NOT NULL,
   ordinal                 INT     NOT NULL,
@@ -526,12 +531,12 @@ CREATE TABLE applied_type_directive_arg (
   value_sdl               VARCHAR NOT NULL,
   PRIMARY KEY (type_name, directive_name, ordinal, directive_argument_name),
   FOREIGN KEY (type_name, directive_name, ordinal)
-    REFERENCES applied_type_directive (type_name, directive_name, ordinal)
+    REFERENCES graphql_type_directive (type_name, directive_name, ordinal)
 );
 
 -- A directive is applied to a field (output or input-object; the parent
 -- type's kind decides which SDL location this was).
-CREATE TABLE applied_field_directive (
+CREATE TABLE graphql_field_directive (
   type_name      VARCHAR NOT NULL,
   field_name     VARCHAR NOT NULL,
   directive_name VARCHAR NOT NULL,
@@ -544,7 +549,7 @@ CREATE TABLE applied_field_directive (
 );
 
 -- An argument the author passed to a field-level application.
-CREATE TABLE applied_field_directive_arg (
+CREATE TABLE graphql_field_directive_arg (
   type_name               VARCHAR NOT NULL,
   field_name              VARCHAR NOT NULL,
   directive_name          VARCHAR NOT NULL,
@@ -553,16 +558,16 @@ CREATE TABLE applied_field_directive_arg (
   value_sdl               VARCHAR NOT NULL,
   PRIMARY KEY (type_name, field_name, directive_name, ordinal, directive_argument_name),
   FOREIGN KEY (type_name, field_name, directive_name, ordinal)
-    REFERENCES applied_field_directive (type_name, field_name, directive_name, ordinal)
+    REFERENCES graphql_field_directive (type_name, field_name, directive_name, ordinal)
 );
 
 -- A directive is applied to a field argument (ARGUMENT_DEFINITION site).
-CREATE TABLE applied_argument_directive (
+CREATE TABLE graphql_argument_directive (
   type_name      VARCHAR NOT NULL,
   field_name     VARCHAR NOT NULL,
   argument_name  VARCHAR NOT NULL, -- the SDL argument the directive sits on
   directive_name VARCHAR NOT NULL,
-  ordinal        INT     NOT NULL, -- as on applied_field_directive
+  ordinal        INT     NOT NULL, -- as on graphql_field_directive
   source_name    VARCHAR,
   source_line    INT,
   source_column  INT,
@@ -572,7 +577,7 @@ CREATE TABLE applied_argument_directive (
 );
 
 -- An argument the author passed to an argument-level application.
-CREATE TABLE applied_argument_directive_arg (
+CREATE TABLE graphql_argument_directive_arg (
   type_name               VARCHAR NOT NULL,
   field_name              VARCHAR NOT NULL,
   argument_name           VARCHAR NOT NULL,
@@ -582,16 +587,16 @@ CREATE TABLE applied_argument_directive_arg (
   value_sdl               VARCHAR NOT NULL,
   PRIMARY KEY (type_name, field_name, argument_name, directive_name, ordinal, directive_argument_name),
   FOREIGN KEY (type_name, field_name, argument_name, directive_name, ordinal)
-    REFERENCES applied_argument_directive (type_name, field_name, argument_name, directive_name, ordinal)
+    REFERENCES graphql_argument_directive (type_name, field_name, argument_name, directive_name, ordinal)
 );
 
--- A directive is applied to an enum value (@deprecated lives here; the
--- graphitron enum-value directives land in the semantic stratum).
-CREATE TABLE applied_enum_value_directive (
+-- A directive is applied to an enum value (@deprecated lives here, and so does
+-- the graphitron enum-value inventory, which is additionally decoded).
+CREATE TABLE graphql_enum_value_directive (
   type_name      VARCHAR NOT NULL,
   value_name     VARCHAR NOT NULL,
   directive_name VARCHAR NOT NULL,
-  ordinal        INT     NOT NULL, -- as on applied_schema_directive
+  ordinal        INT     NOT NULL, -- as on graphql_schema_directive
   source_name    VARCHAR,
   source_line    INT,
   source_column  INT,
@@ -600,7 +605,7 @@ CREATE TABLE applied_enum_value_directive (
 );
 
 -- An argument the author passed to an enum-value application.
-CREATE TABLE applied_enum_value_directive_arg (
+CREATE TABLE graphql_enum_value_directive_arg (
   type_name               VARCHAR NOT NULL,
   value_name              VARCHAR NOT NULL,
   directive_name          VARCHAR NOT NULL,
@@ -609,32 +614,32 @@ CREATE TABLE applied_enum_value_directive_arg (
   value_sdl               VARCHAR NOT NULL,
   PRIMARY KEY (type_name, value_name, directive_name, ordinal, directive_argument_name),
   FOREIGN KEY (type_name, value_name, directive_name, ordinal)
-    REFERENCES applied_enum_value_directive (type_name, value_name, directive_name, ordinal)
+    REFERENCES graphql_enum_value_directive (type_name, value_name, directive_name, ordinal)
 );
 
 -- The one view the DDL ships: every application regardless of site, so a
 -- consumer that wants "all applications of @x" reads one relation.
-CREATE VIEW applied_directive_site AS
+CREATE VIEW graphql_directive_site AS
 SELECT 'SCHEMA' AS site_kind, CAST(NULL AS VARCHAR) AS type_name,
        CAST(NULL AS VARCHAR) AS member_name, CAST(NULL AS VARCHAR) AS argument_name,
        directive_name, ordinal, source_name, source_line, source_column
-  FROM applied_schema_directive
+  FROM graphql_schema_directive
 UNION ALL
 SELECT 'TYPE', type_name, NULL, NULL,
        directive_name, ordinal, source_name, source_line, source_column
-  FROM applied_type_directive
+  FROM graphql_type_directive
 UNION ALL
 SELECT 'FIELD', type_name, field_name, NULL,
        directive_name, ordinal, source_name, source_line, source_column
-  FROM applied_field_directive
+  FROM graphql_field_directive
 UNION ALL
 SELECT 'ARGUMENT', type_name, field_name, argument_name,
        directive_name, ordinal, source_name, source_line, source_column
-  FROM applied_argument_directive
+  FROM graphql_argument_directive
 UNION ALL
 SELECT 'ENUM_VALUE', type_name, value_name, NULL,
        directive_name, ordinal, source_name, source_line, source_column
-  FROM applied_enum_value_directive;
+  FROM graphql_enum_value_directive;
 ```
 
 The semantic stratum decodes the graphitron and federation inventory, one relation family per
@@ -657,9 +662,9 @@ directive, filled by the same capture walk. Its rules:
   `@key` as readily as a base definition), and a repeated application of a non-repeatable
   directive at one coordinate keeps the first row and mints a located detection; the walk
   never throws on author input.
-- **Every application-level relation carries the application's own source position.** The
-  graphitron namespace has no `applied_` twin (it is stripped, not re-emitted), so the intent
-  row is the only record of where the author wrote the application; detections mint located
+- **Every application-level relation carries the application's own source position.** A decoded
+  row does have a `graphql_` twin, but a consumer working in graphitron's vocabulary should not
+  have to join back to find where the author wrote something; detections mint located
   diagnostics from these columns, and document order between applications is recoverable
   where it is load-bearing (a field's `@routine` and `@reference` applications compose one
   table chain in written order, so the chain is an ORDER BY over positions). Child relations
@@ -667,7 +672,7 @@ directive, filled by the same capture walk. Its rules:
   the declaration-site reference, the `graphql_field` pattern: `source_name` doubles as the
   site key part, `source_line` and `source_column` are the application's own.
 - **Repeatable applications key by capture-assigned ordinal in document order**, as in the
-  `applied_` families. This also covers repetition the directive's own semantics key
+  `graphql_` families. This also covers repetition the directive's own semantics key
   differently: `@referenceFor` applications are keyed by participant in consumption, but the
   relation keys by ordinal and keeps the participant as a column, so an author repeating a
   participant produces two rows and a detection, never a key collision.
@@ -680,7 +685,7 @@ directive, filled by the same capture walk. Its rules:
 - **A literal that does not fit its declared shape quarantines raw.** A typed column
   (an Int, a Boolean, a structured input object) captures the decoded value; when the
   authored literal does not have the declared shape, the column stays NULL and the raw
-  literal lands in `intent_undecoded_argument` with its location, so the authored text is
+  literal lands in `graphitron_undecoded_argument` with its location, so the authored text is
   never lost and the malformed-literal detection has its row. Dormant while assembly still
   runs upstream and rejects such schemas first, live when the tolerant path is the only one.
 - **Pair-grammar strings keep the raw column and add an ordered pair child exactly where a
@@ -708,9 +713,10 @@ relations the declarations alone would not suggest (application-level `@referenc
 because an empty path means FK auto-discovery and is a fact about one application) and it
 caught a bug: `@experimental_constructType` has no consumer anywhere in the pipeline and is
 not a graphitron directive at all, so its declaration in `directives.graphqls` is wrong; it
-gets no intent relation, and once the stray declaration is removed its applications are
-foreign and take the `applied_` fidelity path like any other. The `intent_` prefix names what
-a row is: the author's decoded intent at a coordinate.
+gets no decoded relation, and its applications are transcribed into the `graphql_` family like
+every other application whether or not the stray declaration is removed. The `graphitron_`
+prefix names what a row is written in: graphitron's vocabulary for what an application at a
+coordinate spelled.
 
 ```sql
 -- ==== Semantic stratum ======================================================
@@ -718,7 +724,7 @@ a row is: the author's decoded intent at a coordinate.
 -- @table on a type: the author binds the type to a database table. On an
 -- INPUT_OBJECT the application is captured like any other; the ignored-and-
 -- warned status of that site is a detection.
-CREATE TABLE intent_table (
+CREATE TABLE graphitron_table (
   type_name        VARCHAR NOT NULL, -- the OBJECT, INPUT_OBJECT, or INTERFACE carrying @table
   source_name      VARCHAR NOT NULL, -- the applying declaration site (keyed with the line and column below); doubles as the file of the position columns
   declaration_line INT     NOT NULL,
@@ -736,7 +742,7 @@ CREATE TABLE intent_table (
 -- a Java accessor, or a Java member depending on the backing, which is
 -- classification's business; the $source / $errors sigil forms are stored as
 -- written, their recognition being a prefix test SQL can express.
-CREATE TABLE intent_field_binding (
+CREATE TABLE graphitron_field_binding (
   type_name     VARCHAR NOT NULL,
   field_name    VARCHAR NOT NULL,
   source_name   VARCHAR, -- the application's own position, here and below
@@ -748,7 +754,7 @@ CREATE TABLE intent_field_binding (
 );
 
 -- @field on an argument: the filter argument's bound column.
-CREATE TABLE intent_argument_binding (
+CREATE TABLE graphitron_argument_binding (
   type_name     VARCHAR NOT NULL,
   field_name    VARCHAR NOT NULL,
   argument_name VARCHAR NOT NULL,
@@ -763,7 +769,7 @@ CREATE TABLE intent_argument_binding (
 
 -- @field on an enum value: the database string (or Java constant) the value
 -- maps to. The pivot vocabulary decode reads this relation too.
-CREATE TABLE intent_enum_value_binding (
+CREATE TABLE graphitron_enum_value_binding (
   type_name     VARCHAR NOT NULL,
   value_name    VARCHAR NOT NULL,
   source_name   VARCHAR,
@@ -778,7 +784,7 @@ CREATE TABLE intent_enum_value_binding (
 -- capture the application is read like any other; the SDL pre-pass the
 -- current consumer needs (assembly strips directives off spec built-in
 -- redeclarations) dies with the assembled source.
-CREATE TABLE intent_scalar_type (
+CREATE TABLE graphitron_scalar_type (
   type_name        VARCHAR NOT NULL,
   source_name      VARCHAR NOT NULL, -- half of the site FK, so NOT NULL; a graphitron application always has an SDL position
   declaration_line INT     NOT NULL,
@@ -795,8 +801,8 @@ CREATE TABLE intent_scalar_type (
 -- @enum on an enum type. The full ExternalCodeReference is captured as
 -- written, though today only arg_mapping is consumed (to reject a non-blank
 -- value; the Java binding is derived by reflection and the per-value mapping
--- comes from intent_enum_value_binding).
-CREATE TABLE intent_enum (
+-- comes from graphitron_enum_value_binding).
+CREATE TABLE graphitron_enum (
   type_name        VARCHAR NOT NULL,
   source_name      VARCHAR NOT NULL, -- half of the site FK, so NOT NULL; a graphitron application always has an SDL position
   declaration_line INT     NOT NULL,
@@ -814,7 +820,7 @@ CREATE TABLE intent_enum (
 
 -- @condition on a field or input field (shared coordinate; the parent kind
 -- decides which SDL site this was).
-CREATE TABLE intent_field_condition (
+CREATE TABLE graphitron_field_condition (
   type_name     VARCHAR NOT NULL,
   field_name    VARCHAR NOT NULL,
   source_name   VARCHAR,
@@ -829,19 +835,19 @@ CREATE TABLE intent_field_condition (
 );
 
 -- An ordered context argument of a field-site @condition.
-CREATE TABLE intent_field_condition_context_arg (
+CREATE TABLE graphitron_field_condition_context_arg (
   type_name  VARCHAR NOT NULL,
   field_name VARCHAR NOT NULL,
   position   INT     NOT NULL, -- 0-based position in the contextArguments list
   name       VARCHAR NOT NULL,
   PRIMARY KEY (type_name, field_name, position),
   FOREIGN KEY (type_name, field_name)
-    REFERENCES intent_field_condition (type_name, field_name)
+    REFERENCES graphitron_field_condition (type_name, field_name)
 );
 
 -- An ordered pair of a field-site @condition's argMapping. Position-keyed so
 -- an author's duplicate parameter survives for the duplicate detection.
-CREATE TABLE intent_field_condition_arg_mapping_pair (
+CREATE TABLE graphitron_field_condition_arg_mapping_pair (
   type_name     VARCHAR NOT NULL,
   field_name    VARCHAR NOT NULL,
   position      INT     NOT NULL,
@@ -849,11 +855,11 @@ CREATE TABLE intent_field_condition_arg_mapping_pair (
   argument_path VARCHAR NOT NULL, -- the right side as written: a GraphQL argument name or dotted input path
   PRIMARY KEY (type_name, field_name, position),
   FOREIGN KEY (type_name, field_name)
-    REFERENCES intent_field_condition (type_name, field_name)
+    REFERENCES graphitron_field_condition (type_name, field_name)
 );
 
 -- @condition on an argument: the same decode over the three-part coordinate.
-CREATE TABLE intent_argument_condition (
+CREATE TABLE graphitron_argument_condition (
   type_name     VARCHAR NOT NULL,
   field_name    VARCHAR NOT NULL,
   argument_name VARCHAR NOT NULL,
@@ -869,7 +875,7 @@ CREATE TABLE intent_argument_condition (
     REFERENCES graphql_argument (type_name, field_name, argument_name)
 );
 
-CREATE TABLE intent_argument_condition_context_arg (
+CREATE TABLE graphitron_argument_condition_context_arg (
   type_name     VARCHAR NOT NULL,
   field_name    VARCHAR NOT NULL,
   argument_name VARCHAR NOT NULL,
@@ -877,10 +883,10 @@ CREATE TABLE intent_argument_condition_context_arg (
   name          VARCHAR NOT NULL,
   PRIMARY KEY (type_name, field_name, argument_name, position),
   FOREIGN KEY (type_name, field_name, argument_name)
-    REFERENCES intent_argument_condition (type_name, field_name, argument_name)
+    REFERENCES graphitron_argument_condition (type_name, field_name, argument_name)
 );
 
-CREATE TABLE intent_argument_condition_arg_mapping_pair (
+CREATE TABLE graphitron_argument_condition_arg_mapping_pair (
   type_name     VARCHAR NOT NULL,
   field_name    VARCHAR NOT NULL,
   argument_name VARCHAR NOT NULL,
@@ -889,7 +895,7 @@ CREATE TABLE intent_argument_condition_arg_mapping_pair (
   argument_path VARCHAR NOT NULL,
   PRIMARY KEY (type_name, field_name, argument_name, position),
   FOREIGN KEY (type_name, field_name, argument_name)
-    REFERENCES intent_argument_condition (type_name, field_name, argument_name)
+    REFERENCES graphitron_argument_condition (type_name, field_name, argument_name)
 );
 
 -- @reference on a field or input field: one row per application, because an
@@ -900,7 +906,7 @@ CREATE TABLE intent_argument_condition_arg_mapping_pair (
 -- read is the steps ordered by (ordinal, position), and the written-order
 -- interleaving with @routine applications on the same field is an ORDER BY
 -- over the two relations' source positions.
-CREATE TABLE intent_field_reference (
+CREATE TABLE graphitron_field_reference (
   type_name     VARCHAR NOT NULL,
   field_name    VARCHAR NOT NULL,
   ordinal       INT     NOT NULL, -- repeatable; document order
@@ -913,7 +919,7 @@ CREATE TABLE intent_field_reference (
 
 -- An ordered path element of one @reference application; the step's
 -- ExternalCodeReference condition flattens in place.
-CREATE TABLE intent_field_reference_step (
+CREATE TABLE graphitron_field_reference_step (
   type_name   VARCHAR NOT NULL,
   field_name  VARCHAR NOT NULL,
   ordinal     INT     NOT NULL,
@@ -925,11 +931,11 @@ CREATE TABLE intent_field_reference_step (
   arg_mapping VARCHAR,
   PRIMARY KEY (type_name, field_name, ordinal, position),
   FOREIGN KEY (type_name, field_name, ordinal)
-    REFERENCES intent_field_reference (type_name, field_name, ordinal)
+    REFERENCES graphitron_field_reference (type_name, field_name, ordinal)
 );
 
 -- An ordered pair of a step condition's argMapping.
-CREATE TABLE intent_field_reference_step_arg_mapping_pair (
+CREATE TABLE graphitron_field_reference_step_arg_mapping_pair (
   type_name     VARCHAR NOT NULL,
   field_name    VARCHAR NOT NULL,
   ordinal       INT     NOT NULL,
@@ -939,11 +945,11 @@ CREATE TABLE intent_field_reference_step_arg_mapping_pair (
   argument_path VARCHAR NOT NULL,
   PRIMARY KEY (type_name, field_name, ordinal, step_position, position),
   FOREIGN KEY (type_name, field_name, ordinal, step_position)
-    REFERENCES intent_field_reference_step (type_name, field_name, ordinal, position)
+    REFERENCES graphitron_field_reference_step (type_name, field_name, ordinal, position)
 );
 
 -- @reference on an argument: the same family over the three-part coordinate.
-CREATE TABLE intent_argument_reference (
+CREATE TABLE graphitron_argument_reference (
   type_name     VARCHAR NOT NULL,
   field_name    VARCHAR NOT NULL,
   argument_name VARCHAR NOT NULL,
@@ -956,7 +962,7 @@ CREATE TABLE intent_argument_reference (
     REFERENCES graphql_argument (type_name, field_name, argument_name)
 );
 
-CREATE TABLE intent_argument_reference_step (
+CREATE TABLE graphitron_argument_reference_step (
   type_name     VARCHAR NOT NULL,
   field_name    VARCHAR NOT NULL,
   argument_name VARCHAR NOT NULL,
@@ -969,10 +975,10 @@ CREATE TABLE intent_argument_reference_step (
   arg_mapping   VARCHAR,
   PRIMARY KEY (type_name, field_name, argument_name, ordinal, position),
   FOREIGN KEY (type_name, field_name, argument_name, ordinal)
-    REFERENCES intent_argument_reference (type_name, field_name, argument_name, ordinal)
+    REFERENCES graphitron_argument_reference (type_name, field_name, argument_name, ordinal)
 );
 
-CREATE TABLE intent_argument_reference_step_arg_mapping_pair (
+CREATE TABLE graphitron_argument_reference_step_arg_mapping_pair (
   type_name     VARCHAR NOT NULL,
   field_name    VARCHAR NOT NULL,
   argument_name VARCHAR NOT NULL,
@@ -983,14 +989,14 @@ CREATE TABLE intent_argument_reference_step_arg_mapping_pair (
   argument_path VARCHAR NOT NULL,
   PRIMARY KEY (type_name, field_name, argument_name, ordinal, step_position, position),
   FOREIGN KEY (type_name, field_name, argument_name, ordinal, step_position)
-    REFERENCES intent_argument_reference_step (type_name, field_name, argument_name, ordinal, position)
+    REFERENCES graphitron_argument_reference_step (type_name, field_name, argument_name, ordinal, position)
 );
 
 -- @referenceFor on a field: an explicit join path for one participant of a
 -- multi-table interface or union child. Keyed by ordinal per the repeatable
 -- rule; the consumption-side keying by participant makes a repeated
 -- participant a detection, never a collision.
-CREATE TABLE intent_reference_for (
+CREATE TABLE graphitron_reference_for (
   type_name            VARCHAR NOT NULL,
   field_name           VARCHAR NOT NULL,
   ordinal              INT     NOT NULL,
@@ -1002,7 +1008,7 @@ CREATE TABLE intent_reference_for (
   FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
 );
 
-CREATE TABLE intent_reference_for_step (
+CREATE TABLE graphitron_reference_for_step (
   type_name   VARCHAR NOT NULL,
   field_name  VARCHAR NOT NULL,
   ordinal     INT     NOT NULL,
@@ -1014,10 +1020,10 @@ CREATE TABLE intent_reference_for_step (
   arg_mapping VARCHAR,
   PRIMARY KEY (type_name, field_name, ordinal, position),
   FOREIGN KEY (type_name, field_name, ordinal)
-    REFERENCES intent_reference_for (type_name, field_name, ordinal)
+    REFERENCES graphitron_reference_for (type_name, field_name, ordinal)
 );
 
-CREATE TABLE intent_reference_for_step_arg_mapping_pair (
+CREATE TABLE graphitron_reference_for_step_arg_mapping_pair (
   type_name     VARCHAR NOT NULL,
   field_name    VARCHAR NOT NULL,
   ordinal       INT     NOT NULL,
@@ -1027,11 +1033,11 @@ CREATE TABLE intent_reference_for_step_arg_mapping_pair (
   argument_path VARCHAR NOT NULL,
   PRIMARY KEY (type_name, field_name, ordinal, step_position, position),
   FOREIGN KEY (type_name, field_name, ordinal, step_position)
-    REFERENCES intent_reference_for_step (type_name, field_name, ordinal, position)
+    REFERENCES graphitron_reference_for_step (type_name, field_name, ordinal, position)
 );
 
 -- @service on a field: the external service reference.
-CREATE TABLE intent_service (
+CREATE TABLE graphitron_service (
   type_name     VARCHAR NOT NULL,
   field_name    VARCHAR NOT NULL,
   source_name   VARCHAR,
@@ -1044,29 +1050,29 @@ CREATE TABLE intent_service (
   FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
 );
 
-CREATE TABLE intent_service_context_arg (
+CREATE TABLE graphitron_service_context_arg (
   type_name  VARCHAR NOT NULL,
   field_name VARCHAR NOT NULL,
   position   INT     NOT NULL,
   name       VARCHAR NOT NULL,
   PRIMARY KEY (type_name, field_name, position),
-  FOREIGN KEY (type_name, field_name) REFERENCES intent_service (type_name, field_name)
+  FOREIGN KEY (type_name, field_name) REFERENCES graphitron_service (type_name, field_name)
 );
 
-CREATE TABLE intent_service_arg_mapping_pair (
+CREATE TABLE graphitron_service_arg_mapping_pair (
   type_name     VARCHAR NOT NULL,
   field_name    VARCHAR NOT NULL,
   position      INT     NOT NULL,
   param_name    VARCHAR NOT NULL,
   argument_path VARCHAR NOT NULL,
   PRIMARY KEY (type_name, field_name, position),
-  FOREIGN KEY (type_name, field_name) REFERENCES intent_service (type_name, field_name)
+  FOREIGN KEY (type_name, field_name) REFERENCES graphitron_service (type_name, field_name)
 );
 
 -- @externalField on a field: the static jOOQ-Field method. The omitted-method
 -- fallback (the field name) is a derivation; arg_mapping is inert here (raw
 -- column only, its rejection is presence-triggered).
-CREATE TABLE intent_external_field (
+CREATE TABLE graphitron_external_field (
   type_name     VARCHAR NOT NULL,
   field_name    VARCHAR NOT NULL,
   source_name   VARCHAR,
@@ -1081,7 +1087,7 @@ CREATE TABLE intent_external_field (
 
 -- @sourceRow on a field: the parent-side join-key lifter. Flat arguments by
 -- declaration, not an ExternalCodeReference.
-CREATE TABLE intent_source_row (
+CREATE TABLE graphitron_source_row (
   type_name     VARCHAR NOT NULL,
   field_name    VARCHAR NOT NULL,
   source_name   VARCHAR,
@@ -1095,7 +1101,7 @@ CREATE TABLE intent_source_row (
 
 -- @asConnection on a field: the macro's spec, as authored. The expansion's
 -- output is provenance-marked rows in the graphql_ tables, below.
-CREATE TABLE intent_connection (
+CREATE TABLE graphitron_connection (
   type_name           VARCHAR NOT NULL,
   field_name          VARCHAR NOT NULL,
   source_name         VARCHAR,
@@ -1108,8 +1114,8 @@ CREATE TABLE intent_connection (
 );
 
 -- @asFacet on an input field: a marker; the bound column comes from
--- intent_field_binding, and every misuse arm is a detection.
-CREATE TABLE intent_facet (
+-- graphitron_field_binding, and every misuse arm is a detection.
+CREATE TABLE graphitron_facet (
   type_name     VARCHAR NOT NULL,
   field_name    VARCHAR NOT NULL,
   source_name   VARCHAR,
@@ -1120,7 +1126,7 @@ CREATE TABLE intent_facet (
 );
 
 -- @orderBy on an argument: a marker; the input shape rules are detections.
-CREATE TABLE intent_order_by (
+CREATE TABLE graphitron_order_by (
   type_name     VARCHAR NOT NULL,
   field_name    VARCHAR NOT NULL,
   argument_name VARCHAR NOT NULL,
@@ -1134,7 +1140,7 @@ CREATE TABLE intent_order_by (
 
 -- @order on an enum value: a sorting specification. The exactly-one-of rule
 -- over index, fields, and primaryKey is a detection.
-CREATE TABLE intent_order (
+CREATE TABLE graphitron_order (
   type_name     VARCHAR NOT NULL,
   value_name    VARCHAR NOT NULL,
   source_name   VARCHAR,
@@ -1147,7 +1153,7 @@ CREATE TABLE intent_order (
 );
 
 -- An ordered FieldSort entry of an @order.
-CREATE TABLE intent_order_field (
+CREATE TABLE graphitron_order_field (
   type_name  VARCHAR NOT NULL,
   value_name VARCHAR NOT NULL,
   position   INT     NOT NULL,
@@ -1155,12 +1161,12 @@ CREATE TABLE intent_order_field (
   collate    VARCHAR,
   direction  VARCHAR, -- as written; author-spelled enum literal, open column
   PRIMARY KEY (type_name, value_name, position),
-  FOREIGN KEY (type_name, value_name) REFERENCES intent_order (type_name, value_name)
+  FOREIGN KEY (type_name, value_name) REFERENCES graphitron_order (type_name, value_name)
 );
 
 -- @index on an enum value: the deprecated alias of @order(index:), still
 -- honoured when @order is absent; the deprecation is a lint detection.
-CREATE TABLE intent_index (
+CREATE TABLE graphitron_index (
   type_name     VARCHAR NOT NULL,
   value_name    VARCHAR NOT NULL,
   source_name   VARCHAR,
@@ -1173,7 +1179,7 @@ CREATE TABLE intent_index (
 
 -- @defaultOrder on a field: the same specification shape plus the
 -- directive-level direction that serves as the per-entry fallback.
-CREATE TABLE intent_default_order (
+CREATE TABLE graphitron_default_order (
   type_name     VARCHAR NOT NULL,
   field_name    VARCHAR NOT NULL,
   source_name   VARCHAR,
@@ -1186,7 +1192,7 @@ CREATE TABLE intent_default_order (
   FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
 );
 
-CREATE TABLE intent_default_order_field (
+CREATE TABLE graphitron_default_order_field (
   type_name  VARCHAR NOT NULL,
   field_name VARCHAR NOT NULL,
   position   INT     NOT NULL,
@@ -1194,11 +1200,11 @@ CREATE TABLE intent_default_order_field (
   collate    VARCHAR,
   direction  VARCHAR,
   PRIMARY KEY (type_name, field_name, position),
-  FOREIGN KEY (type_name, field_name) REFERENCES intent_default_order (type_name, field_name)
+  FOREIGN KEY (type_name, field_name) REFERENCES graphitron_default_order (type_name, field_name)
 );
 
 -- @mutation on a field: the DML statement spec.
-CREATE TABLE intent_mutation (
+CREATE TABLE graphitron_mutation (
   type_name     VARCHAR NOT NULL,
   field_name    VARCHAR NOT NULL,
   source_name   VARCHAR,
@@ -1213,7 +1219,7 @@ CREATE TABLE intent_mutation (
 
 -- @error on an object type: presence; the handlers list decodes into the
 -- ordered child, and every cross-field handler rule is a detection.
-CREATE TABLE intent_error (
+CREATE TABLE graphitron_error (
   type_name        VARCHAR NOT NULL,
   source_name      VARCHAR NOT NULL, -- half of the site FK, so NOT NULL; a graphitron application always has an SDL position
   declaration_line INT     NOT NULL,
@@ -1227,7 +1233,7 @@ CREATE TABLE intent_error (
 );
 
 -- An ordered ErrorHandler of an @error application.
-CREATE TABLE intent_error_handler (
+CREATE TABLE graphitron_error_handler (
   type_name   VARCHAR NOT NULL,
   position    INT     NOT NULL,
   handler     VARCHAR NOT NULL, -- GENERIC / DATABASE / VALIDATION as written; open column
@@ -1237,13 +1243,13 @@ CREATE TABLE intent_error_handler (
   matches     VARCHAR,
   description VARCHAR,
   PRIMARY KEY (type_name, position),
-  FOREIGN KEY (type_name) REFERENCES intent_error (type_name)
+  FOREIGN KEY (type_name) REFERENCES graphitron_error (type_name)
 );
 
 -- @node on an object type: node identity. The type-name fallback for typeId
 -- and the catalog-PK fallback for key columns are derivations; the
 -- SDL-versus-jOOQ-metadata precedence rules are detections.
-CREATE TABLE intent_node (
+CREATE TABLE graphitron_node (
   type_name        VARCHAR NOT NULL,
   source_name      VARCHAR NOT NULL, -- half of the site FK, so NOT NULL; a graphitron application always has an SDL position
   declaration_line INT     NOT NULL,
@@ -1258,16 +1264,16 @@ CREATE TABLE intent_node (
 );
 
 -- An ordered keyColumns entry of an @node.
-CREATE TABLE intent_node_key_column (
+CREATE TABLE graphitron_node_key_column (
   type_name  VARCHAR NOT NULL,
   position   INT     NOT NULL,
   column_ref VARCHAR NOT NULL,
   PRIMARY KEY (type_name, position),
-  FOREIGN KEY (type_name) REFERENCES intent_node (type_name)
+  FOREIGN KEY (type_name) REFERENCES graphitron_node (type_name)
 );
 
 -- @nodeId on a field or input field.
-CREATE TABLE intent_field_node_id (
+CREATE TABLE graphitron_field_node_id (
   type_name     VARCHAR NOT NULL,
   field_name    VARCHAR NOT NULL,
   source_name   VARCHAR,
@@ -1279,7 +1285,7 @@ CREATE TABLE intent_field_node_id (
 );
 
 -- @nodeId on an argument.
-CREATE TABLE intent_argument_node_id (
+CREATE TABLE graphitron_argument_node_id (
   type_name     VARCHAR NOT NULL,
   field_name    VARCHAR NOT NULL,
   argument_name VARCHAR NOT NULL,
@@ -1293,7 +1299,7 @@ CREATE TABLE intent_argument_node_id (
 );
 
 -- @lookupKey on an argument: the live site, a marker.
-CREATE TABLE intent_argument_lookup_key (
+CREATE TABLE graphitron_argument_lookup_key (
   type_name     VARCHAR NOT NULL,
   field_name    VARCHAR NOT NULL,
   argument_name VARCHAR NOT NULL,
@@ -1307,7 +1313,7 @@ CREATE TABLE intent_argument_lookup_key (
 
 -- @lookupKey on an input field: the retired site; the sole consumer is the
 -- located migration rejection.
-CREATE TABLE intent_field_lookup_key (
+CREATE TABLE graphitron_field_lookup_key (
   type_name     VARCHAR NOT NULL,
   field_name    VARCHAR NOT NULL,
   source_name   VARCHAR,
@@ -1318,7 +1324,7 @@ CREATE TABLE intent_field_lookup_key (
 );
 
 -- @splitQuery on a field: a marker.
-CREATE TABLE intent_split_query (
+CREATE TABLE graphitron_split_query (
   type_name     VARCHAR NOT NULL,
   field_name    VARCHAR NOT NULL,
   source_name   VARCHAR,
@@ -1329,7 +1335,7 @@ CREATE TABLE intent_split_query (
 );
 
 -- @tenantFanOut on a field: a marker; its many conflict arms are detections.
-CREATE TABLE intent_tenant_fan_out (
+CREATE TABLE graphitron_tenant_fan_out (
   type_name     VARCHAR NOT NULL,
   field_name    VARCHAR NOT NULL,
   source_name   VARCHAR,
@@ -1340,7 +1346,7 @@ CREATE TABLE intent_tenant_fan_out (
 );
 
 -- @pivot on a field: the aggregate-projection spec.
-CREATE TABLE intent_pivot (
+CREATE TABLE graphitron_pivot (
   type_name      VARCHAR NOT NULL,
   field_name     VARCHAR NOT NULL,
   source_name    VARCHAR,
@@ -1354,8 +1360,8 @@ CREATE TABLE intent_pivot (
 );
 
 -- @routine on a field: one row per application (repeatable). The table chain
--- interleaves these with intent_field_reference rows in written order.
-CREATE TABLE intent_routine (
+-- interleaves these with graphitron_field_reference rows in written order.
+CREATE TABLE graphitron_routine (
   type_name      VARCHAR NOT NULL,
   field_name     VARCHAR NOT NULL,
   ordinal        INT     NOT NULL,
@@ -1369,7 +1375,7 @@ CREATE TABLE intent_routine (
   FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
 );
 
-CREATE TABLE intent_routine_arg_mapping_pair (
+CREATE TABLE graphitron_routine_arg_mapping_pair (
   type_name     VARCHAR NOT NULL,
   field_name    VARCHAR NOT NULL,
   ordinal       INT     NOT NULL,
@@ -1378,12 +1384,12 @@ CREATE TABLE intent_routine_arg_mapping_pair (
   argument_path VARCHAR NOT NULL,
   PRIMARY KEY (type_name, field_name, ordinal, position),
   FOREIGN KEY (type_name, field_name, ordinal)
-    REFERENCES intent_routine (type_name, field_name, ordinal)
+    REFERENCES graphitron_routine (type_name, field_name, ordinal)
 );
 
 -- columnMapping pairs bind routine parameters to previous-node columns; a
 -- dotted right side is captured as written and rejected by detection.
-CREATE TABLE intent_routine_column_mapping_pair (
+CREATE TABLE graphitron_routine_column_mapping_pair (
   type_name  VARCHAR NOT NULL,
   field_name VARCHAR NOT NULL,
   ordinal    INT     NOT NULL,
@@ -1392,7 +1398,7 @@ CREATE TABLE intent_routine_column_mapping_pair (
   column_ref VARCHAR NOT NULL,
   PRIMARY KEY (type_name, field_name, ordinal, position),
   FOREIGN KEY (type_name, field_name, ordinal)
-    REFERENCES intent_routine (type_name, field_name, ordinal)
+    REFERENCES graphitron_routine (type_name, field_name, ordinal)
 );
 
 -- @experimental_constructType has no relation, and unlike every other name
@@ -1401,11 +1407,11 @@ CREATE TABLE intent_routine_column_mapping_pair (
 -- declaration's only effect is that emission strips applications, silently
 -- swallowing a directive graphitron does not own). Once the stray
 -- declaration is removed the name is foreign like any user-authored
--- directive and its applications land in the applied_ family as fidelity
+-- directive and its applications land in the graphql_ family as fidelity
 -- rows, re-emitted verbatim; the store needs no special case for it.
 
 -- @discriminate on an interface or union: the discriminator column.
-CREATE TABLE intent_discriminate (
+CREATE TABLE graphitron_discriminate (
   type_name        VARCHAR NOT NULL,
   source_name      VARCHAR NOT NULL, -- half of the site FK, so NOT NULL; a graphitron application always has an SDL position
   declaration_line INT     NOT NULL,
@@ -1420,7 +1426,7 @@ CREATE TABLE intent_discriminate (
 );
 
 -- @discriminator on an object type: the participant's discriminator value.
-CREATE TABLE intent_discriminator (
+CREATE TABLE graphitron_discriminator (
   type_name           VARCHAR NOT NULL,
   source_name         VARCHAR NOT NULL, -- half of the site FK, so NOT NULL
   declaration_line    INT     NOT NULL,
@@ -1435,8 +1441,8 @@ CREATE TABLE intent_discriminator (
 );
 
 -- Federation @key, decoded for consumption (its verbatim twin lives in
--- applied_type_directive for re-emission; a gate query pins agreement).
-CREATE TABLE intent_federation_key (
+-- graphql_type_directive for re-emission; a gate query pins agreement).
+CREATE TABLE graphitron_federation_key (
   type_name        VARCHAR NOT NULL,
   ordinal          INT     NOT NULL, -- @key is repeatable; document order
   source_name      VARCHAR NOT NULL, -- the applying declaration site; a synthesized key inherits the causing authored site of the same type, so the reference holds for it too
@@ -1456,23 +1462,23 @@ CREATE TABLE intent_federation_key (
 -- boundary, so the decode happens at capture). The grammar admits nested
 -- selections as dotted paths; that today's consumer rejects nesting is a
 -- detection, not a capture limit.
-CREATE TABLE intent_federation_key_field (
+CREATE TABLE graphitron_federation_key_field (
   type_name  VARCHAR NOT NULL,
   ordinal    INT     NOT NULL,
   position   INT     NOT NULL, -- 0-based within the field set
   field_path VARCHAR NOT NULL, -- dotted path for nested selections
   PRIMARY KEY (type_name, ordinal, position),
   FOREIGN KEY (type_name, ordinal)
-    REFERENCES intent_federation_key (type_name, ordinal)
+    REFERENCES graphitron_federation_key (type_name, ordinal)
 );
 
 -- @link on the schema definition, decoded. All @link applications decode
--- here (the verbatim twin sits in applied_schema_directive); whether a link
+-- here (the verbatim twin sits in graphql_schema_directive); whether a link
 -- is the federation opt-in is a predicate over url, a derivation. @tag and
 -- @shareable get no decoded relations: their only readers are the expansion
 -- machinery itself, which is the capture walk with the AST in hand, so
 -- downstream consumers see them only as fidelity rows for re-emission.
-CREATE TABLE intent_link (
+CREATE TABLE graphitron_link (
   ordinal       INT     NOT NULL, -- @link is repeatable; document order
   source_name   VARCHAR,
   source_line   INT,
@@ -1483,13 +1489,13 @@ CREATE TABLE intent_link (
 
 -- An ordered import entry of an @link, covering both the string form and the
 -- object form.
-CREATE TABLE intent_link_import (
+CREATE TABLE graphitron_link_import (
   link_ordinal INT     NOT NULL,
   position     INT     NOT NULL,
   name         VARCHAR NOT NULL, -- the imported name (the object form's name:)
   alias        VARCHAR,          -- the object form's as:, when written
   PRIMARY KEY (link_ordinal, position),
-  FOREIGN KEY (link_ordinal) REFERENCES intent_link (ordinal)
+  FOREIGN KEY (link_ordinal) REFERENCES graphitron_link (ordinal)
 );
 
 -- Retired directives: existence only, per the rules above.
@@ -1497,13 +1503,13 @@ CREATE TABLE intent_link_import (
 -- @notGenerated, like @experimental_constructType above, is not a graphitron
 -- directive and its declaration in directives.graphqls is a bug, so it gets
 -- no relations. Once the stray declaration is removed its applications take
--- the applied_ fidelity path, and the current hard rejection ("no longer
+-- the graphql_ fidelity path, and the current hard rejection ("no longer
 -- supported") becomes, if it is kept at all, a detection over the directive
--- name in the applied_ rows; whether to keep steering on a name graphitron
+-- name in the graphql_ rows; whether to keep steering on a name graphitron
 -- does not own is a directive-lifecycle question outside this spec.
 
 -- @multitableReference (removed) on a field; routes is never read.
-CREATE TABLE intent_multitable_reference (
+CREATE TABLE graphitron_multitable_reference (
   type_name     VARCHAR NOT NULL,
   field_name    VARCHAR NOT NULL,
   source_name   VARCHAR,
@@ -1516,7 +1522,7 @@ CREATE TABLE intent_multitable_reference (
 -- @record (deprecated, ignored) on an object or input type. class_name is
 -- the one payload value a consumer reads: the warning arms compare it
 -- against the reflected backing class.
-CREATE TABLE intent_record (
+CREATE TABLE graphitron_record (
   type_name        VARCHAR NOT NULL,
   source_name      VARCHAR NOT NULL, -- half of the site FK, so NOT NULL; a graphitron application always has an SDL position
   declaration_line INT     NOT NULL,
@@ -1535,7 +1541,7 @@ CREATE TABLE intent_record (
 -- column and quarantines its raw text here, so the authored value is never
 -- lost and the malformed-literal detection has its row. Empty while assembly
 -- runs upstream.
-CREATE TABLE intent_undecoded_argument (
+CREATE TABLE graphitron_undecoded_argument (
   source_name             VARCHAR NOT NULL, -- the application's position identifies the row; authored applications always have one
   source_line             INT     NOT NULL,
   source_column           INT     NOT NULL,
@@ -1583,7 +1589,7 @@ rewrite retires with its last legacy consumer.
 -- rows hang off these sites through the ordinary declaration reference,
 -- which is what marks additions without per-element provenance; a type is
 -- synthesized exactly when its merge_ordinal-0 site is.
-CREATE TABLE graphql_type_declaration_synthesis (
+CREATE TABLE graphitron_type_declaration_synthesis (
   type_name          VARCHAR NOT NULL,
   source_name        VARCHAR NOT NULL, -- the causing application's position, which is the site's identity
   source_line        INT     NOT NULL,
@@ -1599,7 +1605,7 @@ CREATE TABLE graphql_type_declaration_synthesis (
 
 -- A field's type expression was rewritten by a macro; the authored expression
 -- survives here while the field's graphql_field row holds the effective one.
-CREATE TABLE graphql_field_synthesis (
+CREATE TABLE graphitron_field_synthesis (
   type_name         VARCHAR NOT NULL,
   field_name        VARCHAR NOT NULL,
   macro             VARCHAR NOT NULL,
@@ -1611,16 +1617,16 @@ CREATE TABLE graphql_field_synthesis (
 
 -- A type-level directive application was synthesized rather than authored
 -- (federation key synthesis; the application itself sits in
--- applied_type_directive and intent_federation_key like any other, and must
+-- graphql_type_directive and graphitron_federation_key like any other, and must
 -- re-emit, so provenance is this relation, not exclusion).
-CREATE TABLE applied_type_directive_synthesis (
+CREATE TABLE graphitron_type_directive_synthesis (
   type_name      VARCHAR NOT NULL,
   directive_name VARCHAR NOT NULL,
   ordinal        INT     NOT NULL,
   macro          VARCHAR NOT NULL,
   PRIMARY KEY (type_name, directive_name, ordinal),
   FOREIGN KEY (type_name, directive_name, ordinal)
-    REFERENCES applied_type_directive (type_name, directive_name, ordinal),
+    REFERENCES graphql_type_directive (type_name, directive_name, ordinal),
   CHECK (macro IN ('FEDERATION_KEY'))
 );
 ```
@@ -1815,7 +1821,7 @@ wrong-typed literals, missing required arguments, and duplicate declarations wit
 which is exactly why every capture path is tolerant, recording what does not fit raw and
 located instead of throwing. Capture is total, with no reachability pruning.
 
-- **SDL load.** One walk fills the `graphql_`, `applied_`, and `intent_` families, reading the
+- **SDL load.** One walk fills the `graphql_` and `graphitron_` families, reading the
   **`TypeDefinitionRegistry`**, not the assembled schema, and that source is decided here.
   Three reasons. Parse-to-registry is graphql-java's linear half (5.5 ms at sakila scale,
   46.8 ms at 10x) while assembly is the superlinear half (28 ms, 2.5 s; the diffing audit
@@ -1852,7 +1858,7 @@ located instead of throwing. Capture is total, with no reachability pruning.
   would reject; while the shadow window lasts, assembly still runs upstream and rejects
   invalid schemas first, so the tolerant paths (dangling references, duplicate declarations
   quarantined in `graphql_duplicate_declaration`, undecodable argument
-  literals quarantined raw with their location in `intent_undecoded_argument`) stay dormant
+  literals quarantined raw with their location in `graphitron_undecoded_argument`) stay dormant
   until the LSP consumer arrives, and the
   agreement tests see only valid input. The capture writer gets its own package in core,
   importing the module's generated classes; it does not live inside
@@ -1956,7 +1962,7 @@ file's parse.
   containment for the SDL side (capture is total, `GraphitronSchema` is reachability-pruned, so
   the store contains the model), equality for the `CatalogFacts` and scanner censuses, and
   derived for shipped views, which register the base relations they project so their agreement
-  is vacuous by construction (`applied_directive_site` is the first derived registrant, and the
+  is vacuous by construction (`graphql_directive_site` is the first derived registrant, and the
   later strata land as registrations, not exemptions). The
   anchor checks: type census against `GraphitronSchema.types`, per-coordinate applied-directive
   counts against the SDL, the semantic relations against the minted model components and
@@ -1973,7 +1979,7 @@ file's parse.
   DDL cannot state (at most one `is_primary` row per catalog table, `default_value_sdl` only
   under INPUT_OBJECT parents, application ordinals and `merge_ordinal` dense from 0 per group,
   wrapping decode consistent with `type_sdl` where SQL can express the correspondence, no
-  graphitron-namespace row in any `applied_` family, the federation dual projection in
+  graphitron-namespace row in any `graphql_` family, the federation dual projection in
   agreement). A repeated application of a non-repeatable directive is deliberately not in
   this list: under registry capture it is author-reachable, so it is a detection.
 - All tests live in `graphitron` at the appropriate tier (the tier meta-annotations live in

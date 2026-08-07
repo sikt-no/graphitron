@@ -7,17 +7,18 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
-import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.APPLIED_ARGUMENT_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.APPLIED_ENUM_VALUE_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.APPLIED_FIELD_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.APPLIED_SCHEMA_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.APPLIED_TYPE_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
-import static no.sikt.graphitron.model.Tables.INTENT_FEDERATION_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.jooq.impl.DSL.count;
 import static org.jooq.impl.DSL.field;
@@ -123,19 +124,19 @@ class FactSchemaGateTest {
     void applicationOrdinalsAreDense(@TempDir Path tmp) {
         try (var store = CapturedStore.of(tmp, FIXTURE)) {
             assertThat(store.dsl()
-                .select(APPLIED_TYPE_DIRECTIVE.TYPE_NAME, APPLIED_TYPE_DIRECTIVE.DIRECTIVE_NAME)
-                .from(APPLIED_TYPE_DIRECTIVE)
-                .groupBy(APPLIED_TYPE_DIRECTIVE.TYPE_NAME, APPLIED_TYPE_DIRECTIVE.DIRECTIVE_NAME)
-                .having(max(APPLIED_TYPE_DIRECTIVE.ORDINAL).ne(count().minus(1)))
+                .select(GRAPHQL_TYPE_DIRECTIVE.TYPE_NAME, GRAPHQL_TYPE_DIRECTIVE.DIRECTIVE_NAME)
+                .from(GRAPHQL_TYPE_DIRECTIVE)
+                .groupBy(GRAPHQL_TYPE_DIRECTIVE.TYPE_NAME, GRAPHQL_TYPE_DIRECTIVE.DIRECTIVE_NAME)
+                .having(max(GRAPHQL_TYPE_DIRECTIVE.ORDINAL).ne(count().minus(1)))
                 .fetch()).as("type-level application ordinals").isEmpty();
 
             assertThat(store.dsl()
-                .select(APPLIED_FIELD_DIRECTIVE.TYPE_NAME, APPLIED_FIELD_DIRECTIVE.FIELD_NAME,
-                    APPLIED_FIELD_DIRECTIVE.DIRECTIVE_NAME)
-                .from(APPLIED_FIELD_DIRECTIVE)
-                .groupBy(APPLIED_FIELD_DIRECTIVE.TYPE_NAME, APPLIED_FIELD_DIRECTIVE.FIELD_NAME,
-                    APPLIED_FIELD_DIRECTIVE.DIRECTIVE_NAME)
-                .having(max(APPLIED_FIELD_DIRECTIVE.ORDINAL).ne(count().minus(1)))
+                .select(GRAPHQL_FIELD_DIRECTIVE.TYPE_NAME, GRAPHQL_FIELD_DIRECTIVE.FIELD_NAME,
+                    GRAPHQL_FIELD_DIRECTIVE.DIRECTIVE_NAME)
+                .from(GRAPHQL_FIELD_DIRECTIVE)
+                .groupBy(GRAPHQL_FIELD_DIRECTIVE.TYPE_NAME, GRAPHQL_FIELD_DIRECTIVE.FIELD_NAME,
+                    GRAPHQL_FIELD_DIRECTIVE.DIRECTIVE_NAME)
+                .having(max(GRAPHQL_FIELD_DIRECTIVE.ORDINAL).ne(count().minus(1)))
                 .fetch()).as("field-level application ordinals").isEmpty();
         }
     }
@@ -173,21 +174,51 @@ class FactSchemaGateTest {
         }
     }
 
+    /**
+     * The transcription is total, so an application's name always resolves to a definition. This is
+     * the invariant that replaced an exclusion: the graphitron namespace used to be withheld from
+     * these relations, which made the family a transcription with a hole in it and pushed a
+     * question about {@code source_name} into the choice of table.
+     */
     @Test
-    @DisplayName("no graphitron-namespace row reaches any applied_ family")
-    void theGraphitronNamespaceNeverLandsInFidelityRows(@TempDir Path tmp) {
+    @DisplayName("every directive application resolves to a captured definition")
+    void everyApplicationResolvesToItsDefinition(@TempDir Path tmp) {
         try (var store = CapturedStore.of(tmp, FIXTURE)) {
-            List<String> names = List.copyOf(SdlFactCapture.graphitronDirectiveNames());
-            assertThat(store.dsl().fetchCount(APPLIED_SCHEMA_DIRECTIVE,
-                APPLIED_SCHEMA_DIRECTIVE.DIRECTIVE_NAME.in(names))).isZero();
-            assertThat(store.dsl().fetchCount(APPLIED_TYPE_DIRECTIVE,
-                APPLIED_TYPE_DIRECTIVE.DIRECTIVE_NAME.in(names))).isZero();
-            assertThat(store.dsl().fetchCount(APPLIED_FIELD_DIRECTIVE,
-                APPLIED_FIELD_DIRECTIVE.DIRECTIVE_NAME.in(names))).isZero();
-            assertThat(store.dsl().fetchCount(APPLIED_ARGUMENT_DIRECTIVE,
-                APPLIED_ARGUMENT_DIRECTIVE.DIRECTIVE_NAME.in(names))).isZero();
-            assertThat(store.dsl().fetchCount(APPLIED_ENUM_VALUE_DIRECTIVE,
-                APPLIED_ENUM_VALUE_DIRECTIVE.DIRECTIVE_NAME.in(names))).isZero();
+            var defined = store.dsl().select(GRAPHQL_DIRECTIVE.DIRECTIVE_NAME).from(GRAPHQL_DIRECTIVE);
+            assertThat(store.dsl().fetchCount(GRAPHQL_SCHEMA_DIRECTIVE,
+                GRAPHQL_SCHEMA_DIRECTIVE.DIRECTIVE_NAME.notIn(defined))).isZero();
+            assertThat(store.dsl().fetchCount(GRAPHQL_TYPE_DIRECTIVE,
+                GRAPHQL_TYPE_DIRECTIVE.DIRECTIVE_NAME.notIn(defined))).isZero();
+            assertThat(store.dsl().fetchCount(GRAPHQL_FIELD_DIRECTIVE,
+                GRAPHQL_FIELD_DIRECTIVE.DIRECTIVE_NAME.notIn(defined))).isZero();
+            assertThat(store.dsl().fetchCount(GRAPHQL_ARGUMENT_DIRECTIVE,
+                GRAPHQL_ARGUMENT_DIRECTIVE.DIRECTIVE_NAME.notIn(defined))).isZero();
+            assertThat(store.dsl().fetchCount(GRAPHQL_ENUM_VALUE_DIRECTIVE,
+                GRAPHQL_ENUM_VALUE_DIRECTIVE.DIRECTIVE_NAME.notIn(defined))).isZero();
+        }
+    }
+
+    /**
+     * The decode is an addition to the transcription, never a substitute for it, so a graphitron
+     * application is reachable from both families and a consumer never has to know which one holds
+     * a given directive.
+     */
+    @Test
+    @DisplayName("a decoded graphitron application keeps its verbatim row too")
+    void theDecodeDoesNotReplaceTheTranscription(@TempDir Path tmp) {
+        try (var store = CapturedStore.of(tmp, FIXTURE)) {
+            var decoded = store.dsl()
+                .select(GRAPHITRON_TABLE.TYPE_NAME)
+                .from(GRAPHITRON_TABLE)
+                .fetch(GRAPHITRON_TABLE.TYPE_NAME);
+            assertThat(decoded).as("the fixture applies @table, so the gate has something to pin")
+                .isNotEmpty();
+            var verbatim = store.dsl()
+                .select(GRAPHQL_TYPE_DIRECTIVE.TYPE_NAME)
+                .from(GRAPHQL_TYPE_DIRECTIVE)
+                .where(GRAPHQL_TYPE_DIRECTIVE.DIRECTIVE_NAME.eq("table"))
+                .fetch(GRAPHQL_TYPE_DIRECTIVE.TYPE_NAME);
+            assertThat(verbatim).containsExactlyInAnyOrderElementsOf(decoded);
         }
     }
 
@@ -196,15 +227,15 @@ class FactSchemaGateTest {
     void federationKeyProjectionsAgree(@TempDir Path tmp) {
         try (var store = CapturedStore.of(tmp, FIXTURE)) {
             var decoded = store.dsl()
-                .select(INTENT_FEDERATION_KEY.TYPE_NAME, INTENT_FEDERATION_KEY.ORDINAL)
-                .from(INTENT_FEDERATION_KEY)
+                .select(GRAPHITRON_FEDERATION_KEY.TYPE_NAME, GRAPHITRON_FEDERATION_KEY.ORDINAL)
+                .from(GRAPHITRON_FEDERATION_KEY)
                 .fetch();
             assertThat(decoded).as("the fixture applies @key twice, so the gate has something to pin")
                 .hasSize(2);
             var verbatim = store.dsl()
-                .select(APPLIED_TYPE_DIRECTIVE.TYPE_NAME, APPLIED_TYPE_DIRECTIVE.ORDINAL)
-                .from(APPLIED_TYPE_DIRECTIVE)
-                .where(APPLIED_TYPE_DIRECTIVE.DIRECTIVE_NAME.eq("key"))
+                .select(GRAPHQL_TYPE_DIRECTIVE.TYPE_NAME, GRAPHQL_TYPE_DIRECTIVE.ORDINAL)
+                .from(GRAPHQL_TYPE_DIRECTIVE)
+                .where(GRAPHQL_TYPE_DIRECTIVE.DIRECTIVE_NAME.eq("key"))
                 .fetch();
             assertThat(verbatim).containsExactlyInAnyOrderElementsOf(decoded);
         }
