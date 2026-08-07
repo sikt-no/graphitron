@@ -532,7 +532,7 @@ column on the snapshot, the lifecycle is shared, and the consumer split is purel
 read imposes on it. The store gives the lifecycle its concrete form: the database is created at startup,
 populated during a run, and dies with the process, so there are no migrations and no persisted state of
 record anywhere, and the two snapshot axes describe the store handle a consumer holds. A stamp-invalidated
-warm-start cache under `target/` (R597) changes neither property.
+warm-start cache under `target/`, specified in R595, changes neither property.
 
 ### Location: a fact about an entity, joined not stored
 
@@ -1508,7 +1508,7 @@ no engine makes easier, so the store carries the classification (front) half and
 and determinism is owned at the emission boundary (whatever crosses into emission or diagnostics output is
 sorted at the crossing). The salsa-style incremental-memoization architecture this section once reserved
 is the road not taken: capture reads the type-definition registry (the linear half of graphql-java, never
-the superlinear assembly), and the warm-start cache (R597) is the surviving concession to LSP startup
+the superlinear assembly), and the warm-start cache (R595) is the surviving concession to LSP startup
 latency, a stamp-invalidated cache under `target/` that changes neither lifecycle property.
 
 ## Seam worklist (living table)
@@ -2126,7 +2126,7 @@ The gaps, in resolution order:
   relations materialize in the `graphitron-model` H2 store through jOOQ codegen over the model's own DDL;
   integrity splits into declared FKs (capture-structural) and detection queries (author-spelled); thread
   I's closure invariant is untouched on the emit side. The salsa-style incremental engine once reserved
-  is the road not taken; the warm-start cache (R597) is the surviving concession.
+  is the road not taken; the warm-start cache (R595) is the surviving concession.
 - **Condition placement and the `Single` value-gating semantic**. **Resolved (the resolved-table section):**
   a `condition` keys on `resolvedTable`, and its semantic forks on `target.wrapper` (`List` = row-set
   filtering, `Single` = value-gating). **Open residue:** the `Single` value-gating semantic itself, the
@@ -2171,7 +2171,7 @@ this model's DDL, with integrity split between declared FKs and detection querie
 re-platforming that consumes it (the R549 programme; R314 shipped its reentry slice), any rewrite of R316
 slices 1-4 (they are the valid
 denormalized projection), the substrate itself (R595) and the classification-stage derivations over it
-(R589), and any incremental-query engine for the LSP (the road not taken; R597 is the concession).
+(R589), and any incremental-query engine for the LSP (the road not taken; R595's warm start is the concession).
 No code in this item beyond what is needed to make the model executable as
 tests, and that split is now decided (2026-07-04): the Ready code deliverable is **thread I's closure
 oracle at level 1**, a characterization harness over the *current* emit that walks the generated

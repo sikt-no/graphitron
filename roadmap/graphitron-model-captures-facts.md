@@ -58,8 +58,8 @@ and two things generated from it:
   generator run, created at startup, populated by capture, dead with the process. No
   migrations exist because no persisted state *of record* exists: a warm-start cache under
   `target/` (the populated store persisted at end of run, stamp-invalidated, discarded on any
-  mismatch, never migrated) is admitted and owned by `warm-start-model-store` (R597), and
-  changes neither property.
+  mismatch, never migrated) is specified below, and preserves the no-state-of-record and
+  no-migration properties while retiring the dead-with-the-process one.
 
 A Java function surface stays available as a contingency, not a plan. The functions spike
 (`roadmap/audits/2026-08-05-h2-functions-jooq-spike.md`) proved H2 `CREATE ALIAS` scalar
@@ -107,6 +107,19 @@ These bind the DDL below and every relation added to it later.
   global definitions-before-uses parse order and destroy both. Cross-file integrity is
   checked once, by detection queries over the collected facts. The cost is jOOQ's implicit
   path joins on exactly those FK-free edges; explicit join conditions carry them.
+- **Every base relation is partitionable by the source that produced it.** A refresh deletes
+  exactly the rows one source wrote and re-walks it, so every base row must be reachable from a
+  source identity, and a relation that cannot be traced back to one is a relation the store can
+  only ever discard wholesale. This is the convention persistence turns from a nicety into a
+  requirement, and it is why it is stated here rather than left to the surface that wants it: a
+  schema written without it cannot acquire it later without rekeying. The SDL families satisfy
+  it through the declaration site's `source_name`, with the synthesis provenance relations making
+  orphan cleanup exact and shared machinery types refcounted by carrier row. The classpath and
+  catalog families satisfy it through a source relation naming the classpath entry, one
+  mechanism for both, since the jOOQ catalog is itself loaded from generated classes on the
+  codegen classpath (`JooqCatalog` resolves its catalog through `codegenLoader`) and so has the
+  same kind of provenance a scanned jar does. A source's kind is a closed taxonomy: a schema
+  file, a directory root, or a jar.
 - **Every table and every column is commented.** The shipped DDL states them as `COMMENT ON`
   clauses so they land in `INFORMATION_SCHEMA` and jOOQ carries them into the generated classes'
   Javadoc; the schema is then self-describing at both the SQL prompt and the call site. A gate
@@ -1921,7 +1934,7 @@ observation the FK doctrine makes about cross-file references; per-file scope be
 capture alone, and the derivations stay cheap enough to re-run whole. No diffing is involved,
 and unchanged
 files are never re-read; the store itself
-is the accumulated registry, and with the R597 cache an editor session boots warm and
+is the accumulated registry, and with the persisted store an editor session boots warm and
 refreshes per file from there. The refresh mechanics land with the LSP consumer migration,
 not here; this increment only refuses to break type-locality, which is a review rule on
 capture code: nothing at capture reads across types, and no verdict is computed during a
@@ -2377,6 +2390,45 @@ Two improvements the contract does not demand, noted so the next pass can take o
   (`GraphQLRewriteGenerator`), while `buildOutput` reuses the `catalogFacts` it already has.
   Shadow-period cost only, and cheap to thread through.
 
+## The store persists under `target/` for warm-start surfaces
+
+Absorbed from `warm-start-model-store`, which was filed as a follow-on and is discarded into this
+item. The reason it cannot be a follow-on is the partitionability convention above: persistence
+does not add a feature on top of the schema, it imposes a requirement the schema must already
+satisfy, and a model written without it cannot acquire it later without rekeying. The absorbed
+item's own open list ended with "which meta relation carries the stamp", which is a DDL question
+wearing a scheduling item's clothes.
+
+**Why persist.** The store is in-memory and per-run, so every surface that wants facts pays a
+full capture pipeline before it can answer anything and the LSP and MCP server boot cold. With
+the populated store written to an H2 file under `target/` at the end of a run, a surface opens
+the previous run's facts about as soon as the JVM has booted and serves completions, schema
+queries and the read-only SQL surface immediately, refreshing when its own run completes; with
+registry capture that refresh is per-file incremental rather than a full pipeline. A plain SQL
+client, an agent among them, can query the fact base as a build artifact without booting
+graphitron at all.
+
+**What it does not change.** The file is persisted state and never state *of record*. It is
+stamped, and any mismatch discards and rebuilds, so no migration ever exists and `target/`
+semantics keep deletion always correct. Surfaces label answers with the stamp's run identity, so
+staleness is visible rather than silent.
+
+**What it does change, which the item previously denied.** "Dead with the process" stops being
+true, and the store becomes an accumulation across runs, which the incremental-refresh section
+already assumes when it calls the store the accumulated registry. The stamp is therefore two
+things, not one. A whole-store stamp on DDL content hash and generator version decides whether
+the file is intelligible at all, and that is what keeps migrations out. A per-source stamp
+decides which partitions survive, and without it every edit discards everything, including a
+classpath scan measured at 4.0 s that no schema edit had any reason to invalidate. The absorbed
+item carried only the first, which is what made it look separable.
+
+**Design questions for this pass.** The persist mechanism, whether the store is file-backed
+during the run or exported at the end. Reader concurrency while a build writes: H2 file locking,
+copy-on-open, or auto-server mode. And the shape of the source and stamp relations, which the
+conventions above constrain but do not settle: whether one relation carries all three source
+kinds under a CHECK or whether schema files and classpath entries separate, and whether a
+partition's stamp lives on the source row or in a sibling meta relation.
+
 ## The class census reads the compile classpath
 
 Absorbed from `lsp-classpath-scan-misses-jar-scalar-constants`, which was filed separately and is
@@ -2454,9 +2506,9 @@ today, so this is roughly a 16x increase against a per-build cost that is curren
    `jvm_class`. Per-entry invalidation is then a query rather than a mechanism, the static map
    becomes the in-process degenerate case of it, and the warm store gets a partition it can
    refresh instead of a census it must discard. This belongs to this item even though the
-   persistence does not: `warm-start-model-store` stamps the whole store on DDL hash, generator
-   version and run identity, so without a per-source stamp captured here it has nothing finer to
-   invalidate on, and a schema edit discards a classpath scan that had nothing to do with it.
+   persistence is specified: the whole-store stamp on DDL hash and generator version decides
+   only whether the file is intelligible, so without a per-source stamp there is nothing finer to
+   invalidate on and a schema edit discards a classpath scan that had nothing to do with it.
 
    The stamp column is a real choice and (path, size, last-modified) is the wrong default for
    anything persisted. It is a heuristic, tolerable while a wrong answer dies with the JVM, and

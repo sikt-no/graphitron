@@ -39,7 +39,7 @@ R595's two capture loads run at startup, and the store is "populated by capture"
 results do not exist at capture time (in the batch pipeline javac runs in the consumer's
 build, after the generator exits; only the dev-loop cadence sees them at all, and only after
 generation). So the family needs a third writer with its own lifecycle (per-round upsert or
-delete-and-reload of the partition, interaction with the R597 warm-start stamp), which is a
+delete-and-reload of the partition, interaction with R595's warm-start stamp), which is a
 design of its own, and the relation would sit empty in exactly the batch runs R595's
 agreement tests exercise. Per the architecture's own rule that a relation's DDL lands with
 its first consumer, this family lands as its own item. R569's bridge covers the diagnostics
