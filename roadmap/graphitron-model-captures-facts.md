@@ -171,9 +171,13 @@ These bind the DDL below and every relation added to it later.
   `graphql_duplicate_declaration`, where the duplicate-declaration detection reads it. An
   author mistake becomes a diagnostic row in the derived stratum; it never surfaces as a
   constraint violation here.
-  Cross-relation invariants plain DDL cannot state (at most one primary key per table, defaults
-  only on input-object fields, ordinal zero unless repeatable) get gate queries as their named
-  enforcers, siblings of the comment-coverage gate.
+  Cross-relation invariants plain DDL cannot state (defaults only on input-object fields, ordinal
+  zero unless repeatable) get gate queries as their named enforcers, siblings of the
+  comment-coverage gate. Membership of that list is a claim about the model as much as about SQL,
+  so it earns re-checking whenever a relation is rekeyed: "at most one primary key per table" sat
+  here and was false, DDL being unable to state it only *given a constraint-keyed relation with a
+  flag*, and the constraint reshaping below makes the cardinality structural instead. Both
+  remaining entries deserve the same suspicion before either is accepted as gate-only.
 
 ## The fact schema, first iteration
 
