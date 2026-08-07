@@ -2093,42 +2093,50 @@ under the widened census is `Reference`, most entries being referenced by nobody
 R605's call on its own merits; binding it here would make this item's remaining work wait on an
 item still in Spec.
 
-Blast radius is the DDL's table names and `COMMENT ON` text, `CatalogFactCapture.captureExtensions`,
-and the extension-census anchor. The generated classes regenerate from the DDL and the compiler
-finds every call site, which is the compile-time-only compatibility surface the module section
-describes. Doing it in this pass rather than a follow-up is a cost argument: nothing reads the
-store yet, so the rename is text plus compile fixes today and grows with every consumer that
-migrates, and this item is reopened anyway.
+Blast radius is the same for both renames and is small: the DDL's table names and `COMMENT ON`
+text, `CatalogFactCapture` (both of its loads), and the census anchors in
+`FactCaptureAgreementTest`, which are the only two files in the reactor naming either family's
+generated constants. The generated classes regenerate from the DDL and the compiler finds every
+call site, which is the compile-time-only compatibility surface the module section describes.
+Doing it in this pass rather than a follow-up is a cost argument: nothing reads the store yet,
+so a rename is text plus compile fixes today and grows with every consumer that migrates, and
+this item is reopened anyway. The registration list in the agreement driver moves with the
+relation names, and `everyRelationIsRegistered` fails in both directions if it does not.
 
-**`catalog_` stays, and the two glosses that call it jOOQ's go.** Renaming it `jooq_` for
-symmetry with the above was raised and rejected: it inverts the rule rather than applying it.
-Of the family's thirty columns exactly two are jOOQ's vocabulary, the `java_name` riders on
-`catalog_table` and `catalog_column`; the other twenty-eight (`table_schema`, `column_name`,
-`sql_type`, `nullable`, `constraint_name`, `is_primary`, `target_table`, `index_name`,
-`position`) are the SQL catalog's, and even `sql_type` holds a SQL type that jOOQ merely
-reports.
+**Rename `catalog_` to `sql_` as well.** `jooq_` was proposed first and rejected, because it
+names the reader where the rule asks for the owner: jOOQ defines neither table nor column nor
+foreign key, and the precedent is `graphql_`, which is not `graphqljava_` though graphql-java
+parses every row. But rejecting `jooq_` is not a defence of `catalog_`. SQL is the vocabulary's
+owner, and naming the owner is the rule; `catalog_` names a category within that vocabulary
+instead, which is a different job from the one the prefix has. Strict SQL makes a catalog the
+top-level namespace of `catalog.schema.table`, and this family has no catalog level at all,
+every key starting at `table_schema`, so the incumbent is already using the tooling sense of the
+word rather than SQL's.
 
-The deciding test is the one the `extension_` case turns on: swap the mechanism and ask whether
-the vocabulary survives. Read `INFORMATION_SCHEMA` directly instead of walking jOOQ's generated
-classes and every relation name and all but one column still read correctly, so `catalog_` is
-mechanism-independent where `jooq_` would not be. The `extension_` rows, by contrast, say class
-and method and descriptor whichever scanner produced them, which is why that name failed on its
-own terms. The precedent that settles it is `graphql_`, which is not `graphqljava_` even though
-graphql-java parses every row. `jooq_` is `graphqljava_`.
+`sql_table`, `sql_column`, `sql_key`, `sql_key_column`, `sql_foreign_key`,
+`sql_foreign_key_column`, `sql_index`, `sql_index_column`. The resulting set is `graphql_`,
+`sql_`, `jvm_`, `graphitron_`: three external vocabularies each named by its owner, plus
+graphitron's own, where the incumbent set named one family by category and two by owner. It
+passes the mechanism-independence test the `extension_` case turns on, since reading
+`INFORMATION_SCHEMA` directly instead of walking jOOQ's generated classes leaves every relation
+name correct. Alignment with `CatalogFacts` and `JooqCatalog` is not an argument for holding the
+old prefix, on the same grounds that leave `CompletionData.ExternalReference` out of this: DDL
+family names and Java class names answer to different rules.
 
-The apparent symmetry with `jvm_` does not hold, because `jvm_` names an owner and not a reader.
-The reader of the classfiles is `ClasspathScanner`; the JVM is what defines a descriptor, a
-record component and an access flag. jOOQ defines neither table nor column nor foreign key, SQL
-does, so jOOQ stands in the reader's position rather than the owner's.
+Two things the rename surfaces rather than settles. `sql_key` is the one relation whose noun is
+not obviously SQL's: "key" is partly jOOQ's (`UniqueKey`, `ForeignKey`), the relation's own
+comment reads "a uniqueness constraint exists on a table", and `constraint_name` is what the key
+is built from. `sql_key` carrying `is_primary` is a defensible reading of SQL's PRIMARY KEY and
+UNIQUE forms, but it wants a decision rather than an inheritance. And the two `java_name` riders
+on `sql_table` and `sql_column` should become `jooq_name`: in a relation whose prefix names SQL,
+a jOOQ-generated identifier is visibly the one foreign column, and marking it is better than
+leaving a reader to infer it. That was optional under `catalog_` and is not under `sql_`.
 
-What is genuinely wrong is the prose. The DDL header glosses the family as "jOOQ catalog facts"
-and the section banner as "what the jOOQ catalog scan sees", both naming the reader where every
-other family names the vocabulary's owner, and the family sentence in this item's schema section
-repeats it. Those three lines should say the catalog's vocabulary and name jOOQ as the reader.
-Optional while someone is there: the two `java_name` columns could be `jooq_name`, which puts
-the marker on the columns that earn it rather than on their twenty-eight siblings and is the
-more precise claim, since it is jOOQ's generated field name and not any Java name. Low
-conviction, and `catalog_column`'s table comment already flags the rider.
+The prose glosses go with the prefix. The DDL header calls the family "jOOQ catalog facts" and
+the section banner "what the jOOQ catalog scan sees", both naming the reader, and this item's
+family sentence repeats it; all three should name SQL as the vocabulary and jOOQ as the reader.
+"Catalog" stays available as the prose word for what the family is about, since only the prefix
+carries the rule.
 
 One measurement rides along with the widened census rather than with the rename. R605 rules the
 ~213k `extension_method` rows an insert-throughput question rather than a scoping one, which is
