@@ -1,7 +1,7 @@
 ---
 id: R595
 title: "The graphitron-model module exists and capture fills it"
-status: Ready
+status: Spec
 bucket: architecture
 priority: 4
 theme: classification-model
@@ -2113,8 +2113,8 @@ top-level namespace of `catalog.schema.table`, and this family has no catalog le
 every key starting at `table_schema`, so the incumbent is already using the tooling sense of the
 word rather than SQL's.
 
-`sql_table`, `sql_column`, `sql_unique_constraint`, `sql_unique_constraint_column`,
-`sql_foreign_key`, `sql_foreign_key_column`, `sql_index`, `sql_index_column`. The resulting set is `graphql_`,
+`sql_table`, `sql_column`, `sql_index`, `sql_index_column`, and the constraint relations the
+next section reshapes. The resulting set is `graphql_`,
 `sql_`, `jvm_`, `graphitron_`: three external vocabularies each named by its owner, plus
 graphitron's own, where the incumbent set named one family by category and two by owner. It
 passes the mechanism-independence test the `extension_` case turns on, since reading
@@ -2123,41 +2123,10 @@ name correct. Alignment with `CatalogFacts` and `JooqCatalog` is not an argument
 old prefix, on the same grounds that leave `CompletionData.ExternalReference` out of this: DDL
 family names and Java class names answer to different rules.
 
-The rename settles one noun underneath it and surfaces one column. `catalog_key` becomes
-`sql_unique_constraint`, with `catalog_key_column` following it to
-`sql_unique_constraint_column`. The relation holds the primary key plus every other unique
-constraint, filled from `table.primaryKey()` and `table.uniqueKeys()` and flagged apart by
-`is_primary`; foreign keys and non-unique indexes are their own relations. SQL names exactly
-that set: the standard's unique constraint definition specifies UNIQUE or PRIMARY KEY, so the
-umbrella term and the relation's extension coincide, and the table's own comment already says
-"a uniqueness constraint exists on a table" while the identifier says something else. Keeping
-`key` costs more than vagueness. Beside `sql_foreign_key` it implies a supertype that does not
-hold, since jOOQ's `UniqueKey` and `ForeignKey` do both extend `Key` and the two relations here
-are disjoint; and in MySQL and MariaDB `KEY` is a synonym for `INDEX`, which this schema keeps as
-a separate relation with different contents, so the word is not merely imprecise but wrong in a
-dialect where it collapses a distinction the schema makes. `is_primary` also reads as a question
-about the row rather than a restatement of its noun.
-
-Unifying the constraint families under one typed relation, the shape both Oracle's data
-dictionary and the standard's `INFORMATION_SCHEMA` converged on, is a better model than either
-name and is filed as `sql-constraints-unify-under-one-relation` (R607) rather than folded here:
-it is a data-model change with a live question about where the foreign-key attributes live, so
-it takes the Spec gate rather than a reviewer's note on an item reopened for a correctness
-defect. Nothing is lost by the ordering, since `sql_unique_constraint` is exactly the slice a
-`constraint_type` of PRIMARY KEY or UNIQUE selects, and unification then merges two well-named
-relations instead of renaming one first.
-
 One comment is simply wrong and should go with the rename, being free.
 `catalog_foreign_key_column.source_column` is described as "source column, 1-based per the
 graphql-java convention", which is the SDL families' position wording copy-pasted onto a column
 name. The comment-coverage gate checks that a comment exists and cannot check that it is true.
-
-Two near-misses ruled out, both already in the codebase's vocabulary. `sql_candidate_key` picks
-up `JooqCatalog.candidateKeys`, but a candidate key is relational-model vocabulary rather than
-SQL DDL's, and it overclaims irreducibility that SQL does not require of a UNIQUE declaration.
-`sql_foreign_key` does not follow to `sql_referential_constraint` for symmetry: FOREIGN KEY is
-literal SQL keyword text in every dialect and so is already the vocabulary's own word, where KEY
-alone is not a constraint form at all. The asymmetry between the two names is the correct one.
 
 And the two `java_name` riders
 on `sql_table` and `sql_column` should become `jooq_name`: in a relation whose prefix names SQL,
@@ -2169,6 +2138,96 @@ the section banner "what the jOOQ catalog scan sees", both naming the reader, an
 family sentence repeats it; all three should name SQL as the vocabulary and jOOQ as the reader.
 "Catalog" stays available as the prose word for what the family is about, since only the prefix
 carries the rule.
+
+**The constraint relations unify under one typed supertype, and the primary key leaves the
+flag.** This is the redesign that takes the item back to Spec rather than a rename riding along
+with the others.
+
+The schema models a table's uniqueness constraints and its foreign keys as two disjoint
+relations with two column children, where every real catalog models them as one constraint
+relation discriminated by type. Oracle's data dictionary carries `ALL_CONSTRAINTS` with a
+`CONSTRAINT_TYPE` of `P` / `U` / `R` / `C` and one `ALL_CONS_COLUMNS` under it; the SQL
+standard's `INFORMATION_SCHEMA` carries `TABLE_CONSTRAINTS` with a `constraint_type`,
+`KEY_COLUMN_USAGE` for the local columns of every keyed form, and `REFERENTIAL_CONSTRAINTS` as
+the foreign-key-only extension. Two independent designs converged on the supertype, which is
+evidence about the shape rather than about either vendor. This schema already votes the same way
+elsewhere: `graphql_type` is a supertype over six declaration forms with a CHECK-constrained
+`kind` and the per-form detail in sibling relations, and the conventions state the pattern
+outright, that closed taxonomies are CHECK constraints. The constraint families are the one
+place the schema states a closed taxonomy by having separate relations instead.
+
+The gain is not tidiness. "What constrains this table?" is a union today and one predicate under
+the supertype; a detection ranging over constraints (a `@node(keyColumns:)` naming a column set
+that is not unique) has one relation to read; and the forms this iteration does not capture
+(CHECK, NOT NULL, deferrability) arrive later as type values rather than as new relations with
+new anchors.
+
+The shape is `sql_constraint` as the supertype, keyed by schema, table and constraint name and
+carrying the CHECK-constrained `constraint_type`; `sql_constraint_column` for the ordered
+columns; and two extensions, `sql_primary_key` and `sql_referential_constraint`. The extension
+split follows the standard rather than Oracle, which hangs foreign-key-only columns off the
+supertype to sit NULL on every other row, because this schema's discipline prefers an absent row
+to a null column.
+
+The primary key earns its extension on the natural-key rule rather than on taste. A table has at
+most one, so the fact a primary-key row states is "table T's primary key is constraint C" and its
+coordinate is T; keying it by the constraint name admits "T has primary keys C1 and C2", a
+sentence the domain has no member for, and `is_primary` is the symptom of the key being wrong.
+Keying `sql_primary_key` by `(table_schema, table_name)` makes the cardinality structural and
+retires a gate: the convention list above names "at most one primary key per table" among the
+invariants plain DDL cannot state, and that is false in an instructive way, since DDL cannot
+state it only *given a constraint-keyed relation with a flag*. The limitation belonged to the
+model and was attributed to the language. The unified relation alone cannot buy this either,
+enforcement inside `sql_constraint` needing a filtered unique index H2 does not have, so the
+extension is what makes the invariant structural rather than documented. Worth re-reading the
+other two entries on that list with the same suspicion before either is accepted as gate-only.
+
+The live model already draws the distinction, which is the tell that the store's shape is the
+odd one out. `MatchedKey` is sealed over `PrimaryKey` and `UniqueKey`, `TableRef` carries
+`primaryKeyColumns`, `MutationField` emits a primary-key-only RETURNING clause,
+`@order(primaryKey:)` selects it by name, and `UpdateRowsError` and `DeleteRowsError` render
+"PK" and "UK" differently in user-facing diagnostics. `CatalogFacts` splits them too, into an
+`Optional<Key> primaryKey` and a `List<Key> uniqueKeys`, which is exactly why the census anchor
+folds the store's relation to the `uniqueKeys` view before comparing. That projection is
+recorded in the acceptance list as a projection choice; it is really the shadow model reporting
+a mismatch the store introduced, and it disappears with the split. The driver cannot currently
+tell a projection that bridges a genuine grain difference from one that bridges a modelling
+error, which is worth remembering when the next registration wants one.
+
+Two questions this pass answers rather than inherits. **Target columns keep their denormalised
+pair.** Both catalogs resolve a foreign key's targets by indirection, naming the referenced
+unique constraint and matching its column rows by position, where `sql_constraint_column` would
+carry source and target side by side. Keep the pair and diverge deliberately:
+`CatalogFacts.OutgoingForeignKey` carries the target table and target columns and no
+referenced-constraint name, so indirection widens `CatalogFacts` and re-cuts the equality-arm
+anchor, and it makes target columns unreachable rather than merely denormalised whenever the
+referenced unique constraint is not itself reported. Capture total and cheap, joins as
+derivation's business, is this item's doctrine and the pair follows it. **The constraint's
+backing index stays out.** A primary key or unique constraint is backed by an index, and
+PostgreSQL gives both the same identifier, `actor_pkey` naming a constraint and the index
+enforcing it; Oracle exposes the edge as `ALL_CONSTRAINTS.INDEX_NAME` and needs to, because it
+adopts a suitable existing index instead of always creating one. The question is theoretical for
+us and should be recorded as such so nobody re-derives it: jOOQ's `Table.getIndexes()` excludes
+constraint-backing indexes, so the relations are already disjoint in captured data, sakila's
+generated `Indexes` holding exactly one entry while every `*_pkey` arrives through `Keys`. It
+becomes live only if a later capture reads indexes from somewhere jOOQ's generated model does
+not filter.
+
+Two near-misses ruled out, both already in the codebase's vocabulary. `sql_candidate_key` picks
+up `JooqCatalog.candidateKeys`, but a candidate key is relational-model vocabulary rather than
+SQL DDL's, and it overclaims an irreducibility SQL does not require of a UNIQUE declaration.
+`sql_key` is not the supertype's name either: beside a foreign-key relation it implies a
+containment that does not hold, jOOQ's `UniqueKey` and `ForeignKey` both extending `Key`, and in
+MySQL and MariaDB `KEY` is a synonym for `INDEX`, which this schema keeps separate with different
+contents.
+
+**What the Spec pass must reconcile.** The DDL listing in the schema section above still shows
+`catalog_key`, `catalog_key_column`, `catalog_foreign_key` and `catalog_foreign_key_column`, and
+still carries the old prefixes throughout both renamed families. The listing is this item's
+deliverable, so it is the Spec pass that rewrites it: the relations above with their `COMMENT ON`
+text, the `catalog_` and `extension_` prefixes carried through every relation and every comment,
+and the convention bullet that claims DDL cannot state the primary-key cardinality. Until that
+lands the two sections disagree, deliberately and visibly, rather than quietly.
 
 One measurement rides along with the widened census rather than with the rename. R605 rules the
 ~213k `extension_method` rows an insert-throughput question rather than a scoping one, which is
