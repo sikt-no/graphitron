@@ -2060,7 +2060,7 @@ to extend graphitron. This item has already retired one family name for exactly 
 The `applied_` / `intent_` split died because "carried verbatim" named a treatment that only held
 because capture pre-decided at write time a question belonging at read time; `extension_` names a
 role that only holds because the scan happens to be scoped to reactor output directories. The
-class census reading the compile classpath (R605, already measured) makes the role claim plainly
+class census reading the compile classpath, absorbed below and already measured, makes the role claim plainly
 false rather than arguably true: `extension_class` goes from ~1.8k rows to ~30k and
 `com.fasterxml.jackson.databind.ObjectMapper` becomes a row in a relation named for the
 consumer's extension code. What earns it a row is that an author may legitimately name it in
@@ -2090,8 +2090,8 @@ The sibling Java name stays out. `CompletionData.ExternalReference` is not the s
 since "extension" asserts a role and "external" asserts a location, and a jar class is genuinely
 outside the generated output however little it extends. The part of that name that ages badly
 under the widened census is `Reference`, most entries being referenced by nobody, and that is
-R605's call on its own merits; binding it here would make this item's remaining work wait on an
-item still in Spec.
+a question for whoever next touches that surface; the DDL rename does not wait on it either
+way.
 
 Blast radius is the same for both renames and is small: the DDL's table names and `COMMENT ON`
 text, `CatalogFactCapture` (both of its loads), and the census anchors in
@@ -2303,8 +2303,9 @@ Java identifiers cited are unaffected by the rename.
   class, along with non-public classes, synthetic classes, and everything under the jOOQ
   package. The relation says only that a class exists on the consumer's extension classpath. A
   nested class named in `@record` resolves through the codegen loader and would be reported
-  unknown by the resolution detection R605 plans over this relation, which is R605's own bug one
-  axis over: it fixes directories against jars, this is top-level against nested.
+  unknown by the resolution detection that later migrates onto this relation, which is the
+  absorbed classpath bug one axis over: that one is directories against jars, this is top-level
+  against nested.
 - **`sql_index` overclaims the same way**, jOOQ's `getIndexes()` excluding
   constraint-backing indexes, so `@order(index:)` naming a primary key's index cannot resolve
   against a relation whose comment says an index exists on a table.
@@ -2345,8 +2346,8 @@ type nor parameters, parameters binding as Arg, Context, Sources, DslContext, Ta
 SourceTable, so every public method is a candidate.
 
 Filtering those would mean inferring relevance during capture, which is the defect class the
-sweep above found four instances of, and its failure mode is R605's own bug moved from the class
-axis to the method axis: a `@service` naming a real method the filter excluded reads as unknown
+sweep above found four instances of, and its failure mode is the absorbed classpath bug moved
+from the class axis to the method axis: a `@service` naming a real method the filter excluded reads as unknown
 in the store while the codegen loader resolves it. Completion fails the same way, since an author
 typing a `method:` value needs every public method of the named class offered.
 
@@ -2358,10 +2359,11 @@ in the relation's comment, and failing safe, since an author who scoped too tigh
 diagnostic to act on where a signature filter hides a method nobody knows is absent. Any
 narrowing at all inherits the disclosure obligation the sweep establishes.
 
-One measurement rides along with the widened census rather than with the rename. R605 rules the
-~213k `jvm_method` rows an insert-throughput question rather than a scoping one, which is
-the right call and is this item's premise, but it makes the per-run load worth measuring rather
-than assuming `FactSink`'s batching absorbs a 16x census.
+One measurement rides along with the widened census rather than with the rename. The ~213k
+`jvm_method` rows are an insert-throughput question rather than a scoping one, which is this
+item's premise and stays it, but the per-run load is worth measuring rather than assuming
+`FactSink`'s batching absorbs a 16x census. That measurement is step six of the absorbed plan
+below.
 
 Two improvements the contract does not demand, noted so the next pass can take or leave them:
 
@@ -2374,6 +2376,93 @@ Two improvements the contract does not demand, noted so the next pass can take o
 - `captureFacts` builds a second `JooqCatalog` and re-walks the catalog and the classpath
   (`GraphQLRewriteGenerator`), while `buildOutput` reuses the `catalogFacts` it already has.
   Shadow-period cost only, and cheap to thread through.
+
+## The class census reads the compile classpath
+
+Absorbed from `lsp-classpath-scan-misses-jar-scalar-constants`, which was filed separately and is
+discarded into this item. It was reduced to one residue, the scanner's scope, and argued on that
+basis for landing ahead of this item. The sweep above changed the arithmetic: the same file now
+also owes the real JVM descriptor, four disclosed filters, and the family rename, so the residue
+is no longer small and three passes over `ClasspathScanner` with a rename between them is worse
+than one.
+
+**The bug.** `scalar LocalDate @scalarType(scalar: "graphql.scalars.ExtendedScalars.Date")`
+generates fine and red-squiggles in the editor:
+`Unknown class 'graphql.scalars.ExtendedScalars' on @scalarType. Not found in compiled
+target/classes.` The two paths read different classpaths. Codegen resolves the constant
+reflectively through `RewriteContext.codegenLoader`, a `URLClassLoader` the mojo builds over
+`project.getCompileClasspathElements()` with jars included. The LSP catalog reads
+`CompletionData.externalReferences()`, built from `RewriteContext.classpathRoots()`, which is
+reactor compile-output *directories* only, and `ClasspathScanner.scan` hard-skips any root
+failing `Files.isDirectory`, so no jar is ever opened. The same gap silently disables completion
+at that coordinate, since `ScalarTypeCompletions` sources candidates from
+`ExternalReference.scalarConstants()`, so the library constants the custom-scalars manual page
+documents as the primary use case can never be offered.
+
+**The decision.** The directories-only premise goes. It was never argued from a property of the
+schema language, only from a guess about where consumer vocabulary lives, recorded on
+`RewriteContext.classpathRoots` as "external jars are not scanned: services live in reactor
+source, not third-party libraries", and `@scalarType` falsifies it outright. A scalar-constant-only
+jar census was considered and rejected: it keeps the same bug latent at every other class-bearing
+coordinate, a `@record` naming a DTO from a shared internal library, a `@service` naming an
+interface published as a jar, an `@enum` naming a library enum, all of which resolve at codegen
+and red-squiggle today. The census becomes the set of classes on the compile classpath, which is
+what `codegenLoader` can resolve.
+
+Absorbing this is what keeps the store from shipping a census known to be missing rows. Left
+alone, unification would land both paths on a single *wrong* answer: the constant is still absent
+from the class relation, the detection still fires, and it now fires consistently in both places.
+
+**Cost, measured.** Against `graphitron-sakila-example`'s resolved compile classpath (282 jars),
+replicating the scanner's existing filter over jar entries: 65,261 class entries, of which 29,656
+pass the public / non-synthetic / no-`$` filter, carrying 213,118 public methods and 74
+`GraphQLScalarType` constants. 156 MB of classfile bytes parsed, 4.0 s cold and 1.4 s warm page
+cache, single-threaded. The reactor's compile-output directories hold 1,825 candidate classes
+today, so this is roughly a 16x increase against a per-build cost that is currently ~0.
+
+**Plan.**
+
+1. **Plumb the classpath.** `AbstractRewriteMojo.buildContext` passes `resolveCompileClasspath()`
+   where it passes `resolveClasspathRoots()` today. That method already unions
+   `getCompileClasspathElements()` with the reactor roots and already feeds `buildCodegenLoader`
+   and the incremental compiler, so the two paths become one list by construction rather than by
+   coincidence. Keep the `classpathRoots` component name, which still describes a list of
+   classpath entries, and rewrite its javadoc: the premise is now false and must not survive as a
+   stale claim.
+2. **Teach `ClasspathScanner` to read jars.** `scan` currently continues past anything failing
+   `Files.isDirectory`. Split the per-entry walk: directories keep `Files.walk`, `.jar` entries
+   open a `ZipFile` and feed the same `readIfCandidate` filter over each entry's bytes, which is
+   already byte-oriented and needs only its `Path`-typed signature loosened. The existing FQN
+   dedup across roots carries over and gives classpath-order precedence, matching how a
+   classloader resolves a duplicated class.
+3. **Cache per jar.** A static map keyed on (absolute path, size, last-modified), so repeated
+   catalog builds in one `graphitron:dev` process pay each jar once. `graphitron:dev` rebuilds the
+   catalog on every schema edit and an unconditional 1.4 s re-walk per keystroke is not
+   acceptable; jars are content-addressed and immutable in `~/.m2`, so the cold cost is paid once
+   per process. Directory roots stay uncached, changing on every compile, which is the case a
+   cache would get wrong.
+4. **Ordering, not filtering, for completion.** `ClassNameCompletions` and friends will see ~30k
+   candidates and must not filter them back out, the whole point being that they are legitimately
+   referenceable. Rank reactor-resident classes ahead of jar-resident ones so the common case
+   stays first, and let the client's prefix filter do the rest.
+5. **Take the census truthfully.** The four sweep findings land here rather than as a second pass:
+   the real JVM descriptor from `methodTypeSymbol().descriptorString()` instead of the
+   package-stripped concatenation, and a comment on each relation stating what its scan excludes.
+   The widened census is what makes the descriptor collision ordinary rather than exotic, since
+   282 jars make two same-named types in different packages a near-certainty.
+6. **Time the load.** The insert cost of a 31k-class, 213k-method census through `FactSink`,
+   measured rather than assumed. Per the analysis above the answer to a slow load is a faster
+   load, not a narrower census.
+
+**Tests.** A jar-resident `@scalarType` reference raises no diagnostic, which is the reported bug
+and the regression guard. Completion on `scalar LocalDate @scalarType(scalar: "|")` offers the
+jar-resident constant. `ClasspathScanner` unit tier: a fixture jar is scanned, its public classes
+and methods surface, and a class present in both a jar and a directory root surfaces once with
+classpath-order precedence. Cache behaviour: the same jar is read once, and a jar whose
+last-modified changes is re-read. Two overloads taking same-named types from different packages
+both survive capture, which is the descriptor regression guard. `graphitron-sakila-example`
+already carries the live build-through fixture, so the codegen half needs no new coverage; what
+is new is the LSP tier asserting the two classpaths agree.
 
 ## Acceptance
 
