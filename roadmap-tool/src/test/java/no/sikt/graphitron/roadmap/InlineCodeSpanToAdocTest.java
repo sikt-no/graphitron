@@ -156,6 +156,23 @@ class InlineCodeSpanToAdocTest {
     }
 
     @Test
+    void titleLabel_bareResidue_failsTheCorpusGate() {
+        // The other half of the label emitter's contract: staying bare is only safe because
+        // the gate then fails loudly on it, which is what tells the author to rephrase the
+        // title rather than shipping a substituting span silently.
+        String line = "* xref:plans/x.adoc[" + Main.titleLabel("Retire `a]b`") + "]\n";
+        assertThat(InertSpans.scan(line))
+            .singleElement()
+            .satisfies(f -> assertThat(f.span()).isEqualTo("`a]b`"));
+    }
+
+    @Test
+    void titleLabel_leavesPipesUnescaped() {
+        // It emits onto list lines, where no table parser consumes a backslash.
+        assertThat(Main.titleLabel("Carry `a|b`")).isEqualTo("Carry `+a|b+`");
+    }
+
+    @Test
     void titleCell_usesTheFullProducerAndKeepsThePipeEscape() {
         assertThat(Main.titleCell("Carry `a|b`")).isEqualTo("Carry `+a\\|b+`");
         assertThat(Main.titleCell("Carry `a + b`")).isEqualTo("Carry `pass:c[a + b]`");

@@ -703,8 +703,10 @@ public final class Main {
     static String renderAdocByTheme(List<Item> items) {
         StringBuilder sb = new StringBuilder();
         sb.append("= Rewrite Roadmap, by theme\n");
-        sb.append(":description: Cross-cutting view of every Active and Backlog item by ")
-          .append(InertSpans.monospace("theme:")).append(".\n\n");
+        // No monospace span in an attribute entry: its value takes the header substitution
+        // group, which has no macros, so nothing was ever live here, and the value reaches
+        // the published page as a plain-text meta description where markup is noise.
+        sb.append(":description: Cross-cutting view of every Active and Backlog item by its theme.\n\n");
         sb.append("Themes are a closed set; bucket and theme are orthogonal. ");
         sb.append("See xref:index.adoc[Roadmap] for the status board, ")
           .append("or back to xref:../index.adoc[home].\n\n");
@@ -1111,9 +1113,11 @@ public final class Main {
 
         String prose = staged.toString();
         prose = prose.replaceAll("\\*\\*([^*]+)\\*\\*", "*$1*");
-        prose = transformAdocLinks(prose, ctx, held);
-        // Em-dash sweep: codebase rule.
+        // Em-dash sweep (codebase rule) before the link rewrite, not after: the rewrite
+        // releases a label's held spans early, and a sweep running after it would reach
+        // inside a span that happens to sit in a link label.
         prose = prose.replace("—", ";");
+        prose = transformAdocLinks(prose, ctx, held);
         return new Inline(release(prose, held, InertSpans::monospace), p.openRun());
     }
 
@@ -1147,9 +1151,14 @@ public final class Main {
         return escapeAdocCell(inlineSpansOnly(title, InertSpans::monospace));
     }
 
-    /** A front-matter title bound for the label attrlist of an {@code xref:} or {@code link:}. */
+    /**
+     * A front-matter title bound for the label attrlist of an {@code xref:} or {@code link:}
+     * on a list line. No pipe escape: outside a table there is no cell parser to consume the
+     * backslash, so escaping would publish one, and inside an emitted passthrough it would
+     * publish one verbatim.
+     */
     static String titleLabel(String title) {
-        return escapeAdocCell(inlineSpansOnly(title, InertSpans::label));
+        return inlineSpansOnly(title, InertSpans::label);
     }
 
     private static final Pattern MD_LINK = Pattern.compile("\\[([^\\]]+)\\]\\(([^)]+)\\)");

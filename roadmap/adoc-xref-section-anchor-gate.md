@@ -163,8 +163,9 @@ every span rather than for the ones an author remembered, so identical quotes no
 That has one consequence for the gate itself: a check keying on `xref:<target>[attrlist]` within a single
 line is *not* Asciidoctor-faithful in this corner. On the paragraph that produced the observation above it
 would have flagged the bracketed placeholder, whose `<file>.adoc` target does not exist, and missed the
-reference Asciidoctor actually built a link from. Under-report there is the right trade (the same-line rule catches every reference an author writes
-on purpose, and modelling Asciidoctor's cross-span matching is the id-algorithm mistake in another costume),
+reference Asciidoctor actually built a link from. Under-report there is the right trade (the same-line rule
+catches every reference an author writes on purpose, and modelling Asciidoctor's cross-span matching is the
+id-algorithm mistake in another costume),
 but the item should not claim a faithfulness it does not have. The dangling-anchor class in quoted prose is
 real all the same: a quoted example naming a page that does exist beside the item (another plan's
 `plans/<slug>.adoc`, say) resolves and would fail the gate. Not every authored `.adoc` under `roadmap/`
@@ -184,7 +185,8 @@ below, and failing on one would turn every quoted example into a build break. On
 resolves to a real staged page and names an anchor that page does not publish fails the build.
 
 The reported population is the *anchored* references the gate already collects, not every `xref:` in the
-tree, and on today's tree that count is zero once this item's own quoted examples become passthroughs. The
+tree, and on today's tree that count is zero, because the renderer emits this item's own quoted examples
+inert. The
 wider population is worth knowing about because it is not empty: staging currently carries 9 unanchored
 cross-file references whose target page does not exist, 7 of them from `roadmap/changelog.adoc` naming plan
 pages that were deleted when their items shipped and 2 from
@@ -192,14 +194,15 @@ pages that were deleted when their items shipped and 2 from
 Those are live 404s on the published site, but they are a different failure (wrong path, not wrong anchor)
 with a different fix, so they stay out of this item and land in R596 rather than widening this one.
 
-Two things to keep straight about scanning roadmap prose. First, the alternative of scoping `staging/roadmap/` out of the
-scan is worse than it looks: roadmap items are published pages on the site, so their links rot like any
-other, and this item would have exempted the one page it was written about. Second, the general fix lives
-one level down and is filed separately: markdown code spans are literal by definition while AsciiDoc code
-spans are substituted, and the md-to-adoc render currently passes backticks straight through, so every
-roadmap author has to know AsciiDoc passthrough syntax to quote a macro safely. Emitting a passthrough
-span from the renderer would retire the whole class. This item does not wait on it; the one line here is
-rewritten by hand, at the cost of literal plus signs in GitHub's markdown view of the item.
+Two things to keep straight about scanning roadmap prose. First, the alternative of scoping
+`staging/roadmap/` out of the scan is worse than it looks: roadmap items are published pages on the site,
+so their links rot like any other, and this item would have exempted the one page it was written about.
+Second, the general fix lived one level down, was filed separately as R587, and has shipped: markdown code
+spans are literal by definition while AsciiDoc code spans are substituted, and the md-to-adoc render used
+to pass backticks straight through, so every roadmap author had to know AsciiDoc passthrough syntax to
+quote a macro safely. The renderer now emits an inert form per span, which retires the whole class for
+md-sourced pages. This item no longer carries a hand-written workaround for it, and this body quotes with
+plain markdown backticks throughout.
 
 ## Acceptance
 
@@ -241,8 +244,8 @@ rewritten by hand, at the cost of literal plus signs in GitHub's markdown view o
   to close; a backtick-only double-bracket declaration publishes a real anchor and can duplicate an id.
 * The check reports a count of the anchored references it could not resolve to a staged `.adoc`, rather than
   passing over them silently, so under-coverage is visible without the count itself failing the build. That
-  count is zero on today's tree once this item's own quoted examples are passthroughs, so a non-zero count
-  after the change is a finding, not noise.
+  count is zero on today's tree, because the renderer emits this item's own quoted examples inert, so a
+  non-zero count after the change is a finding, not noise.
 * Every finding names its authored source alongside the staged path, since all of `staging/` is build output
   an author cannot edit: `staging/manual/...` and `staging/architecture/...` are `stage-adoc` copies and map
   back by stripping the staging root onto `docs/` (root-level `staging/*.adoc` included), while

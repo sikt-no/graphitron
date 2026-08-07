@@ -1,7 +1,7 @@
 ---
 id: R587
 title: "Roadmap markdown code spans render as substituting AsciiDoc spans, so quoted macros go live"
-status: Ready
+status: In Progress
 bucket: cleanup
 priority: 3
 theme: docs
@@ -315,6 +315,31 @@ as separate Backlog stubs. The reviewer's call either way.
   residue with `InertSpans.scan` to pin that the gate actually fails on it. One assertion.
 - `roadmap/adoc-xref-section-anchor-gate.md:166` picked up a 148-character line from the reconciliation
   edit; rewrap to the file's width.
+
+### Rework applied
+
+All six taken, the blocking one and all five notes.
+
+- **R582 reconciliation completed.** The "Two things to keep straight about scanning roadmap prose"
+  paragraph now states the pre-change world in the past tense and names R587 as shipped, and the sentence
+  describing the hand-written workaround is gone rather than reworded, because the workaround itself is.
+  Both "once this item's own quoted examples become / are passthroughs" phrasings now say the renderer
+  emits them inert. The `docs/README.adoc` bullet keeps its plus-delimited passthroughs untouched, as the
+  review directed: hand-authored `.adoc` under `docs/` is this item's pinned non-goal and the
+  paragraph-scope rule still governs there. A grep for `passthrough` across the file leaves six hits, all
+  of them either history in the past tense or about that non-goal habitat.
+- **The by-theme `:description:` no longer carries a span at all.** An attribute entry takes the header
+  substitution group, which has no macros, so nothing was live there, and a plain-text meta description is
+  the right shape for the sink. The scanner is unchanged: an attribute value is in its scan, and a future
+  span in one gets flagged, which pushes toward the same answer.
+- **The em-dash sweep moved above the link rewrite**, so a span inside a markdown link label keeps the same
+  verbatim guarantee as one in plain prose rather than losing it to the early label release.
+- **`titleLabel` dropped the pipe escape.** It emits onto list lines only; `titleCell` keeps the escape and
+  is the one cell surface. The cell escape no longer outlives the cell.
+- **The title-label verification bullet is fully pinned.**
+  `titleLabel_bareResidue_failsTheCorpusGate` composes the bare residue with `InertSpans.scan` and asserts
+  the gate reports it, which is the "plus enforcement failure" half the bullet promised.
+- **Line 166 rewrapped.** The other over-width lines in that file predate this item and are left alone.
 
 ## Non-goals
 
