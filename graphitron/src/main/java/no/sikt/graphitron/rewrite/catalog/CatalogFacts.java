@@ -98,15 +98,17 @@ public record CatalogFacts(Map<String, Table> tablesByQualifiedName) {
     }
 
     /**
-     * One table's frozen facts. {@code schema} and {@code name} are the raw SQL names; {@code comment}
-     * is the jOOQ table comment when the runtime catalog carried one (empty otherwise, never
-     * empty-string-valued). {@code primaryKey} is present when the table has one; {@code uniqueKeys}
-     * excludes the PK and is deduplicated on column set (as {@code JooqCatalog.candidateKeys}
-     * already does).
+     * One table's frozen facts. {@code schema} and {@code name} are the raw SQL names; {@code javaName}
+     * is the jOOQ-generated field constant naming the table, the table-grain counterpart of
+     * {@link Column#javaName()}; {@code comment} is the jOOQ table comment when the runtime catalog
+     * carried one (empty otherwise, never empty-string-valued). {@code primaryKey} is present when
+     * the table has one; {@code uniqueKeys} excludes the PK and is deduplicated on column set (as
+     * {@code JooqCatalog.candidateKeys} already does).
      */
     public record Table(
         String schema,
         String name,
+        String javaName,
         Optional<String> comment,
         List<Column> columns,
         Optional<Key> primaryKey,
@@ -118,6 +120,24 @@ public record CatalogFacts(Map<String, Table> tablesByQualifiedName) {
             columns = List.copyOf(columns);
             uniqueKeys = List.copyOf(uniqueKeys);
             indexes = List.copyOf(indexes);
+        }
+
+        /**
+         * Back-compat constructor for fixtures that describe a table nobody generated code for, so
+         * there is no jOOQ field constant to name; the SQL name stands in. The catalog walk always
+         * passes the real one, which is the only path anything reads {@code javaName} on.
+         */
+        public Table(
+            String schema,
+            String name,
+            Optional<String> comment,
+            List<Column> columns,
+            Optional<Key> primaryKey,
+            List<Key> uniqueKeys,
+            List<Index> indexes,
+            ForeignKeys foreignKeys
+        ) {
+            this(schema, name, name, comment, columns, primaryKey, uniqueKeys, indexes, foreignKeys);
         }
 
         /** The schema-qualified SQL name ({@code "schema.name"}); the stable table ID. */

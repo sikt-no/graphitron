@@ -22,6 +22,7 @@ import graphql.language.TypeDefinition;
 import graphql.language.TypeName;
 import graphql.language.UnionTypeDefinition;
 import graphql.schema.idl.TypeDefinitionRegistry;
+import no.sikt.graphitron.rewrite.NodeDeclaration;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -92,22 +93,34 @@ public final class SdlFactCapture {
     private final FactSink sink;
     private final TypeDefinitionRegistry registry;
     private final GraphitronFactCapture decode;
+    private final NodeDeclaration nodes;
 
-    private SdlFactCapture(FactSink sink, TypeDefinitionRegistry registry) {
+    /**
+     * The merge-ordinal-0 declaration site of each type, and its running element ordinals. Both
+     * outlive the walk because macro expansion runs after it and contributes to the same types:
+     * a synthesized application hangs off the causing authored site and numbers after the authored
+     * applications, neither of which it could work out on its own.
+     */
+    private final Map<String, SiteRef> baseSites = new LinkedHashMap<>();
+    private final Map<String, ElementOrdinals> ordinalsByType = new LinkedHashMap<>();
+
+    private SdlFactCapture(FactSink sink, TypeDefinitionRegistry registry, NodeDeclaration nodes) {
         this.sink = sink;
         this.registry = registry;
         this.decode = new GraphitronFactCapture(sink);
+        this.nodes = nodes;
     }
 
     /** Runs the walk, buffering into {@code sink}; the caller flushes. */
-    static void capture(FactSink sink, TypeDefinitionRegistry registry) {
-        new SdlFactCapture(sink, registry).run();
+    static void capture(FactSink sink, TypeDefinitionRegistry registry, NodeDeclaration nodes) {
+        new SdlFactCapture(sink, registry, nodes).run();
     }
 
     private void run() {
         captureDirectiveDefinitions();
         captureSchema();
         captureTypes();
+        new MacroCapture(sink, registry, nodes, this).expand(baseSites, ordinalsByType);
     }
 
     // ---------------------------------------------------------------- directive definitions
@@ -255,7 +268,7 @@ public final class SdlFactCapture {
             sink.claim(GRAPHQL_TYPE, typeName);
             sink.add(typeRecord);
 
-            var elements = new ElementOrdinals();
+            var elements = ordinalsByType.computeIfAbsent(typeName, ignored -> new ElementOrdinals());
             for (int mergeOrdinal = 0; mergeOrdinal < sites.size(); mergeOrdinal++) {
                 Site site = sites.get(mergeOrdinal);
                 if (site.location() == null) {
@@ -270,11 +283,22 @@ public final class SdlFactCapture {
     }
 
     /** Per-type running ordinals; declaration order across sites is the merge order. */
-    private static final class ElementOrdinals {
+    static final class ElementOrdinals {
         int field;
         int argument;
         int enumValue;
         int unionMember;
+        /**
+         * Last-used application ordinal per type-level directive name. Type-wide rather than
+         * per-site because the key it feeds is, so a repeatable directive applied once on the base
+         * and once on an extension numbers 0 and 1 instead of colliding at 0. Macro expansion reads
+         * the same counter to place a synthesized application after every authored one.
+         */
+        final Map<String, Integer> typeDirective = new LinkedHashMap<>();
+
+        int nextTypeDirective(String name) {
+            return typeDirective.merge(name, 0, (old, ignored) -> old + 1);
+        }
     }
 
     private void captureSite(String typeName, Site site, int mergeOrdinal, ElementOrdinals ordinals) {
@@ -295,7 +319,8 @@ public final class SdlFactCapture {
         sink.add(record);
 
         var siteRef = new SiteRef(typeName, location);
-        captureTypeDirectives(siteRef, site.definition().getDirectives());
+        baseSites.putIfAbsent(typeName, siteRef);
+        captureTypeDirectives(siteRef, site.definition().getDirectives(), ordinals);
 
         switch (site.definition()) {
             case ObjectTypeDefinition object -> {
@@ -478,37 +503,46 @@ public final class SdlFactCapture {
 
     // ---------------------------------------------------------------- directive applications
 
-    private void captureTypeDirectives(SiteRef site, List<Directive> directives) {
-        var ordinals = new LinkedHashMap<String, Integer>();
+    private void captureTypeDirectives(SiteRef site, List<Directive> directives, ElementOrdinals ordinals) {
         for (Directive directive : directives) {
-            int ordinal = ordinals.merge(directive.getName(), 0, (old, ignored) -> old + 1);
-            decode.captureTypeDirective(site, directive, ordinal);
-            if (!sink.claim(GRAPHQL_TYPE_DIRECTIVE, site.typeName(), directive.getName(), ordinal)) {
-                quarantine("DIRECTIVE_APPLICATION", site.typeName() + " @" + directive.getName(), directive);
+            captureTypeDirective(site, directive, ordinals.nextTypeDirective(directive.getName()),
+                directive.getSourceLocation());
+        }
+    }
+
+    /**
+     * One type-level application, at a caller-supplied position. An authored application passes its
+     * own location; a macro-synthesized one passes the site's, which is the position an author can
+     * actually edit. The rows are otherwise identical, so provenance lives in its own relation
+     * rather than in a flag here.
+     */
+    void captureTypeDirective(SiteRef site, Directive directive, int ordinal, SourceLocation own) {
+        decode.captureTypeDirective(site, directive, ordinal);
+        if (!sink.claim(GRAPHQL_TYPE_DIRECTIVE, site.typeName(), directive.getName(), ordinal)) {
+            quarantine("DIRECTIVE_APPLICATION", site.typeName() + " @" + directive.getName(), directive);
+            return;
+        }
+        var record = sink.dsl().newRecord(GRAPHQL_TYPE_DIRECTIVE);
+        record.setTypeName(site.typeName());
+        record.setDirectiveName(directive.getName());
+        record.setOrdinal(ordinal);
+        record.setDeclarationLine(site.location().getLine());
+        record.setDeclarationColumn(site.location().getColumn());
+        record.setSourceName(site.location().getSourceName());
+        setOwnPosition(own, record::setSourceLine, record::setSourceColumn);
+        sink.add(record);
+        for (var argument : directive.getArguments()) {
+            if (!sink.claim(GRAPHQL_TYPE_DIRECTIVE_ARG,
+                    site.typeName(), directive.getName(), ordinal, argument.getName())) {
                 continue;
             }
-            var record = sink.dsl().newRecord(GRAPHQL_TYPE_DIRECTIVE);
-            record.setTypeName(site.typeName());
-            record.setDirectiveName(directive.getName());
-            record.setOrdinal(ordinal);
-            record.setDeclarationLine(site.location().getLine());
-            record.setDeclarationColumn(site.location().getColumn());
-            record.setSourceName(site.location().getSourceName());
-            setOwnPosition(directive.getSourceLocation(), record::setSourceLine, record::setSourceColumn);
-            sink.add(record);
-            for (var argument : directive.getArguments()) {
-                if (!sink.claim(GRAPHQL_TYPE_DIRECTIVE_ARG,
-                        site.typeName(), directive.getName(), ordinal, argument.getName())) {
-                    continue;
-                }
-                var row = sink.dsl().newRecord(GRAPHQL_TYPE_DIRECTIVE_ARG);
-                row.setTypeName(site.typeName());
-                row.setDirectiveName(directive.getName());
-                row.setOrdinal(ordinal);
-                row.setDirectiveArgumentName(argument.getName());
-                row.setValueSdl(AstPrinter.printAstCompact(argument.getValue()));
-                sink.add(row);
-            }
+            var row = sink.dsl().newRecord(GRAPHQL_TYPE_DIRECTIVE_ARG);
+            row.setTypeName(site.typeName());
+            row.setDirectiveName(directive.getName());
+            row.setOrdinal(ordinal);
+            row.setDirectiveArgumentName(argument.getName());
+            row.setValueSdl(AstPrinter.printAstCompact(argument.getValue()));
+            sink.add(row);
         }
     }
 

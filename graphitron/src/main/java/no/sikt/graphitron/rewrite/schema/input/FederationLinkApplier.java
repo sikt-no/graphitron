@@ -38,7 +38,7 @@ import java.util.stream.Stream;
  */
 public final class FederationLinkApplier {
 
-    private static final String FEDERATION_SPEC_PREFIX = "https://specs.apollo.dev/federation/";
+    private static final String FEDERATION_SPEC_PREFIX = no.sikt.graphitron.rewrite.schema.federation.FederationSpec.SPEC_PREFIX;
 
     private FederationLinkApplier() {}
 

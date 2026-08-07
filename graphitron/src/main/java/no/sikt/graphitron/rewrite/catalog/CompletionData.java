@@ -149,12 +149,36 @@ public record CompletionData(
         String description,
         List<Method> methods,
         List<RecordComponent> recordComponents,
-        List<ScalarConstant> scalarConstants
+        List<ScalarConstant> scalarConstants,
+        String classKind
     ) {
         public ExternalReference {
             methods = List.copyOf(methods);
             recordComponents = List.copyOf(recordComponents);
             scalarConstants = List.copyOf(scalarConstants);
+        }
+
+        /**
+         * The declared form a caller assumes when it did not read a classfile. Only the classpath
+         * scan can tell an interface from a class, so every other producer gets the one distinction
+         * its own components already make; a hand-built reference is a stand-in for a scanned one,
+         * not a claim about bytecode.
+         */
+        public static String inferredKind(List<RecordComponent> recordComponents) {
+            return recordComponents.isEmpty() ? "CLASS" : "RECORD";
+        }
+
+        /** Back-compat constructor for callers that read no classfile; infers {@code classKind}. */
+        public ExternalReference(
+            String name,
+            String className,
+            String description,
+            List<Method> methods,
+            List<RecordComponent> recordComponents,
+            List<ScalarConstant> scalarConstants
+        ) {
+            this(name, className, description, methods, recordComponents, scalarConstants,
+                inferredKind(recordComponents));
         }
 
         /**

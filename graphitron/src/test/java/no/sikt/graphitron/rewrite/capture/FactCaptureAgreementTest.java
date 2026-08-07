@@ -8,6 +8,7 @@ import graphql.language.InputObjectTypeDefinition;
 import graphql.language.InputValueDefinition;
 import graphql.language.InterfaceTypeDefinition;
 import graphql.language.ObjectTypeDefinition;
+import graphql.language.StringValue;
 import graphql.language.TypeDefinition;
 import no.sikt.graphitron.model.Public;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
@@ -16,6 +17,8 @@ import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.JooqCatalog;
+import no.sikt.graphitron.rewrite.NodeDeclaration;
+import no.sikt.graphitron.rewrite.schema.federation.KeyNodeSynthesiser;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -31,8 +34,10 @@ import java.util.Map;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_SITE;
 import static no.sikt.graphitron.model.Tables.CATALOG_COLUMN;
+import static no.sikt.graphitron.model.Tables.CATALOG_KEY;
 import static no.sikt.graphitron.model.Tables.CATALOG_TABLE;
 import static no.sikt.graphitron.model.Tables.EXTENSION_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
@@ -137,6 +142,28 @@ class FactCaptureAgreementTest {
         input FilmFilter { title: String = "any" }
         """;
 
+    /** A federated slice: one node with an authored key alternative, one without any. */
+    private static final String FEDERATED_FIXTURE = """
+        directive @link(url: String!, import: [String]) repeatable on SCHEMA
+        directive @key(fields: String!, resolvable: Boolean) repeatable on OBJECT
+
+        extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
+
+        type Query { film: Film, language: Language }
+
+        interface Node { id: ID! }
+
+        type Film implements Node @node @key(fields: "title") {
+          id: ID!
+          title: String
+        }
+
+        type Language implements Node @node {
+          id: ID!
+          name: String
+        }
+        """;
+
     @Test
     @DisplayName("every generated relation has a registered agreement source")
     void everyRelationIsRegistered() {
@@ -169,6 +196,43 @@ class FactCaptureAgreementTest {
         }
     }
 
+    /**
+     * Federation's key synthesis has two live implementations: the registry rewrite the legacy
+     * pipeline's assembly runs, and the walk macro capture runs, at different stages over different
+     * representations. Neither can call the other without inverting the pipeline's ordering, so
+     * this anchor is what keeps them from drifting. It retires with the rewrite's last consumer.
+     */
+    @Test
+    @DisplayName("synthesized federation keys agree with the registry rewrite's")
+    void federationKeySynthesisAgreesWithTheRewrite(@TempDir Path tmp) {
+        var nodes = new NodeDeclaration(null);
+        try (var store = CapturedStore.of(tmp, FEDERATED_FIXTURE)) {
+            var captured = new LinkedHashSet<String>();
+            store.dsl()
+                .select(GRAPHITRON_FEDERATION_KEY.TYPE_NAME, GRAPHITRON_FEDERATION_KEY.FIELDS_SDL)
+                .from(GRAPHITRON_FEDERATION_KEY)
+                .fetch()
+                .forEach(row -> captured.add(row.value1() + "|" + row.value2()));
+
+            var rewritten = CapturedStore.registryOf(tmp, FEDERATED_FIXTURE);
+            KeyNodeSynthesiser.apply(rewritten, nodes);
+            var expected = new LinkedHashSet<String>();
+            for (TypeDefinition<?> definition : rewritten.types().values()) {
+                if (!(definition instanceof ObjectTypeDefinition object)) {
+                    continue;
+                }
+                for (Directive key : object.getDirectives("key")) {
+                    var fields = key.getArgument("fields");
+                    if (fields != null && fields.getValue() instanceof StringValue value) {
+                        expected.add(object.getName() + "|" + value.getValue());
+                    }
+                }
+            }
+            assertThat(expected).as("the fixture federates nodes, so this pins something").isNotEmpty();
+            assertThat(captured).isEqualTo(expected);
+        }
+    }
+
     @Test
     @DisplayName("per-coordinate applied-directive counts match the SDL")
     void appliedDirectiveCountsMatchTheSdl(@TempDir Path tmp) {
@@ -197,17 +261,54 @@ class FactCaptureAgreementTest {
         var ctx = testContext();
         var facts = CatalogBuilder.buildCatalogFacts(new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()));
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), emptyRegistry(tmp), facts, List.of());
+            FactCapture.capture(store.dsl(), emptyRegistry(tmp), facts, List.of(), new NodeDeclaration(null));
 
             var capturedTables = Set.copyOf(store.dsl()
                 .select(CATALOG_TABLE.TABLE_SCHEMA.concat(".").concat(CATALOG_TABLE.TABLE_NAME))
                 .from(CATALOG_TABLE).fetch(0, String.class));
             assertThat(capturedTables).isEqualTo(facts.tablesByQualifiedName().keySet());
 
+            var capturedJavaNames = store.dsl()
+                .select(CATALOG_TABLE.TABLE_SCHEMA.concat(".").concat(CATALOG_TABLE.TABLE_NAME),
+                    CATALOG_TABLE.JAVA_NAME)
+                .from(CATALOG_TABLE)
+                .fetch()
+                .intoMap(r -> r.value1(), r -> r.value2());
+            assertThat(capturedJavaNames).isEqualTo(facts.tablesByQualifiedName().values().stream()
+                .collect(java.util.stream.Collectors.toMap(
+                    CatalogFacts.Table::qualifiedName, CatalogFacts.Table::javaName)));
+
             var capturedColumns = store.dsl().fetchCount(CATALOG_COLUMN);
             int expected = facts.tablesByQualifiedName().values().stream()
                 .mapToInt(t -> t.columns().size()).sum();
             assertThat(capturedColumns).isEqualTo(expected);
+        }
+    }
+
+    /**
+     * A gate rather than an agreement, homed here because it needs a real catalog to have anything
+     * to range over. Uniqueness constraints all land in one relation with the primary key flagged,
+     * which only reads unambiguously while a table has at most one flagged row; more than one is a
+     * capture bug, since the DDL can key the constraint but not count the flag.
+     */
+    @Test
+    @DisplayName("no catalog table carries two primary keys")
+    void atMostOnePrimaryKeyPerTable(@TempDir Path tmp) {
+        var ctx = testContext();
+        var facts = CatalogBuilder.buildCatalogFacts(new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()));
+        try (var store = GraphitronModelStore.open()) {
+            FactCapture.capture(store.dsl(), emptyRegistry(tmp), facts, List.of(), new NodeDeclaration(null));
+            assertThat(store.dsl().fetchCount(CATALOG_KEY, CATALOG_KEY.IS_PRIMARY.isTrue()))
+                .as("the catalog has primary keys, so this pins something")
+                .isPositive();
+            var offenders = store.dsl()
+                .select(CATALOG_KEY.TABLE_SCHEMA, CATALOG_KEY.TABLE_NAME)
+                .from(CATALOG_KEY)
+                .where(CATALOG_KEY.IS_PRIMARY.isTrue())
+                .groupBy(CATALOG_KEY.TABLE_SCHEMA, CATALOG_KEY.TABLE_NAME)
+                .having(org.jooq.impl.DSL.count().gt(1))
+                .fetch();
+            assertThat(offenders).as("tables with more than one primary key").isEmpty();
         }
     }
 
@@ -217,7 +318,7 @@ class FactCaptureAgreementTest {
         var ctx = testContext();
         List<CompletionData.ExternalReference> extensions = CatalogBuilder.buildExternalReferences(ctx);
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), emptyRegistry(tmp), CatalogFacts.empty(), extensions);
+            FactCapture.capture(store.dsl(), emptyRegistry(tmp), CatalogFacts.empty(), extensions, new NodeDeclaration(null));
 
             var captured = new LinkedHashSet<String>();
             store.dsl().select(EXTENSION_METHOD.CLASS_NAME, EXTENSION_METHOD.METHOD_NAME)

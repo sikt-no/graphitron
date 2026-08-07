@@ -51,7 +51,7 @@ final class CatalogFactCapture {
             var record = sink.dsl().newRecord(CATALOG_TABLE);
             record.setTableSchema(table.schema());
             record.setTableName(table.name());
-            record.setJavaName(table.name());
+            record.setJavaName(table.javaName());
             record.setDescription(table.comment().orElse(null));
             sink.add(record);
 
@@ -167,7 +167,7 @@ final class CatalogFactCapture {
             }
             var record = sink.dsl().newRecord(EXTENSION_CLASS);
             record.setClassName(className);
-            record.setClassKind(reference.recordComponents().isEmpty() ? "CLASS" : "RECORD");
+            record.setClassKind(reference.classKind());
             sink.add(record);
 
             for (CompletionData.Method method : reference.methods()) {

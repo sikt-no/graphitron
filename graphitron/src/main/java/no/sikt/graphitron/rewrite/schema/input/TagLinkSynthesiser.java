@@ -44,7 +44,7 @@ import java.util.stream.Stream;
 public final class TagLinkSynthesiser {
 
     static final String SYNTHESISED_SOURCE_NAME = "<graphitron-synthesised:tag-link>";
-    private static final String FEDERATION_SPEC_PREFIX = "https://specs.apollo.dev/federation/";
+    private static final String FEDERATION_SPEC_PREFIX = no.sikt.graphitron.rewrite.schema.federation.FederationSpec.SPEC_PREFIX;
     private static final String TAG_IMPORT_NAME = "@tag";
 
     private TagLinkSynthesiser() {}

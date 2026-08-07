@@ -312,6 +312,33 @@ class ClasspathScannerTest {
             .containsExactly("com.example.Real");
     }
 
+    /**
+     * The scan is the only producer holding bytecode, so it is the only one that can tell these
+     * apart; every other producer of an {@code ExternalReference} falls back to inferring the kind
+     * from components it already has.
+     */
+    @Test
+    void reportsTheDeclaredFormFromTheAccessFlags(@TempDir Path classes) throws IOException {
+        writeClass(classes, "com.example.PlainClass", ClassFile.ACC_PUBLIC);
+        writeClass(classes, "com.example.AnInterface",
+            ClassFile.ACC_PUBLIC | ClassFile.ACC_INTERFACE | ClassFile.ACC_ABSTRACT);
+        writeClass(classes, "com.example.AnEnum", ClassFile.ACC_PUBLIC | ClassFile.ACC_ENUM);
+        writeClass(classes, "com.example.AnAnnotation",
+            ClassFile.ACC_PUBLIC | ClassFile.ACC_ANNOTATION | ClassFile.ACC_INTERFACE
+                | ClassFile.ACC_ABSTRACT);
+
+        var kinds = ClasspathScanner.scan(classes, JOOQ_PKG).stream()
+            .collect(java.util.stream.Collectors.toMap(
+                CompletionData.ExternalReference::className,
+                CompletionData.ExternalReference::classKind));
+
+        assertThat(kinds).containsExactlyInAnyOrderEntriesOf(java.util.Map.of(
+            "com.example.PlainClass", "CLASS",
+            "com.example.AnInterface", "INTERFACE",
+            "com.example.AnEnum", "ENUM",
+            "com.example.AnAnnotation", "ANNOTATION"));
+    }
+
     private static void writePublicClass(Path classes, String fqn) throws IOException {
         writeClass(classes, fqn, ClassFile.ACC_PUBLIC);
     }

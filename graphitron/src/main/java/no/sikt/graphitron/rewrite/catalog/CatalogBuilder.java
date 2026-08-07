@@ -995,7 +995,7 @@ public final class CatalogBuilder {
                 incomingByTarget.getOrDefault(qualified, List.of()));
 
             tables.put(qualified, new CatalogFacts.Table(
-                schema, name, optional(table.getComment()),
+                schema, name, entry.javaFieldName(), optional(table.getComment()),
                 columns, primaryKey, uniqueKeys, indexes, foreignKeys));
         }
         return new CatalogFacts(tables);

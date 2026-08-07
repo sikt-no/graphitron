@@ -214,7 +214,8 @@ public class GraphQLRewriteGenerator {
         var catalog = CatalogBuilder.build(jooq, bundle.assembled(), ctx);
         var snapshot = CatalogBuilder.buildSnapshot(attributed.registry(), bundle.model(), catalog);
         var catalogFacts = CatalogBuilder.buildCatalogFacts(jooq);
-        FactCapture.run(attributed.registry(), catalogFacts, catalog.externalReferences());
+        FactCapture.run(attributed.registry(), catalogFacts, catalog.externalReferences(),
+            new NodeDeclaration(jooq));
         var errors = new GraphitronSchemaValidator().validate(bundle.model());
         var warnings = withLintFindings(bundle.model(), attributed);
         var report = ValidationReport.from(errors, warnings);
@@ -302,7 +303,8 @@ public class GraphQLRewriteGenerator {
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         FactCapture.run(attributed.registry(),
             CatalogBuilder.buildCatalogFacts(jooq),
-            CatalogBuilder.buildExternalReferences(ctx));
+            CatalogBuilder.buildExternalReferences(ctx),
+            new NodeDeclaration(jooq));
     }
 
     private IncrementalGeneration runPipeline(AttributedRegistry attributed, boolean buildCompileGraph) {

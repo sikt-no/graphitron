@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.capture;
 
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.rewrite.NodeDeclaration;
 import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.jooq.DSLContext;
@@ -31,27 +32,33 @@ public final class FactCapture {
      * the store's whole lifetime is this method, because no consumer has migrated onto it yet.
      */
     public static void run(TypeDefinitionRegistry registry, CatalogFacts catalogFacts,
-                           List<CompletionData.ExternalReference> extensions) {
+                           List<CompletionData.ExternalReference> extensions, NodeDeclaration nodes) {
         try (GraphitronModelStore store = GraphitronModelStore.open()) {
-            capture(store.dsl(), registry, catalogFacts, extensions);
+            capture(store.dsl(), registry, catalogFacts, extensions, nodes);
         }
     }
 
     /**
      * Fills {@code dsl}'s store from all three inputs. Separate from {@link #run} so a caller that
      * wants to query the result (the agreement and gate tests) can own the store's lifetime.
+     *
+     * @param nodes the nodehood predicate macro expansion needs, since federation's key synthesis
+     *              fires on nodes and nodehood can be inferred from the catalog rather than
+     *              declared. A predicate built on a null catalog reduces it to {@code @node}
+     *              presence, which is what a caller with no catalog in hand should get.
      */
     public static void capture(DSLContext dsl, TypeDefinitionRegistry registry,
                                CatalogFacts catalogFacts,
-                               List<CompletionData.ExternalReference> extensions) {
+                               List<CompletionData.ExternalReference> extensions,
+                               NodeDeclaration nodes) {
         var sink = new FactSink(dsl);
-        SdlFactCapture.capture(sink, registry);
+        SdlFactCapture.capture(sink, registry, nodes);
         CatalogFactCapture.capture(sink, catalogFacts, extensions);
         sink.flush();
     }
 
     /** SDL-only capture, for callers with no catalog in hand. */
     public static void capture(DSLContext dsl, TypeDefinitionRegistry registry) {
-        capture(dsl, registry, CatalogFacts.empty(), List.of());
+        capture(dsl, registry, CatalogFacts.empty(), List.of(), new NodeDeclaration(null));
     }
 }

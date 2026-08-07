@@ -117,7 +117,23 @@ public final class ClasspathScanner {
         var methods = readMethods(cm);
         var recordComponents = readRecordComponents(cm);
         var scalarConstants = readScalarConstants(cm);
-        return new CompletionData.ExternalReference(fqn, fqn, "", methods, recordComponents, scalarConstants);
+        return new CompletionData.ExternalReference(fqn, fqn, "", methods, recordComponents,
+            scalarConstants, declaredKind(cm));
+    }
+
+    /**
+     * The classfile's declared form. Read from the access flags rather than inferred from the
+     * reference's own components, because this is the one producer holding the bytecode: an
+     * interface and a class are indistinguishable once the scan has reduced them to a method list.
+     * Annotation is checked before interface, which it also sets.
+     */
+    private static String declaredKind(ClassModel cm) {
+        var flags = cm.flags();
+        if (flags.has(AccessFlag.ANNOTATION)) return "ANNOTATION";
+        if (flags.has(AccessFlag.INTERFACE)) return "INTERFACE";
+        if (flags.has(AccessFlag.ENUM)) return "ENUM";
+        if (cm.findAttribute(Attributes.record()).isPresent()) return "RECORD";
+        return "CLASS";
     }
 
     /**

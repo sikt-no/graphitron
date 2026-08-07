@@ -5,9 +5,18 @@ package no.sikt.graphitron.rewrite.schema.federation;
  * federation-jvm runtime call) so callers at different stages can reference it without inverting
  * the pipeline ordering.
  *
- * <p>Today this is just the canonical {@code @link} URL.
+ * <p>Today this is the canonical {@code @link} URL and the version-agnostic prefix that
+ * recognises one.
  */
 public final class FederationSpec {
+
+    /**
+     * What makes an {@code @link} a <em>federation</em> link, independent of spec version. Several
+     * stages ask that question at points too far apart to share a caller (link application, tag
+     * synthesis, fact capture), and they must answer it identically or a schema is federated for
+     * one and not the others.
+     */
+    public static final String SPEC_PREFIX = "https://specs.apollo.dev/federation/";
 
     /**
      * The Apollo Federation 2 spec URL bundled with the
