@@ -1656,36 +1656,33 @@ class TypeBuilder {
      */
     InputFieldsResolution resolveInputFields(String name, List<GraphQLInputObjectField> fields, TableRef tableRef) {
         var failures = new ArrayList<InputFieldResolution.Unresolved>();
-        var conditionErrors = new ArrayList<String>();
+        var conditionFailures = new ArrayList<InputFieldConditionFailure>();
         var resolvedFields = new ArrayList<InputField>();
         for (var f : fields) {
             // @table input column-coverage is deferred to consumption. The classifier
             // already lifts column-miss to InputField.UnboundField; non-column-miss failures
             // (notGenerated, @reference path, NodeId resolution, circular nesting) remain
             // Unresolved and surface here.
-            var resolution = ctx.classifyInputField(f, name, tableRef, ClassifyContext.root(), conditionErrors);
+            var resolution = ctx.classifyInputField(f, name, tableRef, ClassifyContext.root(), conditionFailures);
             switch (resolution) {
                 case InputFieldResolution.Resolved r -> resolvedFields.add(r.field());
                 case InputFieldResolution.Unresolved u -> failures.add(u);
             }
         }
         if (!failures.isEmpty()) {
+            // Each failure renders the hint its own typed arm carries, so this fold composes none.
             String reasons = failures.stream()
-                .map(u -> "'" + u.fieldName() + "': " + u.reason())
+                .map(u -> "'" + u.fieldName() + "': " + u.rejection().message())
                 .collect(Collectors.joining("; "));
-            String hint = failures.stream()
-                .map(InputFieldResolution.Unresolved::lookupColumn)
-                .filter(c -> c != null)
-                .findFirst()
-                .map(c -> candidateHint(c, ctx.catalog.columnJavaNamesOf(tableRef.tableName())))
-                .orElse("");
             return new InputFieldsResolution.Failed(
-                "mapped to table '" + tableRef.tableName() + "' — unresolvable fields: " + reasons + hint);
+                "mapped to table '" + tableRef.tableName() + "' — unresolvable fields: " + reasons);
         }
-        if (!conditionErrors.isEmpty()) {
+        if (!conditionFailures.isEmpty()) {
             return new InputFieldsResolution.Failed(
                 "mapped to table '" + tableRef.tableName() + "' — bad @condition on fields: "
-                + String.join("; ", conditionErrors));
+                + conditionFailures.stream()
+                    .map(InputFieldConditionFailure::message)
+                    .collect(Collectors.joining("; ")));
         }
         return new InputFieldsResolution.Resolved(List.copyOf(resolvedFields));
     }

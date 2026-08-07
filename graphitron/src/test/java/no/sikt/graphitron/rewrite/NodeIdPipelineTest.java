@@ -10,6 +10,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.QueryField;
+import no.sikt.graphitron.rewrite.model.Rejection;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -1475,6 +1476,9 @@ class NodeIdPipelineTest {
                 assertThat(f.reason())
                     .contains("FK's target columns do not positionally match")
                     .contains("deferred");
+                // One cause, one identity: the argument site and the input-field site below both
+                // classify this as Deferred, the arm the message itself asks for.
+                assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
             }),
 
         MULTI_HOP_IDENTITY_CARRYING(
@@ -1560,6 +1564,8 @@ class NodeIdPipelineTest {
                 assertThat(f.reason())
                     .contains("FK's target columns do not positionally match")
                     .contains("deferred");
+                // Survives the consuming field's prefix as Deferred, matching the arg-side case.
+                assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
             }),
 
         MULTI_HOP_IDENTITY_CARRYING_INPUT(

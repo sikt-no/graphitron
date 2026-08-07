@@ -1462,7 +1462,8 @@ class FieldBuilder {
                     .findFirst();
                 if (rejected.isPresent()) {
                     return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                        Rejection.structural("input field '" + rejected.get().getName()
+                        Rejection.directiveConflict(List.of(BuildContext.DIR_NOT_GENERATED),
+                        "input field '" + rejected.get().getName()
                         + "': @notGenerated is no longer supported. Remove the directive; fields must be fully described by the schema."));
                 }
                 var retiredLookupKey = iot.getFieldDefinitions().stream()
@@ -1470,7 +1471,8 @@ class FieldBuilder {
                     .findFirst();
                 if (retiredLookupKey.isPresent()) {
                     return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                        Rejection.structural("input field '" + retiredLookupKey.get().getName()
+                        Rejection.directiveConflict(List.of(BuildContext.DIR_LOOKUP_KEY),
+                        "input field '" + retiredLookupKey.get().getName()
                         + "': @lookupKey on a mutation input field is no longer supported; "
                         + "remove it (the field is a filter by default; the UPDATE SET/WHERE "
                         + "partition is derived from the catalog by the walker). On Query-side "
@@ -1562,7 +1564,7 @@ class FieldBuilder {
                     // parent_node + child_ref fixture). Emission requires JOIN-with-translation
                     // and is deferred until output-side JOIN-with-projection emission ships.
                     return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                        Rejection.structural(translatedFkRejectionReason(translated.refTypeName(), rt.tableName())));
+                        translatedFkRejection(translated.refTypeName(), rt.tableName()));
                 }
             }
         }
@@ -2237,18 +2239,22 @@ class FieldBuilder {
     }
 
     /**
-     * Shared rejection text for the {@code TranslatedFk} arm. The message naming is asserted on
-     * by {@code NodeIdPipelineTest.ArgumentFkTargetNodeIdCase.FK_TARGET_PATHOLOGICAL_KEY_MISMATCH_DEFERRED}
+     * Shared rejection for the {@code TranslatedFk} arm, used by both the argument site and the
+     * input-field site so one cause has one identity. {@link Rejection#deferred(String)} is the arm
+     * the message itself asks for: the shape is legitimate and support is absent, not structurally
+     * impossible. The no-{@code StubKey} factory applies because an input-field coordinate has no
+     * stubbed variant class to anchor on. The message naming is asserted on by
+     * {@code NodeIdPipelineTest.ArgumentFkTargetNodeIdCase.FK_TARGET_PATHOLOGICAL_KEY_MISMATCH_DEFERRED}
      * and the parallel input-field-side case via the substrings {@code "FK's target columns do
      * not positionally match"} and {@code "deferred"}.
      */
-    static String translatedFkRejectionReason(String refTypeName, String containingTableName) {
-        return "@nodeId(typeName: '" + refTypeName + "') FK-target on table '"
+    static Rejection translatedFkRejection(String refTypeName, String containingTableName) {
+        return Rejection.deferred("@nodeId(typeName: '" + refTypeName + "') FK-target on table '"
             + containingTableName + "': the FK's target columns do not positionally"
             + " match NodeType '" + refTypeName + "''s key columns,"
             + " so emission requires JOIN-with-translation."
             + " This pathological case is deferred until output-side"
-            + " JOIN-with-projection emission ships.";
+            + " JOIN-with-projection emission ships.");
     }
 
     /**

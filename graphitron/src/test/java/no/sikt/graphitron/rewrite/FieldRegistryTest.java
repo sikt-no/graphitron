@@ -72,7 +72,9 @@ class FieldRegistryTest {
     @Test
     void classifyInput_acceptsUnresolved_withoutCentralStorage() {
         var registry = new FieldRegistry();
-        var resolution = new InputFieldResolution.Unresolved("title", "title", "no such column");
+        var resolution = new InputFieldResolution.Unresolved("title", null,
+            no.sikt.graphitron.rewrite.model.Rejection.unknownColumn(
+                "no such column", "title", java.util.List.of()));
         registry.classifyInput("FilmInput", "title", null, resolution);
         assertThat(registry.entries()).isEmpty();
     }

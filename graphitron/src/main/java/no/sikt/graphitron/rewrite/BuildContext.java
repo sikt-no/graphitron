@@ -2406,24 +2406,27 @@ class BuildContext {
      * Builds an {@link ArgConditionRef} from a {@code @condition} directive on one
      * {@link GraphQLInputObjectField}. Reflects the condition method via
      * {@link ServiceCatalog#reflectTableMethod} with {@code inputFieldName} in {@code argNames}
-     * and any declared {@code contextArguments}. Appends an error and returns
-     * {@link Optional#empty()} on reflection failure — mirrors {@code FieldBuilder.buildArgCondition}.
+     * and any declared {@code contextArguments}. Appends an {@link InputFieldConditionFailure} and
+     * returns {@link Optional#empty()} on reflection failure — mirrors
+     * {@code FieldBuilder.buildArgCondition}.
      */
     Optional<ArgConditionRef> buildInputFieldCondition(
-            GraphQLInputObjectField field, String inputFieldName, List<String> errors) {
+            GraphQLInputObjectField field, String inputFieldName,
+            List<InputFieldConditionFailure> failures) {
         var cond = readConditionDirective(field);
         if (cond == null) return Optional.empty();
         if (cond.argMappingError() != null) {
-            errors.add("input field '" + inputFieldName + "' @condition: " + cond.argMappingError());
+            // ConditionDirective.argMappingError is prose; wrap it at this boundary.
+            failures.add(conditionFailure(field, inputFieldName, untypedUpstream(cond.argMappingError())));
             return Optional.empty();
         }
         var bindingResult = ArgBindingMap.of(java.util.Map.of(field.getName(), field.getType()), cond.argMapping());
         if (bindingResult instanceof ArgBindingMap.Result.UnknownArgRef u) {
-            errors.add("input field '" + inputFieldName + "' @condition: " + u.message());
+            failures.add(conditionFailure(field, inputFieldName, untypedUpstream(u.message())));
             return Optional.empty();
         }
         if (bindingResult instanceof ArgBindingMap.Result.PathRejected p) {
-            errors.add("input field '" + inputFieldName + "' @condition: " + p.message());
+            failures.add(conditionFailure(field, inputFieldName, untypedUpstream(p.message())));
             return Optional.empty();
         }
         var argBindings = ((ArgBindingMap.Result.Ok) bindingResult).map();
@@ -2431,13 +2434,43 @@ class BuildContext {
             argBindings, Set.copyOf(cond.contextArguments()),
             java.util.Map.of(field.getName(), field.getType()));
         if (result.failed()) {
-            errors.add("input field '" + inputFieldName + "' @condition: " + result.rejection().message());
+            // Kept unprefixed: the reflect arms are typed sub-seals whose prefixedWith is a
+            // deliberate no-op, so the "@condition on input field X" context is the consumer's to
+            // render (see InputFieldConditionFailure#message).
+            failures.add(conditionFailure(field, inputFieldName, result.rejection()));
             return Optional.empty();
         }
         var methodRef = result.ref();
         return Optional.of(new ArgConditionRef(
             new ConditionFilter(methodRef.className(), methodRef.methodName(), methodRef.params()),
             cond.override()));
+    }
+
+    private static InputFieldConditionFailure conditionFailure(
+            GraphQLInputObjectField field, String inputFieldName, Rejection rejection) {
+        return new InputFieldConditionFailure(inputFieldName, locationOf(field), rejection);
+    }
+
+    /**
+     * The single boundary wrap for input-field causes whose upstream still reports prose rather
+     * than a {@link Rejection}: {@link #parsePath}'s {@code errorMessage}, {@link ConditionDirective}'s
+     * {@code argMappingError}, and {@link ArgBindingMap}'s two prose-only result arms. Naming the wrap
+     * keeps "this cause is not yet typed" in one identifiable place instead of leaving
+     * {@link InputFieldResolution.Unresolved} polymorphic between prose and type; each call site
+     * deletes when its upstream carrier is widened.
+     */
+    private static Rejection untypedUpstream(String prose) {
+        return Rejection.structural(prose);
+    }
+
+    /**
+     * Builds an {@link InputFieldResolution.Unresolved} at the failing field's own location. Every
+     * producer in the input-field classifier goes through here, so no arm can reintroduce the
+     * locationless carrier the fan-ins used to report at the consuming coordinate.
+     */
+    private static InputFieldResolution unresolved(
+            GraphQLInputObjectField field, String name, Rejection rejection) {
+        return new InputFieldResolution.Unresolved(name, locationOf(field), rejection);
     }
 
     // ===== Input-field classifier (shared between TypeBuilder and FieldBuilder) =====
@@ -2451,9 +2484,10 @@ class BuildContext {
      * {@link FieldBuilder} (argument-classify pass,
      * plain inputs): one decision tree for both.
      *
-     * <p>Condition reflection failures append to {@code errors} and leave the
-     * {@code condition} field empty — the field still classifies as its structural variant.
-     * Column-miss and path-resolution failures return {@link InputFieldResolution.Unresolved}.
+     * <p>Condition reflection failures append an {@link InputFieldConditionFailure} to
+     * {@code conditionFailures} and leave the {@code condition} field empty — the field still
+     * classifies as its structural variant. Column-miss and path-resolution failures return
+     * {@link InputFieldResolution.Unresolved}.
      *
      * <p>{@code ctx} bundles the structural facts threaded through recursive descent that
      * a single field's local view cannot recover: {@link ClassifyContext#expandingTypes} guards
@@ -2465,8 +2499,8 @@ class BuildContext {
      */
     InputFieldResolution classifyInputField(
             GraphQLInputObjectField field, String parentTypeName, TableRef resolvedTable,
-            ClassifyContext ctx, List<String> errors) {
-        var resolution = classifyInputFieldInternal(field, parentTypeName, resolvedTable, ctx, errors);
+            ClassifyContext ctx, List<InputFieldConditionFailure> conditionFailures) {
+        var resolution = classifyInputFieldInternal(field, parentTypeName, resolvedTable, ctx, conditionFailures);
         // Trace-only: input fields are stored embedded in their parent type rather than in a
         // central map, so the registry doesn't own their persistence; this is the canonical
         // emission point.
@@ -2478,19 +2512,19 @@ class BuildContext {
 
     private InputFieldResolution classifyInputFieldInternal(
             GraphQLInputObjectField field, String parentTypeName, TableRef resolvedTable,
-            ClassifyContext ctx, List<String> errors) {
+            ClassifyContext ctx, List<InputFieldConditionFailure> conditionFailures) {
         String name = field.getName();
         if (field.hasAppliedDirective(DIR_NOT_GENERATED)) {
-            return new InputFieldResolution.Unresolved(name, null,
-                "@notGenerated is no longer supported. Remove the directive; fields must be fully described by the schema.");
+            return unresolved(field, name, Rejection.directiveConflict(List.of(DIR_NOT_GENERATED),
+                "@notGenerated is no longer supported. Remove the directive; fields must be fully described by the schema."));
         }
         if (field.hasAppliedDirective(DIR_LOOKUP_KEY)) {
-            return new InputFieldResolution.Unresolved(name, null,
+            return unresolved(field, name, Rejection.directiveConflict(List.of(DIR_LOOKUP_KEY),
                 "@lookupKey on a mutation input field is no longer supported; "
                 + "remove it (the field is a filter by default; the UPDATE SET/WHERE "
                 + "partition is derived from the catalog by the walker). On Query-side "
                 + "@table input args, move @lookupKey to the surrounding ARGUMENT_DEFINITION "
-                + "instead.");
+                + "instead."));
         }
         GraphQLType type = field.getType();
         boolean nonNull = type instanceof GraphQLNonNull;
@@ -2510,23 +2544,24 @@ class BuildContext {
             var resolved = nodeIdLeafResolver.resolve(field, name, resolvedTable);
             return inputFieldFromNodeIdResolved(
                 resolved, parentTypeName, field, name, typeName, nonNull, list,
-                resolvedTable, errors);
+                resolvedTable, conditionFailures);
         }
         if (field.hasAppliedDirective(DIR_REFERENCE)) {
             // @reference is repeatable, so field-level applications compose the table
             // chain; order-composition has no meaning on an input field, so repetition here is
             // a conflict, not a chain.
             if (field.getAppliedDirectives(DIR_REFERENCE).size() > 1) {
-                return new InputFieldResolution.Unresolved(name, null,
+                return unresolved(field, name, Rejection.structural(
                     "repeated @reference on an input field is not supported — ordered chain "
                     + "composition applies only to output field definitions; compose the chain "
-                    + "on the field instead");
+                    + "on the field instead"));
             }
             var path = parsePath(field, name, resolvedTable.tableName(), null);
-            if (path.hasError()) return new InputFieldResolution.Unresolved(name, null, path.errorMessage());
+            // ParsedPath still reports prose; boundary-wrap it rather than widen that carrier here.
+            if (path.hasError()) return unresolved(field, name, untypedUpstream(path.errorMessage()));
             return svc.resolveColumnForReference(columnName, path.elements(), resolvedTable)
                 .<InputFieldResolution>map(col -> {
-                    Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
+                    Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, conditionFailures);
                     // Plain (non-@nodeId) @reference: the predicate fires against the resolved
                     // column directly. liftedSourceColumns carries that single column so the
                     // emitter has one slot to read for both nodeId and non-nodeId carriers.
@@ -2537,8 +2572,9 @@ class BuildContext {
                         List.of(col), path.elements(), List.of(col), false, cond,
                         new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct()));
                 })
-                .orElseGet(() -> new InputFieldResolution.Unresolved(name, columnName,
-                    "no column '" + columnName + "' reachable via @reference path"));
+                .orElseGet(() -> unresolved(field, name, Rejection.unknownColumn(
+                    "no column '" + columnName + "' reachable via @reference path",
+                    columnName, catalog.columnJavaNamesOf(resolvedTable.tableName()))));
         }
         // Nesting: field type is an input object. @table on it is deprecated and inert, so it does
         // not gate the descent; a nested @table grouping input flattens exactly as its
@@ -2547,8 +2583,8 @@ class BuildContext {
         var baseType = GraphQLTypeUtil.unwrapAll(type);
         if (baseType instanceof GraphQLInputObjectType nestedInputType) {
             if (ctx.isExpanding(typeName)) {
-                return new InputFieldResolution.Unresolved(name, null,
-                    "circular input type reference detected while expanding '" + typeName + "'");
+                return unresolved(field, name, Rejection.structural(
+                    "circular input type reference detected while expanding '" + typeName + "'"));
             }
             // Read the field's own @condition override flag (cheap, no errors side effects)
             // so the recursive descent threads the cascade through nested fields. The classifier
@@ -2561,26 +2597,23 @@ class BuildContext {
             var failures = new ArrayList<InputFieldResolution.Unresolved>();
             var resolvedFields = new ArrayList<InputField>();
             for (var nested : nestedInputType.getFieldDefinitions()) {
-                var res = classifyInputField(nested, typeName, resolvedTable, nestedCtx, errors);
+                var res = classifyInputField(nested, typeName, resolvedTable, nestedCtx, conditionFailures);
                 switch (res) {
                     case InputFieldResolution.Resolved r -> resolvedFields.add(r.field());
                     case InputFieldResolution.Unresolved u -> failures.add(u);
                 }
             }
             if (!failures.isEmpty()) {
+                // The nested causes each render their own hint from their own typed arm, so this
+                // level composes no hint of its own (the one it used to compose read SQL names
+                // where the author writes Java names).
                 String reasons = failures.stream()
-                    .map(u -> "'" + u.fieldName() + "': " + u.reason())
+                    .map(u -> "'" + u.fieldName() + "': " + u.rejection().message())
                     .collect(Collectors.joining("; "));
-                String hint = failures.stream()
-                    .map(InputFieldResolution.Unresolved::lookupColumn)
-                    .filter(c -> c != null)
-                    .findFirst()
-                    .map(c -> candidateHint(c, catalog.columnSqlNamesOf(resolvedTable.tableName())))
-                    .orElse("");
-                return new InputFieldResolution.Unresolved(name, null,
-                    "nested input type '" + typeName + "' has unresolvable fields: " + reasons + hint);
+                return unresolved(field, name, Rejection.structural(
+                    "nested input type '" + typeName + "' has unresolvable fields: " + reasons));
             }
-            Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
+            Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, conditionFailures);
             return new InputFieldResolution.Resolved(new InputField.NestingField(
                 parentTypeName, name, locationOf(field), typeName, nonNull, list,
                 List.copyOf(resolvedFields), cond));
@@ -2602,8 +2635,8 @@ class BuildContext {
                 // FK object is then carried by identity into synthesizeFkJoin (no bare re-lookup).
                 var shimFkLookup = catalog.findForeignKey(shimFkName, tableName);
                 if (shimFkLookup instanceof JooqCatalog.ForeignKeyLookup.Ambiguous shimAmb) {
-                    return new InputFieldResolution.Unresolved(name, null,
-                        ambiguousForeignKeyRejection(shimFkName, shimAmb.schemas()).message());
+                    return unresolved(field, name,
+                        ambiguousForeignKeyRejection(shimFkName, shimAmb.schemas()));
                 }
                 // NotInCatalog cannot happen here (shimFkName came from the qualifier map built off
                 // this table's own references); fall through to the column lookup if it somehow does.
@@ -2632,7 +2665,7 @@ class BuildContext {
                             + " (FK '{}'); replace the legacy form with {} to drop the synthesis shim."
                             + " The shim will be removed in a future release.",
                             parentTypeName, name, qualifier, shimFkName, canonical);
-                        Optional<ArgConditionRef> shimRefCond = buildInputFieldCondition(field, name, errors);
+                        Optional<ArgConditionRef> shimRefCond = buildInputFieldCondition(field, name, conditionFailures);
                         // Synthesis shim is for input-side NodeId refs; the parent (input field's
                         // backing table) holds the FK by the shim's invariant, so selfRefFkOnSource
                         // is fixed at true.
@@ -2640,16 +2673,16 @@ class BuildContext {
                         var shimTargetResolution = catalog.findTable(shimTargetTable);
                         if (!(shimFkResolution instanceof FkJoinResolution.Resolved shimFkResolved)) {
                             return switch (shimFkResolution) {
-                                case FkJoinResolution.UnknownTable u -> new InputFieldResolution.Unresolved(name, null,
-                                    unknownTableRejection(u.failure(), u.requestedName()).message());
-                                case FkJoinResolution.UnknownForeignKey uf -> new InputFieldResolution.Unresolved(name, null,
-                                    unknownForeignKeyRejection(uf.fkName()).message());
+                                case FkJoinResolution.UnknownTable u -> unresolved(field, name,
+                                    unknownTableRejection(u.failure(), u.requestedName()));
+                                case FkJoinResolution.UnknownForeignKey uf -> unresolved(field, name,
+                                    unknownForeignKeyRejection(uf.fkName()));
                                 case FkJoinResolution.Resolved r -> throw new IllegalStateException("unreachable");
                             };
                         }
                         if (!(shimTargetResolution instanceof JooqCatalog.TableResolution.Resolved shimTargetResolved)) {
-                            return new InputFieldResolution.Unresolved(name, null,
-                                unknownTableRejection(shimTargetResolution, shimTargetTable).message());
+                            return unresolved(field, name,
+                                unknownTableRejection(shimTargetResolution, shimTargetTable));
                         }
                         List<JoinStep> shimJoinPath = List.of(shimFkResolved.hop());
                         // Single-hop FK shim path: the lifted tuple is the first hop's source-side
@@ -2669,7 +2702,7 @@ class BuildContext {
         var colEntry = catalog.findColumn(tableName, columnName);
         if (colEntry.isPresent()) {
             var e = colEntry.get();
-            Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
+            Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, conditionFailures);
             // @condition(override: true) on a field collapses to UnboundField regardless
             // of whether the column resolves. The column is unused by construction (the explicit
             // condition method owns the predicate entirely), so recording it on a ColumnBackedField is
@@ -2702,12 +2735,12 @@ class BuildContext {
                 var keyColumns = nodeIdMeta.get().keyColumns();
                 var decodeMethod = resolveDecodeHelperForTable(tableName, nodeIdMeta.get().typeId(), keyColumns);
                 if (decodeMethod == null) {
-                    return new InputFieldResolution.Unresolved(name, null,
+                    return unresolved(field, name, Rejection.structural(
                         "@nodeId synthesis shim on input field '" + name + "': unable to resolve"
                         + " the NodeType backing table '" + tableName + "' (zero or multiple"
-                        + " GraphQL types map to it). Declare @nodeId(typeName: T) explicitly.");
+                        + " GraphQL types map to it). Declare @nodeId(typeName: T) explicitly."));
                 }
-                Optional<ArgConditionRef> shimCond = buildInputFieldCondition(field, name, errors);
+                Optional<ArgConditionRef> shimCond = buildInputFieldCondition(field, name, conditionFailures);
                 var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement(decodeMethod);
                 return new InputFieldResolution.Resolved(new InputField.ColumnBackedField(
                     parentTypeName, name, locationOf(field), typeName, nonNull, list,
@@ -2726,7 +2759,7 @@ class BuildContext {
         var conditionDirective = readConditionDirective(field);
         Optional<ArgConditionRef> unboundCond = Optional.empty();
         if (conditionDirective != null) {
-            unboundCond = buildInputFieldCondition(field, name, errors);
+            unboundCond = buildInputFieldCondition(field, name, conditionFailures);
         }
         return new InputFieldResolution.Resolved(new InputField.UnboundField(
             parentTypeName, name, locationOf(field), typeName, nonNull, list,
@@ -2764,13 +2797,14 @@ class BuildContext {
     private InputFieldResolution inputFieldFromNodeIdResolved(
             NodeIdLeafResolver.Resolved resolved, String parentTypeName,
             GraphQLInputObjectField field, String name, String typeName,
-            boolean nonNull, boolean list, TableRef resolvedTable, List<String> errors) {
+            boolean nonNull, boolean list, TableRef resolvedTable,
+            List<InputFieldConditionFailure> conditionFailures) {
         switch (resolved) {
             case NodeIdLeafResolver.Resolved.Rejected r -> {
-                return new InputFieldResolution.Unresolved(name, null, r.message());
+                return unresolved(field, name, r.rejection());
             }
             case NodeIdLeafResolver.Resolved.SameTable st -> {
-                Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
+                Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, conditionFailures);
                 // Authored input-field @nodeId filter throws on malformed/wrong-type ids.
                 var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch(st.decodeMethod());
                 return new InputFieldResolution.Resolved(new InputField.ColumnBackedField(
@@ -2778,7 +2812,7 @@ class BuildContext {
                     st.keyColumns(), cond, extraction));
             }
             case NodeIdLeafResolver.Resolved.FkTarget.DirectFk direct -> {
-                Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
+                Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, conditionFailures);
                 // Authored input-field FK-target @nodeId filter throws on malformed/wrong-type ids.
                 var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch(direct.decodeMethod());
                 return new InputFieldResolution.Resolved(new InputField.ColumnBackedReferenceField(
@@ -2787,8 +2821,8 @@ class BuildContext {
                     direct.liftedSourceColumns(), direct.selfReference(), cond, extraction));
             }
             case NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk translated -> {
-                return new InputFieldResolution.Unresolved(name, null,
-                    FieldBuilder.translatedFkRejectionReason(translated.refTypeName(), resolvedTable.tableName()));
+                return unresolved(field, name, FieldBuilder.translatedFkRejection(
+                    translated.refTypeName(), resolvedTable.tableName()));
             }
         }
     }
@@ -2814,19 +2848,19 @@ class BuildContext {
             List<ColumnRef> liftedSourceColumns,
             Optional<ArgConditionRef> cond) {
         if (targetKeyColumns.isEmpty()) {
-            return new InputFieldResolution.Unresolved(name, null,
+            return new InputFieldResolution.Unresolved(name, location, Rejection.structural(
                 "@nodeId(typeName: '" + refTypeName + "') targets table '" + targetTableName
                 + "' which has no resolvable key columns (no NodeId metadata, no @node(keyColumns:),"
                 + " and no primary key) — declare key columns on the target type or surface the"
-                + " metadata via KjerneJooqGenerator");
+                + " metadata via KjerneJooqGenerator"));
         }
         var decodeMethod = resolveDecodeHelperForType(refTypeName, targetTableName, targetTypeId, targetKeyColumns);
         if (decodeMethod == null) {
-            return new InputFieldResolution.Unresolved(name, null,
+            return new InputFieldResolution.Unresolved(name, location, Rejection.structural(
                 "@nodeId(typeName: '" + refTypeName + "') targets table '" + targetTableName
                 + "' which has no GraphQL type backing and no resolvable decode helper"
                 + " — declare a @table-annotated object type for the target or surface the metadata"
-                + " via KjerneJooqGenerator");
+                + " via KjerneJooqGenerator"));
         }
         var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement(decodeMethod);
         // selfReference=false: this shim resolves the id-reference qualifier-reverse-map to a

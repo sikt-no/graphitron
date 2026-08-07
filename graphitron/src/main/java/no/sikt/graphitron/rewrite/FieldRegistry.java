@@ -114,12 +114,11 @@ public final class FieldRegistry {
             ClassificationTrace.emit(ClassificationTrace.Op.classify, parentTypeName, fieldName,
                 leafName(r.field().getClass()), source, null, null);
         } else if (resolution instanceof InputFieldResolution.Unresolved u) {
-            // Unresolved carries no Rejection variant (the failure path doesn't produce an
-            // UnclassifiedField; it's a transient resolution outcome consumed by the caller).
-            // Default to AUTHOR_ERROR per the kind-of-thumb rule: typo-style column-miss and
-            // path-resolution failures are the bulk of this arm.
+            // The failure path produces no UnclassifiedField (it's a transient resolution outcome
+            // consumed by the caller), but it carries the same typed Rejection every sibling
+            // builder-step result carries, so the trace projects the kind rather than assuming one.
             ClassificationTrace.emit(ClassificationTrace.Op.classify, parentTypeName, fieldName,
-                "", source, RejectionKind.AUTHOR_ERROR, u.reason());
+                "", source, RejectionKind.of(u.rejection()), u.rejection().message());
         }
     }
 

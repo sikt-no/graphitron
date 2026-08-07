@@ -385,7 +385,7 @@ final class MutationInputResolver {
             graphql.schema.GraphQLInputObjectType iot, String argTypeName) {
         for (var sdlField : iot.getFieldDefinitions()) {
             if (sdlField.hasAppliedDirective(DIR_LOOKUP_KEY)) {
-                return Rejection.structural(
+                return Rejection.directiveConflict(List.of(DIR_LOOKUP_KEY),
                     "@mutation input '" + argTypeName + "' field '" + sdlField.getName()
                     + "': @lookupKey on a mutation input field is no longer supported; "
                     + "remove it (the field is a filter by default)");
@@ -395,7 +395,7 @@ final class MutationInputResolver {
                 var overrideArg = condDir != null ? condDir.getArgument(ARG_OVERRIDE) : null;
                 boolean override = overrideArg != null && Boolean.TRUE.equals(overrideArg.getValue());
                 if (!override) {
-                    return Rejection.structural(
+                    return Rejection.directiveConflict(List.of(DIR_CONDITION),
                         "@mutation input '" + argTypeName + "' field '" + sdlField.getName()
                         + "': @condition on a mutation input field is not supported "
                         + "(mutations write values; only @condition(override: true) is admitted)");

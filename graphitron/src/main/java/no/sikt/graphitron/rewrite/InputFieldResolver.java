@@ -25,12 +25,12 @@ import java.util.stream.Collectors;
  * {@link OrderByResolver.Resolved} on the orderBy side.
  *
  * <p>Any {@link InputFieldResolution.Unresolved} is a build error: bare-field-without-{@code @condition}
- * signals binding intent just as much as {@code @condition}-annotated does. The single-Unresolved
- * column-miss case lifts as {@link Rejection#unknownColumn} so LSP fix-its and watch-mode
- * formatters consume the structured {@code attempt + candidates}; everything else lifts as
- * {@link Rejection#structural} with joined prose. {@code @condition} reflection failures fold
- * into the same {@link Resolution.Rejected} arm via the resolver's private {@code condErrors}
- * buffer; no second mutation channel escapes.
+ * signals binding intent just as much as {@code @condition}-annotated does. A single failure keeps
+ * the arm its producer chose (prefixed with this call site's context), so LSP fix-its and watch-mode
+ * formatters consume whatever structured components that arm carries; a multi-cause fold has no
+ * single arm to carry and still lifts as {@link Rejection#structural} with joined prose.
+ * {@code @condition} reflection failures fold into the same {@link Resolution.Rejected} arm via the
+ * resolver's private {@link InputFieldConditionFailure} buffer; no second mutation channel escapes.
  */
 final class InputFieldResolver {
 
@@ -67,38 +67,37 @@ final class InputFieldResolver {
         if (rt == null) return new Resolution.Ok(List.of());
         var rawType = ctx.schema.getType(typeName);
         if (!(rawType instanceof GraphQLInputObjectType iot)) return new Resolution.Ok(List.of());
-        var condErrors = new ArrayList<String>();
+        var conditionFailures = new ArrayList<InputFieldConditionFailure>();
         var classified = new ArrayList<InputField>();
         var failures = new ArrayList<InputFieldResolution.Unresolved>();
         for (var f : iot.getFieldDefinitions()) {
             var res = ctx.classifyInputField(f, typeName, rt,
-                ClassifyContext.withEnclosingOverride(enclosingOverride), condErrors);
+                ClassifyContext.withEnclosingOverride(enclosingOverride), conditionFailures);
             switch (res) {
                 case InputFieldResolution.Resolved r -> classified.add(r.field());
                 case InputFieldResolution.Unresolved u -> failures.add(u);
             }
         }
         String prefix = "plain input type '" + typeName + "': ";
-        if (failures.isEmpty() && condErrors.isEmpty()) {
+        if (failures.isEmpty() && conditionFailures.isEmpty()) {
             return new Resolution.Ok(List.copyOf(classified));
         }
-        // A typed `unknownColumn` arm carries exactly one (attempt, candidates) payload, so
-        // we can only lift to it when there's a single column-miss failure and no condition
-        // errors competing for the structured slot; everything else folds to structural prose.
-        boolean canLiftToUnknownName = condErrors.isEmpty()
-            && failures.size() == 1
-            && failures.get(0).lookupColumn() != null;
-        if (canLiftToUnknownName) {
-            var u = failures.get(0);
-            String summary = prefix + "input field '" + u.fieldName() + "'";
-            return new Resolution.Rejected(Rejection.unknownColumn(
-                summary, u.lookupColumn(), ctx.catalog.columnJavaNamesOf(rt.tableName())));
+        // A single resolution failure keeps its producer's own arm: prefixing threads this call
+        // site's context onto the typed rejection without collapsing its components. A multi-cause
+        // fold has no single arm to carry, and a condition failure carries its context in the
+        // accumulator rather than on the rejection, so both still compose prose.
+        if (conditionFailures.isEmpty() && failures.size() == 1) {
+            var only = failures.getFirst();
+            return new Resolution.Rejected(only.rejection()
+                .prefixedWith(prefix + "input field '" + only.fieldName() + "': "));
         }
         var parts = new ArrayList<String>();
         for (var u : failures) {
-            parts.add("input field '" + u.fieldName() + "': " + u.reason());
+            parts.add("input field '" + u.fieldName() + "': " + u.rejection().message());
         }
-        parts.addAll(condErrors);
+        for (var cf : conditionFailures) {
+            parts.add(cf.message());
+        }
         return new Resolution.Rejected(Rejection.structural(
             prefix + parts.stream().collect(Collectors.joining("; "))));
     }

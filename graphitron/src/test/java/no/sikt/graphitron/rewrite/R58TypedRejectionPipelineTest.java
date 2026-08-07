@@ -20,8 +20,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Out of scope: producer sites whose carrier widening is not yet done
  * ({@code ArgumentRef.ScalarArg.UnboundArg.reason}, {@code ParsedPath.errorMessage},
- * {@code InputFieldResolution.Unresolved.reason}, {@code EnumValidation.Mismatch} message-list,
- * {@code keyColumnErrors} list); those still flatten to {@link Rejection.AuthorError.Structural}.
+ * {@code EnumValidation.Mismatch} message-list, {@code keyColumnErrors} list); those still flatten
+ * to {@link Rejection.AuthorError.Structural}. {@link InputFieldResolution.Unresolved} was on that
+ * list until it started carrying a {@link Rejection} of its own; the input-field cases below pin
+ * what that recovered.
  */
 @PipelineTier
 class R58TypedRejectionPipelineTest {
@@ -157,6 +159,31 @@ class R58TypedRejectionPipelineTest {
         assertThat(unknown.candidates()).isNotEmpty();
         assertThat(ve.message()).startsWith("Field 'Film.bogusColumn': ");
         assertThat(ve.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+    }
+
+    @Test
+    void retiredDirectiveOnInputField_carriesTypedDirectiveName() {
+        // A retired directive on an input field is one cause with one identity: the name rides on
+        // DirectiveConflict.directives rather than only inside the sentence, so a consumer counting
+        // rejections per directive sees one cause where it used to see prose.
+        var schema = TestSchemaHelper.buildSchema("""
+            input PlainFilter { title: String @notGenerated }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { films(filter: PlainFilter): [Film!]! }
+            """);
+
+        var field = schema.field("Query", "films");
+        assertThat(field).isInstanceOf(UnclassifiedField.class);
+
+        var rejection = ((UnclassifiedField) field).rejection();
+        assertThat(rejection).isInstanceOf(Rejection.InvalidSchema.DirectiveConflict.class);
+        assertThat(((Rejection.InvalidSchema.DirectiveConflict) rejection).directives())
+            .containsExactly("notGenerated");
+        // Reached through the pre-emptive retired-directive scan on the argument's input type
+        // (which runs before the classifier), so the rendered prose is the argument site's.
+        assertThat(rejection.message())
+            .startsWith("argument 'filter': input field 'title': ")
+            .contains("@notGenerated is no longer supported");
     }
 
     @Test
