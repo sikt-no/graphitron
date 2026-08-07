@@ -166,11 +166,24 @@ These bind the DDL below and every relation added to it later.
 
 Base relations only: what the two capture loads fill. The derived stratum (claims, reachability,
 demand, occurrence paths, diagnostics, commands) is deliberately absent; see the leave-outs
-section. Five families, prefixed by origin and job: `graphql_` existence and
-synthesis-provenance facts, `applied_` fidelity rows for the non-graphitron directive surface
-(re-emitted verbatim, never interpreted), `intent_` semantic relations for the graphitron and
-federation inventory (decoded at capture), `catalog_` for jOOQ catalog facts, `extension_` for
-the consumer's compiled extension classes.
+section. Five families. The two non-SDL ones take their prefix from where the facts come from:
+`catalog_` for jOOQ catalog facts, `extension_` for the consumer's compiled extension classes.
+The three SDL families share an origin and are split by **how a row is treated**, which is the
+distinction a reader actually needs at a query site: `graphql_` for what exists and is read,
+`applied_` for what is carried verbatim into the emitted schema and interpreted by nobody,
+`intent_` for what is decoded into meaning. That is why the graphitron namespace can be
+forbidden from every `applied_` relation by a single gate, and why `applied_` and `intent_` are
+prefix-siblings rather than one being nested under the other: they are the two halves of the
+one directive-application surface, split by treatment, and federation's `@key` writes to both
+in the same pass.
+
+Two consequences of preferring treatment over origin here, both deliberate. The directive
+*definition* relations are `graphql_` while the *application* relations are `applied_`, because
+a definition is read (its `repeatable` flag governs what a repeated application means) while an
+application is only carried. And a synthesis-provenance relation is named after the relation it
+annotates, not after the family whose job it does, so `graphql_type_declaration_synthesis` and
+`applied_type_directive_synthesis` sit under different prefixes; finding the provenance beside
+the rows it explains is worth more than a uniform prefix for provenance.
 
 A round-trip constraint binds the SDL families: the emitted runtime schema must be
 reproducible from the store alone, the input schema minus the graphitron namespace plus the

@@ -12,6 +12,16 @@
 -- name; every table and column carries a COMMENT ON so INFORMATION_SCHEMA and the generated
 -- Javadoc are self-describing; closed taxonomies are CHECK constraints; VARCHAR is unbounded;
 -- source order is an explicit ordinal column.
+--
+-- Picking a prefix for a new relation. The two non-SDL families name their origin: catalog_ for
+-- jOOQ catalog facts, extension_ for the consumer's compiled extension classes. The three SDL
+-- families share an origin and name how a row is treated: graphql_ for what exists and is read,
+-- applied_ for what is carried verbatim into the emitted schema and interpreted by nobody,
+-- intent_ for what is decoded into meaning. So a directive definition is graphql_ (its
+-- repeatable flag is read) while a directive application is applied_ (it is only carried), and
+-- a synthesis-provenance relation takes the prefix of the relation it annotates rather than of
+-- the job it does, which is why graphql_type_declaration_synthesis and
+-- applied_type_directive_synthesis differ.
 
 -- ==== SDL existence facts =========================================================
 -- One row per element the SDL declares. Capture is total: built-in scalars, @oneOf, federation
