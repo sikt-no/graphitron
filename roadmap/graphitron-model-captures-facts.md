@@ -2435,12 +2435,43 @@ today, so this is roughly a 16x increase against a per-build cost that is curren
    already byte-oriented and needs only its `Path`-typed signature loosened. The existing FQN
    dedup across roots carries over and gives classpath-order precedence, matching how a
    classloader resolves a duplicated class.
-3. **Cache per jar.** A static map keyed on (absolute path, size, last-modified), so repeated
-   catalog builds in one `graphitron:dev` process pay each jar once. `graphitron:dev` rebuilds the
-   catalog on every schema edit and an unconditional 1.4 s re-walk per keystroke is not
-   acceptable; jars are content-addressed and immutable in `~/.m2`, so the cold cost is paid once
-   per process. Directory roots stay uncached, changing on every compile, which is the case a
-   cache would get wrong.
+3. **Give the census a source identity, then cache against it.** The absorbed plan proposed a
+   static map keyed on (absolute path, size, last-modified), which pays each jar once per
+   `graphitron:dev` process and nothing more: every `mvn install`, every forked test JVM and
+   every fresh dev process pays the 4.0 s again. The reason it cannot do better is that the
+   family has nowhere to record what it scanned. `extension_class` is a class name and a kind,
+   and `ClasspathScanner.scan` holds the root while it walks and discards it, deduping FQNs
+   across roots first-wins and returning references that cannot say where they came from.
+
+   The SDL families solved this already, and the asymmetry is the finding. A declaration site
+   carries its `source_name`, which is what lets the refresh unit be "the types this file
+   touches"; the classpath family has no equivalent, so its only available refresh is discarding
+   the whole census. That is the most expensive thing in the store, thrown away by any edit that
+   invalidates anything.
+
+   So the shape changes before the cache does: a `jvm_source` relation for the classpath entry
+   (its path, whether it is a directory or a jar, and its stamp), and a source reference on
+   `jvm_class`. Per-entry invalidation is then a query rather than a mechanism, the static map
+   becomes the in-process degenerate case of it, and the warm store gets a partition it can
+   refresh instead of a census it must discard. This belongs to this item even though the
+   persistence does not: `warm-start-model-store` stamps the whole store on DDL hash, generator
+   version and run identity, so without a per-source stamp captured here it has nothing finer to
+   invalidate on, and a schema edit discards a classpath scan that had nothing to do with it.
+
+   The stamp column is a real choice and (path, size, last-modified) is the wrong default for
+   anything persisted. It is a heuristic, tolerable while a wrong answer dies with the JVM, and
+   not tolerable once it survives a build: CI caches, container image layers and
+   reproducible-build normalisation all produce jars whose modification time is constant or
+   arbitrary. A content hash is exact and is an order of magnitude cheaper than the parse it
+   protects, which the timing step below should confirm rather than assume. A release-coordinate
+   jar under the local repository is immutable by Maven's contract and could key on path alone,
+   but that is a second rule earning milliseconds, and one invalidation story is worth more.
+   Directory roots stay uncached whatever the choice, changing on every compile.
+
+   With a source recorded, the cross-root dedup also stops being lossy: today first-wins
+   discards both which root won and that a shadow existed. Recording the winner and quarantining
+   the shadowed duplicate is what `graphql_duplicate_declaration` does on the SDL side, and a
+   classpath collision is something an author may want told.
 4. **Ordering, not filtering, for completion.** `ClassNameCompletions` and friends will see ~30k
    candidates and must not filter them back out, the whole point being that they are legitimately
    referenceable. Rank reactor-resident classes ahead of jar-resident ones so the common case
@@ -2451,7 +2482,8 @@ today, so this is roughly a 16x increase against a per-build cost that is curren
    The widened census is what makes the descriptor collision ordinary rather than exotic, since
    282 jars make two same-named types in different packages a near-certainty.
 6. **Time the load.** The insert cost of a 31k-class, 213k-method census through `FactSink`,
-   measured rather than assumed. Per the analysis above the answer to a slow load is a faster
+   measured rather than assumed, alongside the cost of hashing the same classpath so the stamp
+   choice above rests on a number. Per the analysis above the answer to a slow load is a faster
    load, not a narrower census.
 
 **Tests.** A jar-resident `@scalarType` reference raises no diagnostic, which is the reported bug
@@ -2460,7 +2492,9 @@ jar-resident constant. `ClasspathScanner` unit tier: a fixture jar is scanned, i
 and methods surface, and a class present in both a jar and a directory root surfaces once with
 classpath-order precedence. Cache behaviour: the same jar is read once, and a jar whose
 last-modified changes is re-read. Two overloads taking same-named types from different packages
-both survive capture, which is the descriptor regression guard. `graphitron-sakila-example`
+both survive capture, which is the descriptor regression guard. A jar whose stamp is unchanged
+is not re-scanned and one whose contents change is, asserted against the source relation rather
+than against a private cache. `graphitron-sakila-example`
 already carries the live build-through fixture, so the codegen half needs no new coverage; what
 is new is the LSP tier asserting the two classpaths agree.
 
