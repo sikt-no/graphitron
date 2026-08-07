@@ -2113,8 +2113,8 @@ top-level namespace of `catalog.schema.table`, and this family has no catalog le
 every key starting at `table_schema`, so the incumbent is already using the tooling sense of the
 word rather than SQL's.
 
-`sql_table`, `sql_column`, `sql_key`, `sql_key_column`, `sql_foreign_key`,
-`sql_foreign_key_column`, `sql_index`, `sql_index_column`. The resulting set is `graphql_`,
+`sql_table`, `sql_column`, `sql_unique_constraint`, `sql_unique_constraint_column`,
+`sql_foreign_key`, `sql_foreign_key_column`, `sql_index`, `sql_index_column`. The resulting set is `graphql_`,
 `sql_`, `jvm_`, `graphitron_`: three external vocabularies each named by its owner, plus
 graphitron's own, where the incumbent set named one family by category and two by owner. It
 passes the mechanism-independence test the `extension_` case turns on, since reading
@@ -2123,11 +2123,29 @@ name correct. Alignment with `CatalogFacts` and `JooqCatalog` is not an argument
 old prefix, on the same grounds that leave `CompletionData.ExternalReference` out of this: DDL
 family names and Java class names answer to different rules.
 
-Two things the rename surfaces rather than settles. `sql_key` is the one relation whose noun is
-not obviously SQL's: "key" is partly jOOQ's (`UniqueKey`, `ForeignKey`), the relation's own
-comment reads "a uniqueness constraint exists on a table", and `constraint_name` is what the key
-is built from. `sql_key` carrying `is_primary` is a defensible reading of SQL's PRIMARY KEY and
-UNIQUE forms, but it wants a decision rather than an inheritance. And the two `java_name` riders
+The rename settles one noun underneath it and surfaces one column. `catalog_key` becomes
+`sql_unique_constraint`, with `catalog_key_column` following it to
+`sql_unique_constraint_column`. The relation holds the primary key plus every other unique
+constraint, filled from `table.primaryKey()` and `table.uniqueKeys()` and flagged apart by
+`is_primary`; foreign keys and non-unique indexes are their own relations. SQL names exactly
+that set: the standard's unique constraint definition specifies UNIQUE or PRIMARY KEY, so the
+umbrella term and the relation's extension coincide, and the table's own comment already says
+"a uniqueness constraint exists on a table" while the identifier says something else. Keeping
+`key` costs more than vagueness. Beside `sql_foreign_key` it implies a supertype that does not
+hold, since jOOQ's `UniqueKey` and `ForeignKey` do both extend `Key` and the two relations here
+are disjoint; and in MySQL and MariaDB `KEY` is a synonym for `INDEX`, which this schema keeps as
+a separate relation with different contents, so the word is not merely imprecise but wrong in a
+dialect where it collapses a distinction the schema makes. `is_primary` also reads as a question
+about the row rather than a restatement of its noun.
+
+Two near-misses ruled out, both already in the codebase's vocabulary. `sql_candidate_key` picks
+up `JooqCatalog.candidateKeys`, but a candidate key is relational-model vocabulary rather than
+SQL DDL's, and it overclaims irreducibility that SQL does not require of a UNIQUE declaration.
+`sql_foreign_key` does not follow to `sql_referential_constraint` for symmetry: FOREIGN KEY is
+literal SQL keyword text in every dialect and so is already the vocabulary's own word, where KEY
+alone is not a constraint form at all. The asymmetry between the two names is the correct one.
+
+And the two `java_name` riders
 on `sql_table` and `sql_column` should become `jooq_name`: in a relation whose prefix names SQL,
 a jOOQ-generated identifier is visibly the one foreign column, and marking it is better than
 leaving a reader to infer it. That was optional under `catalog_` and is not under `sql_`.
