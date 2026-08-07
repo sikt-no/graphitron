@@ -7,7 +7,7 @@ priority: 3
 theme: docs
 depends-on: []
 created: 2026-08-04
-last-updated: 2026-08-06
+last-updated: 2026-08-07
 ---
 
 # Gate dangling cross-file .adoc xref anchors, which render silently and rot invisibly
@@ -28,9 +28,9 @@ Asciidoctor's own documentation or from a habit formed outside this repo, and it
 Census over `docs/target/staging` (the tree the renderer is pointed at), resolving each anchored
 reference against the `id="..."` attributes in the page the build actually produced. 31 anchored
 references (27 cross-file `xref:<file>.adoc#anchor`, 4 same-file `xref:#anchor`), **4 dangling, all four
-the same mistake**, and every one has an exact kebab-case sibling that exists. The counts cover the
-authored docs; this item's own two illustration macros are staged and scanned too, and are accounted for
-separately below:
+the same mistake**, and every one has an exact kebab-case sibling that exists. The counts are the whole
+staged population with nothing set aside: this item's own quoted examples contribute none of them, because
+the renderer emits every markdown code span inert, so they are not references for the gate to collect.
 
 [cols="3,2"]
 |===
@@ -142,7 +142,7 @@ backtick span still counts as a reference (the hand-authored habitat), and both 
 **The paragraph, not the code span, is the unit of containment, and that is why "no attrlist, therefore no
 macro" is not a safe reading.** Settled by rendering the site and reading this page's own HTML, not by
 probing the forms in isolation, and the isolated probes are what got it wrong: a bare
-`xref:node.adoc#anchor` is inert on its own, but the paragraph that quoted it also quoted a bracketed
+`xref:node.adoc#anchor` forms no macro on its own, but the paragraph that quoted it also quoted a bracketed
 `xref:<file>.adoc#anchor[label]` two lines further down, and Asciidoctor's inline-xref match spanned the gap
 between the two code spans. It took the target from the first quote and the attrlist from the second,
 emitted a malformed anchor tag where the first placeholder stood, and left the closing tag's residue as
@@ -186,8 +186,7 @@ resolves to a real staged page and names an anchor that page does not publish fa
 
 The reported population is the *anchored* references the gate already collects, not every `xref:` in the
 tree, and on today's tree that count is zero, because the renderer emits this item's own quoted examples
-inert. The
-wider population is worth knowing about because it is not empty: staging currently carries 9 unanchored
+inert. The wider population is worth knowing about because it is not empty: staging carries 9 unanchored
 cross-file references whose target page does not exist, 7 of them from `roadmap/changelog.adoc` naming plan
 pages that were deleted when their items shipped and 2 from
 `roadmap/plans/service-short-classname-resolution.adoc:21,66` naming `computed-field-with-reference.adoc`.
@@ -264,7 +263,8 @@ plain markdown backticks throughout.
   note), a reference inside a `|===` table cell (live at `mojo-configuration.adoc:117`), an anchor inside a
   `----` listing or `////` comment block (must not count as a reference), a reference in a single-backtick
   span (*does* count, per the Design note above) versus one in either inert form (does not, and the
-  collector asks `InertSpans` rather than matching the forms itself), and a target page outside the tree (counted as unresolvable, neither silently passed nor failed). Pin the
+  collector asks `InertSpans` rather than matching the forms itself), and a target page outside the tree
+  (counted as unresolvable, neither silently passed nor failed). Pin the
   known under-report too: a bare `xref:` target on one line whose activating attrlist sits on a later line
   is *not* collected, which Asciidoctor would nonetheless link, so the limit is asserted rather than
   discovered later.
