@@ -2194,15 +2194,48 @@ a mismatch the store introduced, and it disappears with the split. The driver ca
 tell a projection that bridges a genuine grain difference from one that bridges a modelling
 error, which is worth remembering when the next registration wants one.
 
-Two questions this pass answers rather than inherits. **Target columns keep their denormalised
-pair.** Both catalogs resolve a foreign key's targets by indirection, naming the referenced
-unique constraint and matching its column rows by position, where `sql_constraint_column` would
-carry source and target side by side. Keep the pair and diverge deliberately:
-`CatalogFacts.OutgoingForeignKey` carries the target table and target columns and no
-referenced-constraint name, so indirection widens `CatalogFacts` and re-cuts the equality-arm
-anchor, and it makes target columns unreachable rather than merely denormalised whenever the
-referenced unique constraint is not itself reported. Capture total and cheap, joins as
-derivation's business, is this item's doctrine and the pair follows it. **The constraint's
+**The column child is uniform, and target columns are a join rather than a copy.** Every
+constraint owns its columns in one relation,
+`sql_constraint_column(table_schema, table_name, constraint_name, position, column_name)`, for
+primary keys, unique constraints and the local side of foreign keys alike. A foreign key's
+targets come from the referenced constraint's own rows, matched on `position`, which is how both
+Oracle and the standard resolve them and is guaranteed by SQL semantics, the two column lists
+corresponding positionally.
+
+An earlier draft of this item kept the source and target columns paired on one row and argued
+that capture stores facts while joins are derivation's business. That argument runs the other
+way: a target column is a fact about the *referenced* constraint, so copying it onto the
+referencing row is precomputing a join at capture time, which is the pre-resolution the
+resolution-facts leave-out rejects. The cost objection does not survive either, since
+`JooqCatalog.foreignKeyFactsOf` already calls `fk.getKey()` and takes its table, so the
+referenced constraint's name is one more field on a record it is already building.
+
+The reachability worry behind that draft was real but misaimed. It is not indirection that
+threatens a dangling reference, it is `JooqCatalog.candidateKeys`, which dedupes on column set,
+so a unique constraint sharing a column set with the primary key is dropped and a foreign key
+referencing it would point at nothing. That dedup is a `CatalogFacts` projection choice rather
+than a catalog fact, and the fix is for capture to read the full key set instead of distorting
+the model around a projection. It is the same lesson the primary key teaches, and the two
+together are why the census anchor needs folds at all: the store keeps inheriting
+`CatalogFacts`' shape where it should take the catalog's.
+
+`sql_referential_constraint` therefore carries
+`(table_schema, table_name, constraint_name, referenced_schema, referenced_table,
+referenced_constraint_name)` with a foreign key on each triple into `sql_constraint`. That
+strengthens the structural claim rather than merely relocating it: the relation references
+`catalog_table` today, saying the target table exists, where a foreign key in SQL references a
+constraint and not a table. The referenced schema and table are not a denormalisation, being two
+thirds of the composite key the reference needs.
+
+Whether a foreign key can point out of the scanned catalog at all is the question this sharpens
+and does not answer. `CatalogFactCapture`'s foreign-key loop writes the target from
+`split(fk.targetTable())` with no guard that the table was scanned, and the relation already
+declares a foreign key into `catalog_table`, so an out-of-catalog reference would land as a
+constraint violation, which this item's doctrine reads as a capture bug when it would really be
+a catalog boundary. Whether jOOQ's generated model can produce one should be settled during the
+pass, and it matters more once the reference is to a constraint.
+
+**The constraint's
 backing index stays out.** A primary key or unique constraint is backed by an index, and
 PostgreSQL gives both the same identifier, `actor_pkey` naming a constraint and the index
 enforcing it; Oracle exposes the edge as `ALL_CONSTRAINTS.INDEX_NAME` and needs to, because it
@@ -2226,8 +2259,11 @@ contents.
 still carries the old prefixes throughout both renamed families. The listing is this item's
 deliverable, so it is the Spec pass that rewrites it: the relations above with their `COMMENT ON`
 text, the `catalog_` and `extension_` prefixes carried through every relation and every comment,
-and the convention bullet that claims DDL cannot state the primary-key cardinality. Until that
-lands the two sections disagree, deliberately and visibly, rather than quietly.
+and the convention bullet that claims DDL cannot state the primary-key cardinality. The
+acceptance list goes with it: its census bullet records the fold to `CatalogFacts`' `uniqueKeys`
+view as a projection choice, and both halves of that fold, the excluded primary key and the
+column-set dedup, are the projection artifacts the reshaping removes. Until all of it lands the
+sections disagree, deliberately and visibly, rather than quietly.
 
 One measurement rides along with the widened census rather than with the rename. R605 rules the
 ~213k `extension_method` rows an insert-throughput question rather than a scoping one, which is
