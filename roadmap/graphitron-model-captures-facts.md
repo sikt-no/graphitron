@@ -26,9 +26,10 @@ store. Two spikes ground the stack: `roadmap/audits/2026-08-05-fact-base-h2-spik
 store itself) and `roadmap/audits/2026-08-05-h2-functions-jooq-spike.md` (the function surface
 and the codegen path).
 
-The main delivery of this spec is the target model itself: the first iteration of the fact
-schema below. The module and the loads exist to make that schema real, compiled against, and
-kept honest by tests.
+The main delivery of this spec is the target model itself, the first iteration of the fact schema.
+The module and the loads exist to make that schema real, compiled against, and kept honest by
+tests. Most of it shipped before the item reopened; "Where this stands" separates what is already
+in the tree from what the delivery plan still owes.
 
 ## The module
 
@@ -83,7 +84,7 @@ and the run-time store).
 
 ## Schema conventions
 
-These bind the DDL below and every relation added to it later.
+These bind the shipped DDL and every relation added to it later.
 
 - **snake_case throughout**, tables and columns alike. Table names are singular nouns naming the
   fact one row states.
@@ -181,14 +182,44 @@ These bind the DDL below and every relation added to it later.
 
 ## The fact schema, first iteration
 
-Base relations only: what the two capture loads fill. The derived stratum (claims, reachability,
+**The shipped DDL is the schema; this section is the design behind it and the delta still owed.**
+`graphitron-model/src/main/resources/no/sikt/graphitron/model/graphitron-model.sql` carries all 97
+relations with their `COMMENT ON` text, and it is the only copy. An earlier draft of this item
+transcribed the whole file, which drifted the moment the item reopened, and the transcription
+bought nothing: the schema has no downstream consumers and no persisted state of record, so
+compile-time is its only compatibility surface and changing the model is editing the DDL and
+following the compiler. What this section carries instead is the reasoning that is not derivable
+from the DDL, plus full target DDL for the relations the delivery below adds or reshapes. The 84
+relations of the `graphql_` and `graphitron_` families shipped and are settled; they are reviewed
+in the file.
+
+Base relations only: what the capture loads fill. The derived stratum (claims, reachability,
 demand, occurrence paths, diagnostics, commands) is deliberately absent; see the leave-outs
-section. Four families, each named for **whose vocabulary a row is written in**. `graphql_` is
+section. Five families, each named for **whose vocabulary a row is written in**. `graphql_` is
 reserved for generic GraphQL: a row any SDL reader could produce from the document without
 knowing graphitron exists, which is every declaration, every directive definition, and every
 directive application. `graphitron_` is what graphitron makes of that document: the decoded
-directives, and the provenance of the rows macro expansion mints. `catalog_` is jOOQ catalog
-facts and `extension_` the consumer's compiled extension classes.
+directives, and the provenance of the rows macro expansion mints. `sql_` is what the consumer's
+database declares, read through jOOQ's generated model; `jvm_` is what the classfiles on the
+compile classpath declare; and `store_` is the store's record of what it read and what it was
+built from.
+
+Naming a family for a vocabulary rather than a role or a reader is what decided three of the
+five, and each rejection is worth keeping. `extension_` named a presumed role (code written to
+extend graphitron) that held only while the scan was scoped to reactor output; once the census
+reads the compile classpath, `com.fasterxml.jackson.databind.ObjectMapper` is a row, and what
+earns it one is that an author may name it in `@record` / `@service` / `@enum` / `@scalarType`
+and the codegen loader resolves it, which is a classpath fact. `jvm_` rather than `classfile_`
+or `bytecode_`: `classfile_class` stutters, and a record component comes from the classfile's
+`RecordAttribute` rather than from any bytecode. `catalog_` named a category *within* SQL's
+vocabulary rather than the vocabulary, and used the tooling sense of the word at that, strict SQL
+making a catalog the top level of `catalog.schema.table` where this family has no catalog level
+at all. `jooq_` was proposed and rejected for naming the reader: jOOQ defines neither table nor
+column nor foreign key, and the precedent is `graphql_`, which is not `graphqljava_` though
+graphql-java parses every row. The resulting set is three external vocabularies each named by its
+owner, plus graphitron's own and the store's own. Java-side names answer to different rules and
+do not move with the DDL: `CompletionData.ExternalReference` stays, "external" asserting a
+location rather than a role, and a jar class genuinely is outside the generated output.
 
 The SDL families stack, `graphql_` under `graphitron_` under a third name, `intent_`, held in
 reserve and filled by nothing here. A `graphitron_` row is still a transcription: it restates
@@ -233,244 +264,6 @@ two-part), and stores the object-to-interface edge only inverted (interface to p
 The schema makes all three first-class: `graphql_argument` and `graphql_enum_value` rows are
 directly addressable, and `graphql_implements` states the edge the declaring type wrote.
 
-```sql
--- ==== SDL existence facts ====================================================
--- One row per element the SDL declares. Capture is total: built-in scalars,
--- @oneOf, federation definitions arriving via @link, and user-authored
--- directives are ordinary rows. Source positions follow the 1-based
--- graphql-java convention and are NULL only for engine-provided elements no
--- SDL line declares (built-in scalars). Elements contributed by the bundled
--- directives.graphqls are stamped with that resource name as source_name
--- (for a type, the stamp sits on its declaration rows); consumers wanting
--- user-authored declarations filter on it, as
--- CatalogBuilder.projectTypeDefinitionLocations does today.
-
--- A named type is declared or extended in the schema; this row is the name's
--- existence, written by capture from whichever site it meets first (macro-
--- contributed sites included), and graphql_type_declaration carries every
--- site. The declared-or-extended
--- reading is load-bearing: it is what makes the site rows' FK structural
--- (capture writes this row before any site row), and on a base-less
--- extension chain (an author error a detection reports) the row still
--- exists, anchored by the extension sites.
-CREATE TABLE graphql_type (
-  type_name     VARCHAR NOT NULL, -- the GraphQL type name; the coordinate every other SDL fact hangs off
-  kind          VARCHAR NOT NULL, -- the first declaration site's form in merge order (the base definition's, on a well-formed schema)
-  description   VARCHAR,          -- SDL description string; net-new as a persisted fact (today read live off retained graphql-java objects). Extensions cannot carry descriptions, so this is the base definition's when one exists
-  PRIMARY KEY (type_name),
-  CHECK (kind IN ('OBJECT', 'INTERFACE', 'UNION', 'ENUM', 'INPUT_OBJECT', 'SCALAR'))
-);
-
--- A declaration site of a type: the base definition or one extension. All
--- five extension kinds are live today, so a type's effective shape may be
--- assembled from several files; this relation records who contributed what
--- and indexes the incremental-refresh unit ("which types does this file
--- touch"). Engine-provided types (built-in scalars) have no declaration rows.
-CREATE TABLE graphql_type_declaration (
-  type_name     VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL, -- the site's file; a site is a syntactic occurrence, so its location is its identity
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL, -- in the key because a line does not identify a site: two extensions of one type can share a line in minified SDL
-  merge_ordinal INT     NOT NULL, -- capture-assigned position in merge order: the base definition, then extensions in document order; on a base-less chain the first extension holds 0. Dense per type (a gate), and the order behind every element ordinal
-  is_extension  BOOLEAN NOT NULL, -- FALSE exactly at merge_ordinal 0 on a well-formed schema; a base-less extension chain is an author error a detection reports, never a constraint
-  kind          VARCHAR NOT NULL, -- the declaration form written at this site; a mismatch against the type row's kind is a detection
-  PRIMARY KEY (type_name, source_name, source_line, source_column),
-  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  CHECK (kind IN ('OBJECT', 'INTERFACE', 'UNION', 'ENUM', 'INPUT_OBJECT', 'SCALAR'))
-);
-
--- A field exists at a coordinate. OBJECT and INTERFACE parents make it an
--- output field, INPUT_OBJECT parents an input field; the join decides.
-CREATE TABLE graphql_field (
-  type_name           VARCHAR NOT NULL, -- owning type
-  field_name          VARCHAR NOT NULL,
-  ordinal             INT     NOT NULL, -- order in the effective type: base declaration, then extensions in document order (capture merges them from the registry)
-  declaration_line    INT     NOT NULL, -- the contributing declaration site, keyed with this row's own source_name (an authored row sits lexically inside its site; a synthesized row shares its synthesized site's inherited position)
-  declaration_column  INT     NOT NULL, -- the site key's fourth part, as on graphql_type_declaration
-  type_sdl          VARCHAR NOT NULL, -- the rendered type expression, e.g. '[Film!]!'; authoritative for wrapping fidelity
-  named_type        VARCHAR NOT NULL, -- the named type the expression bottoms out in; author-spelled, no FK, integrity is a detection
-  non_null          BOOLEAN NOT NULL, -- outermost non-null wrapper present
-  is_list           BOOLEAN NOT NULL, -- a list wrapper is present
-  item_non_null     BOOLEAN,          -- item-level non-null when is_list; NULL otherwise
-  default_value_sdl VARCHAR,          -- rendered default value; input-object fields only
-  description       VARCHAR,
-  source_name       VARCHAR NOT NULL, -- every field row comes from an SDL site (built-in scalars declare none), and a NULL here would silently disable the site FK under MATCH SIMPLE
-  source_line       INT,
-  source_column     INT,
-  PRIMARY KEY (type_name, field_name),
-  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (type_name, source_name, declaration_line, declaration_column)
-    REFERENCES graphql_type_declaration (type_name, source_name, source_line, source_column),
-  CHECK (is_list OR item_non_null IS NULL)
-);
-
--- An argument exists on a field. Net-new coordinate: today arguments are
--- classified per-field and mostly projected away, with no location kept.
-CREATE TABLE graphql_argument (
-  type_name         VARCHAR NOT NULL, -- owning type of the field the argument sits on
-  field_name        VARCHAR NOT NULL,
-  argument_name     VARCHAR NOT NULL,
-  ordinal           INT     NOT NULL, -- declaration order within the field
-  type_sdl          VARCHAR NOT NULL, -- rendered type expression, as on graphql_field
-  named_type        VARCHAR NOT NULL,
-  non_null          BOOLEAN NOT NULL,
-  is_list           BOOLEAN NOT NULL,
-  item_non_null     BOOLEAN,
-  default_value_sdl VARCHAR,          -- rendered default value, when declared
-  description       VARCHAR,
-  source_name       VARCHAR,
-  source_line       INT,
-  source_column     INT,
-  PRIMARY KEY (type_name, field_name, argument_name),
-  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name),
-  CHECK (is_list OR item_non_null IS NULL)
-);
-
--- An enum declares a value. Net-new coordinate; deprecation is not a column
--- because @deprecated is an ordinary applied directive.
-CREATE TABLE graphql_enum_value (
-  type_name           VARCHAR NOT NULL, -- the owning ENUM type
-  value_name          VARCHAR NOT NULL,
-  ordinal             INT     NOT NULL, -- order in the effective enum: base declaration, then extensions
-  declaration_line    INT     NOT NULL, -- the contributing site, as on graphql_field
-  declaration_column  INT     NOT NULL,
-  description         VARCHAR,
-  source_name         VARCHAR NOT NULL, -- NOT NULL for the same reason as on graphql_field: half of the site FK
-  source_line         INT,
-  source_column       INT,
-  PRIMARY KEY (type_name, value_name),
-  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (type_name, source_name, declaration_line, declaration_column)
-    REFERENCES graphql_type_declaration (type_name, source_name, source_line, source_column)
-);
-
--- A union lists a member type.
-CREATE TABLE graphql_union_member (
-  union_name          VARCHAR NOT NULL,
-  member_type_name    VARCHAR NOT NULL,
-  ordinal             INT     NOT NULL, -- position in the effective member list
-  declaration_line    INT     NOT NULL, -- the contributing site, as on graphql_field
-  declaration_column  INT     NOT NULL,
-  source_name         VARCHAR NOT NULL, -- position of the member token itself; NOT NULL as on graphql_field
-  source_line         INT,
-  source_column       INT,
-  PRIMARY KEY (union_name, member_type_name),
-  FOREIGN KEY (union_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (union_name, source_name, declaration_line, declaration_column)
-    REFERENCES graphql_type_declaration (type_name, source_name, source_line, source_column)
-);
-
--- A type declares that it implements an interface. Stored in declaration
--- direction; today's model keeps only the inverted interface-to-participants
--- list and reads this edge live off graphql-java.
-CREATE TABLE graphql_implements (
-  type_name           VARCHAR NOT NULL, -- the implementing OBJECT or INTERFACE
-  interface_name      VARCHAR NOT NULL,
-  declaration_line    INT     NOT NULL, -- the contributing site, as on graphql_field
-  declaration_column  INT     NOT NULL,
-  source_name         VARCHAR NOT NULL, -- position of the interface token itself; NOT NULL as on graphql_field
-  source_line         INT,
-  source_column       INT,
-  PRIMARY KEY (type_name, interface_name),
-  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (type_name, source_name, declaration_line, declaration_column)
-    REFERENCES graphql_type_declaration (type_name, source_name, source_line, source_column)
-);
-
--- The schema definition names a root operation type. These rows are the
--- seeds the reachability derivation grows from. The binding is an
--- author-spelled reference, so its dangling case mints a located diagnostic;
--- the position columns are what it locates from. (A double binding cannot
--- reach capture: a schema extension re-binding an operation throws at parse.)
-CREATE TABLE graphql_root_operation (
-  operation     VARCHAR NOT NULL, -- which root slot
-  type_name     VARCHAR NOT NULL, -- the object type serving it
-  source_name   VARCHAR,          -- position of the binding inside the schema { } block; all three NULL exactly when the binding is the name-convention default no SDL line spells
-  source_line   INT,
-  source_column INT,
-  PRIMARY KEY (operation),
-  CHECK (operation IN ('QUERY', 'MUTATION', 'SUBSCRIPTION'))
-);
-
--- The duplicate-declaration overflow, sibling of the semantic stratum's
--- undecoded-argument relation. The registry retains element-level duplicates
--- without error (a field declared twice in one body or re-declared by an
--- extension, a repeated argument, enum value, union member, or implements
--- entry, a second application of a single-application graphitron directive,
--- a repeated location or formal argument in a directive definition), so
--- every element-level natural key in this schema is author-reachable.
--- Capture is first-wins in merge order; the losing occurrence records here,
--- rendered and located, so no authored text is lost and the
--- duplicate-declaration detection has its row. Empty while assembly runs
--- upstream (assembly rejects these schemas first). A second base definition,
--- of a type or of a directive, is the duplication family the registry itself
--- rejects at parse, so the TYPE kind is reachable only through the LSP's
--- per-file fragment path.
-CREATE TABLE graphql_duplicate_declaration (
-  source_name   VARCHAR NOT NULL, -- the losing occurrence's own position identifies the row
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  element_kind  VARCHAR NOT NULL, -- which family's natural key collided
-  coordinate    VARCHAR NOT NULL, -- the colliding key, rendered (e.g. 'Q.title')
-  value_sdl     VARCHAR NOT NULL, -- the losing occurrence as written, rendered from the AST; children ride inside it, so a losing field keeps its arguments
-  PRIMARY KEY (source_name, source_line, source_column),
-  CHECK (element_kind IN ('TYPE', 'FIELD', 'ARGUMENT', 'ENUM_VALUE',
-                          'UNION_MEMBER', 'IMPLEMENTS', 'DIRECTIVE_APPLICATION',
-                          'DIRECTIVE_LOCATION', 'DIRECTIVE_ARGUMENT'))
-);
-
--- ==== Directive definitions ==================================================
--- The definition side of the directive surface: what a directive is, where it
--- may sit, what arguments it declares. Capture is total over the registry, so
--- user-authored, spec built-in, federation-imported, and graphitron's own
--- bundled definitions are all rows. An emitter re-declares the first three and
--- strips the fourth, telling them apart by source_name; the family does not
--- encode the answer. Totality is what makes every application's directive name
--- resolve to a definition, so reading a repeatable flag or an argument default
--- stays a join rather than a namespace case.
-
--- A directive is defined.
-CREATE TABLE graphql_directive (
-  directive_name VARCHAR NOT NULL,
-  repeatable     BOOLEAN NOT NULL, -- whether the definition says 'repeatable'; governs the ordinal on applications
-  description    VARCHAR,
-  source_name    VARCHAR,
-  source_line    INT,
-  source_column  INT,
-  PRIMARY KEY (directive_name)
-);
-
--- A directive definition names a permitted location.
-CREATE TABLE graphql_directive_location (
-  directive_name VARCHAR NOT NULL,
-  location       VARCHAR NOT NULL, -- introspection location name, e.g. FIELD_DEFINITION, INPUT_FIELD_DEFINITION
-  PRIMARY KEY (directive_name, location),
-  FOREIGN KEY (directive_name) REFERENCES graphql_directive (directive_name)
-);
-
--- A directive definition declares a formal argument. Carries the same
--- wrapping decode as graphql_field, so list-ness of a directive argument is
--- a column read, not a string parse.
-CREATE TABLE graphql_directive_argument (
-  directive_name    VARCHAR NOT NULL,
-  argument_name     VARCHAR NOT NULL,
-  ordinal           INT     NOT NULL, -- declaration order in the definition
-  type_sdl          VARCHAR NOT NULL, -- rendered argument type, e.g. '[ReferenceElement!]!'
-  named_type        VARCHAR NOT NULL,
-  non_null          BOOLEAN NOT NULL,
-  is_list           BOOLEAN NOT NULL,
-  item_non_null     BOOLEAN,
-  default_value_sdl VARCHAR,          -- rendered default; the value an application inherits when it omits the argument
-  description       VARCHAR,
-  source_name       VARCHAR,          -- position of the formal argument in the definition
-  source_line       INT,
-  source_column     INT,
-  PRIMARY KEY (directive_name, argument_name),
-  FOREIGN KEY (directive_name) REFERENCES graphql_directive (directive_name),
-  CHECK (is_list OR item_non_null IS NULL)
-);
-```
-
 The `graphql_` families transcribe the application surface, and the transcription is total:
 every application the author wrote is a row, graphitron's namespace included. The round trip
 reads them by filtering rather than by trusting the family to have pre-filtered, because which
@@ -492,172 +285,6 @@ already applies it twice to one type, so a type-level key without an ordinal col
 existing corpus. Raw argument values ride in a child table per family, keyed by the
 application plus the formal argument name, and the DDL ships the union view over all five
 families so no consumer hand-writes the five-arm `UNION ALL`.
-
-```sql
--- ==== Directive applications =================================================
--- One row per application the author wrote, one child row per argument the
--- author passed. Values are the rendered SDL literal, so an application is
--- legible here without knowing what the directive means. Capture is total:
--- graphitron's own applications are rows like any other, and the ones that
--- carry meaning additionally get a decoded row in the semantic stratum.
-
--- A directive is applied to the schema definition (@link lives here).
-CREATE TABLE graphql_schema_directive (
-  directive_name VARCHAR NOT NULL,
-  ordinal        INT     NOT NULL, -- 0 unless the directive is repeatable; repeats number in document order
-  source_name    VARCHAR,          -- position of the application site
-  source_line    INT,
-  source_column  INT,
-  PRIMARY KEY (directive_name, ordinal)
-);
-
--- An argument the author passed to a schema-level application.
-CREATE TABLE graphql_schema_directive_arg (
-  directive_name          VARCHAR NOT NULL,
-  ordinal                 INT     NOT NULL,
-  directive_argument_name VARCHAR NOT NULL, -- the definition's formal argument this value binds
-  value_sdl               VARCHAR NOT NULL, -- the value as written, rendered from the AST; omitted arguments are absent rows
-  PRIMARY KEY (directive_name, ordinal, directive_argument_name),
-  FOREIGN KEY (directive_name, ordinal)
-    REFERENCES graphql_schema_directive (directive_name, ordinal)
-);
-
--- A directive is applied to a type (OBJECT, INTERFACE, UNION, ENUM,
--- INPUT_OBJECT, or SCALAR; the parent kind is a join away).
-CREATE TABLE graphql_type_directive (
-  type_name           VARCHAR NOT NULL,
-  directive_name      VARCHAR NOT NULL,
-  ordinal             INT     NOT NULL, -- as on graphql_schema_directive; federation's @key repeats here
-  declaration_line    INT     NOT NULL, -- the applying site (extensions apply type directives too); a synthesized @key hangs off the type's causing authored site, per its own provenance relation below
-  declaration_column  INT     NOT NULL,
-  source_name         VARCHAR NOT NULL, -- NOT NULL as on graphql_field: half of the site FK
-  source_line         INT,
-  source_column       INT,
-  PRIMARY KEY (type_name, directive_name, ordinal),
-  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (type_name, source_name, declaration_line, declaration_column)
-    REFERENCES graphql_type_declaration (type_name, source_name, source_line, source_column)
-);
-
--- An argument the author passed to a type-level application.
-CREATE TABLE graphql_type_directive_arg (
-  type_name               VARCHAR NOT NULL,
-  directive_name          VARCHAR NOT NULL,
-  ordinal                 INT     NOT NULL,
-  directive_argument_name VARCHAR NOT NULL,
-  value_sdl               VARCHAR NOT NULL,
-  PRIMARY KEY (type_name, directive_name, ordinal, directive_argument_name),
-  FOREIGN KEY (type_name, directive_name, ordinal)
-    REFERENCES graphql_type_directive (type_name, directive_name, ordinal)
-);
-
--- A directive is applied to a field (output or input-object; the parent
--- type's kind decides which SDL location this was).
-CREATE TABLE graphql_field_directive (
-  type_name      VARCHAR NOT NULL,
-  field_name     VARCHAR NOT NULL,
-  directive_name VARCHAR NOT NULL,
-  ordinal        INT     NOT NULL, -- 0 unless the directive is repeatable; repeats number in document order
-  source_name    VARCHAR,
-  source_line    INT,
-  source_column  INT,
-  PRIMARY KEY (type_name, field_name, directive_name, ordinal),
-  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
-);
-
--- An argument the author passed to a field-level application.
-CREATE TABLE graphql_field_directive_arg (
-  type_name               VARCHAR NOT NULL,
-  field_name              VARCHAR NOT NULL,
-  directive_name          VARCHAR NOT NULL,
-  ordinal                 INT     NOT NULL,
-  directive_argument_name VARCHAR NOT NULL,
-  value_sdl               VARCHAR NOT NULL,
-  PRIMARY KEY (type_name, field_name, directive_name, ordinal, directive_argument_name),
-  FOREIGN KEY (type_name, field_name, directive_name, ordinal)
-    REFERENCES graphql_field_directive (type_name, field_name, directive_name, ordinal)
-);
-
--- A directive is applied to a field argument (ARGUMENT_DEFINITION site).
-CREATE TABLE graphql_argument_directive (
-  type_name      VARCHAR NOT NULL,
-  field_name     VARCHAR NOT NULL,
-  argument_name  VARCHAR NOT NULL, -- the SDL argument the directive sits on
-  directive_name VARCHAR NOT NULL,
-  ordinal        INT     NOT NULL, -- as on graphql_field_directive
-  source_name    VARCHAR,
-  source_line    INT,
-  source_column  INT,
-  PRIMARY KEY (type_name, field_name, argument_name, directive_name, ordinal),
-  FOREIGN KEY (type_name, field_name, argument_name)
-    REFERENCES graphql_argument (type_name, field_name, argument_name)
-);
-
--- An argument the author passed to an argument-level application.
-CREATE TABLE graphql_argument_directive_arg (
-  type_name               VARCHAR NOT NULL,
-  field_name              VARCHAR NOT NULL,
-  argument_name           VARCHAR NOT NULL,
-  directive_name          VARCHAR NOT NULL,
-  ordinal                 INT     NOT NULL,
-  directive_argument_name VARCHAR NOT NULL,
-  value_sdl               VARCHAR NOT NULL,
-  PRIMARY KEY (type_name, field_name, argument_name, directive_name, ordinal, directive_argument_name),
-  FOREIGN KEY (type_name, field_name, argument_name, directive_name, ordinal)
-    REFERENCES graphql_argument_directive (type_name, field_name, argument_name, directive_name, ordinal)
-);
-
--- A directive is applied to an enum value (@deprecated lives here, and so does
--- the graphitron enum-value inventory, which is additionally decoded).
-CREATE TABLE graphql_enum_value_directive (
-  type_name      VARCHAR NOT NULL,
-  value_name     VARCHAR NOT NULL,
-  directive_name VARCHAR NOT NULL,
-  ordinal        INT     NOT NULL, -- as on graphql_schema_directive
-  source_name    VARCHAR,
-  source_line    INT,
-  source_column  INT,
-  PRIMARY KEY (type_name, value_name, directive_name, ordinal),
-  FOREIGN KEY (type_name, value_name) REFERENCES graphql_enum_value (type_name, value_name)
-);
-
--- An argument the author passed to an enum-value application.
-CREATE TABLE graphql_enum_value_directive_arg (
-  type_name               VARCHAR NOT NULL,
-  value_name              VARCHAR NOT NULL,
-  directive_name          VARCHAR NOT NULL,
-  ordinal                 INT     NOT NULL,
-  directive_argument_name VARCHAR NOT NULL,
-  value_sdl               VARCHAR NOT NULL,
-  PRIMARY KEY (type_name, value_name, directive_name, ordinal, directive_argument_name),
-  FOREIGN KEY (type_name, value_name, directive_name, ordinal)
-    REFERENCES graphql_enum_value_directive (type_name, value_name, directive_name, ordinal)
-);
-
--- The one view the DDL ships: every application regardless of site, so a
--- consumer that wants "all applications of @x" reads one relation.
-CREATE VIEW graphql_directive_site AS
-SELECT 'SCHEMA' AS site_kind, CAST(NULL AS VARCHAR) AS type_name,
-       CAST(NULL AS VARCHAR) AS member_name, CAST(NULL AS VARCHAR) AS argument_name,
-       directive_name, ordinal, source_name, source_line, source_column
-  FROM graphql_schema_directive
-UNION ALL
-SELECT 'TYPE', type_name, NULL, NULL,
-       directive_name, ordinal, source_name, source_line, source_column
-  FROM graphql_type_directive
-UNION ALL
-SELECT 'FIELD', type_name, field_name, NULL,
-       directive_name, ordinal, source_name, source_line, source_column
-  FROM graphql_field_directive
-UNION ALL
-SELECT 'ARGUMENT', type_name, field_name, argument_name,
-       directive_name, ordinal, source_name, source_line, source_column
-  FROM graphql_argument_directive
-UNION ALL
-SELECT 'ENUM_VALUE', type_name, value_name, NULL,
-       directive_name, ordinal, source_name, source_line, source_column
-  FROM graphql_enum_value_directive;
-```
 
 The semantic stratum decodes the graphitron and federation inventory, one relation family per
 directive, filled by the same capture walk. Its rules:
@@ -720,7 +347,7 @@ directive, filled by the same capture walk. Its rules:
   this set: it is not a graphitron directive at all, and its stray declaration is a bug the
   DDL notes in place.)
 
-The inventory below is the full census: every directive `directives.graphqls` declares, plus
+The shipped inventory is the full census: every directive `directives.graphqls` declares, plus
 the two federation applications the pipeline decodes (`@key`, `@link`), each relation grounded
 in the directive's declared arguments and its actual consumers
 (`roadmap/audits/2026-08-06-directive-consumer-census.md` records the census; today's
@@ -735,840 +362,6 @@ every other application whether or not the stray declaration is removed. The `gr
 prefix names what a row is written in: graphitron's vocabulary for what an application at a
 coordinate spelled.
 
-```sql
--- ==== Semantic stratum ======================================================
-
--- @table on a type: the author binds the type to a database table. On an
--- INPUT_OBJECT the application is captured like any other; the ignored-and-
--- warned status of that site is a detection.
-CREATE TABLE graphitron_table (
-  type_name        VARCHAR NOT NULL, -- the OBJECT, INPUT_OBJECT, or INTERFACE carrying @table
-  source_name      VARCHAR NOT NULL, -- the applying declaration site (keyed with the line and column below); doubles as the file of the position columns
-  declaration_line INT     NOT NULL,
-  declaration_column INT   NOT NULL,
-  source_line      INT,              -- the application's own position
-  source_column    INT,
-  table_ref        VARCHAR,          -- the name argument as written (may carry a schema qualifier); NULL when omitted, the type-name fallback is a derivation
-  PRIMARY KEY (type_name),
-  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (type_name, source_name, declaration_line, declaration_column)
-    REFERENCES graphql_type_declaration (type_name, source_name, source_line, source_column)
-);
-
--- @field on an output or input-object field: the slot's bound name. A column,
--- a Java accessor, or a Java member depending on the backing, which is
--- classification's business; the $source / $errors sigil forms are stored as
--- written, their recognition being a prefix test SQL can express.
-CREATE TABLE graphitron_field_binding (
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  source_name   VARCHAR, -- the application's own position, here and below
-  source_line   INT,
-  source_column INT,
-  name_ref      VARCHAR NOT NULL, -- the name argument as written
-  PRIMARY KEY (type_name, field_name),
-  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
-);
-
--- @field on an argument: the filter argument's bound column.
-CREATE TABLE graphitron_argument_binding (
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  argument_name VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  name_ref      VARCHAR NOT NULL,
-  PRIMARY KEY (type_name, field_name, argument_name),
-  FOREIGN KEY (type_name, field_name, argument_name)
-    REFERENCES graphql_argument (type_name, field_name, argument_name)
-);
-
--- @field on an enum value: the database string (or Java constant) the value
--- maps to. The pivot vocabulary decode reads this relation too.
-CREATE TABLE graphitron_enum_value_binding (
-  type_name     VARCHAR NOT NULL,
-  value_name    VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  name_ref      VARCHAR NOT NULL,
-  PRIMARY KEY (type_name, value_name),
-  FOREIGN KEY (type_name, value_name) REFERENCES graphql_enum_value (type_name, value_name)
-);
-
--- @scalarType on a scalar: the Java constant backing it. Under registry
--- capture the application is read like any other; the SDL pre-pass the
--- current consumer needs (assembly strips directives off spec built-in
--- redeclarations) dies with the assembled source.
-CREATE TABLE graphitron_scalar_type (
-  type_name        VARCHAR NOT NULL,
-  source_name      VARCHAR NOT NULL, -- half of the site FK, so NOT NULL; a graphitron application always has an SDL position
-  declaration_line INT     NOT NULL,
-  declaration_column INT   NOT NULL,
-  source_line      INT,
-  source_column    INT,
-  scalar_ref       VARCHAR NOT NULL, -- the fully-qualified Java constant reference as written
-  PRIMARY KEY (type_name),
-  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (type_name, source_name, declaration_line, declaration_column)
-    REFERENCES graphql_type_declaration (type_name, source_name, source_line, source_column)
-);
-
--- @enum on an enum type. The full ExternalCodeReference is captured as
--- written, though today only arg_mapping is consumed (to reject a non-blank
--- value; the Java binding is derived by reflection and the per-value mapping
--- comes from graphitron_enum_value_binding).
-CREATE TABLE graphitron_enum (
-  type_name        VARCHAR NOT NULL,
-  source_name      VARCHAR NOT NULL, -- half of the site FK, so NOT NULL; a graphitron application always has an SDL position
-  declaration_line INT     NOT NULL,
-  declaration_column INT   NOT NULL,
-  source_line      INT,
-  source_column    INT,
-  class_name       VARCHAR, -- enumReference.className as written
-  method           VARCHAR,
-  arg_mapping      VARCHAR, -- structurally inert here; raw column only, no pair child
-  PRIMARY KEY (type_name),
-  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (type_name, source_name, declaration_line, declaration_column)
-    REFERENCES graphql_type_declaration (type_name, source_name, source_line, source_column)
-);
-
--- @condition on a field or input field (shared coordinate; the parent kind
--- decides which SDL site this was).
-CREATE TABLE graphitron_field_condition (
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  class_name    VARCHAR, -- ExternalCodeReference.className as written
-  method        VARCHAR, -- ExternalCodeReference.method as written
-  arg_mapping   VARCHAR, -- ExternalCodeReference.argMapping as written; the pair child below is its decode, the type_sdl-plus-decode pattern
-  override      BOOLEAN, -- as written; NULL when omitted (the FALSE default is derivable)
-  PRIMARY KEY (type_name, field_name),
-  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
-);
-
--- An ordered context argument of a field-site @condition.
-CREATE TABLE graphitron_field_condition_context_arg (
-  type_name  VARCHAR NOT NULL,
-  field_name VARCHAR NOT NULL,
-  position   INT     NOT NULL, -- 0-based position in the contextArguments list
-  name       VARCHAR NOT NULL,
-  PRIMARY KEY (type_name, field_name, position),
-  FOREIGN KEY (type_name, field_name)
-    REFERENCES graphitron_field_condition (type_name, field_name)
-);
-
--- An ordered pair of a field-site @condition's argMapping. Position-keyed so
--- an author's duplicate parameter survives for the duplicate detection.
-CREATE TABLE graphitron_field_condition_arg_mapping_pair (
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  position      INT     NOT NULL,
-  param_name    VARCHAR NOT NULL, -- the Java parameter (left side)
-  argument_path VARCHAR NOT NULL, -- the right side as written: a GraphQL argument name or dotted input path
-  PRIMARY KEY (type_name, field_name, position),
-  FOREIGN KEY (type_name, field_name)
-    REFERENCES graphitron_field_condition (type_name, field_name)
-);
-
--- @condition on an argument: the same decode over the three-part coordinate.
-CREATE TABLE graphitron_argument_condition (
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  argument_name VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  class_name    VARCHAR,
-  method        VARCHAR,
-  arg_mapping   VARCHAR,
-  override      BOOLEAN,
-  PRIMARY KEY (type_name, field_name, argument_name),
-  FOREIGN KEY (type_name, field_name, argument_name)
-    REFERENCES graphql_argument (type_name, field_name, argument_name)
-);
-
-CREATE TABLE graphitron_argument_condition_context_arg (
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  argument_name VARCHAR NOT NULL,
-  position      INT     NOT NULL,
-  name          VARCHAR NOT NULL,
-  PRIMARY KEY (type_name, field_name, argument_name, position),
-  FOREIGN KEY (type_name, field_name, argument_name)
-    REFERENCES graphitron_argument_condition (type_name, field_name, argument_name)
-);
-
-CREATE TABLE graphitron_argument_condition_arg_mapping_pair (
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  argument_name VARCHAR NOT NULL,
-  position      INT     NOT NULL,
-  param_name    VARCHAR NOT NULL,
-  argument_path VARCHAR NOT NULL,
-  PRIMARY KEY (type_name, field_name, argument_name, position),
-  FOREIGN KEY (type_name, field_name, argument_name)
-    REFERENCES graphitron_argument_condition (type_name, field_name, argument_name)
-);
-
--- @reference on a field or input field: one row per application, because an
--- application is a fact of its own. An empty path means FK auto-discovery
--- between the endpoints, and the rule that every application in a
--- multi-application chain must carry an element is per-application; both are
--- invisible in a flat concatenated chain. The effective chain the consumers
--- read is the steps ordered by (ordinal, position), and the written-order
--- interleaving with @routine applications on the same field is an ORDER BY
--- over the two relations' source positions.
-CREATE TABLE graphitron_field_reference (
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  ordinal       INT     NOT NULL, -- repeatable; document order
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  PRIMARY KEY (type_name, field_name, ordinal),
-  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
-);
-
--- An ordered path element of one @reference application; the step's
--- ExternalCodeReference condition flattens in place.
-CREATE TABLE graphitron_field_reference_step (
-  type_name   VARCHAR NOT NULL,
-  field_name  VARCHAR NOT NULL,
-  ordinal     INT     NOT NULL,
-  position    INT     NOT NULL, -- 0-based within the application's path
-  table_ref   VARCHAR,          -- ReferenceElement.table as written
-  key_ref     VARCHAR,          -- ReferenceElement.key as written (may carry a schema qualifier)
-  class_name  VARCHAR,
-  method      VARCHAR,
-  arg_mapping VARCHAR,
-  PRIMARY KEY (type_name, field_name, ordinal, position),
-  FOREIGN KEY (type_name, field_name, ordinal)
-    REFERENCES graphitron_field_reference (type_name, field_name, ordinal)
-);
-
--- An ordered pair of a step condition's argMapping.
-CREATE TABLE graphitron_field_reference_step_arg_mapping_pair (
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  ordinal       INT     NOT NULL,
-  step_position INT     NOT NULL,
-  position      INT     NOT NULL,
-  param_name    VARCHAR NOT NULL,
-  argument_path VARCHAR NOT NULL,
-  PRIMARY KEY (type_name, field_name, ordinal, step_position, position),
-  FOREIGN KEY (type_name, field_name, ordinal, step_position)
-    REFERENCES graphitron_field_reference_step (type_name, field_name, ordinal, position)
-);
-
--- @reference on an argument: the same family over the three-part coordinate.
-CREATE TABLE graphitron_argument_reference (
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  argument_name VARCHAR NOT NULL,
-  ordinal       INT     NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  PRIMARY KEY (type_name, field_name, argument_name, ordinal),
-  FOREIGN KEY (type_name, field_name, argument_name)
-    REFERENCES graphql_argument (type_name, field_name, argument_name)
-);
-
-CREATE TABLE graphitron_argument_reference_step (
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  argument_name VARCHAR NOT NULL,
-  ordinal       INT     NOT NULL,
-  position      INT     NOT NULL,
-  table_ref     VARCHAR,
-  key_ref       VARCHAR,
-  class_name    VARCHAR,
-  method        VARCHAR,
-  arg_mapping   VARCHAR,
-  PRIMARY KEY (type_name, field_name, argument_name, ordinal, position),
-  FOREIGN KEY (type_name, field_name, argument_name, ordinal)
-    REFERENCES graphitron_argument_reference (type_name, field_name, argument_name, ordinal)
-);
-
-CREATE TABLE graphitron_argument_reference_step_arg_mapping_pair (
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  argument_name VARCHAR NOT NULL,
-  ordinal       INT     NOT NULL,
-  step_position INT     NOT NULL,
-  position      INT     NOT NULL,
-  param_name    VARCHAR NOT NULL,
-  argument_path VARCHAR NOT NULL,
-  PRIMARY KEY (type_name, field_name, argument_name, ordinal, step_position, position),
-  FOREIGN KEY (type_name, field_name, argument_name, ordinal, step_position)
-    REFERENCES graphitron_argument_reference_step (type_name, field_name, argument_name, ordinal, position)
-);
-
--- @referenceFor on a field: an explicit join path for one participant of a
--- multi-table interface or union child. Keyed by ordinal per the repeatable
--- rule; the consumption-side keying by participant makes a repeated
--- participant a detection, never a collision.
-CREATE TABLE graphitron_reference_for (
-  type_name            VARCHAR NOT NULL,
-  field_name           VARCHAR NOT NULL,
-  ordinal              INT     NOT NULL,
-  source_name          VARCHAR,
-  source_line          INT,
-  source_column        INT,
-  participant_type_ref VARCHAR NOT NULL, -- the type argument as written; author-spelled, no FK
-  PRIMARY KEY (type_name, field_name, ordinal),
-  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
-);
-
-CREATE TABLE graphitron_reference_for_step (
-  type_name   VARCHAR NOT NULL,
-  field_name  VARCHAR NOT NULL,
-  ordinal     INT     NOT NULL,
-  position    INT     NOT NULL,
-  table_ref   VARCHAR,
-  key_ref     VARCHAR,
-  class_name  VARCHAR,
-  method      VARCHAR,
-  arg_mapping VARCHAR,
-  PRIMARY KEY (type_name, field_name, ordinal, position),
-  FOREIGN KEY (type_name, field_name, ordinal)
-    REFERENCES graphitron_reference_for (type_name, field_name, ordinal)
-);
-
-CREATE TABLE graphitron_reference_for_step_arg_mapping_pair (
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  ordinal       INT     NOT NULL,
-  step_position INT     NOT NULL,
-  position      INT     NOT NULL,
-  param_name    VARCHAR NOT NULL,
-  argument_path VARCHAR NOT NULL,
-  PRIMARY KEY (type_name, field_name, ordinal, step_position, position),
-  FOREIGN KEY (type_name, field_name, ordinal, step_position)
-    REFERENCES graphitron_reference_for_step (type_name, field_name, ordinal, position)
-);
-
--- @service on a field: the external service reference.
-CREATE TABLE graphitron_service (
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  class_name    VARCHAR,
-  method        VARCHAR,
-  arg_mapping   VARCHAR,
-  PRIMARY KEY (type_name, field_name),
-  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
-);
-
-CREATE TABLE graphitron_service_context_arg (
-  type_name  VARCHAR NOT NULL,
-  field_name VARCHAR NOT NULL,
-  position   INT     NOT NULL,
-  name       VARCHAR NOT NULL,
-  PRIMARY KEY (type_name, field_name, position),
-  FOREIGN KEY (type_name, field_name) REFERENCES graphitron_service (type_name, field_name)
-);
-
-CREATE TABLE graphitron_service_arg_mapping_pair (
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  position      INT     NOT NULL,
-  param_name    VARCHAR NOT NULL,
-  argument_path VARCHAR NOT NULL,
-  PRIMARY KEY (type_name, field_name, position),
-  FOREIGN KEY (type_name, field_name) REFERENCES graphitron_service (type_name, field_name)
-);
-
--- @externalField on a field: the static jOOQ-Field method. The omitted-method
--- fallback (the field name) is a derivation; arg_mapping is inert here (raw
--- column only, its rejection is presence-triggered).
-CREATE TABLE graphitron_external_field (
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  class_name    VARCHAR,
-  method        VARCHAR,
-  arg_mapping   VARCHAR,
-  PRIMARY KEY (type_name, field_name),
-  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
-);
-
--- @sourceRow on a field: the parent-side join-key lifter. Flat arguments by
--- declaration, not an ExternalCodeReference.
-CREATE TABLE graphitron_source_row (
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  class_name    VARCHAR NOT NULL,
-  method        VARCHAR NOT NULL,
-  PRIMARY KEY (type_name, field_name),
-  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
-);
-
--- @asConnection on a field: the macro's spec, as authored. The expansion's
--- output is provenance-marked rows in the graphql_ tables, below.
-CREATE TABLE graphitron_connection (
-  type_name           VARCHAR NOT NULL,
-  field_name          VARCHAR NOT NULL,
-  source_name         VARCHAR,
-  source_line         INT,
-  source_column       INT,
-  default_first_value INT,     -- as written; NULL when omitted
-  connection_name     VARCHAR, -- the deprecated shared-type override, as written; honoured by the expansion, deprecation is a lint detection
-  PRIMARY KEY (type_name, field_name),
-  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
-);
-
--- @asFacet on an input field: a marker; the bound column comes from
--- graphitron_field_binding, and every misuse arm is a detection.
-CREATE TABLE graphitron_facet (
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  PRIMARY KEY (type_name, field_name),
-  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
-);
-
--- @orderBy on an argument: a marker; the input shape rules are detections.
-CREATE TABLE graphitron_order_by (
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  argument_name VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  PRIMARY KEY (type_name, field_name, argument_name),
-  FOREIGN KEY (type_name, field_name, argument_name)
-    REFERENCES graphql_argument (type_name, field_name, argument_name)
-);
-
--- @order on an enum value: a sorting specification. The exactly-one-of rule
--- over index, fields, and primaryKey is a detection.
-CREATE TABLE graphitron_order (
-  type_name     VARCHAR NOT NULL,
-  value_name    VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  index_ref     VARCHAR, -- database index name as written
-  primary_key   BOOLEAN, -- as written; NULL when omitted
-  PRIMARY KEY (type_name, value_name),
-  FOREIGN KEY (type_name, value_name) REFERENCES graphql_enum_value (type_name, value_name)
-);
-
--- An ordered FieldSort entry of an @order.
-CREATE TABLE graphitron_order_field (
-  type_name  VARCHAR NOT NULL,
-  value_name VARCHAR NOT NULL,
-  position   INT     NOT NULL,
-  name_ref   VARCHAR NOT NULL, -- FieldSort.name, a column reference as written
-  collate    VARCHAR,
-  direction  VARCHAR, -- as written; author-spelled enum literal, open column
-  PRIMARY KEY (type_name, value_name, position),
-  FOREIGN KEY (type_name, value_name) REFERENCES graphitron_order (type_name, value_name)
-);
-
--- @index on an enum value: the deprecated alias of @order(index:), still
--- honoured when @order is absent; the deprecation is a lint detection.
-CREATE TABLE graphitron_index (
-  type_name     VARCHAR NOT NULL,
-  value_name    VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  index_ref     VARCHAR, -- the name argument, which the declaration leaves optional
-  PRIMARY KEY (type_name, value_name),
-  FOREIGN KEY (type_name, value_name) REFERENCES graphql_enum_value (type_name, value_name)
-);
-
--- @defaultOrder on a field: the same specification shape plus the
--- directive-level direction that serves as the per-entry fallback.
-CREATE TABLE graphitron_default_order (
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  index_ref     VARCHAR,
-  primary_key   BOOLEAN,
-  direction     VARCHAR, -- as written; open column, the ASC default is a derivation
-  PRIMARY KEY (type_name, field_name),
-  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
-);
-
-CREATE TABLE graphitron_default_order_field (
-  type_name  VARCHAR NOT NULL,
-  field_name VARCHAR NOT NULL,
-  position   INT     NOT NULL,
-  name_ref   VARCHAR NOT NULL,
-  collate    VARCHAR,
-  direction  VARCHAR,
-  PRIMARY KEY (type_name, field_name, position),
-  FOREIGN KEY (type_name, field_name) REFERENCES graphitron_default_order (type_name, field_name)
-);
-
--- @mutation on a field: the DML statement spec.
-CREATE TABLE graphitron_mutation (
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  operation     VARCHAR NOT NULL, -- the typeName argument as written (INSERT / UPDATE / DELETE / UPSERT); open column per the enum-literal rule
-  multi_row     BOOLEAN, -- as written; NULL when omitted
-  table_ref     VARCHAR, -- the DELETE write target as written
-  PRIMARY KEY (type_name, field_name),
-  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
-);
-
--- @error on an object type: presence; the handlers list decodes into the
--- ordered child, and every cross-field handler rule is a detection.
-CREATE TABLE graphitron_error (
-  type_name        VARCHAR NOT NULL,
-  source_name      VARCHAR NOT NULL, -- half of the site FK, so NOT NULL; a graphitron application always has an SDL position
-  declaration_line INT     NOT NULL,
-  declaration_column INT   NOT NULL,
-  source_line      INT,
-  source_column    INT,
-  PRIMARY KEY (type_name),
-  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (type_name, source_name, declaration_line, declaration_column)
-    REFERENCES graphql_type_declaration (type_name, source_name, source_line, source_column)
-);
-
--- An ordered ErrorHandler of an @error application.
-CREATE TABLE graphitron_error_handler (
-  type_name   VARCHAR NOT NULL,
-  position    INT     NOT NULL,
-  handler     VARCHAR NOT NULL, -- GENERIC / DATABASE / VALIDATION as written; open column
-  class_name  VARCHAR,
-  code        VARCHAR,
-  sql_state   VARCHAR,
-  matches     VARCHAR,
-  description VARCHAR,
-  PRIMARY KEY (type_name, position),
-  FOREIGN KEY (type_name) REFERENCES graphitron_error (type_name)
-);
-
--- @node on an object type: node identity. The type-name fallback for typeId
--- and the catalog-PK fallback for key columns are derivations; the
--- SDL-versus-jOOQ-metadata precedence rules are detections.
-CREATE TABLE graphitron_node (
-  type_name        VARCHAR NOT NULL,
-  source_name      VARCHAR NOT NULL, -- half of the site FK, so NOT NULL; a graphitron application always has an SDL position
-  declaration_line INT     NOT NULL,
-  declaration_column INT   NOT NULL,
-  source_line      INT,
-  source_column    INT,
-  type_id          VARCHAR, -- as written
-  PRIMARY KEY (type_name),
-  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (type_name, source_name, declaration_line, declaration_column)
-    REFERENCES graphql_type_declaration (type_name, source_name, source_line, source_column)
-);
-
--- An ordered keyColumns entry of an @node.
-CREATE TABLE graphitron_node_key_column (
-  type_name  VARCHAR NOT NULL,
-  position   INT     NOT NULL,
-  column_ref VARCHAR NOT NULL,
-  PRIMARY KEY (type_name, position),
-  FOREIGN KEY (type_name) REFERENCES graphitron_node (type_name)
-);
-
--- @nodeId on a field or input field.
-CREATE TABLE graphitron_field_node_id (
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  node_type_ref VARCHAR, -- typeName as written; author-spelled type reference, no FK, inference when NULL is a derivation
-  PRIMARY KEY (type_name, field_name),
-  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
-);
-
--- @nodeId on an argument.
-CREATE TABLE graphitron_argument_node_id (
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  argument_name VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  node_type_ref VARCHAR,
-  PRIMARY KEY (type_name, field_name, argument_name),
-  FOREIGN KEY (type_name, field_name, argument_name)
-    REFERENCES graphql_argument (type_name, field_name, argument_name)
-);
-
--- @lookupKey on an argument: the live site, a marker.
-CREATE TABLE graphitron_argument_lookup_key (
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  argument_name VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  PRIMARY KEY (type_name, field_name, argument_name),
-  FOREIGN KEY (type_name, field_name, argument_name)
-    REFERENCES graphql_argument (type_name, field_name, argument_name)
-);
-
--- @lookupKey on an input field: the retired site; the sole consumer is the
--- located migration rejection.
-CREATE TABLE graphitron_field_lookup_key (
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  PRIMARY KEY (type_name, field_name),
-  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
-);
-
--- @splitQuery on a field: a marker.
-CREATE TABLE graphitron_split_query (
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  PRIMARY KEY (type_name, field_name),
-  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
-);
-
--- @tenantFanOut on a field: a marker; its many conflict arms are detections.
-CREATE TABLE graphitron_tenant_fan_out (
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  PRIMARY KEY (type_name, field_name),
-  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
-);
-
--- @pivot on a field: the aggregate-projection spec.
-CREATE TABLE graphitron_pivot (
-  type_name      VARCHAR NOT NULL,
-  field_name     VARCHAR NOT NULL,
-  source_name    VARCHAR,
-  source_line    INT,
-  source_column  INT,
-  on_column      VARCHAR NOT NULL, -- the on: argument, the discriminator column as written
-  value_column   VARCHAR NOT NULL, -- the value: argument as written
-  vocabulary_ref VARCHAR, -- names an enum type; author-spelled, no FK
-  PRIMARY KEY (type_name, field_name),
-  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
-);
-
--- @routine on a field: one row per application (repeatable). The table chain
--- interleaves these with graphitron_field_reference rows in written order.
-CREATE TABLE graphitron_routine (
-  type_name      VARCHAR NOT NULL,
-  field_name     VARCHAR NOT NULL,
-  ordinal        INT     NOT NULL,
-  source_name    VARCHAR,
-  source_line    INT,
-  source_column  INT,
-  routine_ref    VARCHAR NOT NULL, -- the routine name as written (may carry a schema qualifier)
-  arg_mapping    VARCHAR,
-  column_mapping VARCHAR,
-  PRIMARY KEY (type_name, field_name, ordinal),
-  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
-);
-
-CREATE TABLE graphitron_routine_arg_mapping_pair (
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  ordinal       INT     NOT NULL,
-  position      INT     NOT NULL,
-  param_name    VARCHAR NOT NULL,
-  argument_path VARCHAR NOT NULL,
-  PRIMARY KEY (type_name, field_name, ordinal, position),
-  FOREIGN KEY (type_name, field_name, ordinal)
-    REFERENCES graphitron_routine (type_name, field_name, ordinal)
-);
-
--- columnMapping pairs bind routine parameters to previous-node columns; a
--- dotted right side is captured as written and rejected by detection.
-CREATE TABLE graphitron_routine_column_mapping_pair (
-  type_name  VARCHAR NOT NULL,
-  field_name VARCHAR NOT NULL,
-  ordinal    INT     NOT NULL,
-  position   INT     NOT NULL,
-  param_name VARCHAR NOT NULL,
-  column_ref VARCHAR NOT NULL,
-  PRIMARY KEY (type_name, field_name, ordinal, position),
-  FOREIGN KEY (type_name, field_name, ordinal)
-    REFERENCES graphitron_routine (type_name, field_name, ordinal)
-);
-
--- @experimental_constructType has no relation, and unlike every other name
--- in this stratum it is not a graphitron directive: its declaration in
--- directives.graphqls is a bug (the census found no consumer anywhere; the
--- declaration's only effect is that emission strips applications, silently
--- swallowing a directive graphitron does not own). Once the stray
--- declaration is removed the name is foreign like any user-authored
--- directive and its applications land in the graphql_ family as fidelity
--- rows, re-emitted verbatim; the store needs no special case for it.
-
--- @discriminate on an interface or union: the discriminator column.
-CREATE TABLE graphitron_discriminate (
-  type_name        VARCHAR NOT NULL,
-  source_name      VARCHAR NOT NULL, -- half of the site FK, so NOT NULL; a graphitron application always has an SDL position
-  declaration_line INT     NOT NULL,
-  declaration_column INT   NOT NULL,
-  source_line      INT,
-  source_column    INT,
-  on_column        VARCHAR NOT NULL, -- the on: argument as written; catalog resolution is a derivation
-  PRIMARY KEY (type_name),
-  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (type_name, source_name, declaration_line, declaration_column)
-    REFERENCES graphql_type_declaration (type_name, source_name, source_line, source_column)
-);
-
--- @discriminator on an object type: the participant's discriminator value.
-CREATE TABLE graphitron_discriminator (
-  type_name           VARCHAR NOT NULL,
-  source_name         VARCHAR NOT NULL, -- half of the site FK, so NOT NULL
-  declaration_line    INT     NOT NULL,
-  declaration_column  INT     NOT NULL,
-  source_line         INT,
-  source_column       INT,
-  discriminator_value VARCHAR NOT NULL, -- the value: argument as written (VALUE alone is an H2 reserved word)
-  PRIMARY KEY (type_name),
-  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (type_name, source_name, declaration_line, declaration_column)
-    REFERENCES graphql_type_declaration (type_name, source_name, source_line, source_column)
-);
-
--- Federation @key, decoded for consumption (its verbatim twin lives in
--- graphql_type_directive for re-emission; a gate query pins agreement).
-CREATE TABLE graphitron_federation_key (
-  type_name        VARCHAR NOT NULL,
-  ordinal          INT     NOT NULL, -- @key is repeatable; document order
-  source_name      VARCHAR NOT NULL, -- the applying declaration site; a synthesized key inherits the causing authored site of the same type, so the reference holds for it too
-  declaration_line INT     NOT NULL,
-  declaration_column INT   NOT NULL,
-  source_line      INT,
-  source_column    INT,
-  fields_sdl       VARCHAR NOT NULL, -- the field-set literal as written
-  resolvable       BOOLEAN,          -- as written; NULL when omitted
-  PRIMARY KEY (type_name, ordinal),
-  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (type_name, source_name, declaration_line, declaration_column)
-    REFERENCES graphql_type_declaration (type_name, source_name, source_line, source_column)
-);
-
--- An ordered element of a @key field set (the field-set grammar is a parse
--- boundary, so the decode happens at capture). The grammar admits nested
--- selections as dotted paths; that today's consumer rejects nesting is a
--- detection, not a capture limit.
-CREATE TABLE graphitron_federation_key_field (
-  type_name  VARCHAR NOT NULL,
-  ordinal    INT     NOT NULL,
-  position   INT     NOT NULL, -- 0-based within the field set
-  field_path VARCHAR NOT NULL, -- dotted path for nested selections
-  PRIMARY KEY (type_name, ordinal, position),
-  FOREIGN KEY (type_name, ordinal)
-    REFERENCES graphitron_federation_key (type_name, ordinal)
-);
-
--- @link on the schema definition, decoded. All @link applications decode
--- here (the verbatim twin sits in graphql_schema_directive); whether a link
--- is the federation opt-in is a predicate over url, a derivation. @tag and
--- @shareable get no decoded relations: their only readers are the expansion
--- machinery itself, which is the capture walk with the AST in hand, so
--- downstream consumers see them only as fidelity rows for re-emission.
-CREATE TABLE graphitron_link (
-  ordinal       INT     NOT NULL, -- @link is repeatable; document order
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  url           VARCHAR, -- as written
-  PRIMARY KEY (ordinal)
-);
-
--- An ordered import entry of an @link, covering both the string form and the
--- object form.
-CREATE TABLE graphitron_link_import (
-  link_ordinal INT     NOT NULL,
-  position     INT     NOT NULL,
-  name         VARCHAR NOT NULL, -- the imported name (the object form's name:)
-  alias        VARCHAR,          -- the object form's as:, when written
-  PRIMARY KEY (link_ordinal, position),
-  FOREIGN KEY (link_ordinal) REFERENCES graphitron_link (ordinal)
-);
-
--- Retired directives: existence only, per the rules above.
-
--- @notGenerated, like @experimental_constructType above, is not a graphitron
--- directive and its declaration in directives.graphqls is a bug, so it gets
--- no relations. Once the stray declaration is removed its applications take
--- the graphql_ fidelity path, and the current hard rejection ("no longer
--- supported") becomes, if it is kept at all, a detection over the directive
--- name in the graphql_ rows; whether to keep steering on a name graphitron
--- does not own is a directive-lifecycle question outside this spec.
-
--- @multitableReference (removed) on a field; routes is never read.
-CREATE TABLE graphitron_multitable_reference (
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  PRIMARY KEY (type_name, field_name),
-  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name)
-);
-
--- @record (deprecated, ignored) on an object or input type. class_name is
--- the one payload value a consumer reads: the warning arms compare it
--- against the reflected backing class.
-CREATE TABLE graphitron_record (
-  type_name        VARCHAR NOT NULL,
-  source_name      VARCHAR NOT NULL, -- half of the site FK, so NOT NULL; a graphitron application always has an SDL position
-  declaration_line INT     NOT NULL,
-  declaration_column INT   NOT NULL,
-  source_line      INT,
-  source_column    INT,
-  class_name       VARCHAR, -- record.className as written
-  PRIMARY KEY (type_name),
-  FOREIGN KEY (type_name) REFERENCES graphql_type (type_name),
-  FOREIGN KEY (type_name, source_name, declaration_line, declaration_column)
-    REFERENCES graphql_type_declaration (type_name, source_name, source_line, source_column)
-);
-
--- The tolerant-decode overflow: a graphitron application argument whose
--- literal does not fit the declared shape decodes to NULL in its typed
--- column and quarantines its raw text here, so the authored value is never
--- lost and the malformed-literal detection has its row. Empty while assembly
--- runs upstream.
-CREATE TABLE graphitron_undecoded_argument (
-  source_name             VARCHAR NOT NULL, -- the application's position identifies the row; authored applications always have one
-  source_line             INT     NOT NULL,
-  source_column           INT     NOT NULL,
-  directive_name          VARCHAR NOT NULL,
-  directive_argument_name VARCHAR NOT NULL,
-  value_sdl               VARCHAR NOT NULL, -- the literal as written, rendered from the AST
-  PRIMARY KEY (source_name, source_line, source_column, directive_name, directive_argument_name)
-);
-```
-
 Macros expand during the same capture walk when their contribution is a function of one carrier's
 own declaration, which is the same type-locality rule the rest of the walk follows. `@asConnection`
 qualifies: it is schema construction rather than a question over facts, the visitor holds everything
@@ -1577,7 +370,8 @@ enters as a name that nothing here resolves. So the walk expands it inline:
 a macro's contribution enters as declaration sites at the causing position (a definition
 site for each type it creates, an extension site where it adds members to an existing type),
 its element rows hang off those sites through the ordinary declaration reference, and the
-provenance relations below mark the sites, the synthesized applications, and the rewrites.
+three `graphitron_*_synthesis` provenance relations mark the sites, the synthesized applications,
+and the rewrites.
 The authored picture is the rows whose sites are authored; the effective picture is the
 tables as they stand; the round trip emits the effective picture minus the graphitron
 namespace. Name collision is
@@ -1606,115 +400,55 @@ stratum by the same rule that keeps name resolution and effective-value defaulti
 stays a marker relation here; the container is out of this item's scope with the rest of derivation,
 and the macro domains on the provenance relations carry no FACET value as a result.
 
-```sql
--- ==== Macro synthesis provenance =============================================
--- The expansion's own record: which graphql_ rows a macro added, and the
--- authored text where the macro rewrote it. Synthesized rows inherit the
--- causing application's source position; these relations are what say a
--- position means "caused here" rather than "written here".
+### `sql_`, and the constraint supertype
 
--- A declaration site was contributed by a macro rather than the author: a
--- definition site when the macro creates the type (Connection, Edge, facet
--- shapes, at merge_ordinal 0), an extension site when it adds members to an
--- existing type (the Query fields federation adds from @link), and an empty
--- extension site when a later carrier touches a shared machinery type
--- (PageInfo), so carrier multiplicity is the site count. Synthesized element
--- rows hang off these sites through the ordinary declaration reference,
--- which is what marks additions without per-element provenance; a type is
--- synthesized exactly when its merge_ordinal-0 site is.
-CREATE TABLE graphitron_type_declaration_synthesis (
-  type_name          VARCHAR NOT NULL,
-  source_name        VARCHAR NOT NULL, -- the causing application's position, which is the site's identity
-  source_line        INT     NOT NULL,
-  source_column      INT     NOT NULL, -- the site key's fourth part, as on graphql_type_declaration
-  macro              VARCHAR NOT NULL, -- which expansion contributed the site
-  carrier_type_name  VARCHAR,          -- the causing coordinate; NULL for schema-level causes (@link)
-  carrier_field_name VARCHAR,
-  PRIMARY KEY (type_name, source_name, source_line, source_column),
-  FOREIGN KEY (type_name, source_name, source_line, source_column)
-    REFERENCES graphql_type_declaration (type_name, source_name, source_line, source_column),
-  CHECK (macro IN ('CONNECTION', 'FEDERATION'))
-);
+`sql_` rows are keyed `(table_schema, table_name)` end to end; ambiguity of an unqualified
+`@table(name:)` is a resolution question and therefore derivation, so capture just records every
+table. Foreign keys are stored once, on the declaring side; the incoming direction `CatalogFacts`
+denormalizes bidirectionally is a query here, which is the point of having a store. Multi-column
+constraints and indexes are ordered child tables, the spike's rich-value pattern.
 
--- A field's type expression was rewritten by a macro; the authored expression
--- survives here while the field's graphql_field row holds the effective one.
-CREATE TABLE graphitron_field_synthesis (
-  type_name         VARCHAR NOT NULL,
-  field_name        VARCHAR NOT NULL,
-  macro             VARCHAR NOT NULL,
-  authored_type_sdl VARCHAR NOT NULL, -- the type expression as the author wrote it, pre-expansion
-  PRIMARY KEY (type_name, field_name),
-  FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name),
-  CHECK (macro IN ('CONNECTION'))
-);
+Constraints take the shape every real catalog uses: **one supertype relation discriminated by
+type**, with per-form detail in siblings. Oracle's dictionary carries `ALL_CONSTRAINTS` with a
+`CONSTRAINT_TYPE` of `P` / `U` / `R` / `C` over one `ALL_CONS_COLUMNS`; the standard's
+`INFORMATION_SCHEMA` carries `TABLE_CONSTRAINTS` with a `constraint_type`, `KEY_COLUMN_USAGE` for
+the local columns of every keyed form, and `REFERENTIAL_CONSTRAINTS` as the foreign-key-only
+extension. Two independent designs converged, which is evidence about the shape rather than about
+either vendor, and this schema already votes the same way elsewhere: `graphql_type` is a supertype
+over six declaration forms with a CHECK-constrained `kind`, and the conventions state outright that
+closed taxonomies are CHECK constraints. The gain is not tidiness. "What constrains this table?" is
+a union under the old shape and one predicate under this one; a detection ranging over constraints
+(a `@node(keyColumns:)` naming a column set that is not unique) has one relation to read; and the
+forms this iteration does not capture (CHECK, NOT NULL, deferrability) arrive later as type values
+rather than as new relations with new anchors.
 
--- A type-level directive application was synthesized rather than authored
--- (federation key synthesis; the application itself sits in
--- graphql_type_directive and graphitron_federation_key like any other, and must
--- re-emit, so provenance is this relation, not exclusion).
-CREATE TABLE graphitron_type_directive_synthesis (
-  type_name      VARCHAR NOT NULL,
-  directive_name VARCHAR NOT NULL,
-  ordinal        INT     NOT NULL,
-  macro          VARCHAR NOT NULL,
-  PRIMARY KEY (type_name, directive_name, ordinal),
-  FOREIGN KEY (type_name, directive_name, ordinal)
-    REFERENCES graphql_type_directive (type_name, directive_name, ordinal),
-  CHECK (macro IN ('FEDERATION_KEY'))
-);
-```
-
-Catalog facts are keyed `(table_schema, table_name)` end to end, matching `CatalogFacts`'
-schema-qualified keying; ambiguity of an unqualified `@table(name:)` is a resolution question
-and therefore derivation, so capture just records every table. Foreign keys are stored once, on
-the declaring side; the incoming direction `CatalogFacts` denormalizes bidirectionally is a
-query here, which is the point of having a store. Multi-column keys and foreign keys are ordered
-child tables, the spike's rich-value pattern.
+The extension split follows the standard rather than Oracle, which hangs foreign-key-only columns
+off the supertype to sit NULL on every other row: this schema prefers an absent row to a null
+column.
 
 ```sql
--- ==== Catalog facts ==========================================================
--- What the jOOQ catalog scan sees in the consumer's generated database model.
+-- ==== SQL catalog facts ======================================================
+-- What the consumer's database declares, in SQL's vocabulary. jOOQ's generated
+-- model is the reader, not the owner: reading INFORMATION_SCHEMA directly
+-- instead would leave every relation name here correct.
 
--- A table exists in the consumer's catalog.
-CREATE TABLE catalog_table (
-  table_schema VARCHAR NOT NULL, -- SQL schema the table lives in
-  table_name   VARCHAR NOT NULL, -- SQL table name
-  java_name    VARCHAR NOT NULL, -- the generated jOOQ Java field name for the table
-  description  VARCHAR,          -- the database comment on the table, when present
-  PRIMARY KEY (table_schema, table_name)
-);
-
--- A column exists on a table. SQL name is the coordinate, matching
--- CatalogFacts' SQL-name-centric keying; the Java name rides along because
--- the LSP surface is Java-name-centric.
-CREATE TABLE catalog_column (
-  table_schema VARCHAR NOT NULL,
-  table_name   VARCHAR NOT NULL,
-  column_name  VARCHAR NOT NULL, -- SQL column name
-  ordinal      INT     NOT NULL, -- column position in the table definition
-  java_name    VARCHAR NOT NULL, -- generated jOOQ Java field name
-  sql_type     VARCHAR NOT NULL, -- the column's SQL type as jOOQ reports it
-  nullable     BOOLEAN NOT NULL,
-  description  VARCHAR,          -- the database comment on the column, when present
-  PRIMARY KEY (table_schema, table_name, column_name),
-  FOREIGN KEY (table_schema, table_name) REFERENCES catalog_table (table_schema, table_name)
-);
-
--- A uniqueness constraint exists on a table. Every unique constraint jOOQ
--- reports is a row, with the primary key flagged rather than segregated
--- (CatalogFacts excludes the PK from uniqueKeys; that is a projection choice,
--- not a fact).
-CREATE TABLE catalog_key (
+-- A named constraint exists on a table. The supertype: one row per constraint
+-- whatever its form. UNIQUE and PRIMARY KEY and FOREIGN KEY are what this
+-- iteration captures; CHECK and NOT NULL arrive as further type values.
+CREATE TABLE sql_constraint (
   table_schema    VARCHAR NOT NULL,
   table_name      VARCHAR NOT NULL,
   constraint_name VARCHAR NOT NULL,
-  is_primary      BOOLEAN NOT NULL, -- TRUE for the primary key, FALSE for other unique constraints
+  constraint_type VARCHAR NOT NULL, -- the standard's TABLE_CONSTRAINTS vocabulary
   PRIMARY KEY (table_schema, table_name, constraint_name),
-  FOREIGN KEY (table_schema, table_name) REFERENCES catalog_table (table_schema, table_name)
+  FOREIGN KEY (table_schema, table_name) REFERENCES sql_table (table_schema, table_name),
+  CHECK (constraint_type IN ('PRIMARY KEY', 'UNIQUE', 'FOREIGN KEY'))
 );
 
--- An ordered column of a uniqueness constraint.
-CREATE TABLE catalog_key_column (
+-- An ordered column of a constraint: the key columns of a primary key or a
+-- unique constraint, and the referencing columns of a foreign key, in one
+-- relation for all three forms as KEY_COLUMN_USAGE does.
+CREATE TABLE sql_constraint_column (
   table_schema    VARCHAR NOT NULL,
   table_name      VARCHAR NOT NULL,
   constraint_name VARCHAR NOT NULL,
@@ -1722,129 +456,129 @@ CREATE TABLE catalog_key_column (
   column_name     VARCHAR NOT NULL,
   PRIMARY KEY (table_schema, table_name, constraint_name, position),
   FOREIGN KEY (table_schema, table_name, constraint_name)
-    REFERENCES catalog_key (table_schema, table_name, constraint_name),
+    REFERENCES sql_constraint (table_schema, table_name, constraint_name),
   FOREIGN KEY (table_schema, table_name, column_name)
-    REFERENCES catalog_column (table_schema, table_name, column_name)
+    REFERENCES sql_column (table_schema, table_name, column_name)
 );
 
--- A foreign key exists, keyed by the declaring (source) table. Implicit-path
--- inference ("exactly one FK between these two tables") is a derivation over
--- this relation, not a captured fact.
-CREATE TABLE catalog_foreign_key (
-  table_schema    VARCHAR NOT NULL, -- schema of the declaring table
-  table_name      VARCHAR NOT NULL, -- the declaring (source) table
-  constraint_name VARCHAR NOT NULL,
-  target_schema   VARCHAR NOT NULL,
-  target_table    VARCHAR NOT NULL,
-  PRIMARY KEY (table_schema, table_name, constraint_name),
-  FOREIGN KEY (table_schema, table_name)    REFERENCES catalog_table (table_schema, table_name),
-  FOREIGN KEY (target_schema, target_table) REFERENCES catalog_table (table_schema, table_name)
-);
-
--- An ordered column pair of a foreign key. Parallel source and target
--- columns; multi-column FKs are first-class, matching CatalogFacts.
-CREATE TABLE catalog_foreign_key_column (
+-- Table T's primary key is constraint C. Keyed by the table, because a table
+-- has at most one and the coordinate of the fact is therefore the table; that
+-- is what makes the cardinality structural instead of a gate query over a flag.
+CREATE TABLE sql_primary_key (
   table_schema    VARCHAR NOT NULL,
   table_name      VARCHAR NOT NULL,
   constraint_name VARCHAR NOT NULL,
-  position        INT     NOT NULL, -- 0-based position in the FK's column list
-  source_column   VARCHAR NOT NULL,
-  target_column   VARCHAR NOT NULL,
-  PRIMARY KEY (table_schema, table_name, constraint_name, position),
+  PRIMARY KEY (table_schema, table_name),
   FOREIGN KEY (table_schema, table_name, constraint_name)
-    REFERENCES catalog_foreign_key (table_schema, table_name, constraint_name),
-  FOREIGN KEY (table_schema, table_name, source_column)
-    REFERENCES catalog_column (table_schema, table_name, column_name)
+    REFERENCES sql_constraint (table_schema, table_name, constraint_name)
 );
 
--- An index exists on a table (@order(index:) and @index resolve against it).
-CREATE TABLE catalog_index (
-  table_schema VARCHAR NOT NULL,
-  table_name   VARCHAR NOT NULL,
-  index_name   VARCHAR NOT NULL,
-  PRIMARY KEY (table_schema, table_name, index_name),
-  FOREIGN KEY (table_schema, table_name) REFERENCES catalog_table (table_schema, table_name)
-);
-
--- An ordered column of an index.
-CREATE TABLE catalog_index_column (
-  table_schema VARCHAR NOT NULL,
-  table_name   VARCHAR NOT NULL,
-  index_name   VARCHAR NOT NULL,
-  position     INT     NOT NULL, -- 0-based position in the index's column list
-  column_name  VARCHAR NOT NULL,
-  PRIMARY KEY (table_schema, table_name, index_name, position),
-  FOREIGN KEY (table_schema, table_name, index_name)
-    REFERENCES catalog_index (table_schema, table_name, index_name)
+-- A foreign key references a constraint. Referencing the constraint rather
+-- than the table is what SQL declares; the target columns are that
+-- constraint's own sql_constraint_column rows matched on position, which is
+-- how both Oracle and the standard resolve them and is guaranteed by SQL
+-- semantics, never copied onto the referencing row.
+CREATE TABLE sql_referential_constraint (
+  table_schema               VARCHAR NOT NULL,
+  table_name                 VARCHAR NOT NULL,
+  constraint_name            VARCHAR NOT NULL,
+  referenced_schema          VARCHAR NOT NULL, -- two thirds of the composite reference below, not a denormalisation
+  referenced_table           VARCHAR NOT NULL,
+  referenced_constraint_name VARCHAR NOT NULL,
+  PRIMARY KEY (table_schema, table_name, constraint_name),
+  FOREIGN KEY (table_schema, table_name, constraint_name)
+    REFERENCES sql_constraint (table_schema, table_name, constraint_name),
+  FOREIGN KEY (referenced_schema, referenced_table, referenced_constraint_name)
+    REFERENCES sql_constraint (table_schema, table_name, constraint_name)
 );
 ```
 
-Extension facts come from the bytecode-only classpath walk (`ClasspathScanner`: stdlib classfile
-parsing, no classloading, jOOQ package and synthetic classes skipped). Overloads make the plain
-method name a non-key, so the raw JVM descriptor joins the key; it is ugly and it is the
-identity, which is exactly what an identity-carrying key is for.
+Two near-misses ruled out, both already in the codebase's vocabulary. `sql_candidate_key` picks up
+`JooqCatalog.candidateKeys`, but a candidate key is relational-model vocabulary rather than SQL
+DDL's, and it overclaims an irreducibility SQL does not require of a UNIQUE declaration. `sql_key`
+is not the supertype's name either: beside a foreign-key relation it implies a containment that does
+not hold, jOOQ's `UniqueKey` and `ForeignKey` both extending `Key`, and in MySQL and MariaDB `KEY`
+is a synonym for `INDEX`, which this schema keeps separate with different contents.
+
+The constraint's backing index stays out, and the reason is recorded so nobody re-derives it. A
+primary key or unique constraint is backed by an index, and PostgreSQL gives both the same
+identifier, `actor_pkey` naming a constraint and the index enforcing it; Oracle exposes the edge as
+`ALL_CONSTRAINTS.INDEX_NAME` and needs to, because it adopts a suitable existing index instead of
+always creating one. The question is theoretical for us: jOOQ's `Table.getIndexes()` excludes
+constraint-backing indexes, so the relations are already disjoint in captured data, sakila's
+generated `Indexes` holding exactly one entry while every `*_pkey` arrives through `Keys`. It
+becomes live only if a later capture reads indexes from somewhere jOOQ's generated model does not
+filter, and `sql_index`'s own comment owes the exclusion either way.
+
+### `jvm_`
+
+`jvm_` rows come from the bytecode-only classpath walk (`ClasspathScanner`: stdlib classfile
+parsing, no classloading). Overloads make the plain method name a non-key, so the raw JVM
+descriptor joins the key; it is ugly and it is the identity, which is exactly what an
+identity-carrying key is for. `jvm_method.descriptor` must be the real thing,
+`methodTypeSymbol().descriptorString()`, and not a rendering of erased display names.
+
+`jvm_class` gains the source reference that makes the census partitionable, and its comment owes
+the census's filters rather than the bare existence claim it makes today:
 
 ```sql
--- ==== Extension-class facts ==================================================
--- What the consumer's compiled classes offer: service methods, conditions,
--- record shapes, scalar constants. Javadoc and source positions deliberately
--- stay out; those live on the LSP's SourceWalker cadence and are joined at
--- request time, so a .java edit is seen without a generator rebuild.
-
--- A class exists on the consumer's extension classpath.
-CREATE TABLE extension_class (
-  class_name VARCHAR NOT NULL, -- fully qualified binary name
-  class_kind VARCHAR NOT NULL, -- the classfile's declared form; the domain is closed over classfile shapes, so a violation is a capture bug
+-- A class exists on the compile classpath, as the codegen loader would resolve
+-- it. Filtered: public, non-synthetic, top-level (a simple name containing '$'
+-- is skipped, so nested classes are absent), and outside the generated jOOQ
+-- package. A resolution detection over this relation reads those filters as
+-- absence, so they are stated rather than implied.
+CREATE TABLE jvm_class (
+  class_name  VARCHAR NOT NULL, -- fully qualified binary name
+  class_kind  VARCHAR NOT NULL, -- the classfile's declared form; the domain is closed over classfile shapes, so a violation is a capture bug
+  source_name VARCHAR NOT NULL, -- the classpath entry it was read from; the partition this row belongs to
   PRIMARY KEY (class_name),
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name),
   CHECK (class_kind IN ('CLASS', 'INTERFACE', 'ENUM', 'RECORD', 'ANNOTATION'))
 );
+```
 
--- A public method exists on an extension class.
-CREATE TABLE extension_method (
-  class_name        VARCHAR NOT NULL,
-  method_name       VARCHAR NOT NULL,
-  descriptor        VARCHAR NOT NULL, -- raw JVM descriptor; the overload discriminator that keeps this key natural
-  return_type       VARCHAR NOT NULL, -- erased source-form return type
-  returns_condition BOOLEAN NOT NULL, -- matched on the un-erased org.jooq.Condition descriptor, so a consumer's own Condition type does not false-match
-  PRIMARY KEY (class_name, method_name, descriptor),
-  FOREIGN KEY (class_name) REFERENCES extension_class (class_name)
+### `store_`
+
+The fifth family, and the only one whose rows capture does not transcribe from somewhere else: the
+store's record of itself. It earns a family name on the same rule as the others, the vocabulary
+being the store's own metamodel rather than SQL's, the JVM's or GraphQL's. It cannot wear any of
+their prefixes, because one mechanism covers all three source kinds.
+
+```sql
+-- ==== Store bookkeeping ======================================================
+
+-- A source the store read. One relation for all three kinds, because a
+-- partition delete is one mechanism whether the source is a schema file, a
+-- compile-output directory, or a jar. The jOOQ catalog is itself loaded from
+-- generated classes on the codegen classpath, so the sql_ family's provenance
+-- is a classpath entry like the jvm_ family's.
+CREATE TABLE store_source (
+  source_name VARCHAR NOT NULL, -- the schema file path or the classpath entry path
+  source_kind VARCHAR NOT NULL,
+  stamp       VARCHAR,          -- content hash; NULL for a directory root, which changes on every compile and is never cached
+  PRIMARY KEY (source_name),
+  CHECK (source_kind IN ('SCHEMA_FILE', 'DIRECTORY', 'JAR'))
 );
 
--- An ordered parameter of an extension method. Deliberately no
--- parameter-source column: which ParamSource a parameter binds to is decided
--- per directive application, not per method, so it is a derived relation
--- keyed by the application coordinate and lands with its first consumer.
-CREATE TABLE extension_method_parameter (
-  class_name     VARCHAR NOT NULL,
-  method_name    VARCHAR NOT NULL,
-  descriptor     VARCHAR NOT NULL,
-  position       INT     NOT NULL, -- 0-based parameter position
-  parameter_name VARCHAR,          -- NULL when the consumer compiled without -parameters
-  parameter_type VARCHAR NOT NULL, -- erased source-form parameter type
-  PRIMARY KEY (class_name, method_name, descriptor, position),
-  FOREIGN KEY (class_name, method_name, descriptor)
-    REFERENCES extension_method (class_name, method_name, descriptor)
-);
-
--- A record component of an extension record class (from the classfile
--- RecordAttribute; backs record-mapping facts).
-CREATE TABLE extension_record_component (
-  class_name     VARCHAR NOT NULL,
-  component_name VARCHAR NOT NULL,
-  position       INT     NOT NULL, -- component position in the record header
-  display_type   VARCHAR NOT NULL, -- erased display form of the component type
-  PRIMARY KEY (class_name, component_name),
-  FOREIGN KEY (class_name) REFERENCES extension_class (class_name)
-);
-
--- A public static GraphQLScalarType constant (backs @scalarType resolution).
-CREATE TABLE extension_scalar_constant (
-  class_name VARCHAR NOT NULL,
-  field_name VARCHAR NOT NULL, -- the constant's field name, matched on the exact GraphQLScalarType descriptor
-  PRIMARY KEY (class_name, field_name),
-  FOREIGN KEY (class_name) REFERENCES extension_class (class_name)
+-- What this store was built from. At most one row, stated structurally: a
+-- whole-store stamp deciding whether a persisted file is intelligible at all,
+-- which is what keeps migrations out of a schema with no state of record.
+CREATE TABLE store_stamp (
+  singleton         CHAR(1) NOT NULL, -- always 'X'
+  ddl_hash          VARCHAR NOT NULL,
+  generator_version VARCHAR NOT NULL,
+  PRIMARY KEY (singleton),
+  CHECK (singleton = 'X')
 );
 ```
+
+One partition question stays open for the implementation pass rather than being guessed here.
+`jvm_class` and `sql_table` reference `store_source` outright. The `graphql_` declaration sites
+already carry a `source_name` and the walk stands on the file while writing them, so the FK doctrine
+admits the reference, but schema-level relations (`graphitron_link`) hold a nullable `source_name`
+and synthesized sites inherit a causing position rather than a read file. Whether the SDL side
+declares the FK therefore depends on whether `source_name` can be made total there; reachability is
+the convention's requirement and a declared FK is the stronger form of it.
 
 ## The capture loads
 
@@ -1898,8 +632,11 @@ located instead of throwing. Capture is total, with no reachability pruning.
   `no.sikt.graphitron.facts`, whose import-direction allowance stays intact for the legacy
   side it serves. The walk constraint stands regardless of placement: a single pass over the
   registry, not two parallel walkers drifting apart.
-- **Catalog load.** Fills the `catalog_` family from the same jOOQ catalog walk that builds
-  `CatalogFacts` today, and the `extension_` family from the `ClasspathScanner` emission. Runs
+- **Catalog and classpath loads.** Fill the `sql_` family from the jOOQ catalog walk and the `jvm_`
+  family from the `ClasspathScanner` emission, each recording its `store_source` row as it goes.
+  Both read their producer directly rather than through `CatalogFacts` or `CompletionData`, which
+  are shapes designed for the MCP catalog tools and the LSP's completion popups and narrow the
+  census for those consumers; reading through them is what the delivery below is undoing. Runs
   inside the codegen classloader scope; only values cross out, which the store enforces.
 
 Insertion through the module's own generated jOOQ classes, so capture dogfoods the surface every
@@ -1981,10 +718,20 @@ file's parse.
 
 ## Where this stands
 
-Shipped: the module and both boots, the whole DDL, the SDL and catalog capture loads wired into
-the pipeline, the gate family, the mechanical agreement driver with its type-census,
-applied-directive, catalog-census and extension-census anchors, and federation `@key` synthesis
-as a walk macro with its provenance rows and its anchor against `KeyNodeSynthesiser`.
+Part of this item shipped before it reopened, so an implementer picking it up is extending a
+working tree rather than starting one. Read this section for what is already there, then the
+delivery plan for what is left.
+
+Shipped and standing: the module and both boots, the whole DDL, the SDL and catalog capture loads
+wired into the pipeline, the gate family, and the mechanical agreement driver with its type-census,
+applied-directive, catalog-census and extension-census anchors.
+
+Shipped and being replaced by the delivery below: the two non-SDL capture loads read `CatalogFacts`
+and `CompletionData` rather than the catalog and the scanner, which is where every defect slices 3
+and 4 fix comes from; the `catalog_` and `extension_` family names; and the four constraint
+relations. Federation `@key` synthesis shipped as a walk macro with its provenance rows and an
+anchor against `KeyNodeSynthesiser`, but the macro is inert in production and the anchor pins a path
+the pipeline never takes, which is slice 1.
 
 `@asConnection` expands too: the directive-driven arm rewrites the carrier field to the Connection
 it mints (the authored expression surviving in `graphitron_field_synthesis`) and mints the
@@ -2024,535 +771,356 @@ per-relation payload agreement, which arrives with the consumer that migrates on
 brings its own tests; the mechanical driver is what keeps that honest, since a new relation still
 cannot arrive without a registration.
 
-## Rework from the In Review gate (2026-08-07)
+## Delivery
 
-Everything above shipped and `mvn install -Plocal-db` is green; the whole DDL matches this
-item's schema section column for column and constraint for constraint, the mechanical driver
-registers every generated relation, and the gate family covers the acceptance list (the
-`is_primary` count gate is homed in the agreement suite, which is where a real catalog exists
-to range over, and it says so). One blocker sends the item back.
+The item reopened at its In Review gate on 2026-08-07 with one blocker, and then absorbed three
+filings that turned out not to be separable from it: a constraint-modelling item, a classpath-census
+item, and a warm-start-store item. All three are discarded into this one, their numbers left as
+permanent gaps and their slugs deliberately not cited here, the files being gone. What follows is the whole of the remaining work in five slices, ordered. Each ends with a
+green `mvn install -Plocal-db` and tells one story; none of them half-lands a relation.
 
-**The pipeline captures after the federation synthesis rewrite, so the walk macro is inert in
-production.** The item fixes the walk's reading position: "after the loading rewrites ... and
-before the synthesis rewrites", and `MacroCapture`'s own javadoc restates it. Both production
-call sites do the opposite. `GraphQLRewriteGenerator.loadAttributedRegistry` runs
-`KeyNodeSynthesiser.apply(registry, ...)` in place on the same registry object it returns, and
-both `buildOutput` and `runPipeline` hand that mutated registry to `FactCapture.run`. By the
-time `MacroCapture.expandFederationKeys` looks, `hasIdKey` is already true for exactly the
-types the rewrite touched (the two implementations gate on the same nodehood predicate and the
-same single-`id` field set), so the macro contributes nothing. Measured on a one-node federated
-fixture: capturing the pristine registry writes 1 `graphitron_type_directive_synthesis` row,
-capturing the post-`KeyNodeSynthesiser` registry writes 0.
+Two ordering choices are deliberate and worth stating, because both look like they could go the
+other way. The rename (slice 2) deliberately does **not** touch the four constraint relations,
+which slice 3 deletes: renaming them first would mint `sql_key`, a name this item argues against by
+name, for the length of one commit, and leaving them under `catalog_` for one slice is visibly
+transitional in a way that minting a rejected name is not. And the source identity is folded into
+slice 4 rather than following it, because an intermediate commit shipping a 16x census with nothing
+to invalidate against is a build-time regression someone would have to bisect through.
 
-Three consequences, none of which a test currently sees:
+### Slice 1: capture reads the pre-synthesis registry
 
-- The synthesized `@key` is captured as an authored application, so the authored picture is no
-  longer the anti-join against the provenance relations, which is the property the whole
-  provenance family exists to buy.
-- Its `graphql_type_directive.source_line` / `source_column` are NULL rather than the type's
-  declaration site, because a `Directive` the rewrite built carries no `SourceLocation`.
-- `federationKeySynthesisAgreesWithTheRewrite` passes because it captures a freshly parsed
-  registry and applies the rewrite to a second copy only to compute the expectation. It pins a
-  path the pipeline never takes, which is exactly the drift the shadow-period anchors exist to
-  catch.
+The blocker. The item fixes the walk's reading position ("after the loading rewrites ... and before
+the synthesis rewrites") and `MacroCapture`'s own javadoc restates it; both production call sites do
+the opposite. `GraphQLRewriteGenerator.loadAttributedRegistry` runs `KeyNodeSynthesiser.apply` in
+place on the same registry object it returns, and both `buildOutput` and `runPipeline` hand that
+mutated registry to `FactCapture.run`. By the time `MacroCapture.expandFederationKeys` looks,
+`hasIdKey` is already true for exactly the types the rewrite touched (the two implementations gate
+on the same nodehood predicate and the same single-`id` field set), so the macro contributes
+nothing. Measured on a one-node federated fixture: capturing the pristine registry writes 1
+`graphitron_type_directive_synthesis` row, capturing the post-`KeyNodeSynthesiser` registry writes 0.
+
+Three consequences, none of which a test currently sees. The synthesized `@key` is captured as an
+authored application, so the authored picture is no longer the anti-join against the provenance
+relations, which is the property the whole provenance family exists to buy. Its
+`graphql_type_directive.source_line` / `source_column` are NULL rather than the type's declaration
+site, because a `Directive` the rewrite built carries no `SourceLocation`. And
+`federationKeySynthesisAgreesWithTheRewrite` passes because it captures a freshly parsed registry
+and applies the rewrite to a second copy only to compute the expectation, pinning a path the
+pipeline never takes, which is exactly the drift the shadow-period anchors exist to catch.
 
 The fix is a placement decision, not a redesign: either capture the registry before
 `KeyNodeSynthesiser` runs (`loadAttributedRegistry` already builds the `JooqCatalog` the
 `NodeDeclaration` needs), or hand capture a pre-synthesis handle alongside the attributed one.
-Whichever way it goes, the anchor should exercise the registry the pipeline actually captures,
-so this cannot come back.
 
-While the placement is being settled, decide explicitly what the same ordering means for
-`TagApplier` and `DescriptionNoteApplier`, which also mutate the registry before capture. Their
-config-driven `@tag` applications and appended description notes land in the store as authored
+Also in this slice, because it is the same ordering question: decide explicitly what the position
+means for `TagApplier` and `DescriptionNoteApplier`, which also mutate the registry before capture.
+Their config-driven `@tag` applications and appended description notes land in the store as authored
 facts today. That may well be right, since the round-trip constraint wants the emitted schema
-reproducible and both are in it, but it is currently an accident of ordering rather than a
-recorded decision, and the item should say which it is.
+reproducible and both are in it, but it is currently an accident of ordering rather than a recorded
+decision, and the item should say which it is.
 
-**Rename the `extension_` family to `jvm_`.** Raised against the family's own rule and upheld.
-The rule names a family for whose vocabulary a row is written in; three families satisfy it and
-this one does not. Its rows say class, method, descriptor, parameter, record component, field,
-which is the JVM classfile's vocabulary, while `extension_` names a presumed role: code written
-to extend graphitron. This item has already retired one family name for exactly this failure.
-The `applied_` / `intent_` split died because "carried verbatim" named a treatment that only held
-because capture pre-decided at write time a question belonging at read time; `extension_` names a
-role that only holds because the scan happens to be scoped to reactor output directories. The
-class census reading the compile classpath, absorbed below and already measured, makes the role claim plainly
-false rather than arguably true: `extension_class` goes from ~1.8k rows to ~30k and
-`com.fasterxml.jackson.databind.ObjectMapper` becomes a row in a relation named for the
-consumer's extension code. What earns it a row is that an author may legitimately name it in
-`@record` / `@service` / `@enum` / `@scalarType` and the codegen loader resolves it, which is a
-classpath fact.
+**Done when** the federation anchor exercises the registry the pipeline actually captures, so a
+future move of the capture call fails a test rather than silently emptying a relation.
 
-`jvm_` rather than `classfile_` or `bytecode_`, on this item's own text. The conventions above
-already name this vocabulary's owner, in the decode rule's "a JVM descriptor", and
-`extension_method.descriptor` is commented as a raw JVM descriptor. `classfile_class` stutters,
-and `bytecode_` names the encoding rather than the vocabulary, since a record component comes
-from the classfile's `RecordAttribute` and not from any bytecode. The precedent is `catalog_`,
-which names the vocabulary's owner rather than jOOQ, the mechanism that read it.
+### Slice 2: the families are renamed
 
-`extension_scalar_constant` becomes `jvm_scalar_type_field`, and the reasoning is worth keeping
-because it decides the next relation of its shape. Purifying it to a `jvm_static_field` with a
-descriptor column is the wrong move: the scan keeps only fields whose descriptor is exactly
-`Lgraphql/schema/GraphQLScalarType;`, so a total-sounding name over a filtered relation would
-mislead about the table's contents, which is worse than the present name misleading about the
-reason for the row. The selector therefore stays in the name, and it can, because
-`GraphQLScalarType` is a graphql-java class name, a JVM type rather than a graphitron concept.
-The relation is a JVM fact whose reason for capture is GraphQL-side, and reason-for-capture is
-the axis the family rule already rejected. Dropping `constant` is a correction on its own terms:
+Mechanical, wide, no semantic change. Landing it as its own slice is what keeps slice 3's diff
+readable, and doing it in this pass rather than a follow-up is a cost argument: nothing reads the
+store yet, so a rename is text plus compile fixes today and grows with every consumer that migrates.
+
+| from | to |
+| --- | --- |
+| `catalog_table`, `catalog_column`, `catalog_index`, `catalog_index_column` | `sql_*` |
+| `catalog_*.java_name` | `jooq_name` |
+| `extension_class`, `extension_method`, `extension_method_parameter`, `extension_record_component` | `jvm_*` |
+| `extension_scalar_constant` | `jvm_scalar_type_field` |
+
+The reasoning for the family names themselves is in the schema section above, with the rejected
+candidates. Three riders belong here.
+
+`java_name` becomes `jooq_name` because in a relation whose prefix names SQL, a jOOQ-generated
+identifier is visibly the one foreign column, and marking it beats leaving a reader to infer it.
+That was optional under `catalog_` and is not under `sql_`.
+
+`extension_scalar_constant` becomes `jvm_scalar_type_field`, and the reasoning decides the next
+relation of its shape. Purifying it to a `jvm_static_field` with a descriptor column is the wrong
+move: the scan keeps only fields whose descriptor is exactly `Lgraphql/schema/GraphQLScalarType;`,
+so a total-sounding name over a filtered relation would mislead about the table's contents, which is
+worse than the present name misleading about the reason for the row. The selector therefore stays in
+the name, and it can, because `GraphQLScalarType` is a graphql-java class name, a JVM type rather
+than a graphitron concept. Dropping `constant` is a correction on its own terms:
 `ClasspathScanner.readScalarConstants` deliberately does not require `final`, so both the current
 relation name and its comment overclaim.
 
-The sibling Java name stays out. `CompletionData.ExternalReference` is not the same defect,
-since "extension" asserts a role and "external" asserts a location, and a jar class is genuinely
-outside the generated output however little it extends. The part of that name that ages badly
-under the widened census is `Reference`, most entries being referenced by nobody, and that is
-a question for whoever next touches that surface; the DDL rename does not wait on it either
-way.
+The prose glosses go with the prefix. The DDL header calls the family "jOOQ catalog facts" and the
+section banner "what the jOOQ catalog scan sees", both naming the reader; both should name SQL as
+the vocabulary and jOOQ as the reader. "Catalog" stays available as the prose word for what the
+family is about, since only the prefix carries the rule.
 
-Blast radius is the same for both renames and is small: the DDL's table names and `COMMENT ON`
-text, `CatalogFactCapture` (both of its loads), and the census anchors in
-`FactCaptureAgreementTest`, which are the only two files in the reactor naming either family's
-generated constants. The generated classes regenerate from the DDL and the compiler finds every
-call site, which is the compile-time-only compatibility surface the module section describes.
-Doing it in this pass rather than a follow-up is a cost argument: nothing reads the store yet,
-so a rename is text plus compile fixes today and grows with every consumer that migrates, and
-this item is reopened anyway. The registration list in the agreement driver moves with the
-relation names, and `everyRelationIsRegistered` fails in both directions if it does not.
+**Blast radius** is small and the same for both renames: the DDL's table names and `COMMENT ON`
+text, `CatalogFactCapture` (both of its loads), and the census anchors in `FactCaptureAgreementTest`,
+which are the only two files in the reactor naming either family's generated constants. The
+generated classes regenerate from the DDL and the compiler finds every call site.
 
-**Rename `catalog_` to `sql_` as well.** `jooq_` was proposed first and rejected, because it
-names the reader where the rule asks for the owner: jOOQ defines neither table nor column nor
-foreign key, and the precedent is `graphql_`, which is not `graphqljava_` though graphql-java
-parses every row. But rejecting `jooq_` is not a defence of `catalog_`. SQL is the vocabulary's
-owner, and naming the owner is the rule; `catalog_` names a category within that vocabulary
-instead, which is a different job from the one the prefix has. Strict SQL makes a catalog the
-top-level namespace of `catalog.schema.table`, and this family has no catalog level at all,
-every key starting at `table_schema`, so the incumbent is already using the tooling sense of the
-word rather than SQL's.
+**Done when** the build is green with no behavioural diff, and `everyRelationIsRegistered` holds,
+which it will fail in both directions if the driver's registration list does not move with the names.
 
-`sql_table`, `sql_column`, `sql_index`, `sql_index_column`, and the constraint relations the
-next section reshapes. The resulting set is `graphql_`,
-`sql_`, `jvm_`, `graphitron_`: three external vocabularies each named by its owner, plus
-graphitron's own, where the incumbent set named one family by category and two by owner. It
-passes the mechanism-independence test the `extension_` case turns on, since reading
-`INFORMATION_SCHEMA` directly instead of walking jOOQ's generated classes leaves every relation
-name correct. Alignment with `CatalogFacts` and `JooqCatalog` is not an argument for holding the
-old prefix, on the same grounds that leave `CompletionData.ExternalReference` out of this: DDL
-family names and Java class names answer to different rules.
+### Slice 3: the SQL family models constraints as the catalog does
 
-One comment is wrong rather than missing, and the reshaping happens to retire it:
-`catalog_foreign_key_column.source_column` is described as "source column, 1-based per the
-graphql-java convention", the SDL families' position wording copy-pasted onto a column name, and
-that column ceases to exist once the uniform `sql_constraint_column` replaces the paired row.
-The lesson outlives the instance and is the reason the sweep below exists: the comment-coverage
-gate checks that a comment is present and cannot check that it is true, so every claim a
-relation makes about its own contents is unverified.
+`sql_constraint`, `sql_constraint_column`, `sql_primary_key` and `sql_referential_constraint`
+replace `catalog_key`, `catalog_key_column`, `catalog_foreign_key` and
+`catalog_foreign_key_column`. The target DDL and the argument for the supertype are in the schema
+section above; what belongs here is what capture has to change to fill it.
 
-And the two `java_name` riders
-on `sql_table` and `sql_column` should become `jooq_name`: in a relation whose prefix names SQL,
-a jOOQ-generated identifier is visibly the one foreign column, and marking it is better than
-leaving a reader to infer it. That was optional under `catalog_` and is not under `sql_`.
-
-The prose glosses go with the prefix. The DDL header calls the family "jOOQ catalog facts" and
-the section banner "what the jOOQ catalog scan sees", both naming the reader, and this item's
-family sentence repeats it; all three should name SQL as the vocabulary and jOOQ as the reader.
-"Catalog" stays available as the prose word for what the family is about, since only the prefix
-carries the rule.
-
-**The constraint relations unify under one typed supertype, and the primary key leaves the
-flag.** This is the redesign that takes the item back to Spec rather than a rename riding along
-with the others.
-
-The schema models a table's uniqueness constraints and its foreign keys as two disjoint
-relations with two column children, where every real catalog models them as one constraint
-relation discriminated by type. Oracle's data dictionary carries `ALL_CONSTRAINTS` with a
-`CONSTRAINT_TYPE` of `P` / `U` / `R` / `C` and one `ALL_CONS_COLUMNS` under it; the SQL
-standard's `INFORMATION_SCHEMA` carries `TABLE_CONSTRAINTS` with a `constraint_type`,
-`KEY_COLUMN_USAGE` for the local columns of every keyed form, and `REFERENTIAL_CONSTRAINTS` as
-the foreign-key-only extension. Two independent designs converged on the supertype, which is
-evidence about the shape rather than about either vendor. This schema already votes the same way
-elsewhere: `graphql_type` is a supertype over six declaration forms with a CHECK-constrained
-`kind` and the per-form detail in sibling relations, and the conventions state the pattern
-outright, that closed taxonomies are CHECK constraints. The constraint families are the one
-place the schema states a closed taxonomy by having separate relations instead.
-
-The gain is not tidiness. "What constrains this table?" is a union today and one predicate under
-the supertype; a detection ranging over constraints (a `@node(keyColumns:)` naming a column set
-that is not unique) has one relation to read; and the forms this iteration does not capture
-(CHECK, NOT NULL, deferrability) arrive later as type values rather than as new relations with
-new anchors.
-
-The shape is `sql_constraint` as the supertype, keyed by schema, table and constraint name and
-carrying the CHECK-constrained `constraint_type`; `sql_constraint_column` for the ordered
-columns; and two extensions, `sql_primary_key` and `sql_referential_constraint`. The extension
-split follows the standard rather than Oracle, which hangs foreign-key-only columns off the
-supertype to sit NULL on every other row, because this schema's discipline prefers an absent row
-to a null column.
-
-The primary key earns its extension on the natural-key rule rather than on taste. A table has at
-most one, so the fact a primary-key row states is "table T's primary key is constraint C" and its
-coordinate is T; keying it by the constraint name admits "T has primary keys C1 and C2", a
-sentence the domain has no member for, and `is_primary` is the symptom of the key being wrong.
-Keying `sql_primary_key` by `(table_schema, table_name)` makes the cardinality structural and
-retires a gate: the convention list above names "at most one primary key per table" among the
-invariants plain DDL cannot state, and that is false in an instructive way, since DDL cannot
-state it only *given a constraint-keyed relation with a flag*. The limitation belonged to the
-model and was attributed to the language. The unified relation alone cannot buy this either,
-enforcement inside `sql_constraint` needing a filtered unique index H2 does not have, so the
-extension is what makes the invariant structural rather than documented. Worth re-reading the
-other two entries on that list with the same suspicion before either is accepted as gate-only.
-
-The live model already draws the distinction, which is the tell that the store's shape is the
-odd one out. `MatchedKey` is sealed over `PrimaryKey` and `UniqueKey`, `TableRef` carries
-`primaryKeyColumns`, `MutationField` emits a primary-key-only RETURNING clause,
-`@order(primaryKey:)` selects it by name, and `UpdateRowsError` and `DeleteRowsError` render
-"PK" and "UK" differently in user-facing diagnostics. `CatalogFacts` splits them too, into an
-`Optional<Key> primaryKey` and a `List<Key> uniqueKeys`, which is exactly why the census anchor
-folds the store's relation to the `uniqueKeys` view before comparing. That projection is
-recorded in the acceptance list as a projection choice; it is really the shadow model reporting
-a mismatch the store introduced, and it disappears with the split. The driver cannot currently
-tell a projection that bridges a genuine grain difference from one that bridges a modelling
-error, which is worth remembering when the next registration wants one.
-
-**The column child is uniform, and target columns are a join rather than a copy.** Every
-constraint owns its columns in one relation,
-`sql_constraint_column(table_schema, table_name, constraint_name, position, column_name)`, for
-primary keys, unique constraints and the local side of foreign keys alike. A foreign key's
-targets come from the referenced constraint's own rows, matched on `position`, which is how both
-Oracle and the standard resolve them and is guaranteed by SQL semantics, the two column lists
-corresponding positionally.
-
-An earlier draft of this item kept the source and target columns paired on one row and argued
-that capture stores facts while joins are derivation's business. That argument runs the other
-way: a target column is a fact about the *referenced* constraint, so copying it onto the
-referencing row is precomputing a join at capture time, which is the pre-resolution the
-resolution-facts leave-out rejects. The cost objection does not survive either, since
-`JooqCatalog.foreignKeyFactsOf` already calls `fk.getKey()` and takes its table, so the
+**Capture stops reading `CatalogFacts` and reads `JooqCatalog` directly.** This is the load-bearing
+change, not the DDL. `CatalogFacts` is a projection built for the MCP catalog tools, and three of its
+narrowings are currently baked into the store. It splits `Optional<Key> primaryKey` from
+`List<Key> uniqueKeys`, which is why the store modelled the primary key as a flag and why the census
+anchor folds to the `uniqueKeys` view before comparing. `JooqCatalog.candidateKeys` dedupes on
+column set, so a unique constraint sharing a column set with the primary key is dropped, and under
+the new shape a foreign key referencing it would point at nothing: that dedup is a projection choice
+rather than a catalog fact, and capture must read the full key set. And `OutgoingForeignKey` carries
+no referenced-constraint name, which is why the old shape copied target columns onto the referencing
+row; `JooqCatalog.foreignKeyFactsOf` already calls `fk.getKey()` and takes its table, so the
 referenced constraint's name is one more field on a record it is already building.
 
-The reachability worry behind that draft was real but misaimed. It is not indirection that
-threatens a dangling reference, it is `JooqCatalog.candidateKeys`, which dedupes on column set,
-so a unique constraint sharing a column set with the primary key is dropped and a foreign key
-referencing it would point at nothing. That dedup is a `CatalogFacts` projection choice rather
-than a catalog fact, and the fix is for capture to read the full key set instead of distorting
-the model around a projection. It is the same lesson the primary key teaches, and the two
-together are why the census anchor needs folds at all: the store keeps inheriting
-`CatalogFacts`' shape where it should take the catalog's.
+Two more truthfulness fixes ride here, both in the same file and both the same defect class.
+`sql_column.ordinal` comes from `table.fields()`, which is declaration-ordered, instead of
+`table.getClass().getFields()`, whose contract states the result is in no particular order; the
+reflection exists only to reach the generated Java field name, which `Field` does not expose, so it
+stays for `jooq_name` and stops deciding `ordinal`. The column is commented "column position in the
+table definition" and today is not, which is the determinism rule this item states, that iteration
+order is never load-bearing, broken by its own capture. And `sql_index`'s comment states that
+`getIndexes()` excludes constraint-backing indexes, so `@order(index:)` naming a primary key's index
+resolves against a documented absence rather than an apparent one.
 
-`sql_referential_constraint` therefore carries
-`(table_schema, table_name, constraint_name, referenced_schema, referenced_table,
-referenced_constraint_name)` with a foreign key on each triple into `sql_constraint`. That
-strengthens the structural claim rather than merely relocating it: the relation references
-`catalog_table` today, saying the target table exists, where a foreign key in SQL references a
-constraint and not a table. The referenced schema and table are not a denormalisation, being two
-thirds of the composite key the reference needs.
+**Settle during the pass** whether a foreign key can point out of the scanned catalog at all.
+`CatalogFactCapture`'s foreign-key loop writes the target from `split(fk.targetTable())` with no
+guard that the table was scanned, and the relation declares a foreign key into the table relation, so
+an out-of-catalog reference would land as a constraint violation, which this item's doctrine reads as
+a capture bug when it would really be a catalog boundary. It matters more now that the reference is
+to a constraint. If jOOQ's generated model can produce one, the reference is not structural and the
+relation says so.
 
-Whether a foreign key can point out of the scanned catalog at all is the question this sharpens
-and does not answer. `CatalogFactCapture`'s foreign-key loop writes the target from
-`split(fk.targetTable())` with no guard that the table was scanned, and the relation already
-declares a foreign key into `catalog_table`, so an out-of-catalog reference would land as a
-constraint violation, which this item's doctrine reads as a capture bug when it would really be
-a catalog boundary. Whether jOOQ's generated model can produce one should be settled during the
-pass, and it matters more once the reference is to a constraint.
+**Two gates change.** The `is_primary` count gate retires, its invariant having become structural in
+`sql_primary_key`'s key; the conventions list above already records why. The census anchor loses its
+`uniqueKeys` fold, both halves of which (the excluded primary key, the column-set dedup) are
+projection artifacts this slice removes.
 
-**The constraint's
-backing index stays out.** A primary key or unique constraint is backed by an index, and
-PostgreSQL gives both the same identifier, `actor_pkey` naming a constraint and the index
-enforcing it; Oracle exposes the edge as `ALL_CONSTRAINTS.INDEX_NAME` and needs to, because it
-adopts a suitable existing index instead of always creating one. The question is theoretical for
-us and should be recorded as such so nobody re-derives it: jOOQ's `Table.getIndexes()` excludes
-constraint-backing indexes, so the relations are already disjoint in captured data, sakila's
-generated `Indexes` holding exactly one entry while every `*_pkey` arrives through `Keys`. It
-becomes live only if a later capture reads indexes from somewhere jOOQ's generated model does
-not filter.
+**Done when** the store's constraint census equals the catalog's rather than `CatalogFacts`' view of
+it, and the anchor compares without a fold.
 
-Two near-misses ruled out, both already in the codebase's vocabulary. `sql_candidate_key` picks
-up `JooqCatalog.candidateKeys`, but a candidate key is relational-model vocabulary rather than
-SQL DDL's, and it overclaims an irreducibility SQL does not require of a UNIQUE declaration.
-`sql_key` is not the supertype's name either: beside a foreign-key relation it implies a
-containment that does not hold, jOOQ's `UniqueKey` and `ForeignKey` both extending `Key`, and in
-MySQL and MariaDB `KEY` is a synonym for `INDEX`, which this schema keeps separate with different
-contents.
+### Slice 4: the class census reads the compile classpath
 
-**What the Spec pass must reconcile.** The DDL listing in the schema section above still shows
-`catalog_key`, `catalog_key_column`, `catalog_foreign_key` and `catalog_foreign_key_column`, and
-still carries the old prefixes throughout both renamed families. The listing is this item's
-deliverable, so it is the Spec pass that rewrites it: the relations above with their `COMMENT ON`
-text, the `catalog_` and `extension_` prefixes carried through every relation and every comment,
-and the convention bullet that claims DDL cannot state the primary-key cardinality. The
-acceptance list goes with it: its census bullet records the fold to `CatalogFacts`' `uniqueKeys`
-view as a projection choice, and both halves of that fold, the excluded primary key and the
-column-set dedup, are the projection artifacts the reshaping removes. Until all of it lands the
-sections disagree, deliberately and visibly, rather than quietly.
-
-**The two non-SDL loads read one layer too high, and it costs four more facts.** The constraint
-findings above are not isolated. A sweep of every producer found the same defect wherever
-capture reads a projection built for another surface, and found none where it reads the parse
-directly, which locates the cause: `CatalogFacts` and `CompletionData` are shapes designed for
-the MCP catalog tools and the LSP's completion popups, and capture inherits every narrowing they
-made for those consumers. `SdlFactCapture` reads the registry AST and is clean. The fix
-direction is for the loads to read `JooqCatalog` and `ClasspathScanner` output directly, or for
-those producers to carry what the store needs. Relations below are named as this pass leaves
-them, so the code carries `catalog_` and `extension_` where the text says `sql_` and `jvm_`; the
-Java identifiers cited are unaffected by the rename.
-
-- **`jvm_method.descriptor` is fabricated, and lossy inside a primary key.**
-  `CatalogFactCapture.descriptorOf` concatenates `CompletionData.Parameter.type()` values into
-  `(Type;Type;)Return`, and those values are `ClassDesc.displayName()`, package-stripped simple
-  names. The column is commented "raw JVM descriptor; the overload discriminator that keeps this
-  key natural" and is neither. `ClasspathScanner.readMethods` holds `m.methodTypeSymbol()`,
-  whose `descriptorString()` is the real descriptor, and already calls `descriptorString()` on
-  its return type one line later; `CompletionData.Method` drops it and capture invents a
-  replacement. Two public methods taking `com.foo.Result` and `com.bar.Result` render the same
-  string, collide on the key, and the second is dropped by first-wins with no quarantine row.
-  The extension-method anchor compares descriptor-erased precisely because the model carries no
-  descriptor, so it cannot catch this.
-- **`sql_column.ordinal` is reflection order presented as catalog order.**
-  `JooqCatalog.columnFactsOf` enumerates `table.getClass().getFields()`, whose contract states
-  the result is in no particular order, and capture numbers the rows in that sequence. The
-  column is commented "column position in the table definition". This is the determinism rule
-  this item states, that iteration order is never load-bearing, broken by its own capture.
-  jOOQ's `table.fields()` is declaration-ordered; the reflection exists only to reach the
-  generated Java field name, which `Field` does not expose. No anchor covers ordinals, the
-  census comparing names and counts.
-- **`jvm_class` promises classpath existence and delivers four undisclosed filters.**
-  `ClasspathScanner.readIfCandidate` skips any simple name containing `$`, which is every nested
-  class, along with non-public classes, synthetic classes, and everything under the jOOQ
-  package. The relation says only that a class exists on the consumer's extension classpath. A
-  nested class named in `@record` resolves through the codegen loader and would be reported
-  unknown by the resolution detection that later migrates onto this relation, which is the
-  absorbed classpath bug one axis over: that one is directories against jars, this is top-level
-  against nested.
-- **`sql_index` overclaims the same way**, jOOQ's `getIndexes()` excluding
-  constraint-backing indexes, so `@order(index:)` naming a primary key's index cannot resolve
-  against a relation whose comment says an index exists on a table.
-
-The renames sharpen three of these rather than relieving them, which is why the disclosure has
-to ship with the prefix rather than after it. A column called `descriptor` under a family named
-for the JVM claims the JVM's own artefact more loudly than it did under `extension_`; `sql_index`
-and `sql_column.ordinal` claim SQL's index set and SQL's column order where `catalog_` at least
-read as a tool's view of them; and `jvm_class` sounds more total than `extension_class` did,
-since a role name invites the question "extending what?" while a vocabulary name simply asserts
-the category. Every one of these names is more honest about whose vocabulary the row is written
-in and more misleading about which rows are present, so the pass that lands them is the pass
-that owes each relation a comment stating its filters.
-
-Three producers came back clean and are recorded so the pass does not re-derive them. The
-`graphitron_` decode helpers return null or an empty list for an absent argument and quarantine
-a type mismatch, so no default-filling reaches the store and the authored-values convention
-holds. `sql_column.sql_type` and `nullable` are jOOQ's readings, and their comments say so;
-a disclosed projection is the healthy case and the pattern above is what an undisclosed one
-looks like. Column and table comments normalise the empty string upstream, so no relation
-confuses "" with absent.
-
-The general lesson worth keeping past this pass: a fold in an agreement anchor is a symptom, not
-plumbing. Every defect here and in the constraint families surfaced at one, and the driver
-cannot distinguish a fold that bridges a real grain difference (capture total against a pruned
-model) from one that bridges a mismatch capture introduced. Registering an arm that needs a fold
-should carry the reason the grains differ.
-
-**Narrowing the method census to relevant signatures was proposed and is not implementable
-without pre-resolution.** Recorded because the row count invites the idea and the reasoning
-should not be re-derived. Nine coordinates name a Java method: `graphitron_service`,
-`graphitron_source_row`, `graphitron_external_field`, `graphitron_enum`, the field and argument
-conditions, and the three reference-step relations. Exactly one shape constrains a signature.
-Conditions must return `org.jooq.Condition`, which `ClasspathScanner` already classifies from
-the un-erased descriptor into `returns_condition`, so that filter is available as a predicate and
-applying it at capture buys nothing a `WHERE` does not. The other four constrain neither return
-type nor parameters, parameters binding as Arg, Context, Sources, DslContext, Table or
-SourceTable, so every public method is a candidate.
-
-Filtering those would mean inferring relevance during capture, which is the defect class the
-sweep above found four instances of, and its failure mode is the absorbed classpath bug moved
-from the class axis to the method axis: a `@service` naming a real method the filter excluded reads as unknown
-in the store while the codegen loader resolves it. Completion fails the same way, since an author
-typing a `method:` value needs every public method of the named class offered.
-
-The cost the proposal aims at is insert throughput and not query cost, a resolution being
-`WHERE class_name = ? AND method_name = ?` however many rows it ignores, which is why the
-measurement above is the next step rather than a scoping decision. Should it show the load
-dominating, the least-bad narrowing is a configured package scope: author-controlled, disclosable
-in the relation's comment, and failing safe, since an author who scoped too tightly gets a
-diagnostic to act on where a signature filter hides a method nobody knows is absent. Any
-narrowing at all inherits the disclosure obligation the sweep establishes.
-
-One measurement rides along with the widened census rather than with the rename. The ~213k
-`jvm_method` rows are an insert-throughput question rather than a scoping one, which is this
-item's premise and stays it, but the per-run load is worth measuring rather than assuming
-`FactSink`'s batching absorbs a 16x census. That measurement is step six of the absorbed plan
-below.
-
-Two improvements the contract does not demand, noted so the next pass can take or leave them:
-
-- A decode arm that hits a missing required argument returns without writing either its
-  decoded row or a `graphitron_undecoded_argument` row (`GraphitronFactCapture`'s `sourceRow`,
-  `mutation` and `pivot` arms among others). The verbatim `graphql_` row survives, so a
-  detection can still find the application, but nothing in the semantic stratum records that
-  the decode declined. Worth either quarantining the application or naming the
-  "verbatim graphitron application with no decoded row" detection as the intended reading.
-- `captureFacts` builds a second `JooqCatalog` and re-walks the catalog and the classpath
-  (`GraphQLRewriteGenerator`), while `buildOutput` reuses the `catalogFacts` it already has.
-  Shadow-period cost only, and cheap to thread through.
-
-## The store persists under `target/` for warm-start surfaces
-
-Absorbed from `warm-start-model-store`, which was filed as a follow-on and is discarded into this
-item. The reason it cannot be a follow-on is the partitionability convention above: persistence
-does not add a feature on top of the schema, it imposes a requirement the schema must already
-satisfy, and a model written without it cannot acquire it later without rekeying. The absorbed
-item's own open list ended with "which meta relation carries the stamp", which is a DDL question
-wearing a scheduling item's clothes.
-
-**Why persist.** The store is in-memory and per-run, so every surface that wants facts pays a
-full capture pipeline before it can answer anything and the LSP and MCP server boot cold. With
-the populated store written to an H2 file under `target/` at the end of a run, a surface opens
-the previous run's facts about as soon as the JVM has booted and serves completions, schema
-queries and the read-only SQL surface immediately, refreshing when its own run completes; with
-registry capture that refresh is per-file incremental rather than a full pipeline. A plain SQL
-client, an agent among them, can query the fact base as a build artifact without booting
-graphitron at all.
-
-**What it does not change.** The file is persisted state and never state *of record*. It is
-stamped, and any mismatch discards and rebuilds, so no migration ever exists and `target/`
-semantics keep deletion always correct. Surfaces label answers with the stamp's run identity, so
-staleness is visible rather than silent.
-
-**What it does change, which the item previously denied.** "Dead with the process" stops being
-true, and the store becomes an accumulation across runs, which the incremental-refresh section
-already assumes when it calls the store the accumulated registry. The stamp is therefore two
-things, not one. A whole-store stamp on DDL content hash and generator version decides whether
-the file is intelligible at all, and that is what keeps migrations out. A per-source stamp
-decides which partitions survive, and without it every edit discards everything, including a
-classpath scan measured at 4.0 s that no schema edit had any reason to invalidate. The absorbed
-item carried only the first, which is what made it look separable.
-
-**Design questions for this pass.** The persist mechanism, whether the store is file-backed
-during the run or exported at the end. Reader concurrency while a build writes: H2 file locking,
-copy-on-open, or auto-server mode. And the shape of the source and stamp relations, which the
-conventions above constrain but do not settle: whether one relation carries all three source
-kinds under a CHECK or whether schema files and classpath entries separate, and whether a
-partition's stamp lives on the source row or in a sibling meta relation.
-
-## The class census reads the compile classpath
-
-Absorbed from `lsp-classpath-scan-misses-jar-scalar-constants`, which was filed separately and is
-discarded into this item. It was reduced to one residue, the scanner's scope, and argued on that
-basis for landing ahead of this item. The sweep above changed the arithmetic: the same file now
-also owes the real JVM descriptor, four disclosed filters, and the family rename, so the residue
-is no longer small and three passes over `ClasspathScanner` with a rename between them is worse
-than one.
+Absorbed from the classpath-census filing, which was a follow-on that argued for landing ahead of
+this item on the grounds that its residue was small. The sweep changed
+that arithmetic: the same file now also owes the real JVM descriptor, the disclosed filters and the
+family rename, so three passes over `ClasspathScanner` with a rename between them is worse than one.
 
 **The bug.** `scalar LocalDate @scalarType(scalar: "graphql.scalars.ExtendedScalars.Date")`
-generates fine and red-squiggles in the editor:
-`Unknown class 'graphql.scalars.ExtendedScalars' on @scalarType. Not found in compiled
-target/classes.` The two paths read different classpaths. Codegen resolves the constant
-reflectively through `RewriteContext.codegenLoader`, a `URLClassLoader` the mojo builds over
-`project.getCompileClasspathElements()` with jars included. The LSP catalog reads
-`CompletionData.externalReferences()`, built from `RewriteContext.classpathRoots()`, which is
-reactor compile-output *directories* only, and `ClasspathScanner.scan` hard-skips any root
-failing `Files.isDirectory`, so no jar is ever opened. The same gap silently disables completion
-at that coordinate, since `ScalarTypeCompletions` sources candidates from
-`ExternalReference.scalarConstants()`, so the library constants the custom-scalars manual page
-documents as the primary use case can never be offered.
+generates fine and red-squiggles in the editor: `Unknown class 'graphql.scalars.ExtendedScalars' on
+@scalarType. Not found in compiled target/classes.` The two paths read different classpaths. Codegen
+resolves the constant reflectively through `RewriteContext.codegenLoader`, a `URLClassLoader` the
+mojo builds over `project.getCompileClasspathElements()` with jars included. The LSP catalog reads
+`CompletionData.externalReferences()`, built from `RewriteContext.classpathRoots()`, which is reactor
+compile-output *directories* only, and `ClasspathScanner.scan` hard-skips any root failing
+`Files.isDirectory`, so no jar is ever opened. The same gap silently disables completion at that
+coordinate, since `ScalarTypeCompletions` sources candidates from `ExternalReference.scalarConstants()`,
+so the library constants the custom-scalars manual page documents as the primary use case can never
+be offered.
 
 **The decision.** The directories-only premise goes. It was never argued from a property of the
 schema language, only from a guess about where consumer vocabulary lives, recorded on
-`RewriteContext.classpathRoots` as "external jars are not scanned: services live in reactor
-source, not third-party libraries", and `@scalarType` falsifies it outright. A scalar-constant-only
-jar census was considered and rejected: it keeps the same bug latent at every other class-bearing
-coordinate, a `@record` naming a DTO from a shared internal library, a `@service` naming an
-interface published as a jar, an `@enum` naming a library enum, all of which resolve at codegen
-and red-squiggle today. The census becomes the set of classes on the compile classpath, which is
-what `codegenLoader` can resolve.
-
-Absorbing this is what keeps the store from shipping a census known to be missing rows. Left
-alone, unification would land both paths on a single *wrong* answer: the constant is still absent
-from the class relation, the detection still fires, and it now fires consistently in both places.
+`RewriteContext.classpathRoots` as "external jars are not scanned: services live in reactor source,
+not third-party libraries", and `@scalarType` falsifies it outright. A scalar-constant-only jar
+census was considered and rejected: it keeps the same bug latent at every other class-bearing
+coordinate, a `@record` naming a DTO from a shared internal library, a `@service` naming an interface
+published as a jar, an `@enum` naming a library enum, all of which resolve at codegen and
+red-squiggle today. The census becomes the set of classes on the compile classpath, which is what
+`codegenLoader` can resolve. Absorbing this is what keeps the store from shipping a census known to
+be missing rows: left alone, unification would land both paths on a single *wrong* answer, the
+constant still absent from the class relation, the detection still firing, now consistently in both
+places.
 
 **Cost, measured.** Against `graphitron-sakila-example`'s resolved compile classpath (282 jars),
 replicating the scanner's existing filter over jar entries: 65,261 class entries, of which 29,656
 pass the public / non-synthetic / no-`$` filter, carrying 213,118 public methods and 74
 `GraphQLScalarType` constants. 156 MB of classfile bytes parsed, 4.0 s cold and 1.4 s warm page
-cache, single-threaded. The reactor's compile-output directories hold 1,825 candidate classes
-today, so this is roughly a 16x increase against a per-build cost that is currently ~0.
+cache, single-threaded. The reactor's compile-output directories hold 1,825 candidate classes today,
+so this is roughly a 16x increase against a per-build cost that is currently ~0.
 
-**Plan.**
+**Steps.**
 
 1. **Plumb the classpath.** `AbstractRewriteMojo.buildContext` passes `resolveCompileClasspath()`
    where it passes `resolveClasspathRoots()` today. That method already unions
-   `getCompileClasspathElements()` with the reactor roots and already feeds `buildCodegenLoader`
-   and the incremental compiler, so the two paths become one list by construction rather than by
-   coincidence. Keep the `classpathRoots` component name, which still describes a list of
-   classpath entries, and rewrite its javadoc: the premise is now false and must not survive as a
-   stale claim.
+   `getCompileClasspathElements()` with the reactor roots and already feeds `buildCodegenLoader` and
+   the incremental compiler, so the two paths become one list by construction rather than by
+   coincidence. Keep the `classpathRoots` component name, which still describes a list of classpath
+   entries, and rewrite its javadoc: the premise is now false and must not survive as a stale claim.
 2. **Teach `ClasspathScanner` to read jars.** `scan` currently continues past anything failing
-   `Files.isDirectory`. Split the per-entry walk: directories keep `Files.walk`, `.jar` entries
-   open a `ZipFile` and feed the same `readIfCandidate` filter over each entry's bytes, which is
-   already byte-oriented and needs only its `Path`-typed signature loosened. The existing FQN
-   dedup across roots carries over and gives classpath-order precedence, matching how a
-   classloader resolves a duplicated class.
-3. **Give the census a source identity, then cache against it.** The absorbed plan proposed a
-   static map keyed on (absolute path, size, last-modified), which pays each jar once per
-   `graphitron:dev` process and nothing more: every `mvn install`, every forked test JVM and
-   every fresh dev process pays the 4.0 s again. The reason it cannot do better is that the
-   family has nowhere to record what it scanned. `extension_class` is a class name and a kind,
-   and `ClasspathScanner.scan` holds the root while it walks and discards it, deduping FQNs
-   across roots first-wins and returning references that cannot say where they came from.
+   `Files.isDirectory`. Split the per-entry walk: directories keep `Files.walk`, `.jar` entries open
+   a `ZipFile` and feed the same `readIfCandidate` filter over each entry's bytes, which is already
+   byte-oriented and needs only its `Path`-typed signature loosened. The existing FQN dedup across
+   roots carries over and gives classpath-order precedence, matching how a classloader resolves a
+   duplicated class.
+3. **Record the source, then invalidate against it.** `store_source` and `jvm_class.source_name`
+   land here; their DDL is in the schema section. The absorbed plan proposed a static map keyed on
+   (absolute path, size, last-modified), which pays each jar once per `graphitron:dev` process and
+   nothing more: every `mvn install`, every forked test JVM and every fresh dev process pays the
+   4.0 s again. The reason it could not do better is that the family had nowhere to record what it
+   scanned, `ClasspathScanner.scan` holding the root while it walks and discarding it. The SDL
+   families solved this already, and the asymmetry was the finding: a declaration site carries its
+   `source_name`, which is what lets the refresh unit be "the types this file touches", while the
+   classpath family's only available refresh was discarding the whole census, the most expensive
+   thing in the store thrown away by any edit that invalidated anything. With the source recorded,
+   per-entry invalidation is a query rather than a mechanism and the static map becomes its
+   in-process degenerate case.
 
-   The SDL families solved this already, and the asymmetry is the finding. A declaration site
-   carries its `source_name`, which is what lets the refresh unit be "the types this file
-   touches"; the classpath family has no equivalent, so its only available refresh is discarding
-   the whole census. That is the most expensive thing in the store, thrown away by any edit that
-   invalidates anything.
+   The stamp is a content hash, not (path, size, last-modified). That triple is a heuristic,
+   tolerable while a wrong answer dies with the JVM and not tolerable once it survives a build: CI
+   caches, container image layers and reproducible-build normalisation all produce jars whose
+   modification time is constant or arbitrary. A hash is exact and is an order of magnitude cheaper
+   than the parse it protects, which step 6 confirms rather than assumes. A release-coordinate jar
+   under the local repository is immutable by Maven's contract and could key on path alone, but that
+   is a second rule earning milliseconds, and one invalidation story is worth more. Directory roots
+   stay uncached whatever the choice, changing on every compile.
 
-   So the shape changes before the cache does: a `jvm_source` relation for the classpath entry
-   (its path, whether it is a directory or a jar, and its stamp), and a source reference on
-   `jvm_class`. Per-entry invalidation is then a query rather than a mechanism, the static map
-   becomes the in-process degenerate case of it, and the warm store gets a partition it can
-   refresh instead of a census it must discard. This belongs to this item even though the
-   persistence is specified: the whole-store stamp on DDL hash and generator version decides
-   only whether the file is intelligible, so without a per-source stamp there is nothing finer to
-   invalidate on and a schema edit discards a classpath scan that had nothing to do with it.
-
-   The stamp column is a real choice and (path, size, last-modified) is the wrong default for
-   anything persisted. It is a heuristic, tolerable while a wrong answer dies with the JVM, and
-   not tolerable once it survives a build: CI caches, container image layers and
-   reproducible-build normalisation all produce jars whose modification time is constant or
-   arbitrary. A content hash is exact and is an order of magnitude cheaper than the parse it
-   protects, which the timing step below should confirm rather than assume. A release-coordinate
-   jar under the local repository is immutable by Maven's contract and could key on path alone,
-   but that is a second rule earning milliseconds, and one invalidation story is worth more.
-   Directory roots stay uncached whatever the choice, changing on every compile.
-
-   With a source recorded, the cross-root dedup also stops being lossy: today first-wins
-   discards both which root won and that a shadow existed. Recording the winner and quarantining
-   the shadowed duplicate is what `graphql_duplicate_declaration` does on the SDL side, and a
-   classpath collision is something an author may want told.
+   With a source recorded, the cross-root dedup also stops being lossy: today first-wins discards
+   both which root won and that a shadow existed. Recording the winner and quarantining the shadowed
+   duplicate is what `graphql_duplicate_declaration` does on the SDL side, and a classpath collision
+   is something an author may want told. Whether to build the detection is a call for the pass;
+   the source column is what makes it possible either way.
 4. **Ordering, not filtering, for completion.** `ClassNameCompletions` and friends will see ~30k
    candidates and must not filter them back out, the whole point being that they are legitimately
-   referenceable. Rank reactor-resident classes ahead of jar-resident ones so the common case
-   stays first, and let the client's prefix filter do the rest.
-5. **Take the census truthfully.** The four sweep findings land here rather than as a second pass:
-   the real JVM descriptor from `methodTypeSymbol().descriptorString()` instead of the
-   package-stripped concatenation, and a comment on each relation stating what its scan excludes.
-   The widened census is what makes the descriptor collision ordinary rather than exotic, since
-   282 jars make two same-named types in different packages a near-certainty.
-6. **Time the load.** The insert cost of a 31k-class, 213k-method census through `FactSink`,
-   measured rather than assumed, alongside the cost of hashing the same classpath so the stamp
-   choice above rests on a number. Per the analysis above the answer to a slow load is a faster
-   load, not a narrower census.
+   referenceable. Rank reactor-resident classes ahead of jar-resident ones so the common case stays
+   first, and let the client's prefix filter do the rest.
+5. **Take the census truthfully.** `jvm_method.descriptor` comes from
+   `methodTypeSymbol().descriptorString()` instead of `CatalogFactCapture.descriptorOf`, which
+   concatenates `CompletionData.Parameter.type()` values into `(Type;Type;)Return` from
+   `ClassDesc.displayName()`, package-stripped simple names. The column is commented "raw JVM
+   descriptor; the overload discriminator that keeps this key natural" and is neither: two public
+   methods taking `com.foo.Result` and `com.bar.Result` render the same string, collide on the key,
+   and the second is dropped by first-wins with no quarantine row. `ClasspathScanner.readMethods`
+   holds the real descriptor and already calls `descriptorString()` on its return type one line
+   later; `CompletionData.Method` drops it and capture invents a replacement. The widened census is
+   what makes the collision ordinary rather than exotic, 282 jars making two same-named types in
+   different packages a near-certainty. The extension-method anchor compares descriptor-erased
+   precisely because the model carries no descriptor, so it cannot catch this.
 
-**Tests.** A jar-resident `@scalarType` reference raises no diagnostic, which is the reported bug
-and the regression guard. Completion on `scalar LocalDate @scalarType(scalar: "|")` offers the
-jar-resident constant. `ClasspathScanner` unit tier: a fixture jar is scanned, its public classes
-and methods surface, and a class present in both a jar and a directory root surfaces once with
-classpath-order precedence. Cache behaviour: the same jar is read once, and a jar whose
-last-modified changes is re-read. Two overloads taking same-named types from different packages
-both survive capture, which is the descriptor regression guard. A jar whose stamp is unchanged
-is not re-scanned and one whose contents change is, asserted against the source relation rather
-than against a private cache. `graphitron-sakila-example`
-already carries the live build-through fixture, so the codegen half needs no new coverage; what
-is new is the LSP tier asserting the two classpaths agree.
+   `jvm_class`'s comment states its four filters, which the relation currently presents as a bare
+   existence claim: non-public, synthetic, jOOQ-package and any simple name containing `$`, the last
+   of which excludes every nested class. A nested class named in `@record` resolves through the
+   codegen loader and would be reported unknown by the resolution detection that later migrates onto
+   this relation, which is this slice's own bug one axis over: that one is directories against jars,
+   this is top-level against nested. Whether to keep the nested-class filter is a call for the pass;
+   disclosing it is not optional.
+6. **Time the load.** The insert cost of a 31k-class, 213k-method census through `FactSink`,
+   measured rather than assumed, alongside the cost of hashing the same classpath so the stamp choice
+   rests on a number. Per the analysis under "notes carried forward" the answer to a slow load is a
+   faster load, not a narrower census.
+
+**Tests.** A jar-resident `@scalarType` reference raises no diagnostic, which is the reported bug and
+the regression guard. Completion on `scalar LocalDate @scalarType(scalar: "|")` offers the
+jar-resident constant. `ClasspathScanner` unit tier: a fixture jar is scanned, its public classes and
+methods surface, and a class present in both a jar and a directory root surfaces once with
+classpath-order precedence. Two overloads taking same-named types from different packages both
+survive capture, the descriptor regression guard. A jar whose stamp is unchanged is not re-scanned
+and one whose contents change is, asserted against `store_source` rather than against a private
+cache. `graphitron-sakila-example` already carries the live build-through fixture, so the codegen
+half needs no new coverage; what is new is the LSP tier asserting the two classpaths agree.
+
+### Slice 5: the store persists under `target/`
+
+Absorbed from the warm-start-store filing. The reason it could not stay a follow-on is the
+partitionability convention above: persistence does not add a feature on top of the schema, it
+imposes a requirement the schema must already satisfy, and a model written without it cannot acquire
+it later without rekeying. The absorbed item's own open list ended with "which meta relation carries
+the stamp", which is a DDL question wearing a scheduling item's clothes.
+
+**Why persist.** The store is in-memory and per-run, so every surface that wants facts pays a full
+capture pipeline before it can answer anything and the LSP and MCP server boot cold. With the
+populated store written to an H2 file under `target/` at the end of a run, a surface opens the
+previous run's facts about as soon as the JVM has booted and serves completions, schema queries and
+the read-only SQL surface immediately, refreshing when its own run completes; with registry capture
+that refresh is per-file incremental rather than a full pipeline. A plain SQL client, an agent among
+them, can query the fact base as a build artifact without booting graphitron at all.
+
+**What it does not change.** The file is persisted state and never state *of record*. It is stamped,
+and any mismatch discards and rebuilds, so no migration ever exists and `target/` semantics keep
+deletion always correct. Surfaces label answers with the stamp's run identity, so staleness is
+visible rather than silent.
+
+**What it does change, which this item previously denied.** "Dead with the process" stops being
+true, and the store becomes an accumulation across runs, which the incremental-refresh section
+already assumes when it calls the store the accumulated registry. The stamp is therefore two things.
+`store_stamp` decides whether the file is intelligible at all, and that is what keeps migrations out.
+`store_source.stamp` decides which partitions survive, and without it every edit discards everything,
+including a classpath scan measured at 4.0 s that no schema edit had any reason to invalidate. The
+absorbed item carried only the first, which is what made it look separable.
+
+**Open for this slice.** The persist mechanism, whether the store is file-backed during the run or
+exported at the end. Reader concurrency while a build writes: H2 file locking, copy-on-open, or
+auto-server mode. Both are runtime questions the schema does not constrain, which is why they are
+the last thing decided rather than the first.
+
+### Notes carried forward
+
+**A fold in an agreement anchor is a symptom, not plumbing.** Every defect slices 3 and 4 fix
+surfaced at one, and the driver cannot distinguish a fold that bridges a real grain difference
+(capture total against a pruned model) from one that bridges a mismatch capture introduced.
+Registering an arm that needs a fold should carry the reason the grains differ. The sweep that found
+these ran over every producer and found the same defect wherever capture reads a projection built
+for another surface and none where it reads the parse directly, which locates the cause:
+`CatalogFacts` and `CompletionData` are shapes designed for the MCP catalog tools and the LSP's
+completion popups, and capture inherited every narrowing they made. `SdlFactCapture` reads the
+registry AST and is clean.
+
+**Three producers came back clean**, recorded so the pass does not re-derive them. The `graphitron_`
+decode helpers return null or an empty list for an absent argument and quarantine a type mismatch, so
+no default-filling reaches the store and the authored-values convention holds. `sql_column.sql_type`
+and `nullable` are jOOQ's readings and their comments say so; a disclosed projection is the healthy
+case and the pattern above is what an undisclosed one looks like. Column and table comments normalise
+the empty string upstream, so no relation confuses "" with absent.
+
+**The renames sharpen three findings rather than relieving them**, which is why the disclosure ships
+with the prefix rather than after it. A column called `descriptor` under a family named for the JVM
+claims the JVM's own artefact more loudly than it did under `extension_`; `sql_index` and
+`sql_column.ordinal` claim SQL's index set and SQL's column order where `catalog_` at least read as a
+tool's view of them; and `jvm_class` sounds more total than `extension_class` did, since a role name
+invites the question "extending what?" while a vocabulary name simply asserts the category. Every one
+of these names is more honest about whose vocabulary the row is written in and more misleading about
+which rows are present, so the pass that lands them owes each relation a comment stating its filters.
+
+**Narrowing the method census to relevant signatures was proposed and is not implementable without
+pre-resolution.** Recorded because the row count invites the idea. Nine coordinates name a Java
+method: `graphitron_service`, `graphitron_source_row`, `graphitron_external_field`,
+`graphitron_enum`, the field and argument conditions, and the three reference-step relations.
+Exactly one shape constrains a signature. Conditions must return `org.jooq.Condition`, which
+`ClasspathScanner` already classifies from the un-erased descriptor into `returns_condition`, so
+that filter is available as a predicate and applying it at capture buys nothing a `WHERE` does not.
+The other four constrain neither return type nor parameters, parameters binding as Arg, Context,
+Sources, DslContext, Table or SourceTable, so every public method is a candidate. Filtering those
+would mean inferring relevance during capture, the defect class the sweep found four instances of,
+and its failure mode is slice 4's own bug moved from the class axis to the method axis: a `@service`
+naming a real method the filter excluded reads as unknown in the store while the codegen loader
+resolves it, and completion fails the same way, since an author typing a `method:` value needs every
+public method of the named class offered. The cost the proposal aims at is insert throughput and not
+query cost, a resolution being `WHERE class_name = ? AND method_name = ?` however many rows it
+ignores, which is why slice 4's measurement is the next step rather than a scoping decision. Should
+it show the load dominating, the least-bad narrowing is a configured package scope: author-controlled,
+disclosable in the relation's comment, and failing safe, since an author who scoped too tightly gets a
+diagnostic to act on where a signature filter hides a method nobody knows is absent. Any narrowing at
+all inherits the disclosure obligation the sweep establishes.
+
+**Two improvements the contract does not demand**, noted so a pass can take or leave them. A decode
+arm that hits a missing required argument returns without writing either its decoded row or a
+`graphitron_undecoded_argument` row (`GraphitronFactCapture`'s `sourceRow`, `mutation` and `pivot`
+arms among others); the verbatim `graphql_` row survives, so a detection can still find the
+application, but nothing in the semantic stratum records that the decode declined, and it is worth
+either quarantining the application or naming the "verbatim graphitron application with no decoded
+row" detection as the intended reading. And `captureFacts` builds a second `JooqCatalog` and re-walks
+the catalog and the classpath (`GraphQLRewriteGenerator`) while `buildOutput` reuses the
+`catalogFacts` it already has, which is shadow-period cost only and cheap to thread through.
 
 ## Acceptance
 
@@ -2575,22 +1143,32 @@ is new is the LSP tier asserting the two classpaths agree.
   anchor checks: type census against `GraphitronSchema.types`, per-coordinate applied-directive
   counts against the SDL, the semantic relations against the minted model components and
   directive-resolver outputs they shadow, synthesis provenance against the
-  `connectionSynthesis` component, catalog table and column census against `CatalogFacts`,
-  extension method census against the scanner's `CompletionData` view. Two census comparisons
-  are projections rather than mirrors, and the driver compares them as such: `catalog_key`
-  folds to `CatalogFacts`' uniqueKeys view before comparing (that view excludes the primary
-  key and dedupes on column set), and `extension_method` compares descriptor-erased, because
-  `CompletionData.Method` carries no descriptor. They are the shadow
-  period's honesty check and retire as consumers migrate.
+  `connectionSynthesis` component, the federation macro against the registry the pipeline
+  actually captures, SQL table and column census against the catalog, JVM method census against
+  the scanner. No census fold survives the delivery below: the constraint reshaping removes the
+  one that bridged `CatalogFacts`' uniqueKeys view (which excluded the primary key and deduped on
+  column set), and the real descriptor removes the descriptor-erased comparison, so a fold
+  reappearing is a signal rather than plumbing. The anchors are the shadow period's honesty check
+  and retire as consumers migrate.
 - The gate family runs against the bootstrapped store: comment coverage (every table and column
   commented, checked via `INFORMATION_SCHEMA`) and one query per cross-relation invariant the
-  DDL cannot state (at most one `is_primary` row per catalog table, `default_value_sdl` only
+  DDL cannot state (`default_value_sdl` only
   under INPUT_OBJECT parents, application ordinals and `merge_ordinal` dense from 0 per group,
   wrapping decode consistent with `type_sdl` where SQL can express the correspondence, every
   application resolving to a captured definition, a decoded application keeping its verbatim row,
   the federation dual projection in agreement). A repeated application of a non-repeatable
   directive is deliberately not in this list: under registry capture it is author-reachable, so
   it is a detection.
+- Every base relation is partitionable by the source that produced it, per the convention above:
+  `store_source` carries every schema file, directory root and jar the store read, and no base row
+  is unreachable from one. A per-source refresh deletes exactly that source's rows.
+- The class census is the compile classpath, so the LSP and the codegen loader resolve the same
+  set: a jar-resident `@scalarType` constant raises no diagnostic and is offered in completion.
+  Re-scanning is stamped per source, so an unchanged jar is read once.
+- Every relation whose contents are filtered says so in its comment. The comment-coverage gate
+  cannot check that a comment is true, so this one is a review rule, named as such.
+- The store persists to an H2 file under `target/` at the end of a run and a surface opens it
+  without a capture pass; a `store_stamp` mismatch discards and rebuilds rather than migrating.
 - All tests live in `graphitron` at the appropriate tier (the tier meta-annotations live in
   core's test root and the module order forbids the reverse dependency); `graphitron-model`
   hosts model code only: the DDL, the codegen output, the bootstrap, and the codegen driver,
