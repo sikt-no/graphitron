@@ -2138,6 +2138,20 @@ a separate relation with different contents, so the word is not merely imprecise
 dialect where it collapses a distinction the schema makes. `is_primary` also reads as a question
 about the row rather than a restatement of its noun.
 
+Unifying the constraint families under one typed relation, the shape both Oracle's data
+dictionary and the standard's `INFORMATION_SCHEMA` converged on, is a better model than either
+name and is filed as `sql-constraints-unify-under-one-relation` (R607) rather than folded here:
+it is a data-model change with a live question about where the foreign-key attributes live, so
+it takes the Spec gate rather than a reviewer's note on an item reopened for a correctness
+defect. Nothing is lost by the ordering, since `sql_unique_constraint` is exactly the slice a
+`constraint_type` of PRIMARY KEY or UNIQUE selects, and unification then merges two well-named
+relations instead of renaming one first.
+
+One comment is simply wrong and should go with the rename, being free.
+`catalog_foreign_key_column.source_column` is described as "source column, 1-based per the
+graphql-java convention", which is the SDL families' position wording copy-pasted onto a column
+name. The comment-coverage gate checks that a comment exists and cannot check that it is true.
+
 Two near-misses ruled out, both already in the codebase's vocabulary. `sql_candidate_key` picks
 up `JooqCatalog.candidateKeys`, but a candidate key is relational-model vocabulary rather than
 SQL DDL's, and it overclaims irreducibility that SQL does not require of a UNIQUE declaration.
