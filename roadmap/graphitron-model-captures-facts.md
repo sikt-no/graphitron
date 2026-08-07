@@ -2100,6 +2100,36 @@ describes. Doing it in this pass rather than a follow-up is a cost argument: not
 store yet, so the rename is text plus compile fixes today and grows with every consumer that
 migrates, and this item is reopened anyway.
 
+**`catalog_` stays, and the two glosses that call it jOOQ's go.** Renaming it `jooq_` for
+symmetry with the above was raised and rejected: it inverts the rule rather than applying it.
+Of the family's thirty columns exactly two are jOOQ's vocabulary, the `java_name` riders on
+`catalog_table` and `catalog_column`; the other twenty-eight (`table_schema`, `column_name`,
+`sql_type`, `nullable`, `constraint_name`, `is_primary`, `target_table`, `index_name`,
+`position`) are the SQL catalog's, and even `sql_type` holds a SQL type that jOOQ merely
+reports.
+
+The deciding test is the one the `extension_` case turns on: swap the mechanism and ask whether
+the vocabulary survives. Read `INFORMATION_SCHEMA` directly instead of walking jOOQ's generated
+classes and every relation name and all but one column still read correctly, so `catalog_` is
+mechanism-independent where `jooq_` would not be. The `extension_` rows, by contrast, say class
+and method and descriptor whichever scanner produced them, which is why that name failed on its
+own terms. The precedent that settles it is `graphql_`, which is not `graphqljava_` even though
+graphql-java parses every row. `jooq_` is `graphqljava_`.
+
+The apparent symmetry with `jvm_` does not hold, because `jvm_` names an owner and not a reader.
+The reader of the classfiles is `ClasspathScanner`; the JVM is what defines a descriptor, a
+record component and an access flag. jOOQ defines neither table nor column nor foreign key, SQL
+does, so jOOQ stands in the reader's position rather than the owner's.
+
+What is genuinely wrong is the prose. The DDL header glosses the family as "jOOQ catalog facts"
+and the section banner as "what the jOOQ catalog scan sees", both naming the reader where every
+other family names the vocabulary's owner, and the family sentence in this item's schema section
+repeats it. Those three lines should say the catalog's vocabulary and name jOOQ as the reader.
+Optional while someone is there: the two `java_name` columns could be `jooq_name`, which puts
+the marker on the columns that earn it rather than on their twenty-eight siblings and is the
+more precise claim, since it is jOOQ's generated field name and not any Java name. Low
+conviction, and `catalog_column`'s table comment already flags the rider.
+
 One measurement rides along with the widened census rather than with the rename. R605 rules the
 ~213k `extension_method` rows an insert-throughput question rather than a scoping one, which is
 the right call and is this item's premise, but it makes the per-run load worth measuring rather
