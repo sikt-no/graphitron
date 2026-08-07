@@ -1,7 +1,7 @@
 ---
 id: R595
 title: "The graphitron-model module exists and capture fills it"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 4
 theme: classification-model
