@@ -1,7 +1,7 @@
 ---
 id: R605
-title: "LSP unknown-class diagnostic misses jar-resident classes on @scalarType"
-status: Backlog
+title: "Class census reads the compile classpath, not just reactor output directories"
+status: Spec
 bucket: bug
 theme: lsp
 priority: 3
@@ -10,12 +10,39 @@ created: 2026-08-07
 last-updated: 2026-08-07
 ---
 
-# LSP unknown-class diagnostic misses jar-resident classes on @scalarType
+# Class census reads the compile classpath, not just reactor output directories
+
+## Problem
 
 `scalar LocalDate @scalarType(scalar: "graphql.scalars.ExtendedScalars.Date")` generates fine but red-squiggles in the editor: `Unknown class 'graphql.scalars.ExtendedScalars' on @scalarType. Not found in compiled target/classes.` The two paths read different classpaths. Codegen resolves the constant reflectively through `RewriteContext.codegenLoader`, a `URLClassLoader` the mojo builds over `project.getCompileClasspathElements()` (jars included, `AbstractRewriteMojo.buildCodegenLoader`). The LSP catalog instead reads `CompletionData.externalReferences()`, built by `CatalogBuilder.buildExternalReferences` from `RewriteContext.classpathRoots()` — reactor compile-output *directories* only, and `ClasspathScanner.scan` hard-skips any root that fails `Files.isDirectory`, so no jar is ever opened. `graphql.scalars.ExtendedScalars` lives in the `graphql-java-extended-scalars` jar, so it is structurally absent from the scan and `Diagnostics.validateScalarTypeClasspath` reports every reference to it as unknown. The pre-compile empty-scan carve-out does not help: the scan is non-empty, just incomplete.
 
 The same gap silently disables completion at that coordinate. `ScalarTypeCompletions` sources its candidates from `ExternalReference.scalarConstants()`, which `ClasspathScanner.readScalarConstants` fills from `.class` files under the same directory roots, so the library constants that are the documented primary use case (`docs/manual/how-to/custom-scalars.adoc`) can never be offered. The scan's directories-only scope is a deliberate premise, recorded on `RewriteContext.classpathRoots`: "External jars (from `~/.m2`) are not scanned: services live in reactor source, not third-party libraries." That premise holds for `@service` / `@condition` / `@record` and fails exactly for `@scalarType`, whose canonical target *is* a third-party library constant.
 
-Design fork for Spec: (a) widen the scan to the full compile classpath, which fixes both surfaces at once but pulls every dependency class into `@service` / `@enum` / `@record` completion and diagnostics and costs a jar walk per catalog build; (b) keep the class census directory-scoped and add a narrow jar-resident *scalar-constant* census keyed on the `Lgraphql/schema/GraphQLScalarType;` field descriptor `readScalarConstants` already matches on, so only the coordinate with the third-party premise gets the wider classpath; (c) drop the unknown-class arm of `validateScalarTypeClasspath` and leave the class check to the build-tier `ScalarTypeResolver`, accepting no completion. (b) looks right: it fixes the false diagnostic and the missing completions together, keeps the widened scope confined to the one coordinate whose vocabulary genuinely lives in libraries, and the descriptor filter bounds the jar walk's output to a handful of fields per jar. Whichever arm is chosen, the fix needs the mojo to plumb `resolveCompileClasspath()` (or its jar subset) onto `RewriteContext` alongside `classpathRoots`, and the premise sentence on `RewriteContext.classpathRoots` needs rewriting to say which coordinates it does and does not cover.
+## Decision
 
-Regression guards: an LSP diagnostics test asserting a jar-resident `@scalarType` reference raises nothing, and a completion test asserting `graphql.scalars.ExtendedScalars.Date` is offered on `scalar LocalDate @scalarType(scalar: "|")`. `graphitron-sakila-example` already carries the live fixture (`scalar LocalDate` / `scalar BigDecimal` bound to `ExtendedScalars` constants), so the build-through path is covered; what is missing is a test at the LSP tier that pins the two classpaths agreeing.
+The limitation goes. The directories-only premise was never argued from a property of the schema language, only from a guess about where consumer vocabulary lives, and `@scalarType` falsifies the guess outright. Narrowing the fix to a scalar-constant-only jar census (considered and rejected) would keep the same class of bug latent at every other class-bearing coordinate: a `@record` naming a DTO from a shared internal library, a `@service` naming an interface published as a jar, an `@enum` naming a library enum, all resolve at codegen and all red-squiggle today. The census becomes the set of classes on the compile classpath, which is exactly what `codegenLoader` can resolve, so the two paths stop being able to disagree.
+
+## Cost, measured
+
+Measured against `graphitron-sakila-example`'s resolved compile classpath (282 jars), replicating `ClasspathScanner`'s existing filter over jar entries: 65,261 class entries, of which 29,656 pass the public / non-synthetic / no-`$` filter, carrying 213,118 public methods and 74 `GraphQLScalarType` constants. 156 MB of classfile bytes parsed, 4.0 s cold / 1.4 s warm page cache, single-threaded.
+
+For scale: the entire reactor's compile-output directories hold 1,825 candidate classes today, so this is a ~16x increase in census size and a per-build cost that is currently ~0. Two consequences that shape the plan below:
+
+- `graphitron:dev` rebuilds the catalog on every schema edit. An unconditional 1.4 s jar re-walk per keystroke-driven rebuild is not acceptable, so the scan needs a cache. Jars are content-addressed and immutable in `~/.m2`; a per-jar cache keyed on (path, size, last-modified) makes every rebuild after the first free, and the cold cost is paid once per process.
+- The fact store's `extension_` family is filled from the same census (`CatalogFactCapture.captureExtensions`). `extension_class` goes ~1.8k → ~31k rows and `extension_method` to ~213k, with `extension_method_parameter` larger again. This needs measuring against the store's insert path before the widened census is turned on for capture; if it dominates build time, capture takes a scoped view of the census while the LSP takes the full one.
+
+## Plan
+
+1. **Plumb the classpath.** `AbstractRewriteMojo.buildContext` passes `resolveCompileClasspath()` where it passes `resolveClasspathRoots()` today. `resolveCompileClasspath` already unions `project.getCompileClasspathElements()` with the reactor roots and is already used for `buildCodegenLoader` and the incremental compiler, so the two paths become the same list by construction rather than by coincidence. Keep the `RewriteContext` component name (`classpathRoots` still describes a list of classpath entries) and rewrite its javadoc: the "external jars are not scanned" premise is now false and must not survive as a stale claim.
+2. **Teach `ClasspathScanner` to read jars.** `scan(List<Path>, String)` currently `continue`s on anything failing `Files.isDirectory`. Split the per-entry walk: directories keep the `Files.walk` path, `.jar` files open a `ZipFile` and feed the same `readIfCandidate` filter over each entry's bytes. `readIfCandidate` itself is already byte-oriented and needs only its `Path`-typed signature loosened. Existing FQN dedup across roots carries over unchanged and gives classpath-order precedence, which matches how the classloader would resolve a duplicated class.
+3. **Cache per jar.** A static map keyed on (absolute path, size, last-modified) → scanned references, so repeated catalog builds in one `graphitron:dev` process pay the walk once per jar. Directory roots stay uncached: they change on every compile, which is the case the cache would get wrong.
+4. **Measure and decide the capture scope.** Time `CatalogFactCapture` with the widened census before wiring it in. If the `extension_` insert cost is material, `GraphQLRewriteGenerator` passes capture a reactor-scoped view while `CatalogBuilder.build` passes the LSP the full one, and the split gets stated on both call sites. This is the one slice whose outcome the spec does not pre-decide.
+5. **Ordering, not filtering, for completion.** `ClassNameCompletions` and friends will now see ~30k candidates. Do not filter them back out; the point of the item is that they are legitimately referenceable. Rank reactor-resident classes ahead of jar-resident ones so the common case stays first in the list, and let the client's prefix filter do the rest. `ScalarTypeCompletions` already ranks by field-name match against the enclosing `scalar X` and needs no change beyond the wider input.
+
+## Tests
+
+- LSP diagnostics: a jar-resident `@scalarType` reference (`graphql.scalars.ExtendedScalars.Date`) raises no diagnostic. This is the reported bug and the regression guard.
+- LSP completion: `scalar LocalDate @scalarType(scalar: "|")` offers `graphql.scalars.ExtendedScalars.Date`, ranked ahead of the other `ExtendedScalars` constants by the existing field-name preference.
+- `ClasspathScanner` unit tier: a fixture jar is scanned, its public classes and methods surface, and a class present in both a jar and a directory root surfaces once with classpath-order precedence.
+- Cache behaviour: scanning the same jar twice reads it once; a jar whose last-modified changes is re-read.
+- `graphitron-sakila-example` already carries the live build-through fixture (`scalar LocalDate` / `scalar BigDecimal` bound to `ExtendedScalars` constants), so the codegen half needs no new coverage; what is new is the LSP tier asserting the two classpaths agree.
