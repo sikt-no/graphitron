@@ -1,7 +1,7 @@
 ---
 id: R585
 title: "Typed rejections on the input-field resolution path"
-status: In Review
+status: Ready
 bucket: architecture
 priority: 5
 theme: classification-model
@@ -327,6 +327,82 @@ each row declaring its arm and, where the arm is `Structural`, why. The remainin
 id-reference synthesis shim's four arms, the FK-target key mismatch, and the two NodeId decode-helper
 failures) need `KjerneJooqGenerator` node metadata and are covered against the fixture context by
 `NodeIdPipelineTest` and `NodeInferencePipelineTest`, including the key mismatch's `Deferred` arm.
+
+## In Review → Ready rework (2026-08-07)
+
+Independent-session review of `eb27e57` (slice 1) and `ee9f4af` (slice 2). Full
+`mvn install -Plocal-db` SUCCESS on the reviewed tree; 3185 `graphitron` tests green; no
+code-string assertions on generated bodies anywhere in the delivered tests. The mechanism is the
+one the spec asked for and the delivery is close. Three things to settle before the next gate.
+
+### 1. Blocking: a nested `@condition` failure is minted under the wrong input type
+
+`InputFieldConditionFailure` (`graphitron/src/main/java/no/sikt/graphitron/rewrite/InputFieldConditionFailure.java:15`)
+carries `(fieldName, location, rejection)` but not the type that *declares* the field, while the
+accumulator is threaded through the nesting recursion unchanged
+(`BuildContext.java:2645`). `BuildContext.mintInputFieldFailure` (`BuildContext.java:2482`) then
+builds the coordinate from the *fold level's* type name, so a nested field's condition failure is
+minted at a coordinate that does not exist. Reproduced on this tree:
+
+```graphql
+input Inner {
+  filmId: Int! @field(name: "film_id")
+    @condition(condition: {className: "...NoSuchClass", method: "nope"})
+}
+input FilterA { inner: Inner }
+input FilterB { inner: Inner }
+type Query { a(filter: FilterA): [Film!]!  b(filter: FilterB): [Film!]! }
+```
+
+yields two diagnostics, `FilterA.filmId` and `FilterB.filmId`, both at the correct line. Neither
+coordinate exists: `filmId` is declared on `Inner`. Both halves of the design are lost — the
+coordinate is not "built from the input field's own facts", and because it borrows the consumer's
+type name the two mints are unequal values, so the mint-boundary dedup that the Design section
+makes load-bearing does not fire on one fact minted twice. The javadoc on `mintInputFieldFailures`
+("Nothing here carries the consuming coordinate, deliberately") states the intended contract and
+is currently false on this path.
+
+The `Unresolved` path is correct: the nesting branch mints its nested failures with the nested
+type's own name (`BuildContext.java:2655`), so only the condition accumulator is affected.
+
+Fix is contained: thread the declaring type onto `InputFieldConditionFailure` (every one of the
+eight `buildInputFieldCondition` call sites is inside `classifyInputFieldInternal`, which has
+`parentTypeName` in scope, and the nesting recursion already passes the nested type name as
+`parentTypeName`), and have `mintInputFieldFailure` read it instead of the fold's argument. Add the
+nested case to the Tests section's dedup bullet, count-asserted: one nested input consumed by two
+outer types yields one diagnostic at `Inner.<field>`, not two at the consumers'.
+
+### 2. Retirement sweep: two retired terms survive in test javadoc
+
+Both are prose only, both describe the retired mechanism as if it were live:
+
+- `GraphitronSchemaBuilderTest.java:4664` — "the gate's placeholder Unresolved (lookupColumn null)"
+  and ":4666" — "the actionable diagnostic is the condition error in `condErrors`". Neither
+  `lookupColumn` nor `condErrors` exists; the paragraph also predates the location move, since the
+  diagnostic is no longer on the consuming field.
+- `NodeIdPipelineTest.java:1553` — "surfaces the deferred-emission hint via its Unresolved reason".
+  `Unresolved.reason` is retired; the hint now rides the record's `rejection`.
+
+### 3. The spec body still reads as prospective
+
+`roadmap/workflow.adoc` § Item file conventions asks a shipped phase to collapse into a one-line
+"shipped at `<sha>`" note. The Sequencing section still carries both slices in full, and Design /
+Implementation / Tests still read as instructions ("Delete eight `.message()` calls", which the
+Implementation notes then correct to six). The Implementation notes capture the learnings well;
+fold the shipped narrative into them and leave the two SHAs plus whatever genuinely remains.
+
+### Not blocking, for the author's judgment
+
+- The `DirectiveConflict.directives` contract is now stated on the record's javadoc and pinned by
+  `InputFieldFanInDiagnosticsTest.directiveConflict_listsOnlyDirectivesTheAuthorApplied`, but at
+  exactly one of the eleven producer sites. The Tests section asked for a contract test, and one
+  site is a spot check rather than a contract; a sweep asserting the property over every
+  `DirectiveConflict` a corpus schema produces would make it build-enforced. Fine as a follow-up.
+- `BuildContext.untypedUpstream` is `Rejection.structural` under a name, so the boundary wraps are
+  invisible to any consumer and the producer-partition test has to record "boundary wrap" by hand
+  in a note column. That is the honest cost of the additive-then-cutover discipline and reads as
+  intended, but it means the allowlist, not the type system, is what shrinks when `ParsedPath`
+  lands.
 
 ## Spec → Ready sign-off (2026-08-07)
 
