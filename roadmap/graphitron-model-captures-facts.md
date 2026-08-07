@@ -2333,6 +2333,31 @@ cannot distinguish a fold that bridges a real grain difference (capture total ag
 model) from one that bridges a mismatch capture introduced. Registering an arm that needs a fold
 should carry the reason the grains differ.
 
+**Narrowing the method census to relevant signatures was proposed and is not implementable
+without pre-resolution.** Recorded because the row count invites the idea and the reasoning
+should not be re-derived. Nine coordinates name a Java method: `graphitron_service`,
+`graphitron_source_row`, `graphitron_external_field`, `graphitron_enum`, the field and argument
+conditions, and the three reference-step relations. Exactly one shape constrains a signature.
+Conditions must return `org.jooq.Condition`, which `ClasspathScanner` already classifies from
+the un-erased descriptor into `returns_condition`, so that filter is available as a predicate and
+applying it at capture buys nothing a `WHERE` does not. The other four constrain neither return
+type nor parameters, parameters binding as Arg, Context, Sources, DslContext, Table or
+SourceTable, so every public method is a candidate.
+
+Filtering those would mean inferring relevance during capture, which is the defect class the
+sweep above found four instances of, and its failure mode is R605's own bug moved from the class
+axis to the method axis: a `@service` naming a real method the filter excluded reads as unknown
+in the store while the codegen loader resolves it. Completion fails the same way, since an author
+typing a `method:` value needs every public method of the named class offered.
+
+The cost the proposal aims at is insert throughput and not query cost, a resolution being
+`WHERE class_name = ? AND method_name = ?` however many rows it ignores, which is why the
+measurement above is the next step rather than a scoping decision. Should it show the load
+dominating, the least-bad narrowing is a configured package scope: author-controlled, disclosable
+in the relation's comment, and failing safe, since an author who scoped too tightly gets a
+diagnostic to act on where a signature filter hides a method nobody knows is absent. Any
+narrowing at all inherits the disclosure obligation the sweep establishes.
+
 One measurement rides along with the widened census rather than with the rename. R605 rules the
 ~213k `jvm_method` rows an insert-throughput question rather than a scoping one, which is
 the right call and is this item's premise, but it makes the per-run load worth measuring rather
