@@ -1,7 +1,7 @@
 ---
 id: R587
 title: "Roadmap markdown code spans render as substituting AsciiDoc spans, so quoted macros go live"
-status: Ready
+status: In Progress
 bucket: cleanup
 priority: 3
 theme: docs
