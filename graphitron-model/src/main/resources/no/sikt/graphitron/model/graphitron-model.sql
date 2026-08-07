@@ -1730,6 +1730,13 @@ COMMENT ON COLUMN graphitron_undecoded_argument.value_sdl IS 'the literal as wri
 -- The expansion's own record: which graphql_ rows a macro added, and the authored text where
 -- the macro rewrote it. Synthesized rows inherit the causing application's source position;
 -- these relations are what say a position means "caused here" rather than "written here".
+--
+-- The macro domains are closed over the expansions capture can run, which is the expansions whose
+-- contribution is a function of one carrier's own declaration. @asConnection qualifies: its element
+-- type enters as a name and nothing reads the type that name resolves to. @asFacet does not, which
+-- is why no FACET value appears here. Its container's shape reads through the carrier's arguments
+-- into the filter input type's fields, so it is an aggregate over the whole schema rather than a
+-- local expansion, and it belongs to a derived stratum reading these relations.
 CREATE TABLE graphitron_type_declaration_synthesis (
   type_name          VARCHAR NOT NULL,
   source_name        VARCHAR NOT NULL,
@@ -1741,7 +1748,7 @@ CREATE TABLE graphitron_type_declaration_synthesis (
   PRIMARY KEY (type_name, source_name, source_line, source_column),
   FOREIGN KEY (type_name, source_name, source_line, source_column)
     REFERENCES graphql_type_declaration (type_name, source_name, source_line, source_column),
-  CHECK (macro IN ('CONNECTION', 'FACET', 'FEDERATION'))
+  CHECK (macro IN ('CONNECTION', 'FEDERATION'))
 );
 COMMENT ON TABLE graphitron_type_declaration_synthesis IS 'A declaration site was contributed by a macro rather than the author: a definition site when the macro creates the type (Connection, Edge, facet shapes, at merge_ordinal 0), an extension site when it adds members to an existing type (the Query fields federation adds from @link), and an empty extension site when a later carrier touches a shared machinery type (PageInfo), so carrier multiplicity is the site count. Synthesized element rows hang off these sites through the ordinary declaration reference, which is what marks additions without per-element provenance; a type is synthesized exactly when its merge_ordinal-0 site is.';
 COMMENT ON COLUMN graphitron_type_declaration_synthesis.type_name IS 'the GraphQL type this row is about';
@@ -1759,7 +1766,7 @@ CREATE TABLE graphitron_field_synthesis (
   authored_type_sdl VARCHAR NOT NULL,
   PRIMARY KEY (type_name, field_name),
   FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name),
-  CHECK (macro IN ('CONNECTION', 'FACET'))
+  CHECK (macro IN ('CONNECTION'))
 );
 COMMENT ON TABLE graphitron_field_synthesis IS 'A field''s type expression was rewritten by a macro; the authored expression survives here while the field''s graphql_field row holds the effective one.';
 COMMENT ON COLUMN graphitron_field_synthesis.type_name IS 'the GraphQL type this row is about';

@@ -1552,9 +1552,11 @@ CREATE TABLE graphitron_undecoded_argument (
 );
 ```
 
-Macros expand during the same capture walk. `@asConnection` and `@asFacet` are schema
-construction, not questions over facts, and the visitor holds everything construction needs
-(the AST, the wrapping decode, the naming conventions), so the walk expands them inline:
+Macros expand during the same capture walk when their contribution is a function of one carrier's
+own declaration, which is the same type-locality rule the rest of the walk follows. `@asConnection`
+qualifies: it is schema construction rather than a question over facts, the visitor holds everything
+that construction needs (the AST, the wrapping decode, the naming conventions), and its element type
+enters as a name that nothing here resolves. So the walk expands it inline:
 a macro's contribution enters as declaration sites at the causing position (a definition
 site for each type it creates, an extension site where it adds members to an existing type),
 its element rows hang off those sites through the ordinary declaration reference, and the
@@ -1572,6 +1574,20 @@ rewrite (`KeyNodeSynthesiser`) keeps running for the legacy pipeline's assembly 
 both implementations of the rule are live, the agreement suite's applied-directive anchor
 pins them to each other (the store's `@key` rows against the assembled schema's), and the
 rewrite retires with its last legacy consumer.
+
+`@asFacet` is the expansion that does **not** qualify, and the boundary is worth stating because it
+is the same boundary the decode rule draws. The `<Conn>Facets` and `<Scalar>FacetValue` shapes read
+through the carrier's arguments into the filter input type's fields, for the `@asFacet` marker, the
+`@field(name:)` binding, and the value's scalar and nullability. That is an aggregate over the whole
+schema, not a function of the carrier's declaration: the filter input type is free to live in
+another file, so minting the container during the walk would leave it stale under the per-file
+refresh below whenever a facet is added to that other file. Every input the shape needs is already a
+captured column (`graphitron_facet` marks the fields, `graphitron_field_binding` gives the column,
+`graphql_argument` links carrier to filter type, `graphql_field` gives the value's scalar and
+nullability), so it is computable as a query over captured columns, which puts it in a derived
+stratum by the same rule that keeps name resolution and effective-value defaulting out. `@asFacet`
+stays a marker relation here; the container is out of this item's scope with the rest of derivation,
+and the macro domains on the provenance relations carry no FACET value as a result.
 
 ```sql
 -- ==== Macro synthesis provenance =============================================
@@ -1600,7 +1616,7 @@ CREATE TABLE graphitron_type_declaration_synthesis (
   PRIMARY KEY (type_name, source_name, source_line, source_column),
   FOREIGN KEY (type_name, source_name, source_line, source_column)
     REFERENCES graphql_type_declaration (type_name, source_name, source_line, source_column),
-  CHECK (macro IN ('CONNECTION', 'FACET', 'FEDERATION'))
+  CHECK (macro IN ('CONNECTION', 'FEDERATION'))
 );
 
 -- A field's type expression was rewritten by a macro; the authored expression
@@ -1612,7 +1628,7 @@ CREATE TABLE graphitron_field_synthesis (
   authored_type_sdl VARCHAR NOT NULL, -- the type expression as the author wrote it, pre-expansion
   PRIMARY KEY (type_name, field_name),
   FOREIGN KEY (type_name, field_name) REFERENCES graphql_field (type_name, field_name),
-  CHECK (macro IN ('CONNECTION', 'FACET'))
+  CHECK (macro IN ('CONNECTION'))
 );
 
 -- A type-level directive application was synthesized rather than authored
@@ -1959,25 +1975,22 @@ Connection, Edge and shared PageInfo as ordinary declaration sites at the causin
 position, each provenance-marked. The structural arm rewrites and mints nothing, so its rows are
 the author's and the walk already had them.
 
-Remaining, and the reason this item is not yet In Review:
+The facets container moved out of this item rather than shipping: `@asFacet` is an aggregate over
+the whole schema, so it belongs to a derived stratum, as the macro section above now records. The
+provenance relations' macro domains lost their FACET value with it.
 
-- **The facets container is not minted**, and the plan should say so explicitly rather than list
-  `@asFacet` as a walk macro alongside `@asConnection`. The two are not alike. A Connection's
-  contribution is a function of the carrier field alone: the element type enters as a name and
-  nothing reads the type it names, so the expansion is type-local and the refresh unit stays the
-  carrier's file. The `<Conn>Facets` and `<Scalar>FacetValue` shapes are not: `facetSpecsFor` reads
-  through the carrier's arguments into the filter input type's fields, for the `@asFacet` marker,
-  the `@field(name:)` binding and the value's scalar and nullability. That input type is free to
-  live in another file, so an edit adding a facet there would leave the carrier's minted container
-  stale under the per-file refresh this plan specifies. The recommendation is to make the facets
-  container a derivation instead: the store already holds every input it needs (`graphitron_facet`
-  marks the fields, `graphitron_field_binding` gives the column, `graphql_argument` links carrier to
-  filter type, `graphql_field` gives the scalar and its nullability), so it computes as a query over
-  captured columns, which this plan's own decode rule says belongs outside capture. `@asFacet` stays
-  a marker relation either way; what moves is only where the container's shape is built.
-- **The two anchors that read the minted output**: synthesis provenance against the
-  `connectionSynthesis` component, and the semantic relations against the minted model components.
-  Both compare against arms carrying facet names, so both want the fork above settled first.
+The synthesis-provenance anchor against `connectionSynthesis` is in, in two halves: the minted
+Connection and Edge names against the relation's directive-driven rows (scoped to those arms, since
+the facet arms are the derived stratum's business and the assertion names them as such), and the
+rewritten carriers against the same rows. PageInfo agrees on a count rather than a set, being
+schema-grain on the model and per-carrier in the store.
+
+Remaining, and the reason this item is not yet In Review: the acceptance list's one uncovered
+anchor, the semantic relations against the minted model components and the directive-resolver
+outputs they shadow. That is the widest of the six (the `graphitron_` family is 61 relations against
+a resolver surface that is not one component), so it wants a representative-subset design rather
+than a relation-by-relation sweep, and the mechanical driver already fails on any relation without a
+registration, which is what keeps a subset honest about what it does not cover.
 
 ## Acceptance
 

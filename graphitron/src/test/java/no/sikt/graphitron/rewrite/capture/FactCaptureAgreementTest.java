@@ -16,6 +16,8 @@ import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.model.ConnectionSynthesis;
+import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.NodeDeclaration;
 import no.sikt.graphitron.rewrite.schema.federation.KeyNodeSynthesiser;
@@ -35,6 +37,8 @@ import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SYNTHESIS;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_DECLARATION_SYNTHESIS;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_SITE;
 import static no.sikt.graphitron.model.Tables.CATALOG_COLUMN;
 import static no.sikt.graphitron.model.Tables.CATALOG_KEY;
@@ -142,6 +146,23 @@ class FactCaptureAgreementTest {
         input FilmFilter { title: String = "any" }
         """;
 
+    /** A directive-driven carrier and a plain list, so the expansion has something to skip. */
+    private static final String CONNECTION_FIXTURE = """
+        type Query {
+          films: [Film!]! @asConnection
+          languages: [Language!]!
+        }
+
+        type Film @table(name: "film") {
+          id: ID! @field(name: "film_id")
+          title: String
+        }
+
+        type Language @table(name: "language") {
+          name: String @field(name: "name")
+        }
+        """;
+
     /** A federated slice: one node with an authored key alternative, one without any. */
     private static final String FEDERATED_FIXTURE = """
         directive @link(url: String!, import: [String]) repeatable on SCHEMA
@@ -229,6 +250,83 @@ class FactCaptureAgreementTest {
                 }
             }
             assertThat(expected).as("the fixture federates nodes, so this pins something").isNotEmpty();
+            assertThat(captured).isEqualTo(expected);
+        }
+    }
+
+    /**
+     * The walk's connection expansion against the classified model's record of the same synthesis.
+     * Scoped to the arms capture mints: the facet arms are an aggregate over the whole schema and
+     * belong to a derived stratum, so their absence here is the design rather than a gap, and the
+     * assertion says so by naming the arms it compares.
+     */
+    @Test
+    @DisplayName("connection synthesis provenance agrees with the classified model's record")
+    void synthesisProvenanceAgreesWithConnectionSynthesis(@TempDir Path tmp) {
+        try (var store = CapturedStore.of(tmp, CONNECTION_FIXTURE)) {
+            var relation = GraphitronSchemaBuilder.build(store.registry(), testContext())
+                .connectionSynthesis();
+
+            var expected = new LinkedHashSet<String>();
+            for (var row : relation.rows().values()) {
+                if (!(row instanceof ConnectionSynthesis.DirectiveDriven)) {
+                    // A structural carrier references a declared Connection and mints nothing, so
+                    // capture rewrites nothing and has no provenance to show.
+                    continue;
+                }
+                for (var minted : row.mintedNames()) {
+                    if (minted.declaredArm() == GraphitronType.ConnectionType.class
+                        || minted.declaredArm() == GraphitronType.EdgeType.class) {
+                        expected.add(minted.name() + "<-" + row.parentTypeName() + "." + row.fieldName());
+                    }
+                }
+            }
+            assertThat(expected).as("the fixture carries @asConnection, so this pins something")
+                .isNotEmpty();
+
+            var captured = new LinkedHashSet<String>();
+            store.dsl()
+                .select(GRAPHITRON_TYPE_DECLARATION_SYNTHESIS.TYPE_NAME,
+                    GRAPHITRON_TYPE_DECLARATION_SYNTHESIS.CARRIER_TYPE_NAME,
+                    GRAPHITRON_TYPE_DECLARATION_SYNTHESIS.CARRIER_FIELD_NAME)
+                .from(GRAPHITRON_TYPE_DECLARATION_SYNTHESIS)
+                .where(GRAPHITRON_TYPE_DECLARATION_SYNTHESIS.TYPE_NAME.ne("PageInfo"))
+                .fetch()
+                .forEach(row -> captured.add(row.value1() + "<-" + row.value2() + "." + row.value3()));
+            assertThat(captured).isEqualTo(expected);
+
+            // PageInfo is schema-grain on the model and per-carrier in the store, so the agreement
+            // is that both know it was minted and the store's site count is the carrier count.
+            boolean modelMintedPageInfo = relation.sharedMinted().stream()
+                .anyMatch(minted -> minted.declaredArm() == GraphitronType.PageInfoType.class);
+            long carriers = relation.rows().values().stream()
+                .filter(ConnectionSynthesis.DirectiveDriven.class::isInstance).count();
+            assertThat(store.dsl().fetchCount(GRAPHITRON_TYPE_DECLARATION_SYNTHESIS,
+                GRAPHITRON_TYPE_DECLARATION_SYNTHESIS.TYPE_NAME.eq("PageInfo")))
+                .isEqualTo(modelMintedPageInfo ? (int) carriers : 0);
+        }
+    }
+
+    /**
+     * The other half of the same expansion: the carrier's own field. The model records that the
+     * return type was rewritten; the store keeps the authored expression, and the two have to be
+     * talking about the same set of carriers.
+     */
+    @Test
+    @DisplayName("rewritten carriers agree with the model's directive-driven rows")
+    void rewrittenCarriersAgreeWithTheModel(@TempDir Path tmp) {
+        try (var store = CapturedStore.of(tmp, CONNECTION_FIXTURE)) {
+            var expected = GraphitronSchemaBuilder.build(store.registry(), testContext())
+                .connectionSynthesis().rows().values().stream()
+                .filter(ConnectionSynthesis.DirectiveDriven.class::isInstance)
+                .map(row -> row.parentTypeName() + "." + row.fieldName())
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+
+            var captured = new LinkedHashSet<>(store.dsl()
+                .select(GRAPHITRON_FIELD_SYNTHESIS.TYPE_NAME.concat(".")
+                    .concat(GRAPHITRON_FIELD_SYNTHESIS.FIELD_NAME))
+                .from(GRAPHITRON_FIELD_SYNTHESIS)
+                .fetch(0, String.class));
             assertThat(captured).isEqualTo(expected);
         }
     }
