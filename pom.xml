@@ -13,6 +13,7 @@
 
     <modules>
         <module>graphitron-javapoet</module>
+        <module>graphitron-model</module>
         <module>graphitron</module>
         <module>graphitron-fixtures-codegen</module>
         <module>graphitron-sakila-db</module>
@@ -31,6 +32,13 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
         <version.org.jooq>3.20.11</version.org.jooq>
+        <!--
+          The embedded fact store (graphitron-model). One version serves both cadences: the
+          build-time codegen driver boots it so jOOQ reads live H2 metadata off the fact schema,
+          and the run-time bootstrap boots it so a generator run has somewhere to capture into.
+          Pure JVM, no native libraries, so it embeds in the Maven plugin and the LSP alike.
+        -->
+        <version.com.h2database>2.4.240</version.com.h2database>
         <version.org.junit>6.0.3</version.org.junit>
         <version.ch.qos.logback>1.5.32</version.ch.qos.logback>
         <version.postgresql>42.7.10</version.postgresql>
@@ -122,6 +130,11 @@
                 <groupId>org.jooq</groupId>
                 <artifactId>jooq</artifactId>
                 <version>${version.org.jooq}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.h2database</groupId>
+                <artifactId>h2</artifactId>
+                <version>${version.com.h2database}</version>
             </dependency>
             <!-- graphitron-jakarta-rest spec-API deps (Jakarta REST + CDI + JSON-B). -->
             <dependency>

@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>no.sikt</groupId>
+        <artifactId>graphitron-rewrite-parent</artifactId>
+        <version>10-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>graphitron-model</artifactId>
+    <name>${project.groupId}:${project.artifactId}</name>
+    <description>
+        The generator's fact-schema module: the fact-schema DDL, the jOOQ compile-time surface
+        generated from it, and the in-memory H2 bootstrap a generator run captures into. Builds
+        before graphitron so core compiles against the generated classes.
+    </description>
+
+    <properties>
+        <!--
+            Where the codegen driver writes and build-helper reads. Never committed; the DDL
+            resource is the single source and this tree is derived from it on every build.
+        -->
+        <model.generated.sources>${project.build.directory}/generated-sources/jooq</model.generated.sources>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.jooq</groupId>
+            <artifactId>jooq</artifactId>
+        </dependency>
+        <!--
+            The embedded store, at both cadences: the build-time codegen driver boots it so jOOQ
+            reads live H2 metadata, and the run-time bootstrap boots it so a generator run has
+            somewhere to capture into. One engine, one DDL, so a bootstrap regression fails
+            codegen with a real H2 error before it can fail a generator run.
+        -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+        </dependency>
+        <!--
+            Build-time only: the codegen driver's GenerationTool. Provided rather than compile so
+            consumers of the model artifact do not inherit jOOQ's code generator; the driver class
+            it compiles is a build tool that happens to live in the module's source tree, per the
+            single-module driver wiring the H2-functions spike settled on.
+        -->
+        <dependency>
+            <groupId>org.jooq</groupId>
+            <artifactId>jooq-codegen</artifactId>
+            <version>${version.org.jooq}</version>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!--
+                Codegen is a rehearsal of boot, not a second implementation of it: this execution
+                compiles just the bootstrap and driver packages (which need no generated classes),
+                the exec execution below then calls the bootstrap and points jOOQ at the store it
+                hands back, and the default compile builds the rest against the result.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>compile-codegen-driver</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>compile</goal>
+                        </goals>
+                        <configuration>
+                            <includes>
+                                <include>no/sikt/graphitron/model/boot/**</include>
+                                <include>no/sikt/graphitron/model/build/**</include>
+                            </includes>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.5.0</version>
+                <executions>
+                    <execution>
+                        <id>generate-model-sources</id>
+                        <phase>generate-sources</phase>
+                        <goals><goal>java</goal></goals>
+                        <configuration>
+                            <mainClass>no.sikt.graphitron.model.build.ModelCodegenDriver</mainClass>
+                            <classpathScope>compile</classpathScope>
+                            <!--
+                                The DDL resource is not copied to target/classes until
+                                process-resources, two phases later, so the driver reads it from
+                                the source tree. Same file, same loader lookup.
+                            -->
+                            <additionalClasspathElements>
+                                <additionalClasspathElement>${project.basedir}/src/main/resources</additionalClasspathElement>
+                            </additionalClasspathElements>
+                            <arguments>
+                                <argument>${model.generated.sources}</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <version>3.6.1</version>
+                <executions>
+                    <execution>
+                        <id>add-model-sources</id>
+                        <phase>generate-sources</phase>
+                        <goals><goal>add-source</goal></goals>
+                        <configuration>
+                            <sources>
+                                <source>${model.generated.sources}</source>
+                            </sources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
