@@ -1095,8 +1095,11 @@ public final class CatalogBuilder {
      * <basedir>/target/classes} as a single-root default when the context
      * carries no classpathRoots, so unit-tier callers built off
      * {@link RewriteContext}'s six-arg overload get the single-root scope.
+     *
+     * <p>Public because the capture load reads the same census on its own to fill the store's
+     * {@code extension_} family; {@link #build} keeps reading it as one part of the LSP catalog.
      */
-    private static List<CompletionData.ExternalReference> buildExternalReferences(RewriteContext ctx) {
+    public static List<CompletionData.ExternalReference> buildExternalReferences(RewriteContext ctx) {
         var roots = ctx.classpathRoots().isEmpty()
             ? List.of(ctx.basedir().resolve("target/classes"))
             : ctx.classpathRoots();

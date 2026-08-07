@@ -2,7 +2,7 @@
 :description: The reactor module map for the Graphitron generator.
 :!toc:
 
-The repository is a single Maven reactor rooted at the `graphitron-rewrite-parent` parent pom (`10-SNAPSHOT`). Twelve modules cover the generator, its inputs, its consumers, the reusable runtime surface, the tooling that wraps both ends, and the documentation site. The roadmap-tool `check-module-enumeration` step fails the build if this table stops naming a module the root pom declares, so the set below cannot fall behind the reactor:
+The repository is a single Maven reactor rooted at the `graphitron-rewrite-parent` parent pom (`10-SNAPSHOT`). Thirteen modules cover the generator, its inputs, its consumers, the reusable runtime surface, the tooling that wraps both ends, and the documentation site. The roadmap-tool `check-module-enumeration` step fails the build if this table stops naming a module the root pom declares, so the set below cannot fall behind the reactor:
 
 [cols="1,3"]
 |===
@@ -10,6 +10,9 @@ The repository is a single Maven reactor rooted at the `graphitron-rewrite-paren
 
 | `graphitron-javapoet`
 | Internal fork of Square JavaPoet; the emit-time API every generator builds through.
+
+| `graphitron-model`
+| The fact schema: the DDL that defines the generator's fact base, the jOOQ compile-time surface generated from it, and the in-memory H2 bootstrap a generator run captures into. Builds before the core so editing the DDL fails javac in every consumer that touched the changed relation.
 
 | `graphitron`
 | The generator core: schema loader, classifier, validator, and every generator.

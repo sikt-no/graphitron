@@ -97,12 +97,16 @@ class PaginationFactPipelineTest {
     @Test
     void directiveArgumentRead_hasOneLexicalHome() throws IOException {
         // The defaultFirstValue coercion lives once, in the pagination fact's gather; a second
-        // literal read site is the drift this fact was migrated to remove.
+        // literal read site is the drift this fact was migrated to remove. The capture package is
+        // out of scope on purpose: it is the other model, and its job is precisely to read the
+        // directive. It records the authored literal and applies no default, so it is not a
+        // second coercion site and cannot drift from the gathered row.
         var mainRoot = GuardScope.locateRepoRoot().resolve("graphitron/src/main/java/no/sikt/graphitron");
         try (Stream<java.nio.file.Path> files = Files.walk(mainRoot)) {
             var offenders = files
                 .filter(p -> p.toString().endsWith(".java"))
                 .filter(p -> !p.toString().contains("/facts/"))
+                .filter(p -> !p.toString().contains("/capture/"))
                 .filter(p -> {
                     try {
                         return Files.readString(p).contains("\"defaultFirstValue\"");
@@ -112,8 +116,9 @@ class PaginationFactPipelineTest {
                 })
                 .toList();
             assertThat(offenders)
-                .as("the defaultFirstValue directive argument is read (and coerced) only by the"
-                    + " pagination fact's gather; read the gathered row instead of the directive")
+                .as("the defaultFirstValue directive argument is coerced only by the pagination"
+                    + " fact's gather (capture excepted); read the gathered row instead of the"
+                    + " directive")
                 .isEmpty();
         }
     }

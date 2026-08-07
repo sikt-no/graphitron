@@ -6,7 +6,7 @@ Links elsewhere in this file point at deep references. **Don't fetch them up fro
 
 ## What graphitron-rewrite is
 
-The next-generation Graphitron generator: a Maven-based code generator that turns GraphQL schemas + jOOQ-generated database models into Java resolvers. The repo root is the reactor, with its parent pom (`graphitron-rewrite-parent`, `10-SNAPSHOT`). Modules: `graphitron-javapoet`, `graphitron`, `graphitron-fixtures-codegen`, `graphitron-sakila-db`, `graphitron-sakila-service`, `graphitron-mcp`, `graphitron-jakarta-rest`, `graphitron-maven-plugin`, `graphitron-sakila-example`, `graphitron-lsp`, `roadmap-tool`, `docs` (plus the `graphitron-tree-sitter-natives` subdirectory). What each one is for: `docs/architecture/reference/modules.adoc`. Developed by Sikt.
+The next-generation Graphitron generator: a Maven-based code generator that turns GraphQL schemas + jOOQ-generated database models into Java resolvers. The repo root is the reactor, with its parent pom (`graphitron-rewrite-parent`, `10-SNAPSHOT`). Modules: `graphitron-javapoet`, `graphitron-model`, `graphitron`, `graphitron-fixtures-codegen`, `graphitron-sakila-db`, `graphitron-sakila-service`, `graphitron-mcp`, `graphitron-jakarta-rest`, `graphitron-maven-plugin`, `graphitron-sakila-example`, `graphitron-lsp`, `roadmap-tool`, `docs` (plus the `graphitron-tree-sitter-natives` subdirectory). What each one is for: `docs/architecture/reference/modules.adoc`. Developed by Sikt.
 
 ## Technology constraints
 

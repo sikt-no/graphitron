@@ -10,6 +10,7 @@ import no.sikt.graphitron.plan.EmitPlan;
 import no.sikt.graphitron.rewrite.compile.CompileDependencyGraph;
 import no.sikt.graphitron.rewrite.compile.PlanCompileGraph;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
+import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
@@ -213,6 +214,7 @@ public class GraphQLRewriteGenerator {
         var catalog = CatalogBuilder.build(jooq, bundle.assembled(), ctx);
         var snapshot = CatalogBuilder.buildSnapshot(attributed.registry(), bundle.model(), catalog);
         var catalogFacts = CatalogBuilder.buildCatalogFacts(jooq);
+        FactCapture.run(attributed.registry(), catalogFacts, catalog.externalReferences());
         var errors = new GraphitronSchemaValidator().validate(bundle.model());
         var warnings = withLintFindings(bundle.model(), attributed);
         var report = ValidationReport.from(errors, warnings);
@@ -287,6 +289,22 @@ public class GraphQLRewriteGenerator {
         return new AttributedRegistry(registry, injectedNames);
     }
 
+    /**
+     * Runs the capture loads into a fact store for this pass and discards it. The store shadows
+     * the live pipeline: nothing reads it, so a capture that recorded the wrong thing cannot
+     * change what the build accepts, rejects, emits, or reports. Consumers migrate onto it one at
+     * a time, and until the first one does, the agreement tests are what keep the shadow honest.
+     *
+     * <p>Both loads read exactly what the pipeline beside them reads: the parsed registry (before
+     * the synthesis rewrites), the jOOQ catalog projection, and the classpath scan.
+     */
+    private void captureFacts(AttributedRegistry attributed) {
+        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        FactCapture.run(attributed.registry(),
+            CatalogBuilder.buildCatalogFacts(jooq),
+            CatalogBuilder.buildExternalReferences(ctx));
+    }
+
     private IncrementalGeneration runPipeline(AttributedRegistry attributed, boolean buildCompileGraph) {
         var bundle = GraphitronSchemaBuilder.buildBundle(attributed, ctx);
         var schema = bundle.model();
@@ -299,6 +317,8 @@ public class GraphQLRewriteGenerator {
         if (!errors.isEmpty()) {
             throw new ValidationFailedException(errors);
         }
+
+        captureFacts(attributed);
 
         String outputPackage = ctx.outputPackage();
 

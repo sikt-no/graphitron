@@ -20,6 +20,17 @@
             <artifactId>graphitron-javapoet</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!--
+            The fact store: its jOOQ compile-time surface is what the capture package writes
+            through, and its bootstrap is what opens the per-run database. The module builds
+            first, so editing the fact-schema DDL fails javac here for every relation a consumer
+            touched.
+        -->
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>graphitron-model</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <dependency>
             <groupId>com.graphql-java</groupId>
             <artifactId>graphql-java</artifactId>
