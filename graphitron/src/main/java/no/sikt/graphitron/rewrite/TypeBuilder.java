@@ -1638,14 +1638,31 @@ class TypeBuilder {
 
     /**
      * The narrow field-resolution fact a table-relative input-field resolution produces: either
-     * the resolved {@link InputField} list or the accumulated-failure prose. Deliberately a
+     * the resolved {@link InputField} list or the typed consequence of its failures. Deliberately a
      * bare fields carrier and not a per-type model record: the field-derived write-target paths
      * in {@code FieldBuilder} need only the fields, resolved against the consuming field's
      * table.
      */
     sealed interface InputFieldsResolution {
         record Resolved(List<InputField> fields) implements InputFieldsResolution {}
-        record Failed(String reason) implements InputFieldsResolution {}
+
+        /**
+         * The causes are already minted as located diagnostics at the input fields that carry them
+         * (see {@link BuildContext#mintInputFieldFailures}), so this arm carries the consequence's
+         * facts rather than their prose: which input type, against which table, and how many
+         * failures were minted. A bare {@code Failed(Rejection)} would be the same
+         * cause-versus-consequence polymorphism the classifier's own carrier refuses, and would
+         * lose the count a related-information renderer needs.
+         */
+        record Failed(String inputTypeName, TableRef tableRef, int mintedCount)
+                implements InputFieldsResolution {
+            /** The consuming coordinate's rejection, rendered from the facts above. */
+            Rejection consequence() {
+                return Rejection.structural("input type '" + inputTypeName + "' mapped to table '"
+                    + tableRef.tableName() + "': " + mintedCount + " input field"
+                    + (mintedCount == 1 ? "" : "s") + " could not be resolved");
+            }
+        }
     }
 
     /**
@@ -1669,20 +1686,11 @@ class TypeBuilder {
                 case InputFieldResolution.Unresolved u -> failures.add(u);
             }
         }
-        if (!failures.isEmpty()) {
-            // Each failure renders the hint its own typed arm carries, so this fold composes none.
-            String reasons = failures.stream()
-                .map(u -> "'" + u.fieldName() + "': " + u.rejection().message())
-                .collect(Collectors.joining("; "));
-            return new InputFieldsResolution.Failed(
-                "mapped to table '" + tableRef.tableName() + "' — unresolvable fields: " + reasons);
-        }
-        if (!conditionFailures.isEmpty()) {
-            return new InputFieldsResolution.Failed(
-                "mapped to table '" + tableRef.tableName() + "' — bad @condition on fields: "
-                + conditionFailures.stream()
-                    .map(InputFieldConditionFailure::message)
-                    .collect(Collectors.joining("; ")));
+        if (!failures.isEmpty() || !conditionFailures.isEmpty()) {
+            // One located diagnostic per cause, at the input field that carries it; the consuming
+            // coordinate keeps the consequence alone.
+            int minted = ctx.mintInputFieldFailures(name, failures, conditionFailures);
+            return new InputFieldsResolution.Failed(name, tableRef, minted);
         }
         return new InputFieldsResolution.Resolved(List.copyOf(resolvedFields));
     }

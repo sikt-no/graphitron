@@ -413,7 +413,7 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var f = (GraphitronField.UnclassifiedField) schema.field("Mutation", "deleteBars");
-                assertThat(f.reason())
+                assertThat(TestSchemaHelper.diagnosticMessages(schema))
                     .contains("@nodeId without typeName: cannot infer node type")
                     .contains("no @table-annotated object type maps to table 'bar'")
                     .contains("Add typeName: explicitly");
@@ -429,7 +429,7 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var f = (GraphitronField.UnclassifiedField) schema.field("Query", "bars");
-                assertThat(f.reason())
+                assertThat(TestSchemaHelper.diagnosticMessages(schema))
                     .contains("@nodeId without typeName: is ambiguous")
                     .contains("multiple object types map to table 'bar'")
                     .contains("BarA")
@@ -487,7 +487,8 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var f = (GraphitronField.UnclassifiedField) schema.field("Query", "bars");
-                assertThat(f.reason()).contains("zero or multiple GraphQL types map to it");
+                assertThat(TestSchemaHelper.diagnosticMessages(schema))
+                    .contains("zero or multiple GraphQL types map to it");
             }),
 
         EXPLICIT_TYPENAME_DISAMBIGUATES_MULTI_NODE_TABLE(
@@ -873,7 +874,7 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var f = (GraphitronField.UnclassifiedField) schema.field("Mutation", "deleteBars");
-                assertThat(f.reason())
+                assertThat(TestSchemaHelper.diagnosticMessages(schema))
                     .contains("@nodeId without typeName: cannot infer node type")
                     .contains("no @table-annotated object type maps to table 'bar'");
             }),
@@ -890,7 +891,7 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var f = (GraphitronField.UnclassifiedField) schema.field("Query", "bars");
-                assertThat(f.reason())
+                assertThat(TestSchemaHelper.diagnosticMessages(schema))
                     .contains("@nodeId without typeName: is ambiguous")
                     .contains("BarA")
                     .contains("BarB");
@@ -1561,11 +1562,17 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var f = (GraphitronField.UnclassifiedField) schema.field("Query", "childRefs");
-                assertThat(f.reason())
+                assertThat(f.reason()).contains("1 input field could not be resolved");
+                // Same cause, same identity as the arg-side case above, reported at the input
+                // field that carries it rather than on the consuming field.
+                var causes = schema.diagnostics().stream()
+                    .filter(d -> "ChildRefFilterInput.parentIds".equals(d.coordinate()))
+                    .toList();
+                assertThat(causes).hasSize(1);
+                assertThat(causes.getFirst().rejection()).isInstanceOf(Rejection.Deferred.class);
+                assertThat(causes.getFirst().message())
                     .contains("FK's target columns do not positionally match")
                     .contains("deferred");
-                // Survives the consuming field's prefix as Deferred, matching the arg-side case.
-                assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
             }),
 
         MULTI_HOP_IDENTITY_CARRYING_INPUT(

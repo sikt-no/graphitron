@@ -78,27 +78,16 @@ final class InputFieldResolver {
                 case InputFieldResolution.Unresolved u -> failures.add(u);
             }
         }
-        String prefix = "plain input type '" + typeName + "': ";
         if (failures.isEmpty() && conditionFailures.isEmpty()) {
             return new Resolution.Ok(List.copyOf(classified));
         }
-        // A single resolution failure keeps its producer's own arm: prefixing threads this call
-        // site's context onto the typed rejection without collapsing its components. A multi-cause
-        // fold has no single arm to carry, and a condition failure carries its context in the
-        // accumulator rather than on the rejection, so both still compose prose.
-        if (conditionFailures.isEmpty() && failures.size() == 1) {
-            var only = failures.getFirst();
-            return new Resolution.Rejected(only.rejection()
-                .prefixedWith(prefix + "input field '" + only.fieldName() + "': "));
-        }
-        var parts = new ArrayList<String>();
-        for (var u : failures) {
-            parts.add("input field '" + u.fieldName() + "': " + u.rejection().message());
-        }
-        for (var cf : conditionFailures) {
-            parts.add(cf.message());
-        }
+        // Every cause is minted at the input field that carries it; this call site keeps one
+        // rejection stating the consequence. An author sees one diagnostic per broken input field
+        // plus one on the consuming field, which is the shape a compiler uses for "cannot
+        // instantiate" plus its member errors.
+        int minted = ctx.mintInputFieldFailures(typeName, failures, conditionFailures);
         return new Resolution.Rejected(Rejection.structural(
-            prefix + parts.stream().collect(Collectors.joining("; "))));
+            "plain input type '" + typeName + "' against table '" + rt.tableName() + "': "
+            + minted + " input field" + (minted == 1 ? "" : "s") + " could not be resolved"));
     }
 }

@@ -351,6 +351,11 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
          * appears. {@code directives} carries the bare directive names (no leading
          * {@code @}) for downstream tooling; {@code reason} is the prose that
          * surfaces on the validator log line.
+         *
+         * <p>Contract: every name in {@code directives} is applied at the rejection's own
+         * declaration. A remedy the author has <em>not</em> written ("add {@code @splitQuery}")
+         * belongs in {@code reason}, never in the list, so that a consumer grouping or counting
+         * rejections per directive counts causes and never counterfactuals.
          */
         record DirectiveConflict(
             List<String> directives,

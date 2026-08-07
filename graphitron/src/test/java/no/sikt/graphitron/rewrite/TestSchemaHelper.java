@@ -36,6 +36,23 @@ public final class TestSchemaHelper {
         return GraphitronSchemaBuilder.build(registry, ctx);
     }
 
+    /**
+     * The build-time diagnostics rendered one per line as {@code coordinate: message}, for assertions
+     * about a cause that is reported at the coordinate carrying it rather than on the consuming
+     * field. Input-field failures are minted there, one located diagnostic per failure, while the
+     * consuming field keeps a single rejection stating the consequence, so a test that wants the
+     * cause text reads this and a test that wants the consequence reads the field's own rejection.
+     *
+     * <p>The coordinate is rendered from the {@link ValidationError} rather than read out of the
+     * message because the typed sub-seal arms ({@code ReflectionError} and siblings) treat
+     * {@code prefixedWith} as a no-op by design, so their message carries no coordinate prose.
+     */
+    public static String diagnosticMessages(GraphitronSchema schema) {
+        return schema.diagnostics().stream()
+            .map(d -> d.coordinate() + ": " + d.message())
+            .collect(java.util.stream.Collectors.joining("\n"));
+    }
+
     public static GraphitronSchemaBuilder.Bundle buildBundle(String schemaText) {
         return buildBundle(schemaText, TestConfiguration.testContext());
     }

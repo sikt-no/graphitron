@@ -215,7 +215,8 @@ class NodeInferencePipelineTest {
             input Selector { id: ID! }
             type Query { a: FooA b: FooB bars(in: Selector): [FooA!] }
             """);
-        assertThat(((GraphitronField.UnclassifiedField) twoNodes.field("Query", "bars")).reason())
+        assertThat(twoNodes.field("Query", "bars")).isInstanceOf(GraphitronField.UnclassifiedField.class);
+        assertThat(TestSchemaHelper.diagnosticMessages(twoNodes))
             .contains("zero or multiple GraphQL types map to it");
     }
 

@@ -4676,8 +4676,10 @@ class GraphitronSchemaBuilderTest {
             type Query { films(filter: PlainFilter): [Film!]! }
             """);
         var uf = (UnclassifiedField) schema.field("Query", "films");
-        assertThat(uf.reason()).contains("plain input type 'PlainFilter'", "sakskode");
-        assertThat(uf.reason()).doesNotContain("no column 'sakskode' found");
+        assertThat(uf.reason()).contains("plain input type 'PlainFilter'", "1 input field could not be resolved");
+        var diagnostics = TestSchemaHelper.diagnosticMessages(schema);
+        assertThat(diagnostics).contains("PlainFilter.sakskode: ");
+        assertThat(diagnostics).doesNotContain("no column 'sakskode' found");
     }
 
     /**
@@ -4695,7 +4697,10 @@ class GraphitronSchemaBuilderTest {
             type Query { films(filter: PlainFilter): [Film!]! }
             """);
         var uf = (UnclassifiedField) schema.field("Query", "films");
-        assertThat(uf.reason()).contains("plain input type 'PlainFilter'", "filmId");
+        assertThat(uf.reason()).contains("plain input type 'PlainFilter'", "1 input field could not be resolved");
+        assertThat(TestSchemaHelper.diagnosticMessages(schema))
+            .contains("PlainFilter.filmId: ")
+            .contains("could not be loaded");
     }
 
     // ===== UnboundField cascade acceptance tests =====
@@ -5210,7 +5215,9 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var uf = (UnclassifiedField) schema.field("Query", "films");
-                assertThat(uf.reason()).contains("no_such_fkey");
+                assertThat(uf.reason()).contains("1 input field could not be resolved");
+                // The cause is reported at the input field carrying it, not on the consumer.
+                assertThat(TestSchemaHelper.diagnosticMessages(schema)).contains("no_such_fkey");
             }),
 
         NESTED_INPUT_FIELD_UNKNOWN_COLUMN_REJECTS_AT_CONSUMER(
@@ -5368,7 +5375,12 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var uf = (UnclassifiedField) schema.field("Query", "customers");
-                assertThat(uf.reason()).contains("@notGenerated", "no longer supported");
+                assertThat(uf.reason()).contains("1 input field could not be resolved");
+                // Nested: the cause is reported at the nested input field carrying the directive.
+                assertThat(TestSchemaHelper.diagnosticMessages(schema))
+                    .contains("Input field 'InnerFilter.hidden'")
+                    .contains("@notGenerated")
+                    .contains("no longer supported");
             }),
 
         // ===== Canonical [ID!] @nodeId(typeName: T) =====
@@ -5429,8 +5441,9 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var uf = (UnclassifiedField) schema.field("Query", "films");
-                assertThat(uf.reason())
-                    .contains("input field 'languageIds'")
+                assertThat(uf.reason()).contains("1 input field could not be resolved");
+                assertThat(TestSchemaHelper.diagnosticMessages(schema))
+                    .contains("Input field 'FilmFilterInput.languageIds'")
                     .contains("no unique FK from 'film' to 'language'")
                     .contains("declare @reference(path: [{key: ...}]) to disambiguate");
             }),
@@ -5448,7 +5461,9 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var uf = (UnclassifiedField) schema.field("Query", "films");
-                assertThat(uf.reason()).contains("no_such_fkey");
+                assertThat(uf.reason()).contains("1 input field could not be resolved");
+                // The cause is reported at the input field carrying it, not on the consumer.
+                assertThat(TestSchemaHelper.diagnosticMessages(schema)).contains("no_such_fkey");
             }),
 
         ID_REFERENCE_NO_FK_TO_TARGET(
@@ -5463,8 +5478,9 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var uf = (UnclassifiedField) schema.field("Query", "actors");
-                assertThat(uf.reason())
-                    .contains("input field 'languageIds'")
+                assertThat(uf.reason()).contains("1 input field could not be resolved");
+                assertThat(TestSchemaHelper.diagnosticMessages(schema))
+                    .contains("Input field 'ActorFilterInput.languageIds'")
                     .contains("no unique FK from 'actor' to 'language'");
             }),
 
@@ -6362,7 +6378,9 @@ class GraphitronSchemaBuilderTest {
             .as("circular input chain rejects loudly as UnclassifiedField; build terminates")
             .isInstanceOf(UnclassifiedField.class);
         var uf = (UnclassifiedField) schema.field("Query", "films");
-        assertThat(uf.reason()).contains("circular input type reference detected");
+        assertThat(uf.reason()).contains("1 input field could not be resolved");
+        assertThat(TestSchemaHelper.diagnosticMessages(schema))
+            .contains("circular input type reference detected");
     }
 
     // ===== Registry validation =====
@@ -7832,7 +7850,8 @@ class GraphitronSchemaBuilderTest {
             """);
         var f = (UnclassifiedField) schema.field("Query", "customers");
         assertThat(f.rejection()).isInstanceOf(Rejection.AuthorError.Structural.class);
-        assertThat(f.reason())
+        assertThat(f.reason()).contains("1 input field could not be resolved");
+        assertThat(TestSchemaHelper.diagnosticMessages(schema))
             .contains("repeated @reference on an input field")
             .contains("compose the chain on the field instead");
     }
@@ -8620,7 +8639,12 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (UnclassifiedField) schema.field("Mutation", "createFilm");
-                assertThat(f.reason()).contains("nested input type 'FilmDetails' has unresolvable fields");
+                assertThat(f.reason()).contains("1 input field could not be resolved");
+                // The nesting level states its own consequence; the leaf cause is reported at the
+                // nested input field, so neither is quoted inside the other any more.
+                assertThat(TestSchemaHelper.diagnosticMessages(schema))
+                    .contains("nested input type 'FilmDetails' has 1 unresolvable field")
+                    .contains("Input field 'FilmDetails.ref'");
             }),
 
         DML_NESTING_LIST_REJECTED_UPDATE(

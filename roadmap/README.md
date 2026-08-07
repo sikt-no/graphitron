@@ -28,7 +28,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R572` | Warn at build time when consumer graphql-java / jOOQ versions lag | Spec | 2026-08-03 | [plan](consumer-dependency-version-warning.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-08-06 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
-| `R585` | Typed rejections on the input-field resolution path | In Progress | 2026-08-07 <sub>created 2026-08-04</sub> | [plan](input-field-resolution-typed-rejections.md) |
+| `R585` | Typed rejections on the input-field resolution path | In Review | 2026-08-07 <sub>created 2026-08-04</sub> | [plan](input-field-resolution-typed-rejections.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-08-06 | [plan](catalog-check-constraint-validation.md) |
 | `R427` | Type-ahead search backed by native database indexes | Ready | 2026-08-06 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
 | `R580` | Infer @node from `implements Node` + __NODE_* metadata | In Review | 2026-08-06 <sub>created 2026-08-03</sub> | [plan](infer-node-from-implements-node-and-metadata.md) |
@@ -244,7 +244,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R531` [**Meta-test: no registry reads in the classify-time set**](classify-time-registry-read-guard.md) — Backlog, architecture
 - `R537` [**Pin the DefaultRead-under-Outcome validate-time rejection with a named test**](pin-defaultread-outcome-rejection.md) — Backlog, cleanup
 - `R532` [**Route surfaceMultiProducerRejections through bindingRejectionVerdict**](single-producer-rejection-seed.md) — Backlog, cleanup
-- `R585` [**Typed rejections on the input-field resolution path**](input-field-resolution-typed-rejections.md) — In Progress, architecture
+- `R585` [**Typed rejections on the input-field resolution path**](input-field-resolution-typed-rejections.md) — In Review, architecture
 - `R467` [**Upgrade graphql-java 25.0 -> 26.0**](upgrade-graphql-java-26.md) — Spec, tech-debt
 - `R520` [**@table-on-input removal housekeeping: changelog, LSP directive list, docs (Phase 4)**](table-on-input-removal-housekeeping.md) — Backlog, architecture
 - `R485` [**Model-level isFkHop/pairsOf helpers for JoinStep narrowings**](fk-hop-narrowing-helpers.md) — Backlog, structural

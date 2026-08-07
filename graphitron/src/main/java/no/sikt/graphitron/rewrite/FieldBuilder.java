@@ -942,8 +942,11 @@ class FieldBuilder {
                     tbtParentCorrelation);
             }
             if (returnType.wrapper() instanceof FieldWrapper.Connection) {
+                // directives lists what is applied here, not the remedy: @splitQuery is absent by
+                // construction on this branch, and naming it would make a per-directive count over
+                // the component report a directive the author never wrote. The remedy stays prose.
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.directiveConflict(
-                    List.of("asConnection", "splitQuery"),
+                    List.of("asConnection"),
                     "@asConnection on inline (non-@splitQuery) TableField is not supported; add @splitQuery for batched connection semantics"));
             }
             return new TableField(parentTypeName, name, location,
@@ -1091,8 +1094,8 @@ class FieldBuilder {
             // its nested subtree stay intact for the editor view while the build fails through
             // the validator's drain. This reads the @splitQuery half of the gathered
             // delivery-marker relation; @tenantFanOut here is covered by the tenant-binding
-            // fold's unreached-marker sweep. The contains guard dedupes the shared-nesting
-            // case, where two hosts classify the same nested coordinate.
+            // fold's unreached-marker sweep. The shared-nesting case, where two hosts classify
+            // the same nested coordinate, collapses on addDiagnostic's value idempotence.
             if (ctx.facts.delivery().splitQuery(fieldDef)) {
                 String producerNote = typeBuilder.resultProducerFor(elementTypeName)
                     .map(p -> " Type '" + elementTypeName + "' is also produced (" + p.describe()
@@ -1107,9 +1110,7 @@ class FieldBuilder {
                         + " generated. Remove @splitQuery to keep the inline projection."
                         + producerNote),
                     location);
-                if (!ctx.diagnostics().contains(diagnostic)) {
-                    ctx.addDiagnostic(diagnostic);
-                }
+                ctx.addDiagnostic(diagnostic);
             }
             if (expandingTypes.contains(elementTypeName)) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.invalidSchema("circular type reference detected while expanding '" + elementTypeName + "'"));
@@ -1719,7 +1720,7 @@ class FieldBuilder {
         var resolution = typeBuilder.resolveInputFields(typeName, iot.getFieldDefinitions(), rt);
         if (resolution instanceof TypeBuilder.InputFieldsResolution.Failed failed) {
             return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                Rejection.structural("@lookupKey argument '" + name + "': " + failed.reason()));
+                failed.consequence().prefixedWith("@lookupKey argument '" + name + "': "));
         }
         var resolvedFields = ((TypeBuilder.InputFieldsResolution.Resolved) resolution).fields();
         var unbound = resolvedFields.stream()
@@ -2255,6 +2256,20 @@ class FieldBuilder {
             + " so emission requires JOIN-with-translation."
             + " This pathological case is deferred until output-side"
             + " JOIN-with-projection emission ships.");
+    }
+
+    /**
+     * Mints every validator-mirrored input-field rejection into the diagnostic channel and returns
+     * the consequence rejection for the consuming field. The write-target paths used to take
+     * {@code mirrored.getFirst().rejection()} and drop the rest, so a second broken input field on
+     * the same write target was invisible; the mirrored errors already carry their own coordinate
+     * and location, so minting them costs nothing but reports all of them.
+     */
+    private Rejection mintMirroredInputFieldRejections(
+            List<ValidationError> mirrored, String argTypeName, TableRef writeTarget) {
+        mirrored.forEach(ctx::addDiagnostic);
+        return new TypeBuilder.InputFieldsResolution.Failed(argTypeName, writeTarget, mirrored.size())
+            .consequence();
     }
 
     /**
@@ -5191,13 +5206,13 @@ class FieldBuilder {
         var fieldsResolution = typeBuilder.resolveInputFields(argTypeName, rawInput.schemaType().getFieldDefinitions(), writeTarget);
         if (fieldsResolution instanceof TypeBuilder.InputFieldsResolution.Failed failed) {
             return new DeleteWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                Rejection.structural(failed.reason())));
+                failed.consequence()));
         }
         inputFields = ((TypeBuilder.InputFieldsResolution.Resolved) fieldsResolution).fields();
         var mirrored = GraphitronSchemaValidator.collectInputFieldRejections(inputFields);
         if (!mirrored.isEmpty()) {
             return new DeleteWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                mirrored.getFirst().rejection()));
+                mintMirroredInputFieldRejections(mirrored, argTypeName, writeTarget)));
         }
 
         var inputArg = new no.sikt.graphitron.rewrite.model.InputArgRef(argName, argTypeName, writeTarget, list);
@@ -5489,13 +5504,13 @@ class FieldBuilder {
         var fieldsResolution = typeBuilder.resolveInputFields(argTypeName, schemaInput.getFieldDefinitions(), writeTarget);
         if (fieldsResolution instanceof TypeBuilder.InputFieldsResolution.Failed failed) {
             return new ReturnCapableWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                Rejection.structural(failed.reason())));
+                failed.consequence()));
         }
         inputFields = ((TypeBuilder.InputFieldsResolution.Resolved) fieldsResolution).fields();
         var mirrored = GraphitronSchemaValidator.collectInputFieldRejections(inputFields);
         if (!mirrored.isEmpty()) {
             return new ReturnCapableWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                mirrored.getFirst().rejection()));
+                mintMirroredInputFieldRejections(mirrored, argTypeName, writeTarget)));
         }
         return new ReturnCapableWriteTarget.Resolved(writeTarget, inputFields, argName, argTypeName, list, schemaInput);
     }

@@ -276,16 +276,22 @@ class BuildContext {
      */
     private final List<BuildWarning> warnings = new ArrayList<>();
     /**
-     * Build-time validation diagnostics the immutable validate phase accumulates
-     * instead of demoting a classified verdict to {@code UnclassifiedType} / {@code UnclassifiedField}.
-     * The global soundness reductions (node-typeId uniqueness, case-fold collisions, the
-     * dangling-reference backstop, the federation {@code @key} checks, and the multi-producer
-     * {@code DomainReturnType} agreement) register a {@link ValidationError} here rather than
-     * overwriting the registry, so a verdict read after the walk equals the verdict classification
-     * produced. {@code GraphitronSchemaBuilder} hands the list to {@link GraphitronSchema}; the
-     * validator drains it into its {@link ValidationError} stream.
+     * Build-time validation diagnostics accumulated instead of demoting a classified verdict to
+     * {@code UnclassifiedType} / {@code UnclassifiedField}. The global soundness reductions
+     * (node-typeId uniqueness, case-fold collisions, the dangling-reference backstop, the
+     * federation {@code @key} checks, and the multi-producer {@code DomainReturnType} agreement)
+     * register a {@link ValidationError} here rather than overwriting the registry, so a verdict
+     * read after the walk equals the verdict classification produced.
+     * {@code GraphitronSchemaBuilder} hands the list to {@link GraphitronSchema}; the validator
+     * drains it into its {@link ValidationError} stream.
+     *
+     * <p>Classify-time minting is equally intended, and is how a fan-in of per-field failures
+     * reports one located fact per failure instead of one joined sentence at the consuming
+     * coordinate. The channel is append-only and never read back: {@link #addDiagnostic} is
+     * idempotent by value, so a fact minted by two consumers of the same input type collapses at
+     * the mint rather than at some reader's drain.
      */
-    private final List<ValidationError> diagnostics = new ArrayList<>();
+    private final Set<ValidationError> diagnostics = new LinkedHashSet<>();
     private final Map<String, List<String>> typeNamesByTableKey;
     private final NodeIdLeafResolver nodeIdLeafResolver;
     /**
@@ -385,8 +391,11 @@ class BuildContext {
     }
 
     /**
-     * Records a build-time validation diagnostic. Used by the immutable validate
-     * phase's global reductions in place of demoting a classified verdict; see {@link #diagnostics}.
+     * Records a build-time validation diagnostic, in place of demoting a classified verdict; see
+     * {@link #diagnostics}. Idempotent by value: input fields resolve once per consuming field, so
+     * one input type used by five mutations mints the same fact five times, and the fact is the same
+     * fact exactly when the {@link ValidationError} (coordinate, typed rejection, location) is
+     * equal. Callers therefore never need to check the channel before minting.
      */
     void addDiagnostic(ValidationError diagnostic) {
         diagnostics.add(diagnostic);
@@ -2446,6 +2455,37 @@ class BuildContext {
             cond.override()));
     }
 
+    /**
+     * Mints one located diagnostic per input-field failure at the input field's own coordinate, and
+     * returns how many were minted so the caller can state the consequence on the consuming
+     * coordinate. This is what dissolves the fan-ins: five broken input fields used to render as
+     * five names inside one string on the consuming field, reported at that field's location.
+     *
+     * <p>Nothing here carries the consuming coordinate, deliberately. Input fields resolve once per
+     * consuming field, so one input type used by five mutations mints each fact five times; built
+     * from the input field's own facts, those five are one value and collapse on
+     * {@link #addDiagnostic}'s idempotence. Resolved against different tables the candidates differ,
+     * the facts are genuinely different, and all of them survive.
+     */
+    int mintInputFieldFailures(String inputTypeName,
+            List<InputFieldResolution.Unresolved> failures,
+            List<InputFieldConditionFailure> conditionFailures) {
+        for (var u : failures) {
+            mintInputFieldFailure(inputTypeName, u.fieldName(), u.location(), u.rejection());
+        }
+        for (var cf : conditionFailures) {
+            mintInputFieldFailure(inputTypeName, cf.fieldName(), cf.location(), cf.rejection());
+        }
+        return failures.size() + conditionFailures.size();
+    }
+
+    private void mintInputFieldFailure(String inputTypeName, String fieldName,
+            SourceLocation location, Rejection rejection) {
+        String coordinate = inputTypeName + "." + fieldName;
+        addDiagnostic(new ValidationError(coordinate,
+            rejection.prefixedWith("Input field '" + coordinate + "': "), location));
+    }
+
     private static InputFieldConditionFailure conditionFailure(
             GraphQLInputObjectField field, String inputFieldName, Rejection rejection) {
         return new InputFieldConditionFailure(inputFieldName, locationOf(field), rejection);
@@ -2574,7 +2614,12 @@ class BuildContext {
                 })
                 .orElseGet(() -> unresolved(field, name, Rejection.unknownColumn(
                     "no column '" + columnName + "' reachable via @reference path",
-                    columnName, catalog.columnJavaNamesOf(resolvedTable.tableName()))));
+                    columnName,
+                    // The candidate space is the path's terminal table, which is where the author's
+                    // column was looked for; the resolving table is only the walk's start.
+                    svc.terminalTableForReference(path.elements(), resolvedTable)
+                        .map(t -> catalog.columnJavaNamesOf(t.tableName()))
+                        .orElseGet(List::of))));
         }
         // Nesting: field type is an input object. @table on it is deprecated and inert, so it does
         // not gate the descent; a nested @table grouping input flattens exactly as its
@@ -2604,14 +2649,13 @@ class BuildContext {
                 }
             }
             if (!failures.isEmpty()) {
-                // The nested causes each render their own hint from their own typed arm, so this
-                // level composes no hint of its own (the one it used to compose read SQL names
-                // where the author writes Java names).
-                String reasons = failures.stream()
-                    .map(u -> "'" + u.fieldName() + "': " + u.rejection().message())
-                    .collect(Collectors.joining("; "));
+                // Each nested cause is minted at its own coordinate; this level states only the
+                // consequence, so a nested defect no longer renders as quoted strings inside
+                // quoted strings.
+                int minted = mintInputFieldFailures(typeName, failures, List.of());
                 return unresolved(field, name, Rejection.structural(
-                    "nested input type '" + typeName + "' has unresolvable fields: " + reasons));
+                    "nested input type '" + typeName + "' has " + minted
+                    + " unresolvable field" + (minted == 1 ? "" : "s")));
             }
             Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, conditionFailures);
             return new InputFieldResolution.Resolved(new InputField.NestingField(

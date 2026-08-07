@@ -23,7 +23,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code EnumValidation.Mismatch} message-list, {@code keyColumnErrors} list); those still flatten
  * to {@link Rejection.AuthorError.Structural}. {@link InputFieldResolution.Unresolved} was on that
  * list until it started carrying a {@link Rejection} of its own; the input-field cases below pin
- * what that recovered.
+ * what that recovered, and {@link InputFieldFanInDiagnosticsTest} pins the per-failure reporting
+ * that recovery made possible.
  */
 @PipelineTier
 class R58TypedRejectionPipelineTest {

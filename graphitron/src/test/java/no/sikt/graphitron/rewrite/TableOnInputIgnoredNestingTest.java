@@ -113,12 +113,19 @@ class TableOnInputIgnoredNestingTest {
         assertThat(reason).contains("@lookupKey");
     }
 
+    /**
+     * The rejection an INSERT on {@code createFilm} produces, as the consuming field's own reason
+     * plus every build-time diagnostic. Causes that the classifier mints at the input field carrying
+     * them are reported there, not on the consuming field, so a caller asserting on the cause text
+     * has to read both surfaces.
+     */
     private static String insertRejectionReason(String sdl) {
-        var field = TestSchemaHelper.buildSchema(sdl).field("Mutation", "createFilm");
+        var schema = TestSchemaHelper.buildSchema(sdl);
+        var field = schema.field("Mutation", "createFilm");
         assertThat(field)
             .as("the admission scan descends into the nested @table group and rejects")
             .isInstanceOf(UnclassifiedField.class);
-        return ((UnclassifiedField) field).reason();
+        return ((UnclassifiedField) field).reason() + "\n" + TestSchemaHelper.diagnosticMessages(schema);
     }
 
     /** Every generated fetcher class, rendered, so two schemas can be compared as emitted output. */

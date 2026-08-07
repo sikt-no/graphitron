@@ -1,7 +1,7 @@
 ---
 id: R585
 title: "Typed rejections on the input-field resolution path"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 5
 theme: classification-model
@@ -289,6 +289,44 @@ it is what makes slice 2's dedup possible.
 - The `List<String> errors` out-param on `BuildContext.buildInputFieldCondition` and
   `classifyInputField`.
 - `FieldBuilder`'s `ctx.diagnostics().contains(...)` mint guard in the shared-nesting sweep.
+- `FieldBuilder.translatedFkRejectionReason`, replaced by `translatedFkRejection`.
+
+## Implementation notes
+
+Both slices have landed. Seven corrections to the plan's factual claims, all found by doing the work:
+
+- **Six sites had a `Rejection` in hand, not eight.** Of the three out-param `.message()` calls, only
+  `ServiceCatalog.reflectTableMethod`'s carries a rejection; `ArgBindingMap.Result.UnknownArgRef` and
+  `PathRejected` are prose-only records whose sole component *is* the message. They take the boundary
+  wrap alongside `ParsedPath` and `argMappingError`, so the wrap has four call sites rather than two.
+- **The retired-directive causes had five spellings, not three.** Beyond `FieldBuilder`,
+  `BuildContext` and `MutationInputResolver`, a pre-emptive scan over the argument's input type in
+  `FieldBuilder.classifyArgument` carries its own `@notGenerated` and `@lookupKey` rejections and
+  short-circuits the classifier for plain-input args, so it is the producer an author actually hits on
+  the non-nested case. All five now route through `directiveConflict`.
+- **`prefixedWith` is not context-preserving across arms.** Ten typed sub-seals (`ReflectionError`
+  and siblings) define it as a deliberate no-op, since their rendered context is the renderer's job.
+  So the condition accumulator carries the coordinate context itself
+  (`InputFieldConditionFailure.message`) rather than prefixing it onto the rejection, and the minted
+  diagnostic relies on `ValidationError.coordinate` rather than on prose surviving a prefix.
+- **The `@asConnection` site is settled by dropping `splitQuery` from its list.** The contract
+  ("every listed directive is applied at the rejection's own declaration; a remedy belongs in the
+  prose") is now stated on `DirectiveConflict`'s javadoc and pinned by a test that checks the listed
+  names against the rejection's own `definition()`.
+- **The `@reference` column-miss candidate space was wrong in the fold and is now the path's terminal
+  table.** Both folds hinted with the *resolving* table's columns, but the column is looked for at the
+  path's terminal, which `ServiceCatalog.terminalTableForReference` already answers.
+- **A coordinate can legitimately carry two facts.** In a circular input chain the same field is both
+  the cause (the cycle, detected on the second visit) and the consequence (its own nesting failure).
+  Dedup is by value, so both survive, correctly; the producer-partition test therefore selects a row's
+  fact rather than assuming one fact per coordinate.
+- **`BuildContext.candidateHint` stays**, as measured at Ready. Only the folds' calls to it went.
+
+The producer-partition test covers the eight producers reachable from the default fixture catalog,
+each row declaring its arm and, where the arm is `Structural`, why. The remaining producers (the
+id-reference synthesis shim's four arms, the FK-target key mismatch, and the two NodeId decode-helper
+failures) need `KjerneJooqGenerator` node metadata and are covered against the fixture context by
+`NodeIdPipelineTest` and `NodeInferencePipelineTest`, including the key mismatch's `Deferred` arm.
 
 ## Spec → Ready sign-off (2026-08-07)
 
