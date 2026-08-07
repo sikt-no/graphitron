@@ -2123,10 +2123,13 @@ name correct. Alignment with `CatalogFacts` and `JooqCatalog` is not an argument
 old prefix, on the same grounds that leave `CompletionData.ExternalReference` out of this: DDL
 family names and Java class names answer to different rules.
 
-One comment is simply wrong and should go with the rename, being free.
+One comment is wrong rather than missing, and the reshaping happens to retire it:
 `catalog_foreign_key_column.source_column` is described as "source column, 1-based per the
-graphql-java convention", which is the SDL families' position wording copy-pasted onto a column
-name. The comment-coverage gate checks that a comment exists and cannot check that it is true.
+graphql-java convention", the SDL families' position wording copy-pasted onto a column name, and
+that column ceases to exist once the uniform `sql_constraint_column` replaces the paired row.
+The lesson outlives the instance and is the reason the sweep below exists: the comment-coverage
+gate checks that a comment is present and cannot check that it is true, so every claim a
+relation makes about its own contents is unverified.
 
 And the two `java_name` riders
 on `sql_table` and `sql_column` should become `jooq_name`: in a relation whose prefix names SQL,
@@ -2272,9 +2275,11 @@ directly, which locates the cause: `CatalogFacts` and `CompletionData` are shape
 the MCP catalog tools and the LSP's completion popups, and capture inherits every narrowing they
 made for those consumers. `SdlFactCapture` reads the registry AST and is clean. The fix
 direction is for the loads to read `JooqCatalog` and `ClasspathScanner` output directly, or for
-those producers to carry what the store needs.
+those producers to carry what the store needs. Relations below are named as this pass leaves
+them, so the code carries `catalog_` and `extension_` where the text says `sql_` and `jvm_`; the
+Java identifiers cited are unaffected by the rename.
 
-- **`extension_method.descriptor` is fabricated, and lossy inside a primary key.**
+- **`jvm_method.descriptor` is fabricated, and lossy inside a primary key.**
   `CatalogFactCapture.descriptorOf` concatenates `CompletionData.Parameter.type()` values into
   `(Type;Type;)Return`, and those values are `ClassDesc.displayName()`, package-stripped simple
   names. The column is commented "raw JVM descriptor; the overload discriminator that keeps this
@@ -2285,7 +2290,7 @@ those producers to carry what the store needs.
   string, collide on the key, and the second is dropped by first-wins with no quarantine row.
   The extension-method anchor compares descriptor-erased precisely because the model carries no
   descriptor, so it cannot catch this.
-- **`catalog_column.ordinal` is reflection order presented as catalog order.**
+- **`sql_column.ordinal` is reflection order presented as catalog order.**
   `JooqCatalog.columnFactsOf` enumerates `table.getClass().getFields()`, whose contract states
   the result is in no particular order, and capture numbers the rows in that sequence. The
   column is commented "column position in the table definition". This is the determinism rule
@@ -2293,21 +2298,31 @@ those producers to carry what the store needs.
   jOOQ's `table.fields()` is declaration-ordered; the reflection exists only to reach the
   generated Java field name, which `Field` does not expose. No anchor covers ordinals, the
   census comparing names and counts.
-- **`extension_class` promises classpath existence and delivers four undisclosed filters.**
+- **`jvm_class` promises classpath existence and delivers four undisclosed filters.**
   `ClasspathScanner.readIfCandidate` skips any simple name containing `$`, which is every nested
   class, along with non-public classes, synthetic classes, and everything under the jOOQ
   package. The relation says only that a class exists on the consumer's extension classpath. A
   nested class named in `@record` resolves through the codegen loader and would be reported
   unknown by the resolution detection R605 plans over this relation, which is R605's own bug one
   axis over: it fixes directories against jars, this is top-level against nested.
-- **`catalog_index` overclaims the same way**, jOOQ's `getIndexes()` excluding
+- **`sql_index` overclaims the same way**, jOOQ's `getIndexes()` excluding
   constraint-backing indexes, so `@order(index:)` naming a primary key's index cannot resolve
   against a relation whose comment says an index exists on a table.
+
+The renames sharpen three of these rather than relieving them, which is why the disclosure has
+to ship with the prefix rather than after it. A column called `descriptor` under a family named
+for the JVM claims the JVM's own artefact more loudly than it did under `extension_`; `sql_index`
+and `sql_column.ordinal` claim SQL's index set and SQL's column order where `catalog_` at least
+read as a tool's view of them; and `jvm_class` sounds more total than `extension_class` did,
+since a role name invites the question "extending what?" while a vocabulary name simply asserts
+the category. Every one of these names is more honest about whose vocabulary the row is written
+in and more misleading about which rows are present, so the pass that lands them is the pass
+that owes each relation a comment stating its filters.
 
 Three producers came back clean and are recorded so the pass does not re-derive them. The
 `graphitron_` decode helpers return null or an empty list for an absent argument and quarantine
 a type mismatch, so no default-filling reaches the store and the authored-values convention
-holds. `catalog_column.sql_type` and `nullable` are jOOQ's readings, and their comments say so;
+holds. `sql_column.sql_type` and `nullable` are jOOQ's readings, and their comments say so;
 a disclosed projection is the healthy case and the pattern above is what an undisclosed one
 looks like. Column and table comments normalise the empty string upstream, so no relation
 confuses "" with absent.
@@ -2319,7 +2334,7 @@ model) from one that bridges a mismatch capture introduced. Registering an arm t
 should carry the reason the grains differ.
 
 One measurement rides along with the widened census rather than with the rename. R605 rules the
-~213k `extension_method` rows an insert-throughput question rather than a scoping one, which is
+~213k `jvm_method` rows an insert-throughput question rather than a scoping one, which is
 the right call and is this item's premise, but it makes the per-run load worth measuring rather
 than assuming `FactSink`'s batching absorbs a 16x census.
 
