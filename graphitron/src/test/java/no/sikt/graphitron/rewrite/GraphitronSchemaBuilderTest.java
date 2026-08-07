@@ -4659,11 +4659,10 @@ class GraphitronSchemaBuilderTest {
      * the override flag only relaxes the column-resolution requirement, not the condition
      * reflection requirement.
      *
-     * <p>Under override:true the column is unused by construction,
-     * so the "no column 'sakskode' found" arm must not surface alongside the condition error. The
-     * gate's placeholder Unresolved (lookupColumn null) replaces the column-miss line at
-     * {@code BuildContext.classifyInputFieldInternal}; the actionable diagnostic is the condition
-     * error in {@code condErrors}.
+     * <p>Under override:true the column is unused by construction, so the "no column 'sakskode'
+     * found" arm must not surface alongside the condition error. The actionable diagnostic is the
+     * condition failure, minted at the input field that carries the directive; the consuming field
+     * states only the consequence.
      */
     @Test
     void plainInput_overrideTrueWithBrokenCondition_rejectsAsUnclassifiedField() {

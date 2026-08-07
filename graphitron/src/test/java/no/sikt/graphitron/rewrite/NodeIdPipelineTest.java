@@ -1549,9 +1549,9 @@ class NodeIdPipelineTest {
         FK_TARGET_PATHOLOGICAL_KEY_MISMATCH_DEFERRED_INPUT(
             "input-field `[ID!] @nodeId(typeName: ParentNode)` consumed on child_ref where the "
                 + "FK targets parent_node.alt_key but ParentNode's keyColumn is parent_node.pk_id "
-                + "(FK target ≠ NodeType key) → the consuming field rejects (the input field "
-                + "surfaces the deferred-emission hint via its Unresolved reason), parallel to the "
-                + "arg-side ArgumentFkTargetNodeIdCase.FK_TARGET_PATHOLOGICAL_KEY_MISMATCH_DEFERRED",
+                + "(FK target ≠ NodeType key) → the consuming field rejects, and the deferred-emission "
+                + "hint is minted at the input field carrying the typed Deferred rejection, parallel "
+                + "to the arg-side ArgumentFkTargetNodeIdCase.FK_TARGET_PATHOLOGICAL_KEY_MISMATCH_DEFERRED",
             """
             type ParentNode implements Node @table(name: "parent_node") @node { id: ID! }
             type ChildRef @table(name: "child_ref") { childId: String! @field(name: "child_id") }

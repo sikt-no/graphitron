@@ -1,7 +1,7 @@
 ---
 id: R585
 title: "Typed rejections on the input-field resolution path"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 5
 theme: classification-model

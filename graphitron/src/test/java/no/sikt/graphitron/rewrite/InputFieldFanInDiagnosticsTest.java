@@ -132,6 +132,31 @@ class InputFieldFanInDiagnosticsTest {
     }
 
     @Test
+    void nestedConditionFailure_mintsUnderTheDeclaringTypeAndDedups() {
+        // The condition accumulator is threaded through the whole nesting recursion, so a nested
+        // field's failure reaches the outermost fold. Minting it under that fold's type would name a
+        // coordinate the schema does not have, and would make one fact minted from two consumers two
+        // unequal values, which is exactly what the mint-boundary dedup relies on not happening.
+        var schema = TestSchemaHelper.buildSchema("""
+            input Inner {
+              filmId: Int! @field(name: "film_id")
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.NoSuchClass", method: "nope"})
+            }
+            input FilterA { inner: Inner }
+            input FilterB { inner: Inner }
+            """ + FILM + """
+            type Query {
+              a(filter: FilterA): [Film!]!
+              b(filter: FilterB): [Film!]!
+            }
+            """);
+
+        assertThat(diagnosticsFor(schema, "Inner.filmId")).hasSize(1);
+        assertThat(diagnosticsFor(schema, "FilterA.filmId")).isEmpty();
+        assertThat(diagnosticsFor(schema, "FilterB.filmId")).isEmpty();
+    }
+
+    @Test
     void nestedFailure_reportsLeafAtLeafAndConsequenceAtEachLevel() {
         // Three coordinates, one fact each, where the fan-in used to render the nested level's
         // already-joined prose inside the outer level's join.
