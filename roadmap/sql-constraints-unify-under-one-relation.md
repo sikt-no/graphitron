@@ -33,6 +33,42 @@ against something that no longer constrains, a `@node(keyColumns:)` naming a col
 not unique) has one relation to read; and the forms this iteration does not capture (CHECK, NOT
 NULL, deferrability) arrive later as type values rather than as new relations with new anchors.
 
+## The primary key is not a flagged unique constraint
+
+The strongest single reason to reshape, and it is decided rather than open. A table has at most
+one primary key, so the fact a primary-key row states is "table T's primary key is constraint C"
+and its coordinate is T. The relation is keyed by the constraint name instead, which admits "T
+has primary keys C1 and C2", a sentence the domain has no member for, and the `is_primary`
+boolean is the symptom of the key being wrong rather than the modelling itself. The schema
+conventions already rule on this: a row's primary key is the coordinate of the fact it states.
+
+Keying a `sql_primary_key` relation by `(table_schema, table_name)` makes the cardinality
+structural, and that retires a gate. The convention list currently names "at most one primary key
+per table" among the cross-relation invariants plain DDL cannot state, and the claim is false in
+an instructive way: DDL cannot state it *given a constraint-keyed relation with a flag*. The
+limitation belongs to the model and was attributed to the language. Under a table-keyed relation
+H2 enforces it, and a violation is then correctly a capture bug, since no database hands out two
+primary keys. The `atMostOnePrimaryKeyPerTable` query in the agreement suite goes with it.
+
+The unified relation on its own cannot buy this. Enforcing one primary-key row per table inside
+`sql_constraint` needs a filtered unique index, which H2 does not have, so the extension relation
+is what makes the invariant structural rather than merely documented.
+
+The distinction is also one the live model already draws, which is the tell that the store's
+shape is the odd one out. `MatchedKey` is a sealed interface whose two permitted variants are
+`PrimaryKey` and `UniqueKey`; `TableRef` carries `primaryKeyColumns`; `MutationField` emits a
+primary-key-only RETURNING clause; `@order(primaryKey:)` selects it by name; and
+`UpdateRowsError` and `DeleteRowsError` render "PK" and "UK" differently in user-facing
+diagnostics. `CatalogFacts` splits them too, into an `Optional<Key> primaryKey` and a
+`List<Key> uniqueKeys`, which is why the census anchor has to fold the store's relation to the
+`uniqueKeys` view before comparing. That projection exists only to bridge a shape mismatch the
+store introduced, and it disappears with the split.
+
+Beyond cardinality the primary key carries semantics a uniqueness flag does not imply: it forces
+NOT NULL on its columns, and it is the implicit target of a `REFERENCES t` written without a
+column list. The first is already visible through `sql_column.nullable`; the second matters only
+if a later capture reads foreign keys declared in that short form.
+
 ## Open questions for Spec
 
 1. **Where the foreign-key-only attributes live.** Oracle hangs `R_CONSTRAINT_NAME` and
@@ -50,10 +86,20 @@ NULL, deferrability) arrive later as type values rather than as new relations wi
    equality-arm agreement anchor; and it makes the target columns unreachable rather than merely
    denormalised whenever the referenced unique constraint is not itself reported. Capture total
    and cheap, joins as derivation's business, is the item's doctrine and the pair follows it.
-3. **Whether the constraint's index linkage is a fact here.** Oracle's `ALL_CONSTRAINTS` carries
-   `INDEX_NAME`, since a unique constraint is backed by an index. The schema keeps `catalog_index`
-   separate and captures no linkage. Whether that edge is a captured fact or a derivation over
-   column sets should be answered with the first consumer that needs it, not now.
+3. **Whether the constraint's index linkage is a fact here.** A primary key or unique constraint
+   is backed by an index, and in PostgreSQL the two share an identifier: `actor_pkey` names both
+   a constraint and the index enforcing it. Oracle exposes the edge as `ALL_CONSTRAINTS.INDEX_NAME`,
+   and needs to, because Oracle adopts a suitable existing index instead of always creating one
+   (PostgreSQL always creates a fresh index, so the name coincidence is total there and the edge
+   carries no information a join could not recover).
+
+   The question is currently theoretical for us rather than live, which is worth recording so
+   nobody re-derives it: jOOQ's `Table.getIndexes()` excludes constraint-backing indexes, so the
+   two relations are already disjoint in captured data. Sakila's generated `Indexes` holds exactly
+   one entry, the explicitly declared `idx_actor_last_name`, while every `*_pkey` arrives through
+   `Keys`. So this only becomes a question if a later capture reads indexes from somewhere jOOQ's
+   generated model does not filter, and it should be answered with the first consumer that needs
+   the edge.
 
 ## Timing
 
