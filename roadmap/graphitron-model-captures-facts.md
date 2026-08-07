@@ -2265,6 +2265,59 @@ view as a projection choice, and both halves of that fold, the excluded primary 
 column-set dedup, are the projection artifacts the reshaping removes. Until all of it lands the
 sections disagree, deliberately and visibly, rather than quietly.
 
+**The two non-SDL loads read one layer too high, and it costs four more facts.** The constraint
+findings above are not isolated. A sweep of every producer found the same defect wherever
+capture reads a projection built for another surface, and found none where it reads the parse
+directly, which locates the cause: `CatalogFacts` and `CompletionData` are shapes designed for
+the MCP catalog tools and the LSP's completion popups, and capture inherits every narrowing they
+made for those consumers. `SdlFactCapture` reads the registry AST and is clean. The fix
+direction is for the loads to read `JooqCatalog` and `ClasspathScanner` output directly, or for
+those producers to carry what the store needs.
+
+- **`extension_method.descriptor` is fabricated, and lossy inside a primary key.**
+  `CatalogFactCapture.descriptorOf` concatenates `CompletionData.Parameter.type()` values into
+  `(Type;Type;)Return`, and those values are `ClassDesc.displayName()`, package-stripped simple
+  names. The column is commented "raw JVM descriptor; the overload discriminator that keeps this
+  key natural" and is neither. `ClasspathScanner.readMethods` holds `m.methodTypeSymbol()`,
+  whose `descriptorString()` is the real descriptor, and already calls `descriptorString()` on
+  its return type one line later; `CompletionData.Method` drops it and capture invents a
+  replacement. Two public methods taking `com.foo.Result` and `com.bar.Result` render the same
+  string, collide on the key, and the second is dropped by first-wins with no quarantine row.
+  The extension-method anchor compares descriptor-erased precisely because the model carries no
+  descriptor, so it cannot catch this.
+- **`catalog_column.ordinal` is reflection order presented as catalog order.**
+  `JooqCatalog.columnFactsOf` enumerates `table.getClass().getFields()`, whose contract states
+  the result is in no particular order, and capture numbers the rows in that sequence. The
+  column is commented "column position in the table definition". This is the determinism rule
+  this item states, that iteration order is never load-bearing, broken by its own capture.
+  jOOQ's `table.fields()` is declaration-ordered; the reflection exists only to reach the
+  generated Java field name, which `Field` does not expose. No anchor covers ordinals, the
+  census comparing names and counts.
+- **`extension_class` promises classpath existence and delivers four undisclosed filters.**
+  `ClasspathScanner.readIfCandidate` skips any simple name containing `$`, which is every nested
+  class, along with non-public classes, synthetic classes, and everything under the jOOQ
+  package. The relation says only that a class exists on the consumer's extension classpath. A
+  nested class named in `@record` resolves through the codegen loader and would be reported
+  unknown by the resolution detection R605 plans over this relation, which is R605's own bug one
+  axis over: it fixes directories against jars, this is top-level against nested.
+- **`catalog_index` overclaims the same way**, jOOQ's `getIndexes()` excluding
+  constraint-backing indexes, so `@order(index:)` naming a primary key's index cannot resolve
+  against a relation whose comment says an index exists on a table.
+
+Three producers came back clean and are recorded so the pass does not re-derive them. The
+`graphitron_` decode helpers return null or an empty list for an absent argument and quarantine
+a type mismatch, so no default-filling reaches the store and the authored-values convention
+holds. `catalog_column.sql_type` and `nullable` are jOOQ's readings, and their comments say so;
+a disclosed projection is the healthy case and the pattern above is what an undisclosed one
+looks like. Column and table comments normalise the empty string upstream, so no relation
+confuses "" with absent.
+
+The general lesson worth keeping past this pass: a fold in an agreement anchor is a symptom, not
+plumbing. Every defect here and in the constraint families surfaced at one, and the driver
+cannot distinguish a fold that bridges a real grain difference (capture total against a pruned
+model) from one that bridges a mismatch capture introduced. Registering an arm that needs a fold
+should carry the reason the grains differ.
+
 One measurement rides along with the widened census rather than with the rename. R605 rules the
 ~213k `extension_method` rows an insert-throughput question rather than a scoping one, which is
 the right call and is this item's premise, but it makes the per-run load worth measuring rather
