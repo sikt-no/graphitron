@@ -2052,6 +2052,59 @@ facts today. That may well be right, since the round-trip constraint wants the e
 reproducible and both are in it, but it is currently an accident of ordering rather than a
 recorded decision, and the item should say which it is.
 
+**Rename the `extension_` family to `jvm_`.** Raised against the family's own rule and upheld.
+The rule names a family for whose vocabulary a row is written in; three families satisfy it and
+this one does not. Its rows say class, method, descriptor, parameter, record component, field,
+which is the JVM classfile's vocabulary, while `extension_` names a presumed role: code written
+to extend graphitron. This item has already retired one family name for exactly this failure.
+The `applied_` / `intent_` split died because "carried verbatim" named a treatment that only held
+because capture pre-decided at write time a question belonging at read time; `extension_` names a
+role that only holds because the scan happens to be scoped to reactor output directories. The
+class census reading the compile classpath (R605, already measured) makes the role claim plainly
+false rather than arguably true: `extension_class` goes from ~1.8k rows to ~30k and
+`com.fasterxml.jackson.databind.ObjectMapper` becomes a row in a relation named for the
+consumer's extension code. What earns it a row is that an author may legitimately name it in
+`@record` / `@service` / `@enum` / `@scalarType` and the codegen loader resolves it, which is a
+classpath fact.
+
+`jvm_` rather than `classfile_` or `bytecode_`, on this item's own text. The conventions above
+already name this vocabulary's owner, in the decode rule's "a JVM descriptor", and
+`extension_method.descriptor` is commented as a raw JVM descriptor. `classfile_class` stutters,
+and `bytecode_` names the encoding rather than the vocabulary, since a record component comes
+from the classfile's `RecordAttribute` and not from any bytecode. The precedent is `catalog_`,
+which names the vocabulary's owner rather than jOOQ, the mechanism that read it.
+
+`extension_scalar_constant` becomes `jvm_scalar_type_field`, and the reasoning is worth keeping
+because it decides the next relation of its shape. Purifying it to a `jvm_static_field` with a
+descriptor column is the wrong move: the scan keeps only fields whose descriptor is exactly
+`Lgraphql/schema/GraphQLScalarType;`, so a total-sounding name over a filtered relation would
+mislead about the table's contents, which is worse than the present name misleading about the
+reason for the row. The selector therefore stays in the name, and it can, because
+`GraphQLScalarType` is a graphql-java class name, a JVM type rather than a graphitron concept.
+The relation is a JVM fact whose reason for capture is GraphQL-side, and reason-for-capture is
+the axis the family rule already rejected. Dropping `constant` is a correction on its own terms:
+`ClasspathScanner.readScalarConstants` deliberately does not require `final`, so both the current
+relation name and its comment overclaim.
+
+The sibling Java name stays out. `CompletionData.ExternalReference` is not the same defect,
+since "extension" asserts a role and "external" asserts a location, and a jar class is genuinely
+outside the generated output however little it extends. The part of that name that ages badly
+under the widened census is `Reference`, most entries being referenced by nobody, and that is
+R605's call on its own merits; binding it here would make this item's remaining work wait on an
+item still in Spec.
+
+Blast radius is the DDL's table names and `COMMENT ON` text, `CatalogFactCapture.captureExtensions`,
+and the extension-census anchor. The generated classes regenerate from the DDL and the compiler
+finds every call site, which is the compile-time-only compatibility surface the module section
+describes. Doing it in this pass rather than a follow-up is a cost argument: nothing reads the
+store yet, so the rename is text plus compile fixes today and grows with every consumer that
+migrates, and this item is reopened anyway.
+
+One measurement rides along with the widened census rather than with the rename. R605 rules the
+~213k `extension_method` rows an insert-throughput question rather than a scoping one, which is
+the right call and is this item's premise, but it makes the per-run load worth measuring rather
+than assuming `FactSink`'s batching absorbs a 16x census.
+
 Two improvements the contract does not demand, noted so the next pass can take or leave them:
 
 - A decode arm that hits a missing required argument returns without writing either its
