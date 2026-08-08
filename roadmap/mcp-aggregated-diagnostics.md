@@ -5,9 +5,9 @@ status: Spec
 bucket: feature
 priority: 5
 theme: diagnostics
-depends-on: []
+depends-on: [graph-partition-key-dimension]
 created: 2026-08-03
-last-updated: 2026-08-07
+last-updated: 2026-08-08
 ---
 
 # Aggregated diagnostics commands for the MCP server
@@ -267,7 +267,7 @@ job, deferred to its own item; see the first-reader section below.
 **Enabling refactor.** `DiagnosticsTool` currently builds wire `LinkedHashMap`s inline from
 three sources (validator errors, build warnings, compile diagnostics) with no intermediate typed
 representation. The union the earlier draft gave to a package-private `DiagnosticRow` record is
-now the `diagnostic` view over the bridge relations (the first-reader section below), and both
+now the `diagnostic` view (the first-reader section below), and both
 tools read it: the existing per-entry wire mapping projects off the view's rows, and the widened
 filters and the aggregate share one null-safe `where` translation. The sequencing constraint
 survives the substrate change: the bridge DDL must land *after* the model lifts, not before,
@@ -303,51 +303,81 @@ Worth pinning as a test, because it is the failure mode that would quietly defea
 
 ## First reader of the fact store
 
-Between this item's Spec review and now the substrate arrived and the strategy flipped:
-`graphitron-model-captures-facts` (R595, In Progress) has landed the `graphitron-model`
-module, the fact-schema DDL, and the capture loads, and this item is now designated the
-store's first reader instead of building its own evaluation engine. Everything the earlier
-draft hand-built is native SQL over a relation: `groupBy` is `GROUP BY`, `where` is `WHERE`,
-`minCount` is `HAVING`, the tail accounting is a second aggregate over the elided remainder,
-and the `DiagnosticRow` record and the Java grouping engine are never built. The wire
-contract does not move: the closed dimension set, the zero-argument triage preset, exact
-counts, tail honesty, and the single-valued grain are fixed, and every invariant pin asserts
-on tool answers, so the contract cannot tell which substrate answered. As first reader this
-item is also the cheapest end-to-end validation of the store available: its whole workload is
-the query vocabulary the classification migration will lean on (`GROUP BY`, `HAVING`, a union
-view), and a wrong answer costs a bad triage rather than wrong generated code.
+Between this item's Spec review and now the substrate shipped and the strategy flipped:
+`graphitron-model-captures-facts` (R595, Done; see `roadmap/changelog.md`) landed the
+`graphitron-model` module, the fact-schema DDL, the capture loads, and a store that persists
+between runs, and this item is now designated the store's first reader instead of building
+its own evaluation engine. Everything the earlier draft hand-built is native SQL over a
+relation: `groupBy` is `GROUP BY`, `where` is `WHERE`, `minCount` is `HAVING`, the tail
+accounting is a second aggregate over the elided remainder, and the `DiagnosticRow` record
+and the Java grouping engine are never built. The wire contract does not move: the closed
+dimension set, the zero-argument triage preset, exact counts, tail honesty, and the
+single-valued grain are fixed, and every invariant pin asserts on tool answers, so the
+contract cannot tell which substrate answered. As first reader this item is also the cheapest
+end-to-end validation of the store available: its whole workload is the query vocabulary the
+classification migration will lean on (`GROUP BY`, `HAVING`, a union view), and a wrong
+answer costs a bad triage rather than wrong generated code.
 
-**One relation per writer, one view for the reader.** Diagnostics reach the store through two
-bridge base relations, one per channel and cadence: the schema channel (validator errors and
-build warnings, written per snapshot) and the compile channel (the dev loop's javac output,
-written per compile round). A `diagnostic` union view over them, with `source` as a per-arm
-literal in the shipped `applied_directive_site` mould, is what the aggregate and the widened
-`diagnostics` filters read; nothing reads the base relations directly. The per-writer split is
+**One relation per writer, one view for the reader.** A `diagnostic` union view, with
+`source` as a per-arm literal in the shipped `graphql_directive_site` mould, is what the
+aggregate and the widened `diagnostics` filters read; nothing reads the base relations
+directly. Behind it, one base relation per channel and writer cadence. The compile arm is
+`pipeline-output-facts-family`'s (R603) `javac_diagnostic`, read from day one: that item's
+dovetail section picked the fork where this item's compile bridge is never built, this spec
+adopts it, and R603's fallback (this item lands first, bridge included, R603 retires it)
+stands only if scheduling inverts the expected order. The schema arm is this item's one bridge
+relation: validator errors and build warnings, written per snapshot. The per-writer split is
 what keeps ownership single: `validation-adds-facts` (R589) later lands its detection-minted
-violation relation and replaces the view's schema arm; `pipeline-output-facts-family` (R603)
-lands the output family and replaces the compile arm; each retirement is a dropped table and a
-one-line view edit, never a re-key. This item fixes the compile bridge table's first key (file,
-position, an ordinal for repeated identical messages); R603 keeps design freedom over the
-output family's prefix and writer lifecycle and may adopt or supersede that table when it
-lands. It also keeps the `source` boundary honest: for schema rows severity is a function of
-the rejection's kind, for compile rows it is javac's independent verdict, and one relation
-holding both would give one column two meanings.
+relation (the DDL header holds `intent_` in reserve for that stratum) and replaces the schema
+arm, a dropped table and a one-line view edit, never a re-key. The split also keeps the
+`source` boundary honest: for schema rows severity is a function of the rejection's kind, for
+compile rows it is javac's independent verdict, and one relation holding both would give one
+column two meanings.
 
-**The bridge is a load, and saying so is part of the design.** The base relations are
-`ValidationReport` and the compile list, loaded. A copy with exactly one writer, one source,
-and a per-run lifetime is a materialized view, not a second population; but it is also not
-capture, because capture agrees with the model from an independent walk of a different source,
-while the bridge's census check against the report it loaded from catches loader bugs only,
-and during the bridge window the relation content has no independent enforcer. The agreement
-driver therefore gains a fourth registration arm for bridged relations, named as such, whose
-javadoc carries exactly that caveat and the retirement condition (the arm going empty is the
-signal to delete it, so the countdown lives in a test rather than a roadmap item). Nothing
-R595 pinned resists this: its acceptance's load-bearing property is closure with no skip list,
-not the arm count, and the driver's javadoc already says later strata land as registrations.
-The DDL contribution sequences after R595 reaches Done, so `graphitron-model.sql` and the
-registration list do not have two concurrent authors.
+**The store is shared and persistent now, and the bridge inherits both facts.**
+`graph-partition-key-dimension` (R610, this item's dependency) moves the persisted store to a
+per-user cache shared by every module the user builds, keys the SDL families by a leading
+`graph_name`, and makes refresh ownership-scoped. The bridge relation inherits the dimension
+on the same reasoning R603 already states for `javac_diagnostic`: `graph_name` leads its key
+with the structural FK to `store_graph`, every loader statement is scoped to the session's
+graph (an unscoped delete in a shared store is one module erasing another's diagnostics), and
+the relation passes R610's schema gate without an exemption. The view's arms carry
+`graph_name` through, and the MCP read site filters to the reading session's graph; a graph
+dimension on the wire waits for a multi-graph workspace to want it. Persistence adds one
+honesty clause, not a mechanism: bridge rows from a previous session survive a restart until
+the first snapshot's graph-scoped delete-and-reload replaces them, so the tool's existing
+snapshot availability and freshness axes are what keeps a stale aggregate from reading as
+current. Naming follows the landed vocabulary doctrine (a family is named for whose
+vocabulary the row is written in, never its reader or role): the leaning is `validator_`,
+the oracle whose verdicts the rows transcribe during the window, parallel to `javac_`; the
+Spec review settles the word.
 
-**Stored columns are facts; derived columns live in the view.** The base relations carry what
+**The reader goes through the session's handle, never the file.** R610 opens the shared store
+in mixed mode, falls back to a module-local in-memory store on any cache trouble, and stamps
+the store's compatibility into the file path, so a reader that opened the persisted file
+itself could be reading a different store than the one the session writes. R603 already fixes
+this contract for its writer (`CompileFacts` takes the dev session's store handle); the
+aggregate, the widened filters, and the schema-bridge loader hold the same contract on the
+read side: one handle, owned by the workspace, shared by every writer and reader in the
+session.
+
+**The bridge is a load, and saying so is part of the design.** The schema bridge relation is
+`ValidationReport`, loaded. A copy with exactly one writer, one source, and a graph-scoped
+lifetime is a materialized view, not a second population; but it is also not capture, because
+capture agrees with the model from an independent walk of a different source, while the
+bridge's census check against the report it loaded from catches loader bugs only, and during
+the bridge window the relation content has no independent enforcer. The agreement driver
+therefore gains a `BRIDGED` registration arm, named as such, whose javadoc carries exactly
+that caveat and the retirement condition (the arm going empty is the signal to delete it, so
+the countdown lives in a test rather than a roadmap item); with the compile arm reading
+`javac_diagnostic`, the schema bridge is its only registrant, and it sits beside the `ORACLE`
+arm R603 adds for relations a post-capture oracle writer owns. Nothing the shipped driver
+pins resists this: the load-bearing property is closure with no skip list, not the arm count,
+and its javadoc already says later strata land as registrations. The DDL contribution
+sequences after R610's rekey lands, so the bridge relation is born with the partition
+dimension instead of being widened a week later.
+
+**Stored columns are facts; derived columns live in the view.** The schema bridge carries what
 the channel's own typed data states: the rejection's kind and variant, `lspCode`,
 `(attemptKind, attempt)`, the stub key, the lint rule, the location, and a nullable
 `(type_name, field_name)` pair at the DDL's universal grain rather than a rendered coordinate
@@ -382,11 +412,12 @@ under R589 becomes a candidate dimension when its relation lands, not before.
 
 Boundaries and placement, so they are reviewed rather than discovered. `unified-diagnostic-stream`
 (R601) collapses the schema-side report channels, which under this design simplifies the
-bridge loader (one load instead of three), not the aggregate; it stays non-blocking, as does
-R603. The aggregate's jOOQ queries live in `graphitron-mcp` beside the tool (the generated
-classes are the containment, per the rejected-facade reasoning in `validation-adds-facts`;
-`graphitron-model` hosts model code only), and the loader lives with its cadence owner, the
-workspace layer that already holds the report and the compile list. A read-only SQL surface
+schema-bridge loader (one load instead of two slots plus a never-added third), not the
+aggregate; it stays non-blocking. The aggregate's jOOQ queries live in `graphitron-mcp` beside
+the tool (the generated classes are the containment, per the rejected-facade reasoning in
+`validation-adds-facts`; `graphitron-model` hosts model code only), and the schema-bridge
+loader lives with its cadence owner, the workspace layer that already holds the report,
+mirroring where R603 put `CompileFacts` for the compile channel. A read-only SQL surface
 over the whole fact store, which the H2 spike floats as an agent capability, stays a separate
 future item: the derived stratum it would query barely exists yet, and its design question is
 different in kind; see the query-language section above. The whole-board context is
@@ -402,8 +433,8 @@ off today's wide shapes mean re-doing the DDL and the loader both.
 | 1 | `RejectionKind` gains the author-fixable projection; `Diagnostics.severityOf`'s comment becomes a read of it | `graphitron`, `graphitron-lsp` | small |
 | 2 | `StubKey` splits into two permits, non-null `VariantClass` plus an inline-defer arm; the two `deferred` factories map to their own arm | `graphitron` | small |
 | 3 | `CodedRejection` capability lift; `Diagnostics.lspCodeOf` collapses to one `instanceof`; membership partition meta-test | `graphitron`, `graphitron-lsp` | small-medium (42 sites, mechanical) |
-| 4 | Bridge DDL: two base relations, the `directives` child relation, the `diagnostic` union view, comments per the model conventions; the bridged agreement arm with its registrations; sequenced after `graphitron-model-captures-facts` is Done | `graphitron-model`, `graphitron` | small-medium |
-| 5 | The bridge loader at the workspace layer: the single exhaustive-switch site filling typed columns per snapshot and per compile round | `graphitron-lsp` | small-medium |
+| 4 | Bridge DDL: the graph-keyed schema bridge relation, its `directives` child relation, and the `diagnostic` union view (schema arm on the bridge, compile arm on R603's `javac_diagnostic`), comments per the model conventions; the `BRIDGED` agreement arm with its one registration; sequenced after R610's rekey | `graphitron-model`, `graphitron` | small-medium |
+| 5 | The schema-bridge loader at the workspace layer: the single exhaustive-switch site filling typed columns per snapshot, every statement scoped to the session's graph, writing through the session's store handle | `graphitron-lsp` | small-medium |
 | 6 | The aggregate and the widened `diagnostics` filters as jOOQ over the view; the dimension enum as the wire-name-to-view-column mapping; tail rule via `HAVING` plus the elided-remainder aggregate; the new counts-only tool | `graphitron-mcp` | medium |
 
 Steps 1 to 3 are each independently defensible and each improve the LSP or the watch formatter on
@@ -432,17 +463,23 @@ before the convergence would put a confidently wrong count in the very view this
 hedged counts. Nothing else in the design touches it, so the two can be worked in parallel provided the
 dependency lands first.
 
-**A dependency now: `graphitron-model-captures-facts`. Still deliberately not one:
-`validation-adds-facts`.** The store module is this design's substrate (the first-reader
-section above), and step 4 sequences after it reaches Done. R589 stays a relation, not a
-prerequisite: it makes classification a derivation over the store and stops a failed
-coordinate from discarding what the classifier established, which widens this dimension set on
-its own; every fact that survives a rejection becomes a candidate dimension, and the pivot a
-measured session actually wanted ("the diagnostics on my DELETE mutations") becomes
-expressible. Nothing here reads a classification today, and no dimension already in the enum
-changes meaning when R589 lands: its violation relation replaces the view's schema arm and the
-bridge loader's schema half retires, while the view, the wire vocabulary, and every pin stay.
-Every count this item reports is true on today's model; it is narrower, not wrong.
+**The dependency chain now: R610 in front, R603 expected in front, R589 deliberately not.**
+The shipped store (`graphitron-model-captures-facts`, Done) is this design's substrate;
+`graph-partition-key-dimension` (R610) is the named dependency because the bridge relation's
+key and every loader statement take its dimension, so step 4 sequences after its rekey.
+`pipeline-output-facts-family` (R603) is expected to land first too, and this spec adopts its
+dovetail's recommended fork (the compile arm reads `javac_diagnostic`, no compile bridge is
+built); per that item's own sequencing contract neither unconditionally precedes the other,
+so R603 is prose here rather than front-matter, and its fallback covers the inverted order.
+R589 stays a relation, not a prerequisite: it makes classification a derivation over the
+store and stops a failed coordinate from discarding what the classifier established, which
+widens this dimension set on its own; every fact that survives a rejection becomes a
+candidate dimension, and the pivot a measured session actually wanted ("the diagnostics on my
+DELETE mutations") becomes expressible. Nothing here reads a classification today, and no
+dimension already in the enum changes meaning when R589 lands: its detection-minted relation
+replaces the view's schema arm and the schema-bridge loader retires, while the view, the wire
+vocabulary, and every pin stay. Every count this item reports is true on today's model; it is
+narrower, not wrong.
 
 **Carved out at review: the sealed `Coordinate` component.** A sealed
 `Coordinate { SchemaWide | TypeLevel | FieldLevel }` on `ValidationError`, deleting
@@ -451,7 +488,7 @@ Every count this item reports is true on today's model; it is narrower, not wron
 stands, but it is not a prerequisite here, and it was the only step reaching outside the diagnostics
 path. Two reasons it separates cleanly:
 
-- The aggregate does not need it. The bridge relations store a nullable `(type_name,
+- The aggregate does not need it. The schema bridge stores a nullable `(type_name,
   field_name)` pair at the DDL's universal grain, and the loader reads the grain off
   `ValidationError`'s constructors in *one* place; the rendered `coordinate` and coarse `type`
   are view columns computed from the pair, so no dot-split exists anywhere. The spec's
@@ -479,7 +516,7 @@ through the real pipeline into the bootstrapped store, which "behaviour is pinne
 pipeline tier and above" counts as an improvement, not a cost. The tests that carry weight are
 the invariant pins, not per-dimension unit tests. One rule binds them all: every pin asserts on
 tool answers, never on the engine's internals, and that rule is exactly what makes the tier
-move and the later arm swaps (R589's schema arm, R603's compile arm) invisible to this suite:
+move and the later schema-arm swap (R589's detection-minted relation) invisible to this suite:
 
 - **Aggregate / drill-down parity.** Filtering `diagnostics` to a group's key returns exactly that
   group's count. This is the pin that makes the per-cluster examples a sample rather than a lossy
@@ -516,13 +553,15 @@ the collapsed `lspCodeOf`.
 
 ## Implementation sites
 
-- `graphitron-model.sql`: the two bridge base relations, the `directives` child relation, and
-  the `diagnostic` union view, commented per the model conventions (the comment-coverage gate
-  reads them).
-- The agreement driver in `graphitron`'s capture test root: the fourth (bridged) registration
-  arm, its honesty javadoc, and the two bridge registrations.
+- `graphitron-model.sql`: the graph-keyed schema bridge relation, its `directives` child
+  relation, and the `diagnostic` union view (compile arm selecting from R603's
+  `javac_diagnostic`), commented per the model conventions (the comment-coverage gate reads
+  them).
+- The agreement driver in `graphitron`'s capture test root: the `BRIDGED` registration arm,
+  its honesty javadoc, and the schema bridge's registration.
 - A loader class at the workspace layer in `graphitron-lsp`: the single exhaustive-switch site,
-  writing per snapshot (schema channel) and per compile round (compile channel).
+  writing per snapshot (schema channel only; the compile channel is R603's `CompileFacts`),
+  every statement graph-scoped, through the session's store handle.
 - `DiagnosticsTool.java`: the three inline `LinkedHashMap` builders plus `addLocation` /
   `addCompileLocation` become a projection of the `diagnostic` view's rows.
 - A new class in `graphitron-mcp` for the dimension enum (wire name to view column), the jOOQ
@@ -538,11 +577,12 @@ the collapsed `lspCodeOf`.
 - `docs/manual/how-to/mcp-agent-context.adoc`: the per-tool table gains a `diagnostics.aggregate`
   row beside the existing `diagnostics` one. This is the user-facing surface the shipped
   `docs.search` / `catalog.search` tools landed prose on, and the draft omitted it.
-- `ValidationReport.canonicalUri` is declared the single canonical URI site, but
-  `addCompileLocation` puts `CompileDiagnostic.file()` into the `uri` slot raw. A `file` dimension
-  spanning both channels would group two spellings of one path apart, so the loader normalises
-  the compile channel through the same site before the write, and `directory` chops the
-  normalised form in the view.
+- `ValidationReport.canonicalUri` is declared the single canonical URI site, and a `file`
+  dimension spanning both channels would group two spellings of one path apart. R603's
+  flattening section owns the compile side of this (its writer canonicalises the file spelling
+  before the write, restating `location.uri` in this tool as a ride-along), so this item's
+  remaining duty is the schema side plus a parity check that the two arms agree on spelling;
+  `directory` chops the canonical form in the view.
 
 ## Reviewer decisions
 

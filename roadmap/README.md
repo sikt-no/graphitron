@@ -20,7 +20,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R333` | The Graphitron data model | Ready | 2026-08-06 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R589` | Classification is a relation; validation adds facts | Spec | 2026-08-08 <sub>created 2026-08-04</sub> | [plan](validation-adds-facts.md) |
 | `R603` | A pipeline-output facts family in the model store <sub>blocked by: [graph-partition-key-dimension](graph-partition-key-dimension.md)</sub> | Spec | 2026-08-08 <sub>created 2026-08-06</sub> | [plan](pipeline-output-facts-family.md) |
-| `R569` | Aggregated diagnostics commands for the MCP server | Spec | 2026-08-07 <sub>created 2026-08-03</sub> | [plan](mcp-aggregated-diagnostics.md) |
+| `R569` | Aggregated diagnostics commands for the MCP server <sub>blocked by: [graph-partition-key-dimension](graph-partition-key-dimension.md)</sub> | Spec | 2026-08-08 <sub>created 2026-08-03</sub> | [plan](mcp-aggregated-diagnostics.md) |
 | `R473` | Explicit @nodeId grammar: Node.id is the only implicit nodeId; typeName-first decode resolution | Spec | 2026-08-06 <sub>created 2026-07-13</sub> | [plan](explicit-nodeid-grammar.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
@@ -264,7 +264,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R611` [**Nudge commercial-edition jOOQ consumers, whose coordinate the currency check never sees**](commercial-jooq-coordinate-version-nudge.md) — Ready, feature
 - `R601` [**The diagnostic stream unifies**](unified-diagnostic-stream.md) — Backlog, structural
 - `R602` [**Decide the INPUT_OBJECT locations of @record and @table: narrow or retired-location convention**](input-object-directive-locations.md) — Backlog, cleanup
-- `R569` [**Aggregated diagnostics commands for the MCP server**](mcp-aggregated-diagnostics.md) — Spec, feature
+- `R569` [**Aggregated diagnostics commands for the MCP server**](mcp-aggregated-diagnostics.md) — Spec, feature, blocked by [graph-partition-key-dimension](graph-partition-key-dimension.md)
 - `R236` [**BuildContext nested-input candidate-hint draws from path-origin table instead of @reference terminal table**](validator-reference-candidate-hint-terminal-table.md) — Backlog, bug
 - `R557` [**Completeness sweep for @splitQuery applications: every marker consumed, inert-by-construction, or rejected**](split-query-marker-sweep.md) — Backlog, validation
 - `R282` [**Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces**](fk-key-hint-sibling-scope.md) — Spec, bug
