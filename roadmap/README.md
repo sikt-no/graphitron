@@ -16,8 +16,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R610` | SDL fact keys carry a graph partition dimension | Spec | 2026-08-08 | [plan](graph-partition-key-dimension.md) |
-| `R611` | Nudge commercial-edition jOOQ consumers, whose coordinate the currency check never sees | Ready | 2026-08-08 | [plan](commercial-jooq-coordinate-version-nudge.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-06 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
+| `R611` | Nudge commercial-edition jOOQ consumers, whose coordinate the currency check never sees | In Progress | 2026-08-08 | [plan](commercial-jooq-coordinate-version-nudge.md) |
 | `R589` | Classification is a relation; validation adds facts | Spec | 2026-08-08 <sub>created 2026-08-04</sub> | [plan](validation-adds-facts.md) |
 | `R603` | A pipeline-output facts family in the model store <sub>blocked by: [graph-partition-key-dimension](graph-partition-key-dimension.md)</sub> | Spec | 2026-08-08 <sub>created 2026-08-06</sub> | [plan](pipeline-output-facts-family.md) |
 | `R569` | Aggregated diagnostics commands for the MCP server <sub>blocked by: [graph-partition-key-dimension](graph-partition-key-dimension.md)</sub> | Spec | 2026-08-08 <sub>created 2026-08-03</sub> | [plan](mcp-aggregated-diagnostics.md) |
@@ -261,7 +261,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### diagnostics
 
 - `R411` [**Wire-coercion cast guard for @condition and @externalField (R261 Slice 2)**](reject-wire-coercion-nonservice-sites.md) — Backlog, architecture
-- `R611` [**Nudge commercial-edition jOOQ consumers, whose coordinate the currency check never sees**](commercial-jooq-coordinate-version-nudge.md) — Ready, feature
+- `R611` [**Nudge commercial-edition jOOQ consumers, whose coordinate the currency check never sees**](commercial-jooq-coordinate-version-nudge.md) — In Progress, feature
 - `R601` [**The diagnostic stream unifies**](unified-diagnostic-stream.md) — Backlog, structural
 - `R602` [**Decide the INPUT_OBJECT locations of @record and @table: narrow or retired-location convention**](input-object-directive-locations.md) — Backlog, cleanup
 - `R569` [**Aggregated diagnostics commands for the MCP server**](mcp-aggregated-diagnostics.md) — Spec, feature, blocked by [graph-partition-key-dimension](graph-partition-key-dimension.md)
