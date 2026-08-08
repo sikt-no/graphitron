@@ -49,17 +49,43 @@ lagging one as a suppressible build advisory.
 strictly better than any classpath introspection: no reflection, no manifest parsing, and it reports
 the version Maven actually resolved after mediation rather than whatever the POM happens to declare.
 All three mojos already declare `requiresDependencyResolution` (`GenerateMojo.java:17`,
-`ValidateMojo.java:19`, `DevMojo.java:88`), so the artifact set is populated at execute time. The
-Spec must pin which scopes count, and what an absent coordinate means (a consumer with jOOQ at
-`provided` or test scope is a real shape). An absent coordinate is not a lagging one, so it is one of
-the silence cases the tests pin explicitly.
+`ValidateMojo.java:19`, `DevMojo.java:88`), so the artifact set is populated at execute time.
+
+**Which scopes count: every scope except `test`.** This has to be a ruling rather than an implementer's
+choice, because the resolution scope differs per goal: `generate` and `validate` declare
+`ResolutionScope.COMPILE`, `dev` declares `ResolutionScope.TEST`, so `project.getArtifacts()` returns a
+strictly larger set under `dev`. Dropping `test`-scoped artifacts makes the observed set identical
+across all three goals, which is what the placement section's uniformity argument needs: without the
+filter, a consumer whose jOOQ is test-scoped would be nudged under `graphitron:dev` and silent under
+`graphitron:generate`, and the same project would say two different things depending on which goal ran.
+The filter is also right on its own terms, since graphitron generates main sources and the versions that
+matter are the ones the generated code compiles and runs against. `compile`, `provided`, `runtime`, and
+`system` all count; a consumer carrying jOOQ at `provided` is a real shape and a real nudge target.
+
+An absent coordinate is not a lagging one, so it is one of the silence cases the tests pin explicitly.
 
 ## One reference version: what graphitron is built against
 
-There is a single number per dependency, and it is derived, not maintained: the version the reactor
-itself builds against (`version.org.jooq` at `pom.xml:33`, and graphql-java's `25.0` at
-`pom.xml:161`). Promoting the graphql-java version from a hardcoded literal to a property is a
-prerequisite of this item, so there is one source to filter the reference value from.
+There is a single number per dependency, and it is derived, not maintained: the version graphitron
+itself builds against, pinned once in the root pom (`version.org.jooq` at `pom.xml:34`, graphql-java's
+`25.0` at `pom.xml:174`).
+
+**How that number reaches the running mojo: the plugin's own resolved dependency graph.** Those pom
+pins are facts of *graphitron's* build and are invisible at consumer build time, and the reactor has no
+resource-filtering precedent to copy (there is no `<filtering>` anywhere in it), so the delivery has to
+come from something the shipped artifact already carries. It does: a mojo can take
+`@Parameter(defaultValue = "${plugin}", readonly = true) PluginDescriptor`, and
+`PluginDescriptor.getArtifacts()` carries graphql-java and jOOQ because `graphitron-maven-plugin`
+depends on `graphitron`, whose pom declares both at compile scope (`graphitron/pom.xml:36,44`). That is
+exactly symmetric with the `project.getArtifacts()` decode chosen for the consumer side: same API
+shape, same boundary, plain strings by the time either crosses into core. It needs no property
+promotion, no resource filtering, and no new build wiring, and the number stays derived in the way this
+section wants, so R466 and R467 still move the reference for free.
+
+The one way the reference can be something other than graphitron's own pin is a consumer overriding
+`<plugin><dependencies>` to force a different graphql-java or jOOQ onto the plugin's realm. That is
+rare, deliberate, and self-consistent (the advisory then reports the version the plugin actually ran
+with), so it needs no handling beyond this sentence.
 
 Derived is exactly right here, and this is where the nudge framing overrides an instinct worth naming
 explicitly so a later reader does not "fix" it. A separately maintained *minimum supported version*
@@ -117,7 +143,7 @@ wrong, and the counter-example is graphitron's own code.
 (`graphitron/src/main/java/no/sikt/graphitron/rewrite/session/SessionStateWarnings.java`) is this
 exact shape already built once: a whole-build advisory derived purely from mojo POM config, emitted
 as `BuildWarning.LintFinding` with a **`null` location** and a `LintRule` tagged `Source.CODEGEN`,
-folded into the report at `GraphQLRewriteGenerator.withLintFindings` (`GraphQLRewriteGenerator.java:515-538`).
+folded into the report at `GraphQLRewriteGenerator.withLintFindings` (`GraphQLRewriteGenerator.java:538-561`).
 Its class javadoc states the rationale verbatim: a `<sessionState>` posture is a "`pom.xml` /
 whole-build fact with no SDL coordinate." `logWarnings` branches on `loc != null` explicitly, so the
 location-less case is already carried end to end.
@@ -125,13 +151,26 @@ location-less case is already carried end to end.
 Routing through `getLog().warn` instead would open a second diagnostic channel with no rule id, no
 `<lint><disabledRules>` suppression, no LSP replay, and no MCP `diagnostics` projection: three views
 the `BuildWarning` channel serves for free. The one counter-precedent, the `<schemaInput pattern>`
-empty-match warn at `AbstractRewriteMojo.java:167`, fires before a `RewriteContext` exists and
+empty-match warn at `AbstractRewriteMojo.java:163`, fires before a `RewriteContext` exists and
 reports a defect in the mojo's own input expansion, so it is not a model for this.
 
 Concretely: two new `LintRule` values with `Source.CODEGEN`, and a
 `DependencyVersionWarnings.forVersions(...)` in core mirroring `SessionStateWarnings.forConfig`,
-folded into `withLintFindings`. `LintRuleRegistryCoverageTest` then becomes the enforcer that the new
-rules are a deliberate registry edit rather than an orphan.
+folded into `withLintFindings`. `LintRuleRegistryCoverageTest.everyCodegenAdvisoryRuleExists` hard-lists
+the `Source.CODEGEN` rule ids, so it is the enforcer that the new rules are a deliberate registry edit
+rather than an orphan; the implementer extends that list.
+
+### Widen the `Source.CODEGEN` documentation with the change
+
+The axis is currently documented as a `<sessionState>` axis and would go stale the moment this lands.
+`LintRule.Source.CODEGEN`'s javadoc reads "a codegen-config advisory derived at report assembly from the
+`<sessionState>` config"; the enum-constant block comment above `NO_SESSION_STATE` says the same; and
+two tests repeat it in comments (`LintRuleRegistryCoverageTest.everyCodegenAdvisoryRuleExists` and
+`FixtureWarningsGateTest`, which segregates `Source.CODEGEN` findings out of its expected-warning set
+and so absorbs the new rules silently). A dependency version is not `<sessionState>`, and it is not mojo
+config at all: it is resolved-dependency-graph data. Widen all four sites to what the axis actually
+partitions, a whole-build fact with no SDL coordinate, folded in at report assembly, no visitor and no
+classifier site.
 
 ### Cadence
 
@@ -149,9 +188,12 @@ identically and belongs in a dev-loop item rather than here. Do not special-case
 `MavenProject` must not cross into core: they are the external untyped input at this boundary, the
 Maven twin of `Table<?>` and `java.lang.reflect.Type`. Boundaries decode; the interior is typed.
 
-So: the mojo decodes `project.getArtifacts()` into a small typed carrier and threads it through
-`RewriteContext`, the same route `SessionStateConfig` and `LintConfig` already take. The comparison
-itself is a pure, unit-testable decision function in core.
+So: the mojo decodes both artifact sets into a small typed carrier of plain strings and threads it
+through `RewriteContext`, the same route `SessionStateConfig` and `LintConfig` already take. Concretely
+a `withDependencyVersions(...)` wither, the way `tenantColumn` was added (`withTenantColumn`), so the
+canonical constructor's five convenience overloads stay untouched and the pipeline-tier test can set the
+fact in one line. The comparison itself is a pure, unit-testable decision function in core; the next
+subsection is why that is affordable.
 
 Putting the fact on `RewriteContext` resolves the "`AbstractRewriteMojo` or `GenerateMojo`" question
 by construction: the advisory lands on `generate`, `validate`, **and** `dev` with no per-mojo
@@ -167,8 +209,8 @@ something, or say nothing", and the only data a nudge carries is the observed ve
 one.
 
 The honest shape is a single `Optional<BuildWarning>` (or an empty list) per dependency, with the
-silent cases (at current, patch-only lag, coordinate absent from the resolved graph) all collapsing
-to empty. No sealed hierarchy earns its place over a two-outcome decision; the sealed-variant
+silent cases (at current, patch-only lag, coordinate absent from the resolved graph, version string
+that does not decompose) all collapsing to empty. No sealed hierarchy earns its place over a two-outcome decision; the sealed-variant
 discipline is for information that downstream code must switch over exhaustively, and there is no
 such switch here. If a later item does add a failure arm, that is the moment to introduce the sealed
 type, and the change would be small.
@@ -177,33 +219,36 @@ Worth recording for whoever contemplates that later item: a hard failure must **
 `ValidationError`, because that record is bound to a `Rejection` and a schema coordinate
 (`ValidationError.java:29`) and a pom fact has neither. The established path is the core decision
 throwing and the mojo wrapping it as `MojoExecutionException`, as `SessionStateConfig.from(...)` and
-`AbstractRewriteMojo.buildSessionStateConfig` (`AbstractRewriteMojo.java:206-230`) already do.
+`AbstractRewriteMojo.buildSessionStateConfig` (`AbstractRewriteMojo.java:207-225`) already do.
 
 ### Which side does the comparing
 
-The decision-in-core rule and the version-comparison library pull against each other, and the Spec
-resolves it rather than leaving it to be discovered. Version comparison must handle the real shapes
-these coordinates take (`25.0`, `3.20.11`, `3.21.6`, and qualifiers such as `-SNAPSHOT`), and it must
-not be a hand-rolled `String.compareTo`: a lexical compare gets `3.9` versus `3.20` backwards, which
-is exactly the jOOQ line we care about. The right tool is Maven's own
-`org.apache.maven.artifact.versioning.ComparableVersion`, available via `maven-artifact`, a
-transitive of the `provided` `maven-core` dependency (`graphitron-maven-plugin/pom.xml:50-54`). But
-that is a Maven type, and core cannot see it.
+Either side could plausibly own it, and the Spec resolves it rather than leaving it to be discovered.
+Version comparison must handle the real shapes these coordinates take (`25.0`, `3.20.11`, `3.21.6`, and
+qualifiers such as `-SNAPSHOT`), and it must not be a hand-rolled `String.compareTo`: a lexical compare
+gets `3.9` versus `3.20` backwards, which is exactly the jOOQ line we care about.
 
-So the split is: **the mojo parses and compares; core turns the outcome into an advisory.**
-`ComparableVersion` stays on the Maven side of the boundary where it belongs, what crosses into core
-carries only plain strings, and `DependencyVersionWarnings` in core owns the rule tagging and the
-message text. Both halves stay unit-testable and no Maven type reaches core. The alternative, adding
-`maven-artifact` to `graphitron`'s pom, is exactly the boundary violation the placement rule exists to
-prevent.
+**Core compares; the mojo only decodes.** Under the settled minor-line predicate the comparison is not
+an ordering over full version strings at all. It is an integer compare of the `(major, minor)` pair, and
+`3.9` versus `3.20` comes out right precisely because `9 < 20` as integers. That is plain-string work
+with no Maven type in it, so it sits in core behind the boundary exactly where the placement rule wants
+the decision, and the mojo is left with the one job a boundary has: turning `Artifact` objects into
+`(coordinate, version-string)` pairs.
 
-Note that the recommended minor-line predicate needs the version *decomposed*, not just ordered, so
-the mojo side compares minor lines rather than doing a bare `ComparableVersion` ordering. That is
-still comfortably inside "the boundary decodes"; it just means the decode extracts a
-`(major, minor)` pair alongside the raw string.
+That is why the item does *not* pull `org.apache.maven.artifact.versioning.ComparableVersion` across.
+It is available (via `maven-artifact`, a transitive of the `provided` `maven-core` dependency,
+`graphitron-maven-plugin/pom.xml:50-54`) and it is the right tool for a full ordering, but the adopted
+predicate needs the version *decomposed*, not ordered, and `ComparableVersion` orders without
+decomposing. Reaching for it would mean splitting the decision across the boundary, the mojo comparing
+and core only shaping the message, to buy an ordering the predicate never asks for. Adding
+`maven-artifact` to `graphitron`'s own pom instead is the boundary violation the placement rule exists
+to prevent, and is not on the table either.
 
-`ComparableVersion` is total and never throws on odd input, so there is no unparseable case to model;
-a version string that reaches it always yields an ordering.
+The cost of declining `ComparableVersion` is that its totality goes with it: it never throws on odd
+input, whereas a `(major, minor)` decode has to say what it does with a version whose first two
+dot-separated segments are not both integers. **Rule: a version that does not decompose is silent.**
+This is an advisory; failing to read a version string is not worth a build message, let alone a
+failure. It joins the other silence cases and is pinned by a test row.
 
 ## Runtime alternative, and why not
 
@@ -244,25 +289,37 @@ string, because it tests what actually breaks and survives shading.
 
 ## Testing
 
-There is no pipeline-tier surface here: nothing about classification or emitted code changes. The
-honest placement is two unit tiers, and the plan says so explicitly rather than inventing a pipeline
-test to satisfy the "behaviour is pinned at the pipeline tier and above" rubric.
+Classification and emitted code do not change, so there is no *classifier* pipeline surface here. But
+the report channel this item deliberately rides is one, and the entire case for `BuildWarning` over
+`getLog().warn` is that suppression, LSP replay, and MCP projection come free; two unit tiers on the
+halves would leave that claim unpinned by anything. Three tiers:
 
-- Core unit tier, precedent `SessionStateWarningsTest`: the message-shaping decision, asserting the
-  advisory names the observed version, the current version, and the coordinate.
-- Plugin-module unit tier: the decode plus the comparison, which is where the real behaviour lives.
-  Table-driven over observed-versus-current pairs and covering the silence cases explicitly, since
-  under this design silence is the interesting output: at current, patch-only lag within the current
-  minor, and the coordinate absent from the resolved graph. Include the `3.9` versus `3.20` ordering
-  trap and a `-SNAPSHOT` qualifier. Precedent for making a mojo internal package-private for exactly
-  this purpose is `AbstractRewriteMojo.collectExistingDirs` (`AbstractRewriteMojo.java:594-602`),
-  whose javadoc says so in as many words.
+- Core unit tier, precedent `SessionStateWarningsTest`: the decision and the message shaping together,
+  which is where the real behaviour now lives. Table-driven over observed-versus-current pairs,
+  asserting the advisory names the observed version, the current version, and the coordinate to bump,
+  and covering the silence cases explicitly, since under this design silence is the interesting output:
+  at current, patch-only lag within the current minor, the coordinate absent from the resolved graph,
+  and a version that does not decompose into `(major, minor)`. Include the `3.9` versus `3.20` trap, a
+  major-line gap, and a `-SNAPSHOT` qualifier.
+- Plugin-module unit tier: the decode only, over hand-built `Artifact` stubs. What it pins is the scope
+  filter, that a `test`-scoped coordinate is not observed so `dev` and `generate` see the same set, and
+  the absent-coordinate case. Precedent for making a mojo internal package-private for exactly this
+  purpose is `AbstractRewriteMojo.collectExistingDirs` (`AbstractRewriteMojo.java:590-597`), whose
+  javadoc says so in as many words.
+- Pipeline tier, one case in `LintSuppressionPipelineTest`: a lagging version surfaces as a
+  `BuildWarning.LintFinding` on the `ValidationReport` that the real
+  `GraphQLRewriteGenerator.buildOutput()` returns, and the same build with that rule id in
+  `<lint><disabledRules>` does not. That test already drives `buildOutput()` and asserts on the report,
+  and the `withDependencyVersions(...)` wither makes the setup one line alongside the `withLintConfig`
+  it already uses. This is the case that pins the routing argument rather than restating it.
 
 The existing invoker harness (`graphitron-maven-plugin/pom.xml:93-125`) is optional and the
 implementer decides whether it earns its wall-clock. If used, the valuable case is the negative one:
 an assertion in `basic-generate`'s `verify.groovy` that an up-to-date consumer emits no such line. For
 an advisory that fires by design, a false positive is the whole failure mode, and it erodes trust in
-every other warning sharing the channel.
+every other warning sharing the channel. That IT happens to exercise both silence shapes for free: it
+depends on `graphitron-sakila-db`, which carries jOOQ at the reactor's own version, and it names
+graphql-java nowhere, so a clean run pins "at current" and "coordinate absent" in one assertion.
 
 ## Documentation
 
@@ -309,77 +366,34 @@ reopen them.
    release has no explanatory page behind it. The draft already specifies its content precisely
    (policy, no numbers), so the cost is one paragraph.
 
-## Reviewer findings: revisions requested before Ready
+## Review record
 
-The item is well-argued and its factual claims check out against the tree (the `SessionStateWarnings`
-precedent, the `Source.CODEGEN` routing, the `LintRuleRegistryCoverageTest` enforcer, the
-`ValidationError` / `Rejection` coupling, the `ComparableVersion` availability on the plugin's
-`provided` classpath, and the runtime-probe results are all as described). Four things need closing
-before an implementer can be handed this.
+Two Spec-review passes, both by sessions independent of the drafting one. The first settled the three
+open questions the draft raised (recorded in the section above) and requested four revisions. The second
+re-verified the plan's factual claims against the tree and folded those revisions into the body.
 
-### 1. How the reference version reaches the running mojo is unspecified
+Both passes confirm the load-bearing claims hold as written: the `SessionStateWarnings` precedent and
+its `null`-location `BuildWarning.LintFinding` shape, the `Source.CODEGEN` routing through
+`withLintFindings`, the `LintRuleRegistryCoverageTest` enforcement, the `ValidationError` / `Rejection`
+coupling, the single shared `RewriteContext` construction in `AbstractRewriteMojo` that makes one wither
+reach all three goals, `ComparableVersion`'s availability on the plugin's `provided` classpath, and the
+runtime-probe results. Every symbol this body names exists as named.
 
-This is the load-bearing mechanism of the whole item and the plan stops one step short of it.
-"Promoting the graphql-java version to a property, so there is one source to filter the reference
-value from" names the source but not the delivery: a Maven property in the reactor pom is a fact of
-*graphitron's* build and is invisible at consumer build time. Something has to carry both numbers
-into the shipped artifact, and the reactor has no resource-filtering precedent to copy.
+What the second pass changed, beyond refreshing drifted line anchors:
 
-**Recommended path, which removes the prerequisite entirely:** read the plugin's own resolved
-dependency graph. A mojo can take `@Parameter(defaultValue = "${plugin}", readonly = true)
-PluginDescriptor`, and `PluginDescriptor.getArtifacts()` carries graphql-java and jOOQ because
-`graphitron-maven-plugin` depends on `graphitron`, whose pom declares both at compile scope
-(`graphitron/pom.xml:36,44`). That is exactly symmetric with the `project.getArtifacts()` decode
-already chosen for the consumer side: same API shape, same boundary, both sides plain strings by the
-time they cross into core. It needs no property promotion, no resource filtering, and no new build
-wiring, and it stays derived in the way the plan wants, so R466 and R467 still move the reference for
-free. Pick this or name a concrete alternative, but the Spec has to pick.
-
-### 2. "The Spec must pin which scopes count" is still an open instruction, and the answer is not goal-invariant
-
-The draft writes that sentence as a task for itself and never carries it out. It is not a detail the
-implementer can pick freely, because the resolution scope differs per goal: `GenerateMojo` and
-`ValidateMojo` declare `ResolutionScope.COMPILE`, `DevMojo` declares `ResolutionScope.TEST`. So
-`project.getArtifacts()` returns a *different set* depending on which goal is running, and a
-coordinate at test scope is present under `graphitron:dev` and absent under `graphitron:generate`.
-That directly undercuts the placement section's own argument, which puts the fact on `RewriteContext`
-precisely so the advisory lands identically on `generate`, `validate`, and `dev` with no enforcement
-gap. Rule on which scopes count and state whether the advisory is goal-invariant under that rule;
-if it is not, say so explicitly so it is a known consequence rather than a surprise.
-
-### 3. `Source.CODEGEN` is currently documented as a `<sessionState>` axis
-
-The plan reuses `Source.CODEGEN` without noting that the axis's own documentation would become
-false. `LintRule.Source.CODEGEN`'s javadoc reads "a codegen-config advisory derived at report
-assembly from the `<sessionState>` config", and the enum-constant block comment above
-`NO_SESSION_STATE` says the same. A dependency version is not `<sessionState>`, and it is not mojo
-config at all: it is resolved-dependency-graph data. Add a line to the plan that the implementer
-widens that axis documentation to what it actually partitions (a whole-build fact with no SDL
-coordinate, emitted at report assembly, no visitor and no classifier site), so the change does not
-leave a stale javadoc behind.
-
-### 4. The testing plan does not pin the routing claim it rests on
-
-The whole case for riding `BuildWarning` rather than `getLog().warn` is that suppression, LSP replay,
-and MCP projection come free. The two planned unit tiers pin message shaping in core and
-decode-plus-compare in the plugin, and neither one pins that the advisory actually reaches
-`ValidationReport` or that `<lint><disabledRules>` silences it by id.
-
-"There is no pipeline-tier surface here" is true of classification and emitted code, but not of the
-report channel the plan deliberately chose to ride. `LintSuppressionPipelineTest` is the existing
-pipeline-tier home for exactly this assertion, it drives the real `GraphQLRewriteGenerator.buildOutput()`
-and asserts on the `ValidationReport`, and `RewriteContext` already carries the wither pattern
-(`withLintConfig`, `withSessionStateConfig`, `withTenantColumn`) that makes adding a case cheap. Add
-one fires-then-suppressed case there.
-
-While closing this, name the `RewriteContext` shape: a `withDependencyVersions(...)` wither, matching
-how `tenantColumn` was added, avoids touching the canonical constructor's five overloads. The plan
-says "threads it through `RewriteContext`" without saying which.
-
-### Not blocking, worth a pass
-
-Several root-pom coordinates in this body have drifted as the pom grew: `version.org.jooq` is at
-`pom.xml:34`, graphql-java's `25.0` at `pom.xml:174`, the federation and extended-scalars pins at
-`pom.xml:176-185`, `withLintFindings` at `GraphQLRewriteGenerator.java:537-559`, and the
-`<schemaInput pattern>` warn at `AbstractRewriteMojo.java:163`. Every symbol named exists as named;
-only the line coordinates moved. Refresh them if the body is being edited anyway.
+1. **Reference-version delivery is specified.** It reaches the mojo through `${plugin}` /
+   `PluginDescriptor.getArtifacts()`, not through an unstated route out of a reactor pom property. The
+   property-promotion prerequisite is gone, and so is the missing-mechanism gap it papered over: the
+   reactor has no resource filtering to carry a filtered value into the shipped artifact.
+2. **Scopes are ruled on:** every scope except `test`. That is what makes the advisory goal-invariant
+   across `generate`, `validate`, and `dev`, whose resolution scopes differ.
+3. **`Source.CODEGEN`'s documentation is widened as part of the change** rather than left describing a
+   `<sessionState>` axis it no longer partitions; four sites named.
+4. **The routing claim is pinned by a test.** A fires-then-suppressed case in
+   `LintSuppressionPipelineTest`, and the `RewriteContext` carrier is named as a
+   `withDependencyVersions(...)` wither.
+5. **"Which side does the comparing" resolved an internal contradiction.** The placement section
+   promised the decision in core while that subsection handed the comparison to the mojo. The settled
+   minor-line predicate needs the version decomposed rather than ordered, which is plain-string work, so
+   `ComparableVersion` is dropped, core compares, and the unparseable case that decision newly creates
+   is ruled silent.
