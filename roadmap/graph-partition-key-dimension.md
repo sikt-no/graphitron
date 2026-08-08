@@ -25,21 +25,24 @@ into either a fictional merged type or a primary-key violation, and the constrai
 (violations are capture bugs, never author errors) breaks. Directive definitions partition the
 same way, since each subgraph carries its own `@link` with possibly aliased imports.
 
-The justification is stated at its honest width: the dimension buys **no present-tense
-mechanism**. Nothing today deletes per graph, queries per graph, or collides across graphs;
-source partitionability earned its key parts because a live mechanism (per-source refresh)
-needs them, and this dimension has no such mechanism yet. What it buys is a key shape whose
-cost of acquisition scales with consumer count, bought while the consumer count is zero:
-R589 (`validation-adds-facts`) is in Spec and about to migrate consumers onto these relations,
-the store has no persisted state of record (the warm cache is stamp-discarded, never
-migrated), and changing the model is editing the DDL and following the compiler. The same
-change after R589's migration touches every consumer's queries; today it touches capture and
-the gates.
+The dimension ships with its first mechanism rather than ahead of one. The persisted store
+moves out of the module build directory into the per-user cache location (its own section
+below), one store shared by every graphitron module the user builds, so rows from several
+graphs coexist the moment a second subgraph module builds against it. Refresh then has to
+delete exactly what a run owns and nothing else, and `graph_name` is the ownership boundary
+that makes the delete statable. The key shape is still bought while the consumer count is
+zero: R589 (`validation-adds-facts`) is in Spec and about to migrate consumers onto these
+relations, the store has no persisted state of record (a store that cannot prove itself
+current is discarded, never migrated), and changing the model is editing the DDL and
+following the compiler. The same change after R589's migration touches every consumer's
+queries; today it touches capture, refresh, and the gates.
 
 One fork is dismissed on the record: **one store per graph** costs nothing now and needs no
 rekey, but it cannot serve the target case. Shared fact gathering and cross-graph composition
 detections need the facts side by side in one queryable store; a per-graph store makes every
-cross-graph question an application-level merge, which is the thing the store exists to avoid.
+cross-graph question an application-level merge, which is the thing the store exists to
+avoid. The per-user store below is that single store made concrete: graphs accumulate in it,
+one per module build.
 
 ## The DDL change
 
@@ -53,10 +56,12 @@ one blast radius as its consequence.
 
 - Foreign keys between the two families widen automatically, since they reference the
   widened keys. The `graphql_directive_site` union view gains the column in every arm.
-- A new `store_graph (graph_name)` relation anchors the partition. The family relations with
-  no in-family parent (`graphql_type`, `graphql_directive_definition`,
+- A new `store_graph (graph_name, last_captured)` relation anchors the partition, the
+  capture timestamp being the bookkeeping the eviction story below needs. The family
+  relations with no in-family parent (`graphql_type`, `graphql_directive_definition`,
   `graphql_schema_directive`, `graphql_duplicate_declaration`, `graphitron_link`) get a
   direct FK to it; every other relation reaches it through its existing parent chain.
+  `store_source` gains the matching `last_seen` timestamp.
 - The `store_graph` comment owes two discriminators, so the DDL's conventions stay readable
   as consistent. First, why this FK exists while the SDL-to-`store_source` FK was declined:
   the graph is ambient before the walk begins and `NOT NULL` everywhere, while the source
@@ -88,10 +93,41 @@ helpers) state a name once each. The rejected alternative is a core fallback con
 callers that configure nothing: a fallback name is an unowned name, every caller has a
 natural identity to give, and a required field is the enforcer the convention would lack.
 
-A run still captures exactly one graph, and the store says so structurally: a gate asserts
-`store_graph` holds exactly one row. Multi-graph capture is the orchestration item's
-business; when it arrives, retiring that gate is the deliberate act that admits the second
-row.
+A run still captures exactly one graph; the store may hold many. Per-run single-graph is
+enforced by construction through the graph-scoped sink below, not by a row-count gate, since
+a shared store legitimately accumulates one `store_graph` row per module ever built against
+it.
+
+## The store lives with the user
+
+The persisted store leaves `target/`. Its default home follows the platform's cache
+conventions for per-user tool state: `$XDG_CACHE_HOME/graphitron/model/` (falling back to
+`~/.cache/graphitron/model/`) on Linux, `~/Library/Caches/graphitron/model/` on macOS,
+`%LOCALAPPDATA%\graphitron\model\` on Windows. It is a cache by nature (rebuildable from
+sources, no state of record), which is what makes the cache directory the right convention
+rather than the data one. A `<storeDirectory>` mojo parameter with a matching
+`graphitron.store.directory` property overrides the default for consumers and CI setups that
+want the store module-local or hermetic; `FactCapture.run`'s existing `storeDirectory`
+argument is already the seam, so the change is in what the mojos resolve and pass. The
+`mojo-configuration.adoc` manual page documents `<storeDirectory>` beside `<graphName>`.
+
+The directory name carries the store's compatibility stamp: the DDL hash and generator
+version that `store_stamp` records move into the path, so a generator upgrade or DDL change
+opens a **different file** instead of discarding a shared store that other modules' builds
+are still warm on, and mid-upgrade reactors (two modules on two graphitron versions) coexist
+in two files instead of thrashing one. `store_stamp` stays inside the file as the integrity
+check for a hand-moved or hand-corrupted store.
+
+Sharing a file between module builds makes concurrent access the norm, not the edge: `mvnd`
+builds reactor modules in parallel by default. The store opens in H2's mixed mode
+(`AUTO_SERVER`), where the first process holds the file and later processes attach to it
+transparently; the shared families (`store_source`, `sql_`, `jvm_`) are written as
+idempotent per-source merge transactions so two builds crawling the same new jar
+concurrently both land, last writer winning on content the stamps make identical. Any
+failure to open or attach to the shared store (no resolvable home, read-only location, H2
+server trouble) falls back to the module-local in-memory store: cache trouble may cost
+warmth, never correctness, and never fails a build. Tests never touch the real user cache;
+they inject temp directories through the same `storeDirectory` seam they use today.
 
 ## Capture
 
@@ -106,14 +142,25 @@ duplicates. Scoping the sink leaves every existing `claim` call site untouched a
 construction; a future multi-graph load is a second sink, not two hundred call sites that
 each remember a new argument.
 
-`StoreRefresh`'s wholesale clear stays **unqualified** by `graph_name`. A graph-scoped delete
-is a retention policy, and retention in this store requires a freshness proof
-(`store_source.stamp`); graphs have none. Qualifying the clear would permanently retain rows
-written under any other graph name with no mechanism ever deleting them, a live hazard the
-moment a consumer renames the graph (an artifactId change, or setting `<graphName>` for the
-first time over a warm store), since `store_stamp` invalidates only on DDL hash and generator
-version. Under the wholesale clear a rename is harmless: the SDL families rebuild every run
-from a parse the pipeline pays for regardless, and the old name leaves nothing behind.
+`StoreRefresh` becomes **ownership-scoped**: a run deletes exactly what it owns and touches
+nothing else. Owned means two things. The run's graph: the SDL families clear scoped to
+`graph_name = mine` and rebuild whole, because within one graph the parse they rebuild from
+is paid for regardless, and other graphs' rows are another run's business. And the run's
+crawled sources: for each schema file, classpath entry, and jOOQ package in this run's input
+set, the existing stamp logic decides retain-or-rewrite; a source **not** in the input set is
+never examined and never deleted, because a jar absent from this module's classpath may be
+another graph's live dependency. `store_source` and `store_graph` rows upsert with fresh
+`last_seen` / `last_captured` stamps and are never deleted by a run that does not own them.
+
+Retention of unowned rows is justified by ownership, not by a freshness proof: the run that
+owns them refreshes them on its own cadence. The residual hazard is the orphan partition, and
+it is accepted and instrumented rather than solved here: a renamed graph (an artifactId
+change, or `<graphName>` set for the first time) leaves the old graph's rows behind, and a
+jar that leaves every classpath keeps its rows, in both cases until eviction reads the
+`last_captured` / `last_seen` stamps this item writes. The eviction command itself (an age
+policy, a `graphitron:dev` or MCP surface to list and drop partitions) is deferred with its
+first consumer; the stamps land now because a schema written without them cannot support
+eviction later without another pass over capture.
 
 ## Gates
 
@@ -126,8 +173,11 @@ polarity, the same polarity `StoreRefresh.wholesale()` already chose:
   silently not cover the reserved `intent_` stratum and R589's claim relations, which is
   exactly where the dimension matters most; under exemption polarity a new family is covered
   by default and its exemption has to be argued in.
-- **`store_graph` holds exactly one row**: a run captures one graph, whatever it is named,
-  until multi-graph orchestration deliberately retires the gate.
+- **A run writes only under its own graph**: after capturing into a store pre-seeded with a
+  second graph's rows, that graph's partition is byte-identical and no row of the run's
+  output carries any other `graph_name`. This is the two-graph fusion test the item's
+  motivation promises, and it doubles as the enforcer for per-run single-graph capture now
+  that a store legitimately holds many graphs.
 
 Comment coverage extends to the new columns automatically through the existing gate.
 
@@ -141,19 +191,23 @@ should say so when it next revises, and its reviewer can hold it to this item.
 
 ## What stays put
 
-The agreement anchors compare one pipeline run against a single-graph store; they gain the
-constant in their join keys and nothing else changes in what they assert. Warm-start refresh
-semantics are unchanged in behavior. No consumer queries exist yet to update, which is the
-point of doing this now.
+The agreement anchors compare one pipeline run against that run's own graph; they gain the
+graph name in their join keys and nothing else changes in what they assert. Within one
+graph, warm-start retention semantics are unchanged: stamps decide retain-or-rewrite exactly
+as shipped. No consumer queries exist yet to update, which is the point of doing this now.
 
 ## Deliberately out of scope
 
-- **`store_graph_source` membership.** The Backlog stub proposed it; the Spec drops it. In a
-  single-graph store the membership set is exactly `SELECT DISTINCT graph_name, source_name`
-  over the captured rows plus the constant: a derived fact stored as a copy maintained apart
-  from its source, with nothing enforcing agreement. It lands with multi-graph capture
-  orchestration, when membership stops being derivable and becomes an input.
-- Multi-graph capture orchestration and per-graph classloader scopes; any
+- **`store_graph_source` membership.** The Backlog stub proposed it and the shared store
+  sharpens the question: in a multi-graph store, which sources a graph reads is no longer
+  derivable from the graph-blind `jvm_`/`sql_` rows. It still stays out, because nothing
+  reads it yet: each run knows its own input set from configuration, and the two candidate
+  readers (eviction, cross-graph composition detections) are both deferred. It lands with
+  the first of them, as an input written by capture, not a derivation.
+- **Eviction.** Orphaned partitions (renamed graphs, jars no classpath references) accumulate
+  until a policy or command drops them; this item writes the `last_captured` / `last_seen`
+  stamps eviction needs and defers the eviction surface itself.
+- Multi-graph capture orchestration in one process and per-graph classloader scopes; any
   composition-detection stratum; graph-aware resolution across the `jvm_`/`sql_` boundary.
   Each can land later without rekeying anything, which is the test this item's scope was
   cut by.
@@ -161,6 +215,10 @@ point of doing this now.
 ## Verification
 
 Full `mvn install -Plocal-db` green. The DDL edit follows the compiler through capture and
-the tests; the widened gate family and the agreement suite are the honesty check. No
-behavioral change anywhere: the store's contents differ only by one column carrying the
-run's single graph name, and generated output is untouched.
+the tests; the widened gate family and the agreement suite are the honesty check, and the
+two-graph test above is the first assertion the multi-graph store has ever had. The
+persistence tests (`PersistentStoreTest`, `WarmStartRefreshTest`) grow the ownership cases:
+a second graph's partition survives a refresh, an uncrawled source's rows survive a refresh,
+and concurrent opens through mixed mode land both writers' rows. Generated output is
+untouched; the reactor's own builds exercise the per-user default the moment the change
+lands, since every module build now opens the shared store.
