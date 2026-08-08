@@ -1,7 +1,7 @@
 ---
 id: R572
 title: "Warn at build time when consumer graphql-java / jOOQ versions lag"
-status: Spec
+status: Ready
 bucket: feature
 priority: 5
 theme: diagnostics
@@ -380,10 +380,11 @@ reopen them.
 
 ## Review record
 
-Three Spec-review passes, each by a session independent of the drafting one and of the others. The first
+Four Spec-review passes, each by a session independent of the drafting one and of the others. The first
 settled the three open questions the draft raised (recorded in the section above) and requested four
 revisions. The second re-verified the plan's factual claims against the tree and folded those revisions
-into the body. The third re-verified them again and corrected the scope ruling.
+into the body. The third re-verified them again and corrected the scope ruling. The fourth signed the
+item off to Ready.
 
 All passes confirm the load-bearing claims hold as written: the `SessionStateWarnings` precedent and
 its `null`-location `BuildWarning.LintFinding` shape, the `Source.CODEGEN` routing through
@@ -433,3 +434,37 @@ Two non-blocking opportunities the third pass raised, left to the author and the
   `session-state-convention-fence` in prose. The ids are user-visible: a consumer types one into
   `<lint><disabledRules>`, `LintRuleRegistryCoverageTest` hard-lists them, and the MCP `diagnostics`
   tool projects them. Naming them in the Spec rather than at the keyboard is cheap.
+
+The fourth pass found no blocking defect and signed the item off. It re-verified every anchor and
+symbol the body names, and closed the one link in the scope argument no prior pass had checked
+directly: `project.getArtifacts()` really is narrowed per goal, because `MojoExecutor` calls
+`MavenProject.setArtifactFilter(...)` with a filter built from the *executing* mojo's
+`getDependencyResolutionRequired()` immediately before each execution, rather than leaving one
+session-wide resolved set in place. Read off `maven-core` 3.9.14 alongside `toScopes`. So the
+allow-list ruling rests on verified behaviour, not on a plausible reading.
+
+Three further non-blocking opportunities, all the author's call:
+
+- **The silence-case list omits "consumer ahead of the reference".** A consumer on jOOQ `3.21` while
+  graphitron still builds against `3.20.11` must be silent, and it falls out of "orders below" with no
+  extra logic, but it is not among the silence rows the core-tier test enumerates. It is the state every
+  consumer enters the moment R466 or R467 is in flight, and it is what an implementer who writes `!=`
+  instead of `<` gets wrong while every enumerated row still passes. One more table row.
+- **A missing *reference* version has no ruling.** The silence cases cover the consumer side
+  (coordinate absent, version undecodable) but the plan does not say what happens when
+  `PluginDescriptor.getArtifacts()` carries no entry for a coordinate, which the plan itself makes
+  reachable by acknowledging consumers who override `<plugin><dependencies>`. The reasoning already in
+  "Which side does the comparing" settles it (an advisory does not fail, and does not speak when it
+  cannot read its own reference); it just needs the sentence, so an implementer does not reach for a
+  throw or an `Optional.orElseThrow`.
+- **The single-segment opportunity above is close to moot.** The observed version comes off a
+  *resolved* artifact, so it is a version that exists on the repository, and neither coordinate
+  publishes single-segment versions (graphql-java ships `25.0`, `24.1`, ...; jOOQ ships `3.x.y`). The
+  author can close it as won't-fix with more confidence than the third pass had.
+
+One imprecision in an implementation note, worth 30 seconds at the keyboard rather than a revision
+round: "the canonical constructor's five convenience overloads stay untouched" holds for four of the
+five. `RewriteContext` is a record, so a new component means the twelve-arg overload passes one more
+`null` (exactly as it does for `tenantColumn` today, `RewriteContext.java:144`) and the three
+existing withers each thread the new component through. The other four overloads chain through the
+twelve-arg one and genuinely do not move.
