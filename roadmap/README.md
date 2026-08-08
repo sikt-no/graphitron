@@ -19,12 +19,12 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R612` | The schema scan and its freshness replay share one typed recipe <sub>blocked by: [graph-partition-key-dimension](graph-partition-key-dimension.md)</sub> | Spec | 2026-08-08 | [plan](maven-config-fact-family.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-06 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R589` | Classification is a relation; validation adds facts | Spec | 2026-08-08 <sub>created 2026-08-04</sub> | [plan](validation-adds-facts.md) |
-| `R603` | A pipeline-output facts family in the model store <sub>blocked by: [graph-partition-key-dimension](graph-partition-key-dimension.md)</sub> | Spec | 2026-08-08 <sub>created 2026-08-06</sub> | [plan](pipeline-output-facts-family.md) |
 | `R569` | Aggregated diagnostics commands for the MCP server <sub>blocked by: [graph-partition-key-dimension](graph-partition-key-dimension.md)</sub> | Spec | 2026-08-08 <sub>created 2026-08-03</sub> | [plan](mcp-aggregated-diagnostics.md) |
 | `R473` | Explicit @nodeId grammar: Node.id is the only implicit nodeId; typeName-first decode resolution | Spec | 2026-08-08 <sub>created 2026-07-13</sub> | [plan](explicit-nodeid-grammar.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Spec | 2026-08-03 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
+| `R603` | A pipeline-output facts family in the model store <sub>blocked by: [graph-partition-key-dimension](graph-partition-key-dimension.md)</sub> | Ready | 2026-08-08 <sub>created 2026-08-06</sub> | [plan](pipeline-output-facts-family.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-08-06 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-08-06 | [plan](catalog-check-constraint-validation.md) |
@@ -238,7 +238,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R257` [**UpdateRowsWalker raw-SDL substrate absorption**](updaterows-walker-sdl-substrate.md) — Backlog, structural
 - `R466` [**Upgrade jOOQ 3.20.11 -> 3.21.6**](upgrade-jooq-3-21.md) — Backlog, tech-debt
 - `R565` [**@table-on-input rejection cascades into a misleading @mutation arg-shape error**](unclassified-input-arg-cascade-diagnostic.md) — Backlog, architecture
-- `R603` [**A pipeline-output facts family in the model store**](pipeline-output-facts-family.md) — Spec, architecture, blocked by [graph-partition-key-dimension](graph-partition-key-dimension.md)
+- `R603` [**A pipeline-output facts family in the model store**](pipeline-output-facts-family.md) — Ready, architecture, blocked by [graph-partition-key-dimension](graph-partition-key-dimension.md)
 - `R509` [**Bulk DML payloads follow input order, and warn where that cannot be guaranteed**](bulk-dml-payload-input-order.md) — Backlog, architecture
 - `R562` [**Classify a synthesised connection type's totalCount/facets fields as coordinates**](synthesised-connection-fields-as-coordinates.md) — Backlog, architecture
 - `R471` [**Direct-SQL OnlyChild emit for the reentry family**](direct-sql-onlychild-reentry-emit.md) — Backlog, architecture
