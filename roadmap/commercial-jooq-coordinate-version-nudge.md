@@ -1,7 +1,7 @@
 ---
 id: R611
 title: "Nudge commercial-edition jOOQ consumers, whose coordinate the currency check never sees"
-status: Spec
+status: Ready
 bucket: feature
 priority: 3
 theme: diagnostics
