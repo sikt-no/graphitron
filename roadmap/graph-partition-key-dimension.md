@@ -240,11 +240,21 @@ substrates, both shipping here:
 
 - **Age** (when was this read): `store_graph.last_captured` and `store_source.last_seen`
   date every partition.
-- **Currency** (is what was read still what is on disk): `store_source.stamp` is a content
-  hash, so a cold graph's currency is checkable without building its module: re-hash its
-  recorded sources and compare. Age cannot answer this question at all, since a pull
-  invalidates a partition captured a minute ago as readily as one from last month.
-  Staleness detection costs a hash, not a capture. For SDL sources the check needs two
+- **Currency** (is what was read still what would be read now): a cold graph's currency is
+  checkable without building its module, and the check has two instruments because
+  staleness has two shapes. `<schemaInputs>` binds patterns, not files, so a pull can grow
+  or shrink a sibling's match set with no edit to any file the store ever read; a check
+  over recorded sources alone is blind to exactly that arrival. So the set question comes
+  first: re-run the remembered recipe's globs over `base_dir` and compare the resulting
+  file set against `store_source`, which catches added and deleted schema files. Then the
+  content question: re-hash the files both sides agree on against `store_source.stamp`,
+  which catches edits. A partition is current only when the re-expansion reproduces the
+  recorded set and every file in it re-hashes to its stamp; a new match, a lost match, and
+  an edit are one verdict. The remembered recipe is itself trusted only while the build
+  file it was resolved from still hashes to the recorded build identity, which is where the
+  check-and-repair loop below starts. Age cannot answer any of these questions at all,
+  since a pull invalidates a partition captured a minute ago as readily as one from last
+  month. Staleness detection costs a glob walk and a hash, not a capture. For SDL sources the check needs two
   halves, and only one exists today. The address half is settled: which schema files a
   graph read is derivable from its declaration sites, and the `source_name` those record is
   already resolvable from outside the owning module's build on the Maven path, where
@@ -274,9 +284,10 @@ substrates, both shipping here:
   below, and within the owning graph the run's own configuration names its input set.
 
 The rule this binds future consumers to, stated now so it is reviewable now: a cross-graph
-reader treats age and currency as inputs. A composition detection over a sibling partition
-whose sources fail the re-hash reports against a stated stale baseline or declines, and
-never presents a heterogeneous store as uniformly current.
+reader treats age and currency as inputs, and currency means the full check, never the
+re-hash alone. A composition detection over a sibling partition whose recipe re-expansion
+or re-hash fails reports against a stated stale baseline or declines, and never presents a
+heterogeneous store as uniformly current.
 
 With the build identity and the SDL recipe remembered on `store_graph`, the check-and-repair
 loop becomes executable for **every graph the store knows about**, with no build of any
@@ -415,8 +426,10 @@ two-graph test above is the first assertion the multi-graph store has ever had. 
 persistence tests (`PersistentStoreTest`, `WarmStartRefreshTest`) grow the ownership cases:
 a second graph's partition survives a refresh, an uncrawled source's rows survive a refresh,
 concurrent opens through mixed mode land both writers' rows, a schema file's recorded stamp
-matches a re-hash until the file is edited and mismatches after, and a graph's build identity
-and recipe rows are rewritten by its own run and untouched by a sibling's. Generated output is
+matches a re-hash until the file is edited and mismatches after, a file added under a
+remembered recipe's pattern is discovered by re-expansion with no build of the owning module,
+and a graph's build identity and recipe rows are rewritten by its own run and untouched by a
+sibling's. Generated output is
 untouched.
 
 The reactor takes the per-user default for itself rather than pinning `<storeDirectory>`,
