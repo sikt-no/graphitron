@@ -148,9 +148,11 @@ sources, no state of record), which is what makes the cache directory the right 
 rather than the data one. A `<storeDirectory>` mojo parameter with a matching
 `graphitron.store.directory` property overrides the default for consumers and CI setups that
 want the store module-local or hermetic; `FactCapture.run`'s existing `storeDirectory`
-argument is already the seam, so the change is in what the mojos resolve and pass, inside
-`AbstractRewriteMojo.resolveStoreDirectory`. The `mojo-configuration.adoc` manual page
-documents `<storeDirectory>` beside `<graphName>`.
+argument is already the seam, so what the mojos change is the *home* they resolve and pass,
+inside `AbstractRewriteMojo.resolveStoreDirectory`. The `mojo-configuration.adoc` manual page
+documents `<storeDirectory>` beside `<graphName>`, and that documentation is build-enforced
+rather than promised: `MojoDocCoverageTest` already fails on an editable `@Parameter` with no
+row on that page, so both new parameters are covered by a gate that exists.
 
 The move costs one property worth naming rather than leaving to be discovered: `mvn clean`
 stops being the store's recovery story, which `resolveStoreDirectory`'s javadoc currently
@@ -164,21 +166,49 @@ surface that has to list and drop partitions anyway.
 
 The directory name carries the store's compatibility stamp: the DDL hash and generator
 version that `store_stamp` records move into the path, so a generator upgrade or DDL change
-opens a **different file** instead of discarding a shared store that other modules' builds
-are still warm on, and mid-upgrade reactors (two modules on two graphitron versions) coexist
-in two files instead of thrashing one. `store_stamp` stays inside the file as the integrity
-check for a hand-moved or hand-corrupted store.
+opens a **different file** rather than meeting a shared store other modules' builds are still
+warm on, and mid-upgrade reactors (two modules on two graphitron versions) coexist in two
+files instead of thrashing one. `store_stamp` stays inside the file as the integrity check for
+a hand-moved or hand-corrupted store. The stamp in the path is load-bearing rather than
+convenient once the no-discard rule below lands: a shared store is never deleted to make room
+for a new schema, so without a per-stamp path a DDL edit would leave every module reading a
+file none of them can use and no run will replace, and warm-start would be dead until someone
+cleared the cache by hand. Putting the stamp in the path is what makes never discarding safe.
+
+**`GraphitronModelStore` appends that stamp segment, not its callers**, and the placement is
+load-bearing rather than tidy. A caller-computed segment would have to be reproduced
+byte-identically by every opener in every process (the build mojos, `graphitron:dev`'s reader,
+the LSP, MCP), and an opener that computed it even slightly differently would not fail: it
+would look in the wrong directory, find nothing, and silently boot cold against a warm store
+sitting one directory away. The hash is also not the callers' to compute, since `ddlHash()`
+and `generatorVersion()` are private to `GraphitronModelStore` and belong to the module that
+owns the DDL; exposing them so that five call sites could each rebuild the same path would be
+publishing an invariant instead of enforcing one. So `storeDirectory` means the store's
+*home* at every layer that passes it, the store resolves `<home>/<ddl-hash>-<version>/`
+itself, and a consumer pinning `<storeDirectory>` gets the stamped subdirectory under their
+chosen home too, which is what makes a pinned store survive a generator upgrade for the same
+reason the default one does.
 
 Sharing a file between module builds makes concurrent access the norm, not the edge: `mvnd`
 builds reactor modules in parallel by default. The store opens in H2's mixed mode
 (`AUTO_SERVER`), where the first process holds the file and later processes attach to it
 transparently; the shared families (`store_source`, `sql_`, `jvm_`) are written as
 idempotent per-source merge transactions so two builds crawling the same new jar
-concurrently both land, last writer winning on content the stamps make identical. Any
-failure to open or attach to the shared store (no resolvable home, read-only location, H2
-server trouble) falls back to the module-local in-memory store: cache trouble may cost
-warmth, never correctness, and never fails a build. Tests never touch the real user cache;
-they inject temp directories through the same `storeDirectory` seam they use today.
+concurrently both land, last writer winning on content the stamps make identical.
+
+Mixed mode is **not one added URL parameter**, and the two conflicts are stated here because
+an implementer would otherwise meet them as a build failure. H2 rejects `AUTO_SERVER=TRUE`
+outright in combination with two flags `GraphitronModelStore.fileUrl` builds today, and both
+refusals are checked against the pinned 2.4.240 rather than inferred from the manual: with
+`DB_CLOSE_ON_EXIT=FALSE`, which `fileUrl` appends unconditionally, and with
+`ACCESS_MODE_DATA=r`, which it appends for the read path. Each throws
+`Feature not supported`. So the file URL drops `DB_CLOSE_ON_EXIT=FALSE`, which costs nothing
+this store relies on: that flag suppresses H2's shutdown hook, and the only store that needs
+its database to outlive a handle is the in-memory one, which is held open by
+`DB_CLOSE_DELAY=-1` on a different URL and shut down explicitly. A file-backed store is meant
+to be left on disk, so letting H2 close it at JVM exit is what it wanted anyway, and the
+SHUTDOWN discipline `close()` documents is unchanged because it never applied to the file
+case. The read path's flag is settled by deleting the read path, below.
 
 Mixed mode reverses a decision the code already records, so the reversal is argued rather
 than assumed. `GraphitronModelStore.openReadOnly` rejected the server approach in as many
@@ -194,14 +224,50 @@ it exists to warm. The "running service" objection also weakens once the host pr
 build the user started rather than a daemon they have to adopt.
 
 Two existing seams move with that reversal, and this item owns both rather than leaving them
-to contradict the code. `openReadOnly`'s copy becomes an attach, and the concurrency
-rationale in its javadoc is rewritten rather than left standing against the shipped
-behaviour; its only callers today are in `PersistentStoreTest`, so the change is cheap, and
-whether a reader wanting a fixed view holds a transaction or simply re-reads is settled at
-implementation, since no consumer has that requirement yet. And `openAt`'s in-use branch
-becomes unreachable, because the second opener attaches instead of failing: that branch and
-its `isAlreadyOpen` helper are deleted, not left as dead code documenting a lock the store
-no longer takes.
+to contradict the code. **`openReadOnly` is deleted, not converted to an attach.** Converting
+it was the obvious move and it does not work: H2 refuses `AUTO_SERVER=TRUE` together with
+`ACCESS_MODE_DATA=r`, so an attaching reader cannot keep the read-only enforcement that is the
+only thing the method adds over `openAt`, and an attach that quietly drops the flag would be a
+method whose name promises a guarantee its URL no longer carries. Deleting it is the better
+answer anyway, on this item's own reasoning: mixed mode makes a copy-to-temp snapshot
+redundant, no production caller exists (its only callers are two assertions in
+`PersistentStoreTest`, which go with it), and a reader wanting a fixed view now has a
+transaction on an attached connection, which is where that requirement belongs once a consumer
+actually has it. Keeping a read-only entry point alive so it could be argued about later is
+how a store acquires two ways to be opened and one rationale that fits neither. And `openAt`'s
+in-use branch becomes unreachable, because the second opener attaches instead of failing: that
+branch and its `isAlreadyOpen` helper are deleted, not left as dead code documenting a lock the
+store no longer takes.
+
+Deleting that classifier forces the third decision, and it goes the other way from today's:
+a shared store is **never discarded**. `openAt` currently deletes an existing file it cannot
+open, which is right for a module-local cache, where the blast radius is one module's warmth
+and a killed build's half-written file should not outlive it. Under one file shared by every
+module the same act destroys every graph's partition, including the sibling SDL rows the
+cross-graph read surface reads and the baselines the freshness check treats as authoritative,
+on the strength of one local process failing one open. With `isAlreadyOpen` gone there is no
+longer anything separating "someone else holds it" from "it is corrupt", so the safe rule is
+the unconditional one: any failure to open or attach to the shared store (no resolvable home,
+read-only location, H2 server trouble, a file H2 refuses for reasons it will not name) falls
+back to the module-local in-memory store and **leaves the file alone**. `discard` leaves
+`openAt` with the helper, and cache trouble costs warmth, never correctness, and never fails a
+build. What that gives up is self-healing: a store corrupt in a way H2 refuses now costs every
+module's warmth until a generator upgrade or a DDL edit moves the path, or someone deletes the
+cache directory. That is the residue the recovery-story paragraph above already accepted, on
+the same remedy, and the eviction surface this item defers is where a named command for it
+belongs. Tests never touch the real user cache throughout: they inject temp directories
+through the same `storeDirectory` seam they use today, which now means a temp *home* under
+which the store makes its own stamped subdirectory.
+
+Four comments record the decisions this section supersedes and are rewritten with them, listed
+because the comment gate checks that a comment exists and not that it is still true (the
+reversals elsewhere in this item name their own). `resolveStoreDirectory` names `mvn clean` as
+the recovery story. `GraphitronModelStore`'s class javadoc places `openAt`'s file "under the
+build directory" and calls deletability "the only property a `target/` artefact needs", both
+false once the store lives with the user. The `store_stamp.generator_version`
+column comment offers "deleting the build directory" as the remedy, which is now the cache
+directory. And `openReadOnly`'s concurrency rationale goes with the method rather than being
+rewritten.
 
 ## Capture
 
@@ -428,22 +494,36 @@ as shipped. No consumer queries exist yet to update, which is the point of doing
 ## Verification
 
 Full `mvn install -Plocal-db` green. The DDL edit follows the compiler through capture and
-the tests; the widened gate family and the agreement suite are the honesty check, and the
-two-graph test above is the first assertion the multi-graph store has ever had. The
-persistence tests (`PersistentStoreTest`, `WarmStartRefreshTest`) grow the ownership cases:
-a second graph's partition survives a refresh, an uncrawled source's rows survive a refresh,
-concurrent opens through mixed mode land both writers' rows, a schema file's recorded stamp
-matches a re-hash until the file is edited and mismatches after, a file added under a
-remembered recipe's pattern is discovered by re-expansion with no build of the owning module,
-and a graph's build identity and recipe rows are rewritten by its own run and untouched by a
-sibling's. Generated output is
-untouched.
+the tests; the widened gate family and the agreement anchors (`FactCaptureAgreementTest`) are
+the honesty check, and the two-graph test above is the first assertion the multi-graph store
+has ever had. The persistence tests (`PersistentStoreTest`, `WarmStartRefreshTest`) grow the
+ownership cases: a second graph's partition survives a refresh, an uncrawled source's rows
+survive a refresh, a schema file's recorded stamp matches a re-hash until the file is edited
+and mismatches after, a file added under a remembered recipe's pattern is discovered by
+re-expansion with no build of the owning module, and a graph's build identity and recipe rows
+are rewritten by its own run and untouched by a sibling's. Generated output is untouched.
+
+**Mixed mode needs a second process to be tested at all**, and saying so is what keeps the
+suite from growing an anchor that passes before the change. Two handles opened in one JVM
+already share one database with no `AUTO_SERVER` anywhere, which is exactly what
+`aSecondOpenerLeavesTheStoreIntact` pins today; an in-process "concurrent opens land both
+writers' rows" would therefore be green on trunk and would assert nothing about the mechanism
+this item adopts. The property that is actually new is cross-process: a second *process*
+attaches and writes instead of being handed the in-memory fallback. So `PersistentStoreTest`
+gains a case that forks a JVM on the surefire classpath, has it open the same store directory
+while the test holds it, and asserts both processes' rows are in the file afterwards.
+`PersistentStoreTest`'s javadoc declined that machinery in as many words, as "a lot of
+machinery for one branch", and this item reverses that judgement rather than ignoring it: the
+branch it was weighed against is the branch being deleted here, and mixed mode is load-bearing
+for the shared store rather than one arm of a fallback. The javadoc is rewritten with the case.
 
 The reactor takes the per-user default for itself rather than pinning `<storeDirectory>`,
 which is a decision and not an omission. Every module build then opens the shared store the
 moment the change lands, so a full `-T 1C` reactor build is a real concurrent-writer test of
 mixed mode across genuinely different graphs, which is a harder exercise than any fixture can
-stage. Two properties keep that from leaking into what the build asserts. CI caches `~/.m2`
+stage. It exercises rather than asserts, which is the division of labour with the forked case
+above: that one pins the property, this one runs it at a scale no fixture reaches. Two
+properties keep that from leaking into what the build asserts. CI caches `~/.m2`
 and not `~/.cache`, so every CI run starts from a cold store and no result depends on a
 previous run's rows; and the store is a cache with no state of record, so a warm run and a
 cold run agree by the invariant the agreement anchors already pin. If the shared store ever
