@@ -427,6 +427,92 @@ class NodeInferencePipelineTest {
         assertThat(new GraphitronSchemaValidator().validate(schema)).isEmpty();
     }
 
+    // ===== `typeName:` on `Node.id` =====
+    //
+    // The enclosing type already answers "which node" at this coordinate, so the argument is
+    // either a restatement or a contradiction. Both are rejected rather than the second alone:
+    // checking for agreement would legitimise the spelling by rejecting only half of it.
+
+    @Test
+    void typeNameOnNodeIdIsRejectedEvenWhenItAgrees() {
+        var schema = schema("""
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId(typeName: "Baz") }
+            type Query { baz: Baz }
+            """);
+
+        var id = (GraphitronField.UnclassifiedField) schema.field("Baz", "id");
+        assertThat(id.reason())
+            .contains("field 'Baz.id'")
+            .contains("`typeName:` is not allowed")
+            .contains("node type 'Baz'")
+            // The remedy is a deletion, so the message has to say so; an author who reads only
+            // "not allowed" would otherwise go looking for a replacement spelling.
+            .contains("Remove the argument");
+        assertThat(new GraphitronSchemaValidator().validate(schema)).isNotEmpty();
+    }
+
+    @Test
+    void typeNameOnNodeIdIsRejectedWhenItContradicts() {
+        // The half that is unambiguously a bug: the field is Baz's identity by construction and
+        // the author has named a different node. Same verdict, same message, no special case.
+        var schema = schema("""
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId(typeName: "Foo") }
+            type Foo implements Node @table(name: "bar") @node { id: ID! }
+            type Query { baz: Baz foo: Foo }
+            """);
+
+        assertThat(((GraphitronField.UnclassifiedField) schema.field("Baz", "id")).reason())
+            .contains("`typeName:` is not allowed");
+    }
+
+    @Test
+    void theRejectionCarriesASourceLocationTheEditorCanPointAt() {
+        // The rejection is minted classifier-side and drained through UnclassifiedField, which is
+        // what carries the location into the validator's report. Pinned because the location is
+        // the whole reason the diagnostic is actionable in an editor rather than just in a log.
+        var schema = schema("""
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId(typeName: "Baz") }
+            type Query { baz: Baz }
+            """);
+
+        assertThat(schema.field("Baz", "id").location()).isNotNull();
+        assertThat(new GraphitronSchemaValidator().validate(schema))
+            .allSatisfy(e -> assertThat(e.location()).isNotNull());
+    }
+
+    @Test
+    void typeNameStaysLegalOnEveryCoordinateThatIsNotNodeId() {
+        // The rejection is scoped to the one coordinate whose target is already settled. An input
+        // field and a non-`id` output field both still need the argument, and a reference field
+        // named `id` on a *non*-node type is not `Node.id` at all.
+        // Over `bar`, which has no `id` column, so the output `id` is a clean rule-1 carrier and
+        // the only rule under test here is where `typeName:` stays legal.
+        var schema = schema("""
+            type Foo implements Node @table(name: "bar") @node { id: ID! }
+            input FooSelector { id: ID! @nodeId(typeName: "Foo") }
+            type Query { foo(in: FooSelector): Foo }
+            """);
+
+        assertThat(new GraphitronSchemaValidator().validate(schema))
+            .as("an input field's target is not its own enclosing type, so it still needs naming")
+            .isEmpty();
+    }
+
+    @Test
+    void bareNodeIdOnANonNodeTypeNamesTheArgumentThatWouldFixIt() {
+        // Rule 2's rejection already existed; what it lacked was the remedy. Bare `@nodeId`
+        // inherits its node from the enclosing type, so the fix is either to name one or to make
+        // the enclosing type a node.
+        var schema = schema("""
+            type Zed @table(name: "baz") { id: ID! @nodeId }
+            type Query { zed: Zed }
+            """);
+
+        assertThat(((GraphitronField.UnclassifiedField) schema.field("Zed", "id")).reason())
+            .contains("@nodeId requires the containing type to be a node type")
+            .contains("Add `typeName:`");
+    }
+
     @Test
     void theShadowingRuleDoesNotReachOtherIdFieldsOnANodeType() {
         // The implementation trap this rule had to avoid. The deprecated synthesis shim fires for

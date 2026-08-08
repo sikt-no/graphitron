@@ -7187,6 +7187,23 @@ class FieldBuilder {
 
         if (fieldDef.hasAppliedDirective(DIR_NODE_ID)) {
             Optional<String> typeName = argString(fieldDef, DIR_NODE_ID, ARG_TYPE_NAME);
+            // `Node.id` on a node type already answers "which node": the enclosing type does,
+            // unambiguously, which is what makes the directive redundant at this coordinate in the
+            // first place. So a `typeName:` here is either a restatement the author can delete or a
+            // contradiction no reading of the SDL resolves, and checking it for agreement would
+            // legitimise the contradictory spelling by rejecting only half of it. Rejecting the
+            // argument outright keeps one answer at the coordinate. The predicate matches the
+            // implicit carrier arm below, so the rejection covers exactly the shape that arm owns.
+            if (typeName.isPresent()
+                    && tableType instanceof NodeType
+                    && NODE_INTERFACE_ID_FIELD.equals(name)
+                    && !(GraphQLTypeUtil.unwrapNonNull(fieldDef.getType()) instanceof GraphQLList)
+                    && "ID".equals(((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(fieldDef.getType())).getName())) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                    "field '" + parentTypeName + "." + name + "': `typeName:` is not allowed on the `id` field of"
+                    + " node type '" + parentTypeName + "', which is its own node identity by construction."
+                    + " Remove the argument; a bare `@nodeId` (or no directive at all) says the same thing."));
+            }
             if (typeName.isPresent()) {
                 ReturnTypeRef targetType = ctx.resolveReturnType(typeName.get(), new FieldWrapper.Single(true));
                 // The node fact comes from the pure NodeIndex (a fixed point, not the
@@ -7227,8 +7244,16 @@ class FieldBuilder {
                 }
                 return buildNodeIdReferenceCarrier(parentTypeName, name, location, parentTable, targetNodeType, nodeRefPath.elements());
             } else {
+                // Bare `@nodeId` means "node id, target inherited", and on an output field the
+                // target is the enclosing type. A non-node enclosing type supplies no target, so
+                // the directive has nothing to inherit and the message names the argument that
+                // supplies one explicitly.
                 if (!(tableType instanceof NodeType nodeType)) {
-                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural("@nodeId requires the containing type to be a node type (via @node or KjerneJooqGenerator metadata)"));
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                        "@nodeId requires the containing type to be a node type (via @node or KjerneJooqGenerator"
+                        + " metadata); bare `@nodeId` inherits its node from the enclosing type and '" + parentTypeName
+                        + "' is not one. Add `typeName:` to name the node this field identifies, or make '"
+                        + parentTypeName + "' a node type."));
                 }
                 return buildNodeIdOutputCarrier(parentTypeName, name, location, nodeType);
             }
