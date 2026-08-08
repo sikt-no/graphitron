@@ -65,6 +65,15 @@ Maven-ecosystem jar arrives on that surface. The extension post-filter
 `SchemaProblemDiagnostic`) moves with the expander and exists once; the orphan scan keeps its
 own walk but calls the shared predicate.
 
+The decode seam is cut with one eye on a direction the roadmap does not yet own: R610's
+per-user store and this item's core recipe leave graphitron a short step from running as a
+standalone workspace process, with everything build-tool-shaped about the scan living in one
+decoder. A non-Maven entry point is then a second decoder into the same `ScanRecipe`, never a
+second expansion path, and the extension defaulting it would need already lives in core
+(`RewriteContext.DEFAULT_SCHEMA_FILE_EXTENSIONS`). No such decoder ships here, by the same
+first-reader principle that cuts the recipe's extent; what the direction is owed is only that
+core assumes no Maven vocabulary, which the containment rule above already binds.
+
 ## The store-first shape is rejected on the record
 
 The stub's sketch had the run write config rows first and the scanner read them back, making
