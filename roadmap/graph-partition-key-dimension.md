@@ -734,3 +734,81 @@ so a surviving mention is prose describing a mechanism that no longer exists.
   The store lives in the user's cache.
 - "rewrite-core stays filesystem-agnostic", as a claim about where schema-file expansion may
   live. Core re-hashes and re-globs now, and `SchemaRecipe` is where the dialect lives.
+
+## Open at the gate
+
+A Spec to Ready pass re-verified everything the previous pass checked and found it still exact
+after the workspace revision: 83 in-family relations, the seven-root FK closure recomputed over
+the DDL and matching the enumeration exactly, 55 `new RewriteContext(` sites across 53 files in
+five modules, six overloads fourteen-arg down to five-arg, and every quoted comment present as
+quoted. Both H2 refusals reproduce on the pinned 2.4.240 with error 50100, and so does the
+mid-write survival property the concurrency section records: an attached second process wrote 60
+rows through and past the server-holding process's close, and both processes' rows were in the
+file afterwards. The `freshSources` knock-on is right for the stated reason, including the part
+that matters most, that `fresh` gates the `store_source` claims and the `store_source` delete and
+not only the `jvm_` claims. Three things block handing it to an implementer, and three smaller
+ones belong in the same revision.
+
+**The workspace resolver is the one mechanism the item does not argue against the alternative
+already in the tree, and its failure mode is the silent one the item refuses everywhere else.**
+`MavenProject.getParent()` appears nowhere in this repository. The established answer to "which
+reactor is this module part of, answered the same way from the root and from inside the module"
+is `AbstractRewriteMojo.siblingModuleBasedirs(Path)`, a filesystem walk to the nearest ancestor
+`pom.xml` whose `<modules>` resolve to include the current basedir; it exists precisely because
+running a goal from inside a sub-module leaves Maven holding only that module's pom, and
+`docs/architecture/how-to/dev-loop-internals.adoc` documents it in those terms. The inheritance
+chain answers a different question than the aggregator graph, and the two diverge in ordinary
+layouts: an empty `<relativePath/>` resolves the parent from the repository, so `getBasedir()` is
+not an ancestor of the child, the item's own guard trips, and the fallback yields the module's own
+basedir; an aggregator that is not the `<parent>` is a supported layout that walks somewhere else
+entirely. In both cases the run opens a different file, finds nothing, and boots cold with no
+signal, which is verbatim the failure the item spends a paragraph eliminating when it argues the
+stamp segment must be store-computed rather than caller-computed. Either generalise the existing
+aggregator walk (it stops at the *nearest* aggregator, so an outermost-root variant is what this
+needs) or keep `getParent()` and state what makes the divergence non-silent; one mechanism for
+the question, not two.
+
+**"Tests never touch the real user cache throughout" is not true of the maven-invoker
+integration tests.** `graphitron-maven-plugin/src/it/{basic-generate,dependency-version-lag,
+missing-schema-inputs}` are standalone consumer poms with no `<parent>`, cloned to `target/it` and
+built with `invoker.goals=generate-sources` on every `mvn install`. That binds `graphitron:generate`,
+so they go through `resolveStoreDirectory` and would write into the developer's or the CI runner's
+real `~/.cache/graphitron/model/`. They do not reach the `storeDirectory` seam the sentence relies
+on, because they are real Maven builds rather than Java-tier callers. The segment is derived from
+the cloned basedir under `target/it/`, so every clean build mints a fresh workspace segment and
+orphans the previous one in the real cache, with eviction explicitly deferred. The fix is small
+(`<storeDirectory>`, or `graphitron.store.directory` through `src/it/settings.xml` or the invoker
+`<properties>`), but the item asserts the property, so it should carry the seam.
+
+**The drafted manual rows do not fit the table they are drafted for, so the first-client check has
+not actually met the surface.** The "Shared parameters" table in
+`docs/manual/reference/mojo-configuration.adoc` is `[cols="1,1,1,3"]` under the header
+`| Name | Type | Default | Description`, four cells per row. Both new parameters sit on
+`AbstractRewriteMojo` and therefore land in that table, and both drafted rows carry three cells
+with the default written into the prose instead of into the `Default` column that exists for it.
+`MojoDocCoverageTest` matches the backticked name cell only, so a wrong-arity row passes the gate
+and renders wrong, which is why this needs fixing in the draft rather than at implementation.
+`storeDirectory`'s `graphitron.store.directory` property also has nowhere to go: only the
+`dev`-goal table carries a CLI-property column. Say where it lands. `roadmap/workflow.adoc`
+expects the draft to move into its real home when the feature ships, and this one cannot be
+pasted there.
+
+Smaller, same revision. The stale-comment inventory omits `RewriteContext`'s own: a required
+`graphName` on the canonical constructor and on all six overloads, which the item commits to when
+it says the overloads gain the parameter rather than a value, falsifies six javadoc labels
+("Fourteen-arg overload" down to "Five-arg overload") and the compact constructor's "The last six
+components are null-tolerant" comment, whose truth depends on where the new component lands. None
+of them compile-fail, which is exactly the hazard the inventory exists for. The forked-JVM
+paragraph attributes the declined machinery to `PersistentStoreTest`'s javadoc when it is
+`aSecondOpenerLeavesTheStoreIntact`'s **method** javadoc; the class javadoc is separately listed
+in the inventory for a different falsehood, and the item is careful about this distinction for
+`openAt`, so naming the site keeps an implementer from rewriting the wrong one. That method
+javadoc is doubly falsified besides: its second half describes the cross-process in-memory
+fallback for a held file, which mixed mode removes. And the `freshSources` paragraph points at
+"the ownership-scoped delete below" when the ownership-scoped `StoreRefresh` paragraph is above
+it, in the capture section.
+
+One opportunity, not a finding. `mojo-configuration.adoc`'s `:description:` attribute counts "the
+four shared `<configuration>` parameters" and its intro says `dev` "adds three of its own" when
+the table lists four. Both are already stale before this item; adding two shared parameters makes
+the first one staler, and it is a one-line correction to make in passing.
