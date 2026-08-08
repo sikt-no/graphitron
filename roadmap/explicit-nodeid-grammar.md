@@ -1,7 +1,7 @@
 ---
 id: R473
 title: "Explicit @nodeId grammar: Node.id is the only implicit nodeId; typeName-first decode resolution"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 5
 theme: nodeid
