@@ -7,6 +7,8 @@ import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -45,14 +47,25 @@ public final class ClassNameCompletions {
         if (behavior.isEmpty() || !(behavior.get() instanceof Behavior.ClassNameBinding)) {
             return List.of();
         }
-        return data.externalReferences().stream()
-            .map(ref -> toCompletionItem(ref, context))
-            .toList();
+        // Reactor-resident classes first, jar-resident ones after, each group keeping the census
+        // order (the sort is stable). Ordering, not filtering: with the census widened to the whole
+        // compile classpath every one of these is legitimately referenceable, and filtering them
+        // back out would restore the bug the widening fixed. sortText carries the same rank to
+        // clients that re-sort, which most do.
+        var ordered = new ArrayList<>(data.externalReferences());
+        ordered.sort(Comparator.comparing(CompletionData.ExternalReference::fromJar));
+        var items = new ArrayList<CompletionItem>(ordered.size());
+        for (CompletionData.ExternalReference ref : ordered) {
+            items.add(toCompletionItem(ref, context));
+        }
+        return items;
     }
 
     private static CompletionItem toCompletionItem(
         CompletionData.ExternalReference ref, CompletionContext context
     ) {
-        return CompletionItems.replacing(ref.className(), CompletionItemKind.Class, context.replaceRange());
+        var item = CompletionItems.replacing(ref.className(), CompletionItemKind.Class, context.replaceRange());
+        item.setSortText((ref.fromJar() ? "1" : "0") + ref.className());
+        return item;
     }
 }

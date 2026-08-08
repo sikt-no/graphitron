@@ -142,6 +142,10 @@ public record CompletionData(
      * <p>{@code scalarConstants} lists this class's {@code public static}
  * {@code GraphQLScalarType} fields; it backs {@code @scalarType(scalar:)}
      * completion, which composes {@code className + "." + fieldName} for each.
+     *
+     * <p>{@code sourceName} is the classpath entry the class was read from: a compile-output
+     * directory or a jar. Only {@link ClasspathScanner} knows one; every other producer leaves it
+     * empty, the same way {@link #inferredKind} stands in for a classfile nobody read.
      */
     public record ExternalReference(
         String name,
@@ -150,12 +154,43 @@ public record CompletionData(
         List<Method> methods,
         List<RecordComponent> recordComponents,
         List<ScalarConstant> scalarConstants,
-        String classKind
+        String classKind,
+        String sourceName
     ) {
         public ExternalReference {
             methods = List.copyOf(methods);
             recordComponents = List.copyOf(recordComponents);
             scalarConstants = List.copyOf(scalarConstants);
+        }
+
+        /**
+         * The classpath entry this class was read from, empty for a reference no scan produced.
+         * The scan is the only producer that knows one, and it is what makes the census
+         * partitionable: an unchanged jar is read once, and a refresh re-reads one entry rather
+         * than discarding the whole census.
+         */
+        public ExternalReference(
+            String name,
+            String className,
+            String description,
+            List<Method> methods,
+            List<RecordComponent> recordComponents,
+            List<ScalarConstant> scalarConstants,
+            String classKind
+        ) {
+            this(name, className, description, methods, recordComponents, scalarConstants,
+                classKind, "");
+        }
+
+        /**
+         * Whether the class was read out of a jar rather than a compile-output directory. The
+         * distinction is ordering, never filtering: a jar class an author names in {@code @record}
+         * or {@code @scalarType} is legitimately referenceable, so it belongs in the list; it is
+         * just the less likely pick, and with the census widened to the whole compile classpath
+         * the consumer's own classes would otherwise be lost among thirty thousand.
+         */
+        public boolean fromJar() {
+            return sourceName().endsWith(".jar");
         }
 
         /**
@@ -235,13 +270,19 @@ public record CompletionData(
      * match). The MCP {@code conditions} tool reads this pre-classified
      * value rather than re-deriving a fragile simple-name predicate from
      * {@code returnType}.
+     *
+     * <p>{@code descriptor} is the raw JVM method descriptor, the overload discriminator
+     * {@code returnType} and {@code parameters} lose: both render erased simple names, so two
+     * methods taking same-named types from different packages are indistinguishable through them.
+     * Empty for a caller that read no classfile.
      */
     public record Method(
         String name,
         String returnType,
         String description,
         List<Parameter> parameters,
-        boolean returnsCondition
+        boolean returnsCondition,
+        String descriptor
     ) {
         /**
          * Back-compat constructor defaulting {@code returnsCondition} to
@@ -250,7 +291,18 @@ public record CompletionData(
          * compiling unchanged.
          */
         public Method(String name, String returnType, String description, List<Parameter> parameters) {
-            this(name, returnType, description, parameters, false);
+            this(name, returnType, description, parameters, false, "");
+        }
+
+        /**
+         * Back-compat constructor for a caller that read no classfile, so it has no descriptor to
+         * carry. Empty, never a rendering of the erased display types: that rendering is what the
+         * fact store used to key methods on, and two public methods taking same-named types from
+         * different packages collided on it silently.
+         */
+        public Method(String name, String returnType, String description,
+                      List<Parameter> parameters, boolean returnsCondition) {
+            this(name, returnType, description, parameters, returnsCondition, "");
         }
     }
 

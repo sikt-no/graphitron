@@ -17,12 +17,18 @@ import java.util.Set;
  * {@link GraphQLRewriteGenerator#GraphQLRewriteGenerator(RewriteContext)} and is accessible to
  * every pipeline stage through the generator instance.
  *
- * @param classpathRoots compile-output directories the LSP catalog scans for service /
- *                       condition / record class candidates. Populated from every reactor
- *                       project's {@code ${project.build.outputDirectory}} when the mojo runs
- *                       inside Maven; empty for unit-tier callers that don't ship classes.
- *                       External jars (from {@code ~/.m2}) are not scanned: services live in
- *                       reactor source, not third-party libraries.
+ * @param classpathRoots the compile classpath the class census is taken over: every reactor
+ *                       project's {@code ${project.build.outputDirectory}} plus the resolved
+ *                       compile dependencies, jars included, when the mojo runs inside Maven;
+ *                       empty for unit-tier callers that don't ship classes. This is the same
+ *                       list {@code codegenLoader} is built over, by construction rather than by
+ *                       coincidence, which is the point: a class the loader resolves is a class
+ *                       the census holds. It previously carried reactor output directories only,
+ *                       on the premise that consumer vocabulary lives in reactor source rather
+ *                       than in third-party libraries, and
+ *                       {@code @scalarType(scalar: "graphql.scalars.ExtendedScalars.Date")}
+ *                       falsifies that: it generates fine and reads as an unknown class in the
+ *                       editor, because the two paths were reading different classpaths.
  * @param schemaFileExtensions file-name suffixes (with leading dot) that count as GraphQL
  *                       schema files. Drives the {@code <schemaInputs>} post-scan filter,
  *                       the {@code graphitron:dev} watcher's trigger filter, and the

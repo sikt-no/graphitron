@@ -7,9 +7,12 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.lang.classfile.ClassFile;
 import java.lang.constant.ClassDesc;
+import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -337,6 +340,108 @@ class ClasspathScannerTest {
             "com.example.AnInterface", "INTERFACE",
             "com.example.AnEnum", "ENUM",
             "com.example.AnAnnotation", "ANNOTATION"));
+    }
+
+    @Test
+    void readsClassesOutOfJarsToo() throws IOException {
+        // The reported bug: a @scalarType naming a library constant generates fine and reads as an
+        // unknown class in the editor, because codegen resolves through a loader over the whole
+        // compile classpath while this scan opened only directories.
+        Path jar = jarWith(java.util.Map.of("com/example/InAJar.class",
+            classBytes("com.example.InAJar", ClassFile.ACC_PUBLIC)));
+
+        var refs = ClasspathScanner.scan(jar, JOOQ_PKG);
+
+        assertThat(refs).extracting(CompletionData.ExternalReference::className)
+            .containsExactly("com.example.InAJar");
+        assertThat(refs.getFirst().sourceName()).isEqualTo(jar.toString());
+        assertThat(refs.getFirst().fromJar()).isTrue();
+    }
+
+    @Test
+    void appliesTheSameFiltersInsideAJar() throws IOException {
+        Path jar = jarWith(java.util.Map.of(
+            "com/example/Public.class", classBytes("com.example.Public", ClassFile.ACC_PUBLIC),
+            "com/example/PackagePrivate.class", classBytes("com.example.PackagePrivate", 0),
+            "com/example/Outer$Inner.class", classBytes("com.example.Outer$Inner", ClassFile.ACC_PUBLIC),
+            "module-info.class", classBytes("module-info", ClassFile.ACC_PUBLIC),
+            "no/sikt/graphitron/rewrite/test/jooq/Tables.class",
+                classBytes(JOOQ_PKG + ".Tables", ClassFile.ACC_PUBLIC),
+            "META-INF/MANIFEST.MF", "Manifest-Version: 1.0\n".getBytes()));
+
+        var refs = ClasspathScanner.scan(jar, JOOQ_PKG);
+
+        assertThat(refs).extracting(CompletionData.ExternalReference::className)
+            .containsExactly("com.example.Public");
+    }
+
+    @Test
+    void aClassInBothAJarAndADirectorySurfacesOnceInClasspathOrder(@TempDir Path classes) throws IOException {
+        writePublicClass(classes, "com.example.Shared");
+        Path jar = jarWith(java.util.Map.of("com/example/Shared.class",
+            classBytes("com.example.Shared", ClassFile.ACC_PUBLIC)));
+
+        var directoryFirst = ClasspathScanner.scan(List.of(classes, jar), JOOQ_PKG);
+        var jarFirst = ClasspathScanner.scan(List.of(jar, classes), JOOQ_PKG);
+
+        // One row either way, attributed to whichever entry a classloader would have resolved it
+        // from, so the census and the codegen loader agree on which copy is the one.
+        assertThat(directoryFirst).hasSize(1);
+        assertThat(directoryFirst.getFirst().sourceName()).isEqualTo(classes.toString());
+        assertThat(jarFirst).hasSize(1);
+        assertThat(jarFirst.getFirst().sourceName()).isEqualTo(jar.toString());
+    }
+
+    @Test
+    void anUnreadableJarDoesNotTakeTheRestOfTheClasspathWithIt(@TempDir Path classes) throws IOException {
+        writePublicClass(classes, "com.example.Readable");
+        Path notAJar = classes.resolve("broken.jar");
+        Files.write(notAJar, new byte[] {1, 2, 3});
+
+        var refs = ClasspathScanner.scan(List.of(notAJar, classes), JOOQ_PKG);
+
+        assertThat(refs).extracting(CompletionData.ExternalReference::className)
+            .containsExactly("com.example.Readable");
+    }
+
+    @Test
+    void carriesTheRawDescriptorSoOverloadsStaySeparable(@TempDir Path classes) throws IOException {
+        // Two overloads whose parameter types share a simple name. The erased display types the
+        // completion surface renders are identical for both, so a descriptor rebuilt from them
+        // collides; the real one does not.
+        byte[] bytes = ClassFile.of().build(ClassDesc.of("com.example.Overloads"), cb -> {
+            cb.withFlags(ClassFile.ACC_PUBLIC);
+            cb.withMethod("handle",
+                java.lang.constant.MethodTypeDesc.of(ClassDesc.of("java.lang.String"),
+                    ClassDesc.of("com.foo.Result")),
+                ClassFile.ACC_PUBLIC, mb -> {});
+            cb.withMethod("handle",
+                java.lang.constant.MethodTypeDesc.of(ClassDesc.of("java.lang.String"),
+                    ClassDesc.of("com.bar.Result")),
+                ClassFile.ACC_PUBLIC, mb -> {});
+        });
+        writeRawClassBytes(classes, "com.example.Overloads", bytes);
+
+        var methods = ClasspathScanner.scan(classes, JOOQ_PKG).getFirst().methods();
+
+        assertThat(methods).extracting(CompletionData.Method::descriptor)
+            .containsExactlyInAnyOrder(
+                "(Lcom/foo/Result;)Ljava/lang/String;",
+                "(Lcom/bar/Result;)Ljava/lang/String;");
+    }
+
+    private static Path jarWith(java.util.Map<String, byte[]> entries) throws IOException {
+        Path jar = Files.createTempFile("classpath-scanner-fixture", ".jar");
+        try (OutputStream out = Files.newOutputStream(jar);
+             ZipOutputStream zip = new ZipOutputStream(out)) {
+            for (var entry : entries.entrySet()) {
+                zip.putNextEntry(new ZipEntry(entry.getKey()));
+                zip.write(entry.getValue());
+                zip.closeEntry();
+            }
+        }
+        jar.toFile().deleteOnExit();
+        return jar;
     }
 
     private static void writePublicClass(Path classes, String fqn) throws IOException {

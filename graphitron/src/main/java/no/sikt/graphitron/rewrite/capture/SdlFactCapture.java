@@ -36,6 +36,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_DIRECTIVE_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_LOCATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DUPLICATE_DECLARATION;
@@ -82,6 +83,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_UNION_MEMBER;
  */
 public final class SdlFactCapture {
 
+    /** {@code store_source.source_kind}'s schema-file arm; the classpath arms are the scan's. */
+    private static final String SCHEMA_FILE = "SCHEMA_FILE";
+
     /** The declaration form a site wrote, in the vocabulary the {@code kind} CHECK constraints fix. */
     private static final String OBJECT = "OBJECT";
     private static final String INTERFACE = "INTERFACE";
@@ -124,6 +128,61 @@ public final class SdlFactCapture {
         captureSchema();
         captureTypes();
         macros.expand(baseSites, ordinalsByType);
+        captureSources();
+    }
+
+    /**
+     * The schema files this walk read, so every SDL row is reachable from the source that produced
+     * it. Collected from the top-level definitions rather than from every element: an element sits
+     * lexically inside the site that declares it, so the sites cover the set, and a macro's
+     * synthesized site inherits its carrier's file and is already among them.
+     *
+     * <p>Unstamped. The walk is handed source <em>names</em> by graphql-java, never the text, so
+     * there is nothing to hash without re-reading files capture does not own; the classpath family
+     * stamps because the scan holds the bytes it parsed.
+     *
+     * <p>Runs last because it is a summary of the walk, and no SDL relation declares a foreign key
+     * into it: a schema-level row can carry a null source name, and the fact-schema convention puts
+     * a FOREIGN KEY only where the walk writes the child while standing on the parent. Reachability
+     * is what the partition rule asks for, and these rows give it.
+     */
+    private void captureSources() {
+        var names = new java.util.LinkedHashSet<String>();
+        registry.schemaDefinition().ifPresent(schema -> addSource(names, schema.getSourceLocation()));
+        registry.getSchemaExtensionDefinitions()
+            .forEach(extension -> addSource(names, extension.getSourceLocation()));
+        registry.getDirectiveDefinitions().values()
+            .forEach(definition -> addSource(names, definition.getSourceLocation()));
+        registry.types().values().forEach(definition -> addSource(names, definition.getSourceLocation()));
+        registry.scalars().values().forEach(definition -> addSource(names, definition.getSourceLocation()));
+        addExtensionSources(names, registry.objectTypeExtensions());
+        addExtensionSources(names, registry.interfaceTypeExtensions());
+        addExtensionSources(names, registry.unionTypeExtensions());
+        addExtensionSources(names, registry.enumTypeExtensions());
+        addExtensionSources(names, registry.scalarTypeExtensions());
+        addExtensionSources(names, registry.inputObjectTypeExtensions());
+
+        for (String name : names) {
+            if (!sink.claim(STORE_SOURCE, name)) {
+                continue;
+            }
+            var row = sink.dsl().newRecord(STORE_SOURCE);
+            row.setSourceName(name);
+            row.setSourceKind(SCHEMA_FILE);
+            sink.add(row);
+        }
+    }
+
+    private static <T extends TypeDefinition<?>> void addExtensionSources(
+            java.util.Set<String> names, java.util.Map<String, List<T>> extensions) {
+        extensions.values().forEach(sites ->
+            sites.forEach(site -> addSource(names, site.getSourceLocation())));
+    }
+
+    private static void addSource(java.util.Set<String> names, SourceLocation location) {
+        if (location != null && location.getSourceName() != null) {
+            names.add(location.getSourceName());
+        }
     }
 
     // ---------------------------------------------------------------- directive definitions

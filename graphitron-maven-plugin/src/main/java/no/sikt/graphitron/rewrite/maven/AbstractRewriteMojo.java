@@ -171,7 +171,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             resourcesAbs,
             effectiveOutput,
             effectiveJooq,
-            resolveClasspathRoots(),
+            resolveCompileClasspath(),
             codegenLoader,
             resolveCompileSourceRoots(),
             buildLintConfig(),
@@ -457,10 +457,9 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     }
 
     /**
-     * Compile-output directories from every reactor project, scanned by the LSP catalog for
-     * service / condition / record class candidates. External jars on the compile classpath
-     * ({@code ~/.m2}) are intentionally not scanned: services live in reactor source code, not
-     * third-party libraries.
+     * Compile-output directories from every reactor project. One half of
+     * {@link #resolveCompileClasspath()}, which is what the context now carries: the class census
+     * has to be the set the codegen loader can resolve, and this half alone is not it.
      *
      * <p>In a {@link #singleProjectReactor() single-project reactor}, each
      * {@link #siblingModuleBasedirs() sibling}'s {@code target/classes} is folded in through
@@ -733,28 +732,23 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
 
     /**
      * The project-aware classloader the reflection path uses to resolve consumer
-     * service / record / condition / jOOQ-catalog classes: the consumer's compile classpath
-     * plus every reactor sibling's {@code target/classes} (the same set
-     * {@link #resolveClasspathRoots()} feeds the LSP catalog scan). The parent is the plugin's
-     * own loader so the generator's classes still resolve and a consumer-side override under
+     * service / record / condition / jOOQ-catalog classes: exactly
+     * {@link #resolveCompileClasspath()}, which is also what the context carries as
+     * {@code classpathRoots} for the class census. Reading the one method rather than
+     * reassembling its two halves here is what makes "a class the loader resolves is a class the
+     * census holds" true by construction; when the two were assembled separately they agreed by
+     * coincidence, and the coincidence had already broken. The parent is the plugin's own loader
+     * so the generator's classes still resolve and a consumer-side override under
      * {@code <plugin><dependencies>} still wins through the parent chain.
      */
     private URLClassLoader buildCodegenLoader() throws MojoExecutionException {
         var urls = new LinkedHashSet<URL>();
-        try {
-            for (String element : project.getCompileClasspathElements()) {
-                urls.add(Path.of(element).toUri().toURL());
-            }
-        } catch (DependencyResolutionRequiredException | MalformedURLException e) {
-            throw new MojoExecutionException(
-                "Failed to assemble the project compile classpath for codegen reflection.", e);
-        }
-        for (Path root : resolveClasspathRoots()) {
+        for (Path entry : resolveCompileClasspath()) {
             try {
-                urls.add(root.toUri().toURL());
+                urls.add(entry.toUri().toURL());
             } catch (MalformedURLException e) {
                 throw new MojoExecutionException(
-                    "Failed to add reactor sibling output directory " + root + " to codegen classpath.", e);
+                    "Failed to add classpath entry " + entry + " to the codegen classpath.", e);
             }
         }
         return new URLClassLoader(urls.toArray(URL[]::new), getClass().getClassLoader());

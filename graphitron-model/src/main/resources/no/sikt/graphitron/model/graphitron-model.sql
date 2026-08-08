@@ -13,7 +13,7 @@
 -- Javadoc are self-describing; closed taxonomies are CHECK constraints; VARCHAR is unbounded;
 -- source order is an explicit ordinal column.
 --
--- Picking a prefix for a new relation. Four families, each named for whose vocabulary the row
+-- Picking a prefix for a new relation. Five families, each named for whose vocabulary the row
 -- is written in, never for its reader or its role. graphql_ is reserved for generic GraphQL: a
 -- row any SDL reader could produce from the document without knowing graphitron exists, which
 -- is every declaration, every directive definition, and every directive application including
@@ -22,7 +22,9 @@
 -- database declares, read through jOOQ's generated model; jvm_ is what the classfiles on the
 -- compile classpath declare. Naming a family for its reader (jooq_) or a presumed role
 -- (extension_) is what these two replace: jOOQ defines neither table nor column nor foreign
--- key, and an ObjectMapper on the classpath extends nothing yet still earns a row.
+-- key, and an ObjectMapper on the classpath extends nothing yet still earns a row. store_ is
+-- the store's own record of what it read and what it was built from, the one family whose rows
+-- are not a transcription of anything outside.
 --
 -- The SDL strata stack, graphql_ under graphitron_ under a third name, intent_, held in
 -- reserve. A graphitron_ row is still a transcription: it says what a directive application
@@ -1932,6 +1934,25 @@ COMMENT ON COLUMN sql_index_column.position IS '0-based position in the index''s
 COMMENT ON COLUMN sql_index_column.column_name IS 'SQL column name';
 
 
+-- ==== Store bookkeeping ===========================================================
+-- The store's record of what it read. The only family whose rows capture does not transcribe
+-- from somewhere else, which is what earns it a name of its own: the vocabulary is the store's
+-- metamodel rather than SQL's, the JVM's or GraphQL's, and one mechanism covers all three
+-- source kinds because a partition delete is one mechanism whether the source is a schema
+-- file, a compile-output directory, or a jar.
+
+CREATE TABLE store_source (
+  source_name VARCHAR NOT NULL,
+  source_kind VARCHAR NOT NULL,
+  stamp       VARCHAR,
+  PRIMARY KEY (source_name),
+  CHECK (source_kind IN ('SCHEMA_FILE', 'DIRECTORY', 'JAR'))
+);
+COMMENT ON TABLE store_source IS 'A source the store read. Every base relation is partitionable by the source that produced it: a refresh deletes exactly the rows one source wrote and re-walks it, so a relation unreachable from a source row is one the store can only ever discard wholesale.';
+COMMENT ON COLUMN store_source.source_name IS 'the schema file path or the classpath entry path, as the reader spelled it';
+COMMENT ON COLUMN store_source.source_kind IS 'a closed taxonomy: a schema file, a directory root, or a jar';
+COMMENT ON COLUMN store_source.stamp IS 'content hash, so an unchanged source is read once; NULL for a directory root, which changes on every compile and is never cached, and for a schema file, whose bytes capture never holds (graphql-java hands the walk a source name, not the text)';
+
 -- ==== JVM classpath facts =========================================================
 -- What the classfiles on the compile classpath declare, in the JVM's vocabulary: classes,
 -- methods and their parameters, record components, scalar-type fields. The rows are read by a
@@ -1941,14 +1962,17 @@ COMMENT ON COLUMN sql_index_column.column_name IS 'SQL column name';
 -- LSP's SourceWalker cadence and are joined at request time, so a .java edit is seen without a
 -- generator rebuild.
 CREATE TABLE jvm_class (
-  class_name VARCHAR NOT NULL,
-  class_kind VARCHAR NOT NULL,
+  class_name  VARCHAR NOT NULL,
+  class_kind  VARCHAR NOT NULL,
+  source_name VARCHAR NOT NULL,
   PRIMARY KEY (class_name),
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name),
   CHECK (class_kind IN ('CLASS', 'INTERFACE', 'ENUM', 'RECORD', 'ANNOTATION'))
 );
-COMMENT ON TABLE jvm_class IS 'A class exists on the classpath the scan reads. Filtered: public, non-synthetic, top-level (a simple name containing $ is skipped, so nested classes are absent), and outside the generated jOOQ package. A resolution detection over this relation reads those filters as absence, so they are stated rather than implied.';
+COMMENT ON TABLE jvm_class IS 'A class exists on the compile classpath, as the codegen loader would resolve it. Filtered: public, non-synthetic, top-level (a simple name containing $ is skipped, so nested classes are absent), and outside the generated jOOQ package. A resolution detection over this relation reads those filters as absence, so they are stated rather than implied.';
 COMMENT ON COLUMN jvm_class.class_name IS 'fully qualified binary name';
 COMMENT ON COLUMN jvm_class.class_kind IS 'the classfile''s declared form; the domain is closed over classfile shapes, so a violation is a capture bug';
+COMMENT ON COLUMN jvm_class.source_name IS 'the classpath entry it was read from; the partition this row belongs to. A class present under more than one entry is captured once, at the entry that comes first in classpath order, which is where a classloader would resolve it';
 
 CREATE TABLE jvm_method (
   class_name        VARCHAR NOT NULL,

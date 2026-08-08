@@ -54,7 +54,7 @@ final class CatalogFactCapture {
     static void capture(FactSink sink, JooqCatalog jooq,
                         List<CompletionData.ExternalReference> extensions) {
         captureCatalog(sink, jooq);
-        captureExtensions(sink, extensions);
+        captureExtensions(sink, new ClasspathSources(), extensions);
     }
 
     /**
@@ -240,23 +240,32 @@ final class CatalogFactCapture {
     }
 
     /**
-     * Records the classes the classpath scan read. Javadoc and Java source positions stay
-     * out by design: they live on the LSP source walker's cadence and are joined at request time,
-     * so a {@code .java} edit is seen without a generator rebuild.
+     * Records the classes the classpath scan read, and the classpath entries it read them from.
+     * Javadoc and Java source positions stay out by design: they live on the LSP source walker's
+     * cadence and are joined at request time, so a {@code .java} edit is seen without a generator
+     * rebuild.
+     *
+     * <p>Each class carries the entry it came from, which is the partition a refresh deletes and
+     * re-walks. The entry's own row is claimed on first sight rather than from a separate pass over
+     * the classpath, so a census with no classes from an entry records no entry: the store says
+     * what the scan read, not what it was pointed at.
      */
-    private static void captureExtensions(FactSink sink, List<CompletionData.ExternalReference> extensions) {
+    private static void captureExtensions(FactSink sink, ClasspathSources sources,
+                                          List<CompletionData.ExternalReference> extensions) {
         for (CompletionData.ExternalReference reference : extensions) {
             String className = reference.className();
             if (!sink.claim(JVM_CLASS, className)) {
                 continue;
             }
+            String source = sources.record(sink, reference.sourceName());
             var record = sink.dsl().newRecord(JVM_CLASS);
             record.setClassName(className);
             record.setClassKind(reference.classKind());
+            record.setSourceName(source);
             sink.add(record);
 
             for (CompletionData.Method method : reference.methods()) {
-                String descriptor = descriptorOf(method);
+                String descriptor = method.descriptor();
                 if (!sink.claim(JVM_METHOD, className, method.name(), descriptor)) {
                     continue;
                 }
@@ -304,20 +313,6 @@ final class CatalogFactCapture {
                 sink.add(row);
             }
         }
-    }
-
-    /**
-     * The overload discriminator that keeps {@code jvm_method}'s key natural. The scan's
-     * projection carries erased display types rather than the raw JVM descriptor, so the
-     * discriminator is rebuilt from them: same information, same discriminating power over the
-     * overload set of one class, and no live handle involved.
-     */
-    private static String descriptorOf(CompletionData.Method method) {
-        var builder = new StringBuilder("(");
-        for (CompletionData.Parameter parameter : method.parameters()) {
-            builder.append(parameter.type()).append(';');
-        }
-        return builder.append(')').append(method.returnType()).toString();
     }
 
     /** Splits a schema-qualified table ID; an unqualified name keeps an empty schema. */

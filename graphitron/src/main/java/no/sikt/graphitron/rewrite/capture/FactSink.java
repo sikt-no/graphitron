@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.capture;
 
 import org.jooq.DSLContext;
+import org.jooq.Field;
 import org.jooq.Table;
 import org.jooq.TableRecord;
 
@@ -55,18 +56,29 @@ final class FactSink {
     }
 
     /**
-     * Writes every buffered row, parents first. Consecutive same-table records batch into one
-     * JDBC statement, so the cost is roughly one round trip per relation rather than per row.
+     * Writes every buffered row, parents first: one prepared statement per relation, bound once per
+     * row. The rows arrive as records because that is the surface capture dogfoods, but they are
+     * written through a bind batch rather than {@code batchInsert}, which re-derives each record's
+     * changed-field set and renders per record. Measured against the class census the compile
+     * classpath produces (half a million rows), the bind batch is several times faster, and the
+     * census is large enough for the difference to be the load's cost rather than a detail.
      */
     void flush() {
-        var ordered = new ArrayList<TableRecord<?>>();
         for (Table<?> table : parentsFirst(buckets.keySet())) {
-            ordered.addAll(buckets.get(table));
+            var rows = buckets.get(table);
+            if (rows.isEmpty()) {
+                continue;
+            }
+            Field<?>[] fields = table.fields();
+            var batch = dsl.batch(dsl.insertInto(table)
+                .columns(fields)
+                .values(new Object[fields.length]));
+            for (TableRecord<?> row : rows) {
+                batch = batch.bind(row.intoArray());
+            }
+            batch.execute();
         }
         buckets.clear();
-        if (!ordered.isEmpty()) {
-            dsl.batchInsert(ordered).execute();
-        }
     }
 
     /**

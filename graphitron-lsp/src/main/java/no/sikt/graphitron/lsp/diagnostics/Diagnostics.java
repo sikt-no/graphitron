@@ -553,8 +553,10 @@ public final class Diagnostics {
     }
 
     /**
-     * Classpath half of {@link #validateScalarType}. Skipped when the catalog's reference scan
-     * is empty (pre-`mvn compile` state). The structural / malformed-FQN diagnostic fires
+     * Classpath half of {@link #validateScalarType}. The catalog's reference scan is the compile
+     * classpath, which is what the codegen loader resolves against, so a library constant such as
+     * {@code graphql.scalars.ExtendedScalars.Date} is found here exactly when codegen would bind
+     * it. Skipped when the scan is empty (pre-`mvn compile` state). The structural / malformed-FQN diagnostic fires
      * regardless; only the unknown-class check defers until the scan has at least one entry.
      */
     private static void validateScalarTypeClasspath(
@@ -566,8 +568,8 @@ public final class Diagnostics {
             .anyMatch(r -> r.className().equals(parsed.classFqn()));
         if (!found) {
             out.add(diagnostic(file, valueNode,
-                "Unknown class '" + parsed.classFqn() + "' on @scalarType. Not found in "
-                + "compiled target/classes."));
+                "Unknown class '" + parsed.classFqn() + "' on @scalarType. Not found on "
+                + "the compile classpath."));
         }
     }
 
@@ -733,7 +735,7 @@ public final class Diagnostics {
             .anyMatch(r -> r.className().equals(fqn));
         if (!found) {
             out.add(diagnostic(file, valueNode,
-                "Unknown class '" + fqn + "'. Not found in compiled target/classes."));
+                "Unknown class '" + fqn + "'. Not found on the compile classpath."));
         }
     }
 

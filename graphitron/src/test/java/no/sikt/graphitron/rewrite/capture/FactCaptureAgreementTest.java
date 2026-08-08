@@ -53,6 +53,8 @@ import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
+import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -125,7 +127,7 @@ class FactCaptureAgreementTest {
             "sql_primary_key", "sql_referential_constraint", "sql_index",
             "sql_index_column", "jvm_class", "jvm_method",
             "jvm_method_parameter", "jvm_record_component",
-            "jvm_scalar_type_field")) {
+            "jvm_scalar_type_field", "store_source")) {
             registrations.put(relation, Arm.EQUALITY);
         }
         registrations.put("graphql_directive_site", Arm.DERIVED);
@@ -788,8 +790,15 @@ class FactCaptureAgreementTest {
         }
     }
 
+    /**
+     * The method census against the scan, descriptor and all. The comparison used to erase the
+     * descriptor because the scan's projection dropped it and capture rebuilt one from the erased
+     * display types, which two methods taking same-named types from different packages share; the
+     * fold hid a collision the store resolved by dropping a row. The scan carries the real
+     * descriptor now, so the census compares as a mirror.
+     */
     @Test
-    @DisplayName("the JVM method census equals the scanner's, compared descriptor-erased")
+    @DisplayName("the JVM method census equals the scanner's, descriptor included")
     void jvmMethodCensusEqualsTheScanner(@TempDir Path tmp) {
         var ctx = testContext();
         List<CompletionData.ExternalReference> extensions = CatalogBuilder.buildExternalReferences(ctx);
@@ -797,16 +806,80 @@ class FactCaptureAgreementTest {
             FactCapture.capture(store.dsl(), emptyRegistry(tmp), null, extensions, new NodeDeclaration(null));
 
             var captured = new LinkedHashSet<String>();
-            store.dsl().select(JVM_METHOD.CLASS_NAME, JVM_METHOD.METHOD_NAME)
+            store.dsl().select(JVM_METHOD.CLASS_NAME, JVM_METHOD.METHOD_NAME, JVM_METHOD.DESCRIPTOR)
                 .from(JVM_METHOD).fetch()
-                .forEach(row -> captured.add(row.value1() + "#" + row.value2()));
+                .forEach(row -> captured.add(row.value1() + "#" + row.value2() + row.value3()));
 
-            // Descriptor-erased: CompletionData.Method carries no descriptor, so the comparison is
-            // a projection rather than a mirror and the driver compares it as one.
             var expected = new LinkedHashSet<String>();
             extensions.forEach(reference -> reference.methods()
-                .forEach(method -> expected.add(reference.className() + "#" + method.name())));
+                .forEach(method -> expected.add(
+                    reference.className() + "#" + method.name() + method.descriptor())));
             assertThat(captured).isEqualTo(expected);
+        }
+    }
+
+    /**
+     * Every captured class is reachable from the entry it was read from, which is the partition a
+     * refresh deletes and re-walks. A jar is stamped by content so an unchanged one is read once; a
+     * directory is not, changing on every compile.
+     */
+    @Test
+    @DisplayName("the class census is partitioned by the classpath entry it came from")
+    void classCensusIsPartitionedBySource(@TempDir Path tmp) {
+        var ctx = testContext();
+        List<CompletionData.ExternalReference> extensions = CatalogBuilder.buildExternalReferences(ctx);
+        try (var store = GraphitronModelStore.open()) {
+            FactCapture.capture(store.dsl(), emptyRegistry(tmp), null, extensions, new NodeDeclaration(null));
+
+            var expected = new LinkedHashSet<>(extensions.stream()
+                .map(CompletionData.ExternalReference::sourceName).toList());
+            assertThat(expected).as("the scan read something, so this pins something").isNotEmpty();
+
+            var captured = new LinkedHashSet<>(store.dsl()
+                .select(STORE_SOURCE.SOURCE_NAME)
+                .from(STORE_SOURCE)
+                .where(STORE_SOURCE.SOURCE_KIND.in("DIRECTORY", "JAR"))
+                .fetch(STORE_SOURCE.SOURCE_NAME));
+            assertThat(captured).isEqualTo(expected);
+
+            var unstamped = store.dsl()
+                .select(STORE_SOURCE.SOURCE_NAME)
+                .from(STORE_SOURCE)
+                .where(STORE_SOURCE.SOURCE_KIND.eq("JAR"))
+                .and(STORE_SOURCE.STAMP.isNull())
+                .fetch(STORE_SOURCE.SOURCE_NAME);
+            assertThat(unstamped).as("a jar the scan read is a jar it can hash").isEmpty();
+
+            var stamped = store.dsl().fetchCount(STORE_SOURCE,
+                STORE_SOURCE.SOURCE_KIND.eq("DIRECTORY").and(STORE_SOURCE.STAMP.isNotNull()));
+            assertThat(stamped).as("a directory changes on every compile, so it is never stamped")
+                .isZero();
+        }
+    }
+
+    /**
+     * The SDL side is partitionable too. It declares no foreign key into {@code store_source}: a
+     * schema-level row can carry a null source name, and the FK doctrine puts one only where the
+     * walk writes the child while standing on the parent. Reachability is what the partition rule
+     * asks for, and these rows are it.
+     */
+    @Test
+    @DisplayName("every schema file the walk read has a source row")
+    void schemaFilesAreRecordedAsSources(@TempDir Path tmp) {
+        try (var store = CapturedStore.of(tmp, FIXTURE)) {
+            var declared = new LinkedHashSet<>(store.dsl()
+                .selectDistinct(GRAPHQL_TYPE_DECLARATION.SOURCE_NAME)
+                .from(GRAPHQL_TYPE_DECLARATION)
+                .where(GRAPHQL_TYPE_DECLARATION.SOURCE_NAME.isNotNull())
+                .fetch(GRAPHQL_TYPE_DECLARATION.SOURCE_NAME));
+            assertThat(declared).as("the fixture declares types, so this pins something").isNotEmpty();
+
+            var sources = new LinkedHashSet<>(store.dsl()
+                .select(STORE_SOURCE.SOURCE_NAME)
+                .from(STORE_SOURCE)
+                .where(STORE_SOURCE.SOURCE_KIND.eq("SCHEMA_FILE"))
+                .fetch(STORE_SOURCE.SOURCE_NAME));
+            assertThat(sources).containsAll(declared);
         }
     }
 
