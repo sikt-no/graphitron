@@ -21,7 +21,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R589` | Classification is a relation; validation adds facts | Spec | 2026-08-08 <sub>created 2026-08-04</sub> | [plan](validation-adds-facts.md) |
 | `R603` | A pipeline-output facts family in the model store <sub>blocked by: [graph-partition-key-dimension](graph-partition-key-dimension.md)</sub> | Spec | 2026-08-08 <sub>created 2026-08-06</sub> | [plan](pipeline-output-facts-family.md) |
 | `R569` | Aggregated diagnostics commands for the MCP server <sub>blocked by: [graph-partition-key-dimension](graph-partition-key-dimension.md)</sub> | Spec | 2026-08-08 <sub>created 2026-08-03</sub> | [plan](mcp-aggregated-diagnostics.md) |
-| `R473` | Explicit @nodeId grammar: Node.id is the only implicit nodeId; typeName-first decode resolution | Spec | 2026-08-06 <sub>created 2026-07-13</sub> | [plan](explicit-nodeid-grammar.md) |
+| `R473` | Explicit @nodeId grammar: Node.id is the only implicit nodeId; typeName-first decode resolution | Spec | 2026-08-08 <sub>created 2026-07-13</sub> | [plan](explicit-nodeid-grammar.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Spec | 2026-08-03 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
