@@ -154,29 +154,42 @@ another graph's live dependency. `store_source` and `store_graph` rows upsert wi
 
 ### Freshness is heterogeneous by design
 
-A user works on one subgraph at a time. The shared store's steady state is therefore one hot
-graph, refreshed on every build and every dev-loop round, beside siblings that are exactly as
-fresh as their last build, hours or weeks old. That is not a defect to engineer away, it is
-what ownership-scoped refresh means: no run pretends to refresh facts it did not read. What
-the store owes instead is making staleness **visible rather than silent**, and this item
-ships the substrate in three parts:
+A user edits one subgraph at a time, but does not *receive* change that way: in a monorepo,
+`git pull` lands other people's edits to sibling subgraphs with no local build of those
+modules. The shared store's steady state is therefore one hot graph, current to the
+keystroke, beside sibling partitions that faithfully describe sources a pull may since have
+moved underneath them. A cold partition is not merely old; it can be wrong about the working
+tree while remaining true to what it read, and that happens routinely, not exceptionally.
+Ownership-scoped refresh accepts this rather than engineering it away (no run pretends to
+refresh facts it did not read); what the store owes in exchange is keeping **age and
+currency distinguishable, and both visible**. Two different questions, two different
+substrates, both shipping here:
 
-- **When**: `store_graph.last_captured` and `store_source.last_seen` date every partition.
-- **What**: `store_source.stamp` is a content hash, so a cold graph's currency is checkable
-  without building it: re-hash its recorded sources and compare. Staleness detection costs a
-  hash, not a capture.
-- **Where**: for that check to work from outside the owning module's build, a schema file's
-  `source_name` must be recorded in a form resolvable there (absolute or anchored to a
-  stated root, settled at implementation); today it is whatever path the parser was handed.
+- **Age** (when was this read): `store_graph.last_captured` and `store_source.last_seen`
+  date every partition.
+- **Currency** (is what was read still what is on disk): `store_source.stamp` is a content
+  hash, so a cold graph's currency is checkable without building its module: re-hash its
+  recorded sources and compare. Age cannot answer this question at all, since a pull
+  invalidates a partition captured a minute ago as readily as one from last month.
+  Staleness detection costs a hash, not a capture. For SDL sources the check is fully
+  supported today: which schema files a graph read is derivable from its declaration
+  sites, and the `source_name` those record must be resolvable from outside the owning
+  module's build (absolute or anchored to a stated root, settled at implementation; today
+  it is whatever path the parser was handed). Catalog and classpath currency need the
+  deferred membership relation, recorded below as one of its readers.
 
 The rule this binds future consumers to, stated now so it is reviewable now: a cross-graph
-reader treats freshness as an input. A composition detection that reads a sibling partition
-carries the sibling's `last_captured` into any diagnostic it mints, and never presents
-conclusions over a heterogeneous store as if the store were uniformly current.
+reader treats age and currency as inputs. A composition detection over a sibling partition
+whose sources fail the re-hash reports against a stated stale baseline or declines, and
+never presents a heterogeneous store as uniformly current. The natural repair is also worth
+recording as a pointer for the orchestration item: a stale sibling's SDL partition can be
+re-captured by a parse alone, no build of its module, because parse-to-registry is the
+linear half of the pipeline and capture is infallible by construction.
 
-The same work pattern is why shared-store contention stays rare in practice: parallel module
-builds meet in the file on a full reactor build, while the everyday case is a single hot
-graph writing beside cold ones nobody touches.
+Collaboration does not flow through the store, which is what keeps the concurrency posture
+honest: the store is per-user and per-machine, other people's work arrives as source changes
+via git, never as store writes, so parallel module builds meet in the file on a full reactor
+build while the everyday case stays a single hot writer.
 
 Retention of unowned rows is justified by ownership, not by a freshness proof: the run that
 owns them refreshes them on its own cadence. The residual hazard is the orphan partition, and
@@ -227,8 +240,9 @@ as shipped. No consumer queries exist yet to update, which is the point of doing
 - **`store_graph_source` membership.** The Backlog stub proposed it and the shared store
   sharpens the question: in a multi-graph store, which sources a graph reads is no longer
   derivable from the graph-blind `jvm_`/`sql_` rows. It still stays out, because nothing
-  reads it yet: each run knows its own input set from configuration, and the two candidate
-  readers (eviction, cross-graph composition detections) are both deferred. It lands with
+  reads it yet: each run knows its own input set from configuration, and the three candidate
+  readers (eviction, cross-graph composition detections, and currency checks on a sibling's
+  catalog and classpath sources, per the freshness section) are all deferred. It lands with
   the first of them, as an input written by capture, not a derivation.
 - **Eviction.** Orphaned partitions (renamed graphs, jars no classpath references) accumulate
   until a policy or command drops them; this item writes the `last_captured` / `last_seen`
