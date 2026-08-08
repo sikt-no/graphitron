@@ -7,7 +7,7 @@ priority: 4
 theme: classification-model
 depends-on: []
 created: 2026-08-04
-last-updated: 2026-08-06
+last-updated: 2026-08-08
 ---
 
 # Classification is a relation; validation adds facts
@@ -223,14 +223,18 @@ assembly used to enforce becomes detections, this item's thesis applied at the p
 (a dangling author-spelled reference or malformed argument mints a located diagnostic instead
 of dying in graphql-java's throw). The walk records existence facts and directive
 applications: the type exists, the field exists at this coordinate, the argument uses this
-input type. A graphitron application lands decoded in its per-directive semantic relation
-(the decode never throws; while assembly still runs upstream, invalid input never reaches
-capture), a foreign application lands verbatim for round-trip re-emission, and the macros
-(`@asConnection`, `@asFacet`, federation key synthesis) expand during the same walk, their
-synthesized rows marked by provenance relations so the authored picture stays the anti-join.
+input type. Every application transcribes into the generic application relations regardless of
+namespace, graphitron's own included: the shipped `graphql_` family is a total transcription,
+and whether an application survives into the emitted schema is a namespace query at emission,
+not a table choice at capture. A graphitron or federation application additionally lands
+decoded in its per-directive `graphitron_` relation (the decode never throws; while assembly
+still runs upstream, invalid input never reaches capture), and the macros (`@asConnection`,
+`@asFacet`, federation key synthesis) expand during the same walk, their synthesized rows
+marked by provenance relations so the authored picture stays the anti-join.
 Source locations ride the raw facts so every later diagnostic inherits its location without
-re-walking SDL. The catalog
-scans (jOOQ, services) load the other base relations the same way. Capture is total: everything in
+re-walking SDL. The second load fills the `sql_` family straight off `JooqCatalog` (not the
+`CatalogFacts` projection, whose narrowings the store deliberately does not inherit) and the
+`jvm_` family from the full compile classpath, jars included. Capture is total: everything in
 the SDL is recorded, with no reachability pruning at capture time.
 
 Everything after capture is derivation, and classification stops being a phase. An authored
@@ -287,19 +291,22 @@ query order stays free, and an engine upgrade's corpus diff has a suspect list o
 crossings rather than every query.
 
 What the store materializes deserves naming precisely: the fact schema DDL is the umbrella's
-normalised data model reified as a SQL schema. The database is created at startup and populated
-during a run; it lives and dies with the process, so there are no migrations and no persisted
-state of record anywhere (the stamp-invalidated warm-start cache under `target/` is R595's
-business and keeps both the no-state-of-record and no-migration properties). The DDL is source, and its home is a new reactor module, `graphitron-model`,
-which holds the DDL, runs jOOQ codegen over it (live H2 metadata over a store a build driver
+normalised data model reified as a SQL schema. As shipped (R595 slice 5) the store persists as
+an H2 file under `<build>/graphitron-model`, and both load-bearing properties survive the
+persistence because the file is a cache, never a state of record: `store_stamp` (DDL hash plus
+generator version) discards and rebuilds the whole store on any mismatch, so no migration ever
+exists; `StoreRefresh` retains only partitions whose source still hashes to what
+`store_source` recorded; readers get a copy-on-open snapshot, and a contended file degrades to
+in-memory. The DDL is source, and its home is the `graphitron-model` reactor module,
+which holds the DDL, runs jOOQ codegen over it (live H2 metadata over a store the build driver
 boots from the DDL, no external database process; `DDLDatabase` was tried and dropped, per the
 functions spike below), and builds before core: the `graphitron-sakila-db` shape made
 hermetic. The module name is the reification read literally, the module holding the DDL is the
 model. The ordering turns schema
 evolution into a compiler conversation: drop a column and every derivation, detection, and
 consumer that touched it fails javac in core before anything runs, and since no persisted state
-exists, compile-time is the only compatibility surface the schema has. Changing the model is
-editing the DDL and following the compiler.
+of record exists, compile-time is the only compatibility surface the schema has. Changing the
+model is editing the DDL and following the compiler.
 
 The derivation vehicle is settled too, by a second spike
 (`roadmap/audits/2026-08-05-h2-functions-jooq-spike.md`). Table-valued functions are not it: H2
@@ -308,8 +315,9 @@ query, there is no `LATERAL` to rescue the correlated join a TVF-based derivatio
 built from, and the generated binding is untyped besides. Derivations stay SQL statements, views
 and `INSERT..SELECT` strata with recursive CTEs where closure is needed, exactly the shape the
 stratification above assumes. A later round then moved structured-argument decoding into
-capture itself (R595's semantic stratum: the visitor holds the AST, so nothing re-parses at
-derivation time), which empties the known class of derivations needing a SQL-side parse. The
+capture itself (the shipped `graphitron_` family: the visitor holds the AST, so nothing
+re-parses at derivation time), which empties the known class of derivations needing a SQL-side
+parse. The
 scalar-alias bridge the spike proved (`CREATE ALIAS` functions in the model's DDL, row
 explosion via a `SYSTEM_RANGE` join with `CARDINALITY` and `ARRAY_GET`) is thereby a
 contingency, not a planned mechanism: adopted only if a derivation ever genuinely needs a
@@ -317,7 +325,7 @@ parse SQL cannot express, with the spike's wiring as the recipe.
 
 ## Scope
 
-The slices are cut on the strangler frame: R595's substrate ships first, and this item is the
+The slices are cut on the strangler frame: R595's substrate has shipped, and this item is the
 store's first reader, migrating the classification stage. Generated output is identical
 throughout; what moves is where verdicts come from and what survives a failure.
 
@@ -330,8 +338,15 @@ throughout; what moves is where verdicts come from and what survives a failure.
    `roadmap/audits/2026-08-06-fact-base-impact-sweep.md`). Reviewed through this item's gates;
    R333 does not leave Ready.
 2. **The authored claim view ships, and the conflict rule reads it.** The view unions one arm
-   per claiming `intent_` relation at both grains, classifier column a literal per arm; the arm
-   list is the axis declaration. The conflict detection groups the view by coordinate; the
+   per claiming `graphitron_` relation at both grains, classifier column a literal per arm; the
+   arm list is the axis declaration. (The shipped DDL holds the `intent_` prefix in reserve for
+   exactly this derived stratum; whether the claim views take that name is an implementation
+   call.) One capture residual is load-bearing here: a decode arm that declines on a missing
+   required argument currently writes neither its decoded row nor a
+   `graphitron_undecoded_argument` row (R609), so the claim view would silently miss that
+   application; either that quarantine lands first, or this slice ships the companion detection
+   (a graphitron-namespace `graphql_` application with no decoded row). The conflict detection
+   groups the view by coordinate; the
    recognized-combinations rule refines `@routine` with `@lookupKey` to the Deferred kind (cause
    identity pinned: it stays a capability-gap rejection); and the four conflict sites dissolve
    into the one detection: the two hand-enumerated detector lists behind
@@ -416,11 +431,21 @@ surfaces, so the item does not qualify for the internal-refactor exemption.
 
 ## Relationships
 
-- **`graphitron-model-captures-facts` (R595):** the substrate this architecture runs on; ships
-  first per the strangler frame above, which is what the front-matter dependency encodes. It
-  carries the fact-schema DDL, the `graphitron-model` module, the two capture loads, and the
-  agreement tests; this item, the classification-stage migration, is the store's first
-  reader.
+- **`graphitron-model-captures-facts` (R595, Done; see `roadmap/changelog.md`):** the substrate
+  this architecture runs on, shipped, with real divergences from the plan this body's earlier
+  rounds cite. The family prefixes are `graphql_` / `graphitron_` / `sql_` / `jvm_` / `store_`:
+  the fidelity family dissolved into the total `graphql_` transcription (re-emission is a
+  namespace query at emission, and a directive both re-emitted and decoded is a row in each
+  family, not a dual-write special case), the semantic stratum is `graphitron_`, and the DDL
+  header reserves `intent_` for the derived stratum this item builds. Constraints are captured
+  as the catalog declares them, straight off `JooqCatalog`; the class census covers the full
+  compile classpath, jars included; and the store persists as a stamped cache file with
+  `StoreRefresh` partition retention, keeping the no-migrations and no-state-of-record
+  properties. This item, the classification-stage migration, is the store's first reader.
+- **`capture-load-residuals` (R609):** the Done-gate residuals. The declined-decode gap is the
+  one this item's slice 2 must land against (see there); the others (second catalog walk,
+  retained-partition scan skip, nested-class filter, shadowed-duplicate quarantine) are
+  shadow-period sharpenings this item can take or leave.
 - **Umbrella (`coordinate-lowers-to-datafetcher-queryparts`, R333):** amended by slice 1. The claim
   relations are base relations the umbrella's current text lacks; the single-classification
   worldview relocates to the planning stage instead of being abolished, the commands become the
@@ -464,9 +489,9 @@ that reifies the umbrella's normalised model as a startup-created SQL schema in 
 module. The scope above is cut on that picture.
 
 The frame is a strangler migration keyed by consumer, not by derivation layer. The substrate
-ships first (`graphitron-model-captures-facts`, R595): the module, the two capture loads
-running beside the working pipeline and changing no behavior, agreement tests as the shadow
-period's honesty check. After that, downstream code migrates off `GraphitronSchema` onto the
+shipped first (`graphitron-model-captures-facts`, R595, Done): the module, the two capture
+loads running beside the working pipeline and changing no behavior, agreement tests as the
+shadow period's honesty check. Downstream code now migrates off `GraphitronSchema` onto the
 store piece by piece, in whatever order pays best rather than pipeline order, each piece gated
 on generated-output identity; a derivation is built when the first consumer needing it
 migrates, never speculatively. While both models are live, new facts land only in the store,
@@ -526,8 +551,8 @@ land in one of the scope's pieces.
   closure.
 - **The axis declaration's home: closed by the store.** A directive's axis is which derivation
   views read its semantic relation, and the classification axis's declaration is literal: the
-  claim view unions one arm per claiming `intent_` relation, classifier column a literal per
-  arm, at both grains, since types claim too. Today's four conflict sites all dissolve into the
+  claim view unions one arm per claiming `graphitron_` relation, classifier column a literal
+  per arm, at both grains, since types claim too. Today's four conflict sites all dissolve into the
   same grouping detection over that view: the two hand-enumerated detector lists behind
   `FieldBuilder.reduceDirectiveConflict` (child fields: `@service`, `@externalField`, `@nodeId`,
   `@routine`; root query fields: `@service`, `@lookupKey` anywhere on the argument surface,
