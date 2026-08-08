@@ -102,6 +102,7 @@ curl -s -X POST http://localhost:8080/graphql \
   -d '{"query":"mutation { updateFilm(in: { filmId: 6, title: \"RENAMED FILM\" }) { filmId title } }"}'
 ----
 
+[#grouping-fields-with-nested-input-types]
 == Grouping fields with nested input types
 
 A `@mutation` input field can itself be an input object: a plain grouping type whose own fields map onto columns of the *same* write target as the surrounding input. This tidies a large input into named clusters on the client side without introducing a second table. Suppose a schema like:

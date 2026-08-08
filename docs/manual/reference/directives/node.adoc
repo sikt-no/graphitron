@@ -93,6 +93,7 @@ type Person implements Node @table(name: "customer") @node(typeId: "C") {
 
 The `typeId: "C"` keeps existing IDs valid even if `Person` is later renamed to `User` or `Customer`.
 
+[#several-node-types-over-one-table]
 === Several node types over one table
 
 A table may back more than one `@node` type, each publishing its own `typeId`. The shape comes up when a federation entity owned by another subgraph has to issue the same global ID as a type you already expose, and when a renamed type lives alongside its predecessor through a deprecation window:

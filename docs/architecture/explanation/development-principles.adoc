@@ -35,6 +35,7 @@ Signs a model type needs more pre-resolution:
   only its inputs were. Rule of thumb: if two consumers evaluate the same predicate over a model
   field, the branch belongs in the model, and the duplicate sites are an opportunity to drift.
 
+[#sealed-hierarchies-over-enums-for-typed-information]
 === Sealed hierarchies over enums for typed information
 
 When different variants of a concept carry different data, use a sealed interface, not an enum
@@ -99,6 +100,7 @@ a new argument type falls through both silently.
 *Enforced by:* review only ; a downstream view referencing a builder-internal classification type,
 or two passes sharing a hardcoded skip-list, is the tell.
 
+[#builder-step-results-are-sealed-not-strings-or-out-params]
 === Builder-step results are sealed, not strings or out-params
 
 Every builder-step lift returns a sealed `Resolved`; rejection is a typed variant with a stable
@@ -226,6 +228,7 @@ unguarded census) drifts silently. R268 is the worked example, an emit-side allo
 from the arms the emitter implemented until it was deleted and the invariant re-sourced. A review-only label
 is an invitation: filing the meta-test that pins it is roadmap material.
 
+[#rejections-validator-mirrors-classifier-invariants]
 === Rejections: validator mirrors classifier invariants
 
 Every classifier decision that implies a generator branch must fail at validate time if that
@@ -243,6 +246,7 @@ classifier invariant: no generator-side invariant goes unchecked at validate tim
 *Enforced by:* `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` (partition
 exhaustive and disjoint); `ValidateMojo` fails the build on stubbed variants.
 
+[#acceptances-classifier-guarantees-shape-emitter-assumptions]
 === Acceptances: classifier guarantees shape emitter assumptions
 
 The reverse direction: a classifier acceptance lets an emitter assume narrower shapes, so emitted

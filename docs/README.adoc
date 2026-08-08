@@ -55,6 +55,7 @@ The resources copy and any roadmap-tool emit still run, so the staging tree is v
 * File extension is `.adoc` (not `.asciidoc`, not `.asc`).
 * One H1 per file, set as the page title via `= Title`.
 * Cross-page links use `xref:` rather than raw URLs.
+* A cross-page link to a *section* must name an explicit block anchor on that section, never the id Asciidoctor generates from the heading text. Declare the anchor at the target as `+[#kebab-case-id]+` (or `+[[kebab-case-id]]+`) on the line above the heading, then link to it as `+xref:page.adoc#kebab-case-id[label]+`. Asciidoctor never resolves a cross-document target, so a wrong anchor is silent at build time and publishes a link that drops the reader at the top of the right page; `check-adoc-xrefs` is what catches it instead. Naming the generated id would also break the link the next time the heading is reworded. Note that the generated form is kebab-case here (`+several-node-types-over-one-table+`) rather than the underscore form Asciidoctor's own documentation shows, because the site sets `+idprefix+` empty and `+idseparator+` to `+-+`; the underscore form is the mistake this rule exists to retire.
 * Code blocks use `[source,java]` (or `xml`, `yaml`, ...) with optional callouts.
 * Images live in `images/`; never hot-link to the deployed site.
 * `include::` does not resolve in GitHub's web preview; prefer self-contained pages and reserve `include::` for genuine reuse.
@@ -63,4 +64,6 @@ GitHub renders `.adoc` natively in the web UI, so in-repo browsing works for pla
 
 == Errors-vs-warnings
 
-The AsciiDoctor build is configured `failIf severity=WARN`: missing xrefs, missing includes, and unresolved attributes fail the build. We don't tolerate "warnings" in docs the way we sometimes do in compiler output; a missing xref is doc rot.
+The AsciiDoctor build is configured `failIf severity=WARN`, so a missing include or an unresolved attribute fails it. We don't tolerate "warnings" in docs the way we sometimes do in compiler output; doc rot is doc rot.
+
+No missing xref fails the build, however, and it is worth knowing exactly why not. Asciidoctor never resolves a cross-document target at all: it only rewrites the extension, so both a wrong path and a wrong anchor render as a working-looking link and log nothing whatsoever, at any severity. The same-file forms (`+<<id>>+` and `+xref:#id+`) do get checked, but they are reported at INFO, which `failIf severity=WARN` does not catch and which reaches `BUILD SUCCESS`. Cross-file section links are covered instead by `check-adoc-xrefs`, per the authoring convention above; a wrong cross-file *path* is not covered by anything and 404s on the first click.

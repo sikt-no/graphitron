@@ -18,7 +18,7 @@ directive @nodeId(
 [cols="1,1,1,3",options="header"]
 |===
 | Name | Type | Default | Description
-| `typeName` | `String` | inferred | The xref:node.adoc[`@node`] type the ID belongs to. Case-sensitive. Required when the carrier site is ambiguous. Inferred when: (a) on a non-xref:reference.adoc[`@reference`] object field, the containing type is itself a `@node`; (b) on a xref:reference.adoc[`@reference`] field or jOOQ-record input field, exactly one `@node` type binds to the same target table. Inference rule (b) is the only place the backing table decides anything: an explicit `typeName:` takes the ID's `typeId` and key columns from the named type's own xref:node.adoc[`@node`], so xref:node.adoc#_several_node_types_over_one_table[several node types over one table] never make a named leaf ambiguous.
+| `typeName` | `String` | inferred | The xref:node.adoc[`@node`] type the ID belongs to. Case-sensitive. Required when the carrier site is ambiguous. Inferred when: (a) on a non-xref:reference.adoc[`@reference`] object field, the containing type is itself a `@node`; (b) on a xref:reference.adoc[`@reference`] field or jOOQ-record input field, exactly one `@node` type binds to the same target table. Inference rule (b) is the only place the backing table decides anything: an explicit `typeName:` takes the ID's `typeId` and key columns from the named type's own xref:node.adoc[`@node`], so xref:node.adoc#several-node-types-over-one-table[several node types over one table] never make a named leaf ambiguous.
 |===
 
 == Canonical example

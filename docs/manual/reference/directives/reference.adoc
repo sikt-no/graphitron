@@ -111,6 +111,7 @@ On its own this form is a stylistic choice. It exists for composition with xref:
 * When `key` is provided alone, `table` is inferred from the FK target. When `table` is provided alone, `key` is inferred when unique. Setting both is allowed but redundant.
 * A `condition`-only hop (no `table`, no `key`) is treated as a join `ON` condition; the generator joins the field's target table and applies the condition. Use this when the join is non-FK or computed.
 
+[#schema-qualified-keys]
 == Schema-qualified keys
 
 On a database with more than one schema, two schemas can carry a foreign key under the same constraint name (PostgreSQL scopes constraint names per table, so this is legal). When the generator cannot tell which one a bare `{key:}` means, and the source table does not resolve the tie, the build fails with an ambiguous-key error.

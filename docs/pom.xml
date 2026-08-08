@@ -272,6 +272,33 @@
                             <includePluginDependencies>true</includePluginDependencies>
                         </configuration>
                     </execution>
+                    <!--
+                        Declared after render-roadmap-adoc, in the same phase, so it runs on a
+                        fully populated staging tree: the copied .adoc roots land in
+                        process-resources too, from a maven-resources-plugin declared ahead of
+                        this one. Staging rather than the source tree because it is the tree
+                        Asciidoctor resolves against, so path resolution across the docs/roadmap
+                        seam is exact instead of a mount table mirroring the staging steps.
+
+                        Base build rather than the docs profile: only render-site lives in that
+                        profile, so binding here gates a -P!docs build too, and the check reads
+                        staged .adoc sources rather than rendered HTML, so skipping the render
+                        costs it nothing.
+                    -->
+                    <execution>
+                        <id>check-adoc-xrefs</id>
+                        <phase>process-resources</phase>
+                        <goals><goal>java</goal></goals>
+                        <configuration>
+                            <mainClass>no.sikt.graphitron.roadmap.Main</mainClass>
+                            <arguments>
+                                <argument>check-adoc-xrefs</argument>
+                                <argument>${project.build.directory}/staging</argument>
+                            </arguments>
+                            <classpathScope>compile</classpathScope>
+                            <includePluginDependencies>true</includePluginDependencies>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
         </plugins>

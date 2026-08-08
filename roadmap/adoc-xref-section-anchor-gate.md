@@ -18,7 +18,7 @@ section. Asciidoctor does not and cannot catch it, because the target is a separ
 mistake ships and reproduces.
 
 The recurring instance of it is an id-format mismatch. The site renders with `<idprefix/>` and
-`<idseparator>-</idseparator>` (`docs/pom.xml:321`), so an auto-generated section id is kebab-case
+`<idseparator>-</idseparator>` (`docs/pom.xml:321-322`), so an auto-generated section id is kebab-case
 (`several-node-types-over-one-table`), not AsciiDoc's default underscore form
 (`_several_node_types_over_one_table`). The underscore form is what an author gets from reading
 Asciidoctor's own documentation or from a habit formed outside this repo, and it looks right.
@@ -100,7 +100,8 @@ the strict rule; the alternative is the reviewer's to reopen.
 
 **Where it runs.** Implement as `AdocXrefAnchorCheck` in `roadmap-tool` beside `AdocMarkdownTableCheck`,
 with a `check-adoc-xrefs` mode in `Main` and a `AdocXrefAnchorCheckTest`, matching the shape of the three
-sibling checks (`check-adoc-tables`, `check-transient-citations`, `check-module-enumeration`). Part of that
+sibling checks (`check-adoc-tables`, `check-transient-citations`, `check-module-enumeration`, and
+`check-coverage-agent-wiring`). Part of that
 shape is how failure is signalled: throw `BuildFailure` rather than return non-zero, because `Main` turns a
 non-zero return into `System.exit` and the binding below is `exec:java` in the Maven JVM, where that kills
 Maven before `BUILD FAILURE` prints. `AdocMarkdownTableCheck.run` carries the same note.
@@ -232,7 +233,7 @@ plain markdown backticks throughout.
 * The rule is written down where an author reads before the gate teaches it by failing:
   `docs/README.adoc`'s "Authoring conventions" list gains the strict rule, and its "Errors-vs-warnings"
   paragraph is corrected. That paragraph currently claims `failIf severity=WARN` (live at
-  `docs/pom.xml:362`) means "missing xrefs ... fail the build", which the probes above disprove for both
+  `docs/pom.xml:363-364`) means "missing xrefs ... fail the build", which the probes above disprove for both
   anchored cases under exactly that setting: the cross-file one renders silent, and the same-file one logs at
   INFO and still reaches `BUILD SUCCESS`. No missing xref fails the build today.
   `docs/README.adoc` is itself a staged, rendered, scanned page (`stage-adoc` copies root-level `docs/*.adoc`,
@@ -245,6 +246,11 @@ plain markdown backticks throughout.
   passing over them silently, so under-coverage is visible without the count itself failing the build. That
   count is zero on today's tree, because the renderer emits this item's own quoted examples inert, so a
   non-zero count after the change is a finding, not noise.
+* Each finding points at the site of the fix, not only at the site of the mistake. The gate fails at the
+  referencing page, but the repair is almost always on the *target* page (add an explicit anchor), so a
+  finding names the target's authored source too and lists the explicit anchors that page does publish.
+  Listing the real anchors is what makes the message actionable without guessing at a generated id, which
+  is the algorithm the Design note declines to own.
 * Every finding names its authored source alongside the staged path, since all of `staging/` is build output
   an author cannot edit: `staging/manual/...` and `staging/architecture/...` are `stage-adoc` copies and map
   back by stripping the staging root onto `docs/` (root-level `staging/*.adoc` included), while
@@ -268,6 +274,10 @@ plain markdown backticks throughout.
   known under-report too: a bare `xref:` target on one line whose activating attrlist sits on a later line
   is *not* collected, which Asciidoctor would nonetheless link, so the limit is asserted rather than
   discovered later.
+* The listing/comment block skip is not written twice. `InertSpans` already walks that block context for
+  the span gate, with the same table-blocks-stay-in-scope decision this check needs, so the walk moves into
+  a named type both scans drive. The argument is the one this item already makes for span forms one level
+  down: a second copy of which blocks swallow markup is a second source of truth free to drift.
 
 ## Not in scope
 
@@ -276,8 +286,10 @@ plain markdown backticks throughout.
   level, not about the unreported class this item exists for.
 * Following `include::` when collecting a page's anchors. A per-file scan is correct on today's tree: the
   only real includes are `migrating-from-legacy.adoc:16,18`, the two `manual/_generated/` fragments they
-  pull carry sections but no *explicit* anchors (so nothing the gate resolves against), and nothing xrefs
-  into that page. Keep the failure mode straight if that ever
+  pull carry sections but no *explicit* anchors (so nothing the gate resolves against), and no *anchored*
+  reference targets that page. Five unanchored ones do (`diagnostics-glossary.adoc:166`,
+  `multitableReference.adoc:52`, `notGenerated.adoc:52`, `how-to/index.adoc:28,68`), which is worth knowing
+  because it is the population one `#anchor` away from the false failure below. Keep the failure mode straight if that ever
   changes, because it is a *false failure* rather than an under-report, the direction this item elsewhere
   treats as the worse one. The fragments are staged in their own right, so a reference straight at
   `_generated/<fragment>.adoc#anchor` resolves and passes; a reference at

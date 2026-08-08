@@ -204,15 +204,50 @@ final class InertSpans {
     private static final Pattern BLOCK_DELIMITER = Pattern.compile("-{4,}|\\.{4,}|/{4,}|\\+{4,}");
 
     /**
+     * The verbatim-block context of an AsciiDoc document, advanced one line at a time.
+     *
+     * <p>Listing, literal, comment and passthrough blocks hold content that is inert by block
+     * context rather than by span form, so a scan looking for live markup has to skip them. A
+     * block closes only on its own delimiter at the same length, which is Asciidoctor's rule
+     * too. Table blocks are deliberately not tracked: the table cell is a live surface, and
+     * both {@link #scan} and {@link AdocXrefAnchorCheck} exist partly to police it.
+     *
+     * <p>One tracker rather than one per scan, because the set of blocks that swallow markup
+     * is a property of AsciiDoc and not of either caller: a second copy would be free to drift
+     * from this one the same way a second list of inert span forms would drift from
+     * {@link #maskInert}.
+     */
+    static final class BlockContext {
+
+        private String openBlock;
+
+        /**
+         * Advances over {@code line} and answers whether it carries flowed prose, that is,
+         * whether markup on it reaches the page. A delimiter line opens or closes a block and
+         * is never prose itself, and neither is anything between the two.
+         */
+        boolean isProse(String line) {
+            String trimmed = line.strip();
+            if (openBlock != null) {
+                if (trimmed.equals(openBlock)) openBlock = null;
+                return false;
+            }
+            if (BLOCK_DELIMITER.matcher(trimmed).matches()) {
+                openBlock = trimmed;
+                return false;
+            }
+            return true;
+        }
+    }
+
+    /**
      * Scans one generated AsciiDoc document for monospace spans that are not in an inert
      * form, which is to say for flowed prose that reached the page without going through
      * {@link #monospace} or {@link #label}.
      *
-     * <p>Listing, literal, comment and passthrough blocks are skipped: fenced markdown
-     * copies verbatim into a listing block, where backticks are inert by block context
-     * rather than by span form. Table blocks are deliberately not skipped, because the
-     * table cell is one of the surfaces this scan exists to police. A block closes only on
-     * its own delimiter at the same length, which is Asciidoctor's rule too.
+     * <p>Fenced markdown copies verbatim into a listing block, where backticks are inert by
+     * block context rather than by span form, so the blocks {@link BlockContext} skips are
+     * skipped here too.
      *
      * <p>A span crossing a line break stays a bare backtick pair, the one shape the
      * line-based converter cannot make inert, so it is not reported: only a pair opened and
@@ -222,21 +257,11 @@ final class InertSpans {
     static List<Finding> scan(String adoc) {
         List<Finding> findings = new ArrayList<>();
         String[] lines = adoc.split("\n", -1);
-        String openBlock = null;
+        BlockContext block = new BlockContext();
         int carried = 0;
         for (int n = 0; n < lines.length; n++) {
             String line = lines[n];
-            String trimmed = line.strip();
-            if (openBlock != null) {
-                if (trimmed.equals(openBlock)) openBlock = null;
-                continue;
-            }
-            if (BLOCK_DELIMITER.matcher(trimmed).matches()) {
-                openBlock = trimmed;
-                carried = 0;
-                continue;
-            }
-            if (line.isBlank()) {
+            if (!block.isProse(line) || line.isBlank()) {
                 carried = 0;
                 continue;
             }
