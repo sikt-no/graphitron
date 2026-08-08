@@ -244,15 +244,30 @@ substrates, both shipping here:
   hash, so a cold graph's currency is checkable without building its module: re-hash its
   recorded sources and compare. Age cannot answer this question at all, since a pull
   invalidates a partition captured a minute ago as readily as one from last month.
-  Staleness detection costs a hash, not a capture. For SDL sources the check is fully
-  supported today, and more settled than it needs to be argued for: which schema files a
+  Staleness detection costs a hash, not a capture. For SDL sources the check needs two
+  halves, and only one exists today. The address half is settled: which schema files a
   graph read is derivable from its declaration sites, and the `source_name` those record is
   already resolvable from outside the owning module's build on the Maven path, where
   `SchemaInputExpander` writes it absolute and normalized before it ever reaches the parser.
-  The residue is the two source kinds that path does not produce, the bundled
-  `directives.graphqls` (stamped with its resource name, and shipped inside the generator, so
-  never stale against the working tree) and programmatic callers handing a bare name to
-  `SchemaInput.plain`. A cross-graph reader skips a source it cannot resolve to a file rather
+  The baseline half ships here, and it reverses a recorded decision, so the reversal is
+  argued like the mixed-mode one: `SdlFactCapture.captureSources` leaves `SCHEMA_FILE` rows
+  unstamped in as many words, on the grounds that graphql-java hands the walk source names
+  rather than text, so hashing meant re-reading files capture does not own. That reasoning
+  priced the hash against a store nothing read across builds; a currency check run against
+  the working tree without building the module is exactly the reader worth one file re-read
+  per schema file at capture time. Capture therefore stamps each source name that resolves
+  to a regular file when it writes the source summary, and the two comments that record the
+  old decision are rewritten with it: the `captureSources` javadoc, and the
+  `store_source.stamp` column comment, which justifies the NULL for schema files in as many
+  words. One knock-on is inert and stated so it reads as chosen rather than missed:
+  `StoreRefresh.freshSources` starts seeing stamped `SCHEMA_FILE` rows, and nothing changes,
+  because the fresh set feeds only the `jvm_` claims and the SDL families still clear and
+  rebuild whole within their graph.
+  The residue is the two source kinds that never resolve to a file, the bundled
+  `directives.graphqls` (recorded under its resource name, and shipped inside the generator,
+  so never stale against the working tree) and programmatic callers handing a bare name to
+  `SchemaInput.plain`; both stay unstamped exactly as the null-while-loading discipline
+  already allows. A cross-graph reader skips a source it cannot resolve to a file rather
   than reporting it current, which keeps the unresolvable case honest without blocking the
   check on the Maven path that carries every real consumer. Sibling catalog and classpath
   currency is nobody's question: those families sit outside the cross-graph read surface
@@ -272,8 +287,8 @@ pom's config outside Maven is not worth owning); on a match, re-run the recipe's
 resulting file set against `store_source`; and where anything moved, re-capture that graph's
 SDL partition by parse alone, replaying the recipe's tags and description notes, because
 parse-to-registry is the linear half of the pipeline and capture is infallible by
-construction. This item ships the substrate (the columns, the recipe relations, capture
-writing them every run); the loop's driver (in the dev goal's watcher, the LSP, or a store
+construction. This item ships the substrate (the columns, the recipe relations, the
+schema-file stamps, capture writing them every run); the loop's driver (in the dev goal's watcher, the LSP, or a store
 open) is the orchestration item's first move, and it starts with everything it needs.
 
 Collaboration does not flow through the store, which is what keeps the concurrency posture
@@ -399,7 +414,8 @@ the tests; the widened gate family and the agreement suite are the honesty check
 two-graph test above is the first assertion the multi-graph store has ever had. The
 persistence tests (`PersistentStoreTest`, `WarmStartRefreshTest`) grow the ownership cases:
 a second graph's partition survives a refresh, an uncrawled source's rows survive a refresh,
-concurrent opens through mixed mode land both writers' rows, and a graph's build identity
+concurrent opens through mixed mode land both writers' rows, a schema file's recorded stamp
+matches a re-hash until the file is edited and mismatches after, and a graph's build identity
 and recipe rows are rewritten by its own run and untouched by a sibling's. Generated output is
 untouched.
 
