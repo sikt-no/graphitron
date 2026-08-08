@@ -1,7 +1,7 @@
 ---
 id: R473
 title: "Explicit @nodeId grammar: Node.id is the only implicit nodeId; typeName-first decode resolution"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 5
 theme: nodeid
@@ -468,6 +468,56 @@ re-confirmation gates separately. Worth a deliberate keep-or-drop rather than in
 
 Because this pass edited the item, the Spec -> Ready sign-off needs a sixth session: not the original
 author, and none of the four prior reviewers.
+
+**Pass 6, 2026-08-08 (signed off, Spec -> Ready).** Independent Spec -> Ready review by a sixth
+session. No blocking findings. The plan is implementable as written and the gate flips.
+
+The code tree has not moved since pass 5; the commits in between touch `roadmap/` only. Everything
+below was re-checked directly against the tree rather than inherited from the prior passes.
+`resolveDecodeHelperForTable`'s three arms are exactly as rule 5 describes them, and the helper is
+already `NodeIndex.forTable`-backed internally, so "the singleton arm survives as rule 6's
+table-derived resolution" is a re-siting rather than a rewrite; `resolveDecodeHelperForType`'s only
+non-`forName` path is that fallback, so the collapse the deletion bullet prescribes is exact. The
+helper's three live callers are the two the item names plus that fallback. `rejectShadowedIdColumn`
+sits on the `Node.id` arm above the column lookup and names both remedies; the non-`id` shim below it
+fires only on a column miss; the input-side qualifier arm precedes its column lookup and the
+same-table arm follows it. Rule 2's rejection message, both `NodeIdLeafResolver.inferTypeName`
+diagnostics, the `directives.graphqls` inference contract, the `CLASSIFIER` partition's three rules,
+`NODE_INTERFACE_ID_FIELD`, `QueryNodeField` / `QueryNodesField` mapping to `OperationMember.NodeResolve`,
+and every named test class and case member exist as named. `InputFieldResolver.resolve(String typeName, ...)`
+does pass the input type's own name through to `classifyInputField`'s `parentTypeName`, with the
+table as the only target fact, which is the premise rule 6's input arm rests on.
+
+Both 2026-08-08 measurements reproduce. Every baz-backed input in the suite carries a directive
+(`DeleteBazInput` in three spellings across the two mutation classification tests, `BazSelector` and
+`BazFilterInput` in `NodeIdPipelineTest`), and no baz-backed argument exists, so the shadowing
+rejection still costs no migration. Every `@nodeId(typeName:)` on an `id`-named field in the tree sits
+on an input type (five in sakila, five in `graphitron/src/test`), never on a node type's `Node.id`, so
+rule 1's rejection still costs none either. `IdReferenceShimWarnFormatTest` is the only test attached
+to a shim WARN logger, and no test asserts either of the other two WARN texts.
+
+Two non-blocking observations, neither affecting what an implementer builds:
+
+* **R580 is now `In Review`, not `Ready`.** Two places say `Ready`, both inside dated records, and the
+  move is toward Done rather than away, so nothing depends on it. The live claim in that paragraph,
+  that R580's user-manual drafts need rewriting for the rejection, was already overtaken by R580's
+  rework and is recorded correctly in the "One shadowing rule" section above.
+* **Rule 6's input arm also re-sites an ambiguity rejection**, which the "adds no new rejection"
+  paragraph does not count alongside the shadowing sibling. It is defensible to leave it uncounted:
+  the verdict exists today at both coordinates and already names `typeName:` as the fix, so rule 6
+  moves it rather than minting it. What is genuinely new is that moving it ahead of column resolution
+  makes it reachable where a column of that name exists, and there the shadowing rejection and the
+  ambiguity rejection both apply. Pick the order deliberately and pin it, the way the item already
+  instructs for `RejectNonIdNodeIdPipelineTest`'s non-`ID` fixture. Rules 5 and 6 and the Tests
+  section each specify the ambiguity case fully, so this is a precision note, not missing work.
+
+Pass 5's opportunity stays open and passes to the implementer rather than lapsing: the three-commit
+opt-in seam is staging a fixture migration that now measures zero on every axis, and collapsing to
+two commits (rejections plus their cases, then flip and delete) may be the simpler shape. It is a
+keep-or-drop call to make at pickup, with the reasoning recorded in pass 5 above, and it does not need
+another Spec pass either way.
+
+The next gate is In Review -> Done, which needs a reviewer different from the implementer.
 
 ## Provenance
 
