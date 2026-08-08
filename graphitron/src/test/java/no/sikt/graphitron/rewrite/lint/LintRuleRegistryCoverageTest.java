@@ -71,8 +71,9 @@ class LintRuleRegistryCoverageTest {
 
     @Test
     void everyCodegenAdvisoryRuleExists() {
-        // The codegen-config advisories are emitted at report assembly from the <sessionState>
-        // config (SessionStateWarnings), not from a visitor or a classifier site; this pins the CODEGEN
+        // The codegen advisories are emitted at report assembly from whole-build facts: the
+        // <sessionState> config (SessionStateWarnings) and the resolved dependency versions
+        // (DependencyVersionWarnings). Neither a visitor nor a classifier site; this pins the CODEGEN
         // set so a new one is a deliberate registry edit, mirroring the classifier assertion above.
         var codegen = Arrays.stream(LintRule.values())
             .filter(r -> r.source() == LintRule.Source.CODEGEN)
@@ -80,7 +81,9 @@ class LintRuleRegistryCoverageTest {
             .toList();
         assertThat(codegen).containsExactlyInAnyOrder(
             "no-session-state",
-            "session-state-convention-fence");
+            "session-state-convention-fence",
+            "graphql-java-version-lag",
+            "jooq-version-lag");
     }
 
     @Test

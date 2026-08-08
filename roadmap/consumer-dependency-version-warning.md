@@ -1,7 +1,7 @@
 ---
 id: R572
 title: "Warn at build time when consumer graphql-java / jOOQ versions lag"
-status: Ready
+status: In Progress
 bucket: feature
 priority: 5
 theme: diagnostics
@@ -377,6 +377,44 @@ reopen them.
    item a consumer reads *before* meeting the warning, so splitting it means the advisory's first
    release has no explanatory page behind it. The draft already specifies its content precisely
    (policy, no numbers), so the cost is one paragraph.
+
+## Implementation record
+
+Landed as specified. The decision, the predicate, and the message shaping live in
+`DependencyVersionWarnings` in core; the mojo's whole job is
+`AbstractRewriteMojo.decodeDependencyVersions`, turning both artifact sets into
+`(coordinate, version-string)` pairs behind the `GENERATED_CODE_SCOPES` allow-list. The carrier is
+`DependencyVersions`, threaded through a `RewriteContext.withDependencyVersions(...)` wither and
+folded into `withLintFindings` next to `SessionStateWarnings.forConfig`. The coordinates live in a
+`WatchedDependency` enum in core, so the boundary asks which coordinates are interesting rather than
+carrying its own copy of the list, and a third dependency is one enum constant plus one `LintRule`.
+
+Where the implementer exercised the judgement the review left open:
+
+1. **The two rule ids are `graphql-java-version-lag` and `jooq-version-lag`.** Separate rules rather
+   than one shared id, because suppression is per id: a consumer held on an old jOOQ line by a
+   licence or a platform BOM can silence that nudge and keep the graphql-java one.
+2. **A single-segment version is read as minor `0`, not as undecodable.** The third pass raised it
+   and the fourth judged it close to moot; taking it costs one line, `25` does mean `25.0`, and it
+   cannot produce a false positive because an equal line is silent either way. The undecodable case
+   (`RELEASE`, `3.x`, empty) stays silent as ruled.
+3. **A missing reference version is silent**, as the fourth pass's reasoning already settled. Pinned
+   by a test row rather than left to the reader.
+4. **The invoker harness earns its wall-clock, and gains a positive case as well as the negative
+   one.** The spec left the IT to the implementer and named the negative case. A negative-only IT
+   would pass just as green with the feature entirely dead, and the reference-delivery route
+   (`${plugin}` / `PluginDescriptor.getArtifacts()`) is the one claim in this design with no
+   precedent anywhere in the reactor: nothing else uses `${plugin}`. So `basic-generate` gains the
+   negative assertion (an up-to-date consumer, and one carrying no graphql-java, are both silent) and
+   a new `dependency-version-lag` IT declares jOOQ `3.19.24` directly, beating the transitive current
+   version by nearest-wins, and asserts the nudge fires naming both versions and the coordinate. That
+   is the only tier where the reference side runs for real; every other tier hands the decision plain
+   strings. The downgrade does not disturb generation, because the codegen classloader is parented on
+   the plugin realm and `org.jooq` types resolve there parent-first.
+
+The four `<sessionState>`-flavoured `Source.CODEGEN` documentation sites are widened to what the axis
+actually partitions, and `LintRuleRegistryCoverageTest.everyCodegenAdvisoryRuleExists` carries the two
+new ids. `docs/dependencies.adoc` gains the policy paragraph (policy, no version table).
 
 ## Review record
 

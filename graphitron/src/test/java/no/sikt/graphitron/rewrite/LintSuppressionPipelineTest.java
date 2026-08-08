@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.rewrite.dependency.DependencyVersions;
+import no.sikt.graphitron.rewrite.dependency.WatchedDependency;
 import no.sikt.graphitron.rewrite.lint.LintConfig;
 import no.sikt.graphitron.rewrite.lint.LintRule;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
@@ -11,6 +13,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -32,11 +35,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 class LintSuppressionPipelineTest {
 
     private static ValidationReport report(Path schema, String sdl, LintConfig lintConfig) throws IOException {
+        return report(schema, sdl, lintConfig, DependencyVersions.empty());
+    }
+
+    private static ValidationReport report(
+        Path schema, String sdl, LintConfig lintConfig, DependencyVersions versions
+    ) throws IOException {
         Files.writeString(schema, sdl);
         var ctx = new RewriteContext(
             List.of(new SchemaInput(schema.toString(), Optional.empty(), Optional.empty())),
             schema.getParent(), schema.getParent(), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE
-        ).withLintConfig(lintConfig);
+        ).withLintConfig(lintConfig).withDependencyVersions(versions);
         return new GraphQLRewriteGenerator(ctx).buildOutput().report();
     }
 
@@ -112,6 +121,32 @@ class LintSuppressionPipelineTest {
             LintConfig.validated(Set.of(), List.of("Fi*m")));
         assertThat(hasRuleForNode(report, LintRule.FIELD_NAMES_CAMEL_CASE, "original_language_id"))
             .as("a glob pattern excludes the matching type").isFalse();
+    }
+
+    @Test
+    void disabledRule_suppressesCodegenDependencyAdvisoryToo(@TempDir Path tmp) throws IOException {
+        // The dependency-currency nudge is the case that pins the routing choice rather than
+        // restating it: it rides BuildWarning rather than getLog().warn precisely so <lint>
+        // <disabledRules> suppression, LSP replay, and MCP projection come for free, and only a run
+        // through the real buildOutput() shows that the suppression actually reaches it.
+        String sdl = """
+            type Film @table(name: "film") { title: String }
+            type Query { film: Film }
+            """;
+        var versions = new DependencyVersions(
+            Map.of(WatchedDependency.JOOQ, "3.19.15"),
+            Map.of(WatchedDependency.JOOQ, "3.20.11"));
+
+        var enabled = report(tmp.resolve("h.graphqls"), sdl, LintConfig.empty(), versions);
+        assertThat(lintFindings(enabled))
+            .as("control: a lagging jOOQ surfaces as a LintFinding on the report buildOutput() returns")
+            .anyMatch(f -> f.rule() == LintRule.JOOQ_VERSION_LAG && f.location() == null);
+
+        var disabled = report(tmp.resolve("i.graphqls"), sdl,
+            LintConfig.validated(Set.of("jooq-version-lag"), List.of()), versions);
+        assertThat(lintFindings(disabled))
+            .as("the same build with the rule id disabled says nothing")
+            .noneMatch(f -> f.rule() == LintRule.JOOQ_VERSION_LAG);
     }
 
     @Test

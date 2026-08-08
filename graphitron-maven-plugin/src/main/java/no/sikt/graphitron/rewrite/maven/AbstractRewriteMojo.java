@@ -4,14 +4,18 @@ import graphql.schema.idl.errors.SchemaProblem;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.rewrite.dependency.DependencyVersions;
+import no.sikt.graphitron.rewrite.dependency.WatchedDependency;
 import no.sikt.graphitron.rewrite.lint.LintConfig;
 import no.sikt.graphitron.rewrite.session.SessionStateConfig;
 import no.sikt.graphitron.rewrite.ValidationFailedException;
 import no.sikt.graphitron.rewrite.maven.watch.WatchErrorFormatter;
+import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DependencyResolutionRequiredException;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
+import org.apache.maven.plugin.descriptor.PluginDescriptor;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.model.Model;
 import org.apache.maven.model.io.xpp3.MavenXpp3Reader;
@@ -26,10 +30,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.EnumMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -46,6 +53,18 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
 
     @Parameter(defaultValue = "${session}", readonly = true)
     MavenSession session;
+
+    /**
+     * This plugin's own resolved dependency graph, the reference side of the
+     * dependency-currency nudge. {@code graphitron-maven-plugin} depends on {@code graphitron},
+     * whose pom declares graphql-java and jOOQ at compile scope, so the realm carries the exact
+     * versions graphitron was built against with no property promotion, no resource filtering, and
+     * no new build wiring. A consumer who overrides {@code <plugin><dependencies>} moves the
+     * reference, which is self-consistent: the advisory then reports the version the plugin
+     * actually ran with.
+     */
+    @Parameter(defaultValue = "${plugin}", readonly = true)
+    PluginDescriptor pluginDescriptor;
 
     @Parameter
     List<SchemaInputBinding> schemaInputs;
@@ -176,8 +195,82 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             resolveCompileSourceRoots(),
             buildLintConfig(),
             buildSessionStateConfig(),
-            tenantColumn
+            tenantColumn,
+            resolveDependencyVersions()
         );
+    }
+
+    /**
+     * The version facts behind the dependency-currency nudge, decoded from the consumer's resolved
+     * dependency graph and this plugin's own. This is the whole of the boundary's job: the
+     * comparison, the predicate, and the message all live in
+     * {@link no.sikt.graphitron.rewrite.dependency.DependencyVersionWarnings}, because
+     * {@link Artifact} is external untyped input that must not cross into the generator.
+     */
+    private DependencyVersions resolveDependencyVersions() {
+        return decodeDependencyVersions(
+            project == null ? null : project.getArtifacts(),
+            pluginDescriptor == null ? null : pluginDescriptor.getArtifacts());
+    }
+
+    /**
+     * The dependency scopes a watched coordinate is observed on. Deliberately an allow-list rather
+     * than a deny-list of {@code test}, because the goals resolve different scope sets:
+     * {@code generate} and {@code validate} declare {@link org.apache.maven.plugins.annotations.ResolutionScope#COMPILE},
+     * {@code dev} declares {@code TEST}, and Maven expands those to {@code {compile, system,
+     * provided}} and {@code {compile, system, provided, runtime, test}} respectively. Admitting
+     * exactly the three scopes {@code COMPILE} resolves is what makes the advisory say the same
+     * thing under all three goals; excluding {@code test} alone would leave {@code runtime} leaking
+     * through, so a consumer with runtime-scoped jOOQ would be nudged under {@code graphitron:dev}
+     * and silent under {@code graphitron:generate}.
+     *
+     * <p>It is also right on its own terms: generated code names {@code org.jooq} and
+     * {@code graphql.schema} types directly, so a consumer who compiles graphitron's output carries
+     * both at {@code compile} or {@code provided}. A coordinate visible only at {@code runtime} or
+     * {@code test} is not one the generated sources are built against.
+     */
+    static final Set<String> GENERATED_CODE_SCOPES =
+        Set.of(Artifact.SCOPE_COMPILE, Artifact.SCOPE_PROVIDED, Artifact.SCOPE_SYSTEM);
+
+    /**
+     * Turns two artifact sets into {@code (coordinate, version-string)} pairs. Package-private so
+     * the scope allow-list can be pinned with a unit test over hand-built artifacts, the way
+     * {@link #collectExistingDirs} is; what that test cannot pin is Maven's resolution, so the
+     * goal-invariance claim rests on {@link #GENERATED_CODE_SCOPES} naming exactly the scopes
+     * {@code ResolutionScope.COMPILE} resolves.
+     *
+     * <p>The scope filter applies to the consumer side only. The plugin realm's scopes are a fact
+     * of graphitron's own build and do not vary by goal, so filtering them would only risk dropping
+     * the reference version for no gain.
+     */
+    static DependencyVersions decodeDependencyVersions(
+        Collection<Artifact> projectArtifacts, Collection<Artifact> pluginArtifacts
+    ) {
+        return new DependencyVersions(
+            versionsOf(projectArtifacts, scope -> scope != null && GENERATED_CODE_SCOPES.contains(scope)),
+            versionsOf(pluginArtifacts, scope -> true));
+    }
+
+    /**
+     * The resolved version of each {@link WatchedDependency} present in {@code artifacts} on a
+     * scope {@code scopeFilter} admits. First occurrence wins; Maven has already mediated, so a
+     * coordinate appears once.
+     */
+    private static Map<WatchedDependency, String> versionsOf(
+        Collection<Artifact> artifacts, Predicate<String> scopeFilter
+    ) {
+        if (artifacts == null) {
+            return Map.of();
+        }
+        var versions = new EnumMap<WatchedDependency, String>(WatchedDependency.class);
+        for (Artifact artifact : artifacts) {
+            if (artifact == null || artifact.getVersion() == null || !scopeFilter.test(artifact.getScope())) {
+                continue;
+            }
+            WatchedDependency.of(artifact.getGroupId(), artifact.getArtifactId())
+                .ifPresent(dep -> versions.putIfAbsent(dep, artifact.getVersion()));
+        }
+        return versions;
     }
 
     /**

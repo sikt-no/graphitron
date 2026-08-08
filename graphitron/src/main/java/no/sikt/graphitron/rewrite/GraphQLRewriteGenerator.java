@@ -557,6 +557,10 @@ public class GraphQLRewriteGenerator {
         boolean hasService = schema.fields().values().stream()
             .anyMatch(f -> f instanceof no.sikt.graphitron.rewrite.model.ServiceField);
         all.addAll(no.sikt.graphitron.rewrite.session.SessionStateWarnings.forConfig(ctx.sessionStateConfig(), hasService));
+        // The dependency-currency nudge, derived from the resolved graphql-java / jOOQ versions the
+        // mojo decoded off both dependency graphs. Same channel and same reason: a whole-build fact
+        // with no SDL coordinate, suppressible by rule id like every other finding.
+        all.addAll(no.sikt.graphitron.rewrite.dependency.DependencyVersionWarnings.forVersions(ctx.dependencyVersions()));
         // Disabled-rule filter over the *combined* list: keying on the typed rule id after the
         // classifier advisories (schema.warnings()) and engine findings are concatenated means it
         // covers both channels, so a classifier advisory is suppressible by rule id like any

@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.rewrite.dependency.DependencyVersions;
 import no.sikt.graphitron.rewrite.lint.LintConfig;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
 import no.sikt.graphitron.rewrite.session.SessionStateConfig;
@@ -55,6 +56,13 @@ import java.util.Set;
  *                       case-insensitive). Configured through the Mojo's {@code <tenantColumn>}
  *                       element. {@code null} (the default) means single-tenant: no table
  *                       carries a tenant scope and no per-field tenant binding is computed.
+ * @param dependencyVersions the resolved graphql-java / jOOQ versions on both sides of the
+ *                       currency nudge: the consumer's, decoded from the Maven project's
+ *                       dependency graph, and graphitron's own, decoded from the plugin realm.
+ *                       Plain strings by the time they arrive here, because the Maven artifact
+ *                       types they are decoded from must not cross this boundary. {@code null}
+ *                       (the default for every non-Maven caller) means
+ *                       {@link DependencyVersions#empty()} and the advisory stays silent.
  */
 public record RewriteContext(
     List<SchemaInput> schemaInputs,
@@ -69,7 +77,8 @@ public record RewriteContext(
     List<Path> compileSourceRoots,
     LintConfig lintConfig,
     SessionStateConfig sessionStateConfig,
-    String tenantColumn
+    String tenantColumn,
+    DependencyVersions dependencyVersions
 ) {
     /** Standard schema file extensions accepted out of the box. */
     public static final Set<String> DEFAULT_SCHEMA_FILE_EXTENSIONS = Set.of(".graphqls", ".graphql");
@@ -90,14 +99,15 @@ public record RewriteContext(
         schemaInputs = List.copyOf(schemaInputs);
         schemaFileExtensions = Set.copyOf(schemaFileExtensions);
         classpathRoots = List.copyOf(classpathRoots);
-        // The last four components are null-tolerant: only the build mojos populate them
-        // (from <sessionState>, <lint>, <tenantColumn>, and the Maven project's source roots);
-        // every other caller passes null and gets the single-tenant, no-suppression,
-        // no-hook, UNKNOWN-positions defaults.
+        // The last five components are null-tolerant: only the build mojos populate them (from
+        // <sessionState>, <lint>, <tenantColumn>, the Maven project's source roots, and the
+        // resolved dependency graphs); every other caller passes null and gets the single-tenant,
+        // no-suppression, no-hook, UNKNOWN-positions, no-version-facts defaults.
         compileSourceRoots = compileSourceRoots == null ? List.of() : List.copyOf(compileSourceRoots);
         lintConfig = lintConfig == null ? LintConfig.empty() : lintConfig;
         sessionStateConfig = sessionStateConfig == null ? SessionStateConfig.none() : sessionStateConfig;
         tenantColumn = tenantColumn == null || tenantColumn.isBlank() ? null : tenantColumn.trim();
+        dependencyVersions = dependencyVersions == null ? DependencyVersions.empty() : dependencyVersions;
     }
 
     /**
@@ -107,7 +117,8 @@ public record RewriteContext(
     public RewriteContext withLintConfig(LintConfig lintConfig) {
         return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, outputDirectory,
             outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
-            codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn);
+            codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
+            dependencyVersions);
     }
 
     /**
@@ -117,7 +128,8 @@ public record RewriteContext(
     public RewriteContext withSessionStateConfig(SessionStateConfig sessionStateConfig) {
         return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, outputDirectory,
             outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
-            codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn);
+            codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
+            dependencyVersions);
     }
 
     /**
@@ -127,10 +139,25 @@ public record RewriteContext(
     public RewriteContext withTenantColumn(String tenantColumn) {
         return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, outputDirectory,
             outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
-            codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn);
+            codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
+            dependencyVersions);
     }
 
-    /** Twelve-arg overload: defaults {@code tenantColumn} to {@code null} (single-tenant). */
+    /**
+     * Returns a copy with {@code dependencyVersions} replaced, so a convenience-constructor caller
+     * can layer the resolved graphql-java / jOOQ version facts on afterwards.
+     */
+    public RewriteContext withDependencyVersions(DependencyVersions dependencyVersions) {
+        return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, outputDirectory,
+            outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
+            codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
+            dependencyVersions);
+    }
+
+    /**
+     * Twelve-arg overload: defaults {@code tenantColumn} to {@code null} (single-tenant) and
+     * {@code dependencyVersions} to {@link DependencyVersions#empty()} (no version facts).
+     */
     public RewriteContext(
         List<SchemaInput> schemaInputs,
         Set<String> schemaFileExtensions,
@@ -147,7 +174,7 @@ public record RewriteContext(
     ) {
         this(schemaInputs, schemaFileExtensions, basedir, outputDirectory, outputResourcesDirectory,
             outputPackage, jooqPackage, classpathRoots, codegenLoader,
-            compileSourceRoots, lintConfig, sessionStateConfig, null);
+            compileSourceRoots, lintConfig, sessionStateConfig, null, null);
     }
 
     /**

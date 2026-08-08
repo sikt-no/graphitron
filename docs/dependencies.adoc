@@ -15,3 +15,11 @@ Licensing: jOOQ uses dual licensing. The open source edition covers PostgreSQL, 
 GraphQL-Java is the reference implementation of GraphQL for Java. It parses schemas, executes queries, and provides the DataFetcher and TypeResolver interfaces that Graphitron's generated code plugs into.
 
 *GraphQL-Java is under the hood.* You won't typically write GraphQL-Java code directly: Graphitron handles that. But understanding how it executes queries helps when reading generated code or debugging.
+
+== Staying current
+
+Graphitron tracks the current jOOQ and GraphQL-Java lines, and we recommend you do too. Staying current keeps you on upstream fixes and improvements, and it keeps each upgrade small: the longer a subgraph sits on an old line, the larger the eventual jump.
+
+To make that the default rather than something you have to remember, the build says so. When your project resolves a jOOQ or GraphQL-Java version a *minor line* behind the one Graphitron itself is built against, the build emits a warning naming your version, the current one, and the coordinate to bump. Patch-level lag within the current minor is silent, because one patch behind is materially current and saying so on every build would be noise.
+
+It is a nudge, not a compatibility gate. Nothing here fails a build, and there is no minimum supported version: the compiler is the bar, so if the generated code compiles against your versions, you are fine. If you are held on an older line deliberately, silence the warning by rule id like any other, `jooq-version-lag` or `graphql-java-version-lag` under `<lint><disabledRules>`. The two are separate rules so you can accept one and keep the other.

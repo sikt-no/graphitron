@@ -68,9 +68,10 @@ class FixtureWarningsGateTest {
         List<BuildWarning> warnings = allWarnings.stream()
             .filter(w -> !(w instanceof BuildWarning.LintFinding lf
                 && lf.rule().source() == no.sikt.graphitron.rewrite.lint.LintRule.Source.ENGINE))
-            // codegen-config <sessionState> advisories: this gate's RewriteContext has no
-            // <sessionState>, so the no-session-state advisory fires; the category is owned by
-            // SessionStateWarningsTest, so segregate it like the ENGINE lint findings above.
+            // Codegen advisories (whole-build facts folded in at report assembly): this gate's
+            // RewriteContext has no <sessionState>, so the no-session-state advisory fires. The
+            // category is owned by SessionStateWarningsTest and DependencyVersionWarningsTest, so
+            // segregate it like the ENGINE lint findings above.
             .filter(w -> !(w instanceof BuildWarning.LintFinding lf
                 && lf.rule().source() == no.sikt.graphitron.rewrite.lint.LintRule.Source.CODEGEN))
             .toList();
