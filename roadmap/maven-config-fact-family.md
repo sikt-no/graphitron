@@ -60,10 +60,16 @@ someone else's documented behaviour, which is the drift smell at library scale. 
 the `plexus-utils` dependency (already pinned in the plugin pom) for `DirectoryScanner`. The
 cost is named rather than inherited: `graphitron` is a published artifact whose compile scope
 `graphitron-lsp`, `graphitron-mcp` and the plugin all inherit, so one small stable
-Maven-ecosystem jar arrives on that surface. The extension post-filter
-(`SchemaInputExpander.matchesExtension` today, duplicated line for line in
-`SchemaProblemDiagnostic`) moves with the expander and exists once; the orphan scan keeps its
-own walk but calls the shared predicate.
+Maven-ecosystem jar arrives on that surface. Its version is pinned inline in the plugin pom
+today; arriving on a published module's compile scope is the moment to move that pin into the
+root pom's `dependencyManagement` with the rest. The extension post-filter
+(`SchemaInputExpander.matchesExtension` today, near-duplicated in `SchemaProblemDiagnostic`)
+moves with the expander and exists once. The two bodies differ only in what they are handed:
+the expander's takes a scanner-relative path and strips the directory prefix first, the
+diagnostic's takes a bare filename because its caller already called `getFileName`. The shared
+predicate takes the filename, the narrower contract of the two, and the expander does its own
+stripping at the call site; the orphan scan keeps its own walk and calls the predicate
+unchanged.
 
 The decode seam is cut with one eye on a direction the roadmap does not yet own: R610's
 per-user store and this item's core recipe leave graphitron a short step from running as a
@@ -102,25 +108,46 @@ than two relations, because the ordinal is the recipe's spine and splitting the 
 would shatter the one ordering key. Re-expansion of a literal entry is identity plus an
 existence check, so R610's currency verdict covers programmatic graphs with no special case:
 a literal source that no longer resolves is a lost match, exactly as a pattern whose file set
-shrank. Sources that never resolve to a file (the bundled `directives.graphqls` resource name,
-bare programmatic labels) are skipped by the replay per R610's rule, and their literal rows
-record that they were inputs all the same. Literal entries bypass the extension filter, as the
-literal list does today.
+shrank. A literal source that never resolves to a file at all (a bare programmatic label, of
+which the applier tests carry several) is skipped by the replay per R610's rule, and its
+literal row records that it was an input all the same. Literal entries bypass the extension
+filter, as the literal list does today. The bundled `directives.graphqls` is not a recipe
+entry under any of this and needs no carve-out: `RewriteSchemaLoader` hands that resource to
+the parser directly rather than through a `SchemaInput`, so it never reaches the expander, is
+not configuration any caller supplied, and is already excluded from the reader surface
+downstream (`CatalogBuilder` filters locations bearing
+`RewriteSchemaLoader.DIRECTIVES_SOURCE_NAME`).
 
 ## The source carrier is sealed
 
-`SchemaInput.sourceName` is a raw string that is an absolute normalised path on the Maven
-path, a bundled resource name for `directives.graphqls`, and an arbitrary label from
-`SchemaInput.plain`. R610 has capture asking "does this resolve to a regular file" at stamp
-time and the freshness reader asking it again at read time, the same predicate over the same
-untyped string at two sites nothing binds together. This item owns the producer, so it takes
-the lift while it is cheap: the source is a sealed carrier with a file arm (carrying a `Path`)
-and a named arm (carrying the label), decided once where the source enters the system (the
-expander mints file arms from real matches; `SchemaInput.plain` resolves its argument once and
-picks the arm). Capture stamps the file arm and skips the named arm by exhaustive switch
-rather than by predicate, the freshness reader likewise, and a new source kind is a compile
-error at both. The edit is compiler-led through `sourceName`'s consumers
-(`SchemaInputAttribution`, `RewriteSchemaLoader`, `DevMojo.resolveSchemaRoots`, capture).
+`SchemaInput.sourceName` is a raw string that is an absolute normalised path on the Maven path
+and an arbitrary label anywhere else, since `SchemaInput.plain` and the canonical constructor
+take whatever a programmatic caller hands them (the applier tests pass a bare `t.graphqls`, a
+`/a`). R610 has capture asking "does this resolve to a regular file" at stamp time and the
+freshness reader asking it again at read time, the same predicate over the same untyped string
+at two sites nothing binds together. This item owns the producer, so it takes the lift while it
+is cheap: the source is a sealed carrier with a file arm (carrying a `Path`) and a named arm
+(carrying the label), decided once where the source enters the system (the expander mints file
+arms from real matches; `SchemaInput.plain` resolves its argument once and picks the arm).
+Capture stamps the file arm and skips the named arm by exhaustive switch rather than by
+predicate, the freshness reader likewise, and a new source kind is a compile error at both.
+
+One invariant is load-bearing and the compiler cannot hold it, so it is stated here and given
+an enforcer below. `SchemaInput`'s javadoc records that the source name is what
+`RewriteSchemaLoader` hands the parser and what comes back as graphql-java's
+`SourceLocation.getSourceName()`, so `SchemaInputAttribution`'s map matches byte-for-byte
+without renormalisation; `ValidationReport.canonicalUri` and the LSP's URI equality read the
+same returned string. Putting a carrier in front of that inserts a rendering step on a round
+trip that leaves Java's type system, so the carrier renders exactly one canonical source-name
+string, used both at the parser handoff and at every lookup keyed on it: the file arm renders
+its `Path` the way the expander composes the string today (resolved against the basedir, made
+absolute, normalised), and the named arm renders its label verbatim. A divergence of one
+character costs no compile error and no parse failure; it silently stops tags and description
+notes from being applied, which is why the enforcer is an end-to-end attribution case rather
+than an equality on the carrier. The rest of the edit is genuinely compiler-led, through
+`sourceName`'s typed consumers: `SchemaInputAttribution`, `RewriteSchemaLoader`,
+`DevMojo.resolveSchemaRoots`, `AbstractRewriteMojo`'s projection into
+`SchemaProblemDiagnostic`, and capture.
 
 ## Rejection is typed at the new boundary
 
@@ -131,8 +158,22 @@ whose message is composed at the detection site). The core expander returns a se
 resolved sources beside per-pattern empty-match observations, or an
 every-pattern-matched-nothing variant, each a typed fact. The mojo renders the aggregate-empty
 variant as the build failure and the per-pattern observations as warnings, preserving today's
-author-facing text; the dev goal, the LSP and the freshness driver render the same variants
-for their own surfaces instead of re-composing prose.
+author-facing text; the dev goal and the freshness driver render the same variants for their
+own surfaces instead of re-composing prose. The LSP is deliberately not on that list: it boots
+inside the dev goal's codegen scope, after `buildContext` has already failed or succeeded, so
+it has no expansion-failure surface to render and gains none here.
+
+The seal is standalone, not a permit on `Rejection`, and that is a decision rather than an
+omission. `Rejection` is the classifier's vocabulary: its arms describe what an author's SDL
+said and its consumers are the validator and the LSP fix-its. An unmatched `<schemaInputs>`
+pattern is decided before any SDL is parsed, over configuration rather than over a document, so
+it has no site to attach to and nothing to fix-it. Staying outside the hierarchy is therefore
+the honest modelling and also the cheap one: none of `Rejection`'s registration obligations
+attach, so this item owes no paragraph under `SealedHierarchyDocCoverageTest`, no `lspCode()`,
+and no `Diagnostics.lspCodeOf` arm. What it takes from
+`docs/architecture/explanation/typed-rejection.adoc` is the shape the page argues for, a sealed
+result whose failure arms carry structural data instead of a message composed at the detection
+site, which is exactly what the current `MojoExecutionException` does wrong.
 
 ## The rows stay store_, and the doctrine widens one clause
 
@@ -174,9 +215,21 @@ non-vacuous by construction: the run's recipe rows, decoded back into a `ScanRec
 re-expanded by the shared expander, reproduce the run's `RewriteContext.schemaInputs` exactly,
 two independent derivations (mojo-resolved value against row round-trip) meeting in one
 equality, in the same tier as `FactCaptureAgreementTest`. A programmatic run's literal rows
-re-expand to its literal list through the same anchor. `SchemaInputExpanderTest` retargets to
-the moved core component with its cases intact, and the mojo-side rendering of the
-aggregate-empty and per-pattern-empty variants pins today's author-facing text. The sealed
-carrier edit is compiler-led and lands with R610's stamp round-trip case unchanged. No
-user-visible configuration surface changes (`mojo-configuration.adoc` already documents the
-glob semantics this item preserves), so the first-client docs check is exempt.
+re-expand to its literal list through the same anchor.
+
+The sealed carrier's rendering invariant gets the second enforcer, and it has to be end-to-end
+because that is the only altitude at which a divergence shows up. The case expands a temp tree
+through the moved expander with a tag and a description note configured, runs the resulting
+inputs through the load and the attribution appliers, and asserts the tag and the note landed
+on the elements the source declared. That is only possible once the expander is in core, which
+is why this item owes it and R610 could not: it closes the loop from a minted file arm, through
+the parser, to a lookup keyed on what comes back, so any rendering divergence fails it. The
+existing applier tests hold the named arm's half of the same invariant already, passing labels
+that are not paths.
+
+`SchemaInputExpanderTest` retargets to the moved core component with its cases intact, and the
+mojo-side rendering of the aggregate-empty and per-pattern-empty variants pins today's
+author-facing text. The rest of the carrier edit is compiler-led and lands with R610's stamp
+round-trip case unchanged. No user-visible configuration surface changes
+(`mojo-configuration.adoc` already documents the glob semantics this item preserves), so the
+first-client docs check is exempt.
