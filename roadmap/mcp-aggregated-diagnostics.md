@@ -5,7 +5,7 @@ status: Spec
 bucket: feature
 priority: 5
 theme: diagnostics
-depends-on: [input-field-resolution-typed-rejections, graphitron-model-captures-facts]
+depends-on: [graphitron-model-captures-facts]
 created: 2026-08-03
 last-updated: 2026-08-07
 ---
@@ -414,7 +414,8 @@ get built.
 
 **Carved out at review, as a dependency: the retired-directive identity convergence.** Routing
 `@notGenerated` and `@lookupKey` through `Rejection.directiveConflict` so each cause has one identity
-now lives in `input-field-resolution-typed-rejections`. It was sized "small" across three
+shipped with R585 (see `roadmap/changelog.md`); five spellings converged, not the three counted here,
+and this item's `directives` pivot can now trust its counts. It was sized "small" across three
 files on the strength of the two `FieldBuilder` sites and `MutationInputResolver`, all of which already
 hand a `Rejection` to their caller. The third site does not:
 `BuildContext.classifyInputFieldInternal` returns `InputFieldResolution.Unresolved`, which carries prose
@@ -598,8 +599,9 @@ the tool boundary, the preset, pure counts, the set-valued `directives` group, a
   exists to drive.
 
   So the exploded per-directive dimension is deliberately deferred, not rejected. It needs the
-  component's contract pinned first (every listed directive present on the declaration), which is
-  model work and belongs with `input-field-resolution-typed-rejections`, and it needs the response to
+  component's contract pinned first (every listed directive present on the declaration). R585 stated
+  that contract on `DirectiveConflict`'s javadoc and pinned it at one producer site; sweeping it over
+  the rest is R608. It also needs the response to
   declare its grain, since exploding makes group counts sum above the row count. Revisit as a second
   dimension alongside this one once the contract holds, which is the coarse/fine grain pair this
   design already uses elsewhere.
