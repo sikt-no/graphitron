@@ -19,7 +19,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R610` | SDL fact keys carry a graph partition dimension | Spec | 2026-08-08 | [plan](graph-partition-key-dimension.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-06 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R589` | Classification is a relation; validation adds facts | Spec | 2026-08-06 <sub>created 2026-08-04</sub> | [plan](validation-adds-facts.md) |
-| `R603` | A pipeline-output facts family in the model store | Spec | 2026-08-08 <sub>created 2026-08-06</sub> | [plan](pipeline-output-facts-family.md) |
+| `R603` | A pipeline-output facts family in the model store <sub>blocked by: [graph-partition-key-dimension](graph-partition-key-dimension.md)</sub> | Spec | 2026-08-08 <sub>created 2026-08-06</sub> | [plan](pipeline-output-facts-family.md) |
 | `R569` | Aggregated diagnostics commands for the MCP server | Spec | 2026-08-07 <sub>created 2026-08-03</sub> | [plan](mcp-aggregated-diagnostics.md) |
 | `R473` | Explicit @nodeId grammar: Node.id is the only implicit nodeId; typeName-first decode resolution | Spec | 2026-08-06 <sub>created 2026-07-13</sub> | [plan](explicit-nodeid-grammar.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
@@ -237,7 +237,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R257` [**UpdateRowsWalker raw-SDL substrate absorption**](updaterows-walker-sdl-substrate.md) — Backlog, structural
 - `R466` [**Upgrade jOOQ 3.20.11 -> 3.21.6**](upgrade-jooq-3-21.md) — Backlog, tech-debt
 - `R565` [**@table-on-input rejection cascades into a misleading @mutation arg-shape error**](unclassified-input-arg-cascade-diagnostic.md) — Backlog, architecture
-- `R603` [**A pipeline-output facts family in the model store**](pipeline-output-facts-family.md) — Spec, architecture
+- `R603` [**A pipeline-output facts family in the model store**](pipeline-output-facts-family.md) — Spec, architecture, blocked by [graph-partition-key-dimension](graph-partition-key-dimension.md)
 - `R509` [**Bulk DML payloads follow input order, and warn where that cannot be guaranteed**](bulk-dml-payload-input-order.md) — Backlog, architecture
 - `R562` [**Classify a synthesised connection type's totalCount/facets fields as coordinates**](synthesised-connection-fields-as-coordinates.md) — Backlog, architecture
 - `R471` [**Direct-SQL OnlyChild emit for the reentry family**](direct-sql-onlychild-reentry-emit.md) — Backlog, architecture
