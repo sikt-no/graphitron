@@ -1,7 +1,7 @@
 ---
 id: R572
 title: "Warn at build time when consumer graphql-java / jOOQ versions lag"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 5
 theme: diagnostics
