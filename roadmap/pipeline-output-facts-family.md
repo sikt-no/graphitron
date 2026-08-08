@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 5
 theme: classification-model
-depends-on: [graphitron-model-captures-facts]
+depends-on: []
 created: 2026-08-06
 last-updated: 2026-08-07
 ---

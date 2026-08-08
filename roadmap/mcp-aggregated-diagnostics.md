@@ -5,7 +5,7 @@ status: Spec
 bucket: feature
 priority: 5
 theme: diagnostics
-depends-on: [graphitron-model-captures-facts]
+depends-on: []
 created: 2026-08-03
 last-updated: 2026-08-07
 ---

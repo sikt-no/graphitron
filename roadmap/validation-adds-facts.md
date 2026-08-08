@@ -5,7 +5,7 @@ status: Spec
 bucket: architecture
 priority: 4
 theme: classification-model
-depends-on: [graphitron-model-captures-facts]
+depends-on: []
 created: 2026-08-04
 last-updated: 2026-08-06
 ---
