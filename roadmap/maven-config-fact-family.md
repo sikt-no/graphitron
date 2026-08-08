@@ -25,6 +25,34 @@ component, moved where both can reach it), and both paths run over the *same inp
 rows, and an agreement anchor holds to identity). The Backlog stub sketched a third shape,
 routing the build's own scan through the store rows; it is rejected below, on the record.
 
+## Open from the gate: R610 has absorbed the move
+
+This item was written against an R610 that left the expander in the plugin. R610's spec
+revision no longer does, and the overlap has to be resolved before this item is implementable
+as written; it is recorded here rather than patched in place, because what remains of R612 is a
+scope decision its author should make, not a reviewer's edit.
+
+R610 now puts a `SchemaRecipe.expand(baseDir, patterns, extensions)` primitive in `graphitron`
+owning the walk and the extension filter, has `SchemaInputExpander` delegate to it while
+keeping the Maven-shaped work (reading `SchemaInputBinding`, the empty-pattern diagnostics, the
+`MojoExecutionException`), moves plexus-utils onto `graphitron` with its version into the root
+pom's properties, and rewrites the filesystem-agnostic javadoc as its own recorded reversal.
+That is most of the section below, claimed by the item this one depends on and therefore
+landing first.
+
+Three consequences the next pass owes an answer to. **What is left** looks like the typed value
+and the seams around it rather than the move: `ScanRecipe` replacing R610's loose
+`(baseDir, patterns, extensions)` parameter triple, the decode at `buildContext`, the sealed
+source carrier, the round-trip anchor, and the orphan scan's call onto the shared predicate.
+The move's own paragraphs, the plexus cost, and the javadoc reversal should be struck and cited
+to R610 rather than re-argued here. **The names collide**: `ScanRecipe` here against
+`SchemaRecipe` there, one concept across a dependency edge, and the successor keeps one name.
+**The rejection section loses its premise.** "`MojoExecutionException` cannot cross into core,
+so the move forces the failure path to be redesigned" is no longer true, because R610's split
+keeps the exception plugin-side by construction. The typed-rejection redesign may well still be
+worth doing, but it is now a choice this item argues for on its merits, not a consequence it
+inherits.
+
 ## One recipe type, one expander
 
 A core `ScanRecipe` value is the single carrier of resolved scan configuration: the ordered
