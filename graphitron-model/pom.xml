@@ -58,6 +58,31 @@
     <build>
         <plugins>
             <!--
+                The DDL has to reach target/classes before the codegen driver runs, because the
+                driver finds it through the classpath and target/classes comes first there. On a
+                clean build that directory is empty and the source tree wins, which is what made
+                the resource's normal process-resources copy look sufficient; on an incremental
+                build the previous run's copy is still sitting there and shadows the edit, so
+                codegen regenerates the schema the build before had. The compile-time surface then
+                lags the DDL by a build, and the first symptom is "cannot find symbol" in a
+                downstream module against a relation the DDL declares. Copying here, ahead of the
+                driver, keeps "edit the DDL and follow the compiler" true on every build. The
+                later default copy is then a no-op.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>copy-model-ddl-before-codegen</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>resources</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <!--
                 Codegen is a rehearsal of boot, not a second implementation of it: this execution
                 compiles just the bootstrap and driver packages (which need no generated classes),
                 the exec execution below then calls the bootstrap and points jOOQ at the store it
@@ -95,9 +120,10 @@
                             <mainClass>no.sikt.graphitron.model.build.ModelCodegenDriver</mainClass>
                             <classpathScope>compile</classpathScope>
                             <!--
-                                The DDL resource is not copied to target/classes until
-                                process-resources, two phases later, so the driver reads it from
-                                the source tree. Same file, same loader lookup.
+                                The source tree stays on the classpath as the fallback for a build
+                                whose resource copy has not run; the execution above is what makes
+                                the copy that shadows it current rather than a build stale. Same
+                                file either way, same loader lookup.
                             -->
                             <additionalClasspathElements>
                                 <additionalClasspathElement>${project.basedir}/src/main/resources</additionalClasspathElement>

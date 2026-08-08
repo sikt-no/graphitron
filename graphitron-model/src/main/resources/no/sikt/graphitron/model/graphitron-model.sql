@@ -14,12 +14,15 @@
 -- source order is an explicit ordinal column.
 --
 -- Picking a prefix for a new relation. Four families, each named for whose vocabulary the row
--- is written in. graphql_ is reserved for generic GraphQL: a row any SDL reader could produce
--- from the document without knowing graphitron exists, which is every declaration, every
--- directive definition, and every directive application including graphitron's own.
--- graphitron_ is what graphitron makes of that document: the decoded directives, and the
--- provenance of the rows macro expansion mints. catalog_ is jOOQ catalog facts and extension_
--- is the consumer's compiled extension classes.
+-- is written in, never for its reader or its role. graphql_ is reserved for generic GraphQL: a
+-- row any SDL reader could produce from the document without knowing graphitron exists, which
+-- is every declaration, every directive definition, and every directive application including
+-- graphitron's own. graphitron_ is what graphitron makes of that document: the decoded
+-- directives, and the provenance of the rows macro expansion mints. sql_ is what the consumer's
+-- database declares, read through jOOQ's generated model; jvm_ is what the classfiles on the
+-- compile classpath declare. Naming a family for its reader (jooq_) or a presumed role
+-- (extension_) is what these two replace: jOOQ defines neither table nor column nor foreign
+-- key, and an ObjectMapper on the classpath extends nothing yet still earns a row.
 --
 -- The SDL strata stack, graphql_ under graphitron_ under a third name, intent_, held in
 -- reserve. A graphitron_ row is still a transcription: it says what a directive application
@@ -1791,42 +1794,45 @@ COMMENT ON COLUMN graphitron_type_directive_synthesis.ordinal IS 'capture-assign
 COMMENT ON COLUMN graphitron_type_directive_synthesis.macro IS 'which expansion synthesized the application';
 
 
--- ==== Catalog facts ===============================================================
--- What the jOOQ catalog scan sees in the consumer's generated database model.
-CREATE TABLE catalog_table (
+-- ==== SQL catalog facts ===========================================================
+-- What the consumer's database declares, in SQL's vocabulary. jOOQ's generated model is the
+-- reader, not the owner: reading INFORMATION_SCHEMA directly instead would leave every relation
+-- name here correct. "Catalog" stays the prose word for what the family is about; only the
+-- prefix carries the rule.
+CREATE TABLE sql_table (
   table_schema VARCHAR NOT NULL,
   table_name   VARCHAR NOT NULL,
-  java_name    VARCHAR NOT NULL,
+  jooq_name    VARCHAR NOT NULL,
   description  VARCHAR,
   PRIMARY KEY (table_schema, table_name)
 );
-COMMENT ON TABLE catalog_table IS 'A table exists in the consumer''s catalog.';
-COMMENT ON COLUMN catalog_table.table_schema IS 'SQL schema the table lives in';
-COMMENT ON COLUMN catalog_table.table_name IS 'SQL table name';
-COMMENT ON COLUMN catalog_table.java_name IS 'the generated jOOQ Java field name for the table';
-COMMENT ON COLUMN catalog_table.description IS 'the database comment on the table, when present';
+COMMENT ON TABLE sql_table IS 'A table exists in the consumer''s catalog.';
+COMMENT ON COLUMN sql_table.table_schema IS 'SQL schema the table lives in';
+COMMENT ON COLUMN sql_table.table_name IS 'SQL table name';
+COMMENT ON COLUMN sql_table.jooq_name IS 'the generated jOOQ Java field name for the table; under a family named for SQL this is the one foreign column, so the prefix marks it rather than leaving a reader to infer it';
+COMMENT ON COLUMN sql_table.description IS 'the database comment on the table, when present';
 
-CREATE TABLE catalog_column (
+CREATE TABLE sql_column (
   table_schema VARCHAR NOT NULL,
   table_name   VARCHAR NOT NULL,
   column_name  VARCHAR NOT NULL,
   ordinal      INT     NOT NULL,
-  java_name    VARCHAR NOT NULL,
+  jooq_name    VARCHAR NOT NULL,
   sql_type     VARCHAR NOT NULL,
   nullable     BOOLEAN NOT NULL,
   description  VARCHAR,
   PRIMARY KEY (table_schema, table_name, column_name),
-  FOREIGN KEY (table_schema, table_name) REFERENCES catalog_table (table_schema, table_name)
+  FOREIGN KEY (table_schema, table_name) REFERENCES sql_table (table_schema, table_name)
 );
-COMMENT ON TABLE catalog_column IS 'A column exists on a table. SQL name is the coordinate, matching CatalogFacts'' SQL-name-centric keying; the Java name rides along because the LSP surface is Java-name-centric.';
-COMMENT ON COLUMN catalog_column.table_schema IS 'SQL schema the table lives in';
-COMMENT ON COLUMN catalog_column.table_name IS 'SQL table name';
-COMMENT ON COLUMN catalog_column.column_name IS 'SQL column name';
-COMMENT ON COLUMN catalog_column.ordinal IS 'column position in the table definition';
-COMMENT ON COLUMN catalog_column.java_name IS 'generated jOOQ Java field name';
-COMMENT ON COLUMN catalog_column.sql_type IS 'the column''s SQL type as jOOQ reports it';
-COMMENT ON COLUMN catalog_column.nullable IS 'whether the column admits NULL';
-COMMENT ON COLUMN catalog_column.description IS 'the database comment on the column, when present';
+COMMENT ON TABLE sql_column IS 'A column exists on a table. SQL name is the coordinate, matching CatalogFacts'' SQL-name-centric keying; the Java name rides along because the LSP surface is Java-name-centric.';
+COMMENT ON COLUMN sql_column.table_schema IS 'SQL schema the table lives in';
+COMMENT ON COLUMN sql_column.table_name IS 'SQL table name';
+COMMENT ON COLUMN sql_column.column_name IS 'SQL column name';
+COMMENT ON COLUMN sql_column.ordinal IS 'column position in the table definition';
+COMMENT ON COLUMN sql_column.jooq_name IS 'the generated jOOQ Java field name; the one column here written in the reader''s vocabulary rather than SQL''s';
+COMMENT ON COLUMN sql_column.sql_type IS 'the column''s SQL type as jOOQ reports it';
+COMMENT ON COLUMN sql_column.nullable IS 'whether the column admits NULL';
+COMMENT ON COLUMN sql_column.description IS 'the database comment on the column, when present';
 
 CREATE TABLE catalog_key (
   table_schema    VARCHAR NOT NULL,
@@ -1834,7 +1840,7 @@ CREATE TABLE catalog_key (
   constraint_name VARCHAR NOT NULL,
   is_primary      BOOLEAN NOT NULL,
   PRIMARY KEY (table_schema, table_name, constraint_name),
-  FOREIGN KEY (table_schema, table_name) REFERENCES catalog_table (table_schema, table_name)
+  FOREIGN KEY (table_schema, table_name) REFERENCES sql_table (table_schema, table_name)
 );
 COMMENT ON TABLE catalog_key IS 'A uniqueness constraint exists on a table. Every unique constraint jOOQ reports is a row, with the primary key flagged rather than segregated (CatalogFacts excludes the PK from uniqueKeys; that is a projection choice, not a fact).';
 COMMENT ON COLUMN catalog_key.table_schema IS 'SQL schema the table lives in';
@@ -1852,7 +1858,7 @@ CREATE TABLE catalog_key_column (
   FOREIGN KEY (table_schema, table_name, constraint_name)
     REFERENCES catalog_key (table_schema, table_name, constraint_name),
   FOREIGN KEY (table_schema, table_name, column_name)
-    REFERENCES catalog_column (table_schema, table_name, column_name)
+    REFERENCES sql_column (table_schema, table_name, column_name)
 );
 COMMENT ON TABLE catalog_key_column IS 'An ordered column of a uniqueness constraint.';
 COMMENT ON COLUMN catalog_key_column.table_schema IS 'SQL schema the table lives in';
@@ -1868,8 +1874,8 @@ CREATE TABLE catalog_foreign_key (
   target_schema   VARCHAR NOT NULL,
   target_table    VARCHAR NOT NULL,
   PRIMARY KEY (table_schema, table_name, constraint_name),
-  FOREIGN KEY (table_schema, table_name)    REFERENCES catalog_table (table_schema, table_name),
-  FOREIGN KEY (target_schema, target_table) REFERENCES catalog_table (table_schema, table_name)
+  FOREIGN KEY (table_schema, table_name)    REFERENCES sql_table (table_schema, table_name),
+  FOREIGN KEY (target_schema, target_table) REFERENCES sql_table (table_schema, table_name)
 );
 COMMENT ON TABLE catalog_foreign_key IS 'A foreign key exists, keyed by the declaring (source) table. Implicit-path inference ("exactly one FK between these two tables") is a derivation over this relation, not a captured fact.';
 COMMENT ON COLUMN catalog_foreign_key.table_schema IS 'schema of the declaring table';
@@ -1889,7 +1895,7 @@ CREATE TABLE catalog_foreign_key_column (
   FOREIGN KEY (table_schema, table_name, constraint_name)
     REFERENCES catalog_foreign_key (table_schema, table_name, constraint_name),
   FOREIGN KEY (table_schema, table_name, source_column)
-    REFERENCES catalog_column (table_schema, table_name, column_name)
+    REFERENCES sql_column (table_schema, table_name, column_name)
 );
 COMMENT ON TABLE catalog_foreign_key_column IS 'An ordered column pair of a foreign key. Parallel source and target columns; multi-column FKs are first-class, matching CatalogFacts.';
 COMMENT ON COLUMN catalog_foreign_key_column.table_schema IS 'SQL schema the table lives in';
@@ -1899,19 +1905,19 @@ COMMENT ON COLUMN catalog_foreign_key_column.position IS '0-based position in th
 COMMENT ON COLUMN catalog_foreign_key_column.source_column IS 'source column, 1-based per the graphql-java convention';
 COMMENT ON COLUMN catalog_foreign_key_column.target_column IS 'the referenced column';
 
-CREATE TABLE catalog_index (
+CREATE TABLE sql_index (
   table_schema VARCHAR NOT NULL,
   table_name   VARCHAR NOT NULL,
   index_name   VARCHAR NOT NULL,
   PRIMARY KEY (table_schema, table_name, index_name),
-  FOREIGN KEY (table_schema, table_name) REFERENCES catalog_table (table_schema, table_name)
+  FOREIGN KEY (table_schema, table_name) REFERENCES sql_table (table_schema, table_name)
 );
-COMMENT ON TABLE catalog_index IS 'An index exists on a table (@order(index:) and @index resolve against it).';
-COMMENT ON COLUMN catalog_index.table_schema IS 'SQL schema the table lives in';
-COMMENT ON COLUMN catalog_index.table_name IS 'SQL table name';
-COMMENT ON COLUMN catalog_index.index_name IS 'SQL index name';
+COMMENT ON TABLE sql_index IS 'An index exists on a table (@order(index:) and @index resolve against it). Filtered: jOOQ''s Table.getIndexes() excludes the indexes backing a primary key or unique constraint, so those are absent here and present in sql_constraint instead. @order(index:) naming a primary key''s index therefore resolves against a documented absence rather than an apparent one.';
+COMMENT ON COLUMN sql_index.table_schema IS 'SQL schema the table lives in';
+COMMENT ON COLUMN sql_index.table_name IS 'SQL table name';
+COMMENT ON COLUMN sql_index.index_name IS 'SQL index name';
 
-CREATE TABLE catalog_index_column (
+CREATE TABLE sql_index_column (
   table_schema VARCHAR NOT NULL,
   table_name   VARCHAR NOT NULL,
   index_name   VARCHAR NOT NULL,
@@ -1919,48 +1925,51 @@ CREATE TABLE catalog_index_column (
   column_name  VARCHAR NOT NULL,
   PRIMARY KEY (table_schema, table_name, index_name, position),
   FOREIGN KEY (table_schema, table_name, index_name)
-    REFERENCES catalog_index (table_schema, table_name, index_name)
+    REFERENCES sql_index (table_schema, table_name, index_name)
 );
-COMMENT ON TABLE catalog_index_column IS 'An ordered column of an index.';
-COMMENT ON COLUMN catalog_index_column.table_schema IS 'SQL schema the table lives in';
-COMMENT ON COLUMN catalog_index_column.table_name IS 'SQL table name';
-COMMENT ON COLUMN catalog_index_column.index_name IS 'SQL index name';
-COMMENT ON COLUMN catalog_index_column.position IS '0-based position in the index''s column list';
-COMMENT ON COLUMN catalog_index_column.column_name IS 'SQL column name';
+COMMENT ON TABLE sql_index_column IS 'An ordered column of an index.';
+COMMENT ON COLUMN sql_index_column.table_schema IS 'SQL schema the table lives in';
+COMMENT ON COLUMN sql_index_column.table_name IS 'SQL table name';
+COMMENT ON COLUMN sql_index_column.index_name IS 'SQL index name';
+COMMENT ON COLUMN sql_index_column.position IS '0-based position in the index''s column list';
+COMMENT ON COLUMN sql_index_column.column_name IS 'SQL column name';
 
 
--- ==== Extension-class facts =======================================================
--- What the consumer's compiled classes offer: service methods, conditions, record shapes,
--- scalar constants. Javadoc and source positions deliberately stay out; those live on the
+-- ==== JVM classpath facts =========================================================
+-- What the classfiles on the compile classpath declare, in the JVM's vocabulary: classes,
+-- methods and their parameters, record components, scalar-type fields. The rows are read by a
+-- bytecode-only scan, so nothing here is a class graphitron owns or a role it assigns; a jar
+-- class an author may name in @record / @service / @enum / @scalarType earns a row on the same
+-- terms as a reactor one. Javadoc and source positions deliberately stay out; those live on the
 -- LSP's SourceWalker cadence and are joined at request time, so a .java edit is seen without a
 -- generator rebuild.
-CREATE TABLE extension_class (
+CREATE TABLE jvm_class (
   class_name VARCHAR NOT NULL,
   class_kind VARCHAR NOT NULL,
   PRIMARY KEY (class_name),
   CHECK (class_kind IN ('CLASS', 'INTERFACE', 'ENUM', 'RECORD', 'ANNOTATION'))
 );
-COMMENT ON TABLE extension_class IS 'A class exists on the consumer''s extension classpath.';
-COMMENT ON COLUMN extension_class.class_name IS 'fully qualified binary name';
-COMMENT ON COLUMN extension_class.class_kind IS 'the classfile''s declared form; the domain is closed over classfile shapes, so a violation is a capture bug';
+COMMENT ON TABLE jvm_class IS 'A class exists on the classpath the scan reads. Filtered: public, non-synthetic, top-level (a simple name containing $ is skipped, so nested classes are absent), and outside the generated jOOQ package. A resolution detection over this relation reads those filters as absence, so they are stated rather than implied.';
+COMMENT ON COLUMN jvm_class.class_name IS 'fully qualified binary name';
+COMMENT ON COLUMN jvm_class.class_kind IS 'the classfile''s declared form; the domain is closed over classfile shapes, so a violation is a capture bug';
 
-CREATE TABLE extension_method (
+CREATE TABLE jvm_method (
   class_name        VARCHAR NOT NULL,
   method_name       VARCHAR NOT NULL,
   descriptor        VARCHAR NOT NULL,
   return_type       VARCHAR NOT NULL,
   returns_condition BOOLEAN NOT NULL,
   PRIMARY KEY (class_name, method_name, descriptor),
-  FOREIGN KEY (class_name) REFERENCES extension_class (class_name)
+  FOREIGN KEY (class_name) REFERENCES jvm_class (class_name)
 );
-COMMENT ON TABLE extension_method IS 'A public method exists on an extension class.';
-COMMENT ON COLUMN extension_method.class_name IS 'the fully-qualified Java class name as written';
-COMMENT ON COLUMN extension_method.method_name IS 'the method name; not a key on its own, overloads share it';
-COMMENT ON COLUMN extension_method.descriptor IS 'raw JVM descriptor; the overload discriminator that keeps this key natural';
-COMMENT ON COLUMN extension_method.return_type IS 'erased source-form return type';
-COMMENT ON COLUMN extension_method.returns_condition IS 'matched on the un-erased org.jooq.Condition descriptor, so a consumer''s own Condition type does not false-match';
+COMMENT ON TABLE jvm_method IS 'A public method exists on a class in the census. Filtered: public and non-synthetic, constructors and class initializers excluded.';
+COMMENT ON COLUMN jvm_method.class_name IS 'the fully-qualified Java class name as written';
+COMMENT ON COLUMN jvm_method.method_name IS 'the method name; not a key on its own, overloads share it';
+COMMENT ON COLUMN jvm_method.descriptor IS 'raw JVM descriptor; the overload discriminator that keeps this key natural';
+COMMENT ON COLUMN jvm_method.return_type IS 'erased source-form return type';
+COMMENT ON COLUMN jvm_method.returns_condition IS 'matched on the un-erased org.jooq.Condition descriptor, so a consumer''s own Condition type does not false-match';
 
-CREATE TABLE extension_method_parameter (
+CREATE TABLE jvm_method_parameter (
   class_name     VARCHAR NOT NULL,
   method_name    VARCHAR NOT NULL,
   descriptor     VARCHAR NOT NULL,
@@ -1969,36 +1978,36 @@ CREATE TABLE extension_method_parameter (
   parameter_type VARCHAR NOT NULL,
   PRIMARY KEY (class_name, method_name, descriptor, position),
   FOREIGN KEY (class_name, method_name, descriptor)
-    REFERENCES extension_method (class_name, method_name, descriptor)
+    REFERENCES jvm_method (class_name, method_name, descriptor)
 );
-COMMENT ON TABLE extension_method_parameter IS 'An ordered parameter of an extension method. Deliberately no parameter-source column: which ParamSource a parameter binds to is decided per directive application, not per method, so it is a derived relation keyed by the application coordinate and lands with its first consumer.';
-COMMENT ON COLUMN extension_method_parameter.class_name IS 'the fully-qualified Java class name as written';
-COMMENT ON COLUMN extension_method_parameter.method_name IS 'the owning method name';
-COMMENT ON COLUMN extension_method_parameter.descriptor IS 'the owning method''s raw JVM descriptor';
-COMMENT ON COLUMN extension_method_parameter.position IS '0-based parameter position';
-COMMENT ON COLUMN extension_method_parameter.parameter_name IS 'NULL when the consumer compiled without -parameters';
-COMMENT ON COLUMN extension_method_parameter.parameter_type IS 'erased source-form parameter type';
+COMMENT ON TABLE jvm_method_parameter IS 'An ordered parameter of a captured method. Deliberately no parameter-source column: which ParamSource a parameter binds to is decided per directive application, not per method, so it is a derived relation keyed by the application coordinate and lands with its first consumer.';
+COMMENT ON COLUMN jvm_method_parameter.class_name IS 'the fully-qualified Java class name as written';
+COMMENT ON COLUMN jvm_method_parameter.method_name IS 'the owning method name';
+COMMENT ON COLUMN jvm_method_parameter.descriptor IS 'the owning method''s raw JVM descriptor';
+COMMENT ON COLUMN jvm_method_parameter.position IS '0-based parameter position';
+COMMENT ON COLUMN jvm_method_parameter.parameter_name IS 'NULL when the consumer compiled without -parameters';
+COMMENT ON COLUMN jvm_method_parameter.parameter_type IS 'erased source-form parameter type';
 
-CREATE TABLE extension_record_component (
+CREATE TABLE jvm_record_component (
   class_name     VARCHAR NOT NULL,
   component_name VARCHAR NOT NULL,
   position       INT     NOT NULL,
   display_type   VARCHAR NOT NULL,
   PRIMARY KEY (class_name, component_name),
-  FOREIGN KEY (class_name) REFERENCES extension_class (class_name)
+  FOREIGN KEY (class_name) REFERENCES jvm_class (class_name)
 );
-COMMENT ON TABLE extension_record_component IS 'A record component of an extension record class (from the classfile RecordAttribute; backs record-mapping facts).';
-COMMENT ON COLUMN extension_record_component.class_name IS 'the fully-qualified Java class name as written';
-COMMENT ON COLUMN extension_record_component.component_name IS 'the record component name';
-COMMENT ON COLUMN extension_record_component.position IS 'component position in the record header';
-COMMENT ON COLUMN extension_record_component.display_type IS 'erased display form of the component type';
+COMMENT ON TABLE jvm_record_component IS 'A record component of a record class in the census, read from the classfile RecordAttribute rather than from any bytecode; backs record-mapping facts.';
+COMMENT ON COLUMN jvm_record_component.class_name IS 'the fully-qualified Java class name as written';
+COMMENT ON COLUMN jvm_record_component.component_name IS 'the record component name';
+COMMENT ON COLUMN jvm_record_component.position IS 'component position in the record header';
+COMMENT ON COLUMN jvm_record_component.display_type IS 'erased display form of the component type';
 
-CREATE TABLE extension_scalar_constant (
+CREATE TABLE jvm_scalar_type_field (
   class_name VARCHAR NOT NULL,
   field_name VARCHAR NOT NULL,
   PRIMARY KEY (class_name, field_name),
-  FOREIGN KEY (class_name) REFERENCES extension_class (class_name)
+  FOREIGN KEY (class_name) REFERENCES jvm_class (class_name)
 );
-COMMENT ON TABLE extension_scalar_constant IS 'A public static GraphQLScalarType constant (backs @scalarType resolution).';
-COMMENT ON COLUMN extension_scalar_constant.class_name IS 'the fully-qualified Java class name as written';
-COMMENT ON COLUMN extension_scalar_constant.field_name IS 'the constant''s field name, matched on the exact GraphQLScalarType descriptor';
+COMMENT ON TABLE jvm_scalar_type_field IS 'A public static field whose declared type is exactly graphql.schema.GraphQLScalarType (backs @scalarType resolution). Filtered by that descriptor, which is why the selector is in the name: a total-sounding jvm_static_field would mislead about the contents. final is deliberately not required, the reflective resolver binding a non-final field just as well, so these are not necessarily constants.';
+COMMENT ON COLUMN jvm_scalar_type_field.class_name IS 'the fully-qualified Java class name as written';
+COMMENT ON COLUMN jvm_scalar_type_field.field_name IS 'the field name, matched on the exact GraphQLScalarType descriptor';

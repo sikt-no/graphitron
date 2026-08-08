@@ -48,10 +48,10 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_DECLARATION_SYNTHE
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_DIRECTIVE_SYNTHESIS;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_SITE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.CATALOG_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.CATALOG_KEY;
-import static no.sikt.graphitron.model.Tables.CATALOG_TABLE;
-import static no.sikt.graphitron.model.Tables.EXTENSION_METHOD;
+import static no.sikt.graphitron.model.Tables.SQL_TABLE;
+import static no.sikt.graphitron.model.Tables.JVM_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -119,11 +119,11 @@ class FactCaptureAgreementTest {
             registrations.put(relation, Arm.CONTAINMENT);
         }
         for (String relation : List.of(
-            "catalog_table", "catalog_column", "catalog_key", "catalog_key_column",
-            "catalog_foreign_key", "catalog_foreign_key_column", "catalog_index",
-            "catalog_index_column", "extension_class", "extension_method",
-            "extension_method_parameter", "extension_record_component",
-            "extension_scalar_constant")) {
+            "sql_table", "sql_column", "catalog_key", "catalog_key_column",
+            "catalog_foreign_key", "catalog_foreign_key_column", "sql_index",
+            "sql_index_column", "jvm_class", "jvm_method",
+            "jvm_method_parameter", "jvm_record_component",
+            "jvm_scalar_type_field")) {
             registrations.put(relation, Arm.EQUALITY);
         }
         registrations.put("graphql_directive_site", Arm.DERIVED);
@@ -608,21 +608,21 @@ class FactCaptureAgreementTest {
             FactCapture.capture(store.dsl(), emptyRegistry(tmp), facts, List.of(), new NodeDeclaration(null));
 
             var capturedTables = Set.copyOf(store.dsl()
-                .select(CATALOG_TABLE.TABLE_SCHEMA.concat(".").concat(CATALOG_TABLE.TABLE_NAME))
-                .from(CATALOG_TABLE).fetch(0, String.class));
+                .select(SQL_TABLE.TABLE_SCHEMA.concat(".").concat(SQL_TABLE.TABLE_NAME))
+                .from(SQL_TABLE).fetch(0, String.class));
             assertThat(capturedTables).isEqualTo(facts.tablesByQualifiedName().keySet());
 
             var capturedJavaNames = store.dsl()
-                .select(CATALOG_TABLE.TABLE_SCHEMA.concat(".").concat(CATALOG_TABLE.TABLE_NAME),
-                    CATALOG_TABLE.JAVA_NAME)
-                .from(CATALOG_TABLE)
+                .select(SQL_TABLE.TABLE_SCHEMA.concat(".").concat(SQL_TABLE.TABLE_NAME),
+                    SQL_TABLE.JOOQ_NAME)
+                .from(SQL_TABLE)
                 .fetch()
                 .intoMap(r -> r.value1(), r -> r.value2());
             assertThat(capturedJavaNames).isEqualTo(facts.tablesByQualifiedName().values().stream()
                 .collect(java.util.stream.Collectors.toMap(
                     CatalogFacts.Table::qualifiedName, CatalogFacts.Table::javaName)));
 
-            var capturedColumns = store.dsl().fetchCount(CATALOG_COLUMN);
+            var capturedColumns = store.dsl().fetchCount(SQL_COLUMN);
             int expected = facts.tablesByQualifiedName().values().stream()
                 .mapToInt(t -> t.columns().size()).sum();
             assertThat(capturedColumns).isEqualTo(expected);
@@ -657,16 +657,16 @@ class FactCaptureAgreementTest {
     }
 
     @Test
-    @DisplayName("the extension method census equals the scanner's, compared descriptor-erased")
-    void extensionMethodCensusEqualsTheScanner(@TempDir Path tmp) {
+    @DisplayName("the JVM method census equals the scanner's, compared descriptor-erased")
+    void jvmMethodCensusEqualsTheScanner(@TempDir Path tmp) {
         var ctx = testContext();
         List<CompletionData.ExternalReference> extensions = CatalogBuilder.buildExternalReferences(ctx);
         try (var store = GraphitronModelStore.open()) {
             FactCapture.capture(store.dsl(), emptyRegistry(tmp), CatalogFacts.empty(), extensions, new NodeDeclaration(null));
 
             var captured = new LinkedHashSet<String>();
-            store.dsl().select(EXTENSION_METHOD.CLASS_NAME, EXTENSION_METHOD.METHOD_NAME)
-                .from(EXTENSION_METHOD).fetch()
+            store.dsl().select(JVM_METHOD.CLASS_NAME, JVM_METHOD.METHOD_NAME)
+                .from(JVM_METHOD).fetch()
                 .forEach(row -> captured.add(row.value1() + "#" + row.value2()));
 
             // Descriptor-erased: CompletionData.Method carries no descriptor, so the comparison is

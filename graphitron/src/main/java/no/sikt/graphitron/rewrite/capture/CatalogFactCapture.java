@@ -5,23 +5,26 @@ import no.sikt.graphitron.rewrite.catalog.CompletionData;
 
 import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.CATALOG_COLUMN;
 import static no.sikt.graphitron.model.Tables.CATALOG_FOREIGN_KEY;
 import static no.sikt.graphitron.model.Tables.CATALOG_FOREIGN_KEY_COLUMN;
-import static no.sikt.graphitron.model.Tables.CATALOG_INDEX;
-import static no.sikt.graphitron.model.Tables.CATALOG_INDEX_COLUMN;
 import static no.sikt.graphitron.model.Tables.CATALOG_KEY;
 import static no.sikt.graphitron.model.Tables.CATALOG_KEY_COLUMN;
-import static no.sikt.graphitron.model.Tables.CATALOG_TABLE;
-import static no.sikt.graphitron.model.Tables.EXTENSION_CLASS;
-import static no.sikt.graphitron.model.Tables.EXTENSION_METHOD;
-import static no.sikt.graphitron.model.Tables.EXTENSION_METHOD_PARAMETER;
-import static no.sikt.graphitron.model.Tables.EXTENSION_RECORD_COMPONENT;
-import static no.sikt.graphitron.model.Tables.EXTENSION_SCALAR_CONSTANT;
+import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_INDEX;
+import static no.sikt.graphitron.model.Tables.SQL_INDEX_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_TABLE;
+import static no.sikt.graphitron.model.Tables.JVM_CLASS;
+import static no.sikt.graphitron.model.Tables.JVM_METHOD;
+import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER;
+import static no.sikt.graphitron.model.Tables.JVM_RECORD_COMPONENT;
+import static no.sikt.graphitron.model.Tables.JVM_SCALAR_TYPE_FIELD;
 
 /**
- * The catalog capture load: fills the {@code catalog_} family from the jOOQ catalog walk and the
- * {@code extension_} family from the bytecode-only classpath scan.
+ * The catalog capture load: fills the {@code sql_} family from the jOOQ catalog walk and the
+ * {@code jvm_} family from the bytecode-only classpath scan. Both families are named for the
+ * vocabulary a row is written in rather than for the reader that produced it, which is why neither
+ * prefix names jOOQ: jOOQ defines no table, column or foreign key, and a class on the compile
+ * classpath is a JVM fact whether or not it extends anything of graphitron's.
  *
  * <p>Both inputs arrive already reduced to values, which is the property the store then enforces
  * structurally: no live {@code Table<?>}, {@code ForeignKey}, or {@code Class<?>} can cross into a
@@ -45,27 +48,27 @@ final class CatalogFactCapture {
 
     private static void captureCatalog(FactSink sink, CatalogFacts facts) {
         for (CatalogFacts.Table table : facts.tablesByQualifiedName().values()) {
-            if (!sink.claim(CATALOG_TABLE, table.schema(), table.name())) {
+            if (!sink.claim(SQL_TABLE, table.schema(), table.name())) {
                 continue;
             }
-            var record = sink.dsl().newRecord(CATALOG_TABLE);
+            var record = sink.dsl().newRecord(SQL_TABLE);
             record.setTableSchema(table.schema());
             record.setTableName(table.name());
-            record.setJavaName(table.javaName());
+            record.setJooqName(table.javaName());
             record.setDescription(table.comment().orElse(null));
             sink.add(record);
 
             int ordinal = 0;
             for (CatalogFacts.Column column : table.columns()) {
-                if (!sink.claim(CATALOG_COLUMN, table.schema(), table.name(), column.sqlName())) {
+                if (!sink.claim(SQL_COLUMN, table.schema(), table.name(), column.sqlName())) {
                     continue;
                 }
-                var row = sink.dsl().newRecord(CATALOG_COLUMN);
+                var row = sink.dsl().newRecord(SQL_COLUMN);
                 row.setTableSchema(table.schema());
                 row.setTableName(table.name());
                 row.setColumnName(column.sqlName());
                 row.setOrdinal(ordinal++);
-                row.setJavaName(column.javaName());
+                row.setJooqName(column.javaName());
                 row.setSqlType(column.sqlType());
                 row.setNullable(column.nullable());
                 row.setDescription(column.comment().orElse(null));
@@ -78,17 +81,17 @@ final class CatalogFactCapture {
             }
 
             for (CatalogFacts.Index index : table.indexes()) {
-                if (!sink.claim(CATALOG_INDEX, table.schema(), table.name(), index.name())) {
+                if (!sink.claim(SQL_INDEX, table.schema(), table.name(), index.name())) {
                     continue;
                 }
-                var row = sink.dsl().newRecord(CATALOG_INDEX);
+                var row = sink.dsl().newRecord(SQL_INDEX);
                 row.setTableSchema(table.schema());
                 row.setTableName(table.name());
                 row.setIndexName(index.name());
                 sink.add(row);
                 int position = 0;
                 for (String column : index.columns()) {
-                    var columnRow = sink.dsl().newRecord(CATALOG_INDEX_COLUMN);
+                    var columnRow = sink.dsl().newRecord(SQL_INDEX_COLUMN);
                     columnRow.setTableSchema(table.schema());
                     columnRow.setTableName(table.name());
                     columnRow.setIndexName(index.name());
@@ -155,27 +158,27 @@ final class CatalogFactCapture {
     }
 
     /**
-     * Records the consumer's compiled extension classes. Javadoc and Java source positions stay
+     * Records the classes the classpath scan read. Javadoc and Java source positions stay
      * out by design: they live on the LSP source walker's cadence and are joined at request time,
      * so a {@code .java} edit is seen without a generator rebuild.
      */
     private static void captureExtensions(FactSink sink, List<CompletionData.ExternalReference> extensions) {
         for (CompletionData.ExternalReference reference : extensions) {
             String className = reference.className();
-            if (!sink.claim(EXTENSION_CLASS, className)) {
+            if (!sink.claim(JVM_CLASS, className)) {
                 continue;
             }
-            var record = sink.dsl().newRecord(EXTENSION_CLASS);
+            var record = sink.dsl().newRecord(JVM_CLASS);
             record.setClassName(className);
             record.setClassKind(reference.classKind());
             sink.add(record);
 
             for (CompletionData.Method method : reference.methods()) {
                 String descriptor = descriptorOf(method);
-                if (!sink.claim(EXTENSION_METHOD, className, method.name(), descriptor)) {
+                if (!sink.claim(JVM_METHOD, className, method.name(), descriptor)) {
                     continue;
                 }
-                var row = sink.dsl().newRecord(EXTENSION_METHOD);
+                var row = sink.dsl().newRecord(JVM_METHOD);
                 row.setClassName(className);
                 row.setMethodName(method.name());
                 row.setDescriptor(descriptor);
@@ -184,7 +187,7 @@ final class CatalogFactCapture {
                 sink.add(row);
                 int position = 0;
                 for (CompletionData.Parameter parameter : method.parameters()) {
-                    var parameterRow = sink.dsl().newRecord(EXTENSION_METHOD_PARAMETER);
+                    var parameterRow = sink.dsl().newRecord(JVM_METHOD_PARAMETER);
                     parameterRow.setClassName(className);
                     parameterRow.setMethodName(method.name());
                     parameterRow.setDescriptor(descriptor);
@@ -197,11 +200,11 @@ final class CatalogFactCapture {
 
             int position = 0;
             for (CompletionData.RecordComponent component : reference.recordComponents()) {
-                if (!sink.claim(EXTENSION_RECORD_COMPONENT, className, component.name())) {
+                if (!sink.claim(JVM_RECORD_COMPONENT, className, component.name())) {
                     position++;
                     continue;
                 }
-                var row = sink.dsl().newRecord(EXTENSION_RECORD_COMPONENT);
+                var row = sink.dsl().newRecord(JVM_RECORD_COMPONENT);
                 row.setClassName(className);
                 row.setComponentName(component.name());
                 row.setPosition(position++);
@@ -210,10 +213,10 @@ final class CatalogFactCapture {
             }
 
             for (CompletionData.ScalarConstant constant : reference.scalarConstants()) {
-                if (!sink.claim(EXTENSION_SCALAR_CONSTANT, className, constant.fieldName())) {
+                if (!sink.claim(JVM_SCALAR_TYPE_FIELD, className, constant.fieldName())) {
                     continue;
                 }
-                var row = sink.dsl().newRecord(EXTENSION_SCALAR_CONSTANT);
+                var row = sink.dsl().newRecord(JVM_SCALAR_TYPE_FIELD);
                 row.setClassName(className);
                 row.setFieldName(constant.fieldName());
                 sink.add(row);
@@ -222,7 +225,7 @@ final class CatalogFactCapture {
     }
 
     /**
-     * The overload discriminator that keeps {@code extension_method}'s key natural. The scan's
+     * The overload discriminator that keeps {@code jvm_method}'s key natural. The scan's
      * projection carries erased display types rather than the raw JVM descriptor, so the
      * discriminator is rebuilt from them: same information, same discriminating power over the
      * overload set of one class, and no live handle involved.
