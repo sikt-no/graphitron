@@ -88,22 +88,54 @@ be), and the coordinate is data the boundary already has in hand at decode time.
 needs no coordinate at all: the message reports the reference version number and nothing else about
 where it came from.
 
-## Open question for the Spec review
+### Where the observation is selected
 
-**A consumer carrying both editions at once.** Reachable in practice, a transitive open-source jOOQ
-alongside a direct Pro one, and the plan should not leave it to be discovered. Recommended ruling:
-one advisory per watched library, computed on the *lowest* observed line and naming that coordinate,
-because the lowest line is the one actually holding the consumer back. A mixed-edition classpath is
-its own problem and not this advisory's to report; the nudge should not grow a second thing to say.
+Prefix matching makes a watched *library* multi-valued on the observed side: two artifacts can now
+map to `JOOQ`. `AbstractRewriteMojo.versionsOf` currently collapses that with `putIfAbsent`, under a
+javadoc reading "First occurrence wins; Maven has already mediated, so a coordinate appears once".
+Maven mediates per coordinate, not per library, so that sentence stops being true the moment the
+predicate widens, and which observation survives becomes a function of artifact-set iteration order.
+Left alone it is a silent order-dependence, so the plan settles it rather than leaving an implementer
+to keep the existing line and not notice.
+
+Selecting the surviving observation at the boundary is the wrong repair. Comparing release lines *is*
+the decision, `DependencyVersionWarnings.minorLine` is where it lives, and the boundary's stated job
+is turning artifacts into pairs and nothing else (see "Decide once, at the parse boundary" in
+`docs/architecture/explanation/development-principles.adoc`). Doing it there would push version
+ordering across the Maven boundary for the benefit of one edge case.
+
+So shape (1) carries *every* match: `observed()` becomes a per-dependency collection of
+`(coordinate, version)`, the boundary appends rather than de-duplicates, and
+`DependencyVersionWarnings` picks the one it advises on. The reference side keeps its bare
+`Map<WatchedDependency, String>`; the plugin realm carries one jOOQ and no coordinate is reported
+from it. `versionsOf`'s javadoc is rewritten in the same pass rather than left describing the old
+contract.
+
+## Both editions at once: settled
+
+**A consumer carrying both editions at once** is reachable in practice, a transitive open-source jOOQ
+alongside a direct Pro one, and the plan should not leave it to be discovered. Ruling: one advisory
+per watched library, computed on the *lowest* observed line and naming that line's own coordinate,
+because the lowest line is the one actually holding the consumer back. That preserves the invariant
+the structural change exists for, since the coordinate in the message is always one the consumer's
+build actually resolved, never one graphitron guessed. A mixed-edition classpath is its own problem
+and not this advisory's to report; the nudge should not grow a second thing to say.
+
+Two editions on the same line is a tie, and a tie needs a defined answer or the message text moves
+between runs on the same project. Lowest line first, then lowest coordinate string.
 
 ## Testing
 
-The decode tier carries this item. `DependencyVersionDecodeTest` gains rows for `org.jooq.pro`,
-`org.jooq.pro-java-<n>` and `org.jooq.trial-java-<n>` observed, and rows holding `jooq-codegen`
-unmatched under a commercial group id as well as the open-source one. The core tier gains the
-assertion that the message names the *observed* coordinate rather than the canonical one, which is
-the case that would catch a Pro consumer being told to bump `org.jooq:jooq`; and, once the
-both-editions ruling lands, a lowest-line row.
+The matching half lands in `DependencyVersionDecodeTest`, which gains rows for `org.jooq.pro`,
+`org.jooq.pro-java-<n>` and `org.jooq.trial-java-<n>` observed, rows holding `jooq-codegen` unmatched
+under a commercial group id as well as the open-source one, and a row where both editions resolve,
+asserting the decode carries both rather than dropping one.
+
+The deciding half lands in the unit tier, in `DependencyVersionWarningsTest`: that the message names
+the *observed* coordinate rather than the canonical one, which is the case that would catch a Pro
+consumer being told to bump `org.jooq:jooq`; that the lowest line wins when two editions are
+observed, asserted under both input orders so the order-independence is pinned rather than assumed;
+and that the tie-break is the coordinate string.
 
 **The invoker tier cannot cover this, and the plan should say so rather than leave an implementer
 trying.** Only the open-source edition is on Maven Central; commercial and trial artifacts are
@@ -116,8 +148,7 @@ known limit of the coverage rather than papering over.
 ## Documentation
 
 `docs/dependencies.adoc`'s "Staying current" section describes coverage the build does not currently
-have. It gains a sentence when this lands. A decision for the review: whether to correct that page
-now, ahead of the fix, or accept the overstatement for the life of this item. Recommend correcting
-it only if this item stalls, since a doc that describes a gap and then describes the gap being
-closed two commits later is more churn than the exposure warrants.
+have. It gains a sentence when this lands. Settled at the review: do not correct the page ahead of
+the fix, since a doc that describes a gap and then describes the gap being closed two commits later
+is more churn than the exposure warrants. If the item stalls, correcting it becomes the right call.
 
