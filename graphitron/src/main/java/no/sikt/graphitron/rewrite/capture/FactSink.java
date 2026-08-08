@@ -59,9 +59,14 @@ final class FactSink {
      * Writes every buffered row, parents first: one prepared statement per relation, bound once per
      * row. The rows arrive as records because that is the surface capture dogfoods, but they are
      * written through a bind batch rather than {@code batchInsert}, which re-derives each record's
-     * changed-field set and renders per record. Measured against the class census the compile
-     * classpath produces (half a million rows), the bind batch is several times faster, and the
-     * census is large enough for the difference to be the load's cost rather than a detail.
+     * changed-field set and renders per record. Over the class census the compile classpath
+     * produces, that is worth about 1.8x (3.7 s to 2.1 s for 207k rows, warm), and the census is
+     * large enough for the difference to be the load's cost rather than a detail.
+     *
+     * <p>Binding through the JDBC connection directly would be worth about 1.5x again, and nothing
+     * short of that reaches it: a transaction, typed bind parameters and disabling execute logging
+     * were each measured and each changed nothing. The remainder is jOOQ's per-value binding, not a
+     * setting.
      */
     void flush() {
         for (Table<?> table : parentsFirst(buckets.keySet())) {

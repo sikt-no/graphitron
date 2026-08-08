@@ -1083,11 +1083,25 @@ magnitude cheaper than the parse it protects, which the item assumed and this co
 The insert dominated, not the scan: 23 s for half a million rows. Per the note carried forward the
 answer is a faster load, so `FactSink` now renders one insert per relation and binds per row rather
 than going through `batchInsert`, which re-derives each record's changed-field set and renders per
-record; that brings it to 13 s. A raw JDBC prepared-statement batch measured about three times
-faster again (28k `jvm_class` rows in 398 ms, 207k `jvm_method` rows in 1.6 s), and the schema's
-own "only values are stored" convention is what would make binding directly safe, since every
-column is a `VARCHAR`, `INT` or `BOOLEAN`. That is the next faster load if one is wanted; it was
-measured and left, not overlooked.
+record; that brings it to 13 s.
+
+**What the remaining gap is, measured properly.** The first pass at this compared a cold JVM running
+`batchInsert` against a cold JVM running a hand-written JDBC batch and read the difference as an
+insert technique; it is not one, and the number it produced (about threefold) was mostly JIT warmup.
+Warm, best of three, in one JVM, over 206,702 `jvm_method` rows: `batchInsert` 3.7 s, the shipped
+bind batch 2.1 s, a raw JDBC prepared-statement batch 1.4 s. Three candidate explanations for the
+residual are ruled out by the same run. Wrapping the load in a transaction changes nothing either
+way (2.07 vs 2.04 s through jOOQ, 1.45 vs 1.36 s raw), because `executeBatch` is one round trip that
+commits once regardless. Declaring the bind parameters with their `DataType` changes nothing (2.03
+s), because jOOQ already resolves values against the query's declared field types. Turning
+`executeLogging` off changes nothing. jOOQ's `Loader` API is slower than the bind batch, not faster
+(2.6 s).
+
+So the residual 1.5x is jOOQ's per-value binding layer itself, and no setting reaches it. Closing it
+means rendering the SQL with jOOQ and binding through `dsl.connection(...)` directly, which the
+schema's own "only values are stored" convention is what makes safe: every column is a `VARCHAR`,
+`INT` or `BOOLEAN`, so `setObject` needs no conversion. That is the next faster load if one is
+wanted, worth about 4 s of the 13 s; it is measured and left, not overlooked.
 
 The reactor build goes 5:07 to 5:56, with `graphitron-sakila-example` carrying all of it (1:21 to
 2:14 across five generator passes). No narrowing was taken: the cost is per pass and per fresh
