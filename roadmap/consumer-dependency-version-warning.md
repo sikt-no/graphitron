@@ -51,16 +51,24 @@ the version Maven actually resolved after mediation rather than whatever the POM
 All three mojos already declare `requiresDependencyResolution` (`GenerateMojo.java:17`,
 `ValidateMojo.java:19`, `DevMojo.java:88`), so the artifact set is populated at execute time.
 
-**Which scopes count: every scope except `test`.** This has to be a ruling rather than an implementer's
-choice, because the resolution scope differs per goal: `generate` and `validate` declare
-`ResolutionScope.COMPILE`, `dev` declares `ResolutionScope.TEST`, so `project.getArtifacts()` returns a
-strictly larger set under `dev`. Dropping `test`-scoped artifacts makes the observed set identical
-across all three goals, which is what the placement section's uniformity argument needs: without the
-filter, a consumer whose jOOQ is test-scoped would be nudged under `graphitron:dev` and silent under
-`graphitron:generate`, and the same project would say two different things depending on which goal ran.
-The filter is also right on its own terms, since graphitron generates main sources and the versions that
-matter are the ones the generated code compiles and runs against. `compile`, `provided`, `runtime`, and
-`system` all count; a consumer carrying jOOQ at `provided` is a real shape and a real nudge target.
+**Which scopes count: an allow-list of `compile`, `provided`, and `system`.** Not `runtime`, not
+`test`. This has to be a ruling rather than an implementer's choice, because the resolution scope
+differs per goal: `generate` and `validate` declare `ResolutionScope.COMPILE`, `dev` declares
+`ResolutionScope.TEST`, and Maven expands those to different scope sets. `MojoExecutor.toScopes` maps
+`COMPILE` to `{compile, system, provided}` and `TEST` to `{compile, system, provided, runtime, test}`,
+so `project.getArtifacts()` is larger under `dev` by *two* scopes, not one.
+
+That is why the ruling is an allow-list and not a deny-list of `test`. Admitting exactly the three
+scopes `COMPILE` resolves makes the observed set identical across all three goals, which is what the
+placement section's uniformity argument needs. Excluding `test` alone would leave `runtime` leaking
+through, so a consumer whose jOOQ is runtime-scoped would be nudged under `graphitron:dev` and silent
+under `graphitron:generate`: the same project saying two different things depending on which goal ran,
+which is precisely the outcome the ruling exists to prevent.
+
+The allow-list is also right on its own terms. Generated code refers to `org.jooq` and `graphql.schema`
+types directly, so a consumer who compiles graphitron's output necessarily carries both at `compile` or
+`provided`; a coordinate visible only at `runtime` or `test` is not one the generated sources are built
+against. A consumer carrying jOOQ at `provided` is a real shape and a real nudge target.
 
 An absent coordinate is not a lagging one, so it is one of the silence cases the tests pin explicitly.
 
@@ -302,8 +310,12 @@ halves would leave that claim unpinned by anything. Three tiers:
   and a version that does not decompose into `(major, minor)`. Include the `3.9` versus `3.20` trap, a
   major-line gap, and a `-SNAPSHOT` qualifier.
 - Plugin-module unit tier: the decode only, over hand-built `Artifact` stubs. What it pins is the scope
-  filter, that a `test`-scoped coordinate is not observed so `dev` and `generate` see the same set, and
-  the absent-coordinate case. Precedent for making a mojo internal package-private for exactly this
+  allow-list, one row per scope: `compile`, `provided`, and `system` observed; `runtime` and `test` not.
+  The `runtime` row is the load-bearing one, because that is the scope a deny-list of `test` alone would
+  let through, and the one that would make the advisory differ between `dev` and `generate`. Plus the
+  absent-coordinate case. Note what this tier can and cannot pin: it covers the filter, not Maven's
+  resolution, so the goal-invariance claim rests on the allow-list naming exactly the scopes
+  `ResolutionScope.COMPILE` resolves. Precedent for making a mojo internal package-private for exactly this
   purpose is `AbstractRewriteMojo.collectExistingDirs` (`AbstractRewriteMojo.java:590-597`), whose
   javadoc says so in as many words.
 - Pipeline tier, one case in `LintSuppressionPipelineTest`: a lagging version surfaces as a
@@ -368,11 +380,12 @@ reopen them.
 
 ## Review record
 
-Two Spec-review passes, both by sessions independent of the drafting one. The first settled the three
-open questions the draft raised (recorded in the section above) and requested four revisions. The second
-re-verified the plan's factual claims against the tree and folded those revisions into the body.
+Three Spec-review passes, each by a session independent of the drafting one and of the others. The first
+settled the three open questions the draft raised (recorded in the section above) and requested four
+revisions. The second re-verified the plan's factual claims against the tree and folded those revisions
+into the body. The third re-verified them again and corrected the scope ruling.
 
-Both passes confirm the load-bearing claims hold as written: the `SessionStateWarnings` precedent and
+All passes confirm the load-bearing claims hold as written: the `SessionStateWarnings` precedent and
 its `null`-location `BuildWarning.LintFinding` shape, the `Source.CODEGEN` routing through
 `withLintFindings`, the `LintRuleRegistryCoverageTest` enforcement, the `ValidationError` / `Rejection`
 coupling, the single shared `RewriteContext` construction in `AbstractRewriteMojo` that makes one wither
@@ -385,8 +398,8 @@ What the second pass changed, beyond refreshing drifted line anchors:
    `PluginDescriptor.getArtifacts()`, not through an unstated route out of a reactor pom property. The
    property-promotion prerequisite is gone, and so is the missing-mechanism gap it papered over: the
    reactor has no resource filtering to carry a filtered value into the shipped artifact.
-2. **Scopes are ruled on:** every scope except `test`. That is what makes the advisory goal-invariant
-   across `generate`, `validate`, and `dev`, whose resolution scopes differ.
+2. **Scopes are ruled on**, so the advisory is goal-invariant across `generate`, `validate`, and `dev`,
+   whose resolution scopes differ. (The third pass corrected which scopes; see below.)
 3. **`Source.CODEGEN`'s documentation is widened as part of the change** rather than left describing a
    `<sessionState>` axis it no longer partitions; four sites named.
 4. **The routing claim is pinned by a test.** A fires-then-suppressed case in
@@ -397,3 +410,26 @@ What the second pass changed, beyond refreshing drifted line anchors:
    minor-line predicate needs the version decomposed rather than ordered, which is plain-string work, so
    `ComparableVersion` is dropped, core compares, and the unparseable case that decision newly creates
    is ruled silent.
+
+What the third pass changed:
+
+1. **The scope ruling is an allow-list, not "every scope except `test`".** The old ruling did not
+   deliver the goal-invariance it was justified by. `ResolutionScope.COMPILE` and `ResolutionScope.TEST`
+   differ by two scopes, not one: `MojoExecutor.toScopes` expands `COMPILE` to `{compile, system,
+   provided}` and `TEST` to `{compile, system, provided, runtime, test}` (read off `maven-core` 3.9.14
+   directly, not inferred). Excluding `test` alone would still let a runtime-scoped coordinate be
+   observed under `dev` and not under `generate`, reproducing the exact split the section forbids. The
+   ruling now admits `compile`, `provided`, and `system` and nothing else, and the plugin-tier test gains
+   a `runtime` row, which is the one that would have caught this.
+
+Two non-blocking opportunities the third pass raised, left to the author and the implementer:
+
+- **Single-segment versions.** `25` with no minor falls into "does not decompose, therefore silent",
+  which loses the nudge for a consumer who pins `<version>25</version>`, a legal and not-unheard-of
+  pin for graphql-java. Reading a missing minor as `0` would keep it alive at no real cost. The silence
+  rule is defensible as written, so this is a judgement call rather than a defect.
+- **The two rule ids are unnamed.** The plan says "two new `LintRule` values" without proposing their
+  ids, where the `<sessionState>` precedent named `no-session-state` and
+  `session-state-convention-fence` in prose. The ids are user-visible: a consumer types one into
+  `<lint><disabledRules>`, `LintRuleRegistryCoverageTest` hard-lists them, and the MCP `diagnostics`
+  tool projects them. Naming them in the Spec rather than at the keyboard is cheap.
