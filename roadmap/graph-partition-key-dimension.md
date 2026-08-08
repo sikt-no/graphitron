@@ -70,13 +70,28 @@ one blast radius as its consequence.
   classpath scope is a membership and derivation question, not capture, and version skew
   between two graphs' classpaths is that future item's business.
 
-Exactly one graph exists, and the store says so structurally rather than by convention. The
-graph name is a single declared constant owned by capture (the store's only writer), spelled
-so that no author-facing naming surface would accept it as a graph name (a bracketed sentinel;
-exact spelling fixed at implementation), and a gate asserts `store_graph` holds exactly one
-row. No configuration surface ships: a knob nothing reads is speculative, and the
-exactly-one-row gate makes the no-knob decision self-enforcing. The day a second graph
-appears, retiring that gate is the deliberate act that admits it.
+## The graph has a configured name
+
+The graph name is consumer configuration, not a generator constant: a `<graphName>` parameter
+on `AbstractRewriteMojo`, beside `<schemaInputs>` where the consumer already declares what the
+graph is made of, defaulting to `${project.artifactId}`. The artifactId is the module's
+identity in the build, unique within a reactor, which is exactly the namespace a future
+multi-subgraph workspace would key its graphs by; a consumer whose subgraph name differs from
+the module name overrides the parameter. The value threads through `RewriteContext` to
+capture like every other mojo parameter, and the user-manual page
+`docs/manual/reference/mojo-configuration.adoc` documents it beside the schema inputs.
+
+`RewriteContext` requires the name non-blank at construction, the same non-null contract its
+other fields carry; Maven users never see the requirement because the mojo default always
+supplies a value, and the handful of programmatic construction sites (fixture codegen, test
+helpers) state a name once each. The rejected alternative is a core fallback constant for
+callers that configure nothing: a fallback name is an unowned name, every caller has a
+natural identity to give, and a required field is the enforcer the convention would lack.
+
+A run still captures exactly one graph, and the store says so structurally: a gate asserts
+`store_graph` holds exactly one row. Multi-graph capture is the orchestration item's
+business; when it arrives, retiring that gate is the deliberate act that admits the second
+row.
 
 ## Capture
 
@@ -95,8 +110,10 @@ each remember a new argument.
 is a retention policy, and retention in this store requires a freshness proof
 (`store_source.stamp`); graphs have none. Qualifying the clear would permanently retain rows
 written under any other graph name with no mechanism ever deleting them, a live hazard the
-moment the sentinel is ever respelled within a release, since `store_stamp` invalidates only
-on DDL hash and generator version.
+moment a consumer renames the graph (an artifactId change, or setting `<graphName>` for the
+first time over a warm store), since `store_stamp` invalidates only on DDL hash and generator
+version. Under the wholesale clear a rename is harmless: the SDL families rebuild every run
+from a parse the pipeline pays for regardless, and the old name leaves nothing behind.
 
 ## Gates
 
@@ -109,7 +126,8 @@ polarity, the same polarity `StoreRefresh.wholesale()` already chose:
   silently not cover the reserved `intent_` stratum and R589's claim relations, which is
   exactly where the dimension matters most; under exemption polarity a new family is covered
   by default and its exemption has to be argued in.
-- **`store_graph` holds exactly one row** while no configuration surface exists.
+- **`store_graph` holds exactly one row**: a run captures one graph, whatever it is named,
+  until multi-graph orchestration deliberately retires the gate.
 
 Comment coverage extends to the new columns automatically through the existing gate.
 
@@ -135,13 +153,14 @@ point of doing this now.
   over the captured rows plus the constant: a derived fact stored as a copy maintained apart
   from its source, with nothing enforcing agreement. It lands with multi-graph capture
   orchestration, when membership stops being derivable and becomes an input.
-- Configuration surface for graph naming; multi-graph capture orchestration and per-graph
-  classloader scopes; any composition-detection stratum; graph-aware resolution across the
-  `jvm_`/`sql_` boundary. Each can land later without rekeying anything, which is the test
-  this item's scope was cut by.
+- Multi-graph capture orchestration and per-graph classloader scopes; any
+  composition-detection stratum; graph-aware resolution across the `jvm_`/`sql_` boundary.
+  Each can land later without rekeying anything, which is the test this item's scope was
+  cut by.
 
 ## Verification
 
 Full `mvn install -Plocal-db` green. The DDL edit follows the compiler through capture and
 the tests; the widened gate family and the agreement suite are the honesty check. No
-behavioral change anywhere: the store's contents differ only by one constant-valued column.
+behavioral change anywhere: the store's contents differ only by one column carrying the
+run's single graph name, and generated output is untouched.
