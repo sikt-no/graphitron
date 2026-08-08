@@ -1088,6 +1088,7 @@ public class JooqCatalog {
                 fk.getName(),
                 qualifiedName(fk.getTable()),
                 qualifiedName(fk.getKey().getTable()),
+                fk.getKey().getName(),
                 fk.getFields().stream().map(org.jooq.Field::getName).toList(),
                 fk.getKey().getFields().stream().map(org.jooq.Field::getName).toList()))
             .toList();
@@ -1113,13 +1114,18 @@ public class JooqCatalog {
 
     /**
      * A foreign key reduced to resolved-immutable facts: SQL constraint name, schema-qualified
-     * source / target table IDs, and the source / target column SQL-name lists. See
-     * {@link #foreignKeyFactsOf}.
+     * source / target table IDs, the name of the target's constraint the key references, and the
+     * source / target column SQL-name lists. See {@link #foreignKeyFactsOf}.
+     *
+     * <p>{@code referencedConstraintName} is what SQL declares a foreign key against, and
+     * {@code targetColumns} is that constraint's own column list; a consumer keying constraints
+     * rather than tables needs the name, and one that already has the columns can ignore it.
      */
     public record ForeignKeyFacts(
         String constraintName,
         String sourceTable,
         String targetTable,
+        String referencedConstraintName,
         java.util.List<String> columns,
         java.util.List<String> targetColumns
     ) {

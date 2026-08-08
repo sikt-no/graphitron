@@ -6,7 +6,6 @@ import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.rewrite.AttributedRegistry;
 import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
 import org.jooq.DSLContext;
@@ -60,7 +59,7 @@ final class CapturedStore implements AutoCloseable {
             TestConfiguration.DEFAULT_OUTPUT_PACKAGE, TestConfiguration.DEFAULT_JOOQ_PACKAGE);
         var attributed = TestSchemaHelper.attributedRegistry(ctx);
         var store = GraphitronModelStore.open();
-        FactCapture.capture(store.dsl(), attributed.preSynthesisRegistry(), CatalogFacts.empty(),
+        FactCapture.capture(store.dsl(), attributed.preSynthesisRegistry(), null,
             List.of(), TestSchemaHelper.nodeDeclaration(ctx));
         return new CapturedStore(store, attributed.preSynthesisRegistry(), attributed);
     }

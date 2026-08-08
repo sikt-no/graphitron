@@ -14,7 +14,6 @@ import no.sikt.graphitron.model.Public;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
-import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.model.ConnectionSynthesis;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -49,7 +48,10 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_DIRECTIVE_SYNTHESI
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_SITE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
-import static no.sikt.graphitron.model.Tables.CATALOG_KEY;
+import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
+import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
+import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
@@ -119,8 +121,8 @@ class FactCaptureAgreementTest {
             registrations.put(relation, Arm.CONTAINMENT);
         }
         for (String relation : List.of(
-            "sql_table", "sql_column", "catalog_key", "catalog_key_column",
-            "catalog_foreign_key", "catalog_foreign_key_column", "sql_index",
+            "sql_table", "sql_column", "sql_constraint", "sql_constraint_column",
+            "sql_primary_key", "sql_referential_constraint", "sql_index",
             "sql_index_column", "jvm_class", "jvm_method",
             "jvm_method_parameter", "jvm_record_component",
             "jvm_scalar_type_field")) {
@@ -600,59 +602,189 @@ class FactCaptureAgreementTest {
     }
 
     @Test
-    @DisplayName("the catalog table and column census equals CatalogFacts")
-    void catalogCensusEqualsCatalogFacts(@TempDir Path tmp) {
+    @DisplayName("the table and column census equals the catalog's")
+    void catalogCensusEqualsTheCatalog(@TempDir Path tmp) {
         var ctx = testContext();
-        var facts = CatalogBuilder.buildCatalogFacts(new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()));
+        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), emptyRegistry(tmp), facts, List.of(), new NodeDeclaration(null));
+            FactCapture.capture(store.dsl(), emptyRegistry(tmp), jooq, List.of(), new NodeDeclaration(null));
 
-            var capturedTables = Set.copyOf(store.dsl()
-                .select(SQL_TABLE.TABLE_SCHEMA.concat(".").concat(SQL_TABLE.TABLE_NAME))
-                .from(SQL_TABLE).fetch(0, String.class));
-            assertThat(capturedTables).isEqualTo(facts.tablesByQualifiedName().keySet());
+            var expectedTables = new LinkedHashMap<String, String>();
+            int expectedColumns = 0;
+            for (var entry : jooq.allTableEntries()) {
+                var table = entry.table();
+                expectedTables.put(table.getSchema().getName() + "." + table.getName(),
+                    entry.javaFieldName());
+                expectedColumns += table.fields().length;
+            }
 
-            var capturedJavaNames = store.dsl()
+            var capturedTables = store.dsl()
                 .select(SQL_TABLE.TABLE_SCHEMA.concat(".").concat(SQL_TABLE.TABLE_NAME),
                     SQL_TABLE.JOOQ_NAME)
                 .from(SQL_TABLE)
                 .fetch()
                 .intoMap(r -> r.value1(), r -> r.value2());
-            assertThat(capturedJavaNames).isEqualTo(facts.tablesByQualifiedName().values().stream()
-                .collect(java.util.stream.Collectors.toMap(
-                    CatalogFacts.Table::qualifiedName, CatalogFacts.Table::javaName)));
-
-            var capturedColumns = store.dsl().fetchCount(SQL_COLUMN);
-            int expected = facts.tablesByQualifiedName().values().stream()
-                .mapToInt(t -> t.columns().size()).sum();
-            assertThat(capturedColumns).isEqualTo(expected);
+            assertThat(capturedTables).isEqualTo(expectedTables);
+            assertThat(store.dsl().fetchCount(SQL_COLUMN)).isEqualTo(expectedColumns);
         }
     }
 
     /**
-     * A gate rather than an agreement, homed here because it needs a real catalog to have anything
-     * to range over. Uniqueness constraints all land in one relation with the primary key flagged,
-     * which only reads unambiguously while a table has at most one flagged row; more than one is a
-     * capture bug, since the DDL can key the constraint but not count the flag.
+     * The captured column order is the table definition's, which is what the column's own comment
+     * promises. The reflective field walk the jOOQ name comes from is documented to return its
+     * results in no particular order, so an ordinal taken from it would make the store's answer a
+     * JVM implementation detail rather than a fact about the database.
      */
     @Test
-    @DisplayName("no catalog table carries two primary keys")
-    void atMostOnePrimaryKeyPerTable(@TempDir Path tmp) {
+    @DisplayName("column ordinals are the table definition's order")
+    void columnOrdinalsFollowTheTableDefinition(@TempDir Path tmp) {
         var ctx = testContext();
-        var facts = CatalogBuilder.buildCatalogFacts(new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()));
+        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), emptyRegistry(tmp), facts, List.of(), new NodeDeclaration(null));
-            assertThat(store.dsl().fetchCount(CATALOG_KEY, CATALOG_KEY.IS_PRIMARY.isTrue()))
+            FactCapture.capture(store.dsl(), emptyRegistry(tmp), jooq, List.of(), new NodeDeclaration(null));
+
+            var expected = new LinkedHashSet<String>();
+            for (var entry : jooq.allTableEntries()) {
+                var table = entry.table();
+                String qualified = table.getSchema().getName() + "." + table.getName();
+                var fields = table.fields();
+                for (int i = 0; i < fields.length; i++) {
+                    expected.add(qualified + "|" + i + "|" + fields[i].getName());
+                }
+            }
+            assertThat(expected).as("the catalog has columns, so this pins something").isNotEmpty();
+
+            var captured = new LinkedHashSet<String>();
+            store.dsl()
+                .select(SQL_COLUMN.TABLE_SCHEMA, SQL_COLUMN.TABLE_NAME, SQL_COLUMN.ORDINAL,
+                    SQL_COLUMN.COLUMN_NAME)
+                .from(SQL_COLUMN)
+                .fetch()
+                .forEach(row -> captured.add(
+                    row.value1() + "." + row.value2() + "|" + row.value3() + "|" + row.value4()));
+            assertThat(captured).isEqualTo(expected);
+        }
+    }
+
+    /**
+     * The constraint census against the catalog itself rather than against {@code CatalogFacts}'
+     * view of it. No fold: the old comparison had to reduce the store to the projection's
+     * {@code uniqueKeys} shape, which excludes the primary key and drops a unique constraint the
+     * primary key's column set already covers, and a fold that bridges a mismatch capture
+     * introduced is indistinguishable from one bridging a real grain difference.
+     */
+    @Test
+    @DisplayName("the constraint census equals the catalog's, compared without a fold")
+    void constraintCensusEqualsTheCatalog(@TempDir Path tmp) {
+        var ctx = testContext();
+        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        try (var store = GraphitronModelStore.open()) {
+            FactCapture.capture(store.dsl(), emptyRegistry(tmp), jooq, List.of(), new NodeDeclaration(null));
+
+            var expected = new LinkedHashSet<String>();
+            for (var entry : jooq.allTableEntries()) {
+                var table = entry.table();
+                String qualified = table.getSchema().getName() + "." + table.getName();
+                var primary = table.getPrimaryKey();
+                for (var key : new LinkedHashSet<>(table.getKeys())) {
+                    expected.add(qualified + "|" + key.getName()
+                        + "|" + (key.equals(primary) ? "PRIMARY KEY" : "UNIQUE"));
+                }
+                for (var fk : jooq.foreignKeyFactsOf(table)) {
+                    expected.add(qualified + "|" + fk.constraintName() + "|FOREIGN KEY");
+                }
+            }
+            assertThat(expected).as("the catalog declares constraints, so this pins something")
+                .isNotEmpty();
+
+            var captured = new LinkedHashSet<String>();
+            store.dsl()
+                .select(SQL_CONSTRAINT.TABLE_SCHEMA, SQL_CONSTRAINT.TABLE_NAME,
+                    SQL_CONSTRAINT.CONSTRAINT_NAME, SQL_CONSTRAINT.CONSTRAINT_TYPE)
+                .from(SQL_CONSTRAINT)
+                .fetch()
+                .forEach(row -> captured.add(
+                    row.value1() + "." + row.value2() + "|" + row.value3() + "|" + row.value4()));
+            assertThat(captured).isEqualTo(expected);
+        }
+    }
+
+    /**
+     * A foreign key's target columns are the referenced constraint's own columns matched on
+     * position, never copied onto the referencing row. That is the claim the supertype shape rests
+     * on, and it is only true if the join reproduces what the catalog reports.
+     */
+    @Test
+    @DisplayName("a foreign key's target columns are the referenced constraint's, matched on position")
+    void foreignKeyTargetsResolveThroughTheReferencedConstraint(@TempDir Path tmp) {
+        var ctx = testContext();
+        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        try (var store = GraphitronModelStore.open()) {
+            FactCapture.capture(store.dsl(), emptyRegistry(tmp), jooq, List.of(), new NodeDeclaration(null));
+
+            var expected = new LinkedHashSet<String>();
+            for (var entry : jooq.allTableEntries()) {
+                var table = entry.table();
+                String qualified = table.getSchema().getName() + "." + table.getName();
+                for (var fk : jooq.foreignKeyFactsOf(table)) {
+                    for (int i = 0; i < fk.targetColumns().size(); i++) {
+                        expected.add(qualified + "|" + fk.constraintName() + "|" + i
+                            + "|" + fk.targetColumns().get(i));
+                    }
+                }
+            }
+            assertThat(expected).as("the catalog declares foreign keys, so this pins something")
+                .isNotEmpty();
+
+            var referencing = SQL_CONSTRAINT_COLUMN.as("referencing");
+            var referenced = SQL_CONSTRAINT_COLUMN.as("referenced");
+            var captured = new LinkedHashSet<String>();
+            store.dsl()
+                .select(SQL_REFERENTIAL_CONSTRAINT.TABLE_SCHEMA, SQL_REFERENTIAL_CONSTRAINT.TABLE_NAME,
+                    SQL_REFERENTIAL_CONSTRAINT.CONSTRAINT_NAME, referencing.POSITION,
+                    referenced.COLUMN_NAME)
+                .from(SQL_REFERENTIAL_CONSTRAINT)
+                .join(referencing)
+                .on(referencing.TABLE_SCHEMA.eq(SQL_REFERENTIAL_CONSTRAINT.TABLE_SCHEMA))
+                .and(referencing.TABLE_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.TABLE_NAME))
+                .and(referencing.CONSTRAINT_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.CONSTRAINT_NAME))
+                .join(referenced)
+                .on(referenced.TABLE_SCHEMA.eq(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_SCHEMA))
+                .and(referenced.TABLE_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_TABLE))
+                .and(referenced.CONSTRAINT_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_CONSTRAINT_NAME))
+                .and(referenced.POSITION.eq(referencing.POSITION))
+                .fetch()
+                .forEach(row -> captured.add(row.value1() + "." + row.value2() + "|" + row.value3()
+                    + "|" + row.value4() + "|" + row.value5()));
+            assertThat(captured).isEqualTo(expected);
+        }
+    }
+
+    /**
+     * The cardinality the old {@code is_primary} flag needed a gate query for. Keying the relation
+     * by the table is what makes it structural, so what is left to check is that the row names a
+     * constraint of the right form.
+     */
+    @Test
+    @DisplayName("each table's primary key names a PRIMARY KEY constraint")
+    void primaryKeyRowsNamePrimaryKeyConstraints(@TempDir Path tmp) {
+        var ctx = testContext();
+        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        try (var store = GraphitronModelStore.open()) {
+            FactCapture.capture(store.dsl(), emptyRegistry(tmp), jooq, List.of(), new NodeDeclaration(null));
+            assertThat(store.dsl().fetchCount(SQL_PRIMARY_KEY))
                 .as("the catalog has primary keys, so this pins something")
                 .isPositive();
-            var offenders = store.dsl()
-                .select(CATALOG_KEY.TABLE_SCHEMA, CATALOG_KEY.TABLE_NAME)
-                .from(CATALOG_KEY)
-                .where(CATALOG_KEY.IS_PRIMARY.isTrue())
-                .groupBy(CATALOG_KEY.TABLE_SCHEMA, CATALOG_KEY.TABLE_NAME)
-                .having(org.jooq.impl.DSL.count().gt(1))
+            var wrongForm = store.dsl()
+                .select(SQL_PRIMARY_KEY.TABLE_NAME, SQL_CONSTRAINT.CONSTRAINT_TYPE)
+                .from(SQL_PRIMARY_KEY)
+                .join(SQL_CONSTRAINT)
+                .on(SQL_CONSTRAINT.TABLE_SCHEMA.eq(SQL_PRIMARY_KEY.TABLE_SCHEMA))
+                .and(SQL_CONSTRAINT.TABLE_NAME.eq(SQL_PRIMARY_KEY.TABLE_NAME))
+                .and(SQL_CONSTRAINT.CONSTRAINT_NAME.eq(SQL_PRIMARY_KEY.CONSTRAINT_NAME))
+                .where(SQL_CONSTRAINT.CONSTRAINT_TYPE.ne("PRIMARY KEY"))
                 .fetch();
-            assertThat(offenders).as("tables with more than one primary key").isEmpty();
+            assertThat(wrongForm).as("primary-key rows naming a constraint of another form").isEmpty();
         }
     }
 
@@ -662,7 +794,7 @@ class FactCaptureAgreementTest {
         var ctx = testContext();
         List<CompletionData.ExternalReference> extensions = CatalogBuilder.buildExternalReferences(ctx);
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), emptyRegistry(tmp), CatalogFacts.empty(), extensions, new NodeDeclaration(null));
+            FactCapture.capture(store.dsl(), emptyRegistry(tmp), null, extensions, new NodeDeclaration(null));
 
             var captured = new LinkedHashSet<String>();
             store.dsl().select(JVM_METHOD.CLASS_NAME, JVM_METHOD.METHOD_NAME)

@@ -1806,7 +1806,7 @@ CREATE TABLE sql_table (
   description  VARCHAR,
   PRIMARY KEY (table_schema, table_name)
 );
-COMMENT ON TABLE sql_table IS 'A table exists in the consumer''s catalog.';
+COMMENT ON TABLE sql_table IS 'A table exists in the consumer''s catalog. Every table jOOQ''s generated model declares, across every schema it declares; ambiguity of an unqualified @table(name:) is a resolution question and therefore derivation, so capture just records them all.';
 COMMENT ON COLUMN sql_table.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_table.table_name IS 'SQL table name';
 COMMENT ON COLUMN sql_table.jooq_name IS 'the generated jOOQ Java field name for the table; under a family named for SQL this is the one foreign column, so the prefix marks it rather than leaving a reader to infer it';
@@ -1824,31 +1824,32 @@ CREATE TABLE sql_column (
   PRIMARY KEY (table_schema, table_name, column_name),
   FOREIGN KEY (table_schema, table_name) REFERENCES sql_table (table_schema, table_name)
 );
-COMMENT ON TABLE sql_column IS 'A column exists on a table. SQL name is the coordinate, matching CatalogFacts'' SQL-name-centric keying; the Java name rides along because the LSP surface is Java-name-centric.';
+COMMENT ON TABLE sql_column IS 'A column exists on a table. The SQL name is the coordinate, which is what the schema''s directives spell; the jOOQ name rides along because the LSP surface is Java-name-centric.';
 COMMENT ON COLUMN sql_column.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_column.table_name IS 'SQL table name';
 COMMENT ON COLUMN sql_column.column_name IS 'SQL column name';
-COMMENT ON COLUMN sql_column.ordinal IS 'column position in the table definition';
+COMMENT ON COLUMN sql_column.ordinal IS 'column position in the table definition, read from Table.fields() rather than from the reflective field walk, whose order is unspecified';
 COMMENT ON COLUMN sql_column.jooq_name IS 'the generated jOOQ Java field name; the one column here written in the reader''s vocabulary rather than SQL''s';
 COMMENT ON COLUMN sql_column.sql_type IS 'the column''s SQL type as jOOQ reports it';
 COMMENT ON COLUMN sql_column.nullable IS 'whether the column admits NULL';
 COMMENT ON COLUMN sql_column.description IS 'the database comment on the column, when present';
 
-CREATE TABLE catalog_key (
+CREATE TABLE sql_constraint (
   table_schema    VARCHAR NOT NULL,
   table_name      VARCHAR NOT NULL,
   constraint_name VARCHAR NOT NULL,
-  is_primary      BOOLEAN NOT NULL,
+  constraint_type VARCHAR NOT NULL,
   PRIMARY KEY (table_schema, table_name, constraint_name),
-  FOREIGN KEY (table_schema, table_name) REFERENCES sql_table (table_schema, table_name)
+  FOREIGN KEY (table_schema, table_name) REFERENCES sql_table (table_schema, table_name),
+  CHECK (constraint_type IN ('PRIMARY KEY', 'UNIQUE', 'FOREIGN KEY'))
 );
-COMMENT ON TABLE catalog_key IS 'A uniqueness constraint exists on a table. Every unique constraint jOOQ reports is a row, with the primary key flagged rather than segregated (CatalogFacts excludes the PK from uniqueKeys; that is a projection choice, not a fact).';
-COMMENT ON COLUMN catalog_key.table_schema IS 'SQL schema the table lives in';
-COMMENT ON COLUMN catalog_key.table_name IS 'SQL table name';
-COMMENT ON COLUMN catalog_key.constraint_name IS 'SQL constraint name';
-COMMENT ON COLUMN catalog_key.is_primary IS 'TRUE for the primary key, FALSE for other unique constraints';
+COMMENT ON TABLE sql_constraint IS 'A named constraint exists on a table. The supertype: one row per constraint whatever its form, discriminated by constraint_type as the standard''s TABLE_CONSTRAINTS is. Filtered to what jOOQ''s generated model carries: PRIMARY KEY, UNIQUE and FOREIGN KEY. CHECK, NOT NULL and deferrability are absent, and arrive as further type values rather than as new relations.';
+COMMENT ON COLUMN sql_constraint.table_schema IS 'SQL schema the table lives in';
+COMMENT ON COLUMN sql_constraint.table_name IS 'SQL table name';
+COMMENT ON COLUMN sql_constraint.constraint_name IS 'SQL constraint name';
+COMMENT ON COLUMN sql_constraint.constraint_type IS 'the standard''s TABLE_CONSTRAINTS vocabulary; the domain is closed over what the catalog walk reads, so a violation is a capture bug';
 
-CREATE TABLE catalog_key_column (
+CREATE TABLE sql_constraint_column (
   table_schema    VARCHAR NOT NULL,
   table_name      VARCHAR NOT NULL,
   constraint_name VARCHAR NOT NULL,
@@ -1856,54 +1857,50 @@ CREATE TABLE catalog_key_column (
   column_name     VARCHAR NOT NULL,
   PRIMARY KEY (table_schema, table_name, constraint_name, position),
   FOREIGN KEY (table_schema, table_name, constraint_name)
-    REFERENCES catalog_key (table_schema, table_name, constraint_name),
+    REFERENCES sql_constraint (table_schema, table_name, constraint_name),
   FOREIGN KEY (table_schema, table_name, column_name)
     REFERENCES sql_column (table_schema, table_name, column_name)
 );
-COMMENT ON TABLE catalog_key_column IS 'An ordered column of a uniqueness constraint.';
-COMMENT ON COLUMN catalog_key_column.table_schema IS 'SQL schema the table lives in';
-COMMENT ON COLUMN catalog_key_column.table_name IS 'SQL table name';
-COMMENT ON COLUMN catalog_key_column.constraint_name IS 'SQL constraint name';
-COMMENT ON COLUMN catalog_key_column.position IS '0-based position in the constraint''s column list';
-COMMENT ON COLUMN catalog_key_column.column_name IS 'SQL column name';
+COMMENT ON TABLE sql_constraint_column IS 'An ordered column of a constraint: the key columns of a primary key or a unique constraint, and the referencing columns of a foreign key, in one relation for all three forms as KEY_COLUMN_USAGE does. A foreign key''s target columns are not here; they are the referenced constraint''s own rows, matched on position.';
+COMMENT ON COLUMN sql_constraint_column.table_schema IS 'SQL schema the table lives in';
+COMMENT ON COLUMN sql_constraint_column.table_name IS 'SQL table name';
+COMMENT ON COLUMN sql_constraint_column.constraint_name IS 'SQL constraint name';
+COMMENT ON COLUMN sql_constraint_column.position IS '0-based position in the constraint''s column list';
+COMMENT ON COLUMN sql_constraint_column.column_name IS 'SQL column name';
 
-CREATE TABLE catalog_foreign_key (
+CREATE TABLE sql_primary_key (
   table_schema    VARCHAR NOT NULL,
   table_name      VARCHAR NOT NULL,
   constraint_name VARCHAR NOT NULL,
-  target_schema   VARCHAR NOT NULL,
-  target_table    VARCHAR NOT NULL,
-  PRIMARY KEY (table_schema, table_name, constraint_name),
-  FOREIGN KEY (table_schema, table_name)    REFERENCES sql_table (table_schema, table_name),
-  FOREIGN KEY (target_schema, target_table) REFERENCES sql_table (table_schema, table_name)
-);
-COMMENT ON TABLE catalog_foreign_key IS 'A foreign key exists, keyed by the declaring (source) table. Implicit-path inference ("exactly one FK between these two tables") is a derivation over this relation, not a captured fact.';
-COMMENT ON COLUMN catalog_foreign_key.table_schema IS 'schema of the declaring table';
-COMMENT ON COLUMN catalog_foreign_key.table_name IS 'the declaring (source) table';
-COMMENT ON COLUMN catalog_foreign_key.constraint_name IS 'SQL constraint name';
-COMMENT ON COLUMN catalog_foreign_key.target_schema IS 'schema of the referenced table';
-COMMENT ON COLUMN catalog_foreign_key.target_table IS 'the referenced table';
-
-CREATE TABLE catalog_foreign_key_column (
-  table_schema    VARCHAR NOT NULL,
-  table_name      VARCHAR NOT NULL,
-  constraint_name VARCHAR NOT NULL,
-  position        INT     NOT NULL,
-  source_column   VARCHAR NOT NULL,
-  target_column   VARCHAR NOT NULL,
-  PRIMARY KEY (table_schema, table_name, constraint_name, position),
+  PRIMARY KEY (table_schema, table_name),
   FOREIGN KEY (table_schema, table_name, constraint_name)
-    REFERENCES catalog_foreign_key (table_schema, table_name, constraint_name),
-  FOREIGN KEY (table_schema, table_name, source_column)
-    REFERENCES sql_column (table_schema, table_name, column_name)
+    REFERENCES sql_constraint (table_schema, table_name, constraint_name)
 );
-COMMENT ON TABLE catalog_foreign_key_column IS 'An ordered column pair of a foreign key. Parallel source and target columns; multi-column FKs are first-class, matching CatalogFacts.';
-COMMENT ON COLUMN catalog_foreign_key_column.table_schema IS 'SQL schema the table lives in';
-COMMENT ON COLUMN catalog_foreign_key_column.table_name IS 'the declaring (source) table';
-COMMENT ON COLUMN catalog_foreign_key_column.constraint_name IS 'SQL constraint name';
-COMMENT ON COLUMN catalog_foreign_key_column.position IS '0-based position in the FK''s column list';
-COMMENT ON COLUMN catalog_foreign_key_column.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN catalog_foreign_key_column.target_column IS 'the referenced column';
+COMMENT ON TABLE sql_primary_key IS 'Table T''s primary key is constraint C. Keyed by the table, because a table has at most one, which is what makes the cardinality structural instead of a gate query over a flag.';
+COMMENT ON COLUMN sql_primary_key.table_schema IS 'SQL schema the table lives in';
+COMMENT ON COLUMN sql_primary_key.table_name IS 'SQL table name';
+COMMENT ON COLUMN sql_primary_key.constraint_name IS 'the name of the PRIMARY KEY constraint in sql_constraint';
+
+CREATE TABLE sql_referential_constraint (
+  table_schema               VARCHAR NOT NULL,
+  table_name                 VARCHAR NOT NULL,
+  constraint_name            VARCHAR NOT NULL,
+  referenced_schema          VARCHAR NOT NULL,
+  referenced_table           VARCHAR NOT NULL,
+  referenced_constraint_name VARCHAR NOT NULL,
+  PRIMARY KEY (table_schema, table_name, constraint_name),
+  FOREIGN KEY (table_schema, table_name, constraint_name)
+    REFERENCES sql_constraint (table_schema, table_name, constraint_name),
+  FOREIGN KEY (referenced_schema, referenced_table, referenced_constraint_name)
+    REFERENCES sql_constraint (table_schema, table_name, constraint_name)
+);
+COMMENT ON TABLE sql_referential_constraint IS 'A foreign key references a constraint, the foreign-key-only extension of sql_constraint. Referencing the constraint rather than the table is what SQL declares; the target columns are that constraint''s own sql_constraint_column rows matched on position, which is how both Oracle and the standard resolve them and is guaranteed by SQL semantics, never copied onto the referencing row. Implicit-path inference ("exactly one FK between these two tables") is a derivation over this relation, not a captured fact.';
+COMMENT ON COLUMN sql_referential_constraint.table_schema IS 'schema of the declaring table';
+COMMENT ON COLUMN sql_referential_constraint.table_name IS 'the declaring (source) table';
+COMMENT ON COLUMN sql_referential_constraint.constraint_name IS 'SQL constraint name';
+COMMENT ON COLUMN sql_referential_constraint.referenced_schema IS 'schema of the referenced constraint''s table; two thirds of the composite reference, not a denormalisation';
+COMMENT ON COLUMN sql_referential_constraint.referenced_table IS 'the referenced constraint''s table';
+COMMENT ON COLUMN sql_referential_constraint.referenced_constraint_name IS 'the referenced constraint''s name';
 
 CREATE TABLE sql_index (
   table_schema VARCHAR NOT NULL,

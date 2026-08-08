@@ -2,8 +2,8 @@ package no.sikt.graphitron.rewrite.capture;
 
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.NodeDeclaration;
-import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.jooq.DSLContext;
 
@@ -31,10 +31,10 @@ public final class FactCapture {
      * Runs both loads against a fresh store and discards it. This is the shape the pipeline calls:
      * the store's whole lifetime is this method, because no consumer has migrated onto it yet.
      */
-    public static void run(TypeDefinitionRegistry registry, CatalogFacts catalogFacts,
+    public static void run(TypeDefinitionRegistry registry, JooqCatalog jooq,
                            List<CompletionData.ExternalReference> extensions, NodeDeclaration nodes) {
         try (GraphitronModelStore store = GraphitronModelStore.open()) {
-            capture(store.dsl(), registry, catalogFacts, extensions, nodes);
+            capture(store.dsl(), registry, jooq, extensions, nodes);
         }
     }
 
@@ -42,23 +42,27 @@ public final class FactCapture {
      * Fills {@code dsl}'s store from all three inputs. Separate from {@link #run} so a caller that
      * wants to query the result (the agreement and gate tests) can own the store's lifetime.
      *
+     * @param jooq  the catalog to walk, or {@code null} for a caller with none in hand. The catalog
+     *              itself rather than the {@code CatalogFacts} projection over it: that projection
+     *              is shaped for the MCP catalog tools, and a narrowing it makes for them would
+     *              land here as a fact about the consumer's database.
      * @param nodes the nodehood predicate macro expansion needs, since federation's key synthesis
      *              fires on nodes and nodehood can be inferred from the catalog rather than
      *              declared. A predicate built on a null catalog reduces it to {@code @node}
      *              presence, which is what a caller with no catalog in hand should get.
      */
     public static void capture(DSLContext dsl, TypeDefinitionRegistry registry,
-                               CatalogFacts catalogFacts,
+                               JooqCatalog jooq,
                                List<CompletionData.ExternalReference> extensions,
                                NodeDeclaration nodes) {
         var sink = new FactSink(dsl);
         SdlFactCapture.capture(sink, registry, nodes);
-        CatalogFactCapture.capture(sink, catalogFacts, extensions);
+        CatalogFactCapture.capture(sink, jooq, extensions);
         sink.flush();
     }
 
     /** SDL-only capture, for callers with no catalog in hand. */
     public static void capture(DSLContext dsl, TypeDefinitionRegistry registry) {
-        capture(dsl, registry, CatalogFacts.empty(), List.of(), new NodeDeclaration(null));
+        capture(dsl, registry, null, List.of(), new NodeDeclaration(null));
     }
 }
