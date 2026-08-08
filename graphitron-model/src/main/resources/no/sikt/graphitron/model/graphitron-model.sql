@@ -1796,6 +1796,25 @@ COMMENT ON COLUMN graphitron_type_directive_synthesis.ordinal IS 'capture-assign
 COMMENT ON COLUMN graphitron_type_directive_synthesis.macro IS 'which expansion synthesized the application';
 
 
+-- ==== Store bookkeeping ===========================================================
+-- The store's record of what it read. The only family whose rows capture does not transcribe
+-- from somewhere else, which is what earns it a name of its own: the vocabulary is the store's
+-- metamodel rather than SQL's, the JVM's or GraphQL's, and one mechanism covers all three
+-- source kinds because a partition delete is one mechanism whether the source is a schema
+-- file, a compile-output directory, or a jar.
+
+CREATE TABLE store_source (
+  source_name VARCHAR NOT NULL,
+  source_kind VARCHAR NOT NULL,
+  stamp       VARCHAR,
+  PRIMARY KEY (source_name),
+  CHECK (source_kind IN ('SCHEMA_FILE', 'DIRECTORY', 'JAR', 'JOOQ_SCHEMA'))
+);
+COMMENT ON TABLE store_source IS 'A source the store read. Every base relation is partitionable by the source that produced it: a refresh deletes exactly the rows one source wrote and re-walks it, so a relation unreachable from a source row is one the store can only ever discard wholesale.';
+COMMENT ON COLUMN store_source.source_name IS 'the schema file path, the classpath entry path, or the generated package a jOOQ schema lives in, as the reader spelled it';
+COMMENT ON COLUMN store_source.source_kind IS 'a closed taxonomy: a schema file, a directory root, a jar, or a generated jOOQ schema package. The last names jOOQ deliberately, unlike the sql_ family: a family is named for whose vocabulary its rows are written in and jOOQ owns none of SQL''s, but a source is named for what it is, and a generated package is jOOQ''s artefact';
+COMMENT ON COLUMN store_source.stamp IS 'content hash, so an unchanged source is read once; NULL where there is nothing cheap to hash or nothing worth caching: a directory root changes on every compile, a schema file''s bytes capture never holds (graphql-java hands the walk a source name, not the text), and a jOOQ schema is a package spread across the classpath whose walk is cheap enough not to need one';
+
 -- ==== SQL catalog facts ===========================================================
 -- What the consumer's database declares, in SQL's vocabulary. jOOQ's generated model is the
 -- reader, not the owner: reading INFORMATION_SCHEMA directly instead would leave every relation
@@ -1805,13 +1824,16 @@ CREATE TABLE sql_table (
   table_schema VARCHAR NOT NULL,
   table_name   VARCHAR NOT NULL,
   jooq_name    VARCHAR NOT NULL,
+  source_name  VARCHAR NOT NULL,
   description  VARCHAR,
-  PRIMARY KEY (table_schema, table_name)
+  PRIMARY KEY (table_schema, table_name),
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
 );
 COMMENT ON TABLE sql_table IS 'A table exists in the consumer''s catalog. Every table jOOQ''s generated model declares, across every schema it declares; ambiguity of an unqualified @table(name:) is a resolution question and therefore derivation, so capture just records them all.';
 COMMENT ON COLUMN sql_table.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_table.table_name IS 'SQL table name';
 COMMENT ON COLUMN sql_table.jooq_name IS 'the generated jOOQ Java field name for the table; under a family named for SQL this is the one foreign column, so the prefix marks it rather than leaving a reader to infer it';
+COMMENT ON COLUMN sql_table.source_name IS 'the generated package the table''s schema lives in; the partition this row belongs to. The package rather than the classpath entry it was loaded from, because one jar carries every schema a codegen run produced and invalidating the jar would discard them all, while the package is the granularity codegen actually rewrites. Schemas flattened into one package (jOOQ''s outputSchemaToDefault) share a source, which is correct: they are regenerated together';
 COMMENT ON COLUMN sql_table.description IS 'the database comment on the table, when present';
 
 CREATE TABLE sql_column (
@@ -1933,25 +1955,6 @@ COMMENT ON COLUMN sql_index_column.index_name IS 'SQL index name';
 COMMENT ON COLUMN sql_index_column.position IS '0-based position in the index''s column list';
 COMMENT ON COLUMN sql_index_column.column_name IS 'SQL column name';
 
-
--- ==== Store bookkeeping ===========================================================
--- The store's record of what it read. The only family whose rows capture does not transcribe
--- from somewhere else, which is what earns it a name of its own: the vocabulary is the store's
--- metamodel rather than SQL's, the JVM's or GraphQL's, and one mechanism covers all three
--- source kinds because a partition delete is one mechanism whether the source is a schema
--- file, a compile-output directory, or a jar.
-
-CREATE TABLE store_source (
-  source_name VARCHAR NOT NULL,
-  source_kind VARCHAR NOT NULL,
-  stamp       VARCHAR,
-  PRIMARY KEY (source_name),
-  CHECK (source_kind IN ('SCHEMA_FILE', 'DIRECTORY', 'JAR'))
-);
-COMMENT ON TABLE store_source IS 'A source the store read. Every base relation is partitionable by the source that produced it: a refresh deletes exactly the rows one source wrote and re-walks it, so a relation unreachable from a source row is one the store can only ever discard wholesale.';
-COMMENT ON COLUMN store_source.source_name IS 'the schema file path or the classpath entry path, as the reader spelled it';
-COMMENT ON COLUMN store_source.source_kind IS 'a closed taxonomy: a schema file, a directory root, or a jar';
-COMMENT ON COLUMN store_source.stamp IS 'content hash, so an unchanged source is read once; NULL for a directory root, which changes on every compile and is never cached, and for a schema file, whose bytes capture never holds (graphql-java hands the walk a source name, not the text)';
 
 -- ==== JVM classpath facts =========================================================
 -- What the classfiles on the compile classpath declare, in the JVM's vocabulary: classes,

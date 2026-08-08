@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.capture;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.jooq.Field;
+import org.jooq.Schema;
 import org.jooq.Table;
 import org.jooq.UniqueKey;
 
@@ -15,6 +16,7 @@ import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
+import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static no.sikt.graphitron.model.Tables.SQL_INDEX;
 import static no.sikt.graphitron.model.Tables.SQL_INDEX_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
@@ -48,6 +50,9 @@ final class CatalogFactCapture {
     private static final String PRIMARY_KEY = "PRIMARY KEY";
     private static final String UNIQUE = "UNIQUE";
     private static final String FOREIGN_KEY = "FOREIGN KEY";
+
+    /** {@code store_source.source_kind}'s catalog arm; the classpath arms are the scan's. */
+    private static final String JOOQ_SCHEMA = "JOOQ_SCHEMA";
 
     private CatalogFactCapture() {}
 
@@ -83,6 +88,7 @@ final class CatalogFactCapture {
             record.setTableSchema(schema);
             record.setTableName(name);
             record.setJooqName(entry.javaFieldName());
+            record.setSourceName(recordSchemaSource(sink, table));
             record.setDescription(nullIfBlank(table.getComment()));
             sink.add(record);
 
@@ -91,6 +97,31 @@ final class CatalogFactCapture {
             captureForeignKeys(sink, jooq, table, schema, name);
             captureIndexes(sink, jooq, table, schema, name);
         }
+    }
+
+    /**
+     * Claims the source this table's schema was read from, on first sight, and returns its name.
+     *
+     * <p>The source is the generated package the schema lives in, not the classpath entry the
+     * classes were loaded from. Both are true of the rows, and only the package is a refresh unit:
+     * one jar carries every schema a codegen run produced, so invalidating the entry would discard
+     * schemas nothing touched, while the package is the granularity codegen rewrites. It also needs
+     * no code-source probe, being derivable from the live {@link Schema} the walk already holds.
+     *
+     * <p>A table whose schema is absent falls back to its own package, which is the same place for
+     * every layout jOOQ generates; the fallback exists because {@code getSchema()} is nullable, not
+     * because a real catalog reaches it.
+     */
+    private static String recordSchemaSource(FactSink sink, Table<?> table) {
+        Schema schema = table.getSchema();
+        String source = (schema != null ? schema.getClass() : table.getClass()).getPackageName();
+        if (sink.claim(STORE_SOURCE, source)) {
+            var row = sink.dsl().newRecord(STORE_SOURCE);
+            row.setSourceName(source);
+            row.setSourceKind(JOOQ_SCHEMA);
+            sink.add(row);
+        }
+        return source;
     }
 
     /**

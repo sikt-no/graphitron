@@ -1,7 +1,7 @@
 ---
 id: R595
 title: "The graphitron-model module exists and capture fills it"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 4
 theme: classification-model
@@ -115,12 +115,19 @@ These bind the shipped DDL and every relation added to it later.
   requirement, and it is why it is stated here rather than left to the surface that wants it: a
   schema written without it cannot acquire it later without rekeying. The SDL families satisfy
   it through the declaration site's `source_name`, with the synthesis provenance relations making
-  orphan cleanup exact and shared machinery types refcounted by carrier row. The classpath and
-  catalog families satisfy it through a source relation naming the classpath entry, one
-  mechanism for both, since the jOOQ catalog is itself loaded from generated classes on the
-  codegen classpath (`JooqCatalog` resolves its catalog through `codegenLoader`) and so has the
-  same kind of provenance a scanned jar does. A source's kind is a closed taxonomy: a schema
-  file, a directory root, or a jar.
+  orphan cleanup exact and shared machinery types refcounted by carrier row. The classpath family
+  satisfies it through the classpath entry a class was read from. The catalog family was first
+  specified the same way, on the reasoning that the jOOQ catalog is itself loaded from generated
+  classes on the codegen classpath (`JooqCatalog` resolves its catalog through `codegenLoader`) and
+  so has the same kind of provenance a scanned jar does; that is true of the rows and wrong about
+  the unit. One jar carries every schema a codegen run produced, so invalidating the entry would
+  discard schemas nothing touched, while the generated package a schema lives in is the granularity
+  codegen actually rewrites, and it is derivable from the live `Schema` without a code-source probe.
+  The `sql_` family therefore names that package. A source's kind is a closed taxonomy: a schema
+  file, a directory root, a jar, or a generated jOOQ schema package. That last name is jOOQ's on
+  purpose and does not reopen the `sql_` ruling: a family is named for whose vocabulary its rows
+  are written in, and jOOQ owns none of SQL's, while a source is named for what it is, and a
+  generated package is jOOQ's artefact.
 - **Every table and every column is commented.** The shipped DDL states them as `COMMENT ON`
   clauses so they land in `INFORMATION_SCHEMA` and jOOQ carries them into the generated classes'
   Javadoc; the schema is then self-describing at both the SQL prompt and the call site. A gate
@@ -547,17 +554,18 @@ their prefixes, because one mechanism covers all three source kinds.
 ```sql
 -- ==== Store bookkeeping ======================================================
 
--- A source the store read. One relation for all three kinds, because a
--- partition delete is one mechanism whether the source is a schema file, a
--- compile-output directory, or a jar. The jOOQ catalog is itself loaded from
--- generated classes on the codegen classpath, so the sql_ family's provenance
--- is a classpath entry like the jvm_ family's.
+-- A source the store read. One relation for every kind, because a partition
+-- delete is one mechanism whether the source is a schema file, a compile-output
+-- directory, a jar, or the generated package a jOOQ schema lives in. The catalog
+-- names the package rather than the classpath entry its classes came from: one
+-- jar carries every schema a codegen run produced, and the package is the
+-- granularity codegen rewrites.
 CREATE TABLE store_source (
-  source_name VARCHAR NOT NULL, -- the schema file path or the classpath entry path
+  source_name VARCHAR NOT NULL, -- the schema file path, the classpath entry path, or the generated package
   source_kind VARCHAR NOT NULL,
-  stamp       VARCHAR,          -- content hash; NULL for a directory root, which changes on every compile and is never cached
+  stamp       VARCHAR,          -- content hash; NULL where there is nothing cheap to hash or nothing worth caching
   PRIMARY KEY (source_name),
-  CHECK (source_kind IN ('SCHEMA_FILE', 'DIRECTORY', 'JAR'))
+  CHECK (source_kind IN ('SCHEMA_FILE', 'DIRECTORY', 'JAR', 'JOOQ_SCHEMA'))
 );
 
 -- What this store was built from. At most one row, stated structurally: a
@@ -1118,11 +1126,11 @@ keep in agreement. And the cross-root dedup's shadowed duplicate is still discar
 quarantined; the source column is what makes the detection possible, and it can land with the
 consumer that wants it.
 
-**Not landed here: `sql_table` carries no `source_name`.** The delivery plan for this slice names
-`store_source` and `jvm_class.source_name`, and those are in; the catalog's own provenance is the
-classpath entry its generated classes were loaded from, which needs a code-source probe on the
-generated `Table` class, and inventing that reading before anything needs it is the speculation the
-rest of the item avoids. It is what the partitionability acceptance line still owes.
+**`sql_table.source_name` landed too**, which the delivery plan for this slice did not name but the
+partitionability acceptance line owes. It is the generated package the table's schema lives in, not
+the classpath entry the classes came from: see the convention above for why the entry is the wrong
+unit. The multi-schema fixture is what pins the granularity, a single-schema catalog being unable to
+tell a per-schema partition from a per-jar one.
 
 **Tests.** A jar-resident `@scalarType` reference raises no diagnostic, which is the reported bug and
 the regression guard. Completion on `scalar LocalDate @scalarType(scalar: "|")` offers the
@@ -1273,8 +1281,9 @@ the catalog and the classpath (`GraphQLRewriteGenerator`) while `buildOutput` re
   directive is deliberately not in this list: under registry capture it is author-reachable, so
   it is a detection.
 - Every base relation is partitionable by the source that produced it, per the convention above:
-  `store_source` carries every schema file, directory root and jar the store read, and no base row
-  is unreachable from one. A per-source refresh deletes exactly that source's rows.
+  `store_source` carries every schema file, directory root, jar and generated jOOQ schema package
+  the store read, and no base row is unreachable from one. A per-source refresh deletes exactly
+  that source's rows.
 - The class census is the compile classpath, so the LSP and the codegen loader resolve the same
   set: a jar-resident `@scalarType` constant raises no diagnostic and is offered in completion.
   Re-scanning is stamped per source, so an unchanged jar is read once.

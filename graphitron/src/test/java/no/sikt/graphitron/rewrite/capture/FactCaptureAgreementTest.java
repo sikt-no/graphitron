@@ -858,6 +858,47 @@ class FactCaptureAgreementTest {
     }
 
     /**
+     * The catalog is partitioned by the generated package its schema lives in, which is the
+     * granularity codegen rewrites. The classpath entry the classes came from would also be true of
+     * these rows and is the wrong unit: one jar carries every schema a codegen run produced, so
+     * invalidating the entry discards schemas nothing touched.
+     */
+    @Test
+    @DisplayName("the table census is partitioned by its schema's generated package")
+    void catalogIsPartitionedBySchemaPackage(@TempDir Path tmp) {
+        // The multi-schema fixture, because the single-schema catalog cannot tell a per-schema
+        // partition from a per-jar one: both fixtures ship in the same jar, and only this one
+        // spreads its tables over more than one generated package.
+        var jooq = new JooqCatalog("no.sikt.graphitron.rewrite.multischemafixture",
+            testContext().codegenLoader());
+        try (var store = GraphitronModelStore.open()) {
+            FactCapture.capture(store.dsl(), emptyRegistry(tmp), jooq, List.of(), new NodeDeclaration(null));
+
+            var expected = new LinkedHashSet<String>();
+            for (var entry : jooq.allTableEntries()) {
+                expected.add(entry.table().getSchema().getClass().getPackageName());
+            }
+            assertThat(expected).as("the fixture spans schemas, so this pins the granularity")
+                .hasSizeGreaterThan(1);
+
+            var sources = new LinkedHashSet<>(store.dsl()
+                .select(STORE_SOURCE.SOURCE_NAME)
+                .from(STORE_SOURCE)
+                .where(STORE_SOURCE.SOURCE_KIND.eq("JOOQ_SCHEMA"))
+                .fetch(STORE_SOURCE.SOURCE_NAME));
+            assertThat(sources).isEqualTo(expected);
+
+            // Every table reaches one, and reaches the one its own schema names.
+            var mismatched = store.dsl()
+                .select(SQL_TABLE.TABLE_NAME, SQL_TABLE.SOURCE_NAME)
+                .from(SQL_TABLE)
+                .where(SQL_TABLE.SOURCE_NAME.notIn(expected))
+                .fetch();
+            assertThat(mismatched).as("tables whose source is not their schema's package").isEmpty();
+        }
+    }
+
+    /**
      * The SDL side is partitionable too. It declares no foreign key into {@code store_source}: a
      * schema-level row can carry a null source name, and the FK doctrine puts one only where the
      * walk writes the child while standing on the parent. Reachability is what the partition rule
