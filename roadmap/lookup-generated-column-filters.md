@@ -55,33 +55,62 @@ empty or null key list degrades to `DSL.noCondition()`, which returns every row 
 The rewrite's row-typed VALUES join fixes both and additionally preserves input order and
 per-key misses. So the migration target is legacy's capability, not legacy's mechanism.
 
-## What the rewrite already has
+## Spike: the emit already works (measured 2026-08-08)
 
-The gap may be narrower than the message claims, and the item should open with a spike that settles
-it rather than assuming emit work. The lookup key argument is already excluded from
-`GeneratedConditionFilter` at build time (`FieldBuilder`, the `!ca.isLookupKey()` branch), so a
-generated filter on a lookup coordinate is composed purely of the *other* filterable arguments and
-never re-states the key. Both lookup emitters already chain a condition beside the join:
-`RootLauncherRenderer`'s `KeyedLookup` arm declares the `condition` local from the row's glue call
-and `lookupBody` renders `.where(condition)`, and the child arm folds `.and(<glue>)` onto the inner
-select. The condition row itself is minted for lookup coordinates today, which is why authored
-`@condition` entries are supported. `ConditionGlueRenderer` renders the authored and generated
-predicate arms into the same method body against the same table local, with nothing lookup-hostile
-in the generated arm. On that reading the work is closer to "prove the generated arm binds and
-renders correctly on a lookup coordinate, pin it with a SQL baseline and an execution test, delete
-both guards" than to building new emit.
+The rejection is stale. Every emitter this shape reaches already composes the generated predicate
+correctly, and the two guards are the only thing standing between the schema and working output.
+Measured by making both guards conditional on a system property, then generating and running:
 
-## The decision to take at Spec
+- **Root lookup.** `RootLauncherRenderer`'s `KeyedLookup` arm declares the `condition` local from
+  the row's glue call and `lookupBody` renders `.where(condition)`, so the generated predicate lands
+  in the WHERE beside the VALUES join with no renderer change.
+- **Inline child lookup.** The `LookupMultiset` projection arm folds
+  `.and(FilmConditions.actorsCondition(a1, sf.getArguments()))` into the inner select's WHERE,
+  beside the FK correlation and the join to the input rows.
+- **Batched child lookup.** The `@splitQuery` loader folds the same glue call into its
+  `DSL.noCondition().and(...)` WHERE, against the child alias.
+- **It compiles and runs.** A sakila fixture (`languagesByKeyGenerated`, the generated-filter twin
+  of the existing `languagesByKeyFiltered`) generates, compiles at release 17, and executes against
+  PostgreSQL as
+  `select "public"."language"."name" from "public"."language" join (values (0, ?), (1, ?)) as
+  "languagesbykeygeneratedinput" ("idx", "language_id") using ("language_id") where
+  "public"."language"."name" = ? order by "languagesbykeygeneratedinput"."idx"`.
+- **Nothing else depends on the rejection.** The generator suite runs 3246 tests with both guards
+  lifted and fails 3, all of them `RootLookupValidationTest` enum rows that pin the rejection text
+  itself (`COLUMN_ARG_DEFERRED`, `LIST_COLUMN_ARG_DEFERRED`, `SINGLE_RETURN_LIST_ARG`).
 
-1. Whether the spike confirms the above. If a fixture with a lookup key plus a generated filter
-   emits correct SQL once the two guards are lifted, this is a pin-and-delete item. If it does not,
-   the failure mode names the real emit work.
-2. Whether root and child lookups land together. The root launcher and the `LookupMultiset`
-   projection arm are separate emitters and may not be in the same state.
-3. What happens to the sibling deferrals. `GraphitronSchemaValidator.validateConditionEmitImplemented`
-   also rejects any filter on a single-table interface child coordinate; that one is a genuinely
-   unfolded filter list and stays. R567 covers the other unrealized lookup co-member payloads
-   (orderBy and paginate); this item is the filter axis of the same audit and should not absorb them.
-4. Whether the empty-key-list semantics need stating in the user manual, since the rewrite's
-   short-circuit (empty input returns the empty result) differs from what a legacy consumer's
-   queries may have relied on.
+Why it already works: the lookup key argument is excluded from `GeneratedConditionFilter` at build
+time (`FieldBuilder`, the `!ca.isLookupKey()` branch), so the generated filter on a lookup
+coordinate is composed purely of the *other* filterable arguments and never re-states the key; the
+condition row is minted for lookup coordinates today, which is why authored `@condition` is
+supported; and `ConditionGlueRenderer` renders the authored and generated predicate arms into the
+same method body against the same table local. The guard predates that convergence. The comment on
+the pinned validator cases said as much, that they "flip back to valid when the lookup fold
+converges onto glue"; the fold converged and the guard was never revisited.
+
+So this is a pin-and-delete item, not an emit item: delete
+`ConditionCommands.requireNoGeneratedFilterOnLookup` and the lookup arm of
+`GraphitronSchemaValidator.validateConditionEmitImplemented`, re-point the three
+`RootLookupValidationTest` rows from rejected to valid, and land fixtures that pin the three emit
+shapes so the capability cannot regress silently.
+
+## What is left to decide at Spec
+
+1. **Fixture coverage.** The three emit shapes each want a pin. Root wants a
+   `ConditionSqlBaselineTest` SQL baseline plus an execution assertion on the returned rows (the
+   spike asserted the statement, not the result set). Inline and batched child want pipeline-tier
+   pins at minimum, and an execution-tier one if the sakila schema can carry the coordinate cheaply.
+2. **`SINGLE_RETURN_LIST_ARG` is a compound case.** That row pins two rejections at once, a
+   cardinality mismatch and the filter deferral. It needs splitting rather than flipping, so the
+   surviving cardinality verdict keeps its coverage.
+3. **Interaction with a `@lookupKey` that is also `@field`-bound.** Several sakila lookups carry
+   both (`language_id: [Int] @lookupKey @field(name: "language_id")`). The exclusion branch keys off
+   `isLookupKey`, so the key does not double as a predicate, but a fixture should pin that rather
+   than leave it to reading.
+4. **Scope fence.** The sibling deferral in the same validator method, any filter on a single-table
+   interface child coordinate, is a genuinely unfolded filter list and stays. R567 covers the other
+   unrealized lookup co-member payloads (orderBy and paginate); this item is the filter axis of the
+   same audit and should not absorb them.
+5. **Whether the empty-key-list semantics need stating in the user manual**, since the rewrite's
+   short-circuit (empty input returns the empty result) differs from legacy's `noCondition()`
+   degradation to every row, and a migrating consumer's queries may have relied on the latter.
