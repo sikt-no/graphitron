@@ -728,17 +728,41 @@ Shipped and standing: the module and both boots, the whole DDL, the SDL and cata
 wired into the pipeline, the gate family, and the mechanical agreement driver with its type-census,
 applied-directive, catalog-census and extension-census anchors.
 
-Slice 1 has landed: capture takes `AttributedRegistry.preSynthesisRegistry()`, the two appliers sit
-above the cut by decision rather than by accident, and the federation anchor runs one pipeline pass
-and compares the store against the registry the rewrite mutated, with the provenance rows as the
-assertion that catches a capture reading the wrong handle.
+**Slices 1 through 4 have landed; slice 5 has not.** Each ended with a green
+`mvn install -Plocal-db`, and what each settled is recorded in its own section below. In outline:
 
-Shipped and being replaced by the delivery below: the two non-SDL capture loads read `CatalogFacts`
+- **Slice 1.** Capture takes `AttributedRegistry.preSynthesisRegistry()`, a `readOnly()` snapshot
+  taken where the loading rewrites end. `TagApplier` and `DescriptionNoteApplier` sit above the cut
+  by decision rather than by accident, and `KeyNodeSynthesiser` moved below them so the pipeline's
+  order states the split. The federation anchor runs one pipeline pass and compares the store
+  against the registry the rewrite mutated; the provenance rows are the assertion that catches a
+  capture reading the wrong handle, verified by perturbing the handle.
+- **Slice 2.** The families are `sql_` and `jvm_`, `java_name` is `jooq_name`, and
+  `extension_scalar_constant` is `jvm_scalar_type_field`. Every renamed relation's comment now
+  states its filters, which is what the sharper names owe.
+- **Slice 3.** `sql_constraint`, `sql_constraint_column`, `sql_primary_key` and
+  `sql_referential_constraint` replace the four `catalog_` constraint relations, capture reads
+  `JooqCatalog` instead of `CatalogFacts`, `sql_column.ordinal` comes from `Table.fields()`, and
+  the census anchors compare without a fold.
+- **Slice 4.** The census is the compile classpath, jars included; `store_source` records every
+  entry and every schema file, stamped by content hash where there are bytes to hash;
+  `jvm_method.descriptor` is the real JVM descriptor; completion ranks reactor classes first.
+
+A module-wiring defect surfaced in slice 2, the first slice to edit the DDL, and is fixed there.
+The codegen driver finds the DDL through the classpath, where `target/classes` precedes the source
+tree. On a clean build that directory is empty and the source wins, which is what made the
+resource's ordinary `process-resources` copy look sufficient; on an incremental build the previous
+run's copy shadowed the edit, so codegen regenerated the schema the build before had and the
+compile-time surface lagged the DDL by a build. The module copies its resources ahead of the driver
+now, which keeps "edit the DDL and follow the compiler" true on every build rather than only on a
+clean one.
+
+Shipped and replaced by slices 2 through 4: the two non-SDL capture loads read `CatalogFacts`
 and `CompletionData` rather than the catalog and the scanner, which is where every defect slices 3
-and 4 fix comes from; the `catalog_` and `extension_` family names; and the four constraint
+and 4 fix came from; the `catalog_` and `extension_` family names; and the four constraint
 relations. Federation `@key` synthesis shipped as a walk macro with its provenance rows and an
-anchor against `KeyNodeSynthesiser`, but the macro is inert in production and the anchor pins a path
-the pipeline never takes, which is slice 1.
+anchor against `KeyNodeSynthesiser`, but the macro was inert in production and the anchor pinned a
+path the pipeline never took, which slice 1 fixed.
 
 `@asConnection` expands too: the directive-driven arm rewrites the carrier field to the Connection
 it mints (the authored expression surviving in `graphitron_field_synthesis`) and mints the
@@ -881,6 +905,12 @@ generated classes regenerate from the DDL and the compiler finds every call site
 **Done when** the build is green with no behavioural diff, and `everyRelationIsRegistered` holds,
 which it will fail in both directions if the driver's registration list does not move with the names.
 
+**Landed**, with one finding the slice did not go looking for: this was the first slice to edit the
+DDL, and the edit did not reach codegen. The module-wiring fix is recorded under "Where this
+stands"; the symptom was "cannot find symbol" in core against a relation the DDL declares, which is
+exactly the failure the `drop-stale-generated-classes` execution exists to prevent, one phase
+earlier than it was looking.
+
 ### Slice 3: the SQL family models constraints as the catalog does
 
 `sql_constraint`, `sql_constraint_column`, `sql_primary_key` and `sql_referential_constraint`
@@ -925,6 +955,15 @@ projection artifacts this slice removes.
 
 **Done when** the store's constraint census equals the catalog's rather than `CatalogFacts`' view of
 it, and the anchor compares without a fold.
+
+**Landed.** The out-of-catalog question settled the way the target DDL assumed: both endpoints of a
+foreign key come out of the same generated model and the census enumerates every schema that model
+declares, so the referenced constraint is present by construction and the relation declares the
+foreign key. Capture unions the primary key into `Table.getKeys()` before writing, which is a no-op
+under jOOQ's contract and is what keeps `sql_primary_key`'s reference resolvable if a model ever
+separates them. There was no `uniqueKeys` fold to remove, because there was no constraint census
+anchor at all; four now pin the constraint census, the position-matched resolution of a foreign
+key's target columns, the primary-key form, and the definition order of column ordinals.
 
 ### Slice 4: the class census reads the compile classpath
 
@@ -1035,6 +1074,42 @@ so this is roughly a 16x increase against a per-build cost that is currently ~0.
    rests on a number. Per the analysis under "notes carried forward" the answer to a slow load is a
    faster load, not a narrower census.
 
+**Landed**, with step 6's numbers, which decide more than the item expected. Against
+`graphitron-sakila-example`'s 282-entry compile classpath, warm page cache, single-threaded:
+28,556 classes, 205,262 methods, 277,374 parameters and 74 `GraphQLScalarType` fields; the scan
+costs 2.2 s and hashing the whole classpath costs 0.6 s over 121 MiB, so the stamp is an order of
+magnitude cheaper than the parse it protects, which the item assumed and this confirms.
+
+The insert dominated, not the scan: 23 s for half a million rows. Per the note carried forward the
+answer is a faster load, so `FactSink` now renders one insert per relation and binds per row rather
+than going through `batchInsert`, which re-derives each record's changed-field set and renders per
+record; that brings it to 13 s. A raw JDBC prepared-statement batch measured about three times
+faster again (28k `jvm_class` rows in 398 ms, 207k `jvm_method` rows in 1.6 s), and the schema's
+own "only values are stored" convention is what would make binding directly safe, since every
+column is a `VARCHAR`, `INT` or `BOOLEAN`. That is the next faster load if one is wanted; it was
+measured and left, not overlooked.
+
+The reactor build goes 5:07 to 5:56, with `graphitron-sakila-example` carrying all of it (1:21 to
+2:14 across five generator passes). No narrowing was taken: the cost is per pass and per fresh
+store, which is exactly what slice 5 removes, since a run that opens the previous run's file
+re-reads no unchanged jar and re-inserts no unchanged partition.
+
+Three riders on the delivery. The nested-class filter stays, disclosed on `jvm_class` rather than
+removed: a nested class named in `@record` resolving through the codegen loader is a real gap, but
+it is a second axis from this slice's, and widening both at once would leave neither measured.
+`CompletionData` gained the two components the scan was dropping (`ExternalReference.sourceName`,
+`Method.descriptor`) rather than growing a second capture-facing shape beside it, because both are
+facts the scan holds and the LSP surface can use, and a second shape would be a second thing to
+keep in agreement. And the cross-root dedup's shadowed duplicate is still discarded rather than
+quarantined; the source column is what makes the detection possible, and it can land with the
+consumer that wants it.
+
+**Not landed here: `sql_table` carries no `source_name`.** The delivery plan for this slice names
+`store_source` and `jvm_class.source_name`, and those are in; the catalog's own provenance is the
+classpath entry its generated classes were loaded from, which needs a code-source probe on the
+generated `Table` class, and inventing that reading before anything needs it is the speculation the
+rest of the item avoids. It is what the partitionability acceptance line still owes.
+
 **Tests.** A jar-resident `@scalarType` reference raises no diagnostic, which is the reported bug and
 the regression guard. Completion on `scalar LocalDate @scalarType(scalar: "|")` offers the
 jar-resident constant. `ClasspathScanner` unit tier: a fixture jar is scanned, its public classes and
@@ -1078,6 +1153,14 @@ absorbed item carried only the first, which is what made it look separable.
 exported at the end. Reader concurrency while a build writes: H2 file locking, copy-on-open, or
 auto-server mode. Both are runtime questions the schema does not constrain, which is why they are
 the last thing decided rather than the first.
+
+**Not started.** The schema side it depended on is in: `store_source` exists, carries a stamp, and
+every base row the classpath and SDL families write is reachable from one, so the partitionability
+requirement persistence imposes is satisfied ahead of the mechanism (the `sql_` family's own source
+column excepted, noted under slice 4). What remains is the whole of the mechanism: the file under
+`target/`, `store_stamp` and its discard-and-rebuild on mismatch, and the two runtime questions
+above. Slice 4's measurement is the case for it: 15 s of scan-plus-insert per generator pass, paid
+five times in one module's build, is work a warm start does not repeat.
 
 ### Notes carried forward
 
