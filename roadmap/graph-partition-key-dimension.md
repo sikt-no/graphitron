@@ -152,6 +152,32 @@ never examined and never deleted, because a jar absent from this module's classp
 another graph's live dependency. `store_source` and `store_graph` rows upsert with fresh
 `last_seen` / `last_captured` stamps and are never deleted by a run that does not own them.
 
+### Freshness is heterogeneous by design
+
+A user works on one subgraph at a time. The shared store's steady state is therefore one hot
+graph, refreshed on every build and every dev-loop round, beside siblings that are exactly as
+fresh as their last build, hours or weeks old. That is not a defect to engineer away, it is
+what ownership-scoped refresh means: no run pretends to refresh facts it did not read. What
+the store owes instead is making staleness **visible rather than silent**, and this item
+ships the substrate in three parts:
+
+- **When**: `store_graph.last_captured` and `store_source.last_seen` date every partition.
+- **What**: `store_source.stamp` is a content hash, so a cold graph's currency is checkable
+  without building it: re-hash its recorded sources and compare. Staleness detection costs a
+  hash, not a capture.
+- **Where**: for that check to work from outside the owning module's build, a schema file's
+  `source_name` must be recorded in a form resolvable there (absolute or anchored to a
+  stated root, settled at implementation); today it is whatever path the parser was handed.
+
+The rule this binds future consumers to, stated now so it is reviewable now: a cross-graph
+reader treats freshness as an input. A composition detection that reads a sibling partition
+carries the sibling's `last_captured` into any diagnostic it mints, and never presents
+conclusions over a heterogeneous store as if the store were uniformly current.
+
+The same work pattern is why shared-store contention stays rare in practice: parallel module
+builds meet in the file on a full reactor build, while the everyday case is a single hot
+graph writing beside cold ones nobody touches.
+
 Retention of unowned rows is justified by ownership, not by a freshness proof: the run that
 owns them refreshes them on its own cadence. The residual hazard is the orphan partition, and
 it is accepted and instrumented rather than solved here: a renamed graph (an artifactId
