@@ -68,12 +68,21 @@ one blast radius as its consequence.
   rows are a summary collected last and nullable at schema-level sites, so the FK doctrine
   admits one and not the other. Second, a recorded exemption: any derivation joining an SDL
   fact to a catalog or classpath fact (`graphitron_service`'s class name against `jvm_class`,
-  `graphitron_table`'s table reference against `sql_table`) is graph-blind and correct only
-  while exactly one graph exists; the multi-graph orchestration item closes it. Stating it
+  `graphitron_table`'s table reference against `sql_table`) is underdetermined in a shared
+  store until the membership relation says which sources are the joining graph's; such joins
+  are deferred with their consumers, and the membership relation lands with them. Stating it
   makes the next such join read the rule instead of inheriting the hazard silently.
-- `jvm_`, `sql_`, `store_source`, and `store_stamp` keep their keys untouched. Per-graph
-  classpath scope is a membership and derivation question, not capture, and version skew
-  between two graphs' classpaths is that future item's business.
+- `jvm_` and `sql_` stay graph-free but stop being store-global, because the shared store
+  makes their bare natural keys unsound: two modules' classpaths can carry two versions of
+  one class name, two modules' catalogs two shapes of one `(schema, table)` coordinate, and
+  under merge writes the second build would silently clobber facts owned by a source it
+  never crawled. Their keys gain their **source**, not the graph: `jvm_class` keys
+  `(source_name, class_name)`, the `sql_` family leads with its generated-package source,
+  children widening through the usual FK cascade. The same jar at the same path (the shared
+  `~/.m2` case) stays one partition, written once and shared; different versions are
+  different sources and coexist; the version-skew collision becomes representable instead
+  of a clobber. Which sources make up a graph's classpath stays a membership and derivation
+  question for the consumers that need it. `store_source` and `store_stamp` keep their keys.
 
 ## The graph has a configured name
 
@@ -138,9 +147,10 @@ bearing half of the item: `claim` is a hand-maintained mirror of every natural k
 widening the DDL keys without widening the claim keys would relocate the fusion this item
 exists to prevent one layer up, where a two-graph load would first-wins-drop the second
 graph's types before the widened primary keys could ever see them, misfiling them as author
-duplicates. Scoping the sink leaves every existing `claim` call site untouched and correct by
-construction; a future multi-graph load is a second sink, not two hundred call sites that
-each remember a new argument.
+duplicates. Scoping the sink leaves every SDL-family `claim` call site untouched and correct
+by construction; a future multi-graph load is a second sink, not two hundred call sites that
+each remember a new argument. The source-keyed families' few claim sites change with their
+keys, which is the compiler-led part of the rekey.
 
 `StoreRefresh` becomes **ownership-scoped**: a run deletes exactly what it owns and touches
 nothing else. Owned means two things. The run's graph: the SDL families clear scoped to
@@ -175,8 +185,9 @@ substrates, both shipping here:
   supported today: which schema files a graph read is derivable from its declaration
   sites, and the `source_name` those record must be resolvable from outside the owning
   module's build (absolute or anchored to a stated root, settled at implementation; today
-  it is whatever path the parser was handed). Catalog and classpath currency need the
-  deferred membership relation, recorded below as one of its readers.
+  it is whatever path the parser was handed). Sibling catalog and classpath currency is
+  nobody's question: those families sit outside the cross-graph read surface below, and
+  within the owning graph the run's own configuration names its input set.
 
 The rule this binds future consumers to, stated now so it is reviewable now: a cross-graph
 reader treats age and currency as inputs. A composition detection over a sibling partition
@@ -190,6 +201,21 @@ Collaboration does not flow through the store, which is what keeps the concurren
 honest: the store is per-user and per-machine, other people's work arrives as source changes
 via git, never as store writes, so parallel module builds meet in the file on a full reactor
 build while the everyday case stays a single hot writer.
+
+### The cross-graph read surface is the schema contract
+
+Working on subgraph A, the sibling facts that matter are what B's schema **declares**: its
+types, fields, entities and keys, the `graphql_` transcription and the SDL-derived decoded
+stratum. B's implementation facts (its catalog, its classpath, what its binding directives
+resolve to) are B's private business, encapsulated exactly as federation intends: A consumes
+B's contract, never B's internals. The spec fixes that as the store's read discipline:
+**cross-graph reads range over the SDL-derived families only**, and the `sql_` and `jvm_`
+families are read by their own graph's consumers alone. Two alignments fall out, load-bearing
+rather than lucky. The cross-graph read surface coincides with the parse-only re-capture
+surface, so the sibling facts a consumer wants are exactly the ones a pull-staleness repair
+can refresh without building the sibling. And the families whose keys partition by source
+rather than by graph are exactly the ones no cross-graph consumer reads, so their
+graph-freeness costs nothing.
 
 Retention of unowned rows is justified by ownership, not by a freshness proof: the run that
 owns them refreshes them on its own cadence. The residual hazard is the orphan partition, and
@@ -207,11 +233,13 @@ Two new gate queries join `FactSchemaGateTest`, and the first is written in exem
 polarity, the same polarity `StoreRefresh.wholesale()` already chose:
 
 - **Every base relation leads its primary key with `graph_name` unless its family is
-  deliberately graph-blind**, with the exempt prefixes (`store_`, `sql_`, `jvm_`) enumerated
+  deliberately graph-free**, with the exempt prefixes (`store_`, `sql_`, `jvm_`) enumerated
   in the gate and justified in a line each. An allow-list over today's two prefixes would
   silently not cover the reserved `intent_` stratum and R589's claim relations, which is
   exactly where the dimension matters most; under exemption polarity a new family is covered
-  by default and its exemption has to be argued in.
+  by default and its exemption has to be argued in. The exemption is not key-freedom: the
+  same gate checks that `sql_` and `jvm_` relations lead with `source_name` instead, their
+  partition dimension; only the `store_` family itself carries neither.
 - **A run writes only under its own graph**: after capturing into a store pre-seeded with a
   second graph's rows, that graph's partition is byte-identical and no row of the run's
   output carries any other `graph_name`. This is the two-graph fusion test the item's
@@ -239,11 +267,12 @@ as shipped. No consumer queries exist yet to update, which is the point of doing
 
 - **`store_graph_source` membership.** The Backlog stub proposed it and the shared store
   sharpens the question: in a multi-graph store, which sources a graph reads is no longer
-  derivable from the graph-blind `jvm_`/`sql_` rows. It still stays out, because nothing
-  reads it yet: each run knows its own input set from configuration, and the three candidate
-  readers (eviction, cross-graph composition detections, and currency checks on a sibling's
-  catalog and classpath sources, per the freshness section) are all deferred. It lands with
-  the first of them, as an input written by capture, not a derivation.
+  derivable from the graph-free `jvm_`/`sql_` rows. It still stays out, because nothing
+  reads it yet: each run knows its own input set from configuration, and the candidate
+  readers are eviction (which sources does no graph still reference) and per-graph
+  resolution over the source-keyed `sql_`/`jvm_` families; cross-graph composition
+  detections do not need it, since they read sibling SDL rows keyed by graph directly. It
+  lands with the first reader, as an input written by capture, not a derivation.
 - **Eviction.** Orphaned partitions (renamed graphs, jars no classpath references) accumulate
   until a policy or command drops them; this item writes the `last_captured` / `last_seen`
   stamps eviction needs and defers the eviction surface itself.
