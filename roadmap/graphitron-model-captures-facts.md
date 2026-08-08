@@ -599,7 +599,9 @@ located instead of throwing. Capture is total, with no reachability pruning.
   applied at the parse boundary: a dangling author-spelled reference or a malformed directive
   argument is an author error that mints a located diagnostic, never a reason capture cannot
   run. The walk reads the registry after the loading rewrites (federation `@link` imports,
-  `@oneOf` support, the bundled definitions) and before the synthesis rewrites, and is plain
+  `@oneOf` support, the bundled definitions, and the config-driven `@tag` and description-note
+  attribution, all of which are in the emitted schema the store owes a round trip of) and before
+  the synthesis rewrites, and is plain
   iteration over definitions and extensions in document order, no graphql-java visitor
   machinery; effective-type merging is the ordinal rule the schema section states. The
   registry's API is congruent with the schema families, so the walk transcribes rather than
@@ -726,6 +728,11 @@ Shipped and standing: the module and both boots, the whole DDL, the SDL and cata
 wired into the pipeline, the gate family, and the mechanical agreement driver with its type-census,
 applied-directive, catalog-census and extension-census anchors.
 
+Slice 1 has landed: capture takes `AttributedRegistry.preSynthesisRegistry()`, the two appliers sit
+above the cut by decision rather than by accident, and the federation anchor runs one pipeline pass
+and compares the store against the registry the rewrite mutated, with the provenance rows as the
+assertion that catches a capture reading the wrong handle.
+
 Shipped and being replaced by the delivery below: the two non-SDL capture loads read `CatalogFacts`
 and `CompletionData` rather than the catalog and the scanner, which is where every defect slices 3
 and 4 fix comes from; the `catalog_` and `extension_` family names; and the four constraint
@@ -811,13 +818,22 @@ pipeline never takes, which is exactly the drift the shadow-period anchors exist
 The fix is a placement decision, not a redesign: either capture the registry before
 `KeyNodeSynthesiser` runs (`loadAttributedRegistry` already builds the `JooqCatalog` the
 `NodeDeclaration` needs), or hand capture a pre-synthesis handle alongside the attributed one.
+Shipped as the second: `AttributedRegistry` carries a `preSynthesisRegistry` beside the attributed
+one, a `readOnly()` snapshot taken where the loading rewrites end. It is cheap (immutable copies of
+the registry's maps over the same AST nodes), it cannot drift out of the pipeline the way a second
+parse would, and it refuses mutation, so a rewrite inserted after the cut cannot silently leak into
+the capture handle.
 
-Also in this slice, because it is the same ordering question: decide explicitly what the position
-means for `TagApplier` and `DescriptionNoteApplier`, which also mutate the registry before capture.
-Their config-driven `@tag` applications and appended description notes land in the store as authored
-facts today. That may well be right, since the round-trip constraint wants the emitted schema
-reproducible and both are in it, but it is currently an accident of ordering rather than a recorded
-decision, and the item should say which it is.
+Also in this slice, because it is the same ordering question: `TagApplier` and
+`DescriptionNoteApplier` also mutate the registry before capture, and their config-driven `@tag`
+applications and appended description notes land in the store as authored facts. **Decided: they
+stay above the cut**, so capture keeps seeing them. Both are in the emitted schema, and the store
+owes a round trip of it; a store that omitted them could not reproduce what the run emitted. This
+makes them loading rewrites for the reading position's purposes, whatever "applier" suggests, and
+`KeyNodeSynthesiser` moves below them so the pipeline's order states the split rather than
+accidentally realising it. The move changes no output: neither applier touches the type-level
+directive list `KeyNodeSynthesiser` rewrites, and its `transform` preserves the descriptions and
+tagged members the appliers produce, so the two orders reach the same registry.
 
 **Done when** the federation anchor exercises the registry the pipeline actually captures, so a
 future move of the capture call fails a test rather than silently emptying a relation.

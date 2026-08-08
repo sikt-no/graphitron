@@ -77,6 +77,17 @@ public final class TestSchemaHelper {
     }
 
     /**
+     * The attribution pipeline production runs, for tests that need the two handles it hands back
+     * rather than a bare parse: {@link AttributedRegistry#registry()} after the synthesis rewrites
+     * and {@link AttributedRegistry#preSynthesisRegistry()} before them. A test that reconstructs
+     * the stage order itself instead of calling this pins its own reading of the pipeline rather
+     * than the pipeline.
+     */
+    public static AttributedRegistry attributedRegistry(RewriteContext ctx) {
+        return new GraphQLRewriteGenerator(ctx).loadAttributedRegistry();
+    }
+
+    /**
      * Parses {@code schemaText} into a {@link TypeDefinitionRegistry} after prepending the
      * directives prelude and the Relay {@code Node} interface (when not already declared).
      * Exposed so sibling test helpers (e.g. snapshot builders for the classification

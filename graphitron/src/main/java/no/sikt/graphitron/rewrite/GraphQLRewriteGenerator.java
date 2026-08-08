@@ -214,7 +214,7 @@ public class GraphQLRewriteGenerator {
         var catalog = CatalogBuilder.build(jooq, bundle.assembled(), ctx);
         var snapshot = CatalogBuilder.buildSnapshot(attributed.registry(), bundle.model(), catalog);
         var catalogFacts = CatalogBuilder.buildCatalogFacts(jooq);
-        FactCapture.run(attributed.registry(), catalogFacts, catalog.externalReferences(),
+        FactCapture.run(attributed.preSynthesisRegistry(), catalogFacts, catalog.externalReferences(),
             new NodeDeclaration(jooq));
         var errors = new GraphitronSchemaValidator().validate(bundle.model());
         var warnings = withLintFindings(bundle.model(), attributed);
@@ -281,13 +281,21 @@ public class GraphQLRewriteGenerator {
         var registry = RewriteSchemaLoader.load(bySource.keySet());
         TagLinkSynthesiser.apply(registry, bySource);
         var injectedNames = FederationLinkApplier.apply(registry);
+        TagApplier.apply(registry, bySource);
+        DescriptionNoteApplier.apply(registry, bySource);
+        // Everything above is a loading rewrite and everything below is synthesis, which is the
+        // line the capture handle is cut on. TagApplier and DescriptionNoteApplier sit above it
+        // deliberately: their @tag applications and appended notes are in the emitted schema, and
+        // the store owes a round trip, so capture has to see them. They used to sit below
+        // KeyNodeSynthesiser, which changed nothing about the registry either applier produces
+        // (neither touches the directive list KeyNodeSynthesiser rewrites) but did decide, by
+        // accident of ordering, what a capture cut here would see.
+        var preSynthesis = registry.readOnly();
         if (!injectedNames.isEmpty()) {
             KeyNodeSynthesiser.apply(registry,
                 new NodeDeclaration(new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader())));
         }
-        TagApplier.apply(registry, bySource);
-        DescriptionNoteApplier.apply(registry, bySource);
-        return new AttributedRegistry(registry, injectedNames);
+        return new AttributedRegistry(registry, preSynthesis, injectedNames);
     }
 
     /**
@@ -297,11 +305,12 @@ public class GraphQLRewriteGenerator {
      * a time, and until the first one does, the agreement tests are what keep the shadow honest.
      *
      * <p>Both loads read exactly what the pipeline beside them reads: the parsed registry (before
-     * the synthesis rewrites), the jOOQ catalog projection, and the classpath scan.
+     * the synthesis rewrites, which is what {@link AttributedRegistry#preSynthesisRegistry()}
+     * hands back), the jOOQ catalog projection, and the classpath scan.
      */
     private void captureFacts(AttributedRegistry attributed) {
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
-        FactCapture.run(attributed.registry(),
+        FactCapture.run(attributed.preSynthesisRegistry(),
             CatalogBuilder.buildCatalogFacts(jooq),
             CatalogBuilder.buildExternalReferences(ctx),
             new NodeDeclaration(jooq));

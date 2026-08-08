@@ -11,7 +11,14 @@ import java.util.Set;
 /**
  * The output of {@link GraphQLRewriteGenerator#loadAttributedRegistry}: a
  * {@link TypeDefinitionRegistry} paired with the names of the definitions the federation
- * {@code @link} injector added to it.
+ * {@code @link} injector added to it, plus the handle on the same registry as it stood before the
+ * synthesis rewrites.
+ *
+ * <p>{@code preSynthesisRegistry} exists because {@code KeyNodeSynthesiser} rewrites in place: a
+ * consumer that wants the schema an author wrote plus the loading rewrites, and not what synthesis
+ * made of it, has nothing to read once the rewrite has run. It is the handle the fact-capture loads
+ * take, so their macro expansion is the thing that mints the federation keys rather than finding
+ * them already there. Loading rewrites are on both sides of it; only synthesis is on one.
  *
  * <p>{@code injectedNames} is captured once, by the pipeline orchestrator, from
  * {@link no.sikt.graphitron.rewrite.schema.input.FederationLinkApplier#apply}'s return value;
@@ -23,11 +30,23 @@ import java.util.Set;
  * the full attribution pipeline) use {@link #from(TypeDefinitionRegistry)} to derive the set from
  * the registry's contents.
  */
-public record AttributedRegistry(TypeDefinitionRegistry registry, Set<String> injectedNames) {
+public record AttributedRegistry(TypeDefinitionRegistry registry,
+                                 TypeDefinitionRegistry preSynthesisRegistry,
+                                 Set<String> injectedNames) {
 
     public AttributedRegistry {
         Objects.requireNonNull(registry, "registry");
+        Objects.requireNonNull(preSynthesisRegistry, "preSynthesisRegistry");
         injectedNames = Set.copyOf(injectedNames);
+    }
+
+    /**
+     * A registry no synthesis has run over yet, for callers that build one without the pipeline:
+     * the two handles are the same object, which is what "before synthesis" means when nothing
+     * synthesised.
+     */
+    public AttributedRegistry(TypeDefinitionRegistry registry, Set<String> injectedNames) {
+        this(registry, registry, injectedNames);
     }
 
     /** True when the federation {@code @link} injector contributed any definitions. */

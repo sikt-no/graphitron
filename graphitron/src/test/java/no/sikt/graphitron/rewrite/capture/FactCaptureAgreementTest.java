@@ -22,7 +22,6 @@ import no.sikt.graphitron.rewrite.model.MethodBackedField;
 import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.NodeDeclaration;
-import no.sikt.graphitron.rewrite.schema.federation.KeyNodeSynthesiser;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -46,7 +45,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SYNTHESIS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_DECLARATION_SYNTHESIS;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_DIRECTIVE_SYNTHESIS;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_SITE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.CATALOG_COLUMN;
 import static no.sikt.graphitron.model.Tables.CATALOG_KEY;
 import static no.sikt.graphitron.model.Tables.CATALOG_TABLE;
@@ -170,14 +171,16 @@ class FactCaptureAgreementTest {
         }
         """;
 
-    /** A federated slice: one node with an authored key alternative, one without any. */
+    /**
+     * A federated slice with one of each outcome: an authored key alternative that synthesis still
+     * numbers after, a node with no key at all, and an authored id key that stands synthesis down.
+     * The {@code @link} is the author's; the {@code @key} declaration arrives through the pipeline's
+     * own federation import, which is the point of running this fixture through the pipeline.
+     */
     private static final String FEDERATED_FIXTURE = """
-        directive @link(url: String!, import: [String]) repeatable on SCHEMA
-        directive @key(fields: String!, resolvable: Boolean) repeatable on OBJECT
-
         extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
 
-        type Query { film: Film, language: Language }
+        type Query { film: Film, language: Language, actor: Actor }
 
         interface Node { id: ID! }
 
@@ -187,6 +190,11 @@ class FactCaptureAgreementTest {
         }
 
         type Language implements Node @node {
+          id: ID!
+          name: String
+        }
+
+        type Actor implements Node @node @key(fields: "id", resolvable: false) {
           id: ID!
           name: String
         }
@@ -273,12 +281,18 @@ class FactCaptureAgreementTest {
      * pipeline's assembly runs, and the walk macro capture runs, at different stages over different
      * representations. Neither can call the other without inverting the pipeline's ordering, so
      * this anchor is what keeps them from drifting. It retires with the rewrite's last consumer.
+     *
+     * <p>Both sides come out of one pipeline run rather than out of two registries the test
+     * assembles: the expectation is the registry the rewrite mutated, the comparison is the store
+     * filled from the handle production hands capture. That is what makes the reading position part
+     * of what this pins. Capture reading the mutated registry finds the keys already there, agrees
+     * on this set for the wrong reason, and shows it by minting no provenance, which is the second
+     * assertion.
      */
     @Test
-    @DisplayName("synthesized federation keys agree with the registry rewrite's")
+    @DisplayName("synthesized federation keys agree with the registry rewrite's, off one pipeline run")
     void federationKeySynthesisAgreesWithTheRewrite(@TempDir Path tmp) {
-        var nodes = new NodeDeclaration(null);
-        try (var store = CapturedStore.of(tmp, FEDERATED_FIXTURE)) {
+        try (var store = CapturedStore.ofPipeline(tmp, FEDERATED_FIXTURE)) {
             var captured = new LinkedHashSet<String>();
             store.dsl()
                 .select(GRAPHITRON_FEDERATION_KEY.TYPE_NAME, GRAPHITRON_FEDERATION_KEY.FIELDS_SDL)
@@ -286,10 +300,8 @@ class FactCaptureAgreementTest {
                 .fetch()
                 .forEach(row -> captured.add(row.value1() + "|" + row.value2()));
 
-            var rewritten = CapturedStore.registryOf(tmp, FEDERATED_FIXTURE);
-            KeyNodeSynthesiser.apply(rewritten, nodes);
             var expected = new LinkedHashSet<String>();
-            for (TypeDefinition<?> definition : rewritten.types().values()) {
+            for (TypeDefinition<?> definition : store.attributed().registry().types().values()) {
                 if (!(definition instanceof ObjectTypeDefinition object)) {
                     continue;
                 }
@@ -302,6 +314,26 @@ class FactCaptureAgreementTest {
             }
             assertThat(expected).as("the fixture federates nodes, so this pins something").isNotEmpty();
             assertThat(captured).isEqualTo(expected);
+
+            // The authored picture is the anti-join, so the macro has to be what put the unauthored
+            // keys there. Film carries an alternative and Language carries nothing, so both are
+            // synthesized; Actor's authored id key stands synthesis down on both implementations.
+            assertThat(store.dsl()
+                .select(GRAPHITRON_TYPE_DIRECTIVE_SYNTHESIS.TYPE_NAME)
+                .from(GRAPHITRON_TYPE_DIRECTIVE_SYNTHESIS)
+                .where(GRAPHITRON_TYPE_DIRECTIVE_SYNTHESIS.MACRO.eq("FEDERATION_KEY"))
+                .fetch(GRAPHITRON_TYPE_DIRECTIVE_SYNTHESIS.TYPE_NAME))
+                .containsExactlyInAnyOrder("Film", "Language");
+
+            // A rewrite-built directive carries no source location, so a key captured off the
+            // rewritten registry would transcribe unlocated. The macro's inherits the declaration.
+            assertThat(store.dsl()
+                .select(GRAPHQL_TYPE_DIRECTIVE.SOURCE_LINE)
+                .from(GRAPHQL_TYPE_DIRECTIVE)
+                .where(GRAPHQL_TYPE_DIRECTIVE.TYPE_NAME.eq("Language"))
+                .and(GRAPHQL_TYPE_DIRECTIVE.DIRECTIVE_NAME.eq("key"))
+                .fetch(GRAPHQL_TYPE_DIRECTIVE.SOURCE_LINE))
+                .doesNotContainNull();
         }
     }
 
