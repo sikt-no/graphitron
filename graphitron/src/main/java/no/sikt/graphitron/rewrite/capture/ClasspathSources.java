@@ -8,7 +8,11 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
 import java.util.HexFormat;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
+
+import org.jooq.DSLContext;
 
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 
@@ -25,6 +29,12 @@ import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
  *
  * <p>A directory root is deliberately unstamped. It changes on every compile, so hashing it would
  * buy an invalidation that always fires while paying for a full walk to decide that.
+ *
+ * <p>The stamp is written after the rows it vouches for, not with them: {@link #record} inserts the
+ * source unstamped and {@link #commitStamps} fills the hashes in once the load has flushed. A run
+ * killed part-way therefore leaves a partition whose stamp is null, which no refresh will retain,
+ * so the failure mode of a crash is repeated work rather than a partition that claims to hold rows
+ * it never finished writing.
  */
 final class ClasspathSources {
 
@@ -33,6 +43,7 @@ final class ClasspathSources {
     private static final String JAR = "JAR";
 
     private final Map<String, String> stamps = new HashMap<>();
+    private final Set<Path> recorded = new LinkedHashSet<>();
 
     /**
      * Claims the row for {@code sourceName} if this is the first class read from it, and returns
@@ -49,9 +60,28 @@ final class ClasspathSources {
         var row = sink.dsl().newRecord(STORE_SOURCE);
         row.setSourceName(name);
         row.setSourceKind(path != null && Files.isDirectory(path) ? DIRECTORY : JAR);
-        row.setStamp(path != null && Files.isRegularFile(path) ? stamp(path) : null);
         sink.add(row);
+        if (path != null && Files.isRegularFile(path)) {
+            recorded.add(path);
+        }
         return name;
+    }
+
+    /**
+     * Stamps every source this load wrote in full. Called after the flush, which is what makes the
+     * stamp mean "these rows are all here" rather than "these rows were started".
+     */
+    void commitStamps(DSLContext dsl) {
+        for (Path entry : recorded) {
+            String stamp = stamp(entry);
+            if (stamp != null) {
+                dsl.update(STORE_SOURCE)
+                    .set(STORE_SOURCE.STAMP, stamp)
+                    .where(STORE_SOURCE.SOURCE_NAME.eq(entry.toString()))
+                    .execute();
+            }
+        }
+        recorded.clear();
     }
 
     /**

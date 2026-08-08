@@ -63,6 +63,12 @@ import java.util.Set;
  *                       types they are decoded from must not cross this boundary. {@code null}
  *                       (the default for every non-Maven caller) means
  *                       {@link DependencyVersions#empty()} and the advisory stays silent.
+ * @param storeDirectory directory the fact store is kept in between runs, so a run starts from the
+ *                       previous run's rows instead of re-walking everything that has not changed.
+ *                       Populated by the build mojos from the project's build directory;
+ *                       {@code null} for every caller with no build directory to put a file in,
+ *                       which gets the in-memory store that dies with the run. Warm or cold changes
+ *                       what a load costs, never what it records.
  */
 public record RewriteContext(
     List<SchemaInput> schemaInputs,
@@ -78,7 +84,8 @@ public record RewriteContext(
     LintConfig lintConfig,
     SessionStateConfig sessionStateConfig,
     String tenantColumn,
-    DependencyVersions dependencyVersions
+    DependencyVersions dependencyVersions,
+    Path storeDirectory
 ) {
     /** Standard schema file extensions accepted out of the box. */
     public static final Set<String> DEFAULT_SCHEMA_FILE_EXTENSIONS = Set.of(".graphqls", ".graphql");
@@ -99,10 +106,11 @@ public record RewriteContext(
         schemaInputs = List.copyOf(schemaInputs);
         schemaFileExtensions = Set.copyOf(schemaFileExtensions);
         classpathRoots = List.copyOf(classpathRoots);
-        // The last five components are null-tolerant: only the build mojos populate them (from
-        // <sessionState>, <lint>, <tenantColumn>, the Maven project's source roots, and the
-        // resolved dependency graphs); every other caller passes null and gets the single-tenant,
-        // no-suppression, no-hook, UNKNOWN-positions, no-version-facts defaults.
+        // The last six components are null-tolerant: only the build mojos populate them (from
+        // <sessionState>, <lint>, <tenantColumn>, the Maven project's source roots, the resolved
+        // dependency graphs, and the build directory); every other caller passes null and gets the
+        // single-tenant, no-suppression, no-hook, UNKNOWN-positions, no-version-facts,
+        // store-dies-with-the-run defaults.
         compileSourceRoots = compileSourceRoots == null ? List.of() : List.copyOf(compileSourceRoots);
         lintConfig = lintConfig == null ? LintConfig.empty() : lintConfig;
         sessionStateConfig = sessionStateConfig == null ? SessionStateConfig.none() : sessionStateConfig;
@@ -118,7 +126,7 @@ public record RewriteContext(
         return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, outputDirectory,
             outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
             codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
-            dependencyVersions);
+            dependencyVersions, storeDirectory);
     }
 
     /**
@@ -129,7 +137,7 @@ public record RewriteContext(
         return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, outputDirectory,
             outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
             codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
-            dependencyVersions);
+            dependencyVersions, storeDirectory);
     }
 
     /**
@@ -140,7 +148,18 @@ public record RewriteContext(
         return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, outputDirectory,
             outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
             codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
-            dependencyVersions);
+            dependencyVersions, storeDirectory);
+    }
+
+    /**
+     * Returns a copy with {@code storeDirectory} replaced, so the build mojos can point the fact
+     * store at the project's build directory without every other caller growing an argument for it.
+     */
+    public RewriteContext withStoreDirectory(Path storeDirectory) {
+        return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, outputDirectory,
+            outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
+            codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
+            dependencyVersions, storeDirectory);
     }
 
     /**
@@ -151,7 +170,33 @@ public record RewriteContext(
         return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, outputDirectory,
             outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
             codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
-            dependencyVersions);
+            dependencyVersions, storeDirectory);
+    }
+
+    /**
+     * Fourteen-arg overload: defaults {@code storeDirectory} to {@code null}, so the fact store is
+     * in-memory and dies with the run.
+     */
+    public RewriteContext(
+        List<SchemaInput> schemaInputs,
+        Set<String> schemaFileExtensions,
+        Path basedir,
+        Path outputDirectory,
+        Path outputResourcesDirectory,
+        String outputPackage,
+        String jooqPackage,
+        List<Path> classpathRoots,
+        ClassLoader codegenLoader,
+        List<Path> compileSourceRoots,
+        LintConfig lintConfig,
+        SessionStateConfig sessionStateConfig,
+        String tenantColumn,
+        DependencyVersions dependencyVersions
+    ) {
+        this(schemaInputs, schemaFileExtensions, basedir, outputDirectory, outputResourcesDirectory,
+            outputPackage, jooqPackage, classpathRoots, codegenLoader,
+            compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn, dependencyVersions,
+            null);
     }
 
     /**
@@ -174,7 +219,7 @@ public record RewriteContext(
     ) {
         this(schemaInputs, schemaFileExtensions, basedir, outputDirectory, outputResourcesDirectory,
             outputPackage, jooqPackage, classpathRoots, codegenLoader,
-            compileSourceRoots, lintConfig, sessionStateConfig, null, null);
+            compileSourceRoots, lintConfig, sessionStateConfig, null, null, null);
     }
 
     /**

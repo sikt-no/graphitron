@@ -7,6 +7,7 @@ import no.sikt.graphitron.rewrite.NodeDeclaration;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.jooq.DSLContext;
 
+import java.nio.file.Path;
 import java.util.List;
 
 /**
@@ -19,22 +20,32 @@ import java.util.List;
  * reachability pruning; a primary-key violation on any base relation is therefore a capture bug,
  * never something an author's schema can provoke.
  *
- * <p>Nothing reads the store yet. It is populated beside the live pipeline and dies with the run,
- * so a capture that produced nothing useful cannot change what the build accepts, rejects, emits,
- * or reports. Consumers migrate onto it one at a time.
+ * <p>Nothing reads the store yet. It is populated beside the live pipeline, so a capture that
+ * produced nothing useful cannot change what the build accepts, rejects, emits, or reports.
+ * Consumers migrate onto it one at a time. It no longer dies with the run when the caller names a
+ * directory to keep it in, which changes only how much of the next load has to be redone: a
+ * persisted store is stamped, and anything that cannot be shown to match is discarded and rebuilt.
  */
 public final class FactCapture {
 
     private FactCapture() {}
 
     /**
-     * Runs both loads against a fresh store and discards it. This is the shape the pipeline calls:
-     * the store's whole lifetime is this method, because no consumer has migrated onto it yet.
+     * Runs both loads against the store for {@code storeDirectory} and closes it.
+     *
+     * <p>With a directory the store is the file under it, so this run starts from the previous
+     * run's rows and rewrites only what it cannot prove unchanged; without one it is a private
+     * in-memory database that dies here, which is what every caller that has no build directory to
+     * put a file in should get. The two differ in cost, never in content: a warm store is refreshed
+     * to exactly the rows a cold load would have produced, and the agreement anchors are stated
+     * against both.
      */
-    public static void run(TypeDefinitionRegistry registry, JooqCatalog jooq,
+    public static void run(Path storeDirectory, TypeDefinitionRegistry registry, JooqCatalog jooq,
                            List<CompletionData.ExternalReference> extensions, NodeDeclaration nodes) {
-        try (GraphitronModelStore store = GraphitronModelStore.open()) {
-            capture(store.dsl(), registry, jooq, extensions, nodes);
+        try (GraphitronModelStore store = storeDirectory == null
+                ? GraphitronModelStore.open()
+                : GraphitronModelStore.openAt(storeDirectory)) {
+            capture(store.dsl(), store.warm(), registry, jooq, extensions, nodes);
         }
     }
 
@@ -55,10 +66,29 @@ public final class FactCapture {
                                JooqCatalog jooq,
                                List<CompletionData.ExternalReference> extensions,
                                NodeDeclaration nodes) {
+        capture(dsl, false, registry, jooq, extensions, nodes);
+    }
+
+    /**
+     * Fills {@code dsl}'s store, reconciling it first when it already holds rows.
+     *
+     * @param warm whether the store opened onto a previous run's rows. A cold store needs no
+     *             reconciliation; a warm one is cleared of everything this run rewrites, and keeps
+     *             only the partitions whose source still hashes to what it recorded
+     */
+    public static void capture(DSLContext dsl, boolean warm, TypeDefinitionRegistry registry,
+                               JooqCatalog jooq,
+                               List<CompletionData.ExternalReference> extensions,
+                               NodeDeclaration nodes) {
         var sink = new FactSink(dsl);
+        var sources = new ClasspathSources();
+        if (warm) {
+            StoreRefresh.prepare(sink, sources, extensions);
+        }
         SdlFactCapture.capture(sink, registry, nodes);
-        CatalogFactCapture.capture(sink, jooq, extensions);
+        CatalogFactCapture.capture(sink, jooq, extensions, sources);
         sink.flush();
+        sources.commitStamps(dsl);
     }
 
     /** SDL-only capture, for callers with no catalog in hand. */

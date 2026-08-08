@@ -1813,7 +1813,19 @@ CREATE TABLE store_source (
 COMMENT ON TABLE store_source IS 'A source the store read. Every base relation is partitionable by the source that produced it: a refresh deletes exactly the rows one source wrote and re-walks it, so a relation unreachable from a source row is one the store can only ever discard wholesale.';
 COMMENT ON COLUMN store_source.source_name IS 'the schema file path, the classpath entry path, or the generated package a jOOQ schema lives in, as the reader spelled it';
 COMMENT ON COLUMN store_source.source_kind IS 'a closed taxonomy: a schema file, a directory root, a jar, or a generated jOOQ schema package. The last names jOOQ deliberately, unlike the sql_ family: a family is named for whose vocabulary its rows are written in and jOOQ owns none of SQL''s, but a source is named for what it is, and a generated package is jOOQ''s artefact';
-COMMENT ON COLUMN store_source.stamp IS 'content hash, so an unchanged source is read once; NULL where there is nothing cheap to hash or nothing worth caching: a directory root changes on every compile, a schema file''s bytes capture never holds (graphql-java hands the walk a source name, not the text), and a jOOQ schema is a package spread across the classpath whose walk is cheap enough not to need one';
+COMMENT ON COLUMN store_source.stamp IS 'content hash, so an unchanged source is read once; NULL where there is nothing cheap to hash or nothing worth caching: a directory root changes on every compile, a schema file''s bytes capture never holds (graphql-java hands the walk a source name, not the text), and a jOOQ schema is a package spread across the classpath whose walk is cheap enough not to need one. Also NULL while the source''s rows are being written, and set only once they are all in, so a run that dies mid-load leaves a partition that is re-walked rather than one that claims to be complete';
+
+CREATE TABLE store_stamp (
+  singleton         CHAR(1) NOT NULL,
+  ddl_hash          VARCHAR NOT NULL,
+  generator_version VARCHAR NOT NULL,
+  PRIMARY KEY (singleton),
+  CHECK (singleton = 'X')
+);
+COMMENT ON TABLE store_stamp IS 'What this store was built from. At most one row, stated structurally. A persisted store is never state of record: this row decides whether an existing file is intelligible at all, and a mismatch discards and rebuilds it, which is what keeps migrations out of a schema that has none.';
+COMMENT ON COLUMN store_stamp.singleton IS 'always ''X''; the CHECK plus the primary key is how a relation says "at most one row" in SQL';
+COMMENT ON COLUMN store_stamp.ddl_hash IS 'hash of the DDL resource the store was created from, so any schema edit at all invalidates a persisted file';
+COMMENT ON COLUMN store_stamp.generator_version IS 'the capturing generator''s implementation version, or a placeholder where the manifest declares none. It invalidates a persisted file across releases; within one, a capture change that alters row content without touching the DDL is not caught here, and deleting the build directory is the remedy';
 
 -- ==== SQL catalog facts ===========================================================
 -- What the consumer's database declares, in SQL's vocabulary. jOOQ's generated model is the

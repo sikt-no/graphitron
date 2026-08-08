@@ -93,7 +93,7 @@ final class FactSink {
      * own relation is satisfied by insertion order within the bucket), and a reference to a
      * relation this load did not touch is simply not a constraint on the order.
      */
-    private static List<Table<?>> parentsFirst(Set<Table<?>> tables) {
+    static List<Table<?>> parentsFirst(Set<Table<?>> tables) {
         var sorted = new ArrayList<Table<?>>(tables.size());
         var placed = new HashSet<Table<?>>();
         var visiting = new HashSet<Table<?>>();

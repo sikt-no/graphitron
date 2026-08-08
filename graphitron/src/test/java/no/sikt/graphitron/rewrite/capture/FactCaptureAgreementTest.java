@@ -27,7 +27,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
+import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -54,6 +56,7 @@ import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
+import static no.sikt.graphitron.model.Tables.STORE_STAMP;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
@@ -127,7 +130,7 @@ class FactCaptureAgreementTest {
             "sql_primary_key", "sql_referential_constraint", "sql_index",
             "sql_index_column", "jvm_class", "jvm_method",
             "jvm_method_parameter", "jvm_record_component",
-            "jvm_scalar_type_field", "store_source")) {
+            "jvm_scalar_type_field", "store_source", "store_stamp")) {
             registrations.put(relation, Arm.EQUALITY);
         }
         registrations.put("graphql_directive_site", Arm.DERIVED);
@@ -815,6 +818,29 @@ class FactCaptureAgreementTest {
                 .forEach(method -> expected.add(
                     reference.className() + "#" + method.name() + method.descriptor())));
             assertThat(captured).isEqualTo(expected);
+        }
+    }
+
+    /**
+     * The store's stamp names the DDL it was built from. Equality against the resource rather than
+     * against a recorded constant, because the whole job of the stamp is to make a persisted file
+     * unreadable the moment the schema moves: a stamp computed from anything but the DDL this store
+     * ran would let an older file survive an edit and answer with relations that no longer mean what
+     * they say.
+     */
+    @Test
+    @DisplayName("the store stamp names the DDL the store was built from")
+    void theStampNamesTheSchema() throws Exception {
+        byte[] ddl;
+        try (var in = GraphitronModelStore.class.getResourceAsStream(GraphitronModelStore.DDL_RESOURCE)) {
+            ddl = in.readAllBytes();
+        }
+        String expected = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(ddl));
+
+        try (var store = GraphitronModelStore.open()) {
+            var stamps = store.dsl().selectFrom(STORE_STAMP).fetch();
+            assertThat(stamps).as("at most one row, and a booted store has it").hasSize(1);
+            assertThat(stamps.getFirst().getDdlHash()).isEqualTo(expected);
         }
     }
 

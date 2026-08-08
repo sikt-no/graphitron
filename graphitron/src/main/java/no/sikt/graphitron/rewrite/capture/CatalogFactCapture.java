@@ -57,9 +57,10 @@ final class CatalogFactCapture {
     private CatalogFactCapture() {}
 
     static void capture(FactSink sink, JooqCatalog jooq,
-                        List<CompletionData.ExternalReference> extensions) {
+                        List<CompletionData.ExternalReference> extensions,
+                        ClasspathSources sources) {
         captureCatalog(sink, jooq);
-        captureExtensions(sink, new ClasspathSources(), extensions);
+        captureExtensions(sink, sources, extensions);
     }
 
     /**

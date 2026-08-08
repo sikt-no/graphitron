@@ -196,7 +196,8 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             buildLintConfig(),
             buildSessionStateConfig(),
             tenantColumn,
-            resolveDependencyVersions()
+            resolveDependencyVersions(),
+            resolveStoreDirectory(basedir)
         );
     }
 
@@ -271,6 +272,25 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
                 .ifPresent(dep -> versions.putIfAbsent(dep, artifact.getVersion()));
         }
         return versions;
+    }
+
+    /**
+     * The fact store's directory under the build directory (same test-instance fallback as
+     * {@link #resolveOutputResourcesDirectory(Path)}). A run opens the previous run's store here
+     * and rewrites only the partitions it cannot prove unchanged, so the classpath census is not
+     * re-inserted once per generator pass. The store is stamped and never state of record, which is
+     * what makes {@code mvn clean} the whole of its recovery story.
+     */
+    final Path resolveStoreDirectory(Path basedir) {
+        var buildDirectory = project.getBuild() != null
+            ? project.getBuild().getDirectory()
+            : null;
+        var targetDir = buildDirectory != null
+            ? Path.of(buildDirectory)
+            : basedir.resolve("target");
+        return (targetDir.isAbsolute() ? targetDir : basedir.resolve(targetDir))
+            .resolve("graphitron-model")
+            .normalize();
     }
 
     /**

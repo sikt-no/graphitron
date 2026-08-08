@@ -580,13 +580,15 @@ CREATE TABLE store_stamp (
 );
 ```
 
-One partition question stays open for the implementation pass rather than being guessed here.
-`jvm_class` and `sql_table` reference `store_source` outright. The `graphql_` declaration sites
-already carry a `source_name` and the walk stands on the file while writing them, so the FK doctrine
-admits the reference, but schema-level relations (`graphitron_link`) hold a nullable `source_name`
-and synthesized sites inherit a causing position rather than a read file. Whether the SDL side
-declares the FK therefore depends on whether `source_name` can be made total there; reachability is
-the convention's requirement and a declared FK is the stronger form of it.
+One partition question was left to the implementation pass rather than guessed here, and the answer
+is that the SDL side declares no foreign key. `jvm_class` and `sql_table` reference `store_source`
+outright. The `graphql_` declaration sites already carry a `source_name` and the walk stands on the
+file while writing them, so the FK doctrine would admit the reference, but schema-level relations
+(`graphitron_link`) hold a nullable `source_name` and synthesized sites inherit a causing position
+rather than a read file, so `source_name` is not total there and the stronger form is not available.
+It costs nothing: the refresh clears the SDL families wholesale, because the parse they are rebuilt
+from is one the pipeline pays for regardless. A declared FK would buy a cheaper delete for the one
+family whose delete is already free.
 
 ## The capture loads
 
@@ -736,8 +738,8 @@ Shipped and standing: the module and both boots, the whole DDL, the SDL and cata
 wired into the pipeline, the gate family, and the mechanical agreement driver with its type-census,
 applied-directive, catalog-census and extension-census anchors.
 
-**Slices 1 through 4 have landed; slice 5 has not.** Each ended with a green
-`mvn install -Plocal-db`, and what each settled is recorded in its own section below. In outline:
+**All five slices have landed.** Each ended with a green `mvn install -Plocal-db`, and what each
+settled is recorded in its own section below. In outline:
 
 - **Slice 1.** Capture takes `AttributedRegistry.preSynthesisRegistry()`, a `readOnly()` snapshot
   taken where the loading rewrites end. `TagApplier` and `DescriptionNoteApplier` sit above the cut
@@ -755,6 +757,10 @@ applied-directive, catalog-census and extension-census anchors.
 - **Slice 4.** The census is the compile classpath, jars included; `store_source` records every
   entry and every schema file, stamped by content hash where there are bytes to hash;
   `jvm_method.descriptor` is the real JVM descriptor; completion ranks reactor classes first.
+- **Slice 5.** The store is a file under the build directory, stamped by `store_stamp` and
+  discarded and rebuilt on any mismatch. A warm run keeps the partitions whose source still hashes
+  to what it recorded and rewrites everything else; readers get a copy-on-open snapshot. Measured on
+  `graphitron-sakila-example`: about 44 s of module build with no store, 31 s with one.
 
 A module-wiring defect surfaced in slice 2, the first slice to edit the DDL, and is fixed there.
 The codegen driver finds the DDL through the classpath, where `target/classes` precedes the source
@@ -1113,8 +1119,9 @@ wanted, worth about 4 s of the 13 s; it is measured and left, not overlooked.
 
 The reactor build goes 5:07 to 5:56, with `graphitron-sakila-example` carrying all of it (1:21 to
 2:14 across five generator passes). No narrowing was taken: the cost is per pass and per fresh
-store, which is exactly what slice 5 removes, since a run that opens the previous run's file
-re-reads no unchanged jar and re-inserts no unchanged partition.
+store, which is what the persistence slice below then took most of back: a run that opens the
+previous run's file re-inserts no unchanged partition. It still re-reads the jar, so the recovery is
+about a third of the module rather than all of the cost.
 
 Three riders on the delivery. The nested-class filter stays, disclosed on `jvm_class` rather than
 removed: a nested class named in `@record` resolving through the codegen loader is a real gap, but
@@ -1171,18 +1178,67 @@ already assumes when it calls the store the accumulated registry. The stamp is t
 including a classpath scan measured at 4.0 s that no schema edit had any reason to invalidate. The
 absorbed item carried only the first, which is what made it look separable.
 
-**Open for this slice.** The persist mechanism, whether the store is file-backed during the run or
-exported at the end. Reader concurrency while a build writes: H2 file locking, copy-on-open, or
-auto-server mode. Both are runtime questions the schema does not constrain, which is why they are
-the last thing decided rather than the first.
+**Landed.** `GraphitronModelStore.openAt` opens `<build>/graphitron-model/store.mv.db`, the mojo
+supplies the directory through a new nullable `RewriteContext.storeDirectory`, and every caller that
+has no build directory keeps the in-memory store unchanged. `store_stamp` carries the DDL's hash and
+the generator version; a store that does not match, cannot be opened, or has no stamp at all is
+deleted and rebuilt, which is one branch rather than a taxonomy of H2 failures because the response
+to every one of them is the same.
 
-**Not started.** The schema side it depended on is in: `store_source` exists, carries a stamp, and
-every base row the classpath and SDL families write is reachable from one, so the partitionability
-requirement persistence imposes is satisfied ahead of the mechanism (the `sql_` family's own source
-column excepted, noted under slice 4). What remains is the whole of the mechanism: the file under
-`target/`, `store_stamp` and its discard-and-rebuild on mismatch, and the two runtime questions
-above. Slice 4's measurement is the case for it: 15 s of scan-plus-insert per generator pass, paid
-five times in one module's build, is work a warm start does not repeat.
+**The persist mechanism is a file-backed store, not an export at the end.** Export loses the point:
+the run that writes the file still pays a full capture, so the saving would begin one run later and
+never apply to the five passes inside a single module build. It also needs a second serialisation
+path to keep in agreement with the DDL, which is the thing the codegen-rehearses-boot design exists
+to avoid. A file-backed store needs neither, and its failure mode is better: a killed build leaves
+something that either verifies or is discarded, where a killed export leaves nothing at all.
+
+**Reader concurrency is copy-on-open.** `openReadOnly` copies the database and opens the copy
+read-only, so neither side needs a protocol from the other. Auto-server mode was the alternative and
+turns a build artefact into a running service that every reader has to opt into; weakening the file
+lock trades a clean failure for a corrupt one. The copy also gives a reader a fixed snapshot for its
+whole session, which a surface labelling answers with a run identity wants anyway. A copy taken
+mid-write may not open, and that is an empty return rather than a defended case: a caller that
+cannot warm-start boots cold, which is what it did before any of this existed. Nothing reads the
+store yet, so this arm ships with its test and no consumer.
+
+Two hazards the mechanism has to answer rather than assume away, both now pinned. A second process
+holding the file must not be read as corruption, because the response to corruption is deletion:
+H2's already-open error is the one failure `openAt` distinguishes, and it falls back to an in-memory
+store instead. And within one JVM H2 hands both openers the same database, so a file-backed store
+issues no `SHUTDOWN` on close; only the in-memory store, which `DB_CLOSE_DELAY` would otherwise keep
+alive, is dropped.
+
+**What survives a refresh is decided per source**, which is the only granularity the schema supports
+and the reason this could not have been bolted on later. `StoreRefresh` keeps a partition when
+`store_source` recorded a hash for it and the entry still hashes to that, and clears everything else
+wholesale. That is one family today, the classpath jars behind `jvm_`, which is where slice 4's cost
+is; a directory root changes on every compile, a jOOQ schema package has no cheap hash and a walk
+that costs milliseconds, and the SDL families are re-walked from a parse the pipeline pays for
+anyway. The clear is written to fail safe: a relation nobody thought about is emptied and rebuilt,
+never silently retained. Retention is enforced by seeding `FactSink.claim` with the retained class
+names rather than by filtering the walk, so capture walks exactly as it would cold and the rows it
+would have re-inserted are dropped where duplicates always are. That also disposes of the one real
+hazard in per-source retention, a class present in two entries whose classpath order changed between
+runs: the previous run's answer wins and the load stays legal, instead of colliding on the primary
+key. And a source's stamp is written after the flush, not with its rows, so a run killed part-way
+leaves a partition nothing will retain.
+
+**Measured**, on `graphitron-sakila-example` (five generator passes, `-DskipTests`, best of the runs
+taken). No store: 50.0 / 41.7 / 44.6 s. Fresh store, so one cold pass and four warm: 32.3 / 31.2 s.
+Existing store, all five warm: 35.7 / 36.1 / 29.2 s. Roughly a third off the module, against
+slice 4's `+53 s`, and the noise is a good ±5 s so the two warm cases are not distinguishable from
+each other. That the saving is a third rather than all of it is the expected shape: the classpath
+scan still runs, because the reference list is built before capture and the LSP path needs it whole.
+Skipping the scan for a retained partition is the next step and is a change to the scan's caller,
+not to the store.
+
+**Two costs, stated rather than buried.** The file runs about 135 MB for the sakila example's
+census, which is real disk under `target/` and is why it goes there rather than anywhere a `clean`
+would not reach. And `store_stamp.generator_version` reads the implementation version from the
+manifest, so in a build that declares none it is a placeholder: a capture change that alters row
+content without touching the DDL is not caught, and deleting the build directory is the remedy. The
+per-source hashes limit the blast radius to the `jvm_` family, since everything else is rewritten
+every run.
 
 ### Notes carried forward
 
@@ -1287,6 +1343,17 @@ the catalog and the classpath (`GraphQLRewriteGenerator`) while `buildOutput` re
 - The class census is the compile classpath, so the LSP and the codegen loader resolve the same
   set: a jar-resident `@scalarType` constant raises no diagnostic and is offered in completion.
   Re-scanning is stamped per source, so an unchanged jar is read once.
+- The store persists under the build directory between runs and is never state of record.
+  `store_stamp` names the DDL and the generator version that built it, and a store that does not
+  match, cannot be opened, or carries no stamp is discarded and rebuilt, so no migration ever
+  exists and deleting the build directory is always correct. A run that cannot have the file at all
+  falls back to the in-memory store rather than failing a build over a cache.
+- A warm run ends holding exactly the rows a cold run would have produced, relation by relation.
+  It gets there by keeping the partitions whose source still hashes to what the store recorded and
+  rewriting everything else; a source's stamp is written only once its rows are all in, so a killed
+  run leaves nothing that claims to be complete.
+- A reader opens a copy-on-open snapshot beside a writing build, and gets nothing rather than
+  something unreadable when the copy catches a write in progress.
 - Every relation whose contents are filtered says so in its comment. The comment-coverage gate
   cannot check that a comment is true, so this one is a review rule, named as such.
 - The store persists to an H2 file under `target/` at the end of a run and a surface opens it
