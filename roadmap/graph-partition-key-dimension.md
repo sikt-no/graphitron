@@ -76,7 +76,9 @@ one blast radius as its consequence.
   can: how to *find* the graph's schema files, including ones that do not exist yet. The
   `tag` and `description_note` columns are not optional fidelity: those appliers run above
   the capture cut, so replaying a graph's SDL capture without them would mint different rows
-  than the graph's own build.
+  than the graph's own build. The shape is chosen to be absorbable: R612 explores promoting
+  resolved configuration to a fact family the scanner itself reads, and these relations are
+  its compatible first slice, adoptable without a rekey.
 - The `store_graph` comment owes two discriminators, so the DDL's conventions stay readable
   as consistent. First, why this FK exists while the SDL-to-`store_source` FK was declined:
   the graph is ambient before the walk begins and `NOT NULL` everywhere, while the source
@@ -332,7 +334,12 @@ schema contract). So the read discipline is stated positively and admits no infe
 the key: cross-graph reads range over the SDL-derived families, and every other family,
 however keyed, is read by its own graph's consumers alone. A family arriving later joins the
 cross-graph surface by being argued onto it, which is the same polarity the schema gate
-takes and for the same reason.
+takes and for the same reason. The rule governs consumers; the store's own maintenance
+machinery sits beneath it rather than being bound by it, which the freshness check above
+already relies on when it reads every graph's `store_graph` bookkeeping and recipe. That is
+the store keeping itself honest, not a consumer reading another graph's facts, and a reader
+counts as maintenance exactly when it writes no conclusions anywhere but the `store_`
+family.
 
 Retention of unowned rows is justified by ownership, not by a freshness proof: the run that
 owns them refreshes them on its own cadence. The residual hazard is the orphan partition, and
