@@ -52,9 +52,10 @@ own question of that writer: what a compile round's `store_source` entry hashes 
 source is the emitted file set, what vouches for a round's completeness when the stamp that
 vouches for capture is already written, and how rows written after open reach readers that
 snapshot on open. That is a design of its own, and the relation would sit empty in exactly
-the batch runs R595's agreement tests exercise. Per the architecture's own rule that a
-relation's DDL lands with its first consumer (cheap by construction now: new DDL is a stamp
-mismatch and a rebuild, never a migration), this family lands as its own item. R569's bridge
+the batch runs R595's agreement tests exercise. Per the store's own rule that a relation's DDL
+lands with its first consumer (stated on the shipped `jvm_method_parameter` comment, and cheap
+by construction now: new DDL is a stamp mismatch and a rebuild, never a migration), this
+family lands as its own item. R569's bridge
 covers the diagnostics read surface in the meantime; the sections below fix the family's
 shape, and its first consumer is R569's `diagnostic` view, whose compile arm this item
 re-grounds.
@@ -129,13 +130,28 @@ canonical-URI site (`ValidationReport.canonicalUri`) at the javac boundary. That
 R569's own requirement for this channel, hoisted to where it belongs: a `file` dimension
 spanning both channels groups two spellings of one path apart unless exactly one site
 canonicalises, and doing it in the flattening means console, Workspace, and store agree by
-construction instead of each sink normalising or not. It deliberately changes the path
-spelling the console and LSP display today, to the canonical form the schema channel already
-uses. The writer then transcribes the round's `CompileRound.diagnostics()` list verbatim, and
-the relation's content contract is exactly the published round: it inherits, and does not
-fix, the round-scoped-list semantics (a round covers its recompile set, and publishing it
-replaces the previous round wholesale on every surface alike); if that contract ever needs to
-change, the change is to `CompileRound`, upstream of all three sinks.
+construction instead of each sink normalising or not. The writer then transcribes the round's
+`CompileRound.diagnostics()` list verbatim, and the relation's content contract is exactly the
+published round: it inherits, and does not fix, the round-scoped-list semantics (a round
+covers its recompile set, and publishing it replaces the previous round wholesale on every
+surface alike); if that contract ever needs to change, the change is to `CompileRound`,
+upstream of all three sinks.
+
+That canonicalisation restates the path spelling at both live readers of
+`CompileDiagnostic.file()`, and the two are named here rather than discovered later:
+`CompileErrorFormatter` renders it into the dev-loop console error block, and
+`DiagnosticsTool` emits it as the MCP `diagnostics` tool's `location.uri`, a field already
+named for the form it is about to start carrying. Neither is pinned to a real path by a test
+(both suites construct the record directly), so nothing fails, but a session does see the
+difference and *What stays out* says so rather than claiming no surface moves. Considered and
+rejected: leaving `file` raw and adding a canonical accessor the store and the LSP filter
+call. That keeps the console short at the cost of putting the choice of spelling back at every
+sink, which is the drift this move exists to remove; the store's `file` dimension is the one
+that must not fork, so the flattening is where the single spelling belongs. One Backlog item
+reaches this: `lsp-compile-diagnostics-publish` (R430) plans to resolve
+`CompileDiagnostic.file()` under the generated-sources root, and after this change its input
+is already a URI, which shortens that item rather than blocking it. Its body takes the
+one-line correction whenever this lands.
 
 The ERROR predicate collapses to one home in the same edit. The javac-`Kind`-to-severity
 projection is model-owned (R569 declares the view's `severity` a closed-`CHECK` projection),
@@ -156,15 +172,48 @@ view answers wrongly about, where today `Workspace.compileDiagnostics()` cannot 
 the writer does not open its own store per round. A new `CompileFacts` class beside
 `CompileRound` in `no.sikt.graphitron.rewrite.compile` takes the dev session's store handle
 (a `DSLContext`) and a round, and `DevMojo.reportCompile` is the single call site, beside the
-existing two sinks, passing the same handle the `diagnostic` view's in-process readers query.
-That handle is established once per dev session by R569's read-side work (its bridge loader
-needs exactly the same thing); this item's writer replaces that loader one-for-one on the
-same handle, so the in-process delivery contract is inherited, not invented: a round the
-writer wrote is a round the tool sees, whatever the file's fate. No session handle (the batch
-pipeline, or `-Dgraphitron.dev.compile=false`) means no write. Per round, one transaction:
-delete every `javac_diagnostic` row, insert the round's list. Atomicity is what stands in for
-a completeness stamp: `store_stamp` vouches for DDL and version, never for rows, and a
-single-transaction write means no handle ever observes half a round.
+existing two sinks, passing the same handle the `diagnostic` view's in-process readers query,
+so a round the writer wrote is a round the tool sees, whatever the file's fate. No session
+handle (the batch pipeline, or `-Dgraphitron.dev.compile=false`) means no write. Per round,
+one transaction: delete every `javac_diagnostic` row, insert the round's list. Atomicity is
+what stands in for a completeness stamp: `store_stamp` vouches for DDL and version, never for
+rows, and a single-transaction write means no handle ever observes half a round.
+
+**The session handle is stated here rather than assumed, because nothing establishes one
+today.** The store's whole lifetime is currently one call: `FactCapture.run` opens
+`GraphitronModelStore.openAt` and closes it inside a try-with-resources, once per generation
+pass. `DevMojo` holds no `DSLContext`. R569's read side needs the same handle for the same
+reason (its loader writes where its tools read), but its spec places the loader at the
+workspace layer and the queries in `graphitron-mcp` without saying the two share one, so the
+contract belongs to whichever item lands first and is fixed here so the two cannot land
+incompatible halves:
+
+- One `openAt` handle over the directory `AbstractRewriteMojo.resolveStoreDirectory` names,
+  acquired by the dev session and closed with the session's other resources in
+  `DevMojo.cleanup`. Its `dsl()` is what this writer takes and what every in-process reader of
+  the `diagnostic` view queries.
+- Not `openReadOnly`. That method's private copy is the *cross-process* reader shape by design
+  (its javadoc argues the copy is the whole concurrency story), and an in-process reader on a
+  copy would not see the round the writer just wrote, which is the one guarantee this section
+  exists to make. Reading the delivery channel through a snapshot is the failure mode to
+  design against, not an alternative to it.
+- It coexists with capture without a protocol. H2 gives one process one database per file
+  however many connections reach for it, which `GraphitronModelStore.close` already relies on
+  (it withholds `SHUTDOWN` from a file-backed store for exactly that reason), so capture's
+  per-pass `openAt` and close leave the session handle live, and the refresh's clear is
+  visible through it. The lifecycle invariant below is therefore a consequence of the shared
+  handle rather than a second mechanism. H2's already-open error is a cross-process signal;
+  the same-process case is the sharing this relies on.
+- One edge, and it is the implementer's to close: `openAt` deletes and rebuilds the files when
+  the stamp does not name this DDL and this generator version, which can happen under a live
+  handle when a session spans a generator upgrade. Re-acquiring the handle after each
+  generation pass costs one `openAt` and removes the edge; taking it once per session is
+  cheaper and leaves it. Either is acceptable, and the choice is a note in `CompileFacts`'
+  javadoc, not a silent one.
+
+If R569's read side lands first, this item inherits its handle unchanged and adds only the
+writer; if this item lands first, the handle above is its to build. The `DevMojoTest`-tier
+test in *Tests* is what pins whichever it is.
 
 Note the relocation, stated so the reviewer reads a decision rather than a contradiction of
 R569: that item places the compile channel's loader at the workspace layer in
@@ -197,13 +246,16 @@ retained" behaviour the refresh was written around. The resulting invariant is t
 lifecycle in one sentence: after any capture, cold or warm, `javac_diagnostic` is empty; rows
 exist only between a compile round and the next generation.
 
-## Agreement registration: a fourth arm
+## Agreement registration: an arm of its own
 
 `FactCaptureAgreementTest` enumerates every generated relation and fails on any without a
 registered arm, and none of the three landed arms fits: no independent second walk can
-re-derive javac's verdict without re-running javac. The driver gains an `ORACLE` arm for
-relations a post-capture oracle writer owns, and the arm must say something about content, or
-it is a skip list wearing an arm's name. Its anchors are therefore two, both non-vacuous.
+re-derive javac's verdict without re-running javac. R569's bridged arm does not fit either if
+it lands first, so the count is left unstated: that arm's character is a census against the
+list a loader copied from, and this relation has no loader and no list to census against. The
+driver gains an `ORACLE` arm for relations a post-capture oracle writer owns, and the arm must
+say something about content, or it is a skip list wearing an arm's name. Its anchors are
+therefore two, both non-vacuous.
 The lifecycle anchor seeds rows into the relation, runs capture (cold and warm), and asserts
 empty, so the test distinguishes "cleared" from "never written"; an unseeded emptiness check
 would pass identically with the writer deleted. The content anchor drives `CompileFacts` with
@@ -237,7 +289,8 @@ R569's wire-contract pins, which assert on tool answers and cannot tell which su
 answered, are the acceptance that the compile arm's substrate is invisible on the wire.
 `depends-on` stays empty because neither item unconditionally ships first; the sequencing
 contract above is what binds, and whichever item starts implementation first resolves the
-fork with the other's spec in hand.
+fork with the other's spec in hand. The session-handle contract in *The writer* is the piece
+both orders share, which is why it is fixed there instead of left to whichever lands first.
 
 ## What stays out
 
@@ -248,21 +301,35 @@ surface). When it comes it is not a new oracle family: the inventory has no exte
 it is graphitron's own record of what a run wrote, so the vocabulary rule points it at the
 existing families, and the cadence rule this item states covers its post-capture writer
 regardless of which prefix it lands under. The same deferral covers every other output
-oracle (execution results, test outcomes). No MCP tool, no directive, no generated-code
-change, and no user-visible surface: the user-doc first-client check does not apply.
+oracle (execution results, test outcomes).
+
+Two surfaces do move, and the first-client check is answered rather than waved past. The
+canonicalisation restates the file spelling in the dev-loop console error block and in the
+`diagnostics` tool's `location.uri` (the flattening section above owns both). No directive, no
+generated-code change, and no new tool, argument, or response field: the `diagnostics` tool's
+shape is R569's, and this item changes the value of one field it already has. Nothing in
+`docs/` renders either surface, so no user-doc draft is owed; the claim is "no doc changes",
+not "nothing a session can see".
 
 ## Implementation
 
 - `graphitron-model.sql`: the header's prefix-picking paragraph gains the `javac_`
-  vocabulary sentence; the cadence rule lands as its own sentence, not fused into
-  prefix-picking; `CREATE TABLE javac_diagnostic` plus `COMMENT ON`s per the conventions,
-  the one-sided derivation boundary and the key-column sentinel rule stated in them.
+  vocabulary sentence and its opening count goes from five families to six; the cadence rule
+  lands as its own sentence, not fused into prefix-picking; `CREATE TABLE javac_diagnostic`
+  plus `COMMENT ON`s per the conventions, the one-sided derivation boundary and the
+  key-column sentinel rule stated in them.
 - `CompileDiagnostic`: `severity` renamed to `kind`, new nullable `code` component, `from`
   canonicalises the file through the single canonical-URI site, and a named severity
-  projection accessor beside the fact.
+  projection accessor beside the fact. The reshape moves the canonical constructor, so the
+  three files that build the record by hand (`DevMojoTest`, `DiagnosticsToolCompileSourceTest`
+  and `from` itself) come with it; that is the whole blast radius.
 - `CompileRound.errors()` and `DiagnosticsTool`'s compile source: collapse onto the
   projection accessor.
-- New `CompileFacts` writer as above, taking the session store handle.
+- The dev session's store handle per the contract in *The writer*, if R569's read side has
+  not already established one: acquired in `DevMojo`, closed in `cleanup`, its `dsl()` shared
+  by this writer and the view's in-process readers. Nothing holds a store open across a
+  generation pass today, so this is real work whichever item does it.
+- New `CompileFacts` writer as above, taking that handle.
 - `DevMojo.reportCompile`: the third sink call, passing the handle the view's readers query.
 - `FactCaptureAgreementTest`: the `ORACLE` arm, the registration, the seeded lifecycle
   anchor (cold and warm), and the write-read content anchor.
@@ -280,5 +347,7 @@ change, and no user-visible surface: the user-doc first-client check does not ap
   canonical-URI agreement between the flattening and the schema channel's spelling; the
   `Diagnostic.Kind.values()` partition pin on the severity projection.
 - Pipeline tier: both `ORACLE` anchors; agreement closure still holds with no skip list.
-- Maven-plugin tier: `reportCompile` writes through, on the existing `DevMojoTest` seam.
+- Maven-plugin tier: `reportCompile` writes through on the existing `DevMojoTest` seam, and
+  the row is readable on the same handle afterwards, which is the delivery guarantee stated
+  rather than assumed.
 - R569's tool pins run unchanged; no new wire assertions.
