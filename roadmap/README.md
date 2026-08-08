@@ -18,7 +18,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R611` | Nudge commercial-edition jOOQ consumers, whose coordinate the currency check never sees | Spec | 2026-08-08 | [plan](commercial-jooq-coordinate-version-nudge.md) |
 | `R610` | SDL fact keys carry a graph partition dimension | Spec | 2026-08-08 | [plan](graph-partition-key-dimension.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-06 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
-| `R589` | Classification is a relation; validation adds facts | Spec | 2026-08-06 <sub>created 2026-08-04</sub> | [plan](validation-adds-facts.md) |
+| `R589` | Classification is a relation; validation adds facts | Spec | 2026-08-08 <sub>created 2026-08-04</sub> | [plan](validation-adds-facts.md) |
 | `R603` | A pipeline-output facts family in the model store <sub>blocked by: [graph-partition-key-dimension](graph-partition-key-dimension.md)</sub> | Spec | 2026-08-08 <sub>created 2026-08-06</sub> | [plan](pipeline-output-facts-family.md) |
 | `R569` | Aggregated diagnostics commands for the MCP server | Spec | 2026-08-07 <sub>created 2026-08-03</sub> | [plan](mcp-aggregated-diagnostics.md) |
 | `R473` | Explicit @nodeId grammar: Node.id is the only implicit nodeId; typeName-first decode resolution | Spec | 2026-08-06 <sub>created 2026-07-13</sub> | [plan](explicit-nodeid-grammar.md) |
