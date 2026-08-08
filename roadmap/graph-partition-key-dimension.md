@@ -529,3 +529,93 @@ previous run's rows; and the store is a cache with no state of record, so a warm
 cold run agree by the invariant the agreement anchors already pin. If the shared store ever
 does make a reactor build non-reproducible, that is the store failing its own contract and
 the anchors are where it should surface, not something pinning the directory should hide.
+
+## Open at the gate
+
+A Spec to Ready pass verified the item's factual claims and found them exact: 83 in-family
+relations, the seven-root FK closure exactly as enumerated (the two position-keyed roots being
+`graphql_duplicate_declaration` and `graphitron_undecoded_argument`, both referenced by
+nothing), 55 `new RewriteContext(` sites across 53 files in five modules, six convenience
+overloads fourteen-arg down to five-arg, and every comment the item promises to rewrite present
+as quoted. Both H2 refusals reproduce on the pinned 2.4.240 with error 50100:
+`Feature not supported: "AUTO_SERVER=TRUE && DB_CLOSE_ON_EXIT=FALSE"` and
+`Feature not supported: "AUTO_SERVER=TRUE && (readOnly || inMemory || FILE_LOCK=NO || FILE_LOCK=FS)"`.
+Five things the pass wants answered before an implementer picks this up.
+
+**The default graph name is unique in a narrower scope than the store's key.** The item's own
+words for `${project.artifactId}` are "unique within a reactor", and the store is per-user
+across every reactor the user builds. Two checkouts of one repo (a worktree, a release clone)
+and two unrelated projects with a module of the same artifactId therefore collide on
+`graph_name` in one file. Nothing corrupts: ownership-scoped refresh clears
+`graph_name = mine` and rebuilds whole, so the two thrash each other's partition on every
+build, permanently and silently, with `warm()` true and rows present that describe the other
+tree. The cross-graph read surface fares worse, because `base_dir` and `build_file_path` are
+rewritten by whichever ran last, so a sibling reader re-expands the recipe's globs over the
+wrong tree and returns a currency verdict about a checkout it has no interest in. This is the
+fusion the item exists to prevent, one level up from federation, and the item names only the
+rename-to-orphan hazard. It needs a stated answer: fold the build identity into the partition
+(a path segment, or the key), or state what a run does on finding its own `graph_name` carrying
+a different `base_dir`.
+
+**The recipe's re-expansion has no home and no stated dialect.** The recorded patterns are
+plexus `DirectoryScanner` include patterns, which is what `SchemaInputExpander.expand` feeds
+`scanner.setIncludes`, and `plexus-utils` is a dependency of `graphitron-maven-plugin` alone.
+That module depends on `graphitron`, not the reverse, and `graphitron-lsp` carries only
+`graphitron`. So the verification case "a file added under a remembered recipe's pattern is
+discovered by re-expansion with no build of the owning module", placed among the persistence
+tests in `graphitron`, cannot be implemented where the item puts it, and the deferred driver's
+readers cannot reach the dialect either. Name the module and seam that owns re-expansion, and
+make the pattern dialect part of the recipe's contract: a pattern recorded faithfully and
+re-expanded by a different glob engine is a silently wrong currency verdict, which is the one
+failure mode this substrate exists to rule out.
+
+**The stale-comment inventory is short by two, and the item's own discipline is what makes
+that count.** `GraphitronModelStore.openAt`'s method javadoc is the most directly falsified
+comment in the tree ("discarding it if there is one this build cannot read", "a database H2
+refuses outright, is deleted and rebuilt", and the `graphitron:dev` beside `mvn install`
+rationale for the in-use branch), and the item lists the class javadoc from the same file but
+not this. The DDL header's family rule is the other: "store_ is the store's own record of what
+it read and what it was built from, the one family whose rows are not a transcription of
+anything outside" stops being true of a `store_` family holding a transcription of the pom's
+`<schemaInputs>`, so the header wants a rewrite or an argument. In the test tier,
+`PersistentStoreTest`'s class javadoc ("an older schema, a file a killed build left mid-write,
+and a file that is not a database at all are all discarded and rebuilt") and the display names
+`aStaleStampRebuilds` and `anUnreadableFileRebuilds` all assert the discard the item reverses;
+both tests stay green while their names lie.
+
+**Tests addressing the store file by literal path have no seam, and the item's own argument
+closes the obvious one.** `PersistentStoreTest` reaches `directory.resolve("store.mv.db")`
+twice, planting a corrupt file in `anUnreadableFileRebuilds` and asserting existence in
+`aSecondOpenerLeavesTheStoreIntact`, and the forked-JVM case needs the same. The store now
+appends `<ddl-hash>-<version>/` itself, and the item argues correctly that `ddlHash()` and
+`generatorVersion()` stay private, which leaves no way for a test to name the directory. Name
+the accessor rather than leaving an implementer to invent a public-API decision the item has
+already taken half of; an instance method returning the resolved location is the shape that
+keeps the invariant enforced instead of published.
+
+**No `## Retired vocabulary` section.** The item deletes `openReadOnly`, `isAlreadyOpen`,
+`openAt`'s in-use branch and `discard`, and retires the copy-to-temp snapshot mechanism and the
+`mvn clean` recovery story. `roadmap/workflow.adoc` requires the section under Item file
+conventions, and it is load-bearing: without it the Done-gate reviewer has no grep query for
+the retirement sweep.
+
+Smaller things, author's call. "`discard` leaves `openAt` with the helper" garden-paths, since
+"leaves X with Y" reads as leaving X in possession of Y; the intent is that both go. The
+`freshSources` knock-on states a reason narrower than the operative one: a stamped
+`SCHEMA_FILE` row cannot enter `fresh` because `freshSources` only ever consults the classpath
+census `namedSources` reads, which no schema-file path is in, and `fresh` does more than feed
+the `jvm_` claims (it also gates `sink.claim(STORE_SOURCE, ...)` and the `store_source` delete
+in `clear`). Gate one's closing "only the `store_` family itself carries neither" is false of
+`store_graph` and `store_graph_schema_input`, both keyed on `graph_name`; the point is that
+`store_` is exempt from the requirement. Gate two needs `store_graph` excluded from its own
+closure. The recipe's extension-filter child is the one new relation left unnamed. And two new
+mojo parameters plus a default that moves build output outside the project tree is the
+user-visible surface `workflow.adoc` asks to see drafted in the plan as the design's first
+client; the sentence explaining that a build now writes under the user's cache is the one most
+worth writing before implementing rather than after.
+
+One hazard the pass checked and did not find, worth a sentence in the concurrency section
+because the forked-JVM case rests on it: under `AUTO_SERVER` on 2.4.240 a second process that
+attaches survives the first process closing its connection mid-write, and both processes' rows
+land in the file. A master handing off mid-run is therefore not a way for cache trouble to cost
+correctness.
