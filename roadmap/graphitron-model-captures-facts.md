@@ -1,13 +1,13 @@
 ---
 id: R595
 title: "The graphitron-model module exists and capture fills it"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 4
 theme: classification-model
 depends-on: []
 created: 2026-08-05
-last-updated: 2026-08-07
+last-updated: 2026-08-08
 ---
 
 # The graphitron-model module exists and capture fills it
