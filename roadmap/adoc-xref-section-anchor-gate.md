@@ -1,7 +1,7 @@
 ---
 id: R582
 title: "Gate dangling cross-file .adoc xref anchors, which render silently and rot invisibly"
-status: In Progress
+status: In Review
 bucket: cleanup
 priority: 3
 theme: docs
