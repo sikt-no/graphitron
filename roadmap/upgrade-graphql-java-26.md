@@ -1,13 +1,13 @@
 ---
 id: R467
 title: "Upgrade graphql-java 25.0 -> 26.0"
-status: Spec
+status: Ready
 bucket: tech-debt
 priority: 5
 theme: classification-model
 depends-on: []
 created: 2026-07-10
-last-updated: 2026-08-03
+last-updated: 2026-08-08
 ---
 
 # Upgrade graphql-java 25.0 -> 26.0
@@ -71,11 +71,11 @@ but every value is already downcast to `GraphQLNamedType` to read its name, so d
 `LinkedHashMap<String, GraphQLNamedType>` and hoisting that existing cast to the `putIfAbsent` makes
 the narrower static type carry what the code already assumed.
 
-Also worth a reviewer's eye, though it did not bite: 26.0 adds a `FastBuilder` path and documents
-that `getAdditionalTypes()` under it returns *all* non-root types rather than only explicitly-added
-ones. Graphitron does not use `FastBuilder`, so the semantic split is latent, but the assembled
-schema's additional-type set is load-bearing for classification and it is worth confirming nothing
-in the rebuild path reaches `getAdditionalTypes()` expecting the narrow meaning.
+26.0 also adds a `FastBuilder` path and documents that `getAdditionalTypes()` under it returns *all*
+non-root types rather than only explicitly-added ones. The draft left confirming graphitron's
+exposure to the reviewer; settled at the gate: `getAdditionalTypes()` has zero call sites in the
+reactor, main and test alike, so nothing depends on either meaning and the semantic split stays
+latent. Graphitron does not use `FastBuilder` either. Nothing to do here.
 
 ### 4. New: the `-Werror` warning ratchet trips, and the fix is a policy call
 
@@ -109,6 +109,11 @@ reads a *dependency's* class files, never on Java that graphitron emits, so excl
 weaken the cross-module backstop that a generator change emitting warning-producing code fails the
 build. The cost is losing a genuine signal about malformed dependency jars tree-wide.
 
+The comment block is not append-only here. It currently asserts "No category is excluded: the full
+`mvn install -Plocal-db` build is clean across all of them", which remedy A makes false. Rewrite
+that sentence to name `classfile` as the one exclusion and why, rather than adding a reason
+underneath a claim that now contradicts it.
+
 **B. Put the annotation artifacts on the compile classpath** (`com.google.guava:guava` and
 `com.google.errorprone:error_prone_annotations`, `provided` scope, on `graphitron` only). Verified:
 this clears all nine warnings and `graphitron` main compiles clean under the untouched
@@ -116,11 +121,19 @@ this clears all nine warnings and `graphitron` main compiles clean under the unt
 library onto a module's compile classpath purely so javac can resolve annotation methods it will
 then discard, plus the standing risk that Guava becomes casually reachable in `graphitron` source.
 
-**Recommendation: A**, on the reasoning that the excluded category cannot detect the class of defect
-the ratchet exists to catch, and that a recorded one-line exclusion is a smaller standing liability
-than a dependency added as a shim for another project's shading artifact. The Spec reviewer should
-treat this as the item's one real decision and overrule if they weigh the lost `classfile` signal
-higher.
+**Decision: A**, recommended by the draft and ratified at the Spec gate, on the reasoning that the
+excluded category cannot detect the class of defect the ratchet exists to catch, and that a recorded
+one-line exclusion is a smaller standing liability than a dependency added as a shim for another
+project's shading artifact. Implement A; B needs no further consideration.
+
+A third shape was weighed at the gate and rejected: scoping the exclusion to the `graphitron` module
+rather than the root pom, which `graphitron/pom.xml` could carry since it already declares a
+maven-compiler-plugin `<configuration>` block. That would erase A's only stated cost, since the spec
+establishes that no other module is affected. It was rejected because Maven replaces a child
+`<compilerArgs>` list rather than merging it, so the module would have to restate `-Xlint` and
+`-Werror` in a second place, and the ratchet's arguments would then drift apart silently the next
+time the root block changes. One source of truth for the ratchet is worth more than the narrower
+blast radius of an exclusion that, by the argument above, gives up no signal the ratchet can act on.
 
 ### 5. Emitted-code surface (surface A): clean, no generator change
 
@@ -142,10 +155,26 @@ the bytecode level: emitted classes compile to
 `additionalType:(Lgraphql/schema/GraphQLNamedType;)`. No `GraphitronSchemaClassGeneratorTest`
 expectation changes, since they assert the emitted argument text, which is unchanged.
 
+One narrow consumer exposure the dry run could not reach, recorded at the gate as a known
+consequence rather than as work for this item. The `@scalarType(scalar: "FQN.FIELD")` path emits the
+consumer's constant by reference, and `ScalarTypeResolver` gates it on the reflected *value* being a
+`GraphQLScalarType`, never on the field's *declared* type. A consumer whose constant is declared
+`public static final GraphQLType MONEY = ...` therefore passes codegen and emits
+`additionalType(ScalarConstants.MONEY)`, which compiled under 25.0 and does not under 26.0. Every
+graphitron fixture declares the constant as `GraphQLScalarType`, which is why nothing in the reactor
+sees it. The declaration is unusual and the break is graphql-java's own, so it does not change this
+item's scope; tightening the gate to the declared type, so the invariant has an enforcer at the
+parse boundary instead of in a consumer's javac, belongs in a separate Backlog item.
+
 ### 6. Not affected
 
-JDK floor is unchanged (26 keeps a Java 21 runtime floor; generated output stays Java 17). No test
-expectations change anywhere in the reactor.
+JDK floor is unchanged: 25.0 and 26.0 both publish class-file major version 55, so neither the
+runtime floor nor the generator's Java 25 build moves, and generated output stays Java 17. No test
+expectations change anywhere in the reactor. The `graphql-java` version the consumer-lag nudge
+reports is resolved off graphitron's own plugin realm rather than hardcoded, so the `25.0` strings in
+`DependencyVersionWarningsTest` and `DependencyVersionDecodeTest` are fixture inputs and stay as
+they are; consumers still on 25.0 start seeing `graphql-java-version-lag` after this ships, which is
+the mechanism working as documented in `docs/dependencies.adoc`.
 
 ## Implementation note
 
@@ -154,3 +183,32 @@ signature of stale bytecode, not a real break: a non-`clean` build after the ver
 `graphitron-sakila-example` class files compiled against 25.0, because regeneration alone does not
 force recompilation. Use `mvn clean install -Plocal-db` when verifying this item; a warm incremental
 build will produce dozens of misleading failures.
+
+## Review record
+
+One Spec-review pass, by a session independent of the drafting one. No blocking defect; the item
+goes to Ready.
+
+Every external claim was re-verified against the published artifacts rather than taken on report:
+`graphql.schema.idl.DirectiveInfo` is absent from the 26.0 jar; `graphql.Directives` publishes
+`BUILT_IN_DIRECTIVES`, `BUILT_IN_DIRECTIVES_MAP` and both `isBuiltInDirective` overloads, and its
+membership printed from a live 26.0 classpath is exactly the seven names the body lists, identical to
+25.0's `GRAPHQL_SPECIFICATION_DIRECTIVE_MAP` printed the same way; `additionalType`,
+`additionalTypes` and `getAdditionalTypes` carry the narrowed signatures; the relocated
+`ImmutableList` is byte-identical between the two jars and its retained annotations do dangle on
+`GwtCompatible` and the errorprone package, neither of which the jar bundles; federation 7.0.0
+declares `graphql-java:26.0` at `compile` and still ships every one of the eight federation classes
+graphitron references, `ServiceSDLPrinter.generateServiceSDLV2` included; and 24.0 is the newest
+semantic release of `graphql-java-extended-scalars`, as is 26.0 of `graphql-java`. In the tree, the
+`DirectiveInfo` import and call in `SchemaSdlEmitter.includeSchemaElement`, the `{@code}` mention in
+`OneOfDirectiveSdl`'s javadoc, the `pinned` map and its existing downcast in `ConnectionPromoter`,
+the ratchet comment block, and the emitted-surface symbols in
+`GraphitronConnectionInstrumentationGenerator` and `AppliedDirectiveEmitter` all exist as named.
+
+The gate closed the item's one open decision in favour of remedy A and recorded the rejected
+module-scoped variant alongside it, settled the `getAdditionalTypes()` question the draft left open,
+and added the `@scalarType` consumer exposure and the comment-block rewrite requirement. The
+federation bump is a major version and the body reasons about graphql-java only; that rests on the
+green dry run rather than on prose, and the guards that make it safe are already in place:
+`SchemaSdlEmitterTest` asserts byte-identity against `ServiceSDLPrinter.generateServiceSDLV2` and
+`FederationBuildSmokeTest` pins the runtime surface at the execution tier.

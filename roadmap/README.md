@@ -23,9 +23,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R473` | Explicit @nodeId grammar: Node.id is the only implicit nodeId; typeName-first decode resolution | Spec | 2026-08-08 <sub>created 2026-07-13</sub> | [plan](explicit-nodeid-grammar.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
-| `R467` | Upgrade graphql-java 25.0 -> 26.0 | Spec | 2026-08-03 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
 | `R603` | A pipeline-output facts family in the model store <sub>blocked by: [graph-partition-key-dimension](graph-partition-key-dimension.md)</sub> | Ready | 2026-08-08 <sub>created 2026-08-06</sub> | [plan](pipeline-output-facts-family.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
+| `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-08-06 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-08-06 | [plan](catalog-check-constraint-validation.md) |
 | `R427` | Type-ahead search backed by native database indexes | Ready | 2026-08-06 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
@@ -245,7 +245,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R531` [**Meta-test: no registry reads in the classify-time set**](classify-time-registry-read-guard.md) — Backlog, architecture
 - `R537` [**Pin the DefaultRead-under-Outcome validate-time rejection with a named test**](pin-defaultread-outcome-rejection.md) — Backlog, cleanup
 - `R532` [**Route surfaceMultiProducerRejections through bindingRejectionVerdict**](single-producer-rejection-seed.md) — Backlog, cleanup
-- `R467` [**Upgrade graphql-java 25.0 -> 26.0**](upgrade-graphql-java-26.md) — Spec, tech-debt
+- `R467` [**Upgrade graphql-java 25.0 -> 26.0**](upgrade-graphql-java-26.md) — Ready, tech-debt
 - `R520` [**@table-on-input removal housekeeping: changelog, LSP directive list, docs (Phase 4)**](table-on-input-removal-housekeeping.md) — Backlog, architecture
 - `R485` [**Model-level isFkHop/pairsOf helpers for JoinStep narrowings**](fk-hop-narrowing-helpers.md) — Backlog, structural
 - `R323` [**Multi-parent NestingField sharing: BatchKey leaves**](nestingfield-multiparent-batchkey-leaves.md) — Backlog, architecture
