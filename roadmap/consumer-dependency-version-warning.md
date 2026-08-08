@@ -7,7 +7,7 @@ priority: 5
 theme: diagnostics
 depends-on: []
 created: 2026-08-03
-last-updated: 2026-08-03
+last-updated: 2026-08-08
 ---
 
 # Warn at build time when consumer graphql-java / jOOQ versions lag
@@ -286,17 +286,100 @@ correctness bar, nothing here fails a build, and there is no separately maintain
 version. An earlier draft of this plan carried a two-floor model with a hard-failure arm below the
 lower floor; that is retired, along with the floor-relation enforcer test it needed.
 
-## Open questions for the reviewer
+## Reviewer rulings on the open questions
 
-1. **The minor-line predicate.** The Spec recommends nudging on minor-line lag and staying silent on
-   patch drift, which is a judgement call about where "materially current" sits rather than a derived
-   fact. A reviewer who thinks any lag deserves the nudge would simplify the comparison to a plain
-   ordering; a reviewer who thinks jOOQ and graphql-java deserve different thresholds would make it
-   per-dependency. Worth a ruling because it is the main determinant of how often the line fires.
-2. Scope of coordinates checked. This item names graphql-java and jOOQ only, the two the docs call
-   foundational. The reactor also pins `federation-graphql-java-support` and
-   `graphql-java-extended-scalars` (`pom.xml:163-172`), which federation consumers will have. Include
-   now, or follow up? Leaning follow-up: two lines is a nudge, four is a report.
-3. Whether the `docs/dependencies.adoc` policy paragraph should ship in this item or separately. It is
-   small enough to bundle, but it is also the only part of this item a consumer reads before hitting
-   the warning.
+The Spec → Ready review answered the three questions the draft raised. They are settled; do not
+reopen them.
+
+1. **The minor-line predicate: adopt it, uniformly across both dependencies.** Warn when the
+   observed `(major, minor)` pair orders below the current one, stay silent on patch-level lag
+   within the current minor. Uniform rather than per-dependency: a per-dependency threshold is a
+   second judgement with no derivable basis and no enforcer, and the draft's own observation that
+   jOOQ's minor bump is its effective major boundary is exactly why the uniform minor-line rule
+   already does the right thing for the case that matters. Note that major-line lag falls out for
+   free under a `(major, minor)` comparison, so the predicate is one comparison with no
+   special-casing.
+2. **Scope of coordinates: graphql-java and jOOQ only; the other two are a follow-up.** The draft's
+   leaning is right, and there is a second reason to hold: `federation-graphql-java-support` and
+   `graphql-java-extended-scalars` are not in the foundational set `docs/dependencies.adoc`
+   describes, so nudging on them would make the advisory broader than the policy paragraph paired
+   with it. File a Backlog item if it is still wanted after this lands.
+3. **The `docs/dependencies.adoc` policy paragraph ships in this item.** It is the only part of the
+   item a consumer reads *before* meeting the warning, so splitting it means the advisory's first
+   release has no explanatory page behind it. The draft already specifies its content precisely
+   (policy, no numbers), so the cost is one paragraph.
+
+## Reviewer findings: revisions requested before Ready
+
+The item is well-argued and its factual claims check out against the tree (the `SessionStateWarnings`
+precedent, the `Source.CODEGEN` routing, the `LintRuleRegistryCoverageTest` enforcer, the
+`ValidationError` / `Rejection` coupling, the `ComparableVersion` availability on the plugin's
+`provided` classpath, and the runtime-probe results are all as described). Four things need closing
+before an implementer can be handed this.
+
+### 1. How the reference version reaches the running mojo is unspecified
+
+This is the load-bearing mechanism of the whole item and the plan stops one step short of it.
+"Promoting the graphql-java version to a property, so there is one source to filter the reference
+value from" names the source but not the delivery: a Maven property in the reactor pom is a fact of
+*graphitron's* build and is invisible at consumer build time. Something has to carry both numbers
+into the shipped artifact, and the reactor has no resource-filtering precedent to copy.
+
+**Recommended path, which removes the prerequisite entirely:** read the plugin's own resolved
+dependency graph. A mojo can take `@Parameter(defaultValue = "${plugin}", readonly = true)
+PluginDescriptor`, and `PluginDescriptor.getArtifacts()` carries graphql-java and jOOQ because
+`graphitron-maven-plugin` depends on `graphitron`, whose pom declares both at compile scope
+(`graphitron/pom.xml:36,44`). That is exactly symmetric with the `project.getArtifacts()` decode
+already chosen for the consumer side: same API shape, same boundary, both sides plain strings by the
+time they cross into core. It needs no property promotion, no resource filtering, and no new build
+wiring, and it stays derived in the way the plan wants, so R466 and R467 still move the reference for
+free. Pick this or name a concrete alternative, but the Spec has to pick.
+
+### 2. "The Spec must pin which scopes count" is still an open instruction, and the answer is not goal-invariant
+
+The draft writes that sentence as a task for itself and never carries it out. It is not a detail the
+implementer can pick freely, because the resolution scope differs per goal: `GenerateMojo` and
+`ValidateMojo` declare `ResolutionScope.COMPILE`, `DevMojo` declares `ResolutionScope.TEST`. So
+`project.getArtifacts()` returns a *different set* depending on which goal is running, and a
+coordinate at test scope is present under `graphitron:dev` and absent under `graphitron:generate`.
+That directly undercuts the placement section's own argument, which puts the fact on `RewriteContext`
+precisely so the advisory lands identically on `generate`, `validate`, and `dev` with no enforcement
+gap. Rule on which scopes count and state whether the advisory is goal-invariant under that rule;
+if it is not, say so explicitly so it is a known consequence rather than a surprise.
+
+### 3. `Source.CODEGEN` is currently documented as a `<sessionState>` axis
+
+The plan reuses `Source.CODEGEN` without noting that the axis's own documentation would become
+false. `LintRule.Source.CODEGEN`'s javadoc reads "a codegen-config advisory derived at report
+assembly from the `<sessionState>` config", and the enum-constant block comment above
+`NO_SESSION_STATE` says the same. A dependency version is not `<sessionState>`, and it is not mojo
+config at all: it is resolved-dependency-graph data. Add a line to the plan that the implementer
+widens that axis documentation to what it actually partitions (a whole-build fact with no SDL
+coordinate, emitted at report assembly, no visitor and no classifier site), so the change does not
+leave a stale javadoc behind.
+
+### 4. The testing plan does not pin the routing claim it rests on
+
+The whole case for riding `BuildWarning` rather than `getLog().warn` is that suppression, LSP replay,
+and MCP projection come free. The two planned unit tiers pin message shaping in core and
+decode-plus-compare in the plugin, and neither one pins that the advisory actually reaches
+`ValidationReport` or that `<lint><disabledRules>` silences it by id.
+
+"There is no pipeline-tier surface here" is true of classification and emitted code, but not of the
+report channel the plan deliberately chose to ride. `LintSuppressionPipelineTest` is the existing
+pipeline-tier home for exactly this assertion, it drives the real `GraphQLRewriteGenerator.buildOutput()`
+and asserts on the `ValidationReport`, and `RewriteContext` already carries the wither pattern
+(`withLintConfig`, `withSessionStateConfig`, `withTenantColumn`) that makes adding a case cheap. Add
+one fires-then-suppressed case there.
+
+While closing this, name the `RewriteContext` shape: a `withDependencyVersions(...)` wither, matching
+how `tenantColumn` was added, avoids touching the canonical constructor's five overloads. The plan
+says "threads it through `RewriteContext`" without saying which.
+
+### Not blocking, worth a pass
+
+Several root-pom coordinates in this body have drifted as the pom grew: `version.org.jooq` is at
+`pom.xml:34`, graphql-java's `25.0` at `pom.xml:174`, the federation and extended-scalars pins at
+`pom.xml:176-185`, `withLintFindings` at `GraphQLRewriteGenerator.java:537-559`, and the
+`<schemaInput pattern>` warn at `AbstractRewriteMojo.java:163`. Every symbol named exists as named;
+only the line coordinates moved. Refresh them if the body is being edited anyway.
