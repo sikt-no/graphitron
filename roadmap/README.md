@@ -17,7 +17,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-06 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R589` | Classification is a relation; validation adds facts <sub>blocked by: [graphitron-model-captures-facts](graphitron-model-captures-facts.md)</sub> | Spec | 2026-08-06 <sub>created 2026-08-04</sub> | [plan](validation-adds-facts.md) |
-| `R595` | The graphitron-model module exists and capture fills it | In Progress | 2026-08-08 <sub>created 2026-08-05</sub> | [plan](graphitron-model-captures-facts.md) |
+| `R595` | The graphitron-model module exists and capture fills it | In Review | 2026-08-08 <sub>created 2026-08-05</sub> | [plan](graphitron-model-captures-facts.md) |
 | `R569` | Aggregated diagnostics commands for the MCP server <sub>blocked by: [graphitron-model-captures-facts](graphitron-model-captures-facts.md)</sub> | Spec | 2026-08-07 <sub>created 2026-08-03</sub> | [plan](mcp-aggregated-diagnostics.md) |
 | `R473` | Explicit @nodeId grammar: Node.id is the only implicit nodeId; typeName-first decode resolution | Spec | 2026-08-06 <sub>created 2026-07-13</sub> | [plan](explicit-nodeid-grammar.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
@@ -231,7 +231,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R302` [**Rename ChildField to SourceField (carrier-named field hierarchy)**](rename-childfield-to-sourcefield.md) — Backlog, structural
 - `R337` [**Surface input-field projections honestly on the lowered coordinate**](input-nesting-projection-classification.md) — Backlog, architecture
 - `R606` [**The facets container derives from the store rather than minting at capture**](facets-container-derives-from-the-store.md) — Backlog, architecture
-- `R595` [**The graphitron-model module exists and capture fills it**](graphitron-model-captures-facts.md) — In Progress, architecture
+- `R595` [**The graphitron-model module exists and capture fills it**](graphitron-model-captures-facts.md) — In Review, architecture
 - `R257` [**UpdateRowsWalker raw-SDL substrate absorption**](updaterows-walker-sdl-substrate.md) — Backlog, structural
 - `R466` [**Upgrade jOOQ 3.20.11 -> 3.21.6**](upgrade-jooq-3-21.md) — Backlog, tech-debt
 - `R565` [**@table-on-input rejection cascades into a misleading @mutation arg-shape error**](unclassified-input-arg-cascade-diagnostic.md) — Backlog, architecture
