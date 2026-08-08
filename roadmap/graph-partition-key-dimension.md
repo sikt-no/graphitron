@@ -56,12 +56,23 @@ one blast radius as its consequence.
 
 - Foreign keys between the two families widen automatically, since they reference the
   widened keys. The `graphql_directive_site` union view gains the column in every arm.
-- A new `store_graph (graph_name, last_captured)` relation anchors the partition, the
-  capture timestamp being the bookkeeping the eviction story below needs. The family
-  relations with no in-family parent (`graphql_type`, `graphql_directive_definition`,
+- A new `store_graph` relation anchors the partition: `graph_name` as key, `last_captured`
+  (the bookkeeping the eviction story below needs), and the graph's **build identity**,
+  `base_dir`, `build_file_path` and `build_file_stamp` (the module's pom, content-hashed;
+  all three NULL on a programmatic run with no build file). The family relations with no
+  in-family parent (`graphql_type`, `graphql_directive_definition`,
   `graphql_schema_directive`, `graphql_duplicate_declaration`, `graphitron_link`) get a
   direct FK to it; every other relation reaches it through its existing parent chain.
   `store_source` gains the matching `last_seen` timestamp.
+- The graph's **SDL recipe** is remembered beside it, written fresh by every run from its
+  resolved configuration: `store_graph_schema_input (graph_name, ordinal, pattern, tag,
+  description_note)` transcribes the `<schemaInputs>` bindings, and an ordered child carries
+  the effective schema-file-extension filter. The recipe is config, an input capture holds
+  in hand, not a derivation over captured rows, and it records something the read-set never
+  can: how to *find* the graph's schema files, including ones that do not exist yet. The
+  `tag` and `description_note` columns are not optional fidelity: those appliers run above
+  the capture cut, so replaying a graph's SDL capture without them would mint different rows
+  than the graph's own build.
 - The `store_graph` comment owes two discriminators, so the DDL's conventions stay readable
   as consistent. First, why this FK exists while the SDL-to-`store_source` FK was declined:
   the graph is ambient before the walk begins and `NOT NULL` everywhere, while the source
@@ -192,10 +203,20 @@ substrates, both shipping here:
 The rule this binds future consumers to, stated now so it is reviewable now: a cross-graph
 reader treats age and currency as inputs. A composition detection over a sibling partition
 whose sources fail the re-hash reports against a stated stale baseline or declines, and
-never presents a heterogeneous store as uniformly current. The natural repair is also worth
-recording as a pointer for the orchestration item: a stale sibling's SDL partition can be
-re-captured by a parse alone, no build of its module, because parse-to-registry is the
-linear half of the pipeline and capture is infallible by construction.
+never presents a heterogeneous store as uniformly current.
+
+With the build identity and the SDL recipe remembered on `store_graph`, the check-and-repair
+loop becomes executable for **every graph the store knows about**, with no build of any
+sibling module. For each known graph: re-hash its build file, and on a mismatch treat the
+remembered recipe as possibly stale, repaired the next time that module builds (resolving a
+pom's config outside Maven is not worth owning); on a match, re-run the recipe's globs over
+`base_dir`, which discovers added and deleted schema files, not just edited ones; hash the
+resulting file set against `store_source`; and where anything moved, re-capture that graph's
+SDL partition by parse alone, replaying the recipe's tags and description notes, because
+parse-to-registry is the linear half of the pipeline and capture is infallible by
+construction. This item ships the substrate (the columns, the recipe relations, capture
+writing them every run); the loop's driver (in the dev goal's watcher, the LSP, or a store
+open) is the orchestration item's first move, and it starts with everything it needs.
 
 Collaboration does not flow through the store, which is what keeps the concurrency posture
 honest: the store is per-user and per-machine, other people's work arrives as source changes
@@ -265,14 +286,15 @@ as shipped. No consumer queries exist yet to update, which is the point of doing
 
 ## Deliberately out of scope
 
-- **`store_graph_source` membership.** The Backlog stub proposed it and the shared store
-  sharpens the question: in a multi-graph store, which sources a graph reads is no longer
-  derivable from the graph-free `jvm_`/`sql_` rows. It still stays out, because nothing
-  reads it yet: each run knows its own input set from configuration, and the candidate
-  readers are eviction (which sources does no graph still reference) and per-graph
-  resolution over the source-keyed `sql_`/`jvm_` families; cross-graph composition
-  detections do not need it, since they read sibling SDL rows keyed by graph directly. It
-  lands with the first reader, as an input written by capture, not a derivation.
+- **`store_graph_source` membership for the classpath and catalog.** The Backlog stub
+  proposed general membership; the SDL side now lands through the recipe relations above,
+  which serve the freshness reader and subsume it (the recipe finds files membership could
+  only list). What stays out is the `jvm_`/`sql_` side: which classpath entries and
+  generated packages make up a graph. Nothing reads it yet; the candidate readers are
+  eviction (which sources does no graph still reference) and per-graph resolution over the
+  source-keyed families, while cross-graph composition detections need neither, reading
+  sibling SDL rows keyed by graph directly. It lands with the first reader, as an input
+  written by capture, not a derivation.
 - **Eviction.** Orphaned partitions (renamed graphs, jars no classpath references) accumulate
   until a policy or command drops them; this item writes the `last_captured` / `last_seen`
   stamps eviction needs and defers the eviction surface itself.
@@ -288,6 +310,7 @@ the tests; the widened gate family and the agreement suite are the honesty check
 two-graph test above is the first assertion the multi-graph store has ever had. The
 persistence tests (`PersistentStoreTest`, `WarmStartRefreshTest`) grow the ownership cases:
 a second graph's partition survives a refresh, an uncrawled source's rows survive a refresh,
-and concurrent opens through mixed mode land both writers' rows. Generated output is
+concurrent opens through mixed mode land both writers' rows, and a graph's build identity
+and recipe rows are rewritten by its own run and untouched by a sibling's. Generated output is
 untouched; the reactor's own builds exercise the per-user default the moment the change
 lands, since every module build now opens the shared store.
