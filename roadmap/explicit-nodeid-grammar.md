@@ -39,7 +39,7 @@ The grammar below closes that by making the implicit reading available in exactl
    * **`ID`-typed only.** An `id: Int!` is not a node id and must not decode. Rules 3 and 4 make this implicit, but at a coordinate this subtle it is worth an explicit guard rather than an inference.
    * **Scalar and list alike**, unlike the output-side rule 1 arm, whose `isScalarId` guard is deliberate and must not be copied across. The motivating case is a list.
    * **`@field(name:)` defeats it**, pinning the column instead, mirroring the `!hasFieldDirective` guard at `FieldBuilder.java:7273`.
-   * **It resolves ahead of column resolution and wins against a same-named column**, exactly as rule 1 does. See "One shadowing rule" below; the placement is not rule 6's own choice to make.
+   * **It resolves ahead of column resolution, and a same-named column is a rejection rather than a contest it wins**, exactly as rule 1 is since R580's rework. See "One shadowing rule" below; the placement is not rule 6's own choice to make.
 
 ### One shadowing rule, at every coordinate
 
@@ -72,7 +72,7 @@ An earlier draft of this item avoided the `baz` case by resolving rule 6 *after*
 
    Consequently **rule 6 does not reject `typeName:` the way rule 1 does.** Rule 1 rejects it because the enclosing type already answers "which node" unambiguously, making the argument noise. At a table-derived coordinate the argument is load-bearing whenever the table carries several node types, so it stays legal and is the disambiguator. Existing explicit spellings such as `DeleteFilmActorByNodeIdInput.id` and `FilmActorCompositeNodeIdFilter.ids` stay valid as written; there is no removal migration.
 
-   **Rule 6 adds no new rejection.** The "required" half is descriptive, not a verdict: a non-matching argument name is rule 4 falling through to ordinary column resolution, which either resolves or produces the existing `unknownColumn` rejection. So rule 6 lands wholly in the flip-and-delete commit, and the rejections commit covers rules 1 and 2 only. The one discretionary addition is naming `@nodeId` as a candidate fix in that column-miss message when the enclosing field's target is node-backed.
+   **Rule 6's "required" half adds no new rejection.** It is descriptive, not a verdict: a non-matching argument name is rule 4 falling through to ordinary column resolution, which either resolves or produces the existing `unknownColumn` rejection. The rejection rule 6 *does* mint is the shadowing collision, one sibling per new coordinate, and that verdict belongs to "One shadowing rule" rather than to rule 6 itself. Both land in the flip-and-delete commit alongside the arm, since the shadowing rejection is classifier-side and cannot sit behind the validator's opt-in; the rejections commit still covers rules 1 and 2 only. The one discretionary addition is naming `@nodeId` as a candidate fix in that column-miss message when the enclosing field's target is node-backed.
 
 ## Phase 1: shipped as R581
 
@@ -92,7 +92,7 @@ The facts these rejections need are all reachable there. `GraphitronSchemaValida
 
 * Rule 1: `typeName:` on the `id` field satisfying `Node` on a node type. The named type either agrees with the enclosing type (redundant) or contradicts it (a bug the author cannot have meant), so the argument is rejected rather than checked.
 * Rule 2: bare `@nodeId` on an output field of a type that is not a node type. **This one already rejects**, structurally, in `FieldBuilder.classifyChildFieldOnTableType`: "@nodeId requires the containing type to be a node type (via @node or KjerneJooqGenerator metadata)", a message that became true as written once R580 landed the metadata path. So the work here is not a new verdict, it is giving the existing one a source location and a message that names `typeName:` as the fix. Decide explicitly whether the classifier rejection stays as the mirror that "Rejections: validator mirrors classifier invariants" prescribes (it should) or moves; and note the classifier arm is reached only for a `@table`-backed parent, so a non-table-backed parent is a separate coordinate to check.
-* Rule 3 is **not** a third rejection, and an earlier draft had this backwards. It read "bare `@nodeId` on an input field or an argument" as a new verdict subsuming the two friendly diagnostics `BARE_NODE_ID_NO_OBJECT_TYPE` and `BARE_NODE_ID_AMBIGUOUS_OBJECT_TYPES`, on the grounds that it would "fire on the unique-match case too, which is the whole point". Under rule 2's generalisation the unique-match case is exactly what bare `@nodeId` is *for*, so `NodeIdLeafResolver.inferTypeName`'s table-lookup arm is kept rather than deleted, and those two diagnostics are its permanent absence and ambiguity rejections rather than casualties. What changes is the domain it resolves over: re-point it from `findGraphQLTypesForTable` (all `@table` types) to `NodeIndex.forTable` (node types only), so it answers "which node backs this table" instead of "which object type maps to it". That re-pointing is the whole of rule 3's implementation, and it belongs with rule 6's arm in the flip-and-delete commit rather than behind the rejection opt-in.
+* Rule 3 is **not** a third rejection, and an earlier draft had this backwards. It read "bare `@nodeId` on an input field or an argument" as a new verdict subsuming the two friendly diagnostics `BARE_NODE_ID_NO_OBJECT_TYPE` and `BARE_NODE_ID_AMBIGUOUS_OBJECT_TYPES`, on the grounds that it would "fire on the unique-match case too, which is the whole point". Under rule 2's generalisation the unique-match case is exactly what bare `@nodeId` is *for*, so `NodeIdLeafResolver.inferTypeName`'s table-lookup arm is kept rather than deleted, and those two diagnostics are its permanent absence and ambiguity rejections rather than casualties. What changes is the domain it resolves over: re-point it from `findGraphQLTypesForTable` (all `@table` types) to `NodeIndex.forTable` (node types only), so it answers "which node backs this table" instead of "which object type maps to it". That re-pointing is the substance of rule 3's implementation, and it belongs with rule 6's arm in the flip-and-delete commit rather than behind the rejection opt-in. It carries a small tail: both diagnostics describe the domain they used to resolve over ("no @table-annotated object type maps to table", "multiple object types map to table"), and the two `NodeIdPipelineTest` cases pin those substrings, so the message text and the assertions move with the domain. Neither fixture changes verdict under the narrowing: `BARE_NODE_ID_NO_OBJECT_TYPE`'s table has no object type at all, and `BARE_NODE_ID_AMBIGUOUS_OBJECT_TYPES`'s two types are both `@node`, so each still lands on the arm it was written for.
 
   So the rejections commit covers rules 1 and 2 only. Keep the section's name or rename it; do not let the count "three distinct rejections" survive unexamined into the implementation.
 
@@ -107,6 +107,7 @@ Re-measured against the post-R580 tree on 2026-08-04 (re-measure again at pickup
 * `graphitron-sakila-example`: no migration needed, but for two reasons rather than one. All 16 bare `@nodeId` sites across the five `.graphqls` files are `Node.id` on a node type, which rules 1 and 2 keep legal. **The claim in an earlier draft of this item that the sakila INSERT-input fixture writes the bare form on an input is stale and was the main reason this plan looked more expensive than it is**; `CreateKeyedNodeInput` does write `@nodeId(typeName: "KeyedNode")`. Separately, `schema.graphqls:163` carries the one directive-*less* site, `filmActorByNodeId(id: [ID!]! @lookupKey): [FilmActor!]!`, whose argument routes through the arm rule 6 replaces. It survives untouched precisely because rule 6 covers it: the argument is named `id`, `FilmActor` is a node type, so the node resolves off the return type. Under rule 3 alone it would have needed `@nodeId(typeName: "FilmActor")` added, and since `film_actor` has no `id` column it would otherwise have become an `unknownColumn` rejection. This is the coordinate that motivated rule 6.
 * Sakila's `FilmActor` in `schema.graphqls` is now the *fully* implicit rule-1 shape: `implements Node @table(name: "film_actor")` with a bare `id: ID!`, no `@node` and no `@nodeId`. `GraphQLQueryTest`'s `filmActorByNodeId` round-trip is therefore this item's execution-tier proof that rule 1 holds end to end, and it must stay green through the flip. The declared spelling over the same table is still covered by `federated-schema.graphqls`.
 * `graphitron/src/test`: **the 23 input-field and 2 argument bare-`@nodeId` sites no longer migrate at all.** Rule 2's generalisation makes bare `@nodeId` legal at those coordinates, inheriting the target, so they stay as written; only sites whose inherited target is absent or ambiguous need `typeName:`, and those are already the deliberately-failing fixtures that pin `BARE_NODE_ID_NO_OBJECT_TYPE` and `BARE_NODE_ID_AMBIGUOUS_OBJECT_TYPES`. The ~157 output-field sites are `Node.id`-shaped and stay as they are. This is the largest single change the pass-3 discussion made to the item's cost: the fixture migration was the bulk of the work and is now close to empty. **Re-measure at pickup rather than trusting this sentence**, and in particular re-check each of the 23 for an ambiguous target, since a shared table is what turns a legal bare form into a required `typeName:`.
+* **Rule 1's `typeName:` rejection has no in-tree migration cost either, measured 2026-08-08.** No site in the tree writes `@nodeId(typeName:)` on the `id` field of a type that is a node, by declaration or by inference; every explicit spelling sits on an input field or an argument, where rule 6 keeps it legal (`DeleteFilmActorByNodeIdInput`, `CreateKeyedNodeInput`, `UpdateEmailReplyInput`, `ModifyFilmActorRecordInput`, `FilmActorSingularNodeIdFilter` in sakila, and the `graphitron/src/test` sites alongside them). The census above counts the bare form, so this is the half it does not otherwise cover. Re-measure with the same predicate at pickup.
 * Of the two argument sites, `NodeIdPipelineTest`'s `barByIds(ids: [ID!]! @nodeId)` stays legal under rule 2 (`bar` carries one node type). `RejectNonIdNodeIdPipelineTest`'s `search(term: String @nodeId)` is a non-`ID` rejection fixture whose verdict must not change; check which rejection wins and pin the order deliberately, since rule 2 widening where bare `@nodeId` is *legal* must not weaken the non-`ID` rejection.
 
 Rule 6's own verdict cost sits in `NodeIdPipelineTest.LookupKeyCase`, whose three cases all reach the replaced arm with no `@nodeId` anywhere in the fixture. Behaviour decides each, not emit equality:
@@ -413,6 +414,60 @@ Passes 2 and 3 above name `warnShadowedIdColumn` and `LintRule.NODE_ID_SHADOWS_C
 at those passes and are left as dated records, as the rule numbering is. Because this pass edited the
 item, the Spec -> Ready sign-off needs a fifth session: not the original author, and none of the
 three prior reviewers.
+
+**Pass 5, 2026-08-08 (revisions applied by the reviewer).** Independent Spec -> Ready review by a
+fifth session. Pass 4's reconciliation holds and nothing in the tree has moved under it: the six
+commits since that pass touch only the dependency-warning module. Everything re-checked exists as
+named. `warnShadowedIdColumn`, `LintRule.NODE_ID_SHADOWS_COLUMN` and `BuildWarning.LintFinding` grep
+to zero in source (the surviving hits are stale `docs/target/staging` render output);
+`rejectShadowedIdColumn` sits on the `Node.id` arm above the column lookup and returns
+`Rejection.structural`; `NodeInferencePipelineTest`'s "The shadowed `id` column" block is five rows
+over `baz`; the `CLASSIFIER` partition holds three `LintRule` entries; `NodeIndex`'s record shape
+and both accessors, `resolveDecodeHelperForTable`'s three surviving callers,
+`findGraphQLTypesForTable`'s two, rule 2's rejection message verbatim, the `directives.graphqls`
+inference contract, `validateConnectionType` in the validator against `validateNodeTypeIdUniqueness`
+in `TypeBuilder`, `InputFieldResolver.resolve`'s `typeName` being the input type's own name, all
+seven named `NodeIdPipelineTest` cases, and sakila's `FilmActor` / `CreateKeyedNodeInput` /
+`schema.graphqls:163` / `GraphQLQueryTest.filmActorByNodeId` all check out. The fixture DDL backs the
+shadowing argument exactly: `nodeidfixture.baz` is a single `id varchar(50) PRIMARY KEY`, `bar` is
+`id_1` / `id_2` / `name`, and `film_actor` has no `id` column. R273 is fully reconciled with the
+pass-3 scope call and no longer claims the argument arm.
+
+One blocking finding, applied above rather than handed back, because it was residue from the item's
+own settled decision rather than a design question. **Two summary statements did not survive the
+"shadowing is an error" decision**, and both sit where an implementer sizes the work. Rule 6's
+placement bullet said the rule "wins against a same-named column", which is what the rule did in the
+draft where shadowing warned; since that decision, and since R580's rework at output, a same-named
+column is a rejection and nothing wins. And "Rule 6 adds no new rejection" is false as a headline:
+its "required" half adds none, which is what the paragraph's own grounds argue, but the shadowing
+collision at rule 6's two new coordinates is exactly a new verdict, one the Tests section requires be
+asserted by message. The paragraph's operative claims about commit placement were already correct, so
+this was imprecision rather than misrouting, but a spec whose subject is which verdicts land where
+should not say a rule mints none while a section below adds two. Both are now scoped, and the
+shadowing siblings' commit placement is stated where the count is.
+
+Two measurement gaps were filled in the same pass, both things an implementer would otherwise
+re-derive. Rule 1's `typeName:` rejection was never counted: it measures zero in-tree, because every
+explicit spelling in the tree sits on an input field or argument where rule 6 keeps it legal, which
+means the rejections commit has no fixture migration at all. And rule 3's re-pointing was described
+as the whole of its implementation when it also drags two diagnostic messages that name the old
+domain plus the two assertions pinning them; neither fixture changes verdict under the narrowing,
+which is worth stating so the implementer does not go looking.
+
+One non-blocking opportunity, left for the author because it is a scoping call rather than a defect.
+**The three-commit opt-in seam may now be over-built for what it protects.** Its stated justification
+is that the fixture migration proceeds "against a build that fails loudly for a session and quietly
+for everyone else", but the migration is now measured at zero on every axis: rules 1 and 2 have no
+in-tree sites, the shadowing rejection has none at either new coordinate, and Consumer migration
+already says rules 1 and 2 ship as errors immediately since they cannot flip anything silently. The
+design budget spent choosing between a Mojo parameter and a test-settable constant, and the recorded
+constraint about where rejection tests can then live, is buying staging for a migration that does not
+exist. Collapsing to two commits (rejections plus their cases, then flip and delete) would be
+simpler, and the opt-in's real remaining value is out-of-tree exposure, which the Consumer-migration
+re-confirmation gates separately. Worth a deliberate keep-or-drop rather than inheriting it.
+
+Because this pass edited the item, the Spec -> Ready sign-off needs a sixth session: not the original
+author, and none of the four prior reviewers.
 
 ## Provenance
 
