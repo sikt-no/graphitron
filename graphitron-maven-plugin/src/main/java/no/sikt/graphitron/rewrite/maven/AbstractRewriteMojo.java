@@ -5,6 +5,7 @@ import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.dependency.DependencyVersions;
+import no.sikt.graphitron.rewrite.dependency.ObservedVersion;
 import no.sikt.graphitron.rewrite.dependency.WatchedDependency;
 import no.sikt.graphitron.rewrite.lint.LintConfig;
 import no.sikt.graphitron.rewrite.session.SessionStateConfig;
@@ -240,32 +241,64 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * goal-invariance claim rests on {@link #GENERATED_CODE_SCOPES} naming exactly the scopes
      * {@code ResolutionScope.COMPILE} resolves.
      *
-     * <p>The scope filter applies to the consumer side only. The plugin realm's scopes are a fact
-     * of graphitron's own build and do not vary by goal, so filtering them would only risk dropping
-     * the reference version for no gain.
+     * <p>The two sides decode differently and are deliberately separate methods rather than one
+     * parameterised by a scope filter: only the consumer side is scoped, and only the consumer side
+     * can put one library at several coordinates. See {@link #observedVersionsOf} and
+     * {@link #referenceVersionsOf}.
      */
     static DependencyVersions decodeDependencyVersions(
         Collection<Artifact> projectArtifacts, Collection<Artifact> pluginArtifacts
     ) {
         return new DependencyVersions(
-            versionsOf(projectArtifacts, scope -> scope != null && GENERATED_CODE_SCOPES.contains(scope)),
-            versionsOf(pluginArtifacts, scope -> true));
+            observedVersionsOf(projectArtifacts,
+                scope -> scope != null && GENERATED_CODE_SCOPES.contains(scope)),
+            referenceVersionsOf(pluginArtifacts));
     }
 
     /**
-     * The resolved version of each {@link WatchedDependency} present in {@code artifacts} on a
-     * scope {@code scopeFilter} admits. First occurrence wins; Maven has already mediated, so a
-     * coordinate appears once.
+     * Every coordinate each {@link WatchedDependency} was resolved at in {@code artifacts}, on a scope
+     * {@code scopeFilter} admits.
+     *
+     * <p>Every match is carried rather than the first one, because a watched dependency names a
+     * library and jOOQ's editions put one library at several coordinates. Maven mediates per
+     * coordinate, not per library, so de-duplicating here would make the surviving observation a
+     * function of artifact-set iteration order; which coordinate the advisory speaks about is a
+     * decision, and decisions belong behind this boundary.
      */
-    private static Map<WatchedDependency, String> versionsOf(
+    private static Map<WatchedDependency, List<ObservedVersion>> observedVersionsOf(
         Collection<Artifact> artifacts, Predicate<String> scopeFilter
     ) {
         if (artifacts == null) {
             return Map.of();
         }
-        var versions = new EnumMap<WatchedDependency, String>(WatchedDependency.class);
+        var versions = new EnumMap<WatchedDependency, List<ObservedVersion>>(WatchedDependency.class);
         for (Artifact artifact : artifacts) {
             if (artifact == null || artifact.getVersion() == null || !scopeFilter.test(artifact.getScope())) {
+                continue;
+            }
+            WatchedDependency.of(artifact.getGroupId(), artifact.getArtifactId()).ifPresent(dep ->
+                versions.computeIfAbsent(dep, k -> new ArrayList<>()).add(new ObservedVersion(
+                    artifact.getGroupId() + ":" + artifact.getArtifactId(), artifact.getVersion())));
+        }
+        return versions;
+    }
+
+    /**
+     * The resolved version of each {@link WatchedDependency} in graphitron's own plugin realm. First
+     * occurrence wins, which is unambiguous here in a way it is not on the consumer side: the realm is
+     * graphitron's own build, resolving one of each. No coordinate is reported from this side, so none
+     * is carried.
+     *
+     * <p>Unscoped on purpose. The plugin realm's scopes are a fact of graphitron's own build and do
+     * not vary by goal, so filtering them would only risk dropping the reference version for no gain.
+     */
+    private static Map<WatchedDependency, String> referenceVersionsOf(Collection<Artifact> artifacts) {
+        if (artifacts == null) {
+            return Map.of();
+        }
+        var versions = new EnumMap<WatchedDependency, String>(WatchedDependency.class);
+        for (Artifact artifact : artifacts) {
+            if (artifact == null || artifact.getVersion() == null) {
                 continue;
             }
             WatchedDependency.of(artifact.getGroupId(), artifact.getArtifactId())

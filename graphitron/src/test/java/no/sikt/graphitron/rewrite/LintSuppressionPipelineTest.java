@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.dependency.DependencyVersions;
+import no.sikt.graphitron.rewrite.dependency.ObservedVersion;
 import no.sikt.graphitron.rewrite.dependency.WatchedDependency;
 import no.sikt.graphitron.rewrite.lint.LintConfig;
 import no.sikt.graphitron.rewrite.lint.LintRule;
@@ -134,7 +135,7 @@ class LintSuppressionPipelineTest {
             type Query { film: Film }
             """;
         var versions = new DependencyVersions(
-            Map.of(WatchedDependency.JOOQ, "3.19.15"),
+            Map.of(WatchedDependency.JOOQ, List.of(new ObservedVersion("org.jooq:jooq", "3.19.15"))),
             Map.of(WatchedDependency.JOOQ, "3.20.11"));
 
         var enabled = report(tmp.resolve("h.graphqls"), sdl, LintConfig.empty(), versions);

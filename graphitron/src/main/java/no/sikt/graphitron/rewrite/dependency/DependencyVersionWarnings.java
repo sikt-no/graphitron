@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.dependency;
 import no.sikt.graphitron.rewrite.BuildWarning;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
@@ -32,6 +33,12 @@ import java.util.Optional;
  * Major-line lag falls out of the same {@code (major, minor)} comparison with no special-casing, and
  * comparing the pair as integers is also what gets jOOQ's {@code 3.9} versus {@code 3.20} right,
  * where a lexical compare of the full strings gets it backwards.
+ *
+ * <p><b>The advisory names the coordinate the consumer resolved</b>, never a canonical one. jOOQ's
+ * editions put one library at several group ids, and telling a commercial consumer to bump the
+ * open-source coordinate is telling them to switch editions, which for a commercial-only dialect does
+ * not work at all. When a library was resolved at more than one coordinate, {@link #lowestLine}
+ * settles which one the advisory speaks about.
  */
 public final class DependencyVersionWarnings {
 
@@ -43,38 +50,73 @@ public final class DependencyVersionWarnings {
      *
      * <p>Silence is the interesting output here, and every case collapses to it: at the reference
      * version, behind only at patch level, <em>ahead</em> of the reference (a consumer who upgraded
-     * before graphitron did), the coordinate absent from either side, or a version string that does
+     * before graphitron did), the dependency absent from either side, or a version string that does
      * not decompose into a {@code (major, minor)} pair.
      */
     public static List<BuildWarning> forVersions(DependencyVersions versions) {
         var warnings = new ArrayList<BuildWarning>();
         for (WatchedDependency dep : WatchedDependency.values()) {
-            advisoryFor(dep, versions.observed().get(dep), versions.reference().get(dep))
+            advisoryFor(dep, versions.observedFor(dep), versions.reference().get(dep))
                 .ifPresent(warnings::add);
         }
         return List.copyOf(warnings);
     }
 
     /** The advisory for one dependency, or empty for any of the silence cases above. */
-    static Optional<BuildWarning> advisoryFor(WatchedDependency dep, String observed, String reference) {
-        MinorLine observedLine = minorLine(observed);
+    static Optional<BuildWarning> advisoryFor(
+        WatchedDependency dep, List<ObservedVersion> observed, String reference
+    ) {
         MinorLine referenceLine = minorLine(reference);
-        if (observedLine == null || referenceLine == null || !observedLine.isBehind(referenceLine)) {
+        ObservedVersion lagging = lowestLine(observed);
+        if (referenceLine == null || lagging == null) {
+            return Optional.empty();
+        }
+        if (!minorLine(lagging.version()).isBehind(referenceLine)) {
             return Optional.empty();
         }
         return Optional.of(BuildWarning.LintFinding.of(
-            "This build resolves " + dep.coordinate() + " " + observed + ", a minor line behind the "
-                + reference + " graphitron is built against. Staying current keeps you on upstream "
-                + "fixes and keeps the next upgrade small; bump " + dep.coordinate() + " in your pom, "
-                + "or silence this rule (" + dep.rule().id() + ") to accept the lag. Nothing is broken: "
-                + "the generated code compiles against your version, or the build would have said so.",
+            "This build resolves " + lagging.coordinate() + " " + lagging.version() + ", a minor line "
+                + "behind the " + reference + " graphitron is built against. Staying current keeps you "
+                + "on upstream fixes and keeps the next upgrade small; bump " + lagging.coordinate()
+                + " in your pom, or silence this rule (" + dep.rule().id() + ") to accept the lag. "
+                + "Nothing is broken: the generated code compiles against your version, or the build "
+                + "would have said so.",
             null, dep.rule()));
     }
 
+    /**
+     * The observation to advise on when a library was resolved at more than one coordinate, or
+     * {@code null} when none of them carries a readable version.
+     *
+     * <p>The lowest line wins, because that is the one actually holding the consumer back, and it is
+     * always a coordinate the consumer's build resolved rather than one graphitron picked out of the
+     * air. A tie needs a defined answer or the message text moves between runs on an unchanged
+     * project, so equal lines order on the coordinate string; Maven mediates per coordinate, so no two
+     * observations share one and the order is total. Selecting here rather than at the Maven boundary
+     * is what keeps release-line comparison on this side of that seam.
+     *
+     * <p>An observation whose version does not decompose is passed over rather than allowed to
+     * suppress the others: it cannot be ordered, and the remaining ones are still true.
+     */
+    static ObservedVersion lowestLine(List<ObservedVersion> observed) {
+        return observed.stream()
+            .filter(o -> minorLine(o.version()) != null)
+            .min(Comparator.<ObservedVersion, MinorLine>comparing(o -> minorLine(o.version()))
+                .thenComparing(ObservedVersion::coordinate))
+            .orElse(null);
+    }
+
     /** A version's release line, the only ordering this advisory needs. */
-    record MinorLine(int major, int minor) {
+    record MinorLine(int major, int minor) implements Comparable<MinorLine> {
+        @Override
+        public int compareTo(MinorLine other) {
+            return major != other.major
+                ? Integer.compare(major, other.major)
+                : Integer.compare(minor, other.minor);
+        }
+
         boolean isBehind(MinorLine other) {
-            return major != other.major ? major < other.major : minor < other.minor;
+            return compareTo(other) < 0;
         }
     }
 

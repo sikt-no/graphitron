@@ -48,107 +48,84 @@ untouched. No new `LintRule`: the suppression id stays `jooq-version-lag`, so a 
 already silenced the nudge keeps it silenced across an edition switch, and
 `LintRuleRegistryCoverageTest`'s hard-listed `Source.CODEGEN` set does not move.
 
-## The coordinates
+## What shipped
 
-Open source is `org.jooq:jooq`. The commercial and trial distributions keep the artifact id `jooq`
-and vary the group id: `org.jooq.pro` for the current baseline JDK, `org.jooq.pro-java-<n>` for the
-older baselines still supported, and `org.jooq.trial` / `org.jooq.trial-java-<n>` for the trial
-distribution.
+The matching, the carrier and the selection landed together; widening the predicate is what makes
+the observed side multi-valued, so the compiler admitted no smaller step.
 
-**Match by group-id prefix, not by enumeration.** The suffix set is not fixed: `org.jooq.pro` tracks
-whatever the current baseline JDK is, and each jOOQ baseline bump rotates a new `-java-<n>` into the
-supported set and eventually drops an old one. An enumerated list therefore goes stale at exactly
-the moment a consumer upgrades their JDK baseline, and its failure mode is silence, which is the
-same failure this item exists to fix and the same one that took a whole release to notice. Proposed
-predicate: artifact id equal to `jooq`, and group id equal to `org.jooq` or beginning with
-`org.jooq.pro` or `org.jooq.trial`.
+**A watched dependency is a library, not a coordinate.** Each `WatchedDependency` constant carries
+its canonical group id plus the group-id prefixes its other editions ship under (`org.jooq.pro`,
+`org.jooq.trial`), and matching pins the artifact id exactly. Prefix rather than enumeration, so a
+consumer does not drop out of the advisory's sight the moment they move their JDK baseline; artifact
+id exact, because that is what keeps the prefix from swallowing `jooq-codegen` and its commercial
+twins. The prefixes are deliberately narrower than a bare `org.jooq`, which would also match any
+future unrelated coordinate in that namespace.
 
-Pinning the artifact id to `jooq` exactly is what keeps the prefix safe: `org.jooq:jooq-codegen` and
-its commercial twins are not the runtime library and must stay unmatched. `DependencyVersionDecodeTest`
-already carries a row asserting `jooq-codegen` is not `jooq`, so that guard exists and needs
-extending rather than inventing.
+**The observed side is multi-valued and carries coordinates.** `DependencyVersions.observed()` is a
+`Map<WatchedDependency, List<ObservedVersion>>`, and the new `ObservedVersion` pairs the resolved
+coordinate with the resolved version. `AbstractRewriteMojo.observedVersionsOf` appends every match
+rather than collapsing on first occurrence: Maven mediates per coordinate and not per library, so
+first-occurrence-wins would have made the surviving observation a function of artifact-set iteration
+order. The reference side kept its bare version per dependency and moved into its own
+`referenceVersionsOf`, since only the consumer side is scoped and only the consumer side can put one
+library at several coordinates; the two stopped sharing one scope-parameterised method.
 
-## The structural change: an observed coordinate is no longer the watched one
+**The selection lives in the interior.** `DependencyVersionWarnings.lowestLine` picks the observation
+to advise on: lowest release line, ties broken on the coordinate string so the message text does not
+move between runs on an unchanged project. One advisory per library however many editions lag, and
+`MinorLine` became `Comparable` so the ordering is stated once. Comparing release lines is the
+decision the advisory exists to make, and keeping it here rather than at the boundary is "Decide
+once, at the parse boundary" in `docs/architecture/explanation/development-principles.adoc`.
 
-`WatchedDependency` currently is a coordinate: `of(groupId, artifactId)` maps one pair to one
-constant, and the advisory renders `dep.coordinate()` as the thing to bump. That breaks here in a
-way worse than silence. A Pro consumer told to bump `org.jooq:jooq` is being told to switch to the
-open-source edition, which for an Oracle or SQL Server subgraph does not work at all. The message
-must name the coordinate the consumer actually resolved.
-
-So the observed coordinate has to travel with the observed version. Two shapes:
-
-1. `DependencyVersions.observed()` carries `(coordinate, version)` per watched dependency instead of
-   a bare version string, and the message renders the observed coordinate.
-2. `WatchedDependency` grows a matcher plus a separate canonical display coordinate.
-
-**Recommend (1).** It is the smaller change, it keeps `WatchedDependency` as the identity of a
-*library* rather than of an artifact (which is what the coordinate split has just shown it needs to
-be), and the coordinate is data the boundary already has in hand at decode time. The reference side
-needs no coordinate at all: the message reports the reference version number and nothing else about
-where it came from.
-
-### Where the observation is selected
-
-Prefix matching makes a watched *library* multi-valued on the observed side: two artifacts can now
-map to `JOOQ`. `AbstractRewriteMojo.versionsOf` currently collapses that with `putIfAbsent`, under a
-javadoc reading "First occurrence wins; Maven has already mediated, so a coordinate appears once".
-Maven mediates per coordinate, not per library, so that sentence stops being true the moment the
-predicate widens, and which observation survives becomes a function of artifact-set iteration order.
-Left alone it is a silent order-dependence, so the plan settles it rather than leaving an implementer
-to keep the existing line and not notice.
-
-Selecting the surviving observation at the boundary is the wrong repair. Comparing release lines *is*
-the decision, `DependencyVersionWarnings.minorLine` is where it lives, and the boundary's stated job
-is turning artifacts into pairs and nothing else (see "Decide once, at the parse boundary" in
-`docs/architecture/explanation/development-principles.adoc`). Doing it there would push version
-ordering across the Maven boundary for the benefit of one edge case.
-
-So shape (1) carries *every* match: `observed()` becomes a per-dependency collection of
-`(coordinate, version)`, the boundary appends rather than de-duplicates, and
-`DependencyVersionWarnings` picks the one it advises on. The reference side keeps its bare
-`Map<WatchedDependency, String>`; the plugin realm carries one jOOQ and no coordinate is reported
-from it. `versionsOf`'s javadoc is rewritten in the same pass rather than left describing the old
-contract.
-
-## Both editions at once: settled
-
-**A consumer carrying both editions at once** is reachable in practice, a transitive open-source jOOQ
-alongside a direct Pro one, and the plan should not leave it to be discovered. Ruling: one advisory
-per watched library, computed on the *lowest* observed line and naming that line's own coordinate,
-because the lowest line is the one actually holding the consumer back. That preserves the invariant
-the structural change exists for, since the coordinate in the message is always one the consumer's
-build actually resolved, never one graphitron guessed. A mixed-edition classpath is its own problem
-and not this advisory's to report; the nudge should not grow a second thing to say.
-
-Two editions on the same line is a tie, and a tie needs a defined answer or the message text moves
-between runs on the same project. Lowest line first, then lowest coordinate string.
+**Decided during implementation, not settled in the plan.** An observation whose version does not
+decompose into a line is passed over rather than allowed to speak for the others: it cannot be
+ordered, and the readable observations are still true. Silence remains the answer when nothing
+readable is left, so the existing silence case is preserved per observation rather than per library.
 
 ## Testing
 
-The matching half lands in `DependencyVersionDecodeTest`, which gains rows for `org.jooq.pro`,
-`org.jooq.pro-java-<n>` and `org.jooq.trial-java-<n>` observed, rows holding `jooq-codegen` unmatched
-under a commercial group id as well as the open-source one, and a row where both editions resolve,
-asserting the decode carries both rather than dropping one.
+The matching half is in `DependencyVersionDecodeTest`: every commercial and trial group id observed as
+the same watched library and carrying its own coordinate, `jooq-codegen` held unmatched under all four
+group-id shapes, a group id merely sharing the `org.jooq` namespace held unmatched, and both editions
+at once carried rather than one dropped.
 
-The deciding half lands in the unit tier, in `DependencyVersionWarningsTest`: that the message names
-the *observed* coordinate rather than the canonical one, which is the case that would catch a Pro
-consumer being told to bump `org.jooq:jooq`; that the lowest line wins when two editions are
-observed, asserted under both input orders so the order-independence is pinned rather than assumed;
-and that the tie-break is the coordinate string.
+The deciding half is in the unit tier, in `DependencyVersionWarningsTest`: the message names the
+resolved commercial coordinate and provably does not name `org.jooq:jooq`, which is the assertion that
+catches a Pro consumer being told to switch editions; the lowest line wins under both input orders, so
+the order-independence is pinned rather than assumed; the lowest line wins *when it is the commercial
+one*, which is what stops the selection collapsing into "prefer open source"; the tie-break is the
+coordinate string, again under both orders; one advisory however many editions lag; and an unreadable
+observation neither speaks nor silences the readable ones.
 
-**The invoker tier cannot cover this, and the plan should say so rather than leave an implementer
-trying.** Only the open-source edition is on Maven Central; commercial and trial artifacts are
-served from jOOQ's own licensed repository. Every candidate group id was probed against Central and
-all return 404, so no IT can resolve a real commercial artifact, and a hand-installed stub would pin
-nothing the decode tier does not already pin. This is a genuine asymmetry with the open-source path,
-whose end-to-end route the `dependency-version-lag` IT does exercise, and it is worth naming as a
-known limit of the coverage rather than papering over.
+**The invoker tier cannot cover this**, so no implementer should spend the attempt. Only the
+open-source edition is on Maven Central; commercial and trial artifacts are served from jOOQ's own
+licensed repository. Every candidate group id was probed against Central and all return 404, so no IT
+can resolve a real commercial artifact, and a hand-installed stub would pin nothing the decode tier
+does not already pin. This is a genuine asymmetry with the open-source path, whose end-to-end route
+the `dependency-version-lag` IT does exercise, and it is worth naming rather than papering over.
 
 ## Documentation
 
-`docs/dependencies.adoc`'s "Staying current" section describes coverage the build does not currently
-have. It gains a sentence when this lands. Settled at the review: do not correct the page ahead of
-the fix, since a doc that describes a gap and then describes the gap being closed two commits later
-is more churn than the exposure warrants. If the item stalls, correcting it becomes the right call.
+`docs/dependencies.adoc`'s "Staying current" section gained a paragraph: every jOOQ edition counts, the
+warning names the coordinate the build actually resolved so a commercial subgraph is never told to bump
+its way onto the open-source edition, and two editions at once are spoken about on the lower line.
+
+## Known limit worth a reviewer's eye
+
+Once jOOQ drops an older baseline distribution, a consumer on `org.jooq.pro-java-<n>` can be told to
+bump a coordinate that has no such version, because the fix for them is a JDK-baseline move rather
+than a version bump. Nothing was added to defend against it: the advisory already says nothing is
+broken and offers the rule id to silence, and the alternative is per-distribution knowledge of jOOQ's
+support window, which is exactly the machinery the version-synchronisation assumption above forbids.
+Named here so the Done gate sees it was considered rather than missed.
+
+## Retired vocabulary
+
+- `WatchedDependency.coordinate()`, `WatchedDependency.groupId()`, `WatchedDependency.artifactId()`:
+  the accessors that made a constant an artifact. Nothing outside the enum called them once the
+  message began rendering `ObservedVersion.coordinate()`. For the sweep, grep the qualified forms;
+  bare `coordinate()` is a common and unrelated name across the tree (`SchemaCoordinate`, plan rows).
+- `AbstractRewriteMojo.versionsOf`, replaced by `observedVersionsOf` and `referenceVersionsOf`. Its
+  javadoc claim that "Maven has already mediated, so a coordinate appears once" is the sentence this
+  item falsified, and it is gone rather than reworded in place.
 
