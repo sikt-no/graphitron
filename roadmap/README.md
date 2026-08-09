@@ -19,7 +19,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R612` | The schema scan and its freshness replay share one typed recipe | Spec | 2026-08-09 <sub>created 2026-08-08</sub> | [plan](maven-config-fact-family.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-06 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R589` | Classification is a relation; validation adds facts | Spec | 2026-08-08 <sub>created 2026-08-04</sub> | [plan](validation-adds-facts.md) |
-| `R569` | Aggregated diagnostics commands for the MCP server | Spec | 2026-08-08 <sub>created 2026-08-03</sub> | [plan](mcp-aggregated-diagnostics.md) |
+| `R569` | Aggregated diagnostics commands for the MCP server | Spec | 2026-08-09 <sub>created 2026-08-03</sub> | [plan](mcp-aggregated-diagnostics.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
