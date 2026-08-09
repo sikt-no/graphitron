@@ -36,10 +36,9 @@ each is a live inaccuracy or dead code, so they are worth one tidy-up pass.
   `== WARN today, error later` and now also holds `@table` on input types, which is
   not a synthesis shim. The page's `:description:` was reconciled; this sentence
   was not.
-- Same page, the new `== WARN today, error later` section opener points readers at
-  `roadmap/retire-synthesis-shims.md` by slug. That is a pre-existing reference
-  carried through the rewording, not something the reopen introduced, but the
-  workflow's user-facing-doc check calls out plan-by-slug references in the manual:
-  a reader who arrived from search has no `roadmap/` directory. Either drop the
-  pointer or restate it as "no committed date" alone.
+- ~~Same page, the `== WARN today, error later` section opener points readers at
+  a plan by slug, which the workflow's user-facing-doc check calls out: a reader who
+  arrived from search has no `roadmap/` directory.~~ **Resolved** by R473, which
+  restated the opener as "no committed date" alone when it deleted the plan the
+  pointer named.
 

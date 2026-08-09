@@ -129,7 +129,7 @@ Turn the opt-in on by default and delete it, then delete in one commit:
 * The three deprecation WARNs at those sites: `FieldBuilder`'s "synthesizes an `@nodeId` carrier without the directive", and `BuildContext`'s two (`ID_REF_SHIM_LOGGER`, `NODE_ID_SHIM_LOGGER`). **`FieldBuilder.rejectShadowedIdColumn` must be left alone.** It sits in the same method, on the `Node.id` arm immediately above the surviving shim arm, so a sweep of "the diagnostics at this site" would wrongly take it out. It is not a deprecation and not a warning: it is the shipped output-coordinate half of "One shadowing rule", and this item's job is to grow it two siblings at the input and argument coordinates, not to touch it.
 * `IdReferenceShimWarnFormatTest`, which pins the qualifier-arm WARN's text. It is the only warn-format test in scope. **`AsConnectionSameTableWarnFormatTest` is not**, despite the similar name: it covers the `@asConnection` same-table warning and has nothing to do with these shims. No test asserts the `FieldBuilder` WARN's text at all, so that one needs no test change.
 
-R27 (`retire-synthesis-shims`) is the item that has carried the shim deletion; it should be discarded into this one at that point rather than left to delete an empty set. Confirm with whoever picks R27 up first.
+R27 (`retire-synthesis-shims`) is the item that has carried the shim deletion; it should be discarded into this one rather than left to delete an empty set. **Done: R27 was discarded on 2026-08-09**, with its gate and its WARN-to-error flip both dissolved by this item and its migration recipe living on in the user manual. See the changelog entry.
 
 ## Tests
 
@@ -585,10 +585,14 @@ touched subgraph and the user is doing that migration themselves. Neither silent
 staging the plan held in reserve, and no release will carry the flip ahead of that migration. See
 `Consumer migration` above for the recorded confirmation.
 
-**Still open, and deliberately not settled by the implementer:**
+**R27 (`retire-synthesis-shims`) is discarded**, on the user's instruction of 2026-08-09. Its
+deletion set was empty (all three shim sites went with this item's flip), its gate dissolved with the
+consumer re-confirmation, and there was no WARN left to flip because the grammar replaced the warned
+readings with rules. Inbound references in R34, R273 and the `@error`-on-query-fields item were
+repointed; the residuals item's finding about the manual naming that plan by slug is resolved, this
+item's flip having already restated the sentence. The changelog carries the reasoning.
 
-* **R27 (`retire-synthesis-shims`) now has an empty set to delete** and should be discarded into
-  this item, per the "Flip and delete" section. Left for whoever picks it up, as the plan asks.
+**Nothing is left open.** The item is ready for its In Review -> Done gate.
 
 ## Provenance
 

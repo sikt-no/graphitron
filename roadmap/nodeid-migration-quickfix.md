@@ -42,14 +42,14 @@ Follow the shipped `LintQuickFixes` pattern (R398; the same generator-computes/L
 ## Sequencing
 
 - The inserted grammar must be R473-conformant (`explicit-nodeid-grammar`): bare `@nodeId` only on own-type output fields, `typeName:` everywhere else. Land this action before or together with R473 phase 2's error flip so authors get fixes while the old forms still merely warn.
-- R27 (`retire-synthesis-shims`) is the deletion vehicle for the shims. This item is what makes its migration recipe executable at scale: once the quick fixes have driven the shim findings to zero in consumer schemas, R27's WARN-to-error flip is safe. R27's gate note (2026-07-13) already records that no consumer relies on shim *behavior*; this item is about migrating the ~250 sis declarations comfortably, not about correctness of the transition.
+- The shims are already deleted: R473 (`explicit-nodeid-grammar`) removed all three sites together with the grammar that replaces them, and R27 (`retire-synthesis-shims`) was discarded into it with an empty deletion set. So this item no longer unblocks anything; it is purely about migrating the ~250 sis declarations comfortably. The correctness question is settled (the user re-confirmed on 2026-08-09 that sis is the only touched subgraph), which means the quick fixes are an ergonomics deliverable rather than a gate, and the shapes they rewrite are the two the manual's migration recipe names.
 - The WARN-to-`BuildWarning` conversion in step 1 is a prerequisite worth its own commit: it makes the shim findings visible in every consumer build report, LSP or not.
 
 ## Out of scope
 
 - The sis-side execution itself (running the quick fixes over sis-graphql-spec); that happens in the sis repo once this ships.
 - The old plan's Phase 2 (filter inputs missing `@table`) and Phase 3 (author-error `@node`/`@nodeId` cleanup): those already surface as ordinary validator errors with locations, so they are visible in-editor today; whether any deserve their own quick fixes is a separate question to file per finding kind if wanted.
-- Deleting the shims (R27) and enforcing the grammar (R473).
+- Deleting the shims and enforcing the grammar (both shipped in R473).
 
 ## Fact-base note (2026-08-06)
 
