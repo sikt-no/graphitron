@@ -25,7 +25,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-08-06 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
-| `R603` | A pipeline-output facts family in the model store | In Review | 2026-08-09 <sub>created 2026-08-06</sub> | [plan](pipeline-output-facts-family.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-08-06 | [plan](catalog-check-constraint-validation.md) |
 | `R427` | Type-ahead search backed by native database indexes | Ready | 2026-08-06 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-07-15 <sub>created 2026-05-26</sub> | [plan](dml-payload-positional-alignment.md) |
@@ -237,7 +236,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R257` [**UpdateRowsWalker raw-SDL substrate absorption**](updaterows-walker-sdl-substrate.md) — Backlog, structural
 - `R466` [**Upgrade jOOQ 3.20.11 -> 3.21.6**](upgrade-jooq-3-21.md) — Backlog, tech-debt
 - `R565` [**@table-on-input rejection cascades into a misleading @mutation arg-shape error**](unclassified-input-arg-cascade-diagnostic.md) — Backlog, architecture
-- `R603` [**A pipeline-output facts family in the model store**](pipeline-output-facts-family.md) — In Review, architecture
 - `R509` [**Bulk DML payloads follow input order, and warn where that cannot be guaranteed**](bulk-dml-payload-input-order.md) — Backlog, architecture
 - `R562` [**Classify a synthesised connection type's totalCount/facets fields as coordinates**](synthesised-connection-fields-as-coordinates.md) — Backlog, architecture
 - `R471` [**Direct-SQL OnlyChild emit for the reentry family**](direct-sql-onlychild-reentry-emit.md) — Backlog, architecture
