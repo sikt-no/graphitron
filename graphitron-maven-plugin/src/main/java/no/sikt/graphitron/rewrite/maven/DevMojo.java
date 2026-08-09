@@ -10,6 +10,9 @@ import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.SchemaParseException;
 import no.sikt.graphitron.rewrite.ValidationFailedException;
 import no.sikt.graphitron.rewrite.ValidationReport;
+import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.rewrite.capture.FactCapture;
+import no.sikt.graphitron.rewrite.compile.CompileFacts;
 import no.sikt.graphitron.rewrite.compile.CompileOutcome;
 import no.sikt.graphitron.rewrite.compile.IncrementalCompiler;
 import no.sikt.graphitron.rewrite.maven.dev.DevServer;
@@ -161,6 +164,16 @@ public class DevMojo extends AbstractRewriteMojo {
     // -Dgraphitron.dev.compile=false, or when no system compiler is available (graceful degrade to
     // generate-only). Package-private so DevMojoTest can assert the opt-out leaves it unbuilt.
     IncrementalCompiler incrementalCompiler;
+    // The dev session's fact-store handle: one live handle over the store the session's generator
+    // passes write, opened once at startup and closed in cleanup(). Live and shared on purpose:
+    // the compile-facts writer and any in-process reader of the store see each round through the
+    // same database, so a written round is a visible round (capture's own per-pass opens reach the
+    // same database, H2 giving one process one database per file). Package-private so
+    // DevMojoTest can inject an in-memory store.
+    GraphitronModelStore sessionStore;
+    // The javac_ family's writer over sessionStore, or null before the store opens (bare mojos in
+    // the unit tier); reportCompile writes through it beside the console and workspace sinks.
+    CompileFacts compileFacts;
     // The last successful generation (result + compile graph), captured by runGeneratorPass. The
     // consumer-.class-change path recompiles the whole cached tree off this; the schema-save path
     // recompiles the delta against its graph. Volatile: written by the schema-watcher thread and read
@@ -195,6 +208,15 @@ public class DevMojo extends AbstractRewriteMojo {
         });
         var initialCtx = initialCtxHolder.get();
         var initial = initialHolder.get();
+
+        // The session store handle (path-only read on initialCtx). openAt falls back to a private
+        // in-memory store on any cache trouble, so this never fails the goal; either way the
+        // handle lives until cleanup() and every compile round is written and readable through it.
+        this.sessionStore = initialCtx.storeDirectory() != null
+            ? GraphitronModelStore.openAt(initialCtx.storeDirectory())
+            : GraphitronModelStore.open();
+        this.compileFacts = new CompileFacts(sessionStore.dsl(),
+            new FactCapture.GraphIdentity(initialCtx.graphName(), initialCtx.basedir()));
 
         var workspace = new Workspace(initial.catalog(), LspVocabulary.load());
         if (initial.snapshot() instanceof LspSchemaSnapshot.Built.Current current) {
@@ -691,15 +713,20 @@ public class DevMojo extends AbstractRewriteMojo {
     }
 
     /**
-     * Surfaces one compile round through two channels: the console (a labelled
-     * generated-code block on failure via {@link CompileErrorFormatter}, a one-line summary on success)
-     * and the MCP {@code diagnostics} tool (via {@code Workspace.setCompileDiagnostics}, tagged
-     * {@code source:"compile"}). The round's full diagnostic list is published even on success so a prior
+     * Surfaces one compile round through three channels: the console (a labelled
+     * generated-code block on failure via {@link CompileErrorFormatter}, a one-line summary on success),
+     * the MCP {@code diagnostics} tool (via {@code Workspace.setCompileDiagnostics}, tagged
+     * {@code source:"compile"}), and the fact store's {@code javac_diagnostic} relation (via
+     * {@link CompileFacts}, on the session's own store handle so store-side readers see the round the
+     * moment it is written). The round's full diagnostic list is published even on success so a prior
      * failure is cleared once it resolves.
      */
     void reportCompile(Workspace workspace, CompileOutcome outcome, String label) {
         var round = outcome.round();
         workspace.setCompileDiagnostics(round.diagnostics());
+        if (compileFacts != null) {
+            compileFacts.write(round);
+        }
         if (round.success()) {
             getLog().info("graphitron:dev: " + label + " compiled "
                 + outcome.compiledUnits().size() + " unit(s) ok");
@@ -724,6 +751,11 @@ public class DevMojo extends AbstractRewriteMojo {
         // warm threads die with the JVM regardless.
         if (docsWarm != null && docsWarm.state() instanceof WarmState.Ready<DocsIndex> ready) {
             ready.handle().close();
+        }
+        // Last, after the servers whose tools read through it: the session's store handle. A
+        // file-backed store only releases its connection here; the file stays for the next run.
+        if (sessionStore != null) {
+            sessionStore.close();
         }
     }
 

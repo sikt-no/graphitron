@@ -20,8 +20,8 @@ public record CompileRound(boolean success, List<CompileDiagnostic> diagnostics)
         diagnostics = List.copyOf(diagnostics);
     }
 
-    /** Diagnostics of {@code ERROR} kind, the ones that mean a unit did not produce fresh bytecode. */
+    /** Diagnostics whose {@link CompileDiagnostic#severity} projects to {@code "error"}, the ones that mean a unit did not produce fresh bytecode. */
     public List<CompileDiagnostic> errors() {
-        return diagnostics.stream().filter(d -> "ERROR".equals(d.severity())).toList();
+        return diagnostics.stream().filter(d -> "error".equals(d.severity())).toList();
     }
 }

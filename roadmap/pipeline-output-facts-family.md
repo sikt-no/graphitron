@@ -447,14 +447,23 @@ delete.
   not already established one: acquired in `DevMojo`, closed in `cleanup`, its `dsl()` shared
   by this writer and the view's in-process readers. Nothing holds a store open across a
   generation pass today, so this is real work whichever item does it.
-- New `CompileFacts` writer as above, taking that handle and the session's graph name; every
-  statement it issues carries the graph predicate.
+- New `CompileFacts` writer as above, taking that handle and the session's graph identity
+  (name plus base directory, the capture package's own `GraphIdentity`, not the bare name the
+  draft said); every statement it issues carries the graph predicate. The widening is what the
+  structural FK demands in the one store capture never reaches: on the in-memory session
+  fallback no capture has anchored the graph, so the writer mints the minimal `store_graph`
+  row itself (`onDuplicateKeyIgnore`, so a real capture's richer upsert always wins), and the
+  base directory also lets the writer honor capture's ownership rule, skipping a partition
+  whose recorded directory is another checkout's instead of erasing it round by round.
 - `DevMojo.reportCompile`: the third sink call, passing the handle the view's readers query.
-- `StoreRefresh`: one scoped delete of the run's own graph's `javac_diagnostic` rows, beside
-  the SDL families' scoped clear. This is the bullet R610 turns from "no change" into work:
-  under ownership-scoped refresh an untaught relation is retained, not emptied, so the
-  relation that used to be cleared derivationally now has to be named. The two-graph lifecycle
-  anchor is what proves it clears the right rows and only those.
+- `StoreRefresh`: no code after all, and the reason is worth recording because it reverses
+  this bullet a second time. The spec expected one named scoped delete because R610's *spec*
+  framed ownership-scoped refresh as taught-per-relation; R610's *implementation* landed the
+  graph half derivationally (`StoreRefresh.graphScoped()` collects every relation carrying a
+  `GRAPH_NAME` column, so a new graph-keyed relation is ownership-scope-cleared by
+  construction). `javac_diagnostic` carries the column, so it is covered with zero refresh
+  code, and the two-graph lifecycle anchor is what proves the property rather than the code
+  that would have carried it.
 - `FactCaptureAgreementTest`: the `ORACLE` arm, the registration, the two-graph lifecycle
   anchor (cold and warm), and the write-read content anchor.
 - R569 dovetail per the fork above: either the compile arm reads this relation from day one,

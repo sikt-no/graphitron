@@ -22,10 +22,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class DiagnosticsToolCompileSourceTest {
 
-    private static final CompileDiagnostic ERROR =
-        new CompileDiagnostic("gen/pkg/FilmFetchers.java", 12, 7, "ERROR", "cannot find symbol");
-    private static final CompileDiagnostic WARNING =
-        new CompileDiagnostic("gen/pkg/Film.java", 3, 1, "WARNING", "deprecated API");
+    private static final CompileDiagnostic ERROR = new CompileDiagnostic(
+        "gen/pkg/FilmFetchers.java", 12, 7, "ERROR", "compiler.err.cant.resolve", "cannot find symbol");
+    private static final CompileDiagnostic WARNING = new CompileDiagnostic(
+        "gen/pkg/Film.java", 3, 1, "WARNING", null, "deprecated API");
 
     @SuppressWarnings("unchecked")
     private static List<Map<String, Object>> diagnostics(

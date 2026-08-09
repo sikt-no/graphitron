@@ -80,18 +80,18 @@ final class DiagnosticsTool {
             }
         }
         // Generated-code compile diagnostics. They carry no schema coordinate, so a coordinate
-        // filter excludes them by construction, matching how warnings are handled. javac's ERROR kind
-        // maps to the "error" severity gate; every other kind (WARNING / MANDATORY_WARNING / NOTE)
-        // maps to "warning".
+        // filter excludes them by construction, matching how warnings are handled. The
+        // kind-to-severity projection is the record's own (CompileDiagnostic.severity), so this
+        // arm renders it rather than re-deriving it.
         if (coordinate.isEmpty()) {
             for (var d : compileDiagnostics) {
-                boolean isError = "ERROR".equals(d.severity());
-                if (isError ? !wantError : !wantWarning) {
+                String compileSeverity = d.severity();
+                if ("error".equals(compileSeverity) ? !wantError : !wantWarning) {
                     continue;
                 }
                 var m = new LinkedHashMap<String, Object>();
                 m.put("source", "compile");
-                m.put("severity", isError ? "error" : "warning");
+                m.put("severity", compileSeverity);
                 m.put("message", d.message());
                 addCompileLocation(m, d);
                 entries.add(m);
@@ -132,8 +132,9 @@ final class DiagnosticsTool {
     /**
      * Maps a {@link CompileDiagnostic}'s generated-{@code .java} anchor onto the same {@code {uri, line,
      * column}} wire shape, 0-based like {@link #addLocation}. javac reports 1-based line/column and
-     * {@link javax.tools.Diagnostic#NOPOS} as {@code -1}; both clamp to {@code 0}. The file is a plain
-     * path (a generated {@code .java}), surfaced as the {@code uri} field unchanged.
+     * {@link javax.tools.Diagnostic#NOPOS} as {@code -1}; both clamp to {@code 0}. The file is already
+     * a canonical file URI (normalised once at the javac boundary), surfaced as the {@code uri} field
+     * unchanged.
      */
     private static void addCompileLocation(Map<String, Object> entry, CompileDiagnostic diagnostic) {
         if (diagnostic.file() == null || diagnostic.file().isEmpty()) return;

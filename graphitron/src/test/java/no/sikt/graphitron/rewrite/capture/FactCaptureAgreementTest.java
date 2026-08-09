@@ -21,6 +21,9 @@ import no.sikt.graphitron.rewrite.model.MethodBackedField;
 import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.NodeDeclaration;
+import no.sikt.graphitron.rewrite.compile.CompileDiagnostic;
+import no.sikt.graphitron.rewrite.compile.CompileFacts;
+import no.sikt.graphitron.rewrite.compile.CompileRound;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -48,6 +51,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SYNTHESIS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_DECLARATION_SYNTHESIS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_DIRECTIVE_SYNTHESIS;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_SITE;
+import static no.sikt.graphitron.model.Tables.JAVAC_DIAGNOSTIC;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
@@ -68,7 +72,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>The driver is mechanical. It enumerates the generated jOOQ relations and fails on any one
  * without a registered agreement source, so a relation added to the DDL cannot arrive unchecked.
- * Registrations form a closed set of three arms, which is why there is no skip list:
+ * Registrations form a closed set of four arms, which is why there is no skip list:
  * <ul>
  *   <li>{@link Arm#CONTAINMENT} for the SDL side. Capture is total and {@code GraphitronSchema} is
  *       reachability-pruned, so the honest relation is that the store contains the model.</li>
@@ -77,6 +81,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>{@link Arm#DERIVED} for shipped views, which register the base relations they project so
  *       their agreement is vacuous by construction. Later derivation strata land as registrations
  *       here, not as exemptions.</li>
+ *   <li>{@link Arm#ORACLE} for relations a post-capture oracle writer owns, where no independent
+ *       second walk can re-derive the oracle's verdict without re-running the oracle. Two anchors,
+ *       both non-vacuous: a two-graph lifecycle anchor (seeded rows, so "cleared" is
+ *       distinguishable from "never written", under two graphs, so "cleared what it owns" is
+ *       distinguishable from "cleared everything") and a write-read content anchor (the same round
+ *       reduced two ways, at the oracle's cadence). The one thing genuinely unpinned is the
+ *       oracle's verdict itself.</li>
  * </ul>
  *
  * <p>These tests retire as consumers migrate off {@code GraphitronSchema} piece by piece; they pin
@@ -86,7 +97,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class FactCaptureAgreementTest {
 
     /** How a relation's contents are pinned to the model it shadows. */
-    private enum Arm { CONTAINMENT, EQUALITY, DERIVED }
+    private enum Arm { CONTAINMENT, EQUALITY, DERIVED, ORACLE }
 
     private static final Map<String, Arm> REGISTRATIONS = registrations();
 
@@ -135,6 +146,7 @@ class FactCaptureAgreementTest {
             registrations.put(relation, Arm.EQUALITY);
         }
         registrations.put("graphql_directive_site", Arm.DERIVED);
+        registrations.put("javac_diagnostic", Arm.ORACLE);
         return Map.copyOf(registrations);
     }
 
@@ -952,6 +964,100 @@ class FactCaptureAgreementTest {
                 .fetch(STORE_SOURCE.SOURCE_NAME));
             assertThat(sources).containsAll(declared);
         }
+    }
+
+    /**
+     * The {@code ORACLE} arm's lifecycle anchor. Seeding is what distinguishes "cleared" from
+     * "never written", since an unseeded emptiness check would pass identically with the writer
+     * deleted; the second graph is what distinguishes "cleared what it owns" from "cleared
+     * everything", which under a shared store is the difference between a correct refresh and one
+     * that eats a sibling module's diagnostics. Asserted after a cold capture (trivially empty)
+     * and after a warm one (seeded, then cleared scoped). The one thing genuinely unpinned is
+     * javac's verdict itself: no independent second walk can re-derive it without re-running
+     * javac.
+     */
+    @Test
+    @DisplayName("a capture empties its own graph's javac partition and no other's")
+    void oracleLifecycleClearsTheOwnedJavacPartitionOnly(@TempDir Path tmp) throws java.io.IOException {
+        Path ownDir = java.nio.file.Files.createDirectories(tmp.resolve("own"));
+        Path siblingDir = java.nio.file.Files.createDirectories(tmp.resolve("sibling"));
+        try (var store = GraphitronModelStore.open()) {
+            var own = new FactCapture.GraphIdentity("own", ownDir);
+            var sibling = new FactCapture.GraphIdentity("sibling", siblingDir);
+
+            // Cold: capture never writes the oracle family, so a fresh graph's partition is empty.
+            FactCapture.capture(store.dsl(), own,
+                CapturedStore.registryOf(ownDir, "type Query { ping: String }"));
+            assertThat(javacPartition(store, "own")).isEmpty();
+
+            // Rounds land after capture, under both graphs.
+            var round = new CompileRound(false, List.of(
+                new CompileDiagnostic("file:///gen/A.java", 3, 1, "ERROR", "compiler.err.cant.resolve",
+                    "cannot find symbol")));
+            new CompileFacts(store.dsl(), own).write(round);
+            new CompileFacts(store.dsl(), sibling).write(round);
+            assertThat(javacPartition(store, "own")).isNotEmpty();
+            var siblingBefore = javacPartition(store, "sibling");
+            assertThat(siblingBefore).isNotEmpty();
+
+            // Warm: the next capture of `own` empties exactly its own partition.
+            FactCapture.capture(store.dsl(), true, own,
+                CapturedStore.registryOf(ownDir, "type Query { ping: String }"),
+                null, List.of(), new NodeDeclaration(null));
+            assertThat(javacPartition(store, "own"))
+                .as("the captured graph's javac partition, after its own warm capture")
+                .isEmpty();
+            assertThat(javacPartition(store, "sibling"))
+                .as("the sibling graph's javac partition, after another graph's capture")
+                .isEqualTo(siblingBefore);
+        }
+    }
+
+    /**
+     * The {@code ORACLE} arm's content anchor: the same round reduced two ways, at the oracle's
+     * cadence. The {@code EQUALITY} arm's own character applied to a writer instead of a walk,
+     * and what catches a writer bug (dropped rows, ordinal collisions, a transaction split) that
+     * construction alone would let through. Ordinal grain included: two identical diagnostics at
+     * one position are two rows, numbered in round order.
+     */
+    @Test
+    @DisplayName("the javac relation's rows equal the round's published list, ordinal grain included")
+    void oracleContentEqualsTheRoundsPublishedList(@TempDir Path tmp) {
+        try (var store = GraphitronModelStore.open()) {
+            var twin = new CompileDiagnostic("file:///gen/A.java", 12, 7, "ERROR",
+                "compiler.err.cant.resolve", "cannot find symbol");
+            var round = new CompileRound(false, List.of(
+                twin, twin,
+                new CompileDiagnostic("(no source)", -1, -1, "WARNING", null, "unchecked call")));
+            new CompileFacts(store.dsl(), graph(tmp)).write(round);
+
+            var expected = new LinkedHashSet<String>();
+            var ordinals = new LinkedHashMap<String, Integer>();
+            for (var d : round.diagnostics()) {
+                int ordinal = ordinals.merge(d.file() + "|" + d.line() + "|" + d.column(), 1,
+                    Integer::sum) - 1;
+                expected.add(String.join("|", d.file(), String.valueOf(d.line()),
+                    String.valueOf(d.column()), String.valueOf(ordinal), d.kind(),
+                    String.valueOf(d.code()), d.message()));
+            }
+
+            var captured = new LinkedHashSet<String>();
+            store.dsl().selectFrom(JAVAC_DIAGNOSTIC).fetch().forEach(row -> captured.add(
+                String.join("|", row.getFile(), String.valueOf(row.getLineNumber()),
+                    String.valueOf(row.getColumnNumber()), String.valueOf(row.getOrdinal()),
+                    row.getKind(), String.valueOf(row.getCode()), row.getMessage())));
+            assertThat(captured).isEqualTo(expected);
+        }
+    }
+
+    /** The graph's {@code javac_diagnostic} rows, rendered stably for before/after comparison. */
+    private static List<String> javacPartition(GraphitronModelStore store, String graphName) {
+        return store.dsl().selectFrom(JAVAC_DIAGNOSTIC)
+            .where(JAVAC_DIAGNOSTIC.GRAPH_NAME.eq(graphName))
+            .orderBy(JAVAC_DIAGNOSTIC.FILE, JAVAC_DIAGNOSTIC.LINE_NUMBER,
+                JAVAC_DIAGNOSTIC.COLUMN_NUMBER, JAVAC_DIAGNOSTIC.ORDINAL)
+            .fetch()
+            .map(Object::toString);
     }
 
     /** Counts every non-graphitron directive application in the fixture, keyed as the view keys them. */

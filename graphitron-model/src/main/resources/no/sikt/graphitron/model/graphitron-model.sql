@@ -1,4 +1,5 @@
--- The graphitron fact schema: the base relations the generator's capture loads fill.
+-- The graphitron fact schema: the base relations the generator's capture loads and the
+-- post-capture oracle writers fill.
 --
 -- This resource is the single source of the model. jOOQ codegen boots an in-memory H2 store
 -- from this file at build time and generates the compile-time surface from its live metadata;
@@ -13,7 +14,7 @@
 -- Javadoc are self-describing; closed taxonomies are CHECK constraints; VARCHAR is unbounded;
 -- source order is an explicit ordinal column.
 --
--- Picking a prefix for a new relation. Five families, each named for whose vocabulary the row
+-- Picking a prefix for a new relation. Six families, each named for whose vocabulary the row
 -- is written in, never for its reader or its role. graphql_ is reserved for generic GraphQL: a
 -- row any SDL reader could produce from the document without knowing graphitron exists, which
 -- is every declaration, every directive definition, and every directive application including
@@ -25,8 +26,15 @@
 -- key, and an ObjectMapper on the classpath extends nothing yet still earns a row. store_ is
 -- the store's own record: what it read, what it was built from, and which graphs it holds. Its
 -- rows are never a reading of the consumer's schema, database or classpath, which is what the
--- other four prefixes are named for; the graph recipe rows are configuration the run held in
--- hand, which is what keeps them in this family rather than making them a fifth kind.
+-- other transcription prefixes are named for; the graph recipe rows are configuration the run
+-- held in hand, which is what keeps them in this family rather than making them a family of
+-- their own. javac_ is what the JDK compiler reports about the emitted sources, written in
+-- javax.tools.Diagnostic's terms.
+--
+-- Cadence is its own axis, orthogonal to the vocabulary a prefix names. A family whose writer
+-- runs after capture (javac_ is the first) has its own writer on that writer's cadence, and
+-- capture clears the run's own graph partition of such a family before regenerating, because
+-- its rows describe an emitted tree the run is about to replace.
 --
 -- The SDL strata stack, graphql_ under graphitron_ under a third name, intent_, held in
 -- reserve. A graphitron_ row is still a transcription: it says what a directive application
@@ -2294,3 +2302,33 @@ COMMENT ON TABLE jvm_scalar_type_field IS 'A public static field whose declared 
 COMMENT ON COLUMN jvm_scalar_type_field.source_name IS 'the owning class''s classpath entry, as on jvm_class; the key''s leading dimension';
 COMMENT ON COLUMN jvm_scalar_type_field.class_name IS 'the fully-qualified Java class name as written';
 COMMENT ON COLUMN jvm_scalar_type_field.field_name IS 'the field name, matched on the exact GraphQLScalarType descriptor';
+
+-- ==== Compile oracle facts ========================================================
+-- What the JDK compiler reported about a compile round over the emitted sources, in
+-- javax.tools.Diagnostic's vocabulary. The family's writer runs after capture, on the dev
+-- loop's compile cadence: in the batch pipeline javac runs in the consumer's own build after
+-- the generator exits, so only a dev session ever writes here and a batch run's partition
+-- stays empty rather than claiming anything it cannot know. One boundary is this family's own
+-- and one-sided: an oracle's transcription is never derived, and a detection over store rows
+-- must never acquire an oracle's family, or transcription and derivation blur.
+CREATE TABLE javac_diagnostic (
+  graph_name    VARCHAR NOT NULL,
+  file          VARCHAR NOT NULL,
+  line_number   BIGINT  NOT NULL,
+  column_number BIGINT  NOT NULL,
+  ordinal       INT     NOT NULL,
+  kind          VARCHAR NOT NULL,
+  code          VARCHAR,
+  message       VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, file, line_number, column_number, ordinal),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+COMMENT ON TABLE javac_diagnostic IS 'One javac diagnostic from the latest compile round over a graph''s emitted sources; the round replaces the graph''s rows wholesale, so the relation''s content contract is exactly the published round. Graph-keyed and graph-private: a sibling graph''s compile errors are its internals, not its schema contract, so cross-graph reads never range over this family, and rows exist only between one of the graph''s compile rounds and its next generation (capture clears the graph''s own partition with the rest of its ownership scope). Two key columns transcribe absence as javac''s own sentinels rather than NULL, a primary-key column admitting no NULL: readers compare against the sentinel values, never IS NULL.';
+COMMENT ON COLUMN javac_diagnostic.graph_name IS 'the graph whose emitted sources the round compiled; the partition dimension, anchored by store_graph and the scope of every statement the writer issues';
+COMMENT ON COLUMN javac_diagnostic.file IS 'canonical file URI of the generated .java javac anchored the diagnostic on (normalised once at the javac boundary so the dimension cannot fork on spelling), or the "(no source)" sentinel where javac reported no source; never NULL, this column being part of the key';
+COMMENT ON COLUMN javac_diagnostic.line_number IS 'javac''s 1-based line, or -1 (javax.tools.Diagnostic.NOPOS) where javac reported no position; a sentinel, never NULL, this column being part of the key';
+COMMENT ON COLUMN javac_diagnostic.column_number IS 'javac''s 1-based column, on the same NOPOS sentinel terms as line_number';
+COMMENT ON COLUMN javac_diagnostic.ordinal IS 'tie-breaker assigned in round order per (graph_name, file, line_number, column_number), so repeated identical diagnostics at one position keep the key natural rather than decoration on a surrogate counter';
+COMMENT ON COLUMN javac_diagnostic.kind IS 'javax.tools.Diagnostic.Kind.name(). An open column: a CHECK enumerating an externally owned taxonomy would be a hand-maintained copy of javac''s enum, the closed-CHECK convention covering only taxonomies the model owns';
+COMMENT ON COLUMN javac_diagnostic.code IS 'Diagnostic.getCode(), the compiler''s stable diagnostic identifier; NULL exactly where javac returns none, and the typed dimension a display list never had';
+COMMENT ON COLUMN javac_diagnostic.message IS 'javac''s own rendered text (root locale); a transcribed fact because the oracle authored it, but display material: never a dimension, never an agreement anchor';

@@ -1,7 +1,10 @@
 package no.sikt.graphitron.rewrite.maven;
 
+import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.rewrite.RewriteContext;
+import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.compile.CompileDiagnostic;
+import no.sikt.graphitron.rewrite.compile.CompileFacts;
 import no.sikt.graphitron.rewrite.compile.CompileOutcome;
 import no.sikt.graphitron.rewrite.compile.CompileRound;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
@@ -237,7 +240,7 @@ class DevMojoTest {
         // which the diagnostics tool tags source:"compile"). One assertion per channel.
         var workspace = new Workspace();
         var diagnostic = new CompileDiagnostic(
-            "gen/pkg/FilmFetchers.java", 12, 7, "ERROR", "cannot find symbol");
+            "gen/pkg/FilmFetchers.java", 12, 7, "ERROR", "compiler.err.cant.resolve", "cannot find symbol");
         var outcome = new CompileOutcome(
             new CompileRound(false, List.of(diagnostic)), Set.of("gen.pkg.FilmFetchers"));
         var log = new CapturingLog();
@@ -263,7 +266,7 @@ class DevMojoTest {
         // longer shows a stale compile error, and it does not log an error.
         var workspace = new Workspace();
         workspace.setCompileDiagnostics(List.of(
-            new CompileDiagnostic("gen/pkg/Old.java", 1, 1, "ERROR", "stale")));
+            new CompileDiagnostic("gen/pkg/Old.java", 1, 1, "ERROR", null, "stale")));
         var outcome = new CompileOutcome(
             new CompileRound(true, List.of()), Set.of("gen.pkg.A", "gen.pkg.B"));
         var log = new CapturingLog();
@@ -278,6 +281,32 @@ class DevMojoTest {
         assertThat(log.errors)
             .as("a clean round logs no error")
             .isEmpty();
+    }
+
+    @Test
+    void reportCompile_writesTheRoundThroughTheSessionStoreHandle(@TempDir Path basedir) {
+        // The third sink: a reported round lands in the fact store's javac_diagnostic relation,
+        // readable on the same handle afterwards; that is the delivery guarantee stated rather
+        // than assumed (the writer and the store-side readers share the session's live handle).
+        try (var store = GraphitronModelStore.open()) {
+            var mojo = new DevMojo();
+            mojo.setLog(new CapturingLog());
+            mojo.compileFacts = new CompileFacts(store.dsl(),
+                new FactCapture.GraphIdentity("dev-session", basedir));
+            var diagnostic = new CompileDiagnostic(
+                "file:///gen/pkg/FilmFetchers.java", 12, 7, "ERROR", "compiler.err.cant.resolve",
+                "cannot find symbol");
+            var outcome = new CompileOutcome(
+                new CompileRound(false, List.of(diagnostic)), Set.of("gen.pkg.FilmFetchers"));
+
+            mojo.reportCompile(new Workspace(), outcome, "recompile");
+
+            var rows = store.dsl().selectFrom(no.sikt.graphitron.model.Tables.JAVAC_DIAGNOSTIC).fetch();
+            assertThat(rows).hasSize(1);
+            assertThat(rows.getFirst().getGraphName()).isEqualTo("dev-session");
+            assertThat(rows.getFirst().getFile()).isEqualTo("file:///gen/pkg/FilmFetchers.java");
+            assertThat(rows.getFirst().getCode()).isEqualTo("compiler.err.cant.resolve");
+        }
     }
 
     // ---- <devDatabase> reconciliation (env wins over pom; degrade vs fail-loud) ----

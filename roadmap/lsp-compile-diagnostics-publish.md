@@ -7,7 +7,7 @@ priority: 3
 theme: lsp
 depends-on: []
 created: 2026-07-03
-last-updated: 2026-07-03
+last-updated: 2026-08-09
 ---
 
 # LSP publishes graphitron:dev compile diagnostics against generated-file URIs
@@ -19,5 +19,8 @@ shows the javac error inline). R410 shipped the first two; the diagnostics alrea
 `Workspace.compileDiagnostics()` (in the LSP module) after every round, but no LSP
 `textDocument/publishDiagnostics` is emitted for them. Close the gap: on each
 `setCompileDiagnostics` swap, publish the round's error diagnostics against the generated-file URIs
-(resolving `CompileDiagnostic.file()` under the generated-sources root) and clear diagnostics that
-resolved. Best-effort per the R410 spec: an unresolvable path is skipped, not an error.
+and clear diagnostics that resolved. `CompileDiagnostic.file()` now carries a canonical `file://`
+URI (normalised once at the javac boundary, the same spelling the schema channel publishes under),
+so the resolution step starts from a URI rather than a raw path to resolve under the
+generated-sources root. Best-effort per the R410 spec: an unresolvable entry (the `(no source)`
+sentinel, or a URI outside the generated tree) is skipped, not an error.
