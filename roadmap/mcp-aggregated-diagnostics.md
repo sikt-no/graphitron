@@ -5,7 +5,7 @@ status: Spec
 bucket: feature
 priority: 5
 theme: diagnostics
-depends-on: [graph-partition-key-dimension]
+depends-on: []
 created: 2026-08-03
 last-updated: 2026-08-08
 ---
@@ -335,9 +335,8 @@ compile rows it is javac's independent verdict, and one relation holding both wo
 column two meanings.
 
 **The store is shared and persistent now, and the bridge inherits both facts.**
-`graph-partition-key-dimension` (R610, this item's dependency) moves the persisted store to a
-per-user cache shared by every module the user builds, keys the SDL families by a leading
-`graph_name`, and makes refresh ownership-scoped. The bridge relation inherits the dimension
+R610 (shipped) moved the persisted store to a per-user cache shared by every module of a
+workspace, keyed the SDL families by a leading `graph_name`, and made refresh ownership-scoped. The bridge relation inherits the dimension
 on the same reasoning R603 already states for `javac_diagnostic`: `graph_name` leads its key
 with the structural FK to `store_graph`, every loader statement is scoped to the session's
 graph (an unscoped delete in a shared store is one module erasing another's diagnostics), and
@@ -463,10 +462,10 @@ before the convergence would put a confidently wrong count in the very view this
 hedged counts. Nothing else in the design touches it, so the two can be worked in parallel provided the
 dependency lands first.
 
-**The dependency chain now: R610 in front, R603 expected in front, R589 deliberately not.**
-The shipped store (`graphitron-model-captures-facts`, Done) is this design's substrate;
-`graph-partition-key-dimension` (R610) is the named dependency because the bridge relation's
-key and every loader statement take its dimension, so step 4 sequences after its rekey.
+**The dependency chain now: R610 shipped, R603 expected in front, R589 deliberately not.**
+The shipped store (`graphitron-model-captures-facts`, Done) is this design's substrate; R610
+was the named dependency because the bridge relation's key and every loader statement take its
+dimension, and it has since shipped, so the rekey step 4 sequences after is done.
 `pipeline-output-facts-family` (R603) is expected to land first too, and this spec adopts its
 dovetail's recommended fork (the compile arm reads `javac_diagnostic`, no compile bridge is
 built); per that item's own sequencing contract neither unconditionally precedes the other,

@@ -5,7 +5,7 @@ status: Ready
 bucket: architecture
 priority: 5
 theme: classification-model
-depends-on: [graph-partition-key-dimension]
+depends-on: []
 created: 2026-08-06
 last-updated: 2026-08-08
 ---
@@ -59,12 +59,13 @@ covers the diagnostics read surface in the meantime; the sections below fix the 
 shape, and its first consumer is R569's `diagnostic` view, whose compile arm this item
 re-grounds.
 
-## The store this family lands in is the one R610 is building
+## The store this family lands in is the one R610 built
 
-`graph-partition-key-dimension` (R610, Spec) rebuilds three of the properties the sections
-below would otherwise have reasoned from, so this item is specified against R610's store
-rather than against R595's, and `depends-on` names it. Three consequences, each carried
-through below rather than noted and forgotten.
+R610 rebuilt three of the properties the sections below would otherwise have reasoned from, so
+this item is specified against R610's store rather than against R595's. R610 has shipped, so
+`depends-on` no longer names it and the three consequences below are properties of the store as
+it stands rather than of one still being built; each is carried through below rather than noted
+and forgotten.
 
 The store stops being module-local. R610 moves the persisted file out of
 `<build>/graphitron-model` into a per-user cache home shared by every graphitron module the
@@ -372,9 +373,10 @@ bridged registration go; the view's compile arm re-points with its per-arm `sour
 unchanged, a dropped table and a one-line view edit, never a re-key). Under either order
 R569's wire-contract pins, which assert on tool answers and cannot tell which substrate
 answered, are the acceptance that the compile arm's substrate is invisible on the wire.
-`depends-on` names R610 and not R569, and the asymmetry is the point: R610 has to ship first,
-because this relation's key and its writer's delete predicate are R610's dimension, while
-neither this item nor R569 unconditionally precedes the other. The sequencing contract above
+This item depended on R610 and not on R569, and the asymmetry was the point: R610 had to ship
+first, because this relation's key and its writer's delete predicate are R610's dimension, while
+neither this item nor R569 unconditionally precedes the other. R610 has since shipped, so what
+remains of the asymmetry is the fork with R569 below. The sequencing contract above
 is what binds that pair, and whichever of them starts implementation first resolves the fork
 with the other's spec in hand. The session-handle contract in *The writer* is the piece both
 orders share, which is why it is fixed there instead of left to whichever lands first.

@@ -5,7 +5,7 @@ status: Spec
 bucket: architecture
 priority: 3
 theme: classification-model
-depends-on: [graph-partition-key-dimension]
+depends-on: []
 created: 2026-08-08
 last-updated: 2026-08-09
 ---
