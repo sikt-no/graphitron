@@ -1,13 +1,13 @@
 ---
 id: R473
 title: "Explicit @nodeId grammar: Node.id is the only implicit nodeId; typeName-first decode resolution"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 5
 theme: nodeid
 depends-on: []
 created: 2026-07-13
-last-updated: 2026-08-08
+last-updated: 2026-08-09
 ---
 
 # Explicit @nodeId grammar: Node.id is the only implicit nodeId; typeName-first decode resolution
@@ -518,6 +518,73 @@ keep-or-drop call to make at pickup, with the reasoning recorded in pass 5 above
 another Spec pass either way.
 
 The next gate is In Review -> Done, which needs a reviewer different from the implementer.
+
+## Implementation notes, 2026-08-09
+
+Landed in two commits, not three. Full reactor green under `-Plocal-db`, 13/13 modules, including
+the `graphitron-sakila-example` compile and execution tiers.
+
+**The opt-in seam was dropped**, taking the option pass 5 left open. It was staging a fixture
+migration that measured zero on every axis, `Consumer migration` already ships rules 1 and 2 as
+immediate errors because neither can flip anything silently, and out-of-tree exposure is gated
+separately by the re-confirmation below. So: rejections plus their cases, then flip and delete.
+
+**Rules 1 and 2 landed classifier-side, not in `GraphitronSchemaValidator`.** The plan's premise
+there does not hold against the tree: `GraphitronType.NodeType` and `TableType` carry only
+`name`/`location`/`table` with no `schemaType()`, and `definition` sits on the `UnclassifiedField`
+arm alone, so a validator walk cannot see a directive on a field that classifies today. The reason
+the plan wanted the validator was the source location the LSP reads, and the classifier route
+already delivers it: `UnclassifiedField` carries a location and `validateUnclassifiedField` drains
+it into exactly that located `ValidationError`. Pinned by a test rather than left as prose. This
+also gives the grammar one placement instead of two, since the shadowing rejection has to be
+classifier-side regardless.
+
+Rule 2's "separate coordinate to check" needed no work: `FieldBuilder.resolveCarrierIdEncoder`
+already resolves a bare `@nodeId` on a `ResultType` carrier through `NodeIndex.forTable`,
+singleton-or-diagnose, which is rule 2 plus rule 3's ambiguity requirement already shipped.
+
+**Shadowing became one method rather than three siblings**, `BuildContext.rejectShadowedNodeId`,
+with the shipped output-side rejection delegating to it. Keeping three wordings for one rule was
+the first step towards three semantics. `NODE_INTERFACE_ID_FIELD` moved to `BuildContext` for the
+same reason, being read at all three coordinates now.
+
+**Rule 6's key columns come off the `NodeType`, not the table metadata.** A classified `NodeType`
+always carries a non-empty `nodeKeyColumns` (the `@node`-without-`keyColumns` path falls back to
+the primary key and rejects when there is none), so this is both safe and the right polarity: SDL
+keeps winning on `typeId` outright and on key order.
+
+**Two fixtures were leaning on the retired orphan fallback with broken node declarations.**
+`MultiTableFilterLoweringTest`'s `Address` and `ReferenceFilterRemoteColumnPipelineTest`'s `Baz`
+carried `@node` without `implements Node`, which `TypeBuilder` rejects, so neither was ever a
+`NodeType`; the typeId-suffix fallback resolved their decode helpers anyway. Both now declare the
+interface. Worth knowing that the fallback was masking malformed declarations, not just serving
+orphans.
+
+Deletions ran wider than the plan listed, all of it dead in the same motion:
+`buildInputNodeIdReference` (the qualifier shim was its only caller) and the whole
+`typeNamesByTableKey` index behind `findGraphQLTypesForTable`. `IdReferenceShimClassificationTest`
+is a second shim-intent test class the plan's census did not name, deleted alongside
+`IdReferenceShimWarnFormatTest`.
+
+Fixture verdicts moved by stated intent. `IMPLICIT_ID` keeps its reading re-grounded on the SDL and
+now throws rather than skips, since an implicit reading of the grammar is worth the same as an
+authored `@nodeId`. `EXPLICIT_PERSON_ID` inverts into the `@field` silencer case.
+`R377_ORPHAN_INPUT_TYPEID_FALLBACK` and the qualifier-shim case set are deleted, their subject
+being the shim itself. `SCALAR_NODEID_NON_LOOKUP_COMPOSITE_PK_DEFERRED` was re-sited onto a
+node-typed `Bar` so the deferred-composite gap still has a fixture reaching it.
+
+Sakila needed no migration, exactly as the plan predicted: `filmActorByNodeId(id: [ID!]!)` is
+covered by rule 6 and its `GraphQLQueryTest` round-trip stays green through the flip.
+
+**Still open, and deliberately not settled by the implementer:**
+
+* **The Consumer-migration re-confirmation has not been done.** The plan requires it before the
+  flip, because the 2026-07-13 confirmation predates the utdanningsregisteret federation work. The
+  two silent arms are now landed on trunk, so if a consumer does rely on either, the staging the
+  plan prescribes (a WARN for one release) has to be added retroactively rather than ahead of the
+  change. Both arms are covered by the new pinning tests, so the shape of a revert is clear.
+* **R27 (`retire-synthesis-shims`) now has an empty set to delete** and should be discarded into
+  this item, per the "Flip and delete" section. Left for whoever picks it up, as the plan asks.
 
 ## Provenance
 
