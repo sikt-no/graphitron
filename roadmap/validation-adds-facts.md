@@ -174,11 +174,36 @@ claiming semantic relation, so "classification-claiming" is data a query can ans
 a hand-enumerated Java list; `@splitQuery`'s relation contributes no arm, and the `Composes`
 verdict dissolves rather than migrates.
 
+The in-memory precursor is already in the tree and should be read before slice 2 designs the arm
+list. `no.sikt.graphitron.facts.GatheredFacts` holds one named typed slot per registered visitor,
+each visitor owning its own accumulator, with the slot fill switching over `FactVisitor`'s sealed
+permits and no default, so a registered visitor without a slot is a compile error rather than a
+silently dropped relation. That is the drift protection this item wants for the claim view's arms,
+in the shape the pre-store code could express it; the migration is to make the same exhaustiveness
+a property of the view definition. `FieldBuilder.hasLookupKeyAnywhere` is the pattern's other half
+already applied to a claiming directive: it reads `LookupFacts.triggersFor` instead of re-walking
+the argument surface, and its javadoc names the visitor as the directive name's single lexical
+home. Slice 2's arm list should be reconciled against `FactVisitor`'s permits, not derived
+independently.
+
 **Resolution is a relational expression, not a tag filter.** The view planning reads is the
 authored relation unioned with the inferred rows at coordinates the authored relation does not
 cover. Structural classifiers therefore need zero directive knowledge: masking is the join's job,
 never a guard's, and the masked structural reading survives as data ("would classify as a table
 column; `@service` overrides it") for any hover or diagnostic that wants it.
+
+`NodeDeclaration` (R580, Done) is this shape landed at one coordinate, arrived at independently
+and worth copying rather than re-deriving. It answers "is this a node" once, authored (`@node`)
+over inferred (`implements Node` plus catalog metadata), for four consumers that previously read
+the directive off SDL and stayed consistent with the classifier by coincidence: reachability
+seeding, the arrival fold, federation entity synthesis and the LSP node view. Two of its
+properties are the ones this item's derivations need. It sits deliberately *above* classification,
+because two consumers run before any type is classified, and it takes only a `JooqCatalog`, which
+is the derivation layering here (SDL facts joined with catalog facts, no classified registry on
+the input side) reached without a store. Its javadoc also records the honest residue: the
+classifier's own promotion gate does not call the predicate, because it needs the metadata
+*values* to build the type, so the two share helpers rather than a call. Under claim relations
+that duplication is what dissolves, since the values and the verdict are the same row.
 
 **Validation rules are the key constraints, refined.** More than one authored claim on a coordinate
 is a conflict violation carrying every claim, except where a recognized-combinations rule refines
@@ -187,9 +212,14 @@ is coherent authored intent with no designed emit strategy), so that pair mints 
 violation, exactly the cause identity `reduceDirectiveConflict` produces today. Deferral fails the
 build like any rejection, so planning's totality is never exercised and nothing unimplemented
 reaches emit; the pairwise table's entire residue is this one rule's data. More than one inferred
-claim on an authored-free coordinate is a structural ambiguity. Zero claims on a coordinate that
-requires one is unclassifiable. All three mint into `GraphitronSchema.diagnostics`; the claims
-stay.
+claim on an authored-free coordinate is a structural ambiguity. That rule also has a shipped
+precedent: the nodeId grammar (R473, Done) made a directive-less node-id reading colliding with a
+real column of that name an error at all three coordinates it can occur, explicitly "not a warning
+and not a contest either reading wins", through the single method `BuildContext.rejectShadowedNodeId`.
+Two structural readings claiming one coordinate, resolved as a violation rather than a precedence
+pick, is exactly this rule with the relation still to be built; that method is the migration target
+when the detection lands. Zero claims on a coordinate that requires one is unclassifiable. All
+three mint into `GraphitronSchema.diagnostics`; the claims stay.
 
 **Guards are part of a classifier's contract, within the authored side.** Authored classifiers that
 might step on each other make the interaction explicit by knowing each other's directives: the
@@ -412,7 +442,12 @@ throughout; what moves is where verdicts come from and what survives a failure.
    exactly the reachability R221 asks for, and the cascade disjunct gets its evaluation site
    from the occurrence-path derivation (closed below), so R221 closes as subsumed when this
    slice lands. The cascade fact `rejectAtConsumer` reads (`enclosingOverride`) becomes a
-   predicate over path prefixes rather than a call-site local.
+   predicate over path prefixes rather than a call-site local. Acceptance is the count, not the
+   prose: `InputFieldFanInDiagnosticsTest` is already count-asserted throughout precisely because
+   a cause gaining a second producer shows up only as a count, so this slice states the intended
+   count per shape and moves those assertions deliberately. A second evaluation site reappearing
+   for either predicate is then a failing count rather than a duplicate squiggle nobody notices,
+   which is the guard the "exactly one evaluation site" claim otherwise lacks.
 6. **The output-side projection preserves the claims.** A broken DELETE mutation still reads as a
    DELETE mutation with its intended table on the LSP and MCP surfaces, sourced from the claim
    relations, never from `UnclassifiedField.definition()` (a graphql-java node; reading applied
@@ -488,6 +523,21 @@ surfaces, so the item does not qualify for the internal-refactor exemption.
   reserves `intent_` for the derived stratum, and the claim views are capture-cadence
   derivations rather than oracle-written base relations, so the agreement driver's new
   `ORACLE` arm does not apply to them.
+- **Node inference (R580, Done; see `roadmap/changelog.md`):** this item's witness model,
+  delivered at one coordinate before the relations exist. `NodeProvenance` is the per-axis
+  provenance shape (see the closed question below, which it reopened and settled),
+  `NodeDeclaration` is the authored-over-inferred resolution named once and read by four
+  consumers, sitting above classification on SDL plus catalog facts alone. Nothing here needs
+  changing when the claim relations land; both become derivations, and the classifier gate's
+  duplicate re-derivation of the same conjunction dissolves when the values and the verdict are
+  one row. Its unverified pre-rollout safety check (the sis typeId-collision census) is R580's to
+  carry and does not gate this item.
+- **The nodeId grammar (R473, Done; see `roadmap/changelog.md`):** `BuildContext.rejectShadowedNodeId`
+  is the structural-ambiguity rule shipped at three coordinates as one method, deciding the
+  question this item's validation section decides the same way. It is the migration target for
+  that detection, and its "one rule, one lexical home, because divergent wording is the first step
+  towards divergent semantics" argument is the same argument the claim view's single grouping
+  detection makes against today's four conflict sites.
 - **`capture-load-residuals` (R609):** the Done-gate residuals. The declined-decode gap is the
   one this item's slice 2 must land against (see there); the others (second catalog walk,
   retained-partition scan skip, nested-class filter, shadowed-duplicate quarantine) are
@@ -637,10 +687,26 @@ land in one of the scope's pieces.
   `(coordinate, classifier)` key. Two census findings reinforce the model: every structural
   arm already has an explicit directive mask upstream, so moving masking to the
   authored-coverage anti-join invents no semantics, and cross-file triggers are the norm,
-  confirming that no verdict is computable during a file's parse. `ClassificationTrace`, the
-  only provenance-adjacent record today, carries the verdict's class name and no trigger data;
-  the witness evaporates at each arm's return, which is this item's thesis at the provenance
-  grain.
+  confirming that no verdict is computable during a file's parse. `ClassificationTrace` carries
+  the verdict's class name, the source file and the rejection kind, but no trigger data; the
+  witness evaporates at each arm's return, which is this item's thesis at the provenance grain.
+- **Provenance grain within a claim: closed by `NodeProvenance`, which shipped after the census
+  above.** Node inference (R580, Done) delivered the witness model at one coordinate and turned
+  up the wrinkle the census missed. `NodeProvenance(Origin typeId, Origin keyColumns)` records
+  per *axis* where each identity parameter came from (`DECLARED` from `@node`, `METADATA` from
+  the jOOQ constants, `DEFAULTED` from the classifier), and its javadoc states the reason it is
+  a pair: `@node(typeId: "195")` over a table publishing `__NODE_KEY_COLUMNS` is declared on one
+  axis and inferred on the other, so a single declared-versus-inferred flag cannot express it.
+  A claim can therefore mix provenance across its slot facts, which the two-relation split does
+  not by itself capture. The resolution keeps the split and refines the payload: **relation
+  membership is keyed by the claim's trigger, and slot facts carry their own origin where both
+  sources are live.** Nodehood is triggered by `implements Node`, a structural fact, so the claim
+  is inferred; that its `typeId` slot may be decoded from an authored `@node` argument is a
+  property of the slot, not of the trigger. This costs the "the two provenance shapes never share
+  a record" rationale some of its reach (it holds at the trigger grain, not the slot grain) and
+  gains a shipped, reviewed shape to copy: a per-axis origin enum beats a nullable
+  authored-value column, and it is still no kind-dependent nullability. `NodeProvenance` is the
+  precedent a slot-fact origin column should follow.
 
 ## Retired vocabulary (expected; finalise at the Done gate)
 
