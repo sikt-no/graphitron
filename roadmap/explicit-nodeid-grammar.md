@@ -154,7 +154,11 @@ Rule 6's input coordinate needs three of its own, since it resolves table-derive
 
 ## Consumer migration
 
-Per user confirmation on 2026-07-13, no consumer relies on the shim behavior today, so R27's written gate (sis migrated, plus one external-consumer release window) is more conservative than reality and this does not need to wait it out. **That confirmation is now over a year old at the time of writing and predates the utdanningsregisteret federation work; re-confirm before flipping, because the cost of being wrong is a consumer build that fails with no migration path staged.**
+Per user confirmation on 2026-07-13, no consumer relies on the shim behavior today, so R27's written gate (sis migrated, plus one external-consumer release window) is more conservative than reality and this does not need to wait it out. The item then asked for that confirmation to be re-taken before the flip, on the grounds that it predated the utdanningsregisteret federation work.
+
+**Re-confirmed by the user on 2026-08-09, after the flip landed and before any release carries it.** sis is the only touched subgraph, and the user is doing that migration themselves. So the two silent arms below need no WARN staging, and the utdanningsregisteret concern is answered: it is not a consumer of either arm. Nothing in this item now waits on a consumer.
+
+(The re-confirmation instruction also claimed the original was "over a year old", while dating it 2026-07-13, under a month before the re-confirmation. One of the two was wrong. Recorded so a later reader does not reconstruct a staleness argument from the arithmetic; the substantive reason to re-ask was the federation work, not elapsed time.)
 
 Two silent changes remain in this item's set, both on directive-less coordinates that sit *ahead* of column resolution. Every other rule turns a working build into a failing one with a message naming the fix, and the surviving output-side arm fires only on a column miss (see the intro), so deleting it rejects rather than flips.
 
@@ -576,13 +580,13 @@ node-typed `Bar` so the deferred-composite gap still has a fixture reaching it.
 Sakila needed no migration, exactly as the plan predicted: `filmActorByNodeId(id: [ID!]!)` is
 covered by rule 6 and its `GraphQLQueryTest` round-trip stays green through the flip.
 
+**The Consumer-migration gate is closed.** Re-confirmed by the user on 2026-08-09: sis is the only
+touched subgraph and the user is doing that migration themselves. Neither silent arm needs the WARN
+staging the plan held in reserve, and no release will carry the flip ahead of that migration. See
+`Consumer migration` above for the recorded confirmation.
+
 **Still open, and deliberately not settled by the implementer:**
 
-* **The Consumer-migration re-confirmation has not been done.** The plan requires it before the
-  flip, because the 2026-07-13 confirmation predates the utdanningsregisteret federation work. The
-  two silent arms are now landed on trunk, so if a consumer does rely on either, the staging the
-  plan prescribes (a WARN for one release) has to be added retroactively rather than ahead of the
-  change. Both arms are covered by the new pinning tests, so the shape of a revert is clear.
 * **R27 (`retire-synthesis-shims`) now has an empty set to delete** and should be discarded into
   this item, per the "Flip and delete" section. Left for whoever picks it up, as the plan asks.
 
