@@ -247,6 +247,40 @@ class ConditionCommandsPipelineTest {
         assertThat(row.predicates().get(0)).isInstanceOf(Predicate.Generated.class);
     }
 
+    @Test
+    void lookupCoordinate_generatedFilterProducesARowThatNeverRestatesTheKey() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
+            type Query {
+                customersByKey(
+                    customer_id: [Int!]! @lookupKey,
+                    email: String @field(name: "email")
+                ): [Customer!]!
+            }
+            """);
+
+        var relation = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
+
+        // The generated twin of the authored case above: a lookup coordinate's non-key argument
+        // mints an ordinary generated row, composed beside the VALUES join by the same glue call.
+        assertThat(relation.rows()).hasSize(1);
+        var row = relation.rows().get(0);
+        assertThat(row.coordinate()).isEqualTo(FieldCoordinates.coordinates("Query", "customersByKey"));
+        assertThat(row.predicates()).hasSize(1);
+        assertThat(row.predicates().get(0)).isInstanceOf(Predicate.Generated.class);
+
+        // The key-not-restated fact, asserted at the model rather than by counting placeholders in
+        // a rendered statement: the lookup key rides the VALUES join and is excluded from the
+        // generated filter upstream, so no term of this row addresses customer_id. Were the
+        // exclusion to lapse, the key would be predicated twice — once in the join, once here.
+        assertThat(row.predicates().stream()
+                .filter(p -> p instanceof Predicate.Generated)
+                .flatMap(p -> ((Predicate.Generated) p).terms().stream())
+                .flatMap(t -> t.columns().stream())
+                .map(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName))
+            .containsExactly("email");
+    }
+
     private static List<String> generatedTermLocals(List<Predicate> predicates) {
         return predicates.stream()
             .filter(p -> p instanceof Predicate.Generated)

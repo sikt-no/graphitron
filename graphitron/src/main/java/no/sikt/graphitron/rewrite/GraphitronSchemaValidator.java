@@ -83,12 +83,6 @@ public class GraphitronSchemaValidator {
      * silently ignores at a live request).
      *
      * <ul>
-     *   <li><b>Generated column filters on lookup coordinates.</b> Lookup keys ride the VALUES
-     *       join and no emitter renders a generated column predicate beside a lookup member;
-     *       the rejection is the fact-grain co-presence read (a condition surface carrying a
-     *       generated term on a coordinate whose member set has the lookup member). Authored
-     *       {@code @condition} entries on lookup coordinates stay accepted (ordinary condition
-     *       rows, composed beside the VALUES join).</li>
      *   <li><b>Any filter on a single-table interface child coordinate.</b>
      *       {@code ChildField.TableInterfaceField} carries the shared filter components, but its
      *       fetcher composes only the FK correlation and the discriminator restriction and folds
@@ -100,18 +94,6 @@ public class GraphitronSchemaValidator {
     private void validateConditionEmitImplemented(GraphitronSchema schema, List<ValidationError> errors) {
         for (var entry : schema.fields().entrySet()) {
             var field = entry.getValue();
-            var members = schema.operationMembersOf(entry.getKey());
-            boolean lookupMember = members.stream()
-                .anyMatch(m -> m.kind() == no.sikt.graphitron.rewrite.model.OperationMember.Kind.LOOKUP);
-            if (lookupMember
-                    && field instanceof no.sikt.graphitron.rewrite.model.SqlGeneratingField sgf
-                    && sgf.filters().stream().anyMatch(f -> f instanceof no.sikt.graphitron.rewrite.model.GeneratedConditionFilter)) {
-                emitDeferredError(field, (Rejection.Deferred) Rejection.deferred(
-                    "generated column filters on a lookup coordinate are not emitted: lookup keys ride "
-                    + "the VALUES join and no emitter renders a generated column predicate for a lookup "
-                    + "field; use an authored @condition method, or drop the filter"),
-                    errors);
-            }
             if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField tif
                     && !tif.filters().isEmpty()) {
                 emitDeferredError(field, (Rejection.Deferred) Rejection.deferred(
@@ -713,19 +695,14 @@ public class GraphitronSchemaValidator {
                 field.location()
             ));
         } else {
-            // Lookup cardinality is determined by whether any @lookupKey arg is a list.
-            // The validator is input-shape-agnostic: list-ness may come from LookupMapping
-            // or from a filter-carried list arg, and both paths are covered.
+            // Lookup cardinality is the key axis alone: one output row per key, so a list of
+            // keys returns a list. The mapping is the single source of that fact — non-key
+            // filterable arguments compose in the WHERE beside the VALUES join and narrow the
+            // rows a key matches, never the number of keys.
             boolean anyKeyIsList = switch (keyed.mapping()) {
-                    case no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping cm ->
-                        cm.hasListArg();
-                }
-                || field.filters().stream().anyMatch(f -> switch (f) {
-                    case no.sikt.graphitron.rewrite.model.GeneratedConditionFilter gcf ->
-                        gcf.bodyParams().stream().anyMatch(bp -> bp.list());
-                    case no.sikt.graphitron.rewrite.model.ConditionFilter ignored -> false;
-                    case no.sikt.graphitron.rewrite.model.FkTargetConditionFilter ignored -> false;
-                });
+                case no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping cm ->
+                    cm.hasListArg();
+            };
             boolean returnIsList = field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.List;
             if (anyKeyIsList != returnIsList) {
                 errors.add(new ValidationError(

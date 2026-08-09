@@ -13,7 +13,10 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.util.Map;
 
+import static org.assertj.core.api.Assertions.as;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.InstanceOfAssertFactories.list;
+import static org.assertj.core.api.InstanceOfAssertFactories.map;
 
 /**
  * The condition family's SQL equivalence baseline, extending the programme-level harness
@@ -172,6 +175,73 @@ class ConditionSqlBaselineTest {
                     + "join (values (0, ?), (1, ?)) as \"languagesbykeyfilteredinput\" (\"idx\", \"language_id\") using (\"language_id\") "
                     + "where \"public\".\"language\".\"name\" like (replace(replace(replace(?, '!', '!!'), '%', '!%'), '_', '!_') || '%') escape '!' "
                     + "order by \"languagesbykeyfilteredinput\".\"idx\"");
+    }
+
+    @Test
+    void lookupCoordinate_generatedNonKeyFilterBesideTheValuesJoin() {
+        // Keys [hit, hit-but-filtered, miss]: language 1 is English, language 2 is Italian and
+        // matches its key but fails the predicate, language 99 does not exist.
+        var data = execute("{ languagesByKeyGenerated(language_id: [1, 2, 99], name: \"English\") { languageId } }");
+        assertThat(SQL_LOG)
+            .as("the generated twin of the authored fixture above: the implicit column equality "
+                + "the generator builds for a non-key argument lands in the same WHERE slot the "
+                + "authored prefix-match occupies, beside the same VALUES join")
+            .containsExactly(
+                "select \"public\".\"language\".\"language_id\" "
+                    + "from \"public\".\"language\" "
+                    + "join (values (0, ?), (1, ?), (2, ?)) as \"languagesbykeygeneratedinput\" (\"idx\", \"language_id\") using (\"language_id\") "
+                    + "where \"public\".\"language\".\"name\" = ? "
+                    + "order by \"languagesbykeygeneratedinput\".\"idx\"");
+
+        // The one behavioural consequence this item introduces, named rather than left implicit:
+        // a non-key predicate can now remove the row a key matched, and the result carries no
+        // trace of which key that was. The lookup result is the matched rows in input order, not
+        // one slot per key, so a filtered key and an unmatched key are the same absence — the
+        // list simply gets shorter, and a caller cannot pair outputs back to inputs by position
+        // once a filter is in play. Ordering survives among the rows that do come back.
+        assertThat(data).extractingByKey("languagesByKeyGenerated", as(list(Map.class)))
+            .extracting(m -> m.get("languageId"))
+            .containsExactly(1);
+    }
+
+    @Test
+    void inlineChildLookupCoordinate_generatedFilterInsideTheMultisetsInnerSelect() {
+        // Same [hit, hit-but-filtered, miss] keys against film 1's cast (actors 1 and 2):
+        // actor 1 is PENELOPE, actor 2 is NICK and is filtered out, actor 99 does not exist.
+        var data = execute(
+            "{ filmById(film_id: [\"1\"]) { actorsGenerated(actor_id: [1, 2, 99], first_name: \"PENELOPE\") { actorId } } }");
+        assertThat(SQL_LOG)
+            .as("inline child lookup: the glue call renders into the multiset's inner WHERE, "
+                + "beside the FK correlation and the join to the input rows. Asserted as the "
+                + "presence of the predicate rather than as whole-statement text, because this "
+                + "arm mints runtime-prefixed aliases that churn on unrelated changes")
+            .anySatisfy(sql -> assertThat(sql)
+                .contains("\"actorsgeneratedinput\"")
+                .contains("\"first_name\" = ?"));
+        assertThat(data).extractingByKey("filmById", as(list(Map.class)))
+            .singleElement(as(map(String.class, Object.class)))
+            .extracting(f -> f.get("actorsGenerated"), as(list(Map.class)))
+            .extracting(a -> a.get("actorId"))
+            .containsExactly(1);
+    }
+
+    @Test
+    void batchedChildLookupCoordinate_generatedFilterInTheLoadersWhere() {
+        // The same three keys, through the @splitQuery loader rather than the inline multiset.
+        var data = execute(
+            "{ filmById(film_id: [\"1\"]) { actorsBySplitLookupGenerated(actor_id: [1, 2, 99], first_name: \"PENELOPE\") { actorId } } }");
+        assertThat(SQL_LOG)
+            .as("batched child lookup: the loader folds the same glue call into its "
+                + "DSL.noCondition() WHERE against the child alias, beside the parent-input join "
+                + "and the lookup keyset")
+            .anySatisfy(sql -> assertThat(sql)
+                .contains("\"actorsbysplitlookupgeneratedinput\"")
+                .contains("\"first_name\" = ?"));
+        assertThat(data).extractingByKey("filmById", as(list(Map.class)))
+            .singleElement(as(map(String.class, Object.class)))
+            .extracting(f -> f.get("actorsBySplitLookupGenerated"), as(list(Map.class)))
+            .extracting(a -> a.get("actorId"))
+            .containsExactly(1);
     }
 
     @Test

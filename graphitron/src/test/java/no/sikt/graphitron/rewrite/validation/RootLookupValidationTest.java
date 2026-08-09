@@ -30,6 +30,7 @@ import no.sikt.graphitron.rewrite.TestFixtures;
 class RootLookupValidationTest {
 
     private static final ColumnRef FILM_ID_COL = new ColumnRef("film_id", "FILM_ID", "java.lang.Integer");
+    private static final ColumnRef TITLE_COL = new ColumnRef("title", "TITLE", "java.lang.String");
     private static final TableRef FILM_TABLE = TestFixtures.tableRef("film", "FILM", "Film", List.of());
     // A minimal one-arg mapping: these cases pin wrapper/ordering verdicts, not the key
     // payload, and ColumnMapping rejects an empty arg list (the vacuous mapping is
@@ -40,14 +41,38 @@ class RootLookupValidationTest {
             new CallSiteExtraction.Direct(), false)),
         FILM_TABLE);
     private static final LookupResolution KEYED_LOOKUP = new LookupResolution.Keyed(SCALAR_LOOKUP);
+    // The same mapping with a list-typed key arg. Key list-ness is the whole cardinality fact,
+    // so the two mappings are the axis the cube below varies against the return wrapper.
+    private static final LookupMapping LIST_LOOKUP = new LookupMapping.ColumnMapping(
+        List.of(new LookupMapping.ColumnMapping.LookupArg.ScalarLookupArg(
+            "film_id", FILM_ID_COL, new CallSiteExtraction.Direct(), true)),
+        FILM_TABLE);
+    private static final LookupResolution LIST_KEYED_LOOKUP = new LookupResolution.Keyed(LIST_LOOKUP);
     private static final OrderBySpec.Fixed PK_ORDER = new OrderBySpec.Fixed(
         List.of(new OrderBySpec.ColumnOrderEntry(FILM_ID_COL, null, OrderBySpec.SortDirection.ASC)), true);
+    private static final String CARDINALITY_MISMATCH =
+        "Field 'Query.filmById': result type does not match input cardinality";
 
+    /** One cube cell: a lookup field varying key list-ness, return list-ness and filter list-ness. */
+    private static QueryTableField cell(LookupResolution keyed, boolean listReturn, List<WhereFilter> filters) {
+        return new QueryTableField("Query", "filmById", null,
+            new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE,
+                listReturn ? new FieldWrapper.List(true, true) : new FieldWrapper.Single(true)),
+            filters, listReturn ? PK_ORDER : new OrderBySpec.None(), null, keyed,
+            RoutineResolution.None.INSTANCE);
+    }
+
+    /**
+     * A generated filter over a column that is not the lookup key, which is the only shape that
+     * reaches a lookup coordinate: the key argument is excluded from the generated filter
+     * upstream ({@code FieldBuilder}'s {@code !ca.isLookupKey()} branch), so a filter here can
+     * only ever be a non-key sibling argument.
+     */
     private static GeneratedConditionFilter columnFilter(String name, boolean nonNull, boolean list) {
         BodyParam bodyParam = list
-            ? new BodyParam.In(name, FILM_ID_COL, "java.lang.Integer", nonNull, new CallSiteExtraction.Direct())
-            : new BodyParam.Eq(name, FILM_ID_COL, "java.lang.Integer", nonNull, new CallSiteExtraction.Direct());
-        var callParam = new CallParam(name, new CallSiteExtraction.Direct(), list, FILM_ID_COL.columnClass());
+            ? new BodyParam.In(name, TITLE_COL, "java.lang.String", nonNull, new CallSiteExtraction.Direct())
+            : new BodyParam.Eq(name, TITLE_COL, "java.lang.String", nonNull, new CallSiteExtraction.Direct());
+        var callParam = new CallParam(name, new CallSiteExtraction.Direct(), list, TITLE_COL.columnClass());
         return new GeneratedConditionFilter(FILM_TABLE,
             List.of(callParam), List.of(bodyParam));
     }
@@ -58,45 +83,66 @@ class RootLookupValidationTest {
             filters, orderBy, null, KEYED_LOOKUP, RoutineResolution.None.INSTANCE);
     }
 
-    private static final String GENERATED_FILTER_ON_LOOKUP =
-        "Field 'Query.filmById': generated column filters on a lookup coordinate are not emitted: "
-        + "lookup keys ride the VALUES join and no emitter renders a generated column predicate for "
-        + "a lookup field; use an authored @condition method, or drop the filter";
-
     enum Case implements ValidatorCase {
 
-        VALID("single return type, no filters — valid",
-            singleReturn(List.of(), new OrderBySpec.None()),
+        // The cardinality cube, exhaustive over key list-ness x return list-ness x non-key-filter
+        // list-ness. A generated column filter beside the lookup keys is legal at every cell: the
+        // keys ride the VALUES join and the filter composes in the WHERE beside it. The verdict is
+        // the key axis against the return wrapper alone, so the filter column below never changes
+        // it — which is exactly what the four LIST_FILTER cells pin, since the cardinality read
+        // used to OR the filter's list-ness in and made two of them disagree with their siblings.
+
+        SCALAR_KEY_SINGLE_RETURN_NO_FILTER("scalar key, single return, no filter — valid",
+            cell(KEYED_LOOKUP, false, List.of()),
             List.of()),
 
-        // Cardinality-consistent, but the generated filter's method has no emitter on a lookup
-        // coordinate (the entity conditions layer skips lookup-keyed reads), so the shape defers at
-        // validate time instead of shipping a dangling call; these two pin the rejected state,
-        // and flip back to valid when the lookup fold converges onto glue.
-        COLUMN_ARG_DEFERRED("GeneratedConditionFilter scalar on lookup: deferred, no emitter",
-            singleReturn(List.of(columnFilter("id", false, false)), new OrderBySpec.None()),
-            List.of(GENERATED_FILTER_ON_LOOKUP)),
+        SCALAR_KEY_SINGLE_RETURN_SCALAR_FILTER("scalar key, single return, scalar filter — valid",
+            cell(KEYED_LOOKUP, false, List.of(columnFilter("title", false, false))),
+            List.of()),
 
-        LIST_COLUMN_ARG_DEFERRED("GeneratedConditionFilter list on lookup: deferred, no emitter",
-            new QueryTableField("Query", "filmById", null,
-                new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE, new FieldWrapper.List(true, true)),
-                List.of(columnFilter("id", false, true)), PK_ORDER, null, KEYED_LOOKUP, RoutineResolution.None.INSTANCE),
-            List.of(GENERATED_FILTER_ON_LOOKUP)),
+        SCALAR_KEY_SINGLE_RETURN_LIST_FILTER("scalar key, single return, list filter — valid",
+            cell(KEYED_LOOKUP, false, List.of(columnFilter("title", false, true))),
+            List.of()),
+
+        SCALAR_KEY_LIST_RETURN_NO_FILTER("scalar key, list return, no filter — cardinality mismatch",
+            cell(KEYED_LOOKUP, true, List.of()),
+            List.of(CARDINALITY_MISMATCH)),
+
+        SCALAR_KEY_LIST_RETURN_SCALAR_FILTER("scalar key, list return, scalar filter — cardinality mismatch",
+            cell(KEYED_LOOKUP, true, List.of(columnFilter("title", false, false))),
+            List.of(CARDINALITY_MISMATCH)),
+
+        SCALAR_KEY_LIST_RETURN_LIST_FILTER("scalar key, list return, list filter — cardinality mismatch",
+            cell(KEYED_LOOKUP, true, List.of(columnFilter("title", false, true))),
+            List.of(CARDINALITY_MISMATCH)),
+
+        LIST_KEY_SINGLE_RETURN_NO_FILTER("list key, single return, no filter — cardinality mismatch",
+            cell(LIST_KEYED_LOOKUP, false, List.of()),
+            List.of(CARDINALITY_MISMATCH)),
+
+        LIST_KEY_SINGLE_RETURN_SCALAR_FILTER("list key, single return, scalar filter — cardinality mismatch",
+            cell(LIST_KEYED_LOOKUP, false, List.of(columnFilter("title", false, false))),
+            List.of(CARDINALITY_MISMATCH)),
+
+        LIST_KEY_SINGLE_RETURN_LIST_FILTER("list key, single return, list filter — cardinality mismatch",
+            cell(LIST_KEYED_LOOKUP, false, List.of(columnFilter("title", false, true))),
+            List.of(CARDINALITY_MISMATCH)),
+
+        LIST_KEY_LIST_RETURN_NO_FILTER("list key, list return, no filter — valid",
+            cell(LIST_KEYED_LOOKUP, true, List.of()),
+            List.of()),
+
+        LIST_KEY_LIST_RETURN_SCALAR_FILTER("list key, list return, scalar filter — valid",
+            cell(LIST_KEYED_LOOKUP, true, List.of(columnFilter("title", false, false))),
+            List.of()),
+
+        LIST_KEY_LIST_RETURN_LIST_FILTER("list key, list return, list filter — valid",
+            cell(LIST_KEYED_LOOKUP, true, List.of(columnFilter("title", false, true))),
+            List.of()),
 
         VALID_WITH_TABLE_INPUT_TYPE_ARG("table-bound input type arg — skipped, empty filters, valid with single return",
             singleReturn(List.of(), new OrderBySpec.None()),
             List.of()),
-
-        LIST_RETURN_NO_LIST_ARG("list return with no list filter — cardinality mismatch",
-            new QueryTableField("Query", "filmById", null,
-                new ReturnTypeRef.TableBoundReturnType("Film", TestFixtures.tableRef("film", "FILM", "Film", List.of()), new FieldWrapper.List(true, true)),
-                List.of(), PK_ORDER, null, KEYED_LOOKUP, RoutineResolution.None.INSTANCE),
-            List.of("Field 'Query.filmById': result type does not match input cardinality")),
-
-        SINGLE_RETURN_LIST_ARG("single return with list filter: cardinality mismatch, and the filter defers",
-            singleReturn(List.of(columnFilter("id", false, true)), new OrderBySpec.None()),
-            List.of("Field 'Query.filmById': result type does not match input cardinality",
-                GENERATED_FILTER_ON_LOOKUP)),
 
         CONNECTION_RETURN("connection return — never valid on lookup",
             new QueryTableField("Query", "filmById", null,

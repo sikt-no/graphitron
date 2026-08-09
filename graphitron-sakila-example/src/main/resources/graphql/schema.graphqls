@@ -146,6 +146,14 @@ type Query {
             className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
             method: "languageNameStartsWith"}, override: true)
     ): [Language!]!
+    # Generated-filter twin of languagesByKeyFiltered above: the same VALUES join, the same
+    # non-key column, but the predicate is the implicit column equality the generator builds
+    # rather than an authored @condition method. The pair is the point — authored and generated
+    # non-key filters compose identically beside the lookup keys.
+    languagesByKeyGenerated(
+        language_id: [Int] @lookupKey @field(name: "language_id"),
+        name: String @field(name: "name")
+    ): [Language!]!
     customerById(customer_id: [ID] @lookupKey, store_id: ID @lookupKey): [Customer!]!
     storeById(store_id: [Int] @lookupKey @field(name: "store_id")): [Store!]!
     categoryById(category_id: [Int] @lookupKey @field(name: "category_id")): [Category!]!
@@ -1591,10 +1599,25 @@ type Film implements Node & Searchable @table(name: "film") @node {
         {key: "film_actor_film_id_fkey"},
         {key: "film_actor_actor_id_fkey"}
     ])
+    # Generated-filter twin of actors above, as a sibling coordinate rather than an added
+    # argument, so the emit for actors stays byte-identical. The non-key first_name argument
+    # renders its column predicate inside the LookupMultiset inner select's WHERE, beside the FK
+    # correlation and the join to the input rows.
+    actorsGenerated(actor_id: [Int!] @lookupKey, first_name: String @field(name: "first_name")): [Actor!]! @reference(path: [
+        {key: "film_actor_film_id_fkey"},
+        {key: "film_actor_actor_id_fkey"}
+    ])
     # Lookup-keyed batched fixture (@splitQuery + @lookupKey). Same junction-path shape as actors
     # above, but DataLoader-batched — each Film gets its own filtered actor list via the
     # flat-SELECT + VALUES+ON keyset + per-parent scatter shape.
     actorsBySplitLookup(actor_id: [Int!] @lookupKey): [Actor!]! @splitQuery @reference(path: [
+        {key: "film_actor_film_id_fkey"},
+        {key: "film_actor_actor_id_fkey"}
+    ])
+    # Generated-filter twin of actorsBySplitLookup above, again a sibling rather than an added
+    # argument. The batched loader folds the same glue call into its DSL.noCondition().and(...)
+    # WHERE, against the child alias.
+    actorsBySplitLookupGenerated(actor_id: [Int!] @lookupKey, first_name: String @field(name: "first_name")): [Actor!]! @splitQuery @reference(path: [
         {key: "film_actor_film_id_fkey"},
         {key: "film_actor_actor_id_fkey"}
     ])

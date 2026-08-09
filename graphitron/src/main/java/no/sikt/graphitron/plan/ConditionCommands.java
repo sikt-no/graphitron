@@ -55,11 +55,10 @@ import java.util.Set;
  * (the validator's nested-shape comparison enforces the same fact).
  *
  * <p>Every row renders glue and every consumer calls it; the migration dial that once restricted
- * rendering to root rows closed with call-site convergence. Two producer-side backstops mirror
- * validator rejections (an accepted classification whose emit does not exist must fail loudly
- * before production, never mint a row nobody can render or call): generated column filters on a
- * lookup coordinate, and any filter on a single-table interface child coordinate (its fetcher
- * folds no filters at all).
+ * rendering to root rows closed with call-site convergence. One producer-side backstop mirrors a
+ * validator rejection (an accepted classification whose emit does not exist must fail loudly
+ * before production, never mint a row nobody can render or call): any filter on a single-table
+ * interface child coordinate, whose fetcher folds no filters at all.
  */
 public final class ConditionCommands {
 
@@ -109,11 +108,7 @@ public final class ConditionCommands {
                 + "filters, which its fetcher does not fold; the validator must reject this shape "
                 + "before production");
         }
-        boolean lookup = members.stream().anyMatch(m -> m.kind() == OperationMember.Kind.LOOKUP);
         for (var condition : conditions) {
-            if (lookup) {
-                requireNoGeneratedFilterOnLookup(field, condition.filters());
-            }
             switch (condition) {
                 case OperationMember.Condition.OnReturnTable own ->
                     addRow(rows, row(out.parentTypeName(), out.name(), own.table(), own.filters(),
@@ -144,20 +139,6 @@ public final class ConditionCommands {
                 + "nesting type shared across parents must classify its nested filters "
                 + "identically at every reuse site (the validator's nested-shape comparison "
                 + "enforces this before production)");
-        }
-    }
-
-    /**
-     * The validator's mirror of the lookup emit gap: lookup keys ride the VALUES join and no
-     * emitter renders a generated column predicate for a lookup coordinate (authored
-     * {@code @condition} entries are ordinary rows). The {@code GraphitronSchemaValidator}
-     * rejects the shape before production; this throw is the producer-side backstop.
-     */
-    private static void requireNoGeneratedFilterOnLookup(GraphitronField field, List<WhereFilter> filters) {
-        if (filters.stream().anyMatch(f -> f instanceof GeneratedConditionFilter)) {
-            throw new IllegalStateException(
-                "lookup coordinate '" + field.qualifiedName() + "' carries a generated column filter,"
-                + " which no emitter implements; the validator must reject this before production");
         }
     }
 

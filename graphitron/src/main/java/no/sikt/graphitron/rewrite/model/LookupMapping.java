@@ -76,7 +76,12 @@ public sealed interface LookupMapping permits LookupMapping.ColumnMapping {
             return List.copyOf(cols);
         }
 
-        /** {@code true} when any arg is list-typed (drives the row-count loop in the emitter). */
+        /**
+         * {@code true} when any arg is list-typed. This is the lookup's key-cardinality fact:
+         * it drives the row-count loop in the emitter, and it is the single source
+         * {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} reads to require a list
+         * return. Non-key filterable arguments on the same coordinate are not part of it.
+         */
         public boolean hasListArg() {
             return args.stream().anyMatch(LookupArg::list);
         }
