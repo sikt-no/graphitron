@@ -5,9 +5,9 @@ status: Backlog
 bucket: architecture
 priority: 5
 theme: nodeid
-depends-on: [explicit-nodeid-grammar]
+depends-on: []
 created: 2026-06-02
-last-updated: 2026-07-14
+last-updated: 2026-08-09
 ---
 
 # Land or retire R265's deferred compile-tier guard
