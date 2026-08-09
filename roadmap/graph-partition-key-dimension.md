@@ -1,7 +1,7 @@
 ---
 id: R610
 title: "SDL fact keys carry a graph partition dimension"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 3
 theme: classification-model
