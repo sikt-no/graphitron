@@ -1,7 +1,7 @@
 ---
 id: R613
 title: "Generated column filters compose beside the lookup VALUES join"
-status: Ready
+status: In Progress
 bucket: feature
 priority: 1
 theme: legacy-migration
@@ -230,6 +230,38 @@ its output index, which the page currently frames as meaning "unmatched position
   went unnoticed in the spike (the measured root fixture's key is already list-typed, so the
   co-read was invisible in its SQL).
 
+## Implementation notes
+
+Four divergences from the plan, all measured rather than chosen:
+
+*The row assertion could not be written as the plan specified, because the behaviour it names does
+not exist.* The plan asked for "three positions in input order with `null` at indices 1 and 2". The
+root lookup arm returns `.fetch()` straight from the join with no scatter step, so a key that
+matches no row contributes no element at all: `[hit, hit-but-filtered, miss]` yields a
+one-element list, not a three-element list with two nulls. The consequence the plan wanted named is
+real and is pinned, just in its true shape: a non-key predicate removes the row its key matched, and
+that removal is indistinguishable from a miss. What changes is that neither one is a *position*.
+
+*That inaccuracy came from the manual, and correcting it grew the docs commit.* The positional
+reading was not the plan author's invention; `lookupKey.adoc` and `batch-lookups.adoc` both assert
+it, the latter under a section titled "The positional contract", and `@asConnection` is rejected on
+lookup fields citing that contract as the reason. It is false against the shipped generator on every
+lookup shape, not only the filtered one. This item's own fact cannot be stated on a page that
+asserts the opposite two paragraphs up, so the false claims on the pages this item already had to
+touch were corrected to measured behaviour. Deliberately *not* done here: changing the emit. Whether
+the generator should deliver the documented positional contract (a scatter arm plus nullable element
+types) or whether the join semantics are the intended contract is a design decision with consumer
+consequences, filed as its own item rather than settled as a side effect of a filter change.
+
+*The validator rows became the full cube rather than three re-pointed rows.* The plan left
+`SINGLE_RETURN_LIST_ARG` with two options. Landing all twelve cells of key list-ness x return
+list-ness x non-key-filter list-ness is what makes the acceptance criterion checkable by reading,
+and it is what pins the re-grain: two cells (scalar key, list return, list filter; list key, single
+return, list filter) are exactly where the deleted co-read used to flip the verdict.
+
+*One unrelated pin moved.* `FixtureWarningsGateTest` asserts the source line of an unrelated
+warning; the schema fixtures inserted above it shifted the line from 327 to 335.
+
 ## Retired vocabulary
 
 Declared per `roadmap/workflow.adoc` § Item file conventions; the Done-gate reviewer greps prose
@@ -249,6 +281,12 @@ the Done gate if implementation retires more.
   filter-carried list arg, and both paths are covered" (the filter disjunct of `anyKeyIsList`).
 - The coordinate-scoped reading of "`@lookupKey` is exempt from the implicit-predicate path"
   (narrowed to the argument, not deleted; the argument-scoped statement stays true).
+- The manual's positional-null claim for lookup misses, in every phrasing: "the positional
+  contract" as a section title and as the stated reason `@asConnection` is rejected, "one result
+  per input position", "`null` for unmatched positions", "`null` at the corresponding output
+  index", and the worked examples returning "three positions in input order" / "four positions".
+  Replaced by the join semantics the generator implements; whether the code should instead grow
+  to meet the retired claim is the filed follow-up, not a reopening of this vocabulary.
 
 ## Non-goals
 

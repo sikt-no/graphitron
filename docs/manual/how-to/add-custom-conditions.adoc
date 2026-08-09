@@ -186,6 +186,6 @@ Two consequences worth pinning:
 * xref:external-code.adoc[How-to: Wire external Java code] covers the rewrite-plugin classpath, the FQCN requirement, and the `argMapping:` syntax that `@condition` shares with `@service`.
 * xref:../reference/directives/field.adoc[`@field(name: ...)`] supplies the implicit equality predicate that `@condition` either stacks with or replaces.
 * xref:handle-services.adoc[How-to: Handle services] covers the alternative when the *whole* fetcher is custom code, `@condition` is for adjusting a single predicate inside an otherwise generated query.
-* xref:../reference/directives/lookupKey.adoc[`@lookupKey`] is exempt from the implicit-predicate path; `@condition` on a lookup-key arg runs alongside the `VALUES + JOIN` lookup but does not interact with it.
+* A xref:../reference/directives/lookupKey.adoc[`@lookupKey`] *argument* is exempt from the implicit-predicate path; `@condition` on a lookup-key arg runs alongside the `VALUES + JOIN` lookup but does not interact with it. The exemption is the key argument's, not the coordinate's: non-key arguments on a lookup field take the implicit predicate as usual, and it composes in the `WHERE` beside the lookup join.
 
 xref:index.adoc[← How-to index]

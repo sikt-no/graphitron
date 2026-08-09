@@ -190,7 +190,7 @@ The supplying side of the context-argument story (tenant scoping, request-id pro
 * xref:../reference/directives/condition.adoc[`@condition`] is the directive's reference page.
 * xref:../reference/directives/field.adoc[`@field`] supplies the implicit predicate that `@condition` either stacks with or replaces.
 * The producer's reflected parameter type determines the input carrier the condition method reads from; a carrier-free input runs through the `Map`-based path.
-* xref:../reference/directives/lookupKey.adoc[`@lookupKey`] is exempt from the implicit-predicate path.
+* A xref:../reference/directives/lookupKey.adoc[`@lookupKey`] *argument* is exempt from the implicit-predicate path. Its non-key siblings on the same field are not: they cascade exactly as they would anywhere else.
 * xref:../reference/directives/service.adoc[`@service`] is the alternative when an *entire* fetcher is custom code.
 * xref:external-code.adoc[How-to: Wire external Java code] covers the FQCN requirement, classpath setup, and `argMapping:` syntax shared with `@condition`.
 * xref:map-types-to-tables.adoc[How-to: Map types to tables] covers the input-field column binding that `@condition` builds on.
