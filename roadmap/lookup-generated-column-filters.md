@@ -107,61 +107,128 @@ backstop (the sibling interface-child backstop stays, so the javadoc keeps one o
 In `GraphitronSchemaValidator.validateConditionEmitImplemented`, the lookup arm and its `<li>` in
 the method javadoc go; the method survives for the interface-child deferral.
 
+*Re-grain the lookup cardinality read, which is the same stale guard one method over.*
+`GraphitronSchemaValidator.validateRootLookup` decides `anyKeyIsList` by OR-ing
+`LookupMapping.ColumnMapping.hasListArg()` with the list-ness of any `GeneratedConditionFilter`
+body param, under a comment saying "list-ness may come from `LookupMapping` or from a
+filter-carried list arg, and both paths are covered". That second disjunct is a pre-convergence
+leftover from the same era as the guard this item deletes: since lookup keys are excluded from
+`GeneratedConditionFilter` upstream, it can now only read a *non-key* argument's list-ness, splicing
+the filter axis into a fact that belongs to the key axis alone. It is inert today only because the
+guard makes the co-presence unreachable. Delete the guard without touching it and it becomes an
+active false rejection. Measured:
+`filmById(film_id: Int @lookupKey @field(name: "film_id"), title: [String] @field(name: "title")): Film`
+currently reports *both* the deferral and "result type does not match input cardinality"; remove the
+first and the second survives alone against a shape that emits fine.
+
+So `anyKeyIsList` collapses to `keyed.mapping().hasListArg()`, making the mapping the single
+asserted key-cardinality fact. `LookupMapping.ColumnMapping.hasListArg()` currently has exactly one
+reader, this one, and its javadoc says it "drives the row-count loop in the emitter", so the
+accessor is not being trusted as the source of the fact it names. This is the re-grain the item
+owes; the guard deletion is the easy half.
+
 *Re-point the validator rows.* `RootLookupValidationTest` has three rows expecting the rejection.
 `COLUMN_ARG_DEFERRED` and `LIST_COLUMN_ARG_DEFERRED` become valid cases and are renamed off the
-`_DEFERRED` suffix; their prose loses the "no emitter" claim. `SINGLE_RETURN_LIST_ARG` is compound,
-pinning a cardinality mismatch *and* the filter deferral in one expected-errors list, so it keeps
-the row and drops only the deferral string. The pinned comment above the pair, which predicted this
-flip ("these two pin the rejected state, and flip back to valid when the lookup fold converges onto
-glue"), is replaced by the fact rather than deleted.
+`_DEFERRED` suffix; their prose loses the "no emitter" claim. `SINGLE_RETURN_LIST_ARG` does *not*
+merely drop the deferral string: it is the shape the co-read above wrongly rejects, so it flips to
+valid, or is re-pointed to pin the opposite invariant (a scalar key with a list non-key filter is
+legal on a single return). The lookup rows then become exhaustive over the small cube that now
+matters, key list-ness x return list-ness x non-key-filter list-ness, rather than an incidental
+sample. The pinned comment above the pair, which predicted this flip ("these two pin the rejected
+state, and flip back to valid when the lookup fold converges onto glue"), is replaced by the fact
+rather than deleted.
 
 *Pin the three emit shapes.* One sakila coordinate per shape, each a generated-filter twin of an
 existing lookup fixture so the diff reads as a pair:
 
 * Root: `languagesByKeyGenerated`, twin of `languagesByKeyFiltered`. The two together are the point,
   the authored and the generated filter composing the same way beside the same VALUES join.
-* Inline child: a non-key filterable argument beside `Film.actors`'s existing `actor_id` key, or a
-  sibling coordinate if adding the argument would disturb existing baselines.
-* Batched child: the same against `Film.actorsBySplitLookup`.
+* Inline child: a sibling coordinate beside `Film.actors` rather than an added argument on it. The
+  sibling is additive, matches the convention already in that region of the schema
+  (`actorsByKey` / `actorsByKeyViaJunctionCondition` are sibling twins), and keeps the
+  byte-identical-emit acceptance true by construction rather than by inspection.
+* Batched child: the same, beside `Film.actorsBySplitLookup`.
 
-Coverage per shape: a `ConditionSqlBaselineTest` statement baseline (the spike's measured SQL is the
-expected value for the root case) plus an execution assertion on the returned rows, which the spike
-did not cover. `ConditionCommandsPipelineTest.lookupCoordinate_authoredFilterProducesARow` gains a
-generated twin asserting a `Predicate.Generated` row on a lookup coordinate, so the producer-side
-fact is pinned independently of the rendered SQL.
+Three fixtures is the right grain, not bloat: these are three genuinely different emitters
+(`RootLauncherRenderer.lookupBody`, `ProjectionUnitRenderer.lookupInnerSelect`, and the batched
+loader's correlated-lookup arm), and row content is the contract, which lands them at execution.
+Weighting, though, is one statement baseline plus a row assertion for the *root* shape only; the two
+child shapes assert row content and the presence of the glue call, not whole-SQL text. A full
+statement baseline is the closest legal relative of a banned code-string assertion and churns on any
+unrelated aliasing change, and all three arms mint runtime-prefixed aliases.
 
-*Pin the key-is-also-`@field`-bound case.* Several sakila lookups carry both
-(`language_id: [Int] @lookupKey @field(name: "language_id")`), and the root fixture above is one of
-them. Assert that the emitted WHERE carries only the non-key predicate, so the exclusion branch
-(`FieldBuilder`'s `!ca.isLookupKey()`) is fenced by a test rather than by reading. The spike's
-measured SQL already shows this: one `?` in the WHERE, not two.
+The row assertion is where the one behaviourally novel consequence of this item lives, so name it
+rather than leaving it as "a result assertion": a key that matches a row but fails the non-key
+predicate now yields `null` at its output index, indistinguishable at the wire from an unmatched
+key. Assert keys `[hit, hit-but-filtered, miss]` returning three positions in input order with
+`null` at indices 1 and 2. Nothing else in the item changes behaviour; this does.
+
+*Pin the key-not-restated fact at the model, not in SQL text.* Several sakila lookups carry both
+directives (`language_id: [Int] @lookupKey @field(name: "language_id")`), and the root fixture is
+one of them. The fact is that `FieldBuilder`'s `!ca.isLookupKey()` exclusion holds, and that is a
+model fact: the row's `Predicate.Generated` terms contain no lookup-key column. Assert it in
+`ConditionCommandsPipelineTest` beside the generated twin of
+`lookupCoordinate_authoredFilterProducesARow`, where it also survives an emitter refactor, rather
+than by counting placeholders in a SQL string.
+
+### The neighbourhood, measured rather than assumed
+
+The spike proved the happy path. Three adjacent shapes were then measured specifically to find out
+whether legalising the coordinate opens anything the plan does not pin. All three are settled and
+none needs a fixture:
+
+* **Generated filter reaching a joined table.** A non-key argument carrying `@reference` on a lookup
+  coordinate renders its correlated `EXISTS` inside the same glue method and lands in the launcher's
+  WHERE beside the VALUES join. Composes; no additional work. Worth one fixture only if the
+  migrating subgraph turns out to carry the shape, which is a question for the implementer to ask
+  rather than assume.
+* **`@lookupKey` on the argument of a `@table` input type.** Every leaf of that input becomes a key
+  and rides the VALUES join (`Row4`, `using(FILM_ID, ACTOR_ID, LAST_UPDATE)` when a third field is
+  added). There is no non-key sibling to filter on, so the shape mints no generated filter at all
+  and this item does not reach it.
+* **`@lookupKey` on individual input fields, with plain siblings.** Rejected today on the Query side
+  with "move `@lookupKey` to the surrounding ARGUMENT_DEFINITION instead", so the mixed per-field
+  shape is unreachable for an unrelated reason.
+
+The last two turned up a documentation defect that is *not* this item's to fix but should not be
+lost: `lookupKey.adoc`'s Constraints list claims "`@lookupKey` on an individual input field applies
+only to that field; the rest of the input behaves normally", which the Query-side rejection
+contradicts. File it separately rather than widening this item.
 
 ### Commit 2: docs
 
-The manual never documented the rejection, so there is nothing to retract, but two pages state
+The manual never documented the rejection, so there is nothing to retract, but several pages state
 things this change makes incomplete:
 
 * `docs/manual/reference/directives/lookupKey.adoc` says nothing about non-key arguments on a lookup
   coordinate. Its Constraints list gains the positive statement: non-key filterable arguments
   compose as ordinary predicates in the WHERE beside the lookup join.
-* `docs/manual/how-to/add-custom-conditions.adoc`'s See-also line says `@lookupKey` "is exempt from
-  the implicit-predicate path". True of the *key argument*, misleading now as a statement about the
-  coordinate. Narrow it to the argument.
+* The "`@lookupKey` is exempt from the implicit-predicate path" phrasing is true of the *key
+  argument* and misleading as a statement about the coordinate. It appears in
+  `docs/manual/how-to/add-custom-conditions.adoc` and `docs/manual/how-to/condition-cascade.adoc`,
+  and `docs/manual/how-to/batch-lookups.adoc` points at the latter as "the `@lookupKey` exemption".
+  Narrow all three to the argument. The already-correctly-scoped statements elsewhere on those two
+  how-to pages need no change.
 
-The empty-key-list divergence from legacy belongs here too, in `lookupKey.adoc`: an empty or absent
-key list returns no rows, where the legacy generator degraded to an unfiltered read. That is not a
-change this item makes, but a migrating consumer reading the page is exactly the audience for it,
-and this is the first time the page has reason to discuss the key list's edge cases.
+Two facts join `lookupKey.adoc` in the same paragraph, because a migrating consumer is exactly the
+audience for both: an empty or absent key list returns no rows, where the legacy generator degraded
+to an unfiltered read; and a key that matches a row but fails a non-key predicate yields `null` at
+its output index, which the page currently frames as meaning "unmatched position" only.
 
 ## Acceptance
 
-* The three emit shapes generate, compile at release 17, and execute against PostgreSQL, each with a
-  statement baseline and a result assertion.
-* `RootLookupValidationTest` is green with two rows flipped to valid and the compound row narrowed.
-* No other test changes. The spike measured 3246 generator tests with both guards lifted and exactly
-  those three rows failing, so any further churn in this slice means something was missed.
-* Emit for every existing coordinate is byte-identical. Nothing here changes a shape that was
-  already legal.
+* The three emit shapes generate, compile at release 17, and execute against PostgreSQL. Root
+  carries a statement baseline; all three carry the `[hit, hit-but-filtered, miss]` row assertion.
+* `RootLookupValidationTest`'s lookup rows are exhaustive over key list-ness x return list-ness x
+  non-key-filter list-ness, and the cardinality read has one source (`hasListArg()`).
+* Emit for every existing coordinate is byte-identical, evidenced by the sakila regeneration diff.
+  This is the structural acceptance; it is strictly stronger than a suite-wide pass count and,
+  unlike one, it does not rot as tests are added. The spike's "3246 tests, 3 failures" measurement
+  stays in the Spike section as evidence about *existing* coverage, which is all it can be: a
+  change that legalises a shape cannot be measured by a fixture set the guard prevented from
+  existing. That blind spot is not hypothetical, it is exactly why the cardinality co-read above
+  went unnoticed in the spike (the measured root fixture's key is already list-typed, so the
+  co-read was invisible in its SQL).
 
 ## Non-goals
 
