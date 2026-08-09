@@ -29,10 +29,11 @@ bound table has no metadata, naming `@node` and stating that the table publishes
 to infer from. It should pre-empt the column-lookup message rather than decorating it, since the
 did-you-mean list is the actively harmful part.
 
-Sibling to the metadata-*present* branch of the same trap, which is fixed by the inference item
-`R580` (`roadmap/infer-node-from-implements-node-and-metadata.md`). That item deliberately leaves
-this branch alone to avoid mixing a classification change with a message change, and its Non-goals
-section records the three-spelling classification that motivates this one. Worth picking up after
-`R580` lands, since the surviving trap is narrower once inference covers the metadata-present case,
-and the message can then say "this table publishes no node metadata" as a contrast with a path that
-actually exists.
+Sibling to the metadata-*present* branch of the same trap, which node inference has already fixed
+(`R580`, see `roadmap/changelog.md`). That item deliberately left this branch alone to avoid mixing
+a classification change with a message change, and its non-goals recorded the three-spelling
+classification that motivates this one: over a metadata-free table, explicit `@node` is the only
+working spelling, and the two an author would naturally try (bare `id: ID!`, and `id: ID! @nodeId`)
+both reject. The surviving trap is narrower now that inference covers the metadata-present case, and
+the message can say "this table publishes no node metadata" as a contrast with a path that actually
+exists.

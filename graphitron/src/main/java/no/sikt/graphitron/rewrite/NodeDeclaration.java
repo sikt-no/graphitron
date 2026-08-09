@@ -35,8 +35,18 @@ import static no.sikt.graphitron.rewrite.BuildContext.argString;
  * the attributed registry. Both facts it needs, the SDL declarations and the jOOQ catalog, are
  * available there, so it takes only a {@link JooqCatalog}.
  *
- * <p>{@link TypeBuilder}'s own promotion gate calls the same instance, so the classifier's verdict
- * and the seed set cannot disagree about what a node is.
+ * <p>{@link TypeBuilder}'s own promotion gate does not call {@link #isNodeType(GraphQLObjectType)}:
+ * it needs the metadata <em>values</em> to build the type, so it re-derives the same conjunction
+ * from {@link #implementsNode(GraphQLObjectType)}, {@link #boundTableName(GraphQLObjectType)} and
+ * its own probe. Sharing those helpers is what keeps the two from drifting on the inference path,
+ * where they agree by construction.
+ *
+ * <p>They deliberately part on one shape. {@code @node} without {@code implements Node} reads as a
+ * node here, because this is a declaration-level question, while the classifier rejects the type:
+ * the Relay interface requirement is the classifier's to enforce. The consequence is contained,
+ * since such a type fails the build on that rejection whether or not it was seeded here or given a
+ * synthesised federation key. But widening this predicate does not on its own widen what classifies
+ * as a node, nor the reverse; a change to the rule belongs in both places.
  *
  * <h3>Malformed metadata</h3>
  * A table whose {@code __NODE_*} constants are present but fail validation reads as
