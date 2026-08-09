@@ -7,7 +7,7 @@ priority: 3
 theme: classification-model
 depends-on: []
 created: 2026-08-08
-last-updated: 2026-08-08
+last-updated: 2026-08-09
 ---
 
 # SDL fact keys carry a graph partition dimension
@@ -190,6 +190,18 @@ test-tier overloads instead would be that same fallback relocated somewhere the 
 see it, so the overloads gain the parameter rather than a value. The edit itself is
 compiler-led and each site names the fixture or test it already is.
 
+The one part of that edit the compiler does not lead is `RewriteContext`'s own comments, and it
+is named here for the same reason the store section keeps an inventory: the comment gate checks
+that a comment exists, not that it is still true. Every overload's javadoc opens by naming its
+arity ("Fourteen-arg overload", "Twelve-arg", "Ten-arg", "Nine-arg", "Six-arg", "Five-arg"), and
+adding a required component moves all six by one while nothing fails to compile. The compact
+constructor's "The last six components are null-tolerant" comment is falsified by placement
+rather than by count, since the new component is required: appending it makes the sentence name
+the wrong window. Putting `graphName` immediately after `basedir`, beside the other identity the
+context carries about the module rather than at the end among the null-tolerant tail, keeps that
+comment true unedited and reads better at every call site, so the placement is chosen rather
+than defaulted.
+
 A run still captures exactly one graph; the store may hold many. Per-run single-graph is
 enforced by construction through the graph-scoped sink below, not by a row-count gate, since
 a shared store legitimately accumulates one `store_graph` row per module ever built against
@@ -228,21 +240,48 @@ surface that has to list and drop partitions anyway.
 The default home carries a **workspace segment** under the cache root, which is what makes the
 graph-name scoping above structural rather than hopeful: one file per workspace, holding every
 graph that workspace's modules capture, and no file holding two workspaces' graphs. The
-workspace is the reactor root, resolved by walking `MavenProject.getParent()` while the parent
-has a basedir that is an ancestor of the child's and taking the last one, with the module's own
-basedir as the fallback when no parent resolves from the reactor. The walk rather than
-`MavenSession`'s top-level project or execution root, because those two answer "where was mvn
-invoked", so building one module from inside its own directory would resolve a different
-workspace than building it from the root and boot cold against a store one directory away; the
-parent chain answers "which reactor is this module part of" and gives the same answer either
-way. The segment is the root directory's leaf name plus a hash of its absolute normalized path,
-so it is filesystem-safe, collision-free and legible in a directory listing when a user goes
-looking for what is filling their cache.
+workspace is the outermost reactor root, and it is resolved off the **filesystem aggregator
+chain**, which is the dialect this repository already settled on rather than a new one. Neither
+`MavenSession`'s top-level project nor its execution root can serve: both answer "where was
+`mvn` invoked", so building one module from inside its own directory would resolve a different
+workspace than building it from the root and boot cold against a store one directory away.
+`MavenProject.getParent()` looks like the fix and is not, which is worth recording because it is
+the obvious second guess: the inheritance graph and the aggregator graph are different graphs,
+and they come apart in ordinary layouts. A `<parent>` with an empty `<relativePath/>` resolves
+from the local repository, so the parent project's basedir is not an ancestor of the child's and
+the walk has nowhere to go; an aggregator that is not also the parent, which Maven supports and
+consumers use, sends the walk up a tree the workspace does not live in. The fallback in both
+cases is the module's own basedir, which means a different file, no rows, and a silent cold boot,
+the exact failure the stamp-segment argument below refuses to accept from a caller-computed path.
+
+`AbstractRewriteMojo.siblingModuleBasedirs(Path)` already walks the aggregator chain, and already
+does so because a goal run from inside a sub-module leaves Maven holding only that module's pom.
+It answers a one-step question (the nearest ancestor `pom.xml` whose `<modules>` resolve to
+include this basedir, and that ancestor's *other* modules), and it answers it off the filesystem,
+so it gives the same answer from the root and from inside the module. That step is the primitive
+this item needs; the item extracts it rather than writing a second walker, so the two questions
+share one notion of "which reactor is this module part of". The workspace resolver chains the
+step: from the module, to the aggregator that lists it, to the aggregator that lists *that*,
+until no ancestor lists the current directory, and the last one found is the workspace. Outermost
+rather than nearest is what the item's target case wants, since two subgraph modules under
+different intermediate aggregators of one checkout have to land in one file to be composable at
+all. Each hop must be a strict ancestor of the previous, which is naturally true of `<modules>`
+entries naming subdirectories and rejects an aggregator reached through `../`; the walk therefore
+terminates on path depth. `parseModules`'s existing leniency carries over unchanged: an
+unreadable or malformed ancestor pom yields no modules rather than failing anything, because this
+is a cache path and never worth a build failure. When no ancestor lists the module the fallback
+is still the module's own basedir, but it now fires on a property of the tree (there is no
+aggregator on disk, so the module genuinely is its own workspace) rather than on how Maven
+happened to resolve a parent, which is the whole of the difference.
+
+The segment is the root directory's leaf name plus a hash of its absolute normalized path, so it
+is filesystem-safe, collision-free and legible in a directory listing when a user goes looking
+for what is filling their cache.
 
 Resolving the workspace is the mojo's job and stays in the mojo, which is the layering the
-stamp argument below does not disturb: the reactor root is Maven knowledge and
-`graphitron-model` has no access to it, while the stamp is `graphitron-model`'s own and no
-caller's. So `resolveStoreDirectory` returns `<cache>/graphitron/model/<workspace-segment>/`,
+stamp argument below does not disturb: the aggregator layout is Maven's model, read with Maven's
+own `MavenXpp3Reader` beside the walk it already feeds, and `graphitron-model` neither has it nor
+should learn it, while the stamp is `graphitron-model`'s own and no caller's. So `resolveStoreDirectory` returns `<cache>/graphitron/model/<workspace-segment>/`,
 the store appends `<ddl-hash>-<version>/` to whatever home it is handed, and "storeDirectory
 means the store's home at every layer that passes it" stays true verbatim. A consumer pinning
 `<storeDirectory>` gets no workspace segment and needs none, since the path they chose is
@@ -362,9 +401,25 @@ the directory. Workspace scoping is what keeps that blast radius from being ever
 machine, which is the second reason it is worth the segment. That is the residue the
 recovery-story paragraph above already accepted, on the same remedy, and the eviction surface
 this item defers is where a named command for it
-belongs. Tests never touch the real user cache throughout: they inject temp directories
-through the same `storeDirectory` seam they use today, which now means a temp *home* under
-which the store makes its own stamped subdirectory.
+belongs.
+
+Nothing in the build writes to the real user cache, and that takes two seams rather than one,
+because the tests come in two shapes. The Java tiers keep injecting temp directories through the
+same `storeDirectory` argument they use today, which now means a temp *home* under which the
+store makes its own stamped subdirectory. The **maven-invoker integration tests** do not reach
+that argument at all and are the case a "tests inject temp directories" sentence would quietly
+miss: `graphitron-maven-plugin/src/it/{basic-generate,dependency-version-lag,missing-schema-inputs}`
+are standalone consumer poms with no `<parent>`, cloned to `target/it` and built as real Maven
+runs with `invoker.goals=generate-sources`, so they bind `graphitron:generate` and resolve a
+store home like any consumer would. Left alone they would write into the developer's or the CI
+runner's actual `~/.cache`, and because their basedir is a clone under `target/it` the workspace
+segment changes on every clean build, orphaning the previous one in a cache whose eviction
+surface this item defers. So the invoker plugin's `<properties>` element, which passes a common
+set of `-D` values into each invoked build, pins `graphitron.store.directory` under
+`${project.build.directory}`; the parameter's CLI property is what makes that a one-line
+configuration rather than an edit to three consumer poms. The three ITs then share one pinned
+store under three distinct artifactIds, which is a free extra exercise of the multi-graph store
+rather than a compromise, and `mvn clean` removes it.
 
 Six comments record the decisions this section supersedes and are rewritten with them, listed
 because the comment gate checks that a comment exists and not that it is still true (the
@@ -470,7 +525,7 @@ substrates, both shipping here:
   precise reason matters more than the conclusion here, because `fresh` does more than seed the
   `jvm_` claims: it also gates the `store_source` claims and the `store_source` delete in
   `clear`, so "the fresh set only feeds `jvm_`" is the wrong invariant to lean on when the
-  ownership-scoped delete below rewrites that same statement.
+  ownership-scoped delete above rewrites that same statement.
   The residue is the two source kinds that never resolve to a file, the bundled
   `directives.graphqls` (recorded under its resource name, and shipped inside the generator,
   so never stale against the working tree) and programmatic callers handing a bare name to
@@ -634,30 +689,53 @@ Two new parameters and a default that writes outside the project tree is a user-
 so the manual rows are drafted here as the design's first client rather than written after the
 code. If the second row cannot be written plainly, the default is wrong.
 
+Both parameters sit on `AbstractRewriteMojo` and therefore land in the **Shared parameters**
+table of `docs/manual/reference/mojo-configuration.adoc`, which is `[cols="1,1,1,3"]` under
+`| Name | Type | Default | Description`. Four cells per row, so the default gets the column that
+exists for it rather than a sentence of prose, and the draft below is in that shape so it can be
+pasted rather than re-authored. That is not pedantry about a table: `MojoDocCoverageTest` matches
+the backticked name cell alone, so a three-cell row would pass the gate and render as a row whose
+cells have all shifted one to the left.
+
 ```asciidoc
 | `graphName`
 | `String`
-| Name this module's graph carries in the fact store. Defaults to `${project.artifactId}`,
-  which is unique within a reactor and is the right answer unless the subgraph's name differs
-  from the module's. Set it when two modules would otherwise claim one name, or when the graph
-  has a published subgraph name of its own.
+| `${project.artifactId}`
+| Name this module's graph carries in the fact store. The module's own artifactId is unique
+  within a reactor and is the right answer unless the subgraph's name differs from the module's.
+  Set it when two modules would otherwise claim one name, or when the graph has a published
+  subgraph name of its own.
 
 | `storeDirectory`
-| `File`
+| `File` (path)
+| a per-user cache directory
 | Where the fact store is kept between runs, so a build starts from the previous run's rows
-  instead of re-reading every jar on the classpath. Defaults to a per-user cache location
-  (`$XDG_CACHE_HOME/graphitron/model/` or `~/.cache/graphitron/model/` on Linux,
-  `~/Library/Caches/` on macOS, `%LOCALAPPDATA%` on Windows), with one store per reactor shared
-  by that reactor's modules. Set it, or the `graphitron.store.directory` property, to keep the
-  store inside the build instead: a hermetic CI job that wants nothing written outside the
-  workspace, or a container that discards `$HOME`. The store holds no state of record and is
-  rebuilt from your sources whenever it cannot be read, so deleting it is always safe and never
-  loses anything; it is a cache, not build output, which is why `mvn clean` no longer removes it.
+  instead of re-reading every jar on the classpath. The default is your platform's cache location
+  for per-user tool state (`$XDG_CACHE_HOME/graphitron/model/` or `~/.cache/graphitron/model/` on
+  Linux, `~/Library/Caches/graphitron/model/` on macOS, `%LOCALAPPDATA%\graphitron\model\` on
+  Windows), with one store per project checkout, shared by that checkout's modules. Set this
+  parameter, or pass `-Dgraphitron.store.directory=...`, to keep the store inside the build
+  instead: a hermetic CI job that wants nothing written outside the workspace, or a container
+  that discards `$HOME`. The store holds no state of record and is rebuilt from your sources
+  whenever it cannot be read, so deleting it is always safe and never loses anything; it is a
+  cache, not build output, which is why `mvn clean` no longer removes it.
 ```
 
 The last sentence is the one that had to be writable. It is, and it says the thing a consumer
 actually needs to know: `mvn clean` stopped being the reset button, and the reason is that the
 file is no longer build output.
+
+`storeDirectory` is the first shared parameter to carry a CLI property, so where the property is
+documented is a real choice and not an oversight. It goes in the description cell, as the draft
+has it, rather than by giving the shared table the `| CLI property` column the `dev`-goal table
+has. That column earns its place there because all four `dev` parameters carry a property; on a
+table of eleven where one does, it would print ten empty cells that read as an absence rather
+than as an inapplicability, and it would rewrite every existing row to add them. One sentence
+where the reader is already looking is the proportionate answer. Two counts in the page's own
+prose go stale as this lands and are corrected with it: the `:description:` attribute says "the
+four shared `<configuration>` parameters" and the intro says `dev` "adds three of its own", both
+already wrong before this item and both cheaper to fix while the page is open than to leave for
+whoever notices next.
 
 ## Verification
 
@@ -676,6 +754,15 @@ in `graphitron` rather than beside the mojo; a recipe relation whose expansion l
 plugin would have this assertion in a module that cannot see the store. Generated output is
 untouched.
 
+The workspace resolver is pinned where its primitive already is. `AbstractRewriteMojoTest` covers
+`siblingModuleBasedirs` today with three `@TempDir` cases (document order excluding current, stops
+at the nearest ancestor listing current, empty when no ancestor lists it), and the chained
+resolver joins them in the same shape: a nested aggregator tree resolves to the **outermost** root
+and not the intermediate one, the answer is identical whether the walk starts at the root or at a
+leaf module, and a module no ancestor pom lists resolves to itself. Those three are the whole of
+the property the segment rests on, and they are cheap because the walk is static, filesystem-only
+and takes a path.
+
 Two existing cases change what they pin rather than growing, and both go through `location()`,
 which is the whole of that accessor's justification. `aStaleStampRebuilds` and
 `anUnreadableFileRebuilds` address `store.mv.db` by literal path today and cannot once the store
@@ -693,10 +780,15 @@ this item adopts. The property that is actually new is cross-process: a second *
 attaches and writes instead of being handed the in-memory fallback. So `PersistentStoreTest`
 gains a case that forks a JVM on the surefire classpath, has it open the same store directory
 while the test holds it, and asserts both processes' rows are in the file afterwards.
-`PersistentStoreTest`'s javadoc declined that machinery in as many words, as "a lot of
-machinery for one branch", and this item reverses that judgement rather than ignoring it: the
-branch it was weighed against is the branch being deleted here, and mixed mode is load-bearing
-for the shared store rather than one arm of a fallback. The javadoc is rewritten with the case.
+`aSecondOpenerLeavesTheStoreIntact`'s **own method** javadoc declined that machinery in as many
+words, as "a lot of machinery for one branch", and this item reverses that judgement rather than
+ignoring it: the branch it was weighed against is the branch being deleted here, and mixed mode
+is load-bearing for the shared store rather than one arm of a fallback. The method javadoc, not
+the class javadoc the stale-comment inventory above lists for a different falsehood, is the site
+that gets rewritten, and it is falsified twice over: its second half says the cross-process
+guarantee "is reached the other way, by falling back to an in-memory store rather than discarding
+a file H2 refused because someone else holds it", which is a sentence about the in-use branch and
+the discard, both of which this item deletes.
 
 The reactor takes the default home for itself rather than pinning `<storeDirectory>`, which is a
 decision and not an omission, and it is a sharper exercise under workspace scoping than it would
@@ -735,80 +827,3 @@ so a surviving mention is prose describing a mechanism that no longer exists.
 - "rewrite-core stays filesystem-agnostic", as a claim about where schema-file expansion may
   live. Core re-hashes and re-globs now, and `SchemaRecipe` is where the dialect lives.
 
-## Open at the gate
-
-A Spec to Ready pass re-verified everything the previous pass checked and found it still exact
-after the workspace revision: 83 in-family relations, the seven-root FK closure recomputed over
-the DDL and matching the enumeration exactly, 55 `new RewriteContext(` sites across 53 files in
-five modules, six overloads fourteen-arg down to five-arg, and every quoted comment present as
-quoted. Both H2 refusals reproduce on the pinned 2.4.240 with error 50100, and so does the
-mid-write survival property the concurrency section records: an attached second process wrote 60
-rows through and past the server-holding process's close, and both processes' rows were in the
-file afterwards. The `freshSources` knock-on is right for the stated reason, including the part
-that matters most, that `fresh` gates the `store_source` claims and the `store_source` delete and
-not only the `jvm_` claims. Three things block handing it to an implementer, and three smaller
-ones belong in the same revision.
-
-**The workspace resolver is the one mechanism the item does not argue against the alternative
-already in the tree, and its failure mode is the silent one the item refuses everywhere else.**
-`MavenProject.getParent()` appears nowhere in this repository. The established answer to "which
-reactor is this module part of, answered the same way from the root and from inside the module"
-is `AbstractRewriteMojo.siblingModuleBasedirs(Path)`, a filesystem walk to the nearest ancestor
-`pom.xml` whose `<modules>` resolve to include the current basedir; it exists precisely because
-running a goal from inside a sub-module leaves Maven holding only that module's pom, and
-`docs/architecture/how-to/dev-loop-internals.adoc` documents it in those terms. The inheritance
-chain answers a different question than the aggregator graph, and the two diverge in ordinary
-layouts: an empty `<relativePath/>` resolves the parent from the repository, so `getBasedir()` is
-not an ancestor of the child, the item's own guard trips, and the fallback yields the module's own
-basedir; an aggregator that is not the `<parent>` is a supported layout that walks somewhere else
-entirely. In both cases the run opens a different file, finds nothing, and boots cold with no
-signal, which is verbatim the failure the item spends a paragraph eliminating when it argues the
-stamp segment must be store-computed rather than caller-computed. Either generalise the existing
-aggregator walk (it stops at the *nearest* aggregator, so an outermost-root variant is what this
-needs) or keep `getParent()` and state what makes the divergence non-silent; one mechanism for
-the question, not two.
-
-**"Tests never touch the real user cache throughout" is not true of the maven-invoker
-integration tests.** `graphitron-maven-plugin/src/it/{basic-generate,dependency-version-lag,
-missing-schema-inputs}` are standalone consumer poms with no `<parent>`, cloned to `target/it` and
-built with `invoker.goals=generate-sources` on every `mvn install`. That binds `graphitron:generate`,
-so they go through `resolveStoreDirectory` and would write into the developer's or the CI runner's
-real `~/.cache/graphitron/model/`. They do not reach the `storeDirectory` seam the sentence relies
-on, because they are real Maven builds rather than Java-tier callers. The segment is derived from
-the cloned basedir under `target/it/`, so every clean build mints a fresh workspace segment and
-orphans the previous one in the real cache, with eviction explicitly deferred. The fix is small
-(`<storeDirectory>`, or `graphitron.store.directory` through `src/it/settings.xml` or the invoker
-`<properties>`), but the item asserts the property, so it should carry the seam.
-
-**The drafted manual rows do not fit the table they are drafted for, so the first-client check has
-not actually met the surface.** The "Shared parameters" table in
-`docs/manual/reference/mojo-configuration.adoc` is `[cols="1,1,1,3"]` under the header
-`| Name | Type | Default | Description`, four cells per row. Both new parameters sit on
-`AbstractRewriteMojo` and therefore land in that table, and both drafted rows carry three cells
-with the default written into the prose instead of into the `Default` column that exists for it.
-`MojoDocCoverageTest` matches the backticked name cell only, so a wrong-arity row passes the gate
-and renders wrong, which is why this needs fixing in the draft rather than at implementation.
-`storeDirectory`'s `graphitron.store.directory` property also has nowhere to go: only the
-`dev`-goal table carries a CLI-property column. Say where it lands. `roadmap/workflow.adoc`
-expects the draft to move into its real home when the feature ships, and this one cannot be
-pasted there.
-
-Smaller, same revision. The stale-comment inventory omits `RewriteContext`'s own: a required
-`graphName` on the canonical constructor and on all six overloads, which the item commits to when
-it says the overloads gain the parameter rather than a value, falsifies six javadoc labels
-("Fourteen-arg overload" down to "Five-arg overload") and the compact constructor's "The last six
-components are null-tolerant" comment, whose truth depends on where the new component lands. None
-of them compile-fail, which is exactly the hazard the inventory exists for. The forked-JVM
-paragraph attributes the declined machinery to `PersistentStoreTest`'s javadoc when it is
-`aSecondOpenerLeavesTheStoreIntact`'s **method** javadoc; the class javadoc is separately listed
-in the inventory for a different falsehood, and the item is careful about this distinction for
-`openAt`, so naming the site keeps an implementer from rewriting the wrong one. That method
-javadoc is doubly falsified besides: its second half describes the cross-process in-memory
-fallback for a held file, which mixed mode removes. And the `freshSources` paragraph points at
-"the ownership-scoped delete below" when the ownership-scoped `StoreRefresh` paragraph is above
-it, in the capture section.
-
-One opportunity, not a finding. `mojo-configuration.adoc`'s `:description:` attribute counts "the
-four shared `<configuration>` parameters" and its intro says `dev` "adds three of its own" when
-the table lists four. Both are already stale before this item; adding two shared parameters makes
-the first one staler, and it is a one-line correction to make in passing.
