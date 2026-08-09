@@ -1,7 +1,7 @@
 ---
 id: R473
 title: "Explicit @nodeId grammar: Node.id is the only implicit nodeId; typeName-first decode resolution"
-status: In Review
+status: Ready
 bucket: architecture
 priority: 5
 theme: nodeid
@@ -592,7 +592,134 @@ readings with rules. Inbound references in R34, R273 and the `@error`-on-query-f
 repointed; the residuals item's finding about the manual naming that plan by slug is resolved, this
 item's flip having already restated the sentence. The changelog carries the reasoning.
 
-**Nothing is left open.** The item is ready for its In Review -> Done gate.
+**Nothing is left open.** The item is ready for its In Review -> Done gate. (Superseded by the gate
+review below, which found four items still open; the two commits themselves stand.)
+
+## In Review -> Done gate, 2026-08-09 (rework requested)
+
+Independent gate review by a session that authored neither implementation commit. `mvn install
+-Plocal-db` is green, 14/14 modules, including the `graphitron-sakila-example` compile and execution
+tiers, so the build precondition holds. No code-string assertion on a generated method body appears
+anywhere in the delivered tests; the new cases assert model variants and message text. Everything the
+Tests section required is present: the shadowing triple at all three coordinates sited together, the
+Relay root-field pin, both named silent narrowings, and all three of rule 6's input-coordinate cases
+with the ambiguity case asserting its message.
+
+Several judgement calls read better than the plan they replaced, and should survive the next pass
+unchanged: one `BuildContext.rejectShadowedNodeId` instead of three sibling wordings; rule 6's key
+columns off the classified `NodeType` rather than the table's raw metadata; the classifier-side
+placement, argued from the model's actual shape and pinned by a location test rather than left as
+prose; and the two fixtures found carrying `@node` without `implements Node`, which was a latent
+malformed declaration the retired fallback had been masking.
+
+Four findings. The first is an invariant break and is the reason the gate does not flip.
+
+**1. The uniform shadowing rule does not hold at the argument coordinate when the field returns a
+connection.** `FieldBuilder.java:1586` derives rule 6's target from `fieldDef.getType()`, but every
+caller of `resolveTableFieldComponents` passes the connection-*unwrapped* `elementTypeName` and an
+`rt` to match (`FieldBuilder.java:869`, `:4626`, `:6131`, `:6223`, all guarded by
+`ctx.isConnectionType`). So the arm reads an unwrapped table and a wrapped type name, and
+`nodes.forName("BazConnection")` misses. Measured against the fixture catalog, the same shape gives
+two different answers to the one shadowing question:
+
+* `bazes(id: ID): [Baz!]!` rejects with the shadowing message, which is correct.
+* `bazes(id: ID, first: Int, after: String): BazConnection @asConnection` resolves, silently binding
+  the raw `id` column.
+
+This is the coordinate-specific divergence the Tests section says asserting all three coordinates
+together exists to prevent, arriving through the return-type wrapper rather than through the
+coordinate. It is also a third silent narrowing: before the flip that argument decoded (the retired
+arm keyed on `catalog.nodeIdMetadata(rt.tableName())` and read no type name at all, and `baz` is
+single-key, non-list, non-`@lookupKey`, so it took the decode branch). `Consumer migration`'s
+re-confirmation was taken over two silent arms, not three. The fix is to resolve the target off the
+same unwrapped element type name the rest of the classifier already computed rather than off
+`fieldDef.getType()`; thread it into `classifyArgument` alongside `rt`, since the two have to agree.
+Pin the connection shape at the argument coordinate either way, whichever answer is chosen.
+
+**2. The user manual still documents the deleted synthesis shims as live behaviour**, in the same
+file the flip partially rewrote. `docs/manual/how-to/migrating-from-legacy.adoc`:
+
+* `:253`, migration step 3: "Audit the build log for `synthesizes an `@nodeId` carrier without the
+  directive` WARNs". That string greps to zero in main sources after the flip, so a consumer
+  following the step finds nothing and concludes there is no work, which is the opposite of true.
+* `:264`, pitfall: "Periodically grep your build logs for `synthesizes an` to catch shim-bearing
+  fields", permanently useless advice under the heading "Synthesis shims run silently in IDE /
+  language server contexts".
+* `:242`: "the synthesis shims (above) are the only migration work", pointing at a section the flip
+  deleted.
+* `:259`: "Steps 3-4 ... will become non-optional when the corresponding retirement gates fire".
+  Step 3's gate has fired, and step 4's inference was removed outright, which the same commit
+  documents as a hard removal ~130 lines earlier.
+* `:5` lists "the synthesis shims (build succeeds with a WARN today, will fail later)" as one of the
+  four things the recipe covers, and `:277` offers `global-id.adoc` as covering "the declaration
+  shapes the synthesis shims migrate to".
+* `:156` cites "the synthesis shim plan", which is the item discarded at `54540b6`.
+
+The flip's commit message says the manual was "updated where it had gone false"; this is the half
+that was missed. `Consumer migration` records that the sis migration is in progress, so this recipe
+is being read now.
+
+**3. Retired vocabulary left across main sources and tests, describing mechanisms this item
+deleted.** All of it was accurate before the flip, so the flip is what turned it stale. Declare a
+`Retired vocabulary` section (`synthesis shim`, `IdReference synthesis shim`,
+`node-reference synthesis shim`, `SkipMismatchedElement`) so the workflow's Retirement sweep runs at
+the next gate instead of being skipped:
+
+* `FieldBuilder.java:1502-1503`, routing note: "the implicit scalar-ID arm below, which owns
+  synthesised paths (no `@nodeId` declared, parent table has nodeId metadata)". That arm reads no
+  table metadata now and synthesises nothing.
+* `FieldBuilder.java:7329-7332`: "deliberately narrower than the deprecated synthesis shim below:
+  that one fires for *any* bare `ID` field on a node type". There is nothing below.
+* `GraphitronSchemaBuilder.java:1004-1007` and its mirror `FacetedConnectionPipelineTest.java:165`
+  both state the `@asFacet`-on-`ID` rejection's rationale as closing "the node-reference synthesis
+  shim". The rationale needs restating on grounds that still exist.
+* `BuildContext.java:1230` and `:1257`, the latter an explicit "Reached only from ... the IdReference
+  synthesis shim" enumeration that is now wrong about its own caller set.
+* `BuildContext.java:2771`: "the legacy synthesis-shim arms (not reachable from here) keep
+  `SkipMismatchedElement`."
+* `NodeIdLeafResolver.java:64-68` and `CallSiteExtraction.java:143-145`.
+* `InputFieldFanInDiagnosticsTest.java:222`, a census naming "the id-reference synthesis shim's four
+  arms" among producers not reachable from the default catalog; those arms are not producers
+  anywhere now.
+* `NodeIdPipelineTest.java:695`, an orphan `// ===== FK-qualifier synthesis shim =====` header over
+  the deleted enum.
+
+**4. `CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement` has no producer left in main
+sources** (zero constructions; the only two are hand-rolled in `DeleteRowsWalkerTest` and
+`UpdateRowsWalkerTest`), while `LookupRows.java:257` and `:285` still switch on it and three of the
+new assertions pin its absence. Whether the variant goes with the shims is a scoping call this plan
+never made, so decide it here rather than leaving a sealed arm the classifier cannot reach: either
+delete it and collapse the renderer's switch, or state why it stays. Its javadoc's "Produced only by
+the legacy `__NODE_*` synthesis shims" is false as written either way. Note the sakila comment at
+`graphitron-sakila-example/src/main/resources/graphql/schema.graphqls:290`, which describes
+`filmsByNodeIdArg` as decoding "via `SkipMismatchedElement` (malformed ids drop silently)", is
+pre-existing rot rather than this item's; it is worth fixing in the same sweep but does not belong to
+this item's scope claim.
+
+Two non-blocking notes. The new argument rejection reaches the author with a doubled prefix,
+`argument 'id': argument 'bazes(id:)': ...`, because the caller already prefixes with the argument
+name; `argument_bazBareIdIsAmbiguousAndRejects` passes anyway since it asserts with `contains`. And
+`Implementation notes` and both commit messages say "13/13 modules" where the reactor is 14.
+
+One documentation-hygiene point for whoever takes the next pass, since the gate asks that the body
+reflect what shipped: the three `Implementation` subsections above still read as forward-looking
+instructions, two of which the delivery deliberately contradicted (rejections in
+`GraphitronSchemaValidator`, and the build-level opt-in seam), with the reconciliation only in
+`Implementation notes` at the bottom. Collapse each to a one-line landed note naming the commit
+(`b48b0f8` for the rejections, `7eb474f` for the flip and delete) so the body is not read as an
+instruction to redo work that has landed.
+
+## Retired vocabulary
+
+Declared at the gate review above, so the Retirement sweep runs at the next In Review -> Done rather
+than being skipped a second time. Each names a mechanism the flip deleted:
+
+* `synthesis shim` (and `shim` used of any of the three deleted arms)
+* `IdReference synthesis shim` / `id-reference synthesis shim`
+* `node-reference synthesis shim`
+* `resolveDecodeHelperForTable`, `buildInputNodeIdReference`, `findGraphQLTypeForTable`,
+  `findGraphQLTypesForTable`, `typeNamesByTableKey`
+* `SkipMismatchedElement`, conditional on finding 4's keep-or-delete call
 
 ## Provenance
 
