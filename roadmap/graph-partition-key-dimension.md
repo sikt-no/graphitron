@@ -184,7 +184,7 @@ truthful for the graph that owns it instead of describing two trees by turns.
 `RewriteContext` requires the name non-blank at construction, the same non-null contract its
 other fields carry; Maven users never see the requirement because the mojo default always
 supplies a value. The programmatic construction sites state a name once each, and there are
-53 of them across 52 files in five modules (`graphitron`, `graphitron-lsp`,
+52 of them across 51 files in five modules (`graphitron`, `graphitron-lsp`,
 `graphitron-maven-plugin`, `graphitron-mcp`, `graphitron-sakila-example`): all six
 convenience overloads (fourteen-arg down to five-arg) delegate to the canonical constructor,
 so a required field reaches every caller of every one of them. That is the item's largest
@@ -422,8 +422,9 @@ runs with `invoker.goals=generate-sources`, so they bind `graphitron:generate` a
 store home like any consumer would. Left alone they would write into the developer's or the CI
 runner's actual `~/.cache`, and because their basedir is a clone under `target/it` the workspace
 segment changes on every clean build, orphaning the previous one in a cache whose eviction
-surface this item defers. So the invoker plugin's `<properties>` element, which passes a common
-set of `-D` values into each invoked build, pins `graphitron.store.directory` under
+surface this item defers. So the invoker plugin's configuration gains a `<properties>` element
+(the plugin's mechanism for passing a common set of `-D` values into each invoked build; its
+configuration carries none today), pinning `graphitron.store.directory` under
 `${project.build.directory}`; the parameter's CLI property is what makes that a one-line
 configuration rather than an edit to three consumer poms. The three ITs then share one pinned
 store under three distinct artifactIds, which is a free extra exercise of the multi-graph store
