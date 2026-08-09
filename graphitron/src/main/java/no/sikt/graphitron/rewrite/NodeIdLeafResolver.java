@@ -268,17 +268,16 @@ final class NodeIdLeafResolver {
         }
         // Resolution keys on refTypeName, not on targetTableName. By this point the type name is
         // settled, either authored as @nodeId(typeName:) or inferred only where inference was
-        // unambiguous, so several @node types sharing the backing table is not this leaf's
-        // problem. Only a target with no NodeType of that name at all falls back to the table.
-        var decodeMethod = ctx.resolveDecodeHelperForType(
-            refTypeName, targetTableName, keys.typeId(), keys.keyColumns());
-        if (decodeMethod == null) {
+        // unambiguous, so several node types sharing the backing table is not this leaf's problem.
+        // A name carrying no NodeType is now simply not a node: the table-keyed fallback that used
+        // to answer here belonged to the synthesis shims and went with them.
+        var decodeMethodOpt = ctx.resolveDecodeHelperForType(refTypeName);
+        if (decodeMethodOpt.isEmpty()) {
             return new Resolved.Rejected(Rejection.structural("@nodeId(typeName: '" + refTypeName + "') on leaf '" + leafName
-                + "': '" + refTypeName + "' is not a @node type, and table '" + targetTableName
-                + "' carries no unambiguous node identity to fall back on"
-                + " (zero or multiple GraphQL types map to it)."
+                + "': '" + refTypeName + "' is not a node type."
                 + " Annotate '" + refTypeName + "' with @node."));
         }
+        var decodeMethod = decodeMethodOpt.get();
 
         // Same-table short-circuit (own-PK identity) only when @reference is absent. An explicit
         // @reference on a same-table @nodeId names a self-FK: "this field points at a *different*
@@ -385,16 +384,25 @@ final class NodeIdLeafResolver {
         if (explicit.isPresent()) {
             return new TypeNameResult(explicit.get(), null);
         }
-        var candidates = ctx.findGraphQLTypesForTable(containingTable.tableName());
+        // Resolved over node types, not over every @table-annotated object type. Bare @nodeId means
+        // "node id, target inherited", so the question it asks is "which *node* backs this table",
+        // and answering the wider question let a nesting-projection @table type sharing the same
+        // rows count as a candidate. Both arms below are this inference's permanent absence and
+        // ambiguity rejections rather than a shim's, so their messages name the domain they now
+        // resolve over.
+        var candidates = ctx.nodes.forTable(containingTable.tableName()).stream()
+            .map(no.sikt.graphitron.rewrite.model.GraphitronType.NodeType::name)
+            .sorted()
+            .toList();
         if (candidates.isEmpty()) {
             return new TypeNameResult(null,
-                "@nodeId without typeName: cannot infer node type — no @table-annotated object type"
+                "@nodeId without typeName: cannot infer node type — no node type"
                 + " maps to table '" + containingTable.tableName() + "'."
                 + " Add typeName: explicitly.");
         }
         if (candidates.size() > 1) {
             return new TypeNameResult(null,
-                "@nodeId without typeName: is ambiguous — multiple object types map to table '"
+                "@nodeId without typeName: is ambiguous — multiple node types map to table '"
                 + containingTable.tableName() + "': " + String.join(", ", candidates)
                 + ". Specify typeName: explicitly.");
         }

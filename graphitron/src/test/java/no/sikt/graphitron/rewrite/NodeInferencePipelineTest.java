@@ -37,9 +37,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>{@code baz}: single-key metadata whose key column is itself named {@code id} — the
  *       shadowing shape. Degenerate on one axis: its {@code __NODE_TYPE_ID} is the literal
  *       {@code "Baz"}, so the encoded and raw forms are not distinguishable by typeId alone.</li>
- *   <li>{@code shared_node}: the same shadowing shape with the numeric typeId {@code "10154"},
- *       which is the axis {@code BuildContext.resolveDecodeHelperForTable}'s typeId-suffix fallback
- *       turns on.</li>
+ *   <li>{@code shared_node}: the same shadowing shape with the numeric typeId {@code "10154"}, so
+ *       the raw column value and the encoded global ID are visibly different things rather than
+ *       coinciding the way {@code baz}'s do.</li>
  *   <li>{@code collide_a} / {@code collide_b}: two tables publishing the same
  *       {@code __NODE_TYPE_ID}, the only way an <em>inferred</em> typeId collision can be written.</li>
  *   <li>{@code qux}: no metadata; the negative case.</li>
@@ -194,11 +194,11 @@ class NodeInferencePipelineTest {
 
     @Test
     void inferringASecondNodeOverOneTableTurnsAResolvedDecodeSiteIntoARejection() {
-        // The second collision axis, which typeId uniqueness says nothing about:
-        // resolveDecodeHelperForTable forks on how many nodes back the table, and widening the node
-        // population moves tables across that boundary. Here the only edit between the two schemas
-        // is `implements Node` on the sibling, and it turns a resolved input site into a build
-        // failure whose message is about the input field.
+        // The second collision axis, which typeId uniqueness says nothing about: the implicit
+        // input reading forks on how many nodes back the table, and widening the node population
+        // moves tables across that boundary. Here the only edit between the two schemas is
+        // `implements Node` on the sibling, and it turns a resolved input site into a build failure
+        // whose message is about the input field.
         var oneNode = schema("""
             type FooA implements Node @table(name: "bar") @node(typeId: "FooA") { id: ID! }
             type FooB @table(name: "bar") { name: String }
@@ -217,21 +217,24 @@ class NodeInferencePipelineTest {
             """);
         assertThat(twoNodes.field("Query", "bars")).isInstanceOf(GraphitronField.UnclassifiedField.class);
         assertThat(TestSchemaHelper.diagnosticMessages(twoNodes))
-            .contains("zero or multiple GraphQL types map to it");
+            .contains("backs multiple node types")
+            .contains("@nodeId(typeName: T)");
     }
 
     @Test
-    void inferringTheFirstNodeOverATableChangesWhichDecodeHelperAnInputLeafCalls() {
-        // The other direction across the same boundary, and the quieter one: with no node over the
-        // table, the implicit decode falls back to a typeId-suffixed helper name; with one, it is
-        // keyed on the GraphQL type name. Adding `implements Node` to an output type therefore
-        // changes emitted code at an input site that names nothing this item touches.
+    void inferringTheFirstNodeOverATableGivesAnInputLeafItsDecodeHelper() {
+        // The other direction across the same boundary. With no node over the table there is no
+        // implicit node reading to have: a directive-less `id` is an ordinary column, and `bar` has
+        // none by that name, so the consuming field rejects. Adding `implements Node` to the output
+        // type supplies the node the input field was naming all along.
         var noNode = schema("""
             type Foo @table(name: "bar") { name: String }
             input Selector { id: ID! }
             type Query { bars(in: Selector): [Foo!] }
             """);
-        assertThat(decodeMethodName(noNode)).isEqualTo("decodeBar");
+        assertThat(noNode.field("Query", "bars"))
+            .as("no node backs the table, so `id` is a plain column and `bar` has none")
+            .isInstanceOf(GraphitronField.UnclassifiedField.class);
 
         var inferred = schema("""
             type Foo implements Node @table(name: "bar") { name: String id: ID! }
@@ -427,6 +430,97 @@ class NodeInferencePipelineTest {
         assertThat(new GraphitronSchemaValidator().validate(schema)).isEmpty();
     }
 
+    // ===== The shadowed `id` column, at the other two coordinates =====
+    //
+    // The same triple as the output rows above, at the input-field and argument coordinates. Sited
+    // together deliberately: asserting all three coordinates in one place is what pins the
+    // uniformity, and a test covering only one would not catch a later coordinate-specific
+    // divergence, which is the failure mode this rule exists to prevent.
+
+    @Test
+    void inputField_bazBareIdIsAmbiguousAndRejects() {
+        var schema = schema("""
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
+            input BazSelector { id: ID! }
+            type Query { baz(in: BazSelector): Baz }
+            """);
+
+        assertThat(TestSchemaHelper.diagnosticMessages(schema))
+            .contains("input field 'BazSelector.id'")
+            .contains("'id' is ambiguous")
+            .contains("`@nodeId`")
+            .contains("`@field(name: \"id\")`");
+    }
+
+    @Test
+    void inputField_fieldDirectiveSelectsTheColumnAndNodeIdSelectsTheNode() {
+        var column = schema("""
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
+            input BazSelector { id: ID! @field(name: "id") }
+            type Query { baz(in: BazSelector): Baz }
+            """);
+        assertThat(new GraphitronSchemaValidator().validate(column))
+            .as("the author stated the column reading; nothing left to reject")
+            .isEmpty();
+
+        var node = schema("""
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
+            input BazSelector { id: ID! @nodeId }
+            type Query { baz(in: BazSelector): Baz }
+            """);
+        assertThat(new GraphitronSchemaValidator().validate(node))
+            .as("the author stated the node reading; nothing left to reject")
+            .isEmpty();
+    }
+
+    @Test
+    void argument_bazBareIdIsAmbiguousAndRejects() {
+        var schema = schema("""
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
+            type Query { baz(id: ID): Baz }
+            """);
+
+        assertThat(((GraphitronField.UnclassifiedField) schema.field("Query", "baz")).reason())
+            .contains("argument 'baz(id:)'")
+            .contains("'id' is ambiguous")
+            .contains("`@nodeId`")
+            .contains("`@field(name: \"id\")`");
+    }
+
+    @Test
+    void argument_fieldDirectiveSelectsTheColumnAndNodeIdSelectsTheNode() {
+        var column = schema("""
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
+            type Query { baz(id: ID @field(name: "id")): Baz }
+            """);
+        assertThat(new GraphitronSchemaValidator().validate(column)).isEmpty();
+
+        var node = schema("""
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
+            type Query { baz(id: ID @nodeId): Baz }
+            """);
+        assertThat(new GraphitronSchemaValidator().validate(node)).isEmpty();
+    }
+
+    // ===== The Relay root fields =====
+
+    @Test
+    void theRelayRootFieldsAreUntouchedByTheImplicitArgumentReading() {
+        // The most `id`-named arguments in any schema, and a regression here would be both wide and
+        // quiet. They return the Node *interface* rather than a node type, so the implicit reading
+        // never applies: they stay NodeResolve coordinates with no backing table.
+        var schema = schema("""
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
+            type Query { node(id: ID!): Node nodes(ids: [ID!]!): [Node]! baz: Baz }
+            """);
+
+        assertThat(schema.field("Query", "node"))
+            .isNotInstanceOf(GraphitronField.UnclassifiedField.class);
+        assertThat(schema.field("Query", "nodes"))
+            .isNotInstanceOf(GraphitronField.UnclassifiedField.class);
+        assertThat(new GraphitronSchemaValidator().validate(schema)).isEmpty();
+    }
+
     // ===== `typeName:` on `Node.id` =====
     //
     // The enclosing type already answers "which node" at this coordinate, so the argument is
@@ -532,17 +626,18 @@ class NodeInferencePipelineTest {
     }
 
     @Test
-    void aNonIdBareIdFieldWithNoColumnStaysOnTheDeprecatedShim() {
-        // The other half of the narrowing: fields the shim covered and this rule does not are left
-        // exactly where they were, deprecation and all, for the shim's own retirement to handle.
-        // `bar` has no `external_id` column, so this is the shim's arm, not the column arm.
+    void aNonIdBareIdFieldWithNoColumnIsAnUnknownColumnRatherThanASynthesisedNodeId() {
+        // The other half of the narrowing. A non-`id` scalar `ID` on a node type used to be
+        // synthesised into a nodeId carrier here; it is an ordinary scalar now, so a missing column
+        // is simply a missing column. The deletion could not flip a working field, because the arm
+        // it removed fired only where the column was already absent.
         var schema = schema("""
             type Foo implements Node @table(name: "bar") { id: ID! externalId: ID! }
             type Query { foo: Foo }
             """);
 
-        assertThat(((ChildField.ColumnBackedField) schema.field("Foo", "externalId")).compaction())
-            .isInstanceOf(CallSiteCompaction.NodeIdEncodeKeys.class);
+        assertThat(((GraphitronField.UnclassifiedField) schema.field("Foo", "externalId")).reason())
+            .contains("column 'externalId' could not be resolved");
     }
 
     @Test

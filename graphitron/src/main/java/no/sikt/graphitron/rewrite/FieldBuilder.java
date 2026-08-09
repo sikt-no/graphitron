@@ -132,6 +132,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_FIELD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_LOOKUP_KEY;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_MULTITABLE_REFERENCE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_MUTATION;
+import static no.sikt.graphitron.rewrite.BuildContext.NODE_INTERFACE_ID_FIELD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_NODE_ID;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_PIVOT;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_ON;
@@ -163,13 +164,6 @@ import static no.sikt.graphitron.rewrite.BuildContext.locationOf;
 class FieldBuilder {
 
     private static final Logger LOG = LoggerFactory.getLogger(FieldBuilder.class);
-
-    /**
-     * The field name the Relay {@code Node} interface declares. A field by this name on a
-     * {@link NodeType} parent is the node's own global ID by construction, which is what
-     * {@link #classifyChildFieldOnTableType} resolves ahead of the column lookup.
-     */
-    private static final String NODE_INTERFACE_ID_FIELD = "id";
 
     /**
      * Deferral prose for a single-node {@code @routine} on a Mutation root field (no
@@ -1570,21 +1564,48 @@ class FieldBuilder {
             }
         }
 
-        // Scalar ID arg on a node-type table folds onto a ColumnBackedArg carrier with
-        // NodeIdDecodeKeys.ThrowOnMismatch (arity 1..N; a composite carrier's per-row decode
-        // produces a Record<N> and bindings index positionally), carrying the per-NodeType
-        // decode<TypeName> helper.
+        // An argument naming its target's `Node.id` is that node id, implicitly. This follows from
+        // the `Node.id` output rule rather than diluting it: a type classified as a NodeType has
+        // exactly one field satisfying the Node interface, so an argument carrying that field's
+        // name is naming it. The node comes from the *return type* through the NodeIndex, never
+        // from a metadata read on the argument's own table, which is what distinguishes this arm
+        // from the table-keyed one it replaces: a site holding an authoritative type name must not
+        // have that answer discarded by a table reverse-lookup.
+        //
+        // Scalar and list alike, unlike the output-side `Node.id` arm whose scalar-only guard is
+        // about the Relay contract rather than about decoding; the motivating case here is a list.
+        // A name mismatch is not this arm's business: `ids` does not name `id`, so it carries a
+        // directive. Folding the plural on would be exactly the implicit magic this arm removes.
         //
         // Only the lookup-key path is wired for both arms (consumed by LookupMappingResolver →
         // ScalarLookupArg / DecodedRecord). Non-lookup-key composite-PK NodeId args (mutation
         // key, top-level filter) have no projectFilters wiring; they surface as UnclassifiedArg
         // so the gap is visible at validate time rather than silently producing a degenerate
         // path.
-        if ("ID".equals(typeName)) {
-            Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta = ctx.catalog.nodeIdMetadata(rt.tableName());
-            if (nodeIdMeta.isPresent()) {
+        if ("ID".equals(typeName)
+                && NODE_INTERFACE_ID_FIELD.equals(name)
+                && !arg.hasAppliedDirective(DIR_FIELD)) {
+            String returnTypeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(fieldDef.getType())).getName();
+            var targetNode = ctx.nodes.forName(returnTypeName);
+            if (targetNode.isPresent()) {
+                NodeType node = targetNode.get();
+                // Resolves ahead of the column lookup below, so a real column of this name is a
+                // rejection rather than a contest either reading wins. Same answer as the output
+                // coordinate, on purpose: shadowing is one question.
+                var shadowed = ctx.catalog.findColumn(rt.tableName(), name);
+                if (shadowed.isPresent()) {
+                    return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                        BuildContext.rejectShadowedNodeId(
+                            "argument '" + fieldDef.getName() + "(" + name + ":)'",
+                            name, node, shadowed.get().sqlName()));
+                }
                 boolean isLookupKey = arg.hasAppliedDirective(DIR_LOOKUP_KEY);
-                var keyColumns = nodeIdMeta.get().keyColumns();
+                // Key columns come off the NodeType, which is TypeBuilder's reconciled answer for
+                // that name (SDL winning over metadata on typeId outright and on keyColumns order),
+                // rather than off the table's raw metadata. A classified NodeType always carries a
+                // non-empty list; the @node-without-keyColumns path falls back to the primary key
+                // and rejects when there is none.
+                var keyColumns = node.nodeKeyColumns();
                 // Composite-PK + non-list non-@lookupKey rejects; non-list arity-1 falls through
                 // to the single-column carrier below.
                 if (keyColumns.size() > 1 && !isLookupKey) {
@@ -1597,13 +1618,7 @@ class FieldBuilder {
                 if (list && keyColumns.size() == 1 && !isLookupKey) {
                     // Fall through to column-name resolution.
                 } else {
-                    var decodeMethod = ctx.resolveDecodeHelperForTable(
-                        rt.tableName(), nodeIdMeta.get().typeId(), keyColumns);
-                    if (decodeMethod == null) {
-                        return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                            Rejection.structural("@nodeId arg: unable to resolve decode helper for table '" + rt.tableName() + "'"));
-                    }
-                    var extraction = new CallSiteExtraction.ThrowOnMismatch(decodeMethod);
+                    var extraction = new CallSiteExtraction.ThrowOnMismatch(node.decodeMethod());
                     return new ArgumentRef.ScalarArg.ColumnBackedArg(
                         name, typeName, nonNull, list, keyColumns, extraction,
                         argCondition, fieldOverride, isLookupKey, List.of());
@@ -7330,17 +7345,13 @@ class FieldBuilder {
         Optional<ColumnRef> column = svc.resolveColumn(columnName, tableType);
         if (column.isEmpty()) {
             String tableSqlName = tableType.table().tableName();
-            // Synthesis shim: a non-`id` scalar ID field on a NodeType without `@nodeId`,
-            // `@reference`, or `@field` is treated as an implicit `@nodeId`. Fires a per-site
-            // deprecation diagnostic; the canonical form is to declare `@nodeId` explicitly.
-            // `Node.id` itself is handled by the permanent arm above and never reaches here.
-            if (tableType instanceof NodeType nodeType && isScalarId && !hasFieldDirective) {
-                LOG.warn("field '{}.{}' synthesizes an `@nodeId` carrier without the directive;"
-                    + " declare `@nodeId` explicitly. The synthesis shim will be removed in a"
-                    + " future release.",
-                    parentTypeName, name);
-                return buildNodeIdOutputCarrier(parentTypeName, name, location, nodeType);
-            }
+            // A non-`id` scalar `ID` field on a node type used to be synthesised into an implicit
+            // `@nodeId` carrier here, on a column miss. It is an ordinary scalar now: `ID` in SDL
+            // means an opaque identifier, not necessarily a graphitron node id, and only `Node.id`
+            // carries the implicit reading (the permanent arm above, which resolves ahead of the
+            // column lookup and never reaches this branch). Deleting the synthesis cannot flip a
+            // working field silently, because it fired only where the column was already missing:
+            // what was a synthesised carrier becomes the unknownColumn rejection below.
             return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.unknownColumn(
                 "column '" + columnName + "' could not be resolved in the jOOQ table",
                 columnName, ctx.catalog.columnJavaNamesOf(tableSqlName)));
@@ -7365,16 +7376,8 @@ class FieldBuilder {
      */
     private Rejection rejectShadowedIdColumn(String parentTypeName, String name,
                                              NodeType nodeType, ColumnRef shadowed) {
-        String tableSqlName = nodeType.table().tableName();
-        String because = nodeType.provenance().keyColumns() == NodeProvenance.Origin.METADATA
-            ? "table '" + tableSqlName + "' has a column named '" + shadowed.sqlName()
-                + "' and also publishes node metadata"
-            : "'" + parentTypeName + "' is a node type over table '" + tableSqlName
-                + "', which also has a column named '" + shadowed.sqlName() + "'";
-        return Rejection.structural(
-            "field '" + parentTypeName + "." + name + "': " + because
-            + ", so '" + name + "' is ambiguous. Add `@nodeId` to publish the global ID, or"
-            + " `@field(name: \"" + shadowed.sqlName() + "\")` to expose the raw column.");
+        return BuildContext.rejectShadowedNodeId(
+            "field '" + parentTypeName + "." + name + "'", name, nodeType, shadowed.sqlName());
     }
 
     /**

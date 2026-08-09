@@ -19,9 +19,27 @@ include::../_generated/supported-schema-shapes.adoc[]
 
 One replacement pointer for the "Legacy-only directives" list above: legacy `@tableMethod` bound a consumer-authored static method returning a jOOQ table. The rewrite does not declare it. Where the method wrapped a database function, use `@routine`, which binds the generated `Routines`-class call directly; where it applied a filter, express that with `@condition`.
 
+== No migration needed: bare `id` on a node type
+
+
+No migration needed, and this is the one legacy shape that became *more* supported rather than less. A bare `id: ID!` on a node type is the Relay `Node` interface's own field, and graphitron reads it as that node's global ID by construction, with no directive and no warning:
+
+[source,graphql]
+----
+# Supported, no directive required
+type Customer implements Node @table(name: "customer") @node {
+    id: ID!
+    customerId: Int! @field(name: "CUSTOMER_ID")
+}
+----
+
+Writing xref:../reference/directives/nodeId.adoc[`@nodeId`] on that field is still legal and means exactly the same thing, so existing schemas that spell it out need no edit either. What you cannot write there is `@nodeId(typeName:)`: the enclosing type already answers which node the field identifies, so naming one is either a restatement or a contradiction, and the build rejects the argument rather than checking it.
+
+The implicit reading stops at `Node.id`. A *different* bare `ID` field on the same type (`externalId: ID`) used to be synthesised into a second global-ID carrier with a WARN; it is an ordinary column-mapped scalar now, so a field with no column of that name fails with `column 'externalId' could not be resolved` instead of silently encoding. Add `@nodeId` if you meant a node id, or `@field(name: "…")` to point at the column.
+
 == Hard removals
 
-Two directives the rewrite refuses to accept, and one argument it no longer declares. The two directives stay declared so the SDL still parses, but every application is rejected at classify time with a "no longer supported" message. The argument is a harder break: the schema does not load at all.
+Two directives the rewrite refuses to accept, one argument it no longer declares, and one inference it no longer performs. The two directives stay declared so the SDL still parses, but every application is rejected at classify time with a "no longer supported" message. The argument is a harder break: the schema does not load at all. The retired inference is quieter than either, and is called out as such below.
 
 === `@notGenerated`
 
@@ -85,61 +103,17 @@ Fields ['name'] not present in type 'ExternalCodeReference'.
 
 The migration is mechanical: copy the FQCN from the legacy `externalReferences:` entry into `className:` at every site, then delete the plugin config block. This applies to all four directives that take an `ExternalCodeReference` (`@service`, `@externalField`, `@condition`, `@enum`), including a `@condition` nested in a `@reference` path step.
 
-== WARN today, error later
-
-Paths that still work in the rewrite for backwards compatibility but emit a per-occurrence WARN at build time. Plan to migrate them before the retirement gate fires (no committed date; the synthesis shims are tracked at `roadmap/retire-synthesis-shims.md`).
-
-=== `@table` on input types
-
-Legacy schemas bound every mutation and filter input to a table with `@table` on the input type. The rewrite deprecated that location: an input's fields resolve against each *consuming field's* table, so the input-side declaration is redundant, and an input reused across consumers resolves per-consumer. The directive is accepted and then *ignored*, with a per-usage build warning, and will be rejected in a future release. `@table` on `OBJECT` and `INTERFACE` is unchanged.
-
-Because it is ignored rather than honoured, an input whose `@table` named a *different* table from the one its consuming field resolves does not migrate silently-but-correctly: the declared table is discarded and the consumer's is used. The warning is the only signal, so read it instead of assuming the two agreed.
-
-The migration is per-consumer:
-
-* *Filters and lookup inputs*: delete the `@table`; nothing replaces it. The fields resolve against the consuming query field's return-type table.
-* *`INSERT` / `UPDATE` mutation inputs*: delete the `@table`; the write target is derived from the mutation field's return type (a `@table` return, or a payload whose data field is a `@table` element). If the return names no table (an encoded-`ID` / scalar return), add xref:../reference/directives/mutation.adoc[`@mutation(table: "…")`] on the field.
-* *`DELETE` mutation inputs*: delete the `@table` and add `@mutation(table: "…")` on the field (a `DELETE` cannot derive its table from the return type).
-
-xref:../reference/directives/table.adoc[The `@table` reference page] carries the deprecation statement; xref:../reference/directives/mutation.adoc[`@mutation`] documents the write-target derivation.
-
-=== Bare `id: ID!` on `@node` types
-
-Legacy schemas frequently relied on the generator inferring an opaque-ID carrier from a bare `ID!` field on a `@node` type. The rewrite still does this, but warns:
-
-[source,graphql]
-----
-# Legacy form, still works, emits a WARN
-type Customer implements Node @table(name: "customer") @node {
-    id: ID!
-    customerId: Int! @field(name: "CUSTOMER_ID")
-}
-----
-
-Migration: declare xref:../reference/directives/nodeId.adoc[`@nodeId`] explicitly on the carrier:
-
-[source,graphql]
-----
-# Canonical form, no WARN
-type Customer implements Node @table(name: "customer") @node {
-    id: ID! @nodeId
-    customerId: Int! @field(name: "CUSTOMER_ID")
-}
-----
-
-The WARN message names the field: `field 'Customer.id' synthesizes an `@nodeId` carrier without the directive; declare `@nodeId` explicitly.` It also notes that the synthesis shim will be removed in a future release, so the fix is to add the directive now.
-
-When the shim retires, the WARN flips to a classify-time rejection: the field reads as `UnclassifiedField` and the build fails with a "column 'id' could not be resolved" diagnostic.
-
 === `[ID!] @field(name: "X_ID")` on filter input fields
 
-Legacy input types let an `ID!` (or `[ID!]`) field carry a column name through `@field(name:)` and the FK qualifier was inferred from the catalog. The rewrite still does this, but warns. Migration: replace the `@field(name:)` annotation with an explicit xref:../reference/directives/nodeId.adoc[`@nodeId(typeName:)`]. (Legacy schemas also carried `@table` on the input itself; that is a deprecated location, covered above in this same section. The examples below show the input after that directive is dropped.)
+Legacy input types let an `ID!` (or `[ID!]`) field carry a column name through `@field(name:)`, and the FK qualifier was inferred from the catalog so the value was decoded as a global ID. That inference is **removed**: `@field(name:)` now means what it says everywhere, binding the named column and nothing more, so a field written this way silently becomes an ordinary column filter over the raw value.
+
+This is the one change in this recipe with no build error attached, because both readings resolve. Audit filter inputs whose `ID` fields carry `@field(name:)` against an FK column.
 
 Before:
 
 [source,graphql]
 ----
-# Shim form, still works, emits a WARN
+# Decoded a global ID via the FK qualifier. Now binds CUSTOMER_ID as a plain column.
 input CustomerFilter {
     customerIds: [ID!] @field(name: "CUSTOMER_ID")
 }
@@ -157,13 +131,33 @@ input CustomerFilter {
 
 When the FK is ambiguous (more than one path from the consuming field's table to the target), add an explicit `@reference(path: [{key: "fk_constraint_name"}])` alongside the `@nodeId`. The xref:join-with-references.adoc[`@reference` recipe] covers the FK-disambiguation mechanics; the migration is otherwise mechanical.
 
+An input field named for its target's own `id` needs no directive at all: `id: ID!` on an input consumed against a node-backed table reads as that node's global ID, the same way `Node.id` does on the type. Where the table backs more than one node type the build fails and asks for `@nodeId(typeName:)`, rather than picking one.
+
+== WARN today, error later
+
+Paths that still work in the rewrite for backwards compatibility but emit a per-occurrence WARN at build time. Plan to migrate them before the retirement gate fires (no committed date).
+
+=== `@table` on input types
+
+Legacy schemas bound every mutation and filter input to a table with `@table` on the input type. The rewrite deprecated that location: an input's fields resolve against each *consuming field's* table, so the input-side declaration is redundant, and an input reused across consumers resolves per-consumer. The directive is accepted and then *ignored*, with a per-usage build warning, and will be rejected in a future release. `@table` on `OBJECT` and `INTERFACE` is unchanged.
+
+Because it is ignored rather than honoured, an input whose `@table` named a *different* table from the one its consuming field resolves does not migrate silently-but-correctly: the declared table is discarded and the consumer's is used. The warning is the only signal, so read it instead of assuming the two agreed.
+
+The migration is per-consumer:
+
+* *Filters and lookup inputs*: delete the `@table`; nothing replaces it. The fields resolve against the consuming query field's return-type table.
+* *`INSERT` / `UPDATE` mutation inputs*: delete the `@table`; the write target is derived from the mutation field's return type (a `@table` return, or a payload whose data field is a `@table` element). If the return names no table (an encoded-`ID` / scalar return), add xref:../reference/directives/mutation.adoc[`@mutation(table: "…")`] on the field.
+* *`DELETE` mutation inputs*: delete the `@table` and add `@mutation(table: "…")` on the field (a `DELETE` cannot derive its table from the return type).
+
+xref:../reference/directives/table.adoc[The `@table` reference page] carries the deprecation statement; xref:../reference/directives/mutation.adoc[`@mutation`] documents the write-target derivation.
+
 === `@table` alone no longer auto-promotes to `NodeType`
 
 Historical only: legacy versions of the rewrite would silently promote any `@table` SDL type to `NodeType` if its backing jOOQ class carried `__NODE_TYPE_ID` / `__NODE_KEY_COLUMNS` metadata, even without `implements Node`. This behavior was retired (the synthesis shim plan documents the trigger: a mass typeId collision between ~200 backing types each carrying `__NODE_TYPE_ID = "195"` produced a symmetric demotion to `UnclassifiedType`).
 
 The current rule: metadata alone promotes nothing, and `implements Node` is the opt-in. A `@table` type that does *not* declare the interface is a regular `TableType` no matter what its jOOQ class publishes, which is what keeps a nesting projection over a node-bearing table from becoming a second node. A `@table` type that *does* declare `implements Node` over a table publishing that metadata is a node, and takes `typeId` and `keyColumns` from the catalog.
 
-So if a schema relied on the auto-promotion (the type was reachable via `Query.node` or carried `@nodeId` fields), add `implements Node` to the declaration. You need `@node` as well only when the backing jOOQ class publishes no metadata, or when you want to override a published value; the xref:../reference/directives/node.adoc[`@node` reference] covers both. The fields inside the type that *do* depend on node behavior (the `@nodeId` synthesis shim from the previous section) will still warn until they're explicit.
+So if a schema relied on the auto-promotion (the type was reachable via `Query.node` or carried `@nodeId` fields), add `implements Node` to the declaration. You need `@node` as well only when the backing jOOQ class publishes no metadata, or when you want to override a published value; the xref:../reference/directives/node.adoc[`@node` reference] covers both. Fields inside the type that depend on node behavior follow the rules in the previous two sections.
 
 One case to expect on this path: if the table also has a column literally named `id`, the type's `id` field is ambiguous between the encoded global ID and that column, and the build fails until you write `@nodeId` or `@field(name: "id")` on it. The error names both remedies.
 

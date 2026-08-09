@@ -71,9 +71,14 @@ import java.util.stream.Collectors;
  */
 class BuildContext {
 
-    private static final Logger NODE_ID_SHIM_LOGGER = LoggerFactory.getLogger(BuildContext.class);
-    private static final Logger ID_REF_SHIM_LOGGER =
-        LoggerFactory.getLogger(BuildContext.class.getName() + ".idRefShim");
+    /**
+     * The field name the Relay {@code Node} interface declares. A coordinate carrying this name
+     * whose target is a node type is naming that node's own global ID: a node type has exactly one
+     * field satisfying the interface, so the name identifies it. Read at all three coordinates the
+     * implicit reading is available at (output field, input field, argument), which is why it lives
+     * here rather than privately in one of them.
+     */
+    static final String NODE_INTERFACE_ID_FIELD = "id";
 
     // ===== Directive names =====
 
@@ -292,7 +297,6 @@ class BuildContext {
      * the mint rather than at some reader's drain.
      */
     private final Set<ValidationError> diagnostics = new LinkedHashSet<>();
-    private final Map<String, List<String>> typeNamesByTableKey;
     private final NodeIdLeafResolver nodeIdLeafResolver;
     /**
      * The catalog-wide tenant-scope classification, computed once at construction from the
@@ -327,7 +331,6 @@ class BuildContext {
         this.schema = schema;
         this.catalog = catalog;
         this.ctx = java.util.Objects.requireNonNull(ctx, "ctx");
-        this.typeNamesByTableKey = buildTypeNamesByTableKey(schema);
         this.nodeIdLeafResolver = new NodeIdLeafResolver(this);
         this.tenantScopes = catalog == null
             ? no.sikt.graphitron.rewrite.model.TenantScopes.None.INSTANCE
@@ -2672,85 +2675,46 @@ class BuildContext {
                 List.copyOf(resolvedFields), cond));
         }
         String tableName = resolvedTable.tableName();
-        // Synthesis shim: ID! or [ID!] on a @table input whose column name (from @field(name:) or
-        // the GraphQL field name) hits the qualifier map for the resolved table AND the target
-        // table has KjerneJooqGenerator node metadata. Runs before column lookup so
-        // @field(name: "X_ID") fields are intercepted before the case-insensitive column match
-        // would shadow the qualifier reverse-map. The shim routes to the same column-shaped
-        // carriers as the canonical [ID!] @nodeId(typeName: T) branch above.
+        // An input field naming its target's `Node.id` is that node id, implicitly — the same rule
+        // the argument coordinate carries, at the coordinate that binds against a table rather than
+        // a type. No return type name is threaded in here (this method's own `parentTypeName` is
+        // the *input* type's name, and a mutation input has no node type in its SDL at all), so the
+        // node is resolved through the by-table view: a singleton is the answer, and an ambiguous
+        // table is a rejection naming the argument that settles it. This is not the table
+        // reverse-lookup resolveDecodeHelperForType exists to avoid: that one discarded a type name
+        // the call site was already holding, and here there is no name to discard, so the table is
+        // the only source there has ever been.
         if ("ID".equals(typeName)
+                && NODE_INTERFACE_ID_FIELD.equals(name)
+                && !hasFieldDir
                 && !field.hasAppliedDirective(DIR_NODE_ID)
                 && !field.hasAppliedDirective(DIR_REFERENCE)) {
-            String shimFkName = catalog.buildQualifierMap(tableName).get(columnName.toLowerCase());
-            if (shimFkName != null) {
-                // Resolve the FK once, scoped by the backing table, so a constraint name
-                // colliding across schemas resolves to this table's FK instead of a first-hit. The
-                // FK object is then carried by identity into synthesizeFkJoin (no bare re-lookup).
-                var shimFkLookup = catalog.findForeignKey(shimFkName, tableName);
-                if (shimFkLookup instanceof JooqCatalog.ForeignKeyLookup.Ambiguous shimAmb) {
-                    return unresolved(field, name,
-                        ambiguousForeignKeyRejection(shimFkName, shimAmb.schemas()));
+            var nodesOnTable = nodes.forTable(tableName);
+            if (nodesOnTable.size() == 1) {
+                NodeType node = nodesOnTable.get(0);
+                // Ahead of the column lookup, so a real column of this name is a rejection rather
+                // than a contest either reading wins. Identical answer at all three coordinates.
+                var shadowed = catalog.findColumn(tableName, name);
+                if (shadowed.isPresent()) {
+                    return unresolved(field, name, rejectShadowedNodeId(
+                        "input field '" + parentTypeName + "." + name + "'",
+                        name, node, shadowed.get().sqlName()));
                 }
-                // NotInCatalog cannot happen here (shimFkName came from the qualifier map built off
-                // this table's own references); fall through to the column lookup if it somehow does.
-                if (shimFkLookup instanceof JooqCatalog.ForeignKeyLookup.Resolved shimFkResolvedLookup) {
-                    var shimFk = shimFkResolvedLookup.fk();
-                    String qualifier = catalog.qualifierForFk(tableName, shimFkName)
-                        .orElseThrow(() -> new IllegalStateException(
-                            "qualifierForFk returned empty for FK '" + shimFkName + "' on table '"
-                            + tableName + "' — should be unreachable"));
-                    String shimTargetTable = shimFk.getKey().getTable().getName();
-                    Optional<String> targetTypeOpt = findGraphQLTypeForTable(shimTargetTable);
-                    // Gate: target table carries __NODE_TYPE_ID. Same KjerneJooqGenerator-project
-                    // sentinel the scalar bare-ID NodeId shim uses; if the target isn't a node type the
-                    // canonical replacement we'd emit (@nodeId(typeName:)) wouldn't typecheck either.
-                    var shimTargetMeta = catalog.nodeIdMetadata(shimTargetTable);
-                    if (shimTargetMeta.isPresent() && targetTypeOpt.isPresent()) {
-                        boolean fkAmbiguous = catalog
-                            .findUniqueFkToTable(tableName, shimTargetTable)
-                            .isEmpty();
-                        String canonical = fkAmbiguous
-                            ? "@nodeId(typeName: \"" + targetTypeOpt.get() + "\")"
-                              + " @reference(path: [{key: \"" + shimFkName + "\"}])"
-                            : "@nodeId(typeName: \"" + targetTypeOpt.get() + "\")";
-                        ID_REF_SHIM_LOGGER.warn(
-                            "input field '{}.{}' synthesizes a NodeId reference from qualifier '{}'"
-                            + " (FK '{}'); replace the legacy form with {} to drop the synthesis shim."
-                            + " The shim will be removed in a future release.",
-                            parentTypeName, name, qualifier, shimFkName, canonical);
-                        Optional<ArgConditionRef> shimRefCond = buildInputFieldCondition(field, parentTypeName, name, conditionFailures);
-                        // Synthesis shim is for input-side NodeId refs; the parent (input field's
-                        // backing table) holds the FK by the shim's invariant, so selfRefFkOnSource
-                        // is fixed at true.
-                        var shimFkResolution = synthesizeFkJoin(shimFk, tableName, name, 0, null, /*selfRefFkOnSource=*/true);
-                        var shimTargetResolution = catalog.findTable(shimTargetTable);
-                        if (!(shimFkResolution instanceof FkJoinResolution.Resolved shimFkResolved)) {
-                            return switch (shimFkResolution) {
-                                case FkJoinResolution.UnknownTable u -> unresolved(field, name,
-                                    unknownTableRejection(u.failure(), u.requestedName()));
-                                case FkJoinResolution.UnknownForeignKey uf -> unresolved(field, name,
-                                    unknownForeignKeyRejection(uf.fkName()));
-                                case FkJoinResolution.Resolved r -> throw new IllegalStateException("unreachable");
-                            };
-                        }
-                        if (!(shimTargetResolution instanceof JooqCatalog.TableResolution.Resolved shimTargetResolved)) {
-                            return unresolved(field, name,
-                                unknownTableRejection(shimTargetResolution, shimTargetTable));
-                        }
-                        List<JoinStep> shimJoinPath = List.of(shimFkResolved.hop());
-                        // Single-hop FK shim path: the lifted tuple is the first hop's source-side
-                        // columns by construction (length-1 path; lift predicate is vacuous).
-                        return buildInputNodeIdReference(
-                            parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                            shimTargetResolved.entry().toTableRef(shimTargetTable),
-                            targetTypeOpt.get(), shimTargetTable,
-                            shimTargetMeta.get().typeId(), shimTargetMeta.get().keyColumns(),
-                            shimJoinPath,
-                            shimFkResolved.pairs().sourceSideColumns(),
-                            shimRefCond);
-                    }
-                }
+                Optional<ArgConditionRef> nodeIdCond = buildInputFieldCondition(field, parentTypeName, name, conditionFailures);
+                var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch(node.decodeMethod());
+                return new InputFieldResolution.Resolved(new InputField.ColumnBackedField(
+                    parentTypeName, name, locationOf(field), typeName, nonNull, list,
+                    node.nodeKeyColumns(), nodeIdCond, extraction));
             }
+            if (nodesOnTable.size() > 1) {
+                return unresolved(field, name, Rejection.structural(
+                    "input field '" + parentTypeName + "." + name + "' names the node id of table '"
+                    + tableName + "', but that table backs multiple node types ("
+                    + nodesOnTable.stream().map(NodeType::name).sorted().collect(java.util.stream.Collectors.joining(", "))
+                    + "). Add `@nodeId(typeName: T)` to say which one."));
+            }
+            // No node backs the table: an `id` field here is an ordinary column, per the rule that
+            // `ID` without `@nodeId` is a plain scalar. Falls through to the column lookup.
         }
         var colEntry = catalog.findColumn(tableName, columnName);
         if (colEntry.isPresent()) {
@@ -2771,35 +2735,6 @@ class BuildContext {
                 List.of(new ColumnRef(e.sqlName(), e.javaName(), e.columnClass(), e.columnType())), cond,
                 new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct()));
         }
-        // NodeId synthesis shim: scalar ID field with no @nodeId directive whose backing table
-        // carries node-identity metadata (__NODE_TYPE_ID / __NODE_KEY_COLUMNS constants emitted
-        // by KjerneJooqGenerator). Fires a per-site deprecation diagnostic; the canonical form is
-        // to declare @nodeId explicitly, which routes through the bare-@nodeId branch above.
-        if ("ID".equals(typeName) && !list && !field.hasAppliedDirective(DIR_NODE_ID)) {
-            Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta = catalog.nodeIdMetadata(tableName);
-            if (nodeIdMeta.isPresent()) {
-                NODE_ID_SHIM_LOGGER.warn("input field '{}.{}' synthesizes a NodeId-decoded column"
-                    + " without '@nodeId'; declare the directive explicitly. The synthesis shim"
-                    + " will be removed in a future release.",
-                    parentTypeName, name);
-                // Lands on InputField.ColumnBackedField (arity 1..N) with extraction =
-                // NodeIdDecodeKeys.SkipMismatchedElement. HelperRef.Decode is resolved off the
-                // matching NodeType.
-                var keyColumns = nodeIdMeta.get().keyColumns();
-                var decodeMethod = resolveDecodeHelperForTable(tableName, nodeIdMeta.get().typeId(), keyColumns);
-                if (decodeMethod == null) {
-                    return unresolved(field, name, Rejection.structural(
-                        "@nodeId synthesis shim on input field '" + name + "': unable to resolve"
-                        + " the NodeType backing table '" + tableName + "' (zero or multiple"
-                        + " GraphQL types map to it). Declare @nodeId(typeName: T) explicitly."));
-                }
-                Optional<ArgConditionRef> shimCond = buildInputFieldCondition(field, parentTypeName, name, conditionFailures);
-                var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement(decodeMethod);
-                return new InputFieldResolution.Resolved(new InputField.ColumnBackedField(
-                    parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                    keyColumns, shimCond, extraction));
-            }
-        }
         // Column-miss lifts to InputField.UnboundField uniformly. The classifier emits the
         // structural variant once; the validator catches @condition(override:false) shapes at the
         // directive's location, and the consumer applies the cascade (admit when enclosingOverride
@@ -2817,18 +2752,6 @@ class BuildContext {
         return new InputFieldResolution.Resolved(new InputField.UnboundField(
             parentTypeName, name, locationOf(field), typeName, nonNull, list,
             unboundCond, columnName));
-    }
-
-    /**
-     * Returns the GraphQL type name for the given SQL table name, or empty when zero or multiple
-     * {@code @table}-annotated object types claim that table name (case-insensitive). Used by the
-     * id-reference synthesis shim to map the FK's target table back to a GraphQL type name; the
-     * shim then builds an {@link InputField.ColumnBackedReferenceField} carrying the resolved
-     * type's {@link no.sikt.graphitron.rewrite.model.GraphitronType.NodeType} key columns.
-     */
-    private Optional<String> findGraphQLTypeForTable(String sqlTableName) {
-        var candidates = findGraphQLTypesForTable(sqlTableName);
-        return candidates.size() == 1 ? Optional.of(candidates.get(0)) : Optional.empty();
     }
 
     /**
@@ -2881,128 +2804,57 @@ class BuildContext {
     }
 
     /**
-     * Builds the column-shaped carrier for {@code @nodeId(typeName: T)} input fields referencing
-     * another table. Consumed only by the {@code id-reference} synthesis shim (a legacy
-     * {@code ID!} column without {@code @nodeId} that maps via the qualifier-reverse-map to an
-     * FK target table). The canonical {@code @nodeId}-decorated path routes through
-     * {@link #inputFieldFromNodeIdResolved} via {@link NodeIdLeafResolver}; this helper exists
-     * because the shim produces its key columns / join path / typeId from the qualifier map
-     * rather than from a resolver call, so it cannot share the resolver's intake shape.
+     * The one shadowing verdict, shared by every coordinate that can carry an implicit node-id
+     * reading: output fields, input fields and arguments alike. A directive-less coordinate whose
+     * name is the node's {@code id} over a table that also has a column of that name names two
+     * different wire values, and the SDL does not choose between them, so the build refuses instead
+     * of picking.
      *
-     * <p>Builds an {@link InputField.ColumnBackedReferenceField} of arity
-     * {@code targetKeyColumns.size()} with extraction =
-     * {@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement}.
+     * <p>One method rather than three sibling messages on purpose. Shadowing is a single question,
+     * and an author who learns the answer at one coordinate must not have to re-learn it at the
+     * next; divergent wording would be the first step towards divergent semantics.
+     *
+     * <p>{@code coordinate} is the already-qualified label for the site ({@code field 'Baz.id'},
+     * {@code input field 'DeleteBazInput.id'}, {@code argument 'baz(id:)'}), so the reader is told
+     * which of the three they are looking at without the message changing shape.
+     *
+     * <p>Prose rather than a structured repair: both remedies are directive insertions after the
+     * coordinate's type, and graphql-java records a type node's start location but not its end, so
+     * the insertion point is not derivable from source locations.
      */
-    private InputFieldResolution buildInputNodeIdReference(
-            String parentTypeName, String name, graphql.language.SourceLocation location,
-            String typeName, boolean nonNull, boolean list, TableRef parentTable,
-            String refTypeName, String targetTableName, String targetTypeId,
-            List<ColumnRef> targetKeyColumns, List<JoinStep> joinPath,
-            List<ColumnRef> liftedSourceColumns,
-            Optional<ArgConditionRef> cond) {
-        if (targetKeyColumns.isEmpty()) {
-            return new InputFieldResolution.Unresolved(name, location, Rejection.structural(
-                "@nodeId(typeName: '" + refTypeName + "') targets table '" + targetTableName
-                + "' which has no resolvable key columns (no NodeId metadata, no @node(keyColumns:),"
-                + " and no primary key) — declare key columns on the target type or surface the"
-                + " metadata via KjerneJooqGenerator"));
-        }
-        var decodeMethod = resolveDecodeHelperForType(refTypeName, targetTableName, targetTypeId, targetKeyColumns);
-        if (decodeMethod == null) {
-            return new InputFieldResolution.Unresolved(name, location, Rejection.structural(
-                "@nodeId(typeName: '" + refTypeName + "') targets table '" + targetTableName
-                + "' which has no GraphQL type backing and no resolvable decode helper"
-                + " — declare a @table-annotated object type for the target or surface the metadata"
-                + " via KjerneJooqGenerator"));
-        }
-        var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement(decodeMethod);
-        // selfReference=false: this shim resolves the id-reference qualifier-reverse-map to a
-        // cross-table FK target; the self-FK case routes through the @nodeId resolver, never here.
-        return new InputFieldResolution.Resolved(new InputField.ColumnBackedReferenceField(parentTypeName, name, location,
-            typeName, nonNull, list, targetKeyColumns, joinPath, liftedSourceColumns, false, cond, extraction));
+    static Rejection rejectShadowedNodeId(String coordinate, String name, NodeType nodeType, String shadowedColumn) {
+        String tableSqlName = nodeType.table().tableName();
+        // Which half of the pair the author can actually act on differs with how the type became a
+        // node: an inferred node points at the metadata, a declared one at the declaration.
+        String because = nodeType.provenance().keyColumns() == no.sikt.graphitron.rewrite.model.NodeProvenance.Origin.METADATA
+            ? "table '" + tableSqlName + "' has a column named '" + shadowedColumn
+                + "' and also publishes node metadata"
+            : "'" + nodeType.name() + "' is a node type over table '" + tableSqlName
+                + "', which also has a column named '" + shadowedColumn + "'";
+        return Rejection.structural(
+            coordinate + ": " + because
+            + ", so '" + name + "' is ambiguous. Add `@nodeId` to select the node id, or"
+            + " `@field(name: \"" + shadowedColumn + "\")` to select the raw column.");
     }
 
     /**
      * Resolves the {@code decode<TypeName>} helper for a call site that <em>names</em> its target
      * type, either through {@code @nodeId(typeName:)} or through an inference that already
      * produced a unique name. The name is the author's own answer to "which NodeType", so the
-     * {@link NodeIndex} by-name view answers it directly; how many other {@code @node} types
-     * happen to share the backing table is irrelevant.
+     * {@link NodeIndex} by-name view answers it directly; how many other node types happen to
+     * share the backing table is irrelevant.
      *
-     * <p>Falls back to {@link #resolveDecodeHelperForTable} only when no NodeType carries that
-     * name, which is the orphan case that helper exists for: a {@code @table}-only type over a
-     * table whose jOOQ class carries {@code __NODE_TYPE_ID} metadata.
+     * <p>Empty when no NodeType carries that name. There is no table-keyed fallback any more: the
+     * arm that reverse-mapped a table to a decode helper existed for the synthesis shims and for
+     * the orphan case of a {@code @table}-only type over a metadata-carrying table, and with the
+     * shims retired a directive-less {@code ID} is an ordinary scalar rather than an orphaned node
+     * id. Coordinates that legitimately hold only a table resolve through {@link NodeIndex#forTable}
+     * at their own site, where an ambiguous table is a rejection naming {@code typeName:} rather
+     * than a silent pick.
      */
-    no.sikt.graphitron.rewrite.model.HelperRef.Decode resolveDecodeHelperForType(
-            String refTypeName,
-            String sqlTableName,
-            String fallbackTypeId,
-            java.util.List<no.sikt.graphitron.rewrite.model.ColumnRef> keyColumns) {
-        var named = nodes.forName(refTypeName);
-        if (named.isPresent()) {
-            return named.get().decodeMethod();
-        }
-        return resolveDecodeHelperForTable(sqlTableName, fallbackTypeId, keyColumns);
-    }
-
-    /**
-     * Resolves the {@code decode<TypeName>} {@link no.sikt.graphitron.rewrite.model.HelperRef.Decode}
-     * for the NodeType backing the given SQL table, or {@code null} when no usable mapping exists.
-     * Used by the {@code @nodeId} synthesis shim and other input-side classifier paths that have
-     * <em>only</em> the SQL table name in scope. A call site holding a type name must use
-     * {@link #resolveDecodeHelperForType} instead: the ambiguity arm below answers "no" to a
-     * question such a site has already answered.
-     *
-     * <p>Resolves through the {@code @node}-only {@link NodeIndex} by-table view, which is exactly
-     * the right domain: it sees only {@code @node} types, not the nesting-projection {@code @table}
-     * types that share the same rows. {@link no.sikt.graphitron.rewrite.model.GraphitronType.NodeType#decodeMethod()}
-     * is keyed on the GraphQL type name, matching {@code NodeIdEncoderClassGenerator}'s emitted
-     * {@code decode<TypeName>} helper. Three outcomes:
-     *
-     * <ul>
-     *   <li>Exactly one node type backs the table: return its {@code decodeMethod()}.</li>
-     *   <li>Two or more node types back it and the call site could not name one: return
-     *       {@code null} so the caller emits a validate-time rejection rather than a
-     *       {@code decode<typeId>} call the encoder never generates.</li>
-     *   <li>No node type backs it (orphan-input / synthesis-shim case): fall back to the
-     *       metadata's {@code typeId} as the helper suffix. Only reachable through the synthesis
-     *       shim.</li>
-     * </ul>
-     *
-     * <p>Both boundaries move when the node population widens, which is why inference is gated on
-     * {@code implements Node} rather than on metadata alone: promoting a type shifts its table from
-     * the third arm to the first (changing the emitted helper name from the typeId suffix to the
-     * type name) or from the first to the second (turning a resolved input site into a rejection).
-     * {@link no.sikt.graphitron.rewrite.NodeDeclaration} is the predicate that decides membership.
-     */
-    no.sikt.graphitron.rewrite.model.HelperRef.Decode resolveDecodeHelperForTable(
-            String sqlTableName,
-            String fallbackTypeId,
-            java.util.List<no.sikt.graphitron.rewrite.model.ColumnRef> keyColumns) {
-        // The NodeIndex's by-table view sees only @node types (not the nesting-projection @table
-        // types that share the rows), so it is the authoritative decode source. decodeMethod() is
-        // keyed on the GraphQL type name, matching NodeIdEncoderClassGenerator's emitted helper —
-        // unlike the typeId-suffixed fallback below, which agrees with the encoder only when typeId
-        // equals the type name.
-        var nodesForTable = nodes.forTable(sqlTableName);
-        if (nodesForTable.size() == 1) {
-            return nodesForTable.get(0).decodeMethod();
-        }
-        if (!nodesForTable.isEmpty()) {
-            // Two or more @node types back this table and the call site did not disambiguate with
-            // @nodeId(typeName:). There is no implicit decode helper; return null so the caller emits
-            // a validate-time rejection rather than a decode<typeId> call the encoder never generates.
-            return null;
-        }
-        // No @node backs this table (orphan-input / synthesis-shim case: an `input Foo @table(...)`
-        // with catalog NodeId metadata but no @node SDL type). Fall back to the metadata's typeId as
-        // the helper suffix; only reachable through the synthesis shim.
-        if (fallbackTypeId == null || fallbackTypeId.isBlank()) return null;
-        var encoderClass = no.sikt.graphitron.javapoet.ClassName.get(
-            ctx.outputPackage() + ".util",
-            no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator.CLASS_NAME);
-        return new no.sikt.graphitron.rewrite.model.HelperRef.Decode(
-            encoderClass, "decode" + fallbackTypeId, keyColumns, fallbackTypeId);
+    Optional<no.sikt.graphitron.rewrite.model.HelperRef.Decode> resolveDecodeHelperForType(String refTypeName) {
+        return nodes.forName(refTypeName)
+            .map(no.sikt.graphitron.rewrite.model.GraphitronType.NodeType::decodeMethod);
     }
 
     /**
@@ -3081,7 +2933,7 @@ class BuildContext {
      *
      * <p>No {@code decode<TypeName>} method name is resolved: the materialization calls
      * {@code decodeValues(typeId, nodeId)}, never {@code decode<Type>}, so there is no suffix to
-     * derive and the {@code resolveDecodeHelperForTable} typeName-vs-table trap does not apply here.
+     * derive and the typeName-vs-table resolution question does not arise here at all.
      */
     sealed interface NodeIdRecordDecode {
         record Resolved(no.sikt.graphitron.javapoet.ClassName encoderClass, String typeId,
@@ -3223,25 +3075,4 @@ class BuildContext {
         return new RecordFkTargets.Resolved(List.copyOf(targetColumns));
     }
 
-    /**
-     * Returns every {@code @table}-annotated object type whose table name matches
-     * {@code sqlTableName} (case-insensitive), in schema declaration order. Multiple object
-     * types may legitimately share a table; callers that need a unique mapping handle the
-     * ambiguous-and-empty cases themselves (see bare-{@code @nodeId} typeName inference).
-     */
-    List<String> findGraphQLTypesForTable(String sqlTableName) {
-        return typeNamesByTableKey.getOrDefault(sqlTableName.toLowerCase(), List.of());
-    }
-
-    private static Map<String, List<String>> buildTypeNamesByTableKey(GraphQLSchema schema) {
-        if (schema == null) return Map.of();
-        var building = new HashMap<String, List<String>>();
-        for (var t : schema.getAllTypesAsList()) {
-            if (!(t instanceof GraphQLObjectType o) || !o.hasAppliedDirective(DIR_TABLE)) continue;
-            var key = argString(o, DIR_TABLE, ARG_NAME).orElse(o.getName()).toLowerCase();
-            building.computeIfAbsent(key, k -> new ArrayList<>()).add(o.getName());
-        }
-        return building.entrySet().stream()
-            .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, e -> List.copyOf(e.getValue())));
-    }
 }

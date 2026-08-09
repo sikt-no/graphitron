@@ -278,7 +278,7 @@ class MultiTableFilterLoweringTest {
         // test flips here: this is new coverage (the earlier suite carried no
         // NodeIdDecodeKeys rejection case).
         var schema = TestSchemaHelper.buildSchema("""
-            type Address @table(name: "address") @node { id: ID! @nodeId }
+            type Address implements Node @table(name: "address") @node { id: ID! @nodeId }
             type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
             type Staff @table(name: "staff") { firstName: String @field(name: "first_name") }
             union Occupant = Customer | Staff

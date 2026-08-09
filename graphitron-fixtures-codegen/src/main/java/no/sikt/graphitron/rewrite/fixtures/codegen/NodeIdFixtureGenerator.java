@@ -38,9 +38,10 @@ public class NodeIdFixtureGenerator extends JavaGenerator {
         Map.entry("baz", new Metadata("Baz", List.of("ID"))),
         // A customized numeric typeId ("10154") distinct from any GraphQL type name. With a
         // @node type plus a nesting-projection @table type over this table, the decode helper must
-        // resolve through the @node-only NodeIndex (decode<TypeName>); the old findGraphQLTypeForTable
-        // detour returned empty (two object types) and fell back to decode10154, which the encoder
-        // never emits. No existing fixture had a numeric/custom typeId.
+        // resolve through the @node-only NodeIndex (decode<TypeName>) rather than off a typeId
+        // suffix, since decode10154 is a name the encoder never emits. It also makes the raw column
+        // and the encoded global ID visibly different values, which the shadowing rule leans on.
+        // No other fixture has a numeric/custom typeId.
         Map.entry("shared_node", new Metadata("10154", List.of("ID"))),
         // A shared typeId across two tables. Nodehood can be inferred from metadata plus
         // `implements Node`, so two types over these tables collide on typeId without either one

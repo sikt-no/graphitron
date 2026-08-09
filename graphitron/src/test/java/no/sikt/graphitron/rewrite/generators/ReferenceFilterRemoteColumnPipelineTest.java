@@ -178,7 +178,7 @@ class ReferenceFilterRemoteColumnPipelineTest {
         // table (no join needed); it must NOT be wrapped in a RemoteColumnPredicate. This is the
         // proof the nodeId-vs-plain-@reference fork (Direct vs NodeIdDecodeKeys extraction) holds.
         var schema = TestSchemaHelper.buildSchema("""
-            type Baz @table(name: "baz") { id: ID! }
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
             type Bar @table(name: "bar") { idOne: String @field(name: "ID_1") }
             input BarFilter {
                 relatedId: ID @nodeId(typeName: "Baz")
