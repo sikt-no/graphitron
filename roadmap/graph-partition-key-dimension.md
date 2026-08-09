@@ -1,7 +1,7 @@
 ---
 id: R610
 title: "SDL fact keys carry a graph partition dimension"
-status: In Review
+status: Ready
 bucket: architecture
 priority: 3
 theme: classification-model
@@ -756,6 +756,68 @@ four shared `<configuration>` parameters" (nine today, eleven after this), the i
 unique to the `dev` goal" while the table under it lists four. All three were already wrong
 before this item and all three are cheaper to fix while the page is open than to leave for
 whoever notices next.
+
+## Rework from the In Review gate (2026-08-09)
+
+The delivery is `b534810`, and almost all of it stands: the DDL rekey and its three gates, the
+workspace-scoped per-user store in mixed mode with the never-discard rule, graph-scoped capture,
+the mojo surface, the manual rows, and the retirement sweep (`openReadOnly`, `isAlreadyOpen`,
+`discard`, the snapshot vocabulary and the `mvn clean` recovery story are all gone from the tree,
+and R603's spec was swept with them). `mvn install -Plocal-db` is green, the reactor writes
+exactly one workspace segment into `~/.cache/graphitron/model/`, and the plugin's ITs and unit
+tier are pinned under `target/`. What follows is what the next pass owes.
+
+**Blocking: a warm refresh over a multi-package jOOQ catalog cannot complete.** The delivery's one
+recorded departure, `sql_referential_constraint.referenced_source_name` with its own foreign key
+into `sql_constraint` (`graphitron-model.sql:2163`), makes a referential row in package B point
+into package A's partition. `CatalogFactCapture.recordSchemaSource`
+(`graphitron/src/main/java/no/sikt/graphitron/rewrite/capture/CatalogFactCapture.java:131`) clears
+each package's `sql_` partition on first sight, interleaved with the walk, so on a warm run the
+delete at line 142 (`sql_constraint` scoped to package A) fires while B's *previous run's*
+referential rows still reference it. Measured, not inferred: driving
+`FactCapture.capture(dsl, true, ...)` over the `multischemafixture` catalog against a warm store
+throws `Referential integrity constraint violation: SQL_REFERENTIAL_CONSTRAINT FOREIGN
+KEY(REFERENCED_SOURCE_NAME, ...) ('...multischema_a', 'multischema_a', 'widget', 'widget_pkey')`.
+The cross-partition foreign key and the partition-scoped delete have to be reconciled: either the
+referential rows of every package this run owns are cleared before any package's constraints are,
+or the referenced side stops being a declared foreign key and states its cross-partition nature
+some other way. Whichever it is, the case needs a test: no delivered test runs a warm refresh with
+a catalog in hand at all, which is why a green build did not catch this.
+
+**Blocking, and the reason the above is silent rather than red.** `FactCapture.run`
+(`graphitron/src/main/java/no/sikt/graphitron/rewrite/capture/FactCapture.java:102`) catches
+`DataAccessException` from the warm capture, logs at debug, and recaptures into a private
+in-memory store. Its javadoc claims this "reproduces a genuine capture bug and absorbs a
+concurrency casualty, so nothing is masked", and that reasoning does not hold for a warm-only
+bug: the retry runs cold, so the failing delete never executes and the exception never recurs.
+The observable effect for a consumer whose catalog spans packages is that every build silently
+takes the cold path forever while the shared file keeps the first run's rows, with nothing above
+debug level saying so. The fallback needs to be narrowed to what it was argued for (a concurrency
+casualty), or to surface loudly enough that a permanent warm-start outage is not invisible.
+
+**Retirement sweep, one survivor.** `RewriteContext.withStoreDirectory`'s javadoc
+(`graphitron/src/main/java/no/sikt/graphitron/rewrite/RewriteContext.java:177`) still says the
+mojos "point the fact store at the project's build directory", which is exactly the phrase the
+Retired vocabulary section below names. The method has no callers in the tree, so deleting it is
+also on the table.
+
+**Non-blocking, worth taking while the code is open.**
+
+- `FactSchemaGateTest`'s leading-key gate resolves `store_source` and `store_stamp` to
+  `case "store_source", "store_stamp" -> column` (`FactSchemaGateTest.java:293`), which compares
+  the actual to itself. Those two rows can never fail. The item's own words for this shape are "a
+  gate that passes because it never ran"; naming their real leading columns costs nothing.
+- `everyGraphKeyedRelationReachesTheAnchor` counts any foreign-key edge as reaching the anchor,
+  including one that carries no `graph_name` column. The closure would still pass for a
+  graph-keyed relation anchored only through a graph-free reference.
+- `SchemaRecipe`'s `buildFile` component javadoc promises "absolute and normalized"; the compact
+  constructor normalizes neither (only `AbstractRewriteMojo.buildSchemaRecipe` does), so a
+  programmatic caller can record a relative build-file path against the contract.
+- The spec body was not updated with what shipped. Three departures live only in `b534810`'s
+  commit message: `referenced_source_name`, `resolveStoreDirectory` consulting the
+  `graphitron.store.directory` system property for programmatically constructed mojos, and
+  `LOCK_TIMEOUT=60000` on the file URL. `FactCapture.GraphIdentity` and the `DataAccessException`
+  fallback are not described anywhere in this file either. Fold them in before the next gate.
 
 ## Verification
 
