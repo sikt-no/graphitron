@@ -12,125 +12,114 @@ last-updated: 2026-08-09
 
 # The schema scan and its freshness replay share one typed recipe
 
-R610 transcribes one slice of resolved Maven configuration into the store (the
-`store_graph_schema_input` recipe rows, the effective-extension child, and the build identity
-on `store_graph`) so a freshness check can replay a graph's schema-file expansion without
-building its module. Fidelity between the build's own scan and that replay decomposes into two
-claims. The first, both paths run the *same glob semantics*, is bought by R610 itself: it moves
-the walk and the extension filter into a core `SchemaRecipe.expand` primitive, takes
-plexus-utils onto `graphitron` with the version pin, and records the reversal of the
-filesystem-agnostic javadoc, all argued there and landing first. This item buys the second
-claim: both paths run over the *same input value*. The typed recipe is decoded once at the mojo
-boundary, carried on the context, transcribed by capture into R610's rows, decoded back by the
-replay, and held to identity by a round-trip anchor; the source value it produces is sealed so
-capture and the replay switch on source kind instead of re-asking a filesystem predicate at two
-unbound sites. The Backlog stub sketched a third shape, routing the build's own scan through
-the store rows; it is rejected below, on the record.
+R610 has shipped, and with it most of the substrate this item was filed to build. The store
+holds a graph's SDL recipe (`store_graph_schema_input`, `store_graph_schema_extension`, the
+build identity on `store_graph`); `SchemaRecipe` is a core record carrying the resolved
+bindings and the effective extension filter, owning the one glob dialect; the mojo decodes the
+`<schemaInputs>` bindings into it at `AbstractRewriteMojo.buildSchemaRecipe`; the recipe rides
+`RewriteContext` as a component; and capture transcribes it beside the graph. So the first of
+the two fidelity claims, that both paths run the *same glob semantics*, is bought and banked.
 
-## Open: R610 landed more of this than R610's spec described
-
-The second Spec to Ready pass ran after R610's implementation reached trunk, and the overlap the
-first pass recorded has recurred and grown. The section below was written against R610's spec
-text, which promised a static `SchemaRecipe.expand(baseDir, patterns, extensions)` primitive.
-What R610 actually landed is most of "One recipe value, both paths": `SchemaRecipe` is already a
-record (`Path buildFile`, `List<Binding> bindings` carrying pattern plus optional tag and note in
-configuration order, `List<String> extensions`) with an instance `expand(Path baseDir)`; the
-decode already happens at the mojo boundary in `AbstractRewriteMojo.buildSchemaRecipe`, called
-from the `buildContext` path; the recipe already rides `RewriteContext` as a component; capture
-already transcribes it (`FactCapture.writeRecipe`, `FactCapture.GraphIdentity`); and the replay
-already decodes it back and re-expands (the `WarmStartRefreshTest` cases construct recipes
-directly). Rewriting the section is the author's scope call, not a reviewer's edit, so the
-residue and the new questions are recorded here rather than patched in place.
-
-What is left, and is still worth the item:
-
-- **The duplication is now concrete rather than preventive.** `RewriteContext` carries
-  `schemaFileExtensions`, `basedir` *and* `schemaRecipe`, whose `extensions` is the same set,
-  which is exactly the "same fact asserted twice with nothing binding the copies" the section
-  argues against. The accessor collapse below is a fix to landed code.
-- **The sealed source carrier**, `SchemaInput.plain`'s retirement, and the two probes it deletes.
-  Both probes are live as landed: `SdlFactCapture.regularFile` is the stamp-time one and
-  `StoreRefresh`'s `Files.isRegularFile` is the read-time twin.
-- **Literal entries and the `kind` column**, so programmatic runs transcribe at all.
-  `SchemaRecipe.Binding.pattern` is a bare `String` today and `buildFile` is null on a
-  programmatic run, so the widening still has its target.
-- **The shared extension predicate**, whose duplicate pair has moved: it is now the private
-  `SchemaRecipe.matchesExtension` against `SchemaProblemDiagnostic.matchesExtension`.
-  `SchemaInputExpander.matchesExtension`, named below, no longer exists.
-- **The typed rejection** and **the round-trip anchor**.
-
-Three questions the next pass owes an answer to:
-
-- `SchemaRecipe.buildFile` is new, nullable, and Maven-shaped (the module's pom). The
-  containment rule below says core assumes no Maven vocabulary, and the sealed-carrier section
-  rejects null-shaped defaults on exactly this reasoning. Whether it stays a component, becomes
-  an arm, or moves is undecided here.
-- The landed instance `expand(Path baseDir)` returns a deduplicated `Set<Path>`: no per-binding
-  grouping, no tag or note attribution, no configuration order. The typed result this item wants
-  needs all three, so it replaces that method rather than taking "R610's walk and dialect as the
-  body", and the per-pattern static is what `SchemaInputExpander` still uses to keep its
-  per-binding empty diagnostics.
-- The Retired vocabulary entry misdescribes the landed static, which takes one pattern rather
-  than a pattern list. Whether it is retired at all depends on the previous question.
+What is left is the second claim, and it is the one the item was named for: both paths run over
+the *same input value*, end to end and in production. Three things stand between the shipped
+recipe and that claim. The recipe's entries are glob patterns only, so a programmatic run
+records nothing and is not replayable. The row-to-recipe decode exists only inside a test, which
+hand-rolls it out of three columns, so nothing in production reads a recipe back. And the value
+the expansion produces is a raw `String` source name that capture and the freshness reader each
+re-classify with their own filesystem probe. This item closes all three: entries widen to
+pattern-or-literal so every run transcribes, the decode lands as production code held to
+identity by a round-trip anchor, and the source value becomes a sealed carrier so both sides
+switch on a kind the producer decided instead of re-asking a predicate at two unbound sites.
+The Backlog stub sketched a third shape, routing the build's own scan through the store rows; it
+is rejected below, on the record.
 
 ## One recipe value, both paths
 
-`SchemaRecipe` graduates from R610's primitive into the typed value, and one name survives the
-dependency edge; the stub's `ScanRecipe` is dropped. R610 lands a static
-`SchemaRecipe.expand(baseDir, patterns, extensions)` owning the walk and the extension filter;
-that loose triple is R610's provisional shape, sanctioned there as this item's "compatible
-first slice", and this item retires it. `SchemaRecipe` becomes the record carrying the ordered
-entries (each a glob pattern or a literal source, with its optional tag and description note),
-the effective schema-file-extension filter, and the base directory; expansion becomes its
-instance method, returning the sealed result argued below, with R610's walk and dialect as the
-body. R610's re-expansion case, which its Verification writes against the static signature,
-retargets to the value in the same edit.
+`SchemaRecipe` keeps the name and the shape R610 shipped; the stub's second name, `ScanRecipe`,
+was never minted and is not now. Three of its parts change, each for a reason the shipped shape
+states but cannot yet honour.
 
-The mojo decodes `<schemaInputs>`, `<schemaFileExtensions>` and the project basedir into the
-record inside `AbstractRewriteMojo.buildContext`, exactly where `SchemaInputExpander.expand`
-runs today. The plexus-bound `SchemaInputBinding` bean does not cross into core; the decode at
-the mojo boundary is the same move `AbstractRewriteMojo.decodeDependencyVersions` already
-makes for Maven `Artifact`, and for the same containment reason. What R610 leaves of
-`SchemaInputExpander` (the binding read, the empty-pattern diagnostics, the
-`MojoExecutionException`) dissolves here: the binding read becomes the decode into
-`SchemaRecipe`, and the failure prose becomes the mojo-side rendering of the typed result.
-Whether a named decoder class remains or the decode inlines into `buildContext` is the
-implementer's judgment. The expansion's callers become: the build mojos (as today, before
-`RewriteContext` construction), the dev goal's per-regeneration re-expansion (each pass
-rebuilds the context through `buildContext`, so it inherits the seam), and R610's freshness
-replay, which decodes a sibling graph's recipe rows back into a `SchemaRecipe` and runs the
-same expansion. Capture transcribes the run's recipe into R610's relations, adopted in place
-with no rekey.
+Its entries widen. `SchemaRecipe.Binding` carries a bare glob `String`, so `FactCapture`'s
+`GraphIdentity` takes a null recipe for a caller with no resolved `<schemaInputs>` and the
+graph, in the record's own words, is "not replayable". A literal entry retires that hole: every
+run transcribes, and the null recipe with it. An entry becomes a glob pattern or a literal
+source, keeping the optional tag and description note it already has.
 
-The recipe rides on `RewriteContext` as the single source of two facts the record carries
-today, rather than beside them. A recipe holding its own base directory and extension set next
-to the context's existing `basedir` and `schemaFileExtensions` components would be the same
-fact asserted twice with nothing binding the copies, the disagreement-at-the-producer this
-item exists to abolish, moved up one level. So `basedir` and `schemaFileExtensions` stop being
-record components and become accessors reading the recipe; the fact is asserted once and there
-is nothing to hold in agreement. The convenience overloads keep their signatures verbatim and
-mint a literal recipe internally (each `SchemaInput` one literal entry, extensions defaulted
-as today), so their callers compile untouched, and a derived literal recipe cannot disagree
-with the list it was derived from. The canonical constructor takes the recipe; the two sites
-that pass an extension set explicitly (`buildContext` and `CatalogBuilderSourceTest`) move onto
-it, and the five `with*` copy methods follow the compiler onto the same component. Read sites
-keep compiling through the accessors. `RewriteContext`
-carries the recipe beside the expanded `schemaInputs` list, both produced by the one seam in
-`buildContext`, so the pair cannot disagree at the producer.
+Its expansion returns a value rather than a file set. `SchemaRecipe.expand(Path baseDir)`
+returns a deduplicated `Set<Path>`, which is exactly right for the currency question it was
+built for and cannot serve the build's own scan: it drops configuration order, drops which binding
+matched what, and drops the tag and note that binding carries, all three of which the expanded
+`SchemaInput` list needs. The instance expansion therefore returns the sealed result argued
+below, carrying ordered per-entry matches with their attribution. The per-pattern static
+`SchemaRecipe.expand(baseDir, pattern, extensions)` is what makes the per-binding
+empty-pattern diagnostics expressible, so it stays as the dialect's one primitive; the instance
+method is layered over it, as it already is.
 
-The extension filter lands in core with R610's move; what this item adds is that the predicate
-exists once. `SchemaInputExpander.matchesExtension` is near-duplicated in
-`SchemaProblemDiagnostic`, and the two bodies differ only in what they are handed: the
-expander's takes a scanner-relative path and strips the directory prefix first, the
-diagnostic's takes a bare filename because its caller already called `getFileName`. The shared
-predicate takes the filename, the narrower contract of the two, and the expansion does its own
-stripping at the call site; the orphan scan keeps its own walk and calls the predicate
-unchanged.
+Its decode lands in production. Nothing outside a test reads a recipe back out of the store
+today: `WarmStartRefreshTest` hand-rolls the row-to-recipe decode inline, selecting pattern, tag
+and note from `store_graph_schema_input` and the extension rows from
+`store_graph_schema_extension` and rebuilding a `SchemaRecipe` from them. That is the freshness
+replay's decode, written once in a test and owned by nobody, and a hand-rolled decode is
+precisely what drifts from its encoder. The decode becomes a core function beside `expand`, the
+test reads it, and the round-trip anchor holds it to the writer.
 
-The decode seam is cut with one eye on a direction the roadmap does not yet own: R610's
-per-user store and this item's core recipe leave graphitron a short step from running as a
-standalone workspace process, with everything build-tool-shaped about the scan living in one
-decoder. A non-Maven entry point is then a second decoder into the same `SchemaRecipe`, never
+`baseDir` stays where R610 put it, and the reasoning is worth stating because an earlier draft
+of this item moved it. The recipe carries no base directory: `expand` takes one, `GraphIdentity`
+holds one, and `store_graph.base_dir` records one, which is what lets a freshness reader replay
+a *sibling's* recipe against a directory the reader resolved. A recipe that carried its own
+base directory could only ever be replayed where it was written. `SchemaRecipe.buildFile` stays
+too, for the same division: it is the recipe's trust anchor rather than an input to the walk,
+and its nullability says "no build file", which is a fact about the run and not a default door
+of the kind the source carrier below refuses.
+
+The mojo-side decode is shipped (`AbstractRewriteMojo.buildSchemaRecipe`, reading the
+plexus-bound `SchemaInputBinding` beans, collapsing empty tag and note strings to absent), and
+this item does not move it; the plexus bean still does not cross into core, for the same
+containment reason `AbstractRewriteMojo.decodeDependencyVersions` already answers for Maven
+`Artifact`. What changes is that the decode and the expansion stop being two seams. Today
+`buildContext` builds the recipe with `buildSchemaRecipe` and expands the same `<schemaInputs>`
+list separately through `SchemaInputExpander`, which re-reads the same beans and re-collapses
+the same empty strings; the two agree because two pieces of code were written to agree.
+`SchemaInputExpander` dissolves: the binding read is the decode that already exists, the
+expansion runs off the decoded recipe, and the empty-pattern diagnostics and the
+`MojoExecutionException` become the mojo-side rendering of the typed result. Whether a named
+decoder class remains or the decode stays a private method on the mojo is the implementer's
+judgment. The expansion's callers become: the build mojos (as today, before `RewriteContext`
+construction), the dev goal's per-regeneration re-expansion (each pass rebuilds the context
+through `buildContext`, so it inherits the seam), and the freshness replay, which decodes a
+sibling graph's recipe rows and runs the same expansion. Capture keeps writing the relations it
+already writes, with the `kind` column below the only DDL change.
+
+The recipe rides on `RewriteContext` already, and it landed *beside* the fact it duplicates
+rather than in place of it: the context carries `schemaFileExtensions` and `schemaRecipe`, whose
+`extensions()` is the same set, two components with nothing binding the copies. That is the
+disagreement-at-the-producer this item exists to abolish, one level up, and it is landed code
+rather than a design to prevent. So `schemaFileExtensions` stops being a record component and
+becomes an accessor reading the recipe; the fact is asserted once and there is nothing to hold
+in agreement. `basedir` stays a component, per the division above: the recipe carries no base
+directory, so there is no second copy to collapse. The convenience overloads keep their
+signatures verbatim and mint a literal recipe internally (each `SchemaInput` one literal entry,
+extensions defaulted as today), so their callers compile untouched, and a derived literal recipe
+cannot disagree with the list it was derived from. The two sites that pass an extension set
+explicitly (`buildContext` and `CatalogBuilderSourceTest`) move onto the recipe, and the five
+`with*` copy methods follow the compiler. Read sites keep compiling through the accessor.
+`RewriteContext` carries the recipe beside the expanded `schemaInputs` list, both produced by
+the one seam in `buildContext`, so the pair cannot disagree at the producer.
+
+The extension filter is in core; what this item adds is that the predicate exists once. R610's
+move left the duplicate pair straddling the module edge: the private
+`SchemaRecipe.matchesExtension` in core and `SchemaProblemDiagnostic.matchesExtension` in the
+plugin, two bodies that differ only in what they are handed. The recipe's takes a
+scanner-relative path and strips the directory prefix first; the diagnostic's takes a bare
+filename because its caller already called `getFileName`. The shared predicate takes the
+filename, the narrower contract of the two, and the expansion does its own stripping at the call
+site; the orphan scan keeps its own walk and calls the predicate unchanged. Exposing it means
+the recipe's private helper becomes the published one, which is the direction the dialect
+argument already points: one implementation, reachable by everyone who must agree with it.
+
+The decode seam is cut with one eye on a direction the roadmap does not yet own: the shipped
+per-user store and the core recipe leave graphitron a short step from running as a standalone
+workspace process, with everything build-tool-shaped about the scan living in one decoder. A non-Maven entry point is then a second decoder into the same `SchemaRecipe`, never
 a second expansion path, and the extension defaulting it would need already lives in core
 (`RewriteContext.DEFAULT_SCHEMA_FILE_EXTENSIONS`). No such decoder ships here, by the same
 first-reader principle that cuts the recipe's extent; what the direction is owed is only that
@@ -141,8 +130,8 @@ core assumes no Maven vocabulary, which the containment rule above already binds
 The stub's sketch had the run write config rows first and the scanner read them back, making
 the store the channel between two components of one run. Three arguments retire it. First, it
 is an untyped channel: the mojo holds a typed value and would hand the scanner a bag of
-`VARCHAR`s to re-normalise on the way out (the expander already collapses empty tag and note
-strings to absent, and a row decode has to reproduce that exactly), an encode/decode pair at a
+`VARCHAR`s to re-normalise on the way out (`buildSchemaRecipe` already collapses empty tag and
+note strings to absent, and a row decode has to reproduce that exactly), an encode/decode pair at a
 boundary with no cross-process reason to exist. Second, it makes the honesty check vacuous:
 under read-your-own-writes the pipeline's inputs are derived from the rows, so "the rows agree
 with what the pipeline read" is true by construction, and a transcription bug becomes a build
@@ -160,11 +149,11 @@ Every run transcribes its recipe, not just Maven runs. A pattern entry records t
 literal entry records the canonical source-name rendering of the `SchemaInput` a programmatic
 caller handed over. The recipe relation is one discriminated relation rather than several,
 because the ordinal is the recipe's spine and splitting the relations would shatter the one
-ordering key; its `kind` column takes three values under a CHECK constraint (R610's DDL
-carries a `pattern` column, and adopting the relation generalises that to `kind` plus a value
+ordering key; its `kind` column takes three values under a CHECK constraint (the shipped
+`store_graph_schema_input` carries a `pattern` column, which generalises to `kind` plus a value
 column, still keyed `(graph_name, ordinal)` with no rekey). `pattern` records a glob; the two
 literal kinds transcribe which door the entry's source came through (the sealed carrier
-below): a `file` literal re-expands by identity plus an existence check, so R610's currency
+below): a `file` literal re-expands by identity plus an existence check, so the currency
 verdict covers programmatic graphs with no special case, a file literal that no longer
 resolves being a lost match exactly as a pattern whose file set shrank; a `named` literal (a
 bare programmatic label, of which the applier tests carry several) is skipped by the replay
@@ -183,9 +172,9 @@ downstream (`CatalogBuilder` filters locations bearing
 `SchemaInput.sourceName` is a raw string that is an absolute normalised path on the Maven path
 and an arbitrary label anywhere else, since `SchemaInput.plain` and the canonical constructor
 take whatever a programmatic caller hands them (the applier tests pass a bare `t.graphqls`, a
-`/a`). R610 has capture asking "does this resolve to a regular file" at stamp time and the
-freshness reader asking it again at read time, the same predicate over the same untyped string
-at two sites nothing binds together. This item owns the producer, so it takes the lift while
+`/a`). Both probes R610 shipped read that string: `SdlFactCapture.regularFile` asks "does this
+resolve to a regular file" at stamp time, and `StoreRefresh` asks `Files.isRegularFile` again at
+read time, the same predicate over the same untyped string at two sites nothing binds together. This item owns the producer, so it takes the lift while
 it is cheap: the source is a sealed carrier with a file arm (carrying a `Path`) and a named
 arm (carrying the label), decided once where the source enters the system, and a new source
 kind is a compile error at every consumer that switches on it.
@@ -227,8 +216,9 @@ transcription.
 The carrier pays for itself at the consumers that today re-derive path-ness from the string:
 `DevMojo.resolveSchemaRoots` runs `Paths.get(input.sourceName())` and switches to reading the
 file arm; `SchemaProblemDiagnostic.normaliseLoaded`'s absolute-or-resolve branch is dead once
-the arm carries an absolute normalised `Path`, and is deleted rather than ported; R610's two
-probe sites become the stamp-time switch above and the replay's row-kind dispatch.
+the arm carries an absolute normalised `Path`, and is deleted rather than ported;
+`SdlFactCapture.regularFile` becomes the stamp-time switch above and `StoreRefresh`'s read-time
+probe becomes the replay's row-kind dispatch.
 `RewriteSchemaLoader.load` narrows its parameter from `Collection<String>` to the file arm,
 rendering the canonical string internally at the `MultiSourceReader` handoff, and the
 generator's projection from `schemaInputs` to loadable sources
@@ -246,11 +236,13 @@ an enforcer below. `SchemaInput`'s javadoc records that the source name is what
 `RewriteSchemaLoader` hands the parser and what comes back as graphql-java's
 `SourceLocation.getSourceName()`, so `SchemaInputAttribution`'s map matches byte-for-byte
 without renormalisation; `ValidationReport.canonicalUri` and the LSP's URI equality read the
-same returned string. Putting a carrier in front of that inserts a rendering step on a round
-trip that leaves Java's type system, so the carrier renders exactly one canonical source-name
-string, used both at the parser handoff and at every lookup keyed on it: the file door
-normalises at mint (absolute, normalised, exactly the string the expander composes today from
-a scanner match), the file arm renders that `Path`, and the named arm renders its label
+same returned string, and R603 widened that reader set by normalising the compile side through
+the same function at the javac boundary. Putting a carrier in front of that inserts a rendering
+step on a round trip that leaves Java's type system, so the carrier renders exactly one
+canonical source-name string, used both at the parser handoff and at every lookup keyed on it:
+the file door normalises at mint (absolute, normalised, exactly the string
+`SchemaRecipe.expand` composes today from a scanner match), the file arm renders that `Path`,
+and the named arm renders its label
 verbatim. A divergence of one character costs no compile error and no parse failure; it
 silently stops tags and description notes from being applied, and silently unmatches capture's
 stamp lookup, which is why the enforcer is an end-to-end attribution case rather than an
@@ -260,22 +252,27 @@ consumers: `SchemaInputAttribution`, `RewriteSchemaLoader`, `DevMojo.resolveSche
 
 ## Rejection is typed at the new boundary
 
-This redesign is argued on its merits, not forced by the move: R610's split already keeps
+This redesign is argued on its merits, not forced by anything above: R610's split already keeps
 `MojoExecutionException` plugin-side by construction, so the plugin could keep composing its
-failure prose over the core primitive's raw output. The merit is the consumer count. Once
-expansion is a core seam, its failure vocabulary has three render surfaces (the build mojos,
-the dev goal's regeneration loop, and the freshness replay's driver), and today's shape (a
-result bag with a warning list plus an exception whose message is composed at the detection
-site) is renderable by exactly one of them; the other two would re-compose prose from
-half-structured parts. The redesign follows
+failure prose over the core primitive's raw output. The merit is that the expansion acquires a
+reader that cannot use prose. Today's shape is a result bag with a warning list plus an
+exception whose message is composed at the detection site, and exactly one consumer can render
+it: the build mojo that composes it. The dev goal is not a second such consumer and this item
+does not pretend otherwise, since it reaches expansion through `buildContext` and
+`DevMojo.regenerate` simply logs the `MojoExecutionException` it catches. The freshness replay
+is the reader that breaks the shape. It runs the same expansion to answer a currency question,
+so "every pattern matched nothing" is a verdict it has to *decide on*, not a message it can
+print, and recovering that from a composed string means parsing prose the mojo wrote for a human.
+A typed result is what lets one expansion serve a renderer and a decider at once. The redesign
+follows
 `docs/architecture/explanation/typed-rejection.adoc` instead. The core expansion returns a
 sealed result: resolved sources beside per-pattern empty-match observations, or an
 every-pattern-matched-nothing variant, each a typed fact. The mojo renders the aggregate-empty
 variant as the build failure and the per-pattern observations as warnings, preserving today's
-author-facing text; the dev goal and the freshness driver render the same variants for their
-own surfaces instead of re-composing prose. The LSP is deliberately not on that list: it boots
-inside the dev goal's codegen scope, after `buildContext` has already failed or succeeded, so
-it has no expansion-failure surface to render and gains none here.
+author-facing text; the freshness driver switches on the same variants to reach a verdict. The
+dev goal keeps rendering what it renders today, through the mojo, and the LSP is deliberately
+untouched: it boots inside the dev goal's codegen scope, after `buildContext` has already
+failed or succeeded, so it has no expansion-failure surface to render and gains none here.
 
 The seal is standalone, not a permit on `Rejection`, and that is a decision rather than an
 omission. `Rejection` is the classifier's vocabulary: its arms describe what an author's SDL
@@ -289,24 +286,26 @@ and no `Diagnostics.lspCodeOf` arm. What it takes from
 result whose failure arms carry structural data instead of a message composed at the detection
 site, which is exactly what the current `MojoExecutionException` path does wrong.
 
-## The rows stay store_, and the doctrine widens one clause
+## The rows stay store_, and the read doctrine lands
 
-The recipe rows keep the `store_` prefix, adopting R610's relations in place. The DDL header's
-family-naming rule rejects the alternatives by its own words: `config_` is a role name, the
-same objection that retired `extension_`, and `maven_` is a vocabulary name that is false for
-exactly the literal rows above, which no build tool spelled. But the current `store_` doctrine
-sentence ("the store's own record of what it read and what it was built from, the one family
-whose rows are not a transcription of anything outside") is falsified by the recipe on both
-halves, so the sentence widens by a clause rather than being left to contradict the rows: the
-store's own record of what it was told to read, what it read, and what it was built from. The
-recipe is the store's record of its instructions; naming it for the tool that supplied them
-would fragment the family the first time a caller with no pom writes the same shape.
+The naming question this item was filed to settle is settled: R610 landed the rows under
+`store_` and rewrote the family's doctrine sentence to carry them, so the header now reads the
+store's own record as what it read, what it was built from, and which graphs it holds, with the
+recipe rows named in the sentence as configuration the run held in hand. The alternatives stay
+rejected on the same words that rejected them before, and are recorded here because the
+literal rows below are the case that would tempt a re-litigation: `config_` is a role name, the
+objection that retired `extension_`, and `maven_` is a vocabulary name that is false for exactly
+those rows, which no build tool spelled. R603's cadence axis does not reach them either, since
+capture writes the recipe on capture's own cadence rather than after it.
 
-The read doctrine the stub's third fork asked for, stated here as the config rows' contract: a
-run reading its own graph's recipe is an ordinary same-graph read; a reader of *another*
-graph's recipe is maintenance machinery under R610's carve-out, and counts as maintenance
-exactly while it writes no conclusions anywhere but the `store_` family. The recipe rows never
-join the cross-graph consumer read surface, which stays SDL-derived families only.
+What has not landed is the read doctrine, and the `kind` widening is the moment to state it,
+because a literal row is the first recipe row a reader could mistake for a source census. A run
+reading its own graph's recipe is an ordinary same-graph read; a reader of *another* graph's
+recipe is maintenance machinery, and counts as maintenance exactly while
+it writes no conclusions anywhere but the `store_` family. The recipe rows never join the
+cross-graph consumer read surface, which stays SDL-derived families only. It lands where the
+relation's own comment can carry it, beside the sentence `javac_diagnostic` already sets the
+precedent for.
 
 ## Deliberately out of scope
 
@@ -318,20 +317,26 @@ join the cross-graph consumer read surface, which stays SDL-derived families onl
   one day be a query over the recipe, but it has no fact-model payoff today; it stays a
   plugin-side walk that now calls the shared extension predicate instead of carrying its own
   copy.
-- **The freshness loop's driver.** This item makes the replay's expansion exist; where the
-  loop runs from stays with R610's orchestration successor.
+- **The freshness loop's driver.** This item makes the replay's expansion and its row decode
+  exist; where the loop runs from (the dev goal's watcher, the LSP, or a store maintenance
+  command) stays with whichever item picks the orchestration up.
 - **Any consumer-facing read surface over config rows**, per the read doctrine above.
 
 ## Verification
 
-Full `mvn install -Plocal-db` green. The round-trip anchor is the item's enforcer: the run's
-recipe rows, decoded back into a `SchemaRecipe` and re-expanded by the shared expansion,
-reproduce the run's `RewriteContext.schemaInputs` exactly, the context's own value against that
-value round-tripped through the rows, in the same tier as `FactCaptureAgreementTest`. Both sides
-run the one `expand`, so what the equality pins is transcription fidelity plus glob determinism
-rather than two independent expansions, which is exactly the residue a single expansion path
-leaves to verify. The tier has no mojo, so the fixture mints the recipe directly and builds the
-context from its expansion, the same pairing `buildContext` makes. Non-vacuity is a requirement
+Full `mvn install -Plocal-db` green. The round-trip anchor is the item's enforcer, and it has a
+registered home already: `FactCaptureAgreementTest` registers `store_graph_schema_input` and
+`store_graph_schema_extension` under its `EQUALITY` arm, so the anchor is the content half that
+registration promises rather than a new seam. The run's recipe rows, decoded back into a
+`SchemaRecipe` by the production decoder and re-expanded, reproduce the run's
+`RewriteContext.schemaInputs` exactly: the context's own value against that value round-tripped
+through the rows. Both sides run the one `expand`, so what the equality pins is transcription
+fidelity plus glob determinism rather than two independent expansions, which is exactly the
+residue a single expansion path leaves to verify. The tier has no mojo, so the fixture mints the
+recipe directly and builds the context from its expansion, the same pairing `buildContext`
+makes. `WarmStartRefreshTest`'s hand-rolled decode in
+`aRecipeReExpansionDiscoversAnAddedFile` reads the production decoder in the same edit, which is
+what stops the two from drifting. Non-vacuity is a requirement
 on the case, not a property of the
 shape: a literal entry re-expands by identity, so the anchor's fixture must include at least
 one pattern entry for the equality to test anything. A programmatic run's literal rows
@@ -346,7 +351,7 @@ through the core expansion with a tag and a description note configured, runs th
 inputs through the load and the attribution appliers, and asserts the tag and the note landed
 on the elements the source declared. It closes the loop from a minted file arm, through the
 parser, to a lookup keyed on what comes back, so any rendering divergence fails it; it lives
-in `graphitron`, which is only possible once the expansion does. The existing applier tests
+in `graphitron`, beside the expansion it exercises. The existing applier tests
 hold the named arm's half of the same invariant already, passing labels that are not paths.
 
 `SchemaInputExpanderTest` retargets to the core expansion with its cases intact, except the
@@ -361,7 +366,8 @@ first-client docs check is exempt.
 
 - `SchemaInput.plain`, replaced by the explicit `SchemaInput.file` / `SchemaInput.named`
   doors.
-- The static `SchemaRecipe.expand(baseDir, patterns, extensions)` signature over a loose
-  parameter triple, R610's provisional shape, replaced by the record's instance expansion.
-- `SchemaInputExpander` as a class name, dissolved into the mojo-side decode and the core
-  expansion.
+- `SchemaInputExpander` as a class name, dissolved into the shipped mojo-side decode and the
+  core expansion.
+- "not replayable" said of a graph whose caller supplied no `<schemaInputs>` configuration, and
+  the null `SchemaRecipe` on `FactCapture.GraphIdentity` that the phrase describes. Every run
+  records a recipe once literal entries exist.
