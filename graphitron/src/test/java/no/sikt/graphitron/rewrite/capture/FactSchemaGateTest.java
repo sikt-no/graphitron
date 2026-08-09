@@ -290,7 +290,8 @@ class FactSchemaGateTest {
                     expected = switch (table) {
                         case "store_graph", "store_graph_schema_input", "store_graph_schema_extension"
                             -> "graph_name";
-                        case "store_source", "store_stamp" -> column;
+                        case "store_source" -> "source_name";
+                        case "store_stamp" -> "singleton";
                         default -> "graph_name";
                     };
                 } else {
@@ -312,9 +313,12 @@ class FactSchemaGateTest {
      * closure over the declared foreign keys (the generated model's own rendering of them,
      * regenerated from the DDL every build) rather than compared against a hand-kept list,
      * because the parentless roots are exactly what an eye misses: nothing references them
-     * either, so they read as leaves. {@code store_graph} itself is the one excluded row, the
-     * anchor being unable to reach itself by a foreign key; excluding it silently would read as
-     * a gate that passes because it never ran, so it is stated.
+     * either, so they read as leaves. Only an edge that itself threads {@code graph_name} counts
+     * towards the closure: a graph-keyed relation reaching the anchor solely through some other,
+     * graph-free reference would still leave its own {@code graph_name} column unconstrained,
+     * which is exactly the hole this gate exists to close. {@code store_graph} itself is the one
+     * excluded row, the anchor being unable to reach itself by a foreign key; excluding it
+     * silently would read as a gate that passes because it never ran, so it is stated.
      */
     @Test
     @DisplayName("every graph-keyed relation reaches store_graph by foreign key")
@@ -329,8 +333,17 @@ class FactSchemaGateTest {
                 if (reaches.contains(table)) {
                     continue;
                 }
+                var graphField = table.field("GRAPH_NAME", String.class);
+                if (graphField == null) {
+                    continue;
+                }
                 for (var reference : table.getReferences()) {
-                    if (reaches.contains(reference.getKey().getTable())) {
+                    // Only a foreign key that itself threads graph_name counts: a graph-keyed
+                    // relation reaching its anchor through some other, graph-free reference would
+                    // still leave the graph_name column unconstrained, which is the failure this
+                    // gate exists to catch.
+                    if (reference.getFields().contains(graphField)
+                        && reaches.contains(reference.getKey().getTable())) {
                         reaches.add(table);
                         grew = true;
                         break;

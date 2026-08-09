@@ -79,11 +79,17 @@ public final class FactCapture {
      * <p>Two cache conditions demote a run to the in-memory store, and neither touches the file.
      * A graph name already recorded against a different base directory is not taken over, because
      * ownership-scoped refresh would otherwise let two checkouts thrash one partition silently;
-     * this is the one cache condition a consumer can fix, so it is the one that logs, naming both
-     * directories and {@code <graphName>} as the remedy. And a write that fails against the shared
-     * file (a concurrent writer of the same rows, a lock that timed out) is retried against the
-     * in-memory store instead, which reproduces a genuine capture bug and absorbs a concurrency
-     * casualty, so nothing is masked and nothing fails a build over a cache.
+     * this is the one cache condition a consumer can fix, so it is the one that always logs, naming
+     * both directories and {@code <graphName>} as the remedy. And a write that fails against the
+     * shared file is retried once against that same file before being demoted, which is what tells
+     * a concurrency casualty (a concurrent writer of the same rows, a lock that timed out; cleared
+     * by the time the retry runs, since capture's own delete-then-rewrite is safely rerunnable)
+     * apart from a deterministic capture bug (the same failure both times, timing-independent).
+     * The first case is absorbed at debug level, unremarkable by the time it is logged. The second
+     * demotes to the in-memory store just the same, since a cache is never allowed to cost more
+     * than warmth, but logs at warn with the exception, naming the graph, because a deterministic
+     * failure means this graph's warm start is out for good until the underlying bug is fixed, and
+     * that is not something the debug level below may leave unread.
      */
     public static void run(Path storeDirectory, GraphIdentity graph, TypeDefinitionRegistry registry,
                            JooqCatalog jooq, List<CompletionData.ExternalReference> extensions,
@@ -96,17 +102,42 @@ public final class FactCapture {
                     return;
                 }
                 if (!store.warm() || ownsGraph(store.dsl(), graph)) {
-                    try {
-                        capture(store.dsl(), store.warm(), graph, registry, jooq, extensions, nodes);
+                    if (captureWithRetry(store, graph, registry, jooq, extensions, nodes)) {
                         return;
-                    } catch (DataAccessException e) {
-                        LOG.debug("shared fact store write failed; recapturing in memory", e);
                     }
                 }
             }
         }
         try (GraphitronModelStore store = GraphitronModelStore.open()) {
             capture(store.dsl(), false, graph, registry, jooq, extensions, nodes);
+        }
+    }
+
+    /**
+     * Attempts the warm capture, retrying once against the same store before giving up, so a
+     * transient concurrency casualty (cleared by the time the retry runs) is told apart from a
+     * deterministic capture bug (fails the same way both times). Returns {@code true} once either
+     * attempt lands; {@code false} tells the caller to fall back to an in-memory capture instead.
+     */
+    private static boolean captureWithRetry(GraphitronModelStore store, GraphIdentity graph,
+                                            TypeDefinitionRegistry registry, JooqCatalog jooq,
+                                            List<CompletionData.ExternalReference> extensions,
+                                            NodeDeclaration nodes) {
+        try {
+            capture(store.dsl(), store.warm(), graph, registry, jooq, extensions, nodes);
+            return true;
+        } catch (DataAccessException first) {
+            LOG.debug("shared fact store write failed; retrying once before recapturing in memory", first);
+        }
+        try {
+            capture(store.dsl(), store.warm(), graph, registry, jooq, extensions, nodes);
+            return true;
+        } catch (DataAccessException second) {
+            LOG.warn("shared fact store write for graph '{}' failed twice in a row; this looks like a "
+                    + "deterministic capture bug rather than a concurrency casualty, and warm start will "
+                    + "stay unavailable for this graph until it is fixed. Recapturing in memory for this run.",
+                graph.name(), second);
+            return false;
         }
     }
 

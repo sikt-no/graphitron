@@ -173,17 +173,6 @@ public record RewriteContext(
     }
 
     /**
-     * Returns a copy with {@code storeDirectory} replaced, so the build mojos can point the fact
-     * store at the project's build directory without every other caller growing an argument for it.
-     */
-    public RewriteContext withStoreDirectory(Path storeDirectory) {
-        return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, graphName, outputDirectory,
-            outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
-            codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
-            dependencyVersions, storeDirectory, schemaRecipe);
-    }
-
-    /**
      * Returns a copy with {@code dependencyVersions} replaced, so a convenience-constructor caller
      * can layer the resolved graphql-java / jOOQ version facts on afterwards.
      */

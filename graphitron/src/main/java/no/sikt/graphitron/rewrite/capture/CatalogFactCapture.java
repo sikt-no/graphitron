@@ -7,10 +7,12 @@ import org.jooq.Schema;
 import org.jooq.Table;
 import org.jooq.UniqueKey;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
@@ -88,11 +90,12 @@ final class CatalogFactCapture {
             String schema = table.getSchema() == null ? "" : table.getSchema().getName();
             sourceByTable.put(schema + "." + table.getName(), packageOf(table));
         }
+        clearSchemaSources(sink, new LinkedHashSet<>(sourceByTable.values()));
         for (JooqCatalog.TableEntry entry : jooq.allTableEntries()) {
             Table<?> table = entry.table();
             String schema = table.getSchema() == null ? "" : table.getSchema().getName();
             String name = table.getName();
-            String source = recordSchemaSource(sink, table);
+            String source = packageOf(table);
             if (!sink.claim(SQL_TABLE, source, schema, name)) {
                 continue;
             }
@@ -112,11 +115,22 @@ final class CatalogFactCapture {
     }
 
     /**
-     * Claims the source this table's schema was read from, on first sight, and returns its name.
-     * First sight also clears the source's own {@code sql_} partition: a jOOQ package carries no
-     * stamp (its walk costs milliseconds), so an owned package is always rewritten, and scoping
-     * the delete to the source this walk now knows it owns is what leaves sibling graphs'
-     * packages standing in a shared store.
+     * Claims every source the catalog census touches, on first sight, and clears each owned
+     * source's {@code sql_} partition ahead of the walk: a jOOQ package carries no stamp (its walk
+     * costs milliseconds), so an owned package is always rewritten, and scoping the delete to the
+     * sources this run now knows it owns is what leaves sibling graphs' packages standing in a
+     * shared store.
+     *
+     * <p>The clear runs in two rounds across every owned source rather than one round per source,
+     * because {@code sql_referential_constraint.referenced_source_name} can name a <em>different</em>
+     * source than the row's own {@code source_name}: a foreign key crossing schemas that codegen
+     * wrote into different packages, which the multi-schema layout produces. Clearing a source's
+     * {@code sql_constraint} rows (round two) while a sibling source not yet cleared still declares
+     * a referential row into them (round one, only run for that sibling) violates the referenced-side
+     * foreign key on a warm run. Deleting every owned source's own referential-constraint rows first,
+     * over the whole set, before deleting any owned source's constraints removes every row that could
+     * dangle, regardless of which source the catalog walk visits first or which source's foreign key
+     * crosses into which.
      *
      * <p>The source is the generated package the schema lives in, not the classpath entry the
      * classes were loaded from. Both are true of the rows, and only the package is a refresh unit:
@@ -128,14 +142,19 @@ final class CatalogFactCapture {
      * every layout jOOQ generates; the fallback exists because {@code getSchema()} is nullable, not
      * because a real catalog reaches it.
      */
-    private static String recordSchemaSource(FactSink sink, Table<?> table) {
-        String source = packageOf(table);
-        if (sink.claim(STORE_SOURCE, source)) {
-            var dsl = sink.dsl();
-            dsl.deleteFrom(SQL_INDEX_COLUMN).where(SQL_INDEX_COLUMN.SOURCE_NAME.eq(source)).execute();
-            dsl.deleteFrom(SQL_INDEX).where(SQL_INDEX.SOURCE_NAME.eq(source)).execute();
-            dsl.deleteFrom(SQL_REFERENTIAL_CONSTRAINT)
-                .where(SQL_REFERENTIAL_CONSTRAINT.SOURCE_NAME.eq(source)).execute();
+    private static void clearSchemaSources(FactSink sink, Set<String> sources) {
+        var dsl = sink.dsl();
+        var owned = new ArrayList<String>();
+        for (String source : sources) {
+            if (sink.claim(STORE_SOURCE, source)) {
+                owned.add(source);
+                dsl.deleteFrom(SQL_INDEX_COLUMN).where(SQL_INDEX_COLUMN.SOURCE_NAME.eq(source)).execute();
+                dsl.deleteFrom(SQL_INDEX).where(SQL_INDEX.SOURCE_NAME.eq(source)).execute();
+                dsl.deleteFrom(SQL_REFERENTIAL_CONSTRAINT)
+                    .where(SQL_REFERENTIAL_CONSTRAINT.SOURCE_NAME.eq(source)).execute();
+            }
+        }
+        for (String source : owned) {
             dsl.deleteFrom(SQL_PRIMARY_KEY).where(SQL_PRIMARY_KEY.SOURCE_NAME.eq(source)).execute();
             dsl.deleteFrom(SQL_CONSTRAINT_COLUMN)
                 .where(SQL_CONSTRAINT_COLUMN.SOURCE_NAME.eq(source)).execute();
@@ -144,7 +163,6 @@ final class CatalogFactCapture {
             dsl.deleteFrom(SQL_TABLE).where(SQL_TABLE.SOURCE_NAME.eq(source)).execute();
             ClasspathSources.upsert(dsl, source, JOOQ_SCHEMA);
         }
-        return source;
     }
 
     /** The generated package the table's schema lives in; the sql_ family's partition source. */

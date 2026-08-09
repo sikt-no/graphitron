@@ -255,9 +255,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
                     Optional.ofNullable(binding.descriptionNote).filter(s -> !s.isEmpty())));
             }
         }
-        var buildFile = project.getFile() != null
-            ? project.getFile().toPath().toAbsolutePath().normalize()
-            : null;
+        var buildFile = project.getFile() != null ? project.getFile().toPath() : null;
         return new SchemaRecipe(buildFile, bindings, List.copyOf(extensions));
     }
 

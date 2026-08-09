@@ -52,6 +52,9 @@ public record SchemaRecipe(Path buildFile, List<Binding> bindings, List<String> 
     public SchemaRecipe {
         Objects.requireNonNull(bindings, "bindings");
         Objects.requireNonNull(extensions, "extensions");
+        if (buildFile != null) {
+            buildFile = buildFile.toAbsolutePath().normalize();
+        }
         bindings = List.copyOf(bindings);
         extensions = List.copyOf(extensions);
     }

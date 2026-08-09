@@ -1,7 +1,7 @@
 ---
 id: R610
 title: "SDL fact keys carry a graph partition dimension"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 3
 theme: classification-model
@@ -135,6 +135,18 @@ one blast radius as its consequence.
   classpath order. That stays true of a single run and becomes misleading store-wide, where
   two runs' entries are two partitions that coexist by design. The comment gate checks that a
   comment exists, not that it is still true, so this one is named here to be caught.
+- `sql_referential_constraint`'s foreign key can cross package partitions: the multi-schema
+  layout spreads tables across more than one generated package, so a table's foreign key can
+  reference a constraint whose own `source_name` differs from the referencing row's. The
+  relation therefore carries a `referenced_source_name` column beside `referenced_schema` /
+  `referenced_table` / `referenced_constraint_name`, resolved from a package census the catalog
+  walk builds up front, and the relation's own foreign key into `sql_constraint` widens to match.
+  This is not free: a warm refresh has to clear every owned package's referential-constraint
+  rows before it clears any owned package's constraints, over the whole set rather than one
+  package at a time, because deleting a constraint while a not-yet-cleared sibling package's
+  referential row still points at it violates the referenced-side foreign key. `CatalogFactCapture`
+  runs that clear in two rounds across every source the census names rather than interleaved with
+  the per-table walk.
 
 ## The graph has a configured name
 
@@ -212,7 +224,12 @@ than defaulted.
 A run still captures exactly one graph; the store may hold many. Per-run single-graph is
 enforced by construction through the graph-scoped sink below, not by a row-count gate, since
 a shared store legitimately accumulates one `store_graph` row per module ever built against
-it.
+it. `FactCapture.GraphIdentity(name, baseDir, recipe)` is that one graph made a type rather than
+three parallel arguments every capture entry point would otherwise carry: the graph's name, the
+base directory its ownership is checked against, and the recipe capture remembers beside it
+(nullable, for a caller with no resolved `<schemaInputs>` configuration to remember). Its compact
+constructor is where `name`'s non-blank contract and `baseDir`'s absolute-and-normalized form are
+enforced once, for every caller, rather than at each of the (few) entry points that build one.
 
 ## The store lives with the user
 
@@ -225,7 +242,12 @@ rather than the data one. A `<storeDirectory>` mojo parameter with a matching
 `graphitron.store.directory` property overrides the default for consumers and CI setups that
 want the store module-local or hermetic; `FactCapture.run`'s existing `storeDirectory`
 argument is already the seam, so what the mojos change is the *home* they resolve and pass,
-inside `AbstractRewriteMojo.resolveStoreDirectory`. That method is the only store-home resolver
+inside `AbstractRewriteMojo.resolveStoreDirectory`. That method also falls back to
+`System.getProperty("graphitron.store.directory")` directly when the `@Parameter` field itself
+is unset, mirroring what Maven's CLI property injection would otherwise do: a mojo Maven
+constructs sees the parameter populated from `-D`, but a mojo a test constructs programmatically
+never goes through that injection at all, and without the direct fallback such a caller would
+silently resolve the real per-user cache instead of the test's own directory. That method is the only store-home resolver
 in the tree, and every other opener (the `dev` goal's server, the LSP catalog, MCP) reaches the
 store through the `RewriteContext` it built, so there is one place for the rest of this section
 to be true of. The `mojo-configuration.adoc` manual page
@@ -360,6 +382,13 @@ to be left on disk, so letting H2 close it at JVM exit is what it wanted anyway,
 SHUTDOWN discipline `close()` documents is unchanged because it never applied to the file
 case. The read path's flag is settled by deleting the read path, below.
 
+The file URL also carries `LOCK_TIMEOUT=60000`: mixed mode makes a second process's write wait
+on the first's file lock the ordinary case rather than the exceptional one, and H2's default
+timeout (a few seconds) turns an ordinary `mvnd`-parallel wait into a spurious failure. Sixty
+seconds is long enough to cover a sibling module's own capture load without masking a genuinely
+stuck holder; a wait that long is still bounded, and `FactCapture.run`'s never-fail rule catches
+the case where it is exceeded.
+
 Mixed mode reverses a decision the code already records, so the reversal is argued rather
 than assumed. `GraphitronModelStore.openReadOnly` rejected the server approach in as many
 words, on the grounds that it turns a build artefact into a running service every reader has
@@ -410,6 +439,22 @@ machine, which is the second reason it is worth the segment. That is the residue
 recovery-story paragraph above already accepted, on the same remedy, and the eviction surface
 this item defers is where a named command for it
 belongs.
+
+The never-discard rule above is about failing to *open* the shared file; a warm capture can also
+fail to *write* to a file it opened successfully, and that failure gets its own answer for the
+same reason. `FactCapture.run` retries a failed warm capture once against the same store before
+falling back, which is what tells a transient concurrency casualty (a concurrent writer of the
+same rows, a lock that timed out; capture's own delete-then-rewrite is safely rerunnable, so a
+retry against a store the other writer has since released simply lands) apart from a
+deterministic capture bug (the same failure both times, independent of timing). The first case is
+absorbed at debug level; the second still demotes to the in-memory store, since a cache is never
+allowed to cost more than warmth, but logs at warn with the exception and the graph's name,
+because a deterministic failure means this graph's warm start is out for good until the
+underlying bug is fixed, and that is not something a debug-level line may leave unread. Retrying
+the same warm capture rather than distinguishing exception types by SQL state is deliberate: H2's
+error taxonomy for "someone else holds this row" and "the delete you asked for cannot happen at
+all" is not a contract worth coupling to, while running the capture again and observing whether
+it still fails is.
 
 Nothing in the build writes to the real user cache, and that takes two seams rather than one,
 because the tests come in two shapes. The Java tiers keep injecting temp directories through the
@@ -759,65 +804,24 @@ whoever notices next.
 
 ## Rework from the In Review gate (2026-08-09)
 
-The delivery is `b534810`, and almost all of it stands: the DDL rekey and its three gates, the
-workspace-scoped per-user store in mixed mode with the never-discard rule, graph-scoped capture,
-the mojo surface, the manual rows, and the retirement sweep (`openReadOnly`, `isAlreadyOpen`,
-`discard`, the snapshot vocabulary and the `mvn clean` recovery story are all gone from the tree,
-and R603's spec was swept with them). `mvn install -Plocal-db` is green, the reactor writes
-exactly one workspace segment into `~/.cache/graphitron/model/`, and the plugin's ITs and unit
-tier are pinned under `target/`. What follows is what the next pass owes.
-
-**Blocking: a warm refresh over a multi-package jOOQ catalog cannot complete.** The delivery's one
-recorded departure, `sql_referential_constraint.referenced_source_name` with its own foreign key
-into `sql_constraint` (`graphitron-model.sql:2163`), makes a referential row in package B point
-into package A's partition. `CatalogFactCapture.recordSchemaSource`
-(`graphitron/src/main/java/no/sikt/graphitron/rewrite/capture/CatalogFactCapture.java:131`) clears
-each package's `sql_` partition on first sight, interleaved with the walk, so on a warm run the
-delete at line 142 (`sql_constraint` scoped to package A) fires while B's *previous run's*
-referential rows still reference it. Measured, not inferred: driving
-`FactCapture.capture(dsl, true, ...)` over the `multischemafixture` catalog against a warm store
-throws `Referential integrity constraint violation: SQL_REFERENTIAL_CONSTRAINT FOREIGN
-KEY(REFERENCED_SOURCE_NAME, ...) ('...multischema_a', 'multischema_a', 'widget', 'widget_pkey')`.
-The cross-partition foreign key and the partition-scoped delete have to be reconciled: either the
-referential rows of every package this run owns are cleared before any package's constraints are,
-or the referenced side stops being a declared foreign key and states its cross-partition nature
-some other way. Whichever it is, the case needs a test: no delivered test runs a warm refresh with
-a catalog in hand at all, which is why a green build did not catch this.
-
-**Blocking, and the reason the above is silent rather than red.** `FactCapture.run`
-(`graphitron/src/main/java/no/sikt/graphitron/rewrite/capture/FactCapture.java:102`) catches
-`DataAccessException` from the warm capture, logs at debug, and recaptures into a private
-in-memory store. Its javadoc claims this "reproduces a genuine capture bug and absorbs a
-concurrency casualty, so nothing is masked", and that reasoning does not hold for a warm-only
-bug: the retry runs cold, so the failing delete never executes and the exception never recurs.
-The observable effect for a consumer whose catalog spans packages is that every build silently
-takes the cold path forever while the shared file keeps the first run's rows, with nothing above
-debug level saying so. The fallback needs to be narrowed to what it was argued for (a concurrency
-casualty), or to surface loudly enough that a permanent warm-start outage is not invisible.
-
-**Retirement sweep, one survivor.** `RewriteContext.withStoreDirectory`'s javadoc
-(`graphitron/src/main/java/no/sikt/graphitron/rewrite/RewriteContext.java:177`) still says the
-mojos "point the fact store at the project's build directory", which is exactly the phrase the
-Retired vocabulary section below names. The method has no callers in the tree, so deleting it is
-also on the table.
-
-**Non-blocking, worth taking while the code is open.**
-
-- `FactSchemaGateTest`'s leading-key gate resolves `store_source` and `store_stamp` to
-  `case "store_source", "store_stamp" -> column` (`FactSchemaGateTest.java:293`), which compares
-  the actual to itself. Those two rows can never fail. The item's own words for this shape are "a
-  gate that passes because it never ran"; naming their real leading columns costs nothing.
-- `everyGraphKeyedRelationReachesTheAnchor` counts any foreign-key edge as reaching the anchor,
-  including one that carries no `graph_name` column. The closure would still pass for a
-  graph-keyed relation anchored only through a graph-free reference.
-- `SchemaRecipe`'s `buildFile` component javadoc promises "absolute and normalized"; the compact
-  constructor normalizes neither (only `AbstractRewriteMojo.buildSchemaRecipe` does), so a
-  programmatic caller can record a relative build-file path against the contract.
-- The spec body was not updated with what shipped. Three departures live only in `b534810`'s
-  commit message: `referenced_source_name`, `resolveStoreDirectory` consulting the
-  `graphitron.store.directory` system property for programmatically constructed mojos, and
-  `LOCK_TIMEOUT=60000` on the file URL. `FactCapture.GraphIdentity` and the `DataAccessException`
-  fallback are not described anywhere in this file either. Fold them in before the next gate.
+The delivery reviewed there was `b534810`; almost all of it stood, and stands: the DDL rekey and
+its three gates, the workspace-scoped per-user store in mixed mode with the never-discard rule,
+graph-scoped capture, the mojo surface, the manual rows, and the retirement sweep. That gate found
+two blocking defects, one retirement-sweep survivor, and four smaller notes, all addressed by this
+pass. `CatalogFactCapture` now clears every owned package's referential-constraint rows before
+clearing any owned package's constraints (a two-round pass over the whole set rather than one
+round interleaved with the per-table walk), which is what a warm refresh over a catalog whose
+foreign keys cross package partitions needs; `WarmStartRefreshTest` pins it directly against the
+multi-schema fixture, bypassing `FactCapture.run` so the assertion cannot be masked by the retry
+below. `FactCapture.run` now retries a failed warm capture once before falling back, which tells a
+transient concurrency casualty apart from a deterministic bug and logs the latter at warn instead
+of leaving it at debug forever. `RewriteContext.withStoreDirectory`, the one retirement-sweep
+survivor, is deleted (it had no callers). The four smaller notes are taken too: the leading-key
+gate now names `store_source` and `store_stamp`'s real columns instead of comparing a value to
+itself, `everyGraphKeyedRelationReachesTheAnchor`'s closure only follows an edge that itself
+threads `graph_name`, `SchemaRecipe`'s compact constructor normalizes `buildFile` so every caller
+gets the contract its javadoc promises, and the departures this section names are folded into the
+sections above.
 
 ## Verification
 
@@ -835,6 +839,13 @@ sibling's. The re-expansion case is implementable there only because `SchemaReci
 in `graphitron` rather than beside the mojo; a recipe relation whose expansion lived in the
 plugin would have this assertion in a module that cannot see the store. Generated output is
 untouched.
+
+A warm refresh over a catalog is pinned too, and separately from the census anchors above,
+because none of them drives a *second* capture over a jOOQ catalog: `WarmStartRefreshTest`
+captures the multi-schema fixture, then captures it again against the same warm store, calling
+`FactCapture.capture` directly rather than `FactCapture.run` so a regression cannot hide behind
+the retry-then-fall-back this item's own rework added. That is the case a catalog whose foreign
+keys cross package partitions needs and the one no test ran before this pass.
 
 The workspace resolver is pinned where its primitive already is. `AbstractRewriteMojoTest` covers
 `siblingModuleBasedirs` today with three `@TempDir` cases (document order excluding current, stops

@@ -17,8 +17,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R613` | Generated column filters compose beside the lookup VALUES join | Spec | 2026-08-08 | [plan](lookup-generated-column-filters.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R612` | The schema scan and its freshness replay share one typed recipe <sub>blocked by: [graph-partition-key-dimension](graph-partition-key-dimension.md)</sub> | Spec | 2026-08-09 <sub>created 2026-08-08</sub> | [plan](maven-config-fact-family.md) |
-| `R610` | SDL fact keys carry a graph partition dimension | Ready | 2026-08-09 <sub>created 2026-08-08</sub> | [plan](graph-partition-key-dimension.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-06 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
+| `R610` | SDL fact keys carry a graph partition dimension | In Progress | 2026-08-09 <sub>created 2026-08-08</sub> | [plan](graph-partition-key-dimension.md) |
 | `R589` | Classification is a relation; validation adds facts | Spec | 2026-08-08 <sub>created 2026-08-04</sub> | [plan](validation-adds-facts.md) |
 | `R569` | Aggregated diagnostics commands for the MCP server <sub>blocked by: [graph-partition-key-dimension](graph-partition-key-dimension.md)</sub> | Spec | 2026-08-08 <sub>created 2026-08-03</sub> | [plan](mcp-aggregated-diagnostics.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
@@ -226,7 +226,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R234` [**Support jOOQ embedded and UDT records as non-table input backings**](jooq-embedded-and-udt-input-backings.md) — Backlog, architecture
 - `R523` [**Carry field SourceLocations through the tenant-binding fold rejections**](tenant-fold-rejection-source-locations.md) — Backlog, tech-debt
-- `R610` [**SDL fact keys carry a graph partition dimension**](graph-partition-key-dimension.md) — Ready, architecture
+- `R610` [**SDL fact keys carry a graph partition dimension**](graph-partition-key-dimension.md) — In Progress, architecture
 - `R333` [**The Graphitron data model**](coordinate-lowers-to-datafetcher-queryparts.md) — Ready, structural
 - `R612` [**The schema scan and its freshness replay share one typed recipe**](maven-config-fact-family.md) — Spec, architecture, blocked by [graph-partition-key-dimension](graph-partition-key-dimension.md)
 - `R609` [**Capture-load residuals from the fact-store delivery**](capture-load-residuals.md) — Backlog, architecture

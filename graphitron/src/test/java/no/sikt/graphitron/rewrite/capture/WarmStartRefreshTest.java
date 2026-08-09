@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.capture;
 
 import no.sikt.graphitron.model.Public;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.NodeDeclaration;
 import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
@@ -34,13 +35,17 @@ import java.util.zip.ZipOutputStream;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS;
+import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
+import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SCHEMA_EXTENSION;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SCHEMA_INPUT;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
  * What a warm store keeps and what it rewrites, under ownership scoping: a run deletes exactly
@@ -284,6 +289,40 @@ class WarmStartRefreshTest {
             .containsExactlyInAnyOrder(
                 tmp.resolve("fixture.graphqls").toAbsolutePath().normalize(),
                 tmp.resolve("added.graphqls").toAbsolutePath().normalize());
+    }
+
+    /**
+     * {@code sql_referential_constraint}'s referenced-side foreign key can cross package
+     * partitions (a foreign key crossing schemas the multi-schema fixture spreads over different
+     * generated packages), while the catalog walk clears each package's {@code sql_} partition as
+     * it visits that package. A warm refresh must not let the delete of one package's constraints
+     * fire while a sibling package's stale referential rows still point at them. Calls
+     * {@link FactCapture#capture(DSLContext, boolean, FactCapture.GraphIdentity,
+     * graphql.schema.idl.TypeDefinitionRegistry, JooqCatalog, List, NodeDeclaration) capture}
+     * directly rather than through {@link FactCapture#run}, whose retry-then-fall-back masks a
+     * deterministic failure behind a private in-memory store instead of surfacing it here.
+     */
+    @Test
+    @DisplayName("a warm refresh over a multi-package jOOQ catalog completes")
+    void aWarmRefreshOverAMultiPackageCatalogCompletes(@TempDir Path tmp) {
+        var jooq = new JooqCatalog("no.sikt.graphitron.rewrite.multischemafixture",
+            testContext().codegenLoader());
+        try (var store = GraphitronModelStore.open()) {
+            FactCapture.capture(store.dsl(), false, graph(tmp), CapturedStore.registryOf(tmp, SDL),
+                jooq, List.of(), new NodeDeclaration(null));
+
+            assertThatCode(() -> FactCapture.capture(store.dsl(), true, graph(tmp),
+                CapturedStore.registryOf(tmp, SDL), jooq, List.of(), new NodeDeclaration(null)))
+                .as("a warm refresh over a catalog whose foreign keys cross package partitions")
+                .doesNotThrowAnyException();
+
+            assertThat(store.dsl().fetchCount(SQL_TABLE))
+                .as("the warm refresh completed and rewrote the catalog").isPositive();
+            assertThat(store.dsl().fetchCount(SQL_REFERENTIAL_CONSTRAINT,
+                SQL_REFERENTIAL_CONSTRAINT.REFERENCED_SOURCE_NAME.ne(SQL_REFERENTIAL_CONSTRAINT.SOURCE_NAME)))
+                .as("the fixture's cross-package foreign key, still standing after the warm refresh")
+                .isPositive();
+        }
     }
 
     private static final String GRAPH_NAME = "WarmStartRefreshTest";
