@@ -7,7 +7,7 @@ priority: 1
 theme: legacy-migration
 depends-on: []
 created: 2026-08-08
-last-updated: 2026-08-08
+last-updated: 2026-08-09
 ---
 
 # Generated column filters compose beside the lookup VALUES join
@@ -229,6 +229,26 @@ its output index, which the page currently frames as meaning "unmatched position
   existing. That blind spot is not hypothetical, it is exactly why the cardinality co-read above
   went unnoticed in the spike (the measured root fixture's key is already list-typed, so the
   co-read was invisible in its SQL).
+
+## Retired vocabulary
+
+Declared per `roadmap/workflow.adoc` § Item file conventions; the Done-gate reviewer greps prose
+surfaces (javadoc, comments, `.adoc`, fixture prose, test names) for these. Finalise the list at
+the Done gate if implementation retires more.
+
+- `requireNoGeneratedFilterOnLookup` (the `ConditionCommands` backstop, its call-site `lookup`
+  boolean, and the class javadoc's lookup clause).
+- The deferral claim in any phrasing: "generated column filters on a lookup coordinate are not
+  emitted", "no emitter renders a generated column predicate" (for/beside a lookup field, member,
+  or coordinate), and the validator javadoc's lookup `<li>`.
+- `COLUMN_ARG_DEFERRED` / `LIST_COLUMN_ARG_DEFERRED` (renamed off the `_DEFERRED` suffix) and the
+  test's `GENERATED_FILTER_ON_LOOKUP` message constant, whose text is the deferral claim above.
+- The prediction comment "flip back to valid when the lookup fold converges onto glue" (replaced
+  by the fact, per the plan).
+- The cardinality co-read and its comment: "list-ness may come from LookupMapping or from a
+  filter-carried list arg, and both paths are covered" (the filter disjunct of `anyKeyIsList`).
+- The coordinate-scoped reading of "`@lookupKey` is exempt from the implicit-predicate path"
+  (narrowed to the argument, not deleted; the argument-scoped statement stays true).
 
 ## Non-goals
 
