@@ -61,7 +61,7 @@ class BuildOutputReportPipelineTest {
 
         var ctx = new RewriteContext(
             List.of(new SchemaInput(schema.toString(), Optional.empty(), Optional.empty())),
-            tmp,
+            tmp, "BuildOutputReportPipelineTest",
             tmp,
             DEFAULT_OUTPUT_PACKAGE,
             DEFAULT_JOOQ_PACKAGE
@@ -106,7 +106,7 @@ class BuildOutputReportPipelineTest {
 
         var ctx = new RewriteContext(
             List.of(new SchemaInput(schema.toString(), Optional.empty(), Optional.empty())),
-            tmp, tmp, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            tmp, "BuildOutputReportPipelineTest", tmp, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
 
         var report = new GraphQLRewriteGenerator(ctx).buildOutput().report();
 

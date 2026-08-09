@@ -42,7 +42,7 @@ class TypedAccessorSchemaQualifiedIdentityPipelineTest {
     private static RewriteContext multiSchemaContext() {
         return new RewriteContext(
             List.of(),
-            Path.of(""),
+            Path.of(""), "TypedAccessorSchemaQualifiedIdentityPipelineTest",
             Path.of(""),
             MULTI_OUTPUT_PACKAGE,
             MULTI_JOOQ_PACKAGE

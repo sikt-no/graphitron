@@ -1,8 +1,8 @@
 package no.sikt.graphitron.rewrite.maven;
 
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
+import no.sikt.graphitron.rewrite.schema.input.SchemaRecipe;
 import org.apache.maven.plugin.MojoExecutionException;
-import org.codehaus.plexus.util.DirectoryScanner;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -12,8 +12,11 @@ import java.util.Set;
 
 /**
  * Expands {@link SchemaInputBinding} glob patterns into resolved {@link SchemaInput} records.
- * Rewrite-core's {@link SchemaInput} holds one concrete source per entry; the pattern-to-file
- * expansion lives here so rewrite-core stays filesystem-agnostic.
+ * The walk itself is {@link SchemaRecipe#expand}, rewrite-core's one glob dialect, because the
+ * pattern a build expands is also a pattern capture records and a currency check re-expands, and
+ * two implementations of the dialect could not be kept in agreement. What stays here is the
+ * Maven-shaped work: reading {@link SchemaInputBinding}, the empty-pattern diagnostics, and the
+ * {@link MojoExecutionException} shapes.
  */
 class SchemaInputExpander {
 
@@ -40,21 +43,12 @@ class SchemaInputExpander {
         var emptyPatterns = new ArrayList<ExpansionResult.EmptyPattern>();
         for (int i = 0; i < bindings.size(); i++) {
             var b = bindings.get(i);
-            var scanner = new DirectoryScanner();
-            scanner.setBasedir(basedir.toFile());
-            scanner.setIncludes(new String[]{b.pattern});
+            List<String> matches;
             try {
-                scanner.scan();
+                matches = SchemaRecipe.expand(basedir, b.pattern, schemaFileExtensions);
             } catch (RuntimeException e) {
                 throw new MojoExecutionException(
                     "<schemaInput pattern='" + b.pattern + "'> scanner error (entry #" + i + "): " + e.getMessage(), e);
-            }
-            var rawMatches = scanner.getIncludedFiles();
-            var matches = new ArrayList<String>(rawMatches.length);
-            for (var rel : rawMatches) {
-                if (matchesExtension(rel, schemaFileExtensions)) {
-                    matches.add(rel);
-                }
             }
             if (matches.isEmpty()) {
                 emptyPatterns.add(new ExpansionResult.EmptyPattern(i, b.pattern));
@@ -75,14 +69,5 @@ class SchemaInputExpander {
             throw new MojoExecutionException(sb.toString());
         }
         return new ExpansionResult(expanded, List.copyOf(emptyPatterns));
-    }
-
-    private static boolean matchesExtension(String relativePath, Set<String> schemaFileExtensions) {
-        int sep = Math.max(relativePath.lastIndexOf('/'), relativePath.lastIndexOf('\\'));
-        var filename = sep < 0 ? relativePath : relativePath.substring(sep + 1);
-        for (String ext : schemaFileExtensions) {
-            if (filename.endsWith(ext)) return true;
-        }
-        return false;
     }
 }

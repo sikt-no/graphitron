@@ -8,6 +8,7 @@ import no.sikt.graphitron.rewrite.dependency.DependencyVersions;
 import no.sikt.graphitron.rewrite.dependency.ObservedVersion;
 import no.sikt.graphitron.rewrite.dependency.WatchedDependency;
 import no.sikt.graphitron.rewrite.lint.LintConfig;
+import no.sikt.graphitron.rewrite.schema.input.SchemaRecipe;
 import no.sikt.graphitron.rewrite.session.SessionStateConfig;
 import no.sikt.graphitron.rewrite.ValidationFailedException;
 import no.sikt.graphitron.rewrite.maven.watch.WatchErrorFormatter;
@@ -27,14 +28,19 @@ import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.EnumMap;
 import java.util.LinkedHashSet;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -86,6 +92,26 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
 
     @Parameter(defaultValue = "${project.build.directory}/generated-sources/graphitron")
     String outputDirectory;
+
+    /**
+     * Name this module's graph carries in the fact store: the partition dimension every SDL fact
+     * row's key leads with, so one workspace store holds every module's graph without fusing
+     * them. The default, the module's own artifactId, is unique within a reactor, which is
+     * exactly the store's sharing scope; override it when the subgraph's published name differs
+     * from the module's, or when two modules would otherwise claim one name.
+     */
+    @Parameter(defaultValue = "${project.artifactId}")
+    String graphName;
+
+    /**
+     * Where the fact store is kept between runs; the store's <em>home</em>, under which the store
+     * itself keeps a compatibility-stamped subdirectory. Omit for the platform's per-user cache
+     * location with a per-workspace segment, resolved by {@link #resolveStoreDirectory}; set it
+     * (or pass {@code -Dgraphitron.store.directory=...}) to keep the store inside the build for
+     * hermetic CI jobs or containers that discard {@code $HOME}.
+     */
+    @Parameter(property = "graphitron.store.directory")
+    String storeDirectory;
 
     @Parameter
     String outputPackage;
@@ -187,6 +213,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             expansion.inputs(),
             extensions,
             basedir,
+            effectiveGraphName(),
             outAbs,
             resourcesAbs,
             effectiveOutput,
@@ -198,8 +225,40 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             buildSessionStateConfig(),
             tenantColumn,
             resolveDependencyVersions(),
-            resolveStoreDirectory(basedir)
+            resolveStoreDirectory(basedir),
+            buildSchemaRecipe(extensions)
         );
+    }
+
+    /**
+     * The configured {@code <graphName>}, or the parameter's own default recomputed for callers
+     * that construct the mojo programmatically (the unit tier), where Maven never applies
+     * {@code defaultValue}. One truth, stated twice by necessity, not a second default.
+     */
+    private String effectiveGraphName() {
+        return graphName != null && !graphName.isBlank() ? graphName : project.getArtifactId();
+    }
+
+    /**
+     * The graph's SDL recipe: the {@code <schemaInputs>} bindings as configured (patterns, tags,
+     * description notes), the effective extension filter, and the pom they were resolved from.
+     * Capture persists it beside the graph, which is what lets a currency check re-expand the
+     * globs over the module's base directory without building the module.
+     */
+    private SchemaRecipe buildSchemaRecipe(Set<String> extensions) {
+        var bindings = new ArrayList<SchemaRecipe.Binding>();
+        if (schemaInputs != null) {
+            for (SchemaInputBinding binding : schemaInputs) {
+                bindings.add(new SchemaRecipe.Binding(
+                    binding.pattern,
+                    Optional.ofNullable(binding.tag).filter(s -> !s.isEmpty()),
+                    Optional.ofNullable(binding.descriptionNote).filter(s -> !s.isEmpty())));
+            }
+        }
+        var buildFile = project.getFile() != null
+            ? project.getFile().toPath().toAbsolutePath().normalize()
+            : null;
+        return new SchemaRecipe(buildFile, bindings, List.copyOf(extensions));
     }
 
     /**
@@ -308,22 +367,109 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     }
 
     /**
-     * The fact store's directory under the build directory (same test-instance fallback as
-     * {@link #resolveOutputResourcesDirectory(Path)}). A run opens the previous run's store here
-     * and rewrites only the partitions it cannot prove unchanged, so the classpath census is not
-     * re-inserted once per generator pass. The store is stamped and never state of record, which is
-     * what makes {@code mvn clean} the whole of its recovery story.
+     * The fact store's home: the per-user cache location with a per-workspace segment, or the
+     * consumer's {@code <storeDirectory>} / {@code -Dgraphitron.store.directory} override taken
+     * verbatim (a pinned home is already scoped to whatever the consumer meant it to be scoped
+     * to). This is the only store-home resolver in the tree; every other opener reaches the
+     * store through the {@link RewriteContext} it built. The store itself appends a
+     * compatibility-stamped subdirectory under whatever home this returns, so the value means
+     * "home", never "the directory the file sits in".
+     *
+     * <p>The workspace segment is what makes the graph-name scoping structural rather than
+     * hopeful: one file per workspace, holding every graph that workspace's modules capture, and
+     * no file holding two workspaces' graphs, so two checkouts of one repository cannot thrash
+     * each other's partitions through equal artifactIds. The store is a cache with no state of
+     * record; a run that cannot use it boots cold and correct, so nothing here is ever worth a
+     * build failure. {@code mvn clean} no longer removes it, the file no longer being build
+     * output; the remedy for a damaged store is deleting the cache directory (or the one
+     * workspace segment under it) by hand.
      */
     final Path resolveStoreDirectory(Path basedir) {
-        var buildDirectory = project.getBuild() != null
-            ? project.getBuild().getDirectory()
-            : null;
-        var targetDir = buildDirectory != null
-            ? Path.of(buildDirectory)
-            : basedir.resolve("target");
-        return (targetDir.isAbsolute() ? targetDir : basedir.resolve(targetDir))
-            .resolve("graphitron-model")
-            .normalize();
+        // Maven binds the CLI property into the field at injection; consulting the system
+        // property here mirrors that for programmatically constructed mojos (the unit tier),
+        // whose runs would otherwise resolve the developer's real cache and orphan one
+        // workspace segment per @TempDir. The plugin's own surefire pins it for exactly that
+        // reason.
+        String configured = storeDirectory != null && !storeDirectory.isBlank()
+            ? storeDirectory
+            : System.getProperty("graphitron.store.directory");
+        if (configured != null && !configured.isBlank()) {
+            var home = Path.of(configured.trim());
+            return (home.isAbsolute() ? home : basedir.resolve(home)).normalize();
+        }
+        Path workspace = workspaceRoot(basedir);
+        return userCacheRoot()
+            .resolve("graphitron")
+            .resolve("model")
+            .resolve(workspaceSegment(workspace));
+    }
+
+    /**
+     * The platform's cache convention for per-user tool state: {@code $XDG_CACHE_HOME} (falling
+     * back to {@code ~/.cache}) on Linux, {@code ~/Library/Caches} on macOS,
+     * {@code %LOCALAPPDATA%} on Windows. The cache convention rather than the data one because
+     * the store is a cache by nature: rebuildable from sources, no state of record, always safe
+     * to delete.
+     */
+    private static Path userCacheRoot() {
+        Path home = Path.of(System.getProperty("user.home"));
+        String os = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT);
+        if (os.contains("win")) {
+            String localAppData = System.getenv("LOCALAPPDATA");
+            return localAppData != null && !localAppData.isBlank()
+                ? Path.of(localAppData)
+                : home.resolve("AppData").resolve("Local");
+        }
+        if (os.contains("mac")) {
+            return home.resolve("Library").resolve("Caches");
+        }
+        String xdg = System.getenv("XDG_CACHE_HOME");
+        return xdg != null && !xdg.isBlank() && Path.of(xdg).isAbsolute()
+            ? Path.of(xdg)
+            : home.resolve(".cache");
+    }
+
+    /**
+     * The root directory's leaf name plus a hash of its absolute normalized path: filesystem-safe,
+     * collision-free, and legible in a directory listing when a user goes looking for what is
+     * filling their cache.
+     */
+    private static String workspaceSegment(Path workspace) {
+        Path leaf = workspace.getFileName();
+        String name = leaf != null ? leaf.toString() : "workspace";
+        try {
+            var digest = MessageDigest.getInstance("SHA-256");
+            var hash = HexFormat.of().formatHex(
+                digest.digest(workspace.toString().getBytes(StandardCharsets.UTF_8)));
+            return name + "-" + hash.substring(0, 16);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is required of every JVM", e);
+        }
+    }
+
+    /**
+     * The workspace a module belongs to: the outermost reactor root, resolved off the filesystem
+     * aggregator chain by chaining {@link #nearestAggregator}'s one step until no ancestor pom
+     * lists the current directory. Outermost rather than nearest because two subgraph modules
+     * under different intermediate aggregators of one checkout have to land in one store to be
+     * composable at all. Filesystem-only on purpose: the Maven session's top-level project and
+     * execution root both answer "where was {@code mvn} invoked", so a module built from inside
+     * its own directory would resolve a different workspace than the same module built from the
+     * root and boot cold against a store one directory away; and the parent chain is a different
+     * graph than the aggregator chain (an empty {@code <relativePath/>} resolves the parent from
+     * the repository, an aggregator need not be the parent), so it cannot serve either. Each hop
+     * is a strict ancestor of the previous, so the walk terminates on path depth; a module no
+     * ancestor pom lists resolves to itself, which fires on a property of the tree (there is no
+     * aggregator on disk) rather than on how Maven happened to resolve anything.
+     */
+    static Path workspaceRoot(Path moduleBasedir) {
+        Path workspace = moduleBasedir.toAbsolutePath().normalize();
+        for (Path aggregator = nearestAggregator(workspace);
+             aggregator != null;
+             aggregator = nearestAggregator(workspace)) {
+            workspace = aggregator;
+        }
+        return workspace;
     }
 
     /**
@@ -550,29 +696,42 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      */
     static List<Path> siblingModuleBasedirs(Path currentBasedir) {
         Path current = currentBasedir.toAbsolutePath().normalize();
+        Path aggregator = nearestAggregator(current);
+        if (aggregator == null) {
+            return List.of();
+        }
+        var siblings = new ArrayList<Path>();
+        for (String module : parseModules(aggregator.resolve("pom.xml"))) {
+            Path moduleBase = resolveModuleBasedir(aggregator, module);
+            if (moduleBase != null && !moduleBase.equals(current)) {
+                siblings.add(moduleBase);
+            }
+        }
+        return List.copyOf(siblings);
+    }
+
+    /**
+     * One step of the aggregator chain, shared by the sibling scan and the workspace resolver so
+     * the two questions share one notion of "which reactor is this module part of": the nearest
+     * ancestor directory whose {@code pom.xml}'s {@code <modules>} resolve to include
+     * {@code currentBasedir}, or {@code null} when no ancestor lists it. Answered off the
+     * filesystem, so it gives the same answer from the reactor root and from inside the module.
+     */
+    private static Path nearestAggregator(Path currentBasedir) {
+        Path current = currentBasedir.toAbsolutePath().normalize();
         for (Path dir = current.getParent(); dir != null; dir = dir.getParent()) {
             Path pom = dir.resolve("pom.xml");
             if (!Files.isRegularFile(pom)) {
                 continue;
             }
-            var siblings = new ArrayList<Path>();
-            boolean listsCurrent = false;
             for (String module : parseModules(pom)) {
                 Path moduleBase = resolveModuleBasedir(dir, module);
-                if (moduleBase == null) {
-                    continue;
+                if (current.equals(moduleBase)) {
+                    return dir;
                 }
-                if (moduleBase.equals(current)) {
-                    listsCurrent = true;
-                } else {
-                    siblings.add(moduleBase);
-                }
-            }
-            if (listsCurrent) {
-                return List.copyOf(siblings);
             }
         }
-        return List.of();
+        return null;
     }
 
     /**

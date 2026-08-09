@@ -52,11 +52,6 @@
             <artifactId>maven-core</artifactId>
             <scope>provided</scope>
         </dependency>
-        <dependency>
-            <groupId>org.codehaus.plexus</groupId>
-            <artifactId>plexus-utils</artifactId>
-            <version>3.6.1</version>
-        </dependency>
 
         <dependency>
             <groupId>org.junit.jupiter</groupId>
@@ -88,6 +83,13 @@
                          "restricted method ... has been called" warning. @{argLine} leads so the
                          JaCoCo agent flags from -Pcoverage survive this override. -->
                     <argLine>@{argLine} --enable-native-access=ALL-UNNAMED</argLine>
+                    <!-- The mojo tests construct and execute real mojos, so without a pinned home
+                         resolveStoreDirectory would write the developer's or CI runner's actual
+                         user cache and orphan one workspace segment per @TempDir run. Same
+                         hermeticity move as the invoker <properties> below. -->
+                    <systemPropertyVariables>
+                        <graphitron.store.directory>${project.build.directory}/test-store</graphitron.store.directory>
+                    </systemPropertyVariables>
                 </configuration>
             </plugin>
             <plugin>
@@ -108,6 +110,18 @@
                     <settingsFile>src/it/settings.xml</settingsFile>
                     <postBuildHookScript>verify.groovy</postBuildHookScript>
                     <showErrors>true</showErrors>
+                    <!--
+                      The ITs are real consumer builds, so left alone they would resolve the fact
+                      store's default home and write into the developer's or CI runner's actual
+                      user cache; worse, their basedir is a fresh clone under target/it on every
+                      build, so each run would orphan the previous workspace segment. Pinning the
+                      home under this module's build directory keeps the tree hermetic and lets
+                      mvn clean remove it; the three ITs then share one store under three distinct
+                      artifactIds, which is a free extra exercise of the multi-graph store.
+                    -->
+                    <properties>
+                        <graphitron.store.directory>${project.build.directory}/it-store</graphitron.store.directory>
+                    </properties>
                     <extraArtifacts>
                         <extraArtifact>no.sikt:graphitron-sakila-db:${project.version}</extraArtifact>
                     </extraArtifacts>

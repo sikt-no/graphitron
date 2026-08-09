@@ -10,6 +10,7 @@ import org.jooq.UniqueKey;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
@@ -78,30 +79,44 @@ final class CatalogFactCapture {
         if (jooq == null) {
             return;
         }
+        // Which package each table's schema lives in, resolved up front: a foreign key may cross
+        // schemas that codegen wrote into different packages, and the referenced side of its row
+        // has to name the referenced constraint's own source.
+        var sourceByTable = new HashMap<String, String>();
+        for (JooqCatalog.TableEntry entry : jooq.allTableEntries()) {
+            Table<?> table = entry.table();
+            String schema = table.getSchema() == null ? "" : table.getSchema().getName();
+            sourceByTable.put(schema + "." + table.getName(), packageOf(table));
+        }
         for (JooqCatalog.TableEntry entry : jooq.allTableEntries()) {
             Table<?> table = entry.table();
             String schema = table.getSchema() == null ? "" : table.getSchema().getName();
             String name = table.getName();
-            if (!sink.claim(SQL_TABLE, schema, name)) {
+            String source = recordSchemaSource(sink, table);
+            if (!sink.claim(SQL_TABLE, source, schema, name)) {
                 continue;
             }
             var record = sink.dsl().newRecord(SQL_TABLE);
+            record.setSourceName(source);
             record.setTableSchema(schema);
             record.setTableName(name);
             record.setJooqName(entry.javaFieldName());
-            record.setSourceName(recordSchemaSource(sink, table));
             record.setDescription(nullIfBlank(table.getComment()));
             sink.add(record);
 
-            captureColumns(sink, jooq, table, schema, name);
-            captureConstraints(sink, table, schema, name);
-            captureForeignKeys(sink, jooq, table, schema, name);
-            captureIndexes(sink, jooq, table, schema, name);
+            captureColumns(sink, jooq, table, source, schema, name);
+            captureConstraints(sink, table, source, schema, name);
+            captureForeignKeys(sink, jooq, table, source, schema, name, sourceByTable);
+            captureIndexes(sink, jooq, table, source, schema, name);
         }
     }
 
     /**
      * Claims the source this table's schema was read from, on first sight, and returns its name.
+     * First sight also clears the source's own {@code sql_} partition: a jOOQ package carries no
+     * stamp (its walk costs milliseconds), so an owned package is always rewritten, and scoping
+     * the delete to the source this walk now knows it owns is what leaves sibling graphs'
+     * packages standing in a shared store.
      *
      * <p>The source is the generated package the schema lives in, not the classpath entry the
      * classes were loaded from. Both are true of the rows, and only the package is a refresh unit:
@@ -114,15 +129,28 @@ final class CatalogFactCapture {
      * because a real catalog reaches it.
      */
     private static String recordSchemaSource(FactSink sink, Table<?> table) {
-        Schema schema = table.getSchema();
-        String source = (schema != null ? schema.getClass() : table.getClass()).getPackageName();
+        String source = packageOf(table);
         if (sink.claim(STORE_SOURCE, source)) {
-            var row = sink.dsl().newRecord(STORE_SOURCE);
-            row.setSourceName(source);
-            row.setSourceKind(JOOQ_SCHEMA);
-            sink.add(row);
+            var dsl = sink.dsl();
+            dsl.deleteFrom(SQL_INDEX_COLUMN).where(SQL_INDEX_COLUMN.SOURCE_NAME.eq(source)).execute();
+            dsl.deleteFrom(SQL_INDEX).where(SQL_INDEX.SOURCE_NAME.eq(source)).execute();
+            dsl.deleteFrom(SQL_REFERENTIAL_CONSTRAINT)
+                .where(SQL_REFERENTIAL_CONSTRAINT.SOURCE_NAME.eq(source)).execute();
+            dsl.deleteFrom(SQL_PRIMARY_KEY).where(SQL_PRIMARY_KEY.SOURCE_NAME.eq(source)).execute();
+            dsl.deleteFrom(SQL_CONSTRAINT_COLUMN)
+                .where(SQL_CONSTRAINT_COLUMN.SOURCE_NAME.eq(source)).execute();
+            dsl.deleteFrom(SQL_CONSTRAINT).where(SQL_CONSTRAINT.SOURCE_NAME.eq(source)).execute();
+            dsl.deleteFrom(SQL_COLUMN).where(SQL_COLUMN.SOURCE_NAME.eq(source)).execute();
+            dsl.deleteFrom(SQL_TABLE).where(SQL_TABLE.SOURCE_NAME.eq(source)).execute();
+            ClasspathSources.upsert(dsl, source, JOOQ_SCHEMA);
         }
         return source;
+    }
+
+    /** The generated package the table's schema lives in; the sql_ family's partition source. */
+    private static String packageOf(Table<?> table) {
+        Schema schema = table.getSchema();
+        return (schema != null ? schema.getClass() : table.getClass()).getPackageName();
     }
 
     /**
@@ -134,7 +162,7 @@ final class CatalogFactCapture {
      * column's own comment already promised the definition's order.
      */
     private static void captureColumns(FactSink sink, JooqCatalog jooq, Table<?> table,
-                                       String schema, String name) {
+                                       String source, String schema, String name) {
         var positions = new HashMap<String, Integer>();
         Field<?>[] declared = table.fields();
         for (int i = 0; i < declared.length; i++) {
@@ -148,10 +176,11 @@ final class CatalogFactCapture {
                 // given a position the table definition does not give it.
                 continue;
             }
-            if (!sink.claim(SQL_COLUMN, schema, name, column.sqlName())) {
+            if (!sink.claim(SQL_COLUMN, source, schema, name, column.sqlName())) {
                 continue;
             }
             var row = sink.dsl().newRecord(SQL_COLUMN);
+            row.setSourceName(source);
             row.setTableSchema(schema);
             row.setTableName(name);
             row.setColumnName(column.sqlName());
@@ -171,7 +200,8 @@ final class CatalogFactCapture {
      * projection choice serving the UPDATE key match, and a foreign key referencing the dropped
      * constraint would have nothing to point at here.
      */
-    private static void captureConstraints(FactSink sink, Table<?> table, String schema, String name) {
+    private static void captureConstraints(FactSink sink, Table<?> table, String source,
+                                           String schema, String name) {
         UniqueKey<?> primary = table.getPrimaryKey();
         var keys = new LinkedHashSet<UniqueKey<?>>(table.getKeys());
         if (primary != null) {
@@ -180,12 +210,13 @@ final class CatalogFactCapture {
             keys.add(primary);
         }
         for (UniqueKey<?> key : keys) {
-            writeConstraint(sink, schema, name, key.getName(),
+            writeConstraint(sink, source, schema, name, key.getName(),
                 key.equals(primary) ? PRIMARY_KEY : UNIQUE,
                 key.getFields().stream().map(Field::getName).toList());
         }
         if (primary != null) {
             var row = sink.dsl().newRecord(SQL_PRIMARY_KEY);
+            row.setSourceName(source);
             row.setTableSchema(schema);
             row.setTableName(name);
             row.setConstraintName(primary.getName());
@@ -205,13 +236,17 @@ final class CatalogFactCapture {
      * declares the foreign key rather than leaving it a detection.
      */
     private static void captureForeignKeys(FactSink sink, JooqCatalog jooq, Table<?> table,
-                                           String schema, String name) {
+                                           String source, String schema, String name,
+                                           Map<String, String> sourceByTable) {
         for (JooqCatalog.ForeignKeyFacts fk : jooq.foreignKeyFactsOf(table)) {
-            if (!writeConstraint(sink, schema, name, fk.constraintName(), FOREIGN_KEY, fk.columns())) {
+            if (!writeConstraint(sink, source, schema, name, fk.constraintName(), FOREIGN_KEY, fk.columns())) {
                 continue;
             }
             var referenced = split(fk.targetTable());
             var row = sink.dsl().newRecord(SQL_REFERENTIAL_CONSTRAINT);
+            row.setSourceName(source);
+            row.setReferencedSourceName(
+                sourceByTable.getOrDefault(referenced[0] + "." + referenced[1], source));
             row.setTableSchema(schema);
             row.setTableName(name);
             row.setConstraintName(fk.constraintName());
@@ -223,12 +258,13 @@ final class CatalogFactCapture {
     }
 
     /** The supertype row and its ordered columns, shared by all three constraint forms. */
-    private static boolean writeConstraint(FactSink sink, String schema, String name,
+    private static boolean writeConstraint(FactSink sink, String source, String schema, String name,
                                            String constraintName, String type, List<String> columns) {
-        if (!sink.claim(SQL_CONSTRAINT, schema, name, constraintName)) {
+        if (!sink.claim(SQL_CONSTRAINT, source, schema, name, constraintName)) {
             return false;
         }
         var record = sink.dsl().newRecord(SQL_CONSTRAINT);
+        record.setSourceName(source);
         record.setTableSchema(schema);
         record.setTableName(name);
         record.setConstraintName(constraintName);
@@ -237,6 +273,7 @@ final class CatalogFactCapture {
         int position = 0;
         for (String column : columns) {
             var row = sink.dsl().newRecord(SQL_CONSTRAINT_COLUMN);
+            row.setSourceName(source);
             row.setTableSchema(schema);
             row.setTableName(name);
             row.setConstraintName(constraintName);
@@ -248,12 +285,13 @@ final class CatalogFactCapture {
     }
 
     private static void captureIndexes(FactSink sink, JooqCatalog jooq, Table<?> table,
-                                       String schema, String name) {
+                                       String source, String schema, String name) {
         for (JooqCatalog.IndexFacts index : jooq.indexFactsOf(table)) {
-            if (!sink.claim(SQL_INDEX, schema, name, index.name())) {
+            if (!sink.claim(SQL_INDEX, source, schema, name, index.name())) {
                 continue;
             }
             var row = sink.dsl().newRecord(SQL_INDEX);
+            row.setSourceName(source);
             row.setTableSchema(schema);
             row.setTableName(name);
             row.setIndexName(index.name());
@@ -261,6 +299,7 @@ final class CatalogFactCapture {
             int position = 0;
             for (String column : index.columns()) {
                 var columnRow = sink.dsl().newRecord(SQL_INDEX_COLUMN);
+                columnRow.setSourceName(source);
                 columnRow.setTableSchema(schema);
                 columnRow.setTableName(name);
                 columnRow.setIndexName(index.name());
@@ -302,6 +341,7 @@ final class CatalogFactCapture {
                     continue;
                 }
                 var row = sink.dsl().newRecord(JVM_METHOD);
+                row.setSourceName(source);
                 row.setClassName(className);
                 row.setMethodName(method.name());
                 row.setDescriptor(descriptor);
@@ -311,6 +351,7 @@ final class CatalogFactCapture {
                 int position = 0;
                 for (CompletionData.Parameter parameter : method.parameters()) {
                     var parameterRow = sink.dsl().newRecord(JVM_METHOD_PARAMETER);
+                    parameterRow.setSourceName(source);
                     parameterRow.setClassName(className);
                     parameterRow.setMethodName(method.name());
                     parameterRow.setDescriptor(descriptor);
@@ -328,6 +369,7 @@ final class CatalogFactCapture {
                     continue;
                 }
                 var row = sink.dsl().newRecord(JVM_RECORD_COMPONENT);
+                row.setSourceName(source);
                 row.setClassName(className);
                 row.setComponentName(component.name());
                 row.setPosition(position++);
@@ -340,6 +382,7 @@ final class CatalogFactCapture {
                     continue;
                 }
                 var row = sink.dsl().newRecord(JVM_SCALAR_TYPE_FIELD);
+                row.setSourceName(source);
                 row.setClassName(className);
                 row.setFieldName(constant.fieldName());
                 sink.add(row);

@@ -379,7 +379,7 @@ class DevMojoTest {
         // so the jooq package / output directory values are never exercised.
         return new RewriteContext(
             List.of(SchemaInput.plain(schemaFile.toString())),
-            basedir,
+            basedir, "DevMojoTest",
             basedir.resolve("target/generated"),
             "com.example.generated",
             "com.example.jooq");

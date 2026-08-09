@@ -42,7 +42,7 @@ class SchemaParseExceptionPropagationTest {
 
         var ctx = new RewriteContext(
             List.of(SchemaInput.plain(broken.toString())),
-            tmp,
+            tmp, "SchemaParseExceptionPropagationTest",
             tmp,
             DEFAULT_OUTPUT_PACKAGE,
             DEFAULT_JOOQ_PACKAGE);

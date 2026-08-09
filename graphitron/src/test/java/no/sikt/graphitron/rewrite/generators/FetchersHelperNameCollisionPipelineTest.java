@@ -146,7 +146,7 @@ class FetchersHelperNameCollisionPipelineTest {
     }
 
     private static RewriteContext multiSchemaContext() {
-        return new RewriteContext(List.of(), Path.of(""), Path.of(""),
+        return new RewriteContext(List.of(), Path.of(""), "FetchersHelperNameCollisionPipelineTest", Path.of(""),
             MULTI_OUTPUT_PACKAGE, MULTI_JOOQ_PACKAGE);
     }
 

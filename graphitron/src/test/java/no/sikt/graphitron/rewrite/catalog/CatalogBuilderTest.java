@@ -134,7 +134,7 @@ class CatalogBuilderTest {
         var jooq = new JooqCatalog(DEFAULT_JOOQ_PACKAGE);
         var bundle = TestSchemaHelper.buildBundle("type Query { x: Int }");
         var ctx = new no.sikt.graphitron.rewrite.RewriteContext(
-            java.util.List.of(), empty, empty.resolve("out"),
+            java.util.List.of(), empty, "CatalogBuilderTest", empty.resolve("out"),
             "fake.code.generated", DEFAULT_JOOQ_PACKAGE
         );
 

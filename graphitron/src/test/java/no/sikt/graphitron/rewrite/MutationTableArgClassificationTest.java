@@ -39,7 +39,7 @@ class MutationTableArgClassificationTest {
      */
     private static final RewriteContext NODEID_CTX = new RewriteContext(
         List.of(),
-        Path.of(""),
+        Path.of(""), "MutationTableArgClassificationTest",
         Path.of(""),
         "fake.code.generated",
         "no.sikt.graphitron.rewrite.nodeidfixture"

@@ -42,7 +42,7 @@ class QualifiedTerminalReferenceColumnPipelineTest {
 
     private static RewriteContext multiSchemaContext() {
         return new RewriteContext(
-            List.of(), Path.of(""), Path.of(""),
+            List.of(), Path.of(""), "QualifiedTerminalReferenceColumnPipelineTest", Path.of(""),
             MULTI_OUTPUT_PACKAGE, MULTI_JOOQ_PACKAGE);
     }
 

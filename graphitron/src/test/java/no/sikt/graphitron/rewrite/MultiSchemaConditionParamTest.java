@@ -35,7 +35,7 @@ class MultiSchemaConditionParamTest {
     private static RewriteContext multiSchemaContext() {
         return new RewriteContext(
             List.of(),
-            Path.of(""),
+            Path.of(""), "MultiSchemaConditionParamTest",
             Path.of(""),
             MULTI_OUTPUT_PACKAGE,
             MULTI_JOOQ_PACKAGE

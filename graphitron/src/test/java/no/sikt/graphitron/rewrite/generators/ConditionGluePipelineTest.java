@@ -30,7 +30,7 @@ class ConditionGluePipelineTest {
 
     private static final String FIXTURE_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.nodeidfixture";
     private static final RewriteContext FIXTURE_CTX = new RewriteContext(
-        List.of(), Path.of(""), Path.of(""),
+        List.of(), Path.of(""), "ConditionGluePipelineTest", Path.of(""),
         DEFAULT_OUTPUT_PACKAGE, FIXTURE_JOOQ_PACKAGE
     );
 

@@ -311,7 +311,7 @@ class IncrementalCompileHarnessTest {
 
         RewriteContext ctx = new RewriteContext(
             List.of(SchemaInput.plain(schemaFile.toString())),
-            workDir,
+            workDir, "IncrementalCompileHarnessTest",
             workDir.resolve("generated-sources"),
             OUTPUT_PACKAGE,
             TestConfiguration.DEFAULT_JOOQ_PACKAGE);

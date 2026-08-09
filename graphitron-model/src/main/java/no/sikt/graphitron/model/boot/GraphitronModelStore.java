@@ -1,6 +1,5 @@
 package no.sikt.graphitron.model.boot;
 
-import org.h2.api.ErrorCode;
 import org.h2.jdbcx.JdbcDataSource;
 import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
@@ -19,11 +18,9 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.stream.Stream;
 
 /**
  * The fact store's run-time bootstrap: opens an H2 database, executes the fact schema DDL into it,
@@ -31,14 +28,23 @@ import java.util.stream.Stream;
  *
  * <p>Two shapes, and the difference is only where the database lives. {@link #open()} is a private
  * in-memory database that dies with the process: the shape codegen, the tests and any caller with
- * no build directory want. {@link #openAt} is the same database in a file under the build
- * directory, so the next run starts from the previous run's rows instead of an empty schema.
+ * no store home want. {@link #openAt} is the same database in a file under the home it is handed
+ * (a per-user cache directory shared by one workspace's modules, or wherever a consumer pinned
+ * it), so the next run starts from the previous run's rows instead of an empty schema.
  *
  * <p>Persisting changes nothing about what the store <em>is</em>. It is never state of record,
- * which is what keeps migrations out: {@code store_stamp} records the DDL the file was built from
- * and the version that built it, and any mismatch, unreadable file, or missing stamp discards the
- * file and rebuilds from the DDL. Deleting the build directory is therefore always correct and
- * never loses anything, which is the only property a {@code target/} artefact needs.
+ * which is what keeps migrations out: the DDL hash and generator version name the store's own
+ * subdirectory under the home, so a generator upgrade or a DDL edit opens a different file
+ * rather than meeting one it cannot read, and {@code store_stamp} re-records both inside the
+ * file as the integrity check for a hand-moved or hand-damaged one. A shared store is never
+ * deleted by this class: any failure to open or attach falls back to {@link #open()} and leaves
+ * the file alone, so cache trouble costs warmth, never correctness, and never fails a build.
+ * Deleting the store's cache directory by hand is always safe and never loses anything.
+ *
+ * <p>A file-backed store opens in H2's mixed mode ({@code AUTO_SERVER}): the first process holds
+ * the file and later processes attach through it transparently, which is what lets a parallel
+ * reactor build share one workspace store instead of handing every module but the first a cold
+ * in-memory fallback.
  *
  * <p>The build calls this too. {@code ModelCodegenDriver} opens a store through this same entry
  * point and points jOOQ's live H2 metadata generation at it, so codegen is a rehearsal of boot
@@ -57,9 +63,9 @@ public final class GraphitronModelStore implements AutoCloseable {
     public static final String DDL_RESOURCE = "/no/sikt/graphitron/model/graphitron-model.sql";
 
     /**
-     * Base name of the persisted database inside the directory {@link #openAt} is given. H2 derives
-     * every file it keeps from this (the store itself, a trace log, temporary files), so discarding
-     * a store means removing everything in the directory that starts with it.
+     * Base name of the persisted database inside the stamped directory {@link #openAt} resolves.
+     * H2 derives every file it keeps from this (the store itself, a trace log, temporary files),
+     * so a hand cleanup means removing everything in the directory that starts with it.
      */
     private static final String DATABASE = "store";
 
@@ -69,14 +75,14 @@ public final class GraphitronModelStore implements AutoCloseable {
     private final Connection connection;
     private final DSLContext dsl;
     private final boolean warm;
-    private final Path scratch;
+    private final Path location;
     private final boolean dropOnClose;
 
-    private GraphitronModelStore(Connection connection, boolean warm, Path scratch, boolean dropOnClose) {
+    private GraphitronModelStore(Connection connection, boolean warm, Path location, boolean dropOnClose) {
         this.connection = connection;
         this.dsl = DSL.using(connection, SQLDialect.H2);
         this.warm = warm;
-        this.scratch = scratch;
+        this.location = location;
         this.dropOnClose = dropOnClose;
     }
 
@@ -95,88 +101,66 @@ public final class GraphitronModelStore implements AutoCloseable {
     }
 
     /**
-     * Opens the store persisted under {@code directory}, creating it if there is none and
-     * discarding it if there is one this build cannot read.
+     * Opens the store persisted under the home {@code storeDirectory}, creating it if there is
+     * none, attaching to it if another process already holds it, and leaving it strictly alone if
+     * it cannot be used.
      *
-     * <p>An existing file is kept only when it opens, carries a {@code store_stamp} row, and that
-     * row names both this DDL and this generator version. Anything else, a schema from an older
-     * DDL, a file left half-written by a killed build, a database H2 refuses outright, is deleted
-     * and rebuilt, because there is nothing in it worth recovering that re-running capture will not
-     * produce. {@link #warm()} reports which of the two happened, and it is the caller's cue that
-     * the store already holds rows a refresh has to reconcile.
+     * <p>{@code storeDirectory} is the store's <em>home</em>, at every layer that passes it; the
+     * store itself appends a {@code <ddl-hash>-<version>} segment and keeps its file there. The
+     * segment is appended here and not by callers because every opener in every process (the
+     * build mojos, {@code graphitron:dev}'s reader, the LSP, MCP) would have to reproduce it
+     * byte-identically, and one that computed it even slightly differently would not fail: it
+     * would look in the wrong directory, find nothing, and silently boot cold beside a warm
+     * store. The hash is also this class's own ({@link #ddlHash()} reads the DDL this class
+     * boots from), so the path is an enforced invariant rather than a published one. The stamped
+     * path is what makes never discarding safe: a generator upgrade or a DDL edit opens a
+     * different file instead of meeting a shared store other modules' builds are still warm on.
      *
-     * <p>It never fails for want of a file. Persistence is an optimisation over an in-memory store
-     * that was always correct on its own, so a directory that cannot be created, and a database
-     * another process holds open, both fall back to {@link #open()} rather than failing a build
-     * over a cache. The second case is the one that matters in practice: {@code graphitron:dev}
-     * beside {@code mvn install} in the same project would otherwise have one of them delete the
-     * file the other is using.
+     * <p>The file opens in H2's mixed mode, so concurrent module builds of one workspace share
+     * it: the first process holds the file, later ones attach transparently, and an attached
+     * process survives the holder closing first. An existing file is kept only when it opens and
+     * its {@code store_stamp} row names this DDL and this generator version, which under the
+     * stamped path can only fail for a hand-moved or hand-damaged file. {@link #warm()} reports
+     * whether previous rows were found, and it is the caller's cue that the store already holds
+     * rows a refresh has to reconcile.
+     *
+     * <p>It never fails, and it never deletes. Persistence is an optimisation over an in-memory
+     * store that was always correct on its own, and one file is now every module's warmth, so
+     * any failure at all (no resolvable home, a read-only location, H2 server trouble, a file H2
+     * refuses for reasons it will not name) falls back to {@link #open()} and leaves the file
+     * for the run that can read it. Cache trouble costs warmth, never correctness, and never
+     * fails a build.
      */
-    public static GraphitronModelStore openAt(Path directory) {
+    public static GraphitronModelStore openAt(Path storeDirectory) {
+        Path directory = storeDirectory.resolve(stampSegment());
         try {
             Files.createDirectories(directory);
         } catch (IOException e) {
             return open();
         }
-        Attempt existing = openExisting(directory);
-        if (existing.store() != null) {
-            return existing.store();
-        }
-        if (existing.inUse()) {
-            return open();
-        }
-        discard(directory);
+        boolean existing = Files.isRegularFile(directory.resolve(DATABASE + ".mv.db"));
         try {
-            Connection connection = connect(fileUrl(directory, false));
+            Connection connection = connect(fileUrl(directory));
+            if (stampMatches(connection)) {
+                return new GraphitronModelStore(connection, true, directory, false);
+            }
+            if (existing) {
+                // A file at the stamped path whose stamp still mismatches was moved or damaged
+                // by hand. Not this run's to repair, and never its to delete.
+                closeQuietly(connection);
+                return open();
+            }
             create(connection);
             stamp(connection);
-            return new GraphitronModelStore(connection, false, null, false);
+            return new GraphitronModelStore(connection, false, directory, false);
         } catch (RuntimeException e) {
             // Whatever went wrong is about the file, not the schema: a DDL this module cannot
             // execute fails identically on the in-memory store below, carrying the same message.
+            // This also catches the cold-start race, two processes creating the store at once:
+            // whichever executes the DDL first completes and stamps it, the other fails fast on
+            // the first CREATE and takes the fallback, losing warmth for one build and nothing
+            // else.
             return open();
-        }
-    }
-
-    /**
-     * Opens a read-only snapshot of the store persisted under {@code directory}, or empty when
-     * there is no readable one.
-     *
-     * <p>Reads go through a private copy rather than through the live file, which is the whole of
-     * the concurrency story. A build holds the store open for its own writes, and H2 gives a
-     * database one writer; the alternatives are to make the first opener a server the rest connect
-     * through, which turns a build artefact into a running service every reader has to opt into, or
-     * to weaken the file lock, which trades a clean failure for a corrupt one. A copy needs no
-     * protocol from either side, and it gives the reader a fixed snapshot for its whole session,
-     * which a surface that labels its answers with a run identity wants anyway.
-     *
-     * <p>Copying a file a writer is in the middle of can of course produce something H2 will not
-     * open. That is the empty return, and it is not a failure mode worth defending against: a
-     * caller that cannot warm-start boots cold, which is what it did before any of this existed.
-     */
-    public static Optional<GraphitronModelStore> openReadOnly(Path directory) {
-        Path database = directory.resolve(DATABASE + ".mv.db");
-        if (!Files.isRegularFile(database)) {
-            return Optional.empty();
-        }
-        Path scratch;
-        try {
-            scratch = Files.createTempDirectory("graphitron-model-read-");
-            Files.copy(database, scratch.resolve(DATABASE + ".mv.db"));
-        } catch (IOException e) {
-            return Optional.empty();
-        }
-        try {
-            Connection connection = connect(fileUrl(scratch, true));
-            if (!stampMatches(connection)) {
-                closeQuietly(connection);
-                deleteRecursively(scratch);
-                return Optional.empty();
-            }
-            return Optional.of(new GraphitronModelStore(connection, true, scratch, false));
-        } catch (RuntimeException e) {
-            deleteRecursively(scratch);
-            return Optional.empty();
         }
     }
 
@@ -186,12 +170,24 @@ public final class GraphitronModelStore implements AutoCloseable {
     }
 
     /**
-     * Whether this store opened onto rows a previous run wrote. False for every in-memory store and
-     * for a persisted one that had to be rebuilt, so a caller can treat it as "the schema is empty"
-     * without asking the database.
+     * Whether this store opened onto rows a previous run wrote. False for every in-memory store
+     * and for a persisted one created fresh by this open, so a caller can treat it as "the schema
+     * is empty" without asking the database.
      */
     public boolean warm() {
         return warm;
+    }
+
+    /**
+     * The directory this store actually opened in (the home plus the stamp segment), empty for
+     * the in-memory shape. Reporting where the store landed is not publishing the segment: a
+     * caller learns the path after the fact rather than rebuilding it in advance, so the
+     * cold-boot-beside-a-warm-store failure the private hash prevents stays unreachable. Without
+     * this no test could address the database file at all, the stamped segment being exactly
+     * what a test cannot name.
+     */
+    public Optional<Path> location() {
+        return Optional.ofNullable(location);
     }
 
     /**
@@ -205,8 +201,7 @@ public final class GraphitronModelStore implements AutoCloseable {
 
     /**
      * Shuts the database down and releases the connection. An in-memory database goes with it; a
-     * file-backed one is left on disk for the next run, and a read-only snapshot's private copy is
-     * removed.
+     * file-backed one is left on disk for the next run.
      */
     @Override
     public void close() {
@@ -222,52 +217,13 @@ public final class GraphitronModelStore implements AutoCloseable {
             }
         }
         closeQuietly(connection);
-        if (scratch != null) {
-            deleteRecursively(scratch);
-        }
-    }
-
-    /**
-     * The outcome of reaching for an existing file: the store when it was readable, and otherwise
-     * the one distinction the caller has to act on. Every other way of being unreadable collapses
-     * to "rebuild it", so the caller keeps one branch instead of a taxonomy kept in step with H2's.
-     *
-     * @param inUse another process holds the database. The one failure that must not be treated as
-     *              a corrupt file, because the response to a corrupt file is to delete it
-     */
-    private record Attempt(GraphitronModelStore store, boolean inUse) {}
-
-    private static Attempt openExisting(Path directory) {
-        if (!Files.isRegularFile(directory.resolve(DATABASE + ".mv.db"))) {
-            return new Attempt(null, false);
-        }
-        Connection connection;
-        try {
-            connection = connect(fileUrl(directory, false));
-        } catch (IllegalStateException e) {
-            return new Attempt(null, isAlreadyOpen(e));
-        }
-        if (!stampMatches(connection)) {
-            closeQuietly(connection);
-            return new Attempt(null, false);
-        }
-        return new Attempt(new GraphitronModelStore(connection, true, null, false), false);
-    }
-
-    /** Whether the open failed because someone else has the database, in H2's own vocabulary. */
-    private static boolean isAlreadyOpen(Throwable failure) {
-        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
-            if (cause instanceof SQLException sql && sql.getErrorCode() == ErrorCode.DATABASE_ALREADY_OPEN_1) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /**
      * Whether the store behind {@code connection} names this DDL and this generator version. A
-     * missing relation, a missing row, or a read that throws all count as "no", which is what makes
-     * an older schema indistinguishable from a corrupt one at this level: both get rebuilt.
+     * missing relation, a missing row, or a read that throws all count as "no", which is what
+     * makes an older schema indistinguishable from a corrupt one at this level: neither is this
+     * run's to use, and the caller decides between creating the schema and falling back.
      */
     private static boolean stampMatches(Connection connection) {
         String sql = "SELECT ddl_hash, generator_version FROM store_stamp WHERE singleton = 'X'";
@@ -278,31 +234,6 @@ public final class GraphitronModelStore implements AutoCloseable {
                 && generatorVersion().equals(rows.getString(2));
         } catch (SQLException e) {
             return false;
-        }
-    }
-
-    /**
-     * Removes every file H2 derived from the database name, so the next open starts from nothing.
-     * Best effort: a file that will not go away leaves the create below to fail, and the fallback
-     * to an in-memory store is the same answer either way.
-     */
-    private static void discard(Path directory) {
-        try (Stream<Path> files = Files.list(directory)) {
-            for (Path file : files.filter(f -> f.getFileName().toString().startsWith(DATABASE + ".")).toList()) {
-                Files.deleteIfExists(file);
-            }
-        } catch (IOException e) {
-            // Nothing to do here that the create's own failure will not do better.
-        }
-    }
-
-    private static void deleteRecursively(Path directory) {
-        try (Stream<Path> paths = Files.walk(directory)) {
-            for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
-                Files.deleteIfExists(path);
-            }
-        } catch (IOException e) {
-            // A snapshot copy left behind is a temp-directory file, not a correctness problem.
         }
     }
 
@@ -322,10 +253,30 @@ public final class GraphitronModelStore implements AutoCloseable {
         }
     }
 
-    private static String fileUrl(Path directory, boolean readOnly) {
-        String url = "jdbc:h2:file:" + directory.toAbsolutePath().resolve(DATABASE)
-            + ";DB_CLOSE_ON_EXIT=FALSE";
-        return readOnly ? url + ";ACCESS_MODE_DATA=r" : url;
+    /**
+     * Mixed mode, and nothing else but a lock budget. H2 refuses {@code AUTO_SERVER=TRUE} in
+     * combination with {@code DB_CLOSE_ON_EXIT=FALSE}, and dropping that flag costs nothing this
+     * store relies on: it suppressed H2's shutdown hook, and the only store that needs its
+     * database to outlive a handle is the in-memory one, held open by {@code DB_CLOSE_DELAY=-1}
+     * on a different URL. A file-backed store is meant to be left on disk, so H2 closing it at
+     * JVM exit is what it wanted anyway. The lock timeout is raised from H2's one-second default
+     * because concurrent module builds sharing the file serialize on rows a whole capture
+     * transaction holds, and a writer that waits its turn beats one that falls back cold.
+     */
+    private static String fileUrl(Path directory) {
+        return "jdbc:h2:file:" + directory.toAbsolutePath().resolve(DATABASE)
+            + ";AUTO_SERVER=TRUE;LOCK_TIMEOUT=60000";
+    }
+
+    /**
+     * The compatibility segment the store keeps its file under: a prefix of the DDL hash plus the
+     * generator version. Any DDL edit or version change moves the path, which is what
+     * {@link #openAt} leans on to never meet a file it cannot read; the prefix keeps the whole
+     * path short enough for platforms that cap it, and sixteen hex digits lose nothing a cache
+     * path needs (a colliding edit would still be caught by {@code store_stamp}).
+     */
+    private static String stampSegment() {
+        return ddlHash().substring(0, 16) + "-" + generatorVersion();
     }
 
     private static void create(Connection connection) {

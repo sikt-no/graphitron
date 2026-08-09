@@ -1,8 +1,8 @@
 = Maven plugin configuration
-:description: Every parameter of every goal on Graphitron's Maven plugin (graphitron-maven-plugin). Covers the three goals (generate, validate, dev), the four shared <configuration> parameters, the dev-only watch parameters, the <schemaInput> POM binding, and the CLI -D properties.
+:description: Every parameter of every goal on Graphitron's Maven plugin (graphitron-maven-plugin). Covers the three goals (generate, validate, dev), the eleven shared <configuration> parameters, the dev-only watch parameters, the <schemaInput> POM binding, and the CLI -D properties.
 :!toc:
 
-`graphitron-maven-plugin` exposes three Maven goals: `generate` (the build-time codegen pipeline), `validate` (a faster schema-only run that emits no Java), and `dev` (the editor-loop server). Each goal accepts the same handful of `<configuration>` parameters; `dev` adds three of its own. One of the parameters (`<schemaInputs>`) is a list-of-complex-objects with its own POM binding.
+`graphitron-maven-plugin` exposes three Maven goals: `generate` (the build-time codegen pipeline), `validate` (a faster schema-only run that emits no Java), and `dev` (the editor-loop server). Each goal accepts the same handful of `<configuration>` parameters; `dev` adds four of its own. One of the parameters (`<schemaInputs>`) is a list-of-complex-objects with its own POM binding.
 
 This page is the parameter-by-parameter reference. The xref:../tutorial/01-prerequisites.adoc[tutorial's first chapter] introduces the canonical `<configuration>` shape with one schema input and the two required packages; the directive reference under xref:directives/index.adoc[`reference/directives`] covers what each schema input declares.
 
@@ -53,6 +53,28 @@ The following parameters apply to every goal:
 | (none)
 | Root Java package of the consumer's jOOQ-generated catalog (the `Tables` / `Keys` / `Routines` classes). Required for `generate` and `dev`; optional for `validate`. The classifier resolves every `@table` and `@field` against the catalog rooted at this package.
 
+| `graphName`
+| `String`
+| `${project.artifactId}`
+| Name this module's graph carries in the fact store. The module's own artifactId is unique
+  within a reactor and is the right answer unless the subgraph's name differs from the module's.
+  Set it when two modules would otherwise claim one name, or when the graph has a published
+  subgraph name of its own.
+
+| `storeDirectory`
+| `File` (path)
+| a per-user cache directory
+| Where the fact store is kept between runs, so a build starts from the previous run's rows
+  instead of re-reading every jar on the classpath. The default is your platform's cache location
+  for per-user tool state (`$XDG_CACHE_HOME/graphitron/model/` or `~/.cache/graphitron/model/` on
+  Linux, `~/Library/Caches/graphitron/model/` on macOS, `%LOCALAPPDATA%\graphitron\model\` on
+  Windows), with one store per project checkout, shared by that checkout's modules. Set this
+  parameter, or pass `-Dgraphitron.store.directory=...`, to keep the store inside the build
+  instead: a hermetic CI job that wants nothing written outside the workspace, or a container
+  that discards `$HOME`. The store holds no state of record and is rebuilt from your sources
+  whenever it cannot be read, so deleting it is always safe and never loses anything; it is a
+  cache, not build output, which is why `mvn clean` no longer removes it.
+
 | `schemaInputs`
 | `List<SchemaInputBinding>`
 | empty
@@ -86,7 +108,7 @@ The following parameters apply to every goal:
 
 == `dev`-goal parameters
 
-Three watch-loop knobs unique to the `dev` goal, each driven from a CLI property:
+Four watch-loop knobs unique to the `dev` goal, each driven from a CLI property:
 
 [cols="1,1,1,1,3",options="header"]
 |===

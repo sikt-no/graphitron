@@ -40,7 +40,7 @@ final class CapturedStore implements AutoCloseable {
     static CapturedStore of(Path directory, String sdl) {
         var registry = registryOf(directory, sdl);
         var store = GraphitronModelStore.open();
-        FactCapture.capture(store.dsl(), registry);
+        FactCapture.capture(store.dsl(), graph(directory), registry);
         return new CapturedStore(store, registry, null);
     }
 
@@ -55,13 +55,18 @@ final class CapturedStore implements AutoCloseable {
         Path file = write(directory, sdl);
         var ctx = new RewriteContext(
             List.of(SchemaInput.plain(file.toString())),
-            directory, directory,
+            directory, "CapturedStore", directory,
             TestConfiguration.DEFAULT_OUTPUT_PACKAGE, TestConfiguration.DEFAULT_JOOQ_PACKAGE);
         var attributed = TestSchemaHelper.attributedRegistry(ctx);
         var store = GraphitronModelStore.open();
-        FactCapture.capture(store.dsl(), attributed.preSynthesisRegistry(), null,
+        FactCapture.capture(store.dsl(), graph(directory), attributed.preSynthesisRegistry(), null,
             List.of(), TestSchemaHelper.nodeDeclaration(ctx));
         return new CapturedStore(store, attributed.preSynthesisRegistry(), attributed);
+    }
+
+    /** The fixture graph capture writes under, shared so readers can scope by it. */
+    static FactCapture.GraphIdentity graph(Path directory) {
+        return new FactCapture.GraphIdentity("CapturedStore", directory);
     }
 
     /** Just the parse, for callers that fill a store from something other than the SDL. */

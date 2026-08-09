@@ -95,7 +95,7 @@ class ConnectionFederationTagPipelineTest {
             """);
         var ctx = new RewriteContext(
             List.of(new SchemaInput(src.toString(), Optional.of("catalog"), Optional.empty())),
-            tmp, tmp, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            tmp, "ConnectionFederationTagPipelineTest", tmp, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
         var registry = new GraphQLRewriteGenerator(ctx).loadAttributedRegistry();
         return GraphitronSchemaBuilder.buildBundle(registry, ctx);
     }

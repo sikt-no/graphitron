@@ -45,7 +45,7 @@ class LintSuppressionPipelineTest {
         Files.writeString(schema, sdl);
         var ctx = new RewriteContext(
             List.of(new SchemaInput(schema.toString(), Optional.empty(), Optional.empty())),
-            schema.getParent(), schema.getParent(), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE
+            schema.getParent(), "LintSuppressionPipelineTest", schema.getParent(), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE
         ).withLintConfig(lintConfig).withDependencyVersions(versions);
         return new GraphQLRewriteGenerator(ctx).buildOutput().report();
     }

@@ -346,7 +346,7 @@ class JooqRecordServiceParamPipelineTest {
         "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmEndorsementRecord";
 
     private static RewriteContext fixtureCtx(String jooqPackage) {
-        return new RewriteContext(List.of(), Path.of(""), Path.of(""),
+        return new RewriteContext(List.of(), Path.of(""), "JooqRecordServiceParamPipelineTest", Path.of(""),
             DEFAULT_OUTPUT_PACKAGE, jooqPackage);
     }
 

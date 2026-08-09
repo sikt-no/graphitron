@@ -85,7 +85,7 @@ class JarResidentClassCensusTest {
 
     private static RewriteContext contextOver(Path basedir, Path... entries) {
         return new RewriteContext(
-            List.of(), basedir, basedir.resolve("target/generated"),
+            List.of(), basedir, "JarResidentClassCensusTest", basedir.resolve("target/generated"),
             DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE, List.of(entries));
     }
 

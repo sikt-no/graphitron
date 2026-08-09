@@ -38,7 +38,7 @@ class IdempotentWriterTest {
     private static RewriteContext contextFor(Path schemaFile, Path outputDir) {
         return new RewriteContext(
             List.of(new SchemaInput(schemaFile.toString(), Optional.empty(), Optional.empty())),
-            schemaFile.getParent(),
+            schemaFile.getParent(), "IdempotentWriterTest",
             outputDir,
             DEFAULT_OUTPUT_PACKAGE,
             DEFAULT_JOOQ_PACKAGE

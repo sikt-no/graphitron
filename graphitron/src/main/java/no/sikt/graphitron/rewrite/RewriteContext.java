@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite;
 import no.sikt.graphitron.rewrite.dependency.DependencyVersions;
 import no.sikt.graphitron.rewrite.lint.LintConfig;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
+import no.sikt.graphitron.rewrite.schema.input.SchemaRecipe;
 import no.sikt.graphitron.rewrite.session.SessionStateConfig;
 
 import java.nio.file.Path;
@@ -39,7 +40,7 @@ import java.util.Set;
  *                       {@link java.net.URLClassLoader} over the project's compile classpath
  *                       and every reactor sibling's {@code target/classes}, parented on the
  *                       plugin loader. Unit-tier callers default to the current thread's
- *                       context classloader through the five-arg overload, which equals the
+ *                       context classloader through the six-arg overload, which equals the
  *                       system classloader in a JUnit-launched JVM.
  * @param compileSourceRoots compile source-root directories (hand-written plus
  *                       generated-sources) the LSP catalog parses to recover Java
@@ -63,17 +64,32 @@ import java.util.Set;
  *                       types they are decoded from must not cross this boundary. {@code null}
  *                       (the default for every non-Maven caller) means
  *                       {@link DependencyVersions#empty()} and the advisory stays silent.
- * @param storeDirectory directory the fact store is kept in between runs, so a run starts from the
- *                       previous run's rows instead of re-walking everything that has not changed.
- *                       Populated by the build mojos from the project's build directory;
- *                       {@code null} for every caller with no build directory to put a file in,
- *                       which gets the in-memory store that dies with the run. Warm or cold changes
- *                       what a load costs, never what it records.
+ * @param graphName      the name this run's graph carries in the fact store: the partition every
+ *                       SDL fact row's key leads with, so one shared store holds many graphs
+ *                       without fusing them. Maven callers get the {@code <graphName>} parameter's
+ *                       default, the module's artifactId; programmatic callers state a name once
+ *                       each, because a fallback name would be an unowned name and every caller
+ *                       has a natural identity to give. Required and non-blank.
+ * @param storeDirectory the fact store's home, so a run starts from the previous run's rows
+ *                       instead of re-walking everything that has not changed. The store appends
+ *                       its own compatibility segment under whatever home it is handed. Populated
+ *                       by the build mojos from the resolved per-user cache location (or the
+ *                       consumer's {@code <storeDirectory>} override); {@code null} for every
+ *                       caller with no home to give, which gets the in-memory store that dies
+ *                       with the run. Warm or cold changes what a load costs, never what it
+ *                       records.
+ * @param schemaRecipe   how this run's schema files were found: the resolved {@code <schemaInputs>}
+ *                       bindings, the effective extension filter, and the build file they were
+ *                       resolved from. Capture persists it beside the graph so a currency check
+ *                       can re-expand the globs without building the module. Populated by the
+ *                       build mojos; {@code null} for programmatic callers, whose graph then
+ *                       records no recipe and is simply not replayable, which is honest.
  */
 public record RewriteContext(
     List<SchemaInput> schemaInputs,
     Set<String> schemaFileExtensions,
     Path basedir,
+    String graphName,
     Path outputDirectory,
     Path outputResourcesDirectory,
     String outputPackage,
@@ -85,7 +101,8 @@ public record RewriteContext(
     SessionStateConfig sessionStateConfig,
     String tenantColumn,
     DependencyVersions dependencyVersions,
-    Path storeDirectory
+    Path storeDirectory,
+    SchemaRecipe schemaRecipe
 ) {
     /** Standard schema file extensions accepted out of the box. */
     public static final Set<String> DEFAULT_SCHEMA_FILE_EXTENSIONS = Set.of(".graphqls", ".graphql");
@@ -94,6 +111,7 @@ public record RewriteContext(
         Objects.requireNonNull(schemaInputs, "schemaInputs");
         Objects.requireNonNull(schemaFileExtensions, "schemaFileExtensions");
         Objects.requireNonNull(basedir, "basedir");
+        Objects.requireNonNull(graphName, "graphName");
         Objects.requireNonNull(outputDirectory, "outputDirectory");
         Objects.requireNonNull(outputResourcesDirectory, "outputResourcesDirectory");
         Objects.requireNonNull(outputPackage, "outputPackage");
@@ -103,14 +121,17 @@ public record RewriteContext(
         if (schemaFileExtensions.isEmpty()) {
             throw new IllegalArgumentException("schemaFileExtensions must contain at least one entry");
         }
+        if (graphName.isBlank()) {
+            throw new IllegalArgumentException("graphName must be non-blank");
+        }
         schemaInputs = List.copyOf(schemaInputs);
         schemaFileExtensions = Set.copyOf(schemaFileExtensions);
         classpathRoots = List.copyOf(classpathRoots);
-        // The last six components are null-tolerant: only the build mojos populate them (from
+        // The last seven components are null-tolerant: only the build mojos populate them (from
         // <sessionState>, <lint>, <tenantColumn>, the Maven project's source roots, the resolved
-        // dependency graphs, and the build directory); every other caller passes null and gets the
-        // single-tenant, no-suppression, no-hook, UNKNOWN-positions, no-version-facts,
-        // store-dies-with-the-run defaults.
+        // dependency graphs, the resolved store home, and the <schemaInputs> configuration);
+        // every other caller passes null and gets the single-tenant, no-suppression, no-hook,
+        // UNKNOWN-positions, no-version-facts, store-dies-with-the-run, no-recipe defaults.
         compileSourceRoots = compileSourceRoots == null ? List.of() : List.copyOf(compileSourceRoots);
         lintConfig = lintConfig == null ? LintConfig.empty() : lintConfig;
         sessionStateConfig = sessionStateConfig == null ? SessionStateConfig.none() : sessionStateConfig;
@@ -123,10 +144,10 @@ public record RewriteContext(
      * layer the {@code <lint>} suppression on afterwards.
      */
     public RewriteContext withLintConfig(LintConfig lintConfig) {
-        return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, outputDirectory,
+        return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, graphName, outputDirectory,
             outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
             codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
-            dependencyVersions, storeDirectory);
+            dependencyVersions, storeDirectory, schemaRecipe);
     }
 
     /**
@@ -134,10 +155,10 @@ public record RewriteContext(
      * can layer the {@code <sessionState>} configuration on afterwards.
      */
     public RewriteContext withSessionStateConfig(SessionStateConfig sessionStateConfig) {
-        return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, outputDirectory,
+        return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, graphName, outputDirectory,
             outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
             codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
-            dependencyVersions, storeDirectory);
+            dependencyVersions, storeDirectory, schemaRecipe);
     }
 
     /**
@@ -145,10 +166,10 @@ public record RewriteContext(
      * layer the {@code <tenantColumn>} declaration on afterwards.
      */
     public RewriteContext withTenantColumn(String tenantColumn) {
-        return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, outputDirectory,
+        return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, graphName, outputDirectory,
             outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
             codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
-            dependencyVersions, storeDirectory);
+            dependencyVersions, storeDirectory, schemaRecipe);
     }
 
     /**
@@ -156,10 +177,10 @@ public record RewriteContext(
      * store at the project's build directory without every other caller growing an argument for it.
      */
     public RewriteContext withStoreDirectory(Path storeDirectory) {
-        return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, outputDirectory,
+        return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, graphName, outputDirectory,
             outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
             codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
-            dependencyVersions, storeDirectory);
+            dependencyVersions, storeDirectory, schemaRecipe);
     }
 
     /**
@@ -167,20 +188,21 @@ public record RewriteContext(
      * can layer the resolved graphql-java / jOOQ version facts on afterwards.
      */
     public RewriteContext withDependencyVersions(DependencyVersions dependencyVersions) {
-        return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, outputDirectory,
+        return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, graphName, outputDirectory,
             outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
             codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
-            dependencyVersions, storeDirectory);
+            dependencyVersions, storeDirectory, schemaRecipe);
     }
 
     /**
-     * Fourteen-arg overload: defaults {@code storeDirectory} to {@code null}, so the fact store is
+     * Fifteen-arg overload: defaults {@code storeDirectory} to {@code null}, so the fact store is
      * in-memory and dies with the run.
      */
     public RewriteContext(
         List<SchemaInput> schemaInputs,
         Set<String> schemaFileExtensions,
         Path basedir,
+        String graphName,
         Path outputDirectory,
         Path outputResourcesDirectory,
         String outputPackage,
@@ -193,20 +215,21 @@ public record RewriteContext(
         String tenantColumn,
         DependencyVersions dependencyVersions
     ) {
-        this(schemaInputs, schemaFileExtensions, basedir, outputDirectory, outputResourcesDirectory,
+        this(schemaInputs, schemaFileExtensions, basedir, graphName, outputDirectory, outputResourcesDirectory,
             outputPackage, jooqPackage, classpathRoots, codegenLoader,
             compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn, dependencyVersions,
-            null);
+            null, null);
     }
 
     /**
-     * Twelve-arg overload: defaults {@code tenantColumn} to {@code null} (single-tenant) and
+     * Thirteen-arg overload: defaults {@code tenantColumn} to {@code null} (single-tenant) and
      * {@code dependencyVersions} to {@link DependencyVersions#empty()} (no version facts).
      */
     public RewriteContext(
         List<SchemaInput> schemaInputs,
         Set<String> schemaFileExtensions,
         Path basedir,
+        String graphName,
         Path outputDirectory,
         Path outputResourcesDirectory,
         String outputPackage,
@@ -217,19 +240,20 @@ public record RewriteContext(
         LintConfig lintConfig,
         SessionStateConfig sessionStateConfig
     ) {
-        this(schemaInputs, schemaFileExtensions, basedir, outputDirectory, outputResourcesDirectory,
+        this(schemaInputs, schemaFileExtensions, basedir, graphName, outputDirectory, outputResourcesDirectory,
             outputPackage, jooqPackage, classpathRoots, codegenLoader,
-            compileSourceRoots, lintConfig, sessionStateConfig, null, null, null);
+            compileSourceRoots, lintConfig, sessionStateConfig, null, null, null, null);
     }
 
     /**
-     * Ten-arg overload: defaults {@code lintConfig} to {@link LintConfig#empty()} (no
+     * Eleven-arg overload: defaults {@code lintConfig} to {@link LintConfig#empty()} (no
      * suppression; every author-owned type is linted with every rule).
      */
     public RewriteContext(
         List<SchemaInput> schemaInputs,
         Set<String> schemaFileExtensions,
         Path basedir,
+        String graphName,
         Path outputDirectory,
         Path outputResourcesDirectory,
         String outputPackage,
@@ -238,19 +262,20 @@ public record RewriteContext(
         ClassLoader codegenLoader,
         List<Path> compileSourceRoots
     ) {
-        this(schemaInputs, schemaFileExtensions, basedir, outputDirectory, outputResourcesDirectory,
+        this(schemaInputs, schemaFileExtensions, basedir, graphName, outputDirectory, outputResourcesDirectory,
             outputPackage, jooqPackage, classpathRoots, codegenLoader,
             compileSourceRoots, LintConfig.empty(), SessionStateConfig.none());
     }
 
     /**
-     * Nine-arg overload: defaults {@code compileSourceRoots} to empty, so the catalog carries
+     * Ten-arg overload: defaults {@code compileSourceRoots} to empty, so the catalog carries
      * file-level / {@code UNKNOWN} positions.
      */
     public RewriteContext(
         List<SchemaInput> schemaInputs,
         Set<String> schemaFileExtensions,
         Path basedir,
+        String graphName,
         Path outputDirectory,
         Path outputResourcesDirectory,
         String outputPackage,
@@ -258,39 +283,41 @@ public record RewriteContext(
         List<Path> classpathRoots,
         ClassLoader codegenLoader
     ) {
-        this(schemaInputs, schemaFileExtensions, basedir, outputDirectory, outputResourcesDirectory,
+        this(schemaInputs, schemaFileExtensions, basedir, graphName, outputDirectory, outputResourcesDirectory,
             outputPackage, jooqPackage, classpathRoots, codegenLoader, List.of(),
             LintConfig.empty(), SessionStateConfig.none());
     }
 
     /**
-     * Six-arg overload for callers that supply {@code classpathRoots} but no explicit
+     * Seven-arg overload for callers that supply {@code classpathRoots} but no explicit
      * {@code codegenLoader}; the loader defaults to the current thread's context classloader,
      * which equals the system classloader in a JUnit-launched JVM.
      */
     public RewriteContext(
         List<SchemaInput> schemaInputs,
         Path basedir,
+        String graphName,
         Path outputDirectory,
         String outputPackage,
         String jooqPackage,
         List<Path> classpathRoots
     ) {
-        this(schemaInputs, DEFAULT_SCHEMA_FILE_EXTENSIONS, basedir, outputDirectory,
+        this(schemaInputs, DEFAULT_SCHEMA_FILE_EXTENSIONS, basedir, graphName, outputDirectory,
             defaultResourcesDirectory(outputDirectory), outputPackage, jooqPackage,
             classpathRoots, Thread.currentThread().getContextClassLoader(), List.of(),
             LintConfig.empty(), SessionStateConfig.none());
     }
 
-    /** Five-arg overload for unit-tier callers that don't care about classpath scanning. */
+    /** Six-arg overload for unit-tier callers that don't care about classpath scanning. */
     public RewriteContext(
         List<SchemaInput> schemaInputs,
         Path basedir,
+        String graphName,
         Path outputDirectory,
         String outputPackage,
         String jooqPackage
     ) {
-        this(schemaInputs, DEFAULT_SCHEMA_FILE_EXTENSIONS, basedir, outputDirectory,
+        this(schemaInputs, DEFAULT_SCHEMA_FILE_EXTENSIONS, basedir, graphName, outputDirectory,
             defaultResourcesDirectory(outputDirectory), outputPackage, jooqPackage,
             List.of(), Thread.currentThread().getContextClassLoader(), List.of(),
             LintConfig.empty(), SessionStateConfig.none());

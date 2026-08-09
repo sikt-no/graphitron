@@ -85,7 +85,7 @@ class SynthesizeFkJoinReorderedKeysTest {
     private static RewriteContext stubRewriteContext() {
         return new RewriteContext(
             java.util.List.of(),
-            java.nio.file.Path.of("."),
+            java.nio.file.Path.of("."), "SynthesizeFkJoinReorderedKeysTest",
             java.nio.file.Path.of("."),
             "unused",
             "unused");

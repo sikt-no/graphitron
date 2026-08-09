@@ -130,7 +130,8 @@ class FactCaptureAgreementTest {
             "sql_primary_key", "sql_referential_constraint", "sql_index",
             "sql_index_column", "jvm_class", "jvm_method",
             "jvm_method_parameter", "jvm_record_component",
-            "jvm_scalar_type_field", "store_source", "store_stamp")) {
+            "jvm_scalar_type_field", "store_source", "store_stamp",
+            "store_graph", "store_graph_schema_input", "store_graph_schema_extension")) {
             registrations.put(relation, Arm.EQUALITY);
         }
         registrations.put("graphql_directive_site", Arm.DERIVED);
@@ -612,7 +613,7 @@ class FactCaptureAgreementTest {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), emptyRegistry(tmp), jooq, List.of(), new NodeDeclaration(null));
+            FactCapture.capture(store.dsl(), graph(tmp), emptyRegistry(tmp), jooq, List.of(), new NodeDeclaration(null));
 
             var expectedTables = new LinkedHashMap<String, String>();
             int expectedColumns = 0;
@@ -646,7 +647,7 @@ class FactCaptureAgreementTest {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), emptyRegistry(tmp), jooq, List.of(), new NodeDeclaration(null));
+            FactCapture.capture(store.dsl(), graph(tmp), emptyRegistry(tmp), jooq, List.of(), new NodeDeclaration(null));
 
             var expected = new LinkedHashSet<String>();
             for (var entry : jooq.allTableEntries()) {
@@ -684,7 +685,7 @@ class FactCaptureAgreementTest {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), emptyRegistry(tmp), jooq, List.of(), new NodeDeclaration(null));
+            FactCapture.capture(store.dsl(), graph(tmp), emptyRegistry(tmp), jooq, List.of(), new NodeDeclaration(null));
 
             var expected = new LinkedHashSet<String>();
             for (var entry : jooq.allTableEntries()) {
@@ -725,7 +726,7 @@ class FactCaptureAgreementTest {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), emptyRegistry(tmp), jooq, List.of(), new NodeDeclaration(null));
+            FactCapture.capture(store.dsl(), graph(tmp), emptyRegistry(tmp), jooq, List.of(), new NodeDeclaration(null));
 
             var expected = new LinkedHashSet<String>();
             for (var entry : jooq.allTableEntries()) {
@@ -750,11 +751,13 @@ class FactCaptureAgreementTest {
                     referenced.COLUMN_NAME)
                 .from(SQL_REFERENTIAL_CONSTRAINT)
                 .join(referencing)
-                .on(referencing.TABLE_SCHEMA.eq(SQL_REFERENTIAL_CONSTRAINT.TABLE_SCHEMA))
+                .on(referencing.SOURCE_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.SOURCE_NAME))
+                .and(referencing.TABLE_SCHEMA.eq(SQL_REFERENTIAL_CONSTRAINT.TABLE_SCHEMA))
                 .and(referencing.TABLE_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.TABLE_NAME))
                 .and(referencing.CONSTRAINT_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.CONSTRAINT_NAME))
                 .join(referenced)
-                .on(referenced.TABLE_SCHEMA.eq(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_SCHEMA))
+                .on(referenced.SOURCE_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.SOURCE_NAME))
+                .and(referenced.TABLE_SCHEMA.eq(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_SCHEMA))
                 .and(referenced.TABLE_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_TABLE))
                 .and(referenced.CONSTRAINT_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_CONSTRAINT_NAME))
                 .and(referenced.POSITION.eq(referencing.POSITION))
@@ -776,7 +779,7 @@ class FactCaptureAgreementTest {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), emptyRegistry(tmp), jooq, List.of(), new NodeDeclaration(null));
+            FactCapture.capture(store.dsl(), graph(tmp), emptyRegistry(tmp), jooq, List.of(), new NodeDeclaration(null));
             assertThat(store.dsl().fetchCount(SQL_PRIMARY_KEY))
                 .as("the catalog has primary keys, so this pins something")
                 .isPositive();
@@ -784,7 +787,8 @@ class FactCaptureAgreementTest {
                 .select(SQL_PRIMARY_KEY.TABLE_NAME, SQL_CONSTRAINT.CONSTRAINT_TYPE)
                 .from(SQL_PRIMARY_KEY)
                 .join(SQL_CONSTRAINT)
-                .on(SQL_CONSTRAINT.TABLE_SCHEMA.eq(SQL_PRIMARY_KEY.TABLE_SCHEMA))
+                .on(SQL_CONSTRAINT.SOURCE_NAME.eq(SQL_PRIMARY_KEY.SOURCE_NAME))
+                .and(SQL_CONSTRAINT.TABLE_SCHEMA.eq(SQL_PRIMARY_KEY.TABLE_SCHEMA))
                 .and(SQL_CONSTRAINT.TABLE_NAME.eq(SQL_PRIMARY_KEY.TABLE_NAME))
                 .and(SQL_CONSTRAINT.CONSTRAINT_NAME.eq(SQL_PRIMARY_KEY.CONSTRAINT_NAME))
                 .where(SQL_CONSTRAINT.CONSTRAINT_TYPE.ne("PRIMARY KEY"))
@@ -806,7 +810,7 @@ class FactCaptureAgreementTest {
         var ctx = testContext();
         List<CompletionData.ExternalReference> extensions = CatalogBuilder.buildExternalReferences(ctx);
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), emptyRegistry(tmp), null, extensions, new NodeDeclaration(null));
+            FactCapture.capture(store.dsl(), graph(tmp), emptyRegistry(tmp), null, extensions, new NodeDeclaration(null));
 
             var captured = new LinkedHashSet<String>();
             store.dsl().select(JVM_METHOD.CLASS_NAME, JVM_METHOD.METHOD_NAME, JVM_METHOD.DESCRIPTOR)
@@ -855,7 +859,7 @@ class FactCaptureAgreementTest {
         var ctx = testContext();
         List<CompletionData.ExternalReference> extensions = CatalogBuilder.buildExternalReferences(ctx);
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), emptyRegistry(tmp), null, extensions, new NodeDeclaration(null));
+            FactCapture.capture(store.dsl(), graph(tmp), emptyRegistry(tmp), null, extensions, new NodeDeclaration(null));
 
             var expected = new LinkedHashSet<>(extensions.stream()
                 .map(CompletionData.ExternalReference::sourceName).toList());
@@ -898,7 +902,7 @@ class FactCaptureAgreementTest {
         var jooq = new JooqCatalog("no.sikt.graphitron.rewrite.multischemafixture",
             testContext().codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), emptyRegistry(tmp), jooq, List.of(), new NodeDeclaration(null));
+            FactCapture.capture(store.dsl(), graph(tmp), emptyRegistry(tmp), jooq, List.of(), new NodeDeclaration(null));
 
             var expected = new LinkedHashSet<String>();
             for (var entry : jooq.allTableEntries()) {
@@ -1015,5 +1019,10 @@ class FactCaptureAgreementTest {
      */
     private static graphql.schema.idl.TypeDefinitionRegistry emptyRegistry(Path tmp) {
         return CapturedStore.registryOf(tmp, "type Query { ping: String }");
+    }
+
+    /** The graph these anchors capture under; one per store, so joins stay within one run's rows. */
+    private static FactCapture.GraphIdentity graph(Path tmp) {
+        return new FactCapture.GraphIdentity("FactCaptureAgreementTest", tmp);
     }
 }

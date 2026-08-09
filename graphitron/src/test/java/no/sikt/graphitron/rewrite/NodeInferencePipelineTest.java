@@ -50,7 +50,7 @@ class NodeInferencePipelineTest {
 
     private static final String FIXTURE_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.nodeidfixture";
     private static final RewriteContext FIXTURE_CTX = new RewriteContext(
-        List.of(), Path.of(""), Path.of(""), DEFAULT_OUTPUT_PACKAGE, FIXTURE_JOOQ_PACKAGE);
+        List.of(), Path.of(""), "NodeInferencePipelineTest", Path.of(""), DEFAULT_OUTPUT_PACKAGE, FIXTURE_JOOQ_PACKAGE);
 
     private static GraphitronSchema schema(String sdl) {
         return TestSchemaHelper.buildSchema(sdl, FIXTURE_CTX);

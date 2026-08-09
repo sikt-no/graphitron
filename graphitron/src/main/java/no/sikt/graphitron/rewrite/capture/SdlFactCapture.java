@@ -24,6 +24,9 @@ import graphql.language.UnionTypeDefinition;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.rewrite.NodeDeclaration;
 
+import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -110,17 +113,22 @@ public final class SdlFactCapture {
 
     private final MacroCapture macros;
 
-    private SdlFactCapture(FactSink sink, TypeDefinitionRegistry registry, NodeDeclaration nodes) {
+    private final ClasspathSources sources;
+
+    private SdlFactCapture(FactSink sink, TypeDefinitionRegistry registry, NodeDeclaration nodes,
+                           ClasspathSources sources) {
         this.sink = sink;
         this.registry = registry;
         this.decode = new GraphitronFactCapture(sink);
         this.nodes = nodes;
         this.macros = new MacroCapture(sink, registry, nodes, this);
+        this.sources = sources;
     }
 
     /** Runs the walk, buffering into {@code sink}; the caller flushes. */
-    static void capture(FactSink sink, TypeDefinitionRegistry registry, NodeDeclaration nodes) {
-        new SdlFactCapture(sink, registry, nodes).run();
+    static void capture(FactSink sink, TypeDefinitionRegistry registry, NodeDeclaration nodes,
+                        ClasspathSources sources) {
+        new SdlFactCapture(sink, registry, nodes, sources).run();
     }
 
     private void run() {
@@ -137,9 +145,13 @@ public final class SdlFactCapture {
      * lexically inside the site that declares it, so the sites cover the set, and a macro's
      * synthesized site inherits its carrier's file and is already among them.
      *
-     * <p>Unstamped. The walk is handed source <em>names</em> by graphql-java, never the text, so
-     * there is nothing to hash without re-reading files capture does not own; the classpath family
-     * stamps because the scan holds the bytes it parsed.
+     * <p>Stamped, for every source name that resolves to a regular file. The walk is handed source
+     * <em>names</em> by graphql-java rather than text, so stamping costs one file re-read per
+     * schema file at capture time, and that price was weighed against the reader it buys: a
+     * currency check that re-hashes a cold graph's schema files against the working tree without
+     * building its module. The residue stays unstamped exactly as the null-while-loading
+     * discipline allows: the bundled directives.graphqls is a resource name, and a programmatic
+     * caller may hand a bare name that resolves to no file.
      *
      * <p>Runs last because it is a summary of the walk, and no SDL relation declares a foreign key
      * into it: a schema-level row can carry a null source name, and the fact-schema convention puts
@@ -166,10 +178,18 @@ public final class SdlFactCapture {
             if (!sink.claim(STORE_SOURCE, name)) {
                 continue;
             }
-            var row = sink.dsl().newRecord(STORE_SOURCE);
-            row.setSourceName(name);
-            row.setSourceKind(SCHEMA_FILE);
-            sink.add(row);
+            ClasspathSources.upsert(sink.dsl(), name, SCHEMA_FILE);
+            regularFile(name).ifPresent(sources::noteRegularFile);
+        }
+    }
+
+    /** The path behind a source name, when the name is a path and the path is a regular file. */
+    private static java.util.Optional<Path> regularFile(String name) {
+        try {
+            Path path = Path.of(name);
+            return Files.isRegularFile(path) ? java.util.Optional.of(path) : java.util.Optional.empty();
+        } catch (InvalidPathException e) {
+            return java.util.Optional.empty();
         }
     }
 

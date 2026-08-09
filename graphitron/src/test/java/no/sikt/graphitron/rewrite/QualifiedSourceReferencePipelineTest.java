@@ -49,7 +49,7 @@ class QualifiedSourceReferencePipelineTest {
 
     private static RewriteContext multiSchemaContext() {
         return new RewriteContext(
-            List.of(), Path.of(""), Path.of(""),
+            List.of(), Path.of(""), "QualifiedSourceReferencePipelineTest", Path.of(""),
             MULTI_OUTPUT_PACKAGE, MULTI_JOOQ_PACKAGE);
     }
 

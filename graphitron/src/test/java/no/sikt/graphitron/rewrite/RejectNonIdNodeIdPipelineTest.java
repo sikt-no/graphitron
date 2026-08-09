@@ -35,7 +35,7 @@ class RejectNonIdNodeIdPipelineTest {
     // target (alt_key) does not match the keyColumn (pk_id), so the @nodeId reference resolves to a
     // ChildField.ColumnBackedReferenceField with NodeIdEncodeKeys — exactly finding H's encoded-key shape.
     private static final RewriteContext FIXTURE_CTX = new RewriteContext(
-        List.of(), Path.of(""), Path.of(""),
+        List.of(), Path.of(""), "RejectNonIdNodeIdPipelineTest", Path.of(""),
         DEFAULT_OUTPUT_PACKAGE, "no.sikt.graphitron.rewrite.nodeidfixture"
     );
 

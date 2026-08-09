@@ -49,7 +49,7 @@ class FixtureWarningsGateTest {
     private static List<BuildWarning> buildAllWarnings() {
         var ctx = new RewriteContext(
             List.of(new SchemaInput(FIXTURE_SCHEMA.toString(), Optional.empty(), Optional.empty())),
-            FIXTURE_SCHEMA.getParent(),
+            FIXTURE_SCHEMA.getParent(), "FixtureWarningsGateTest",
             FIXTURE_SCHEMA.getParent(),
             OUTPUT_PACKAGE,
             JOOQ_PACKAGE

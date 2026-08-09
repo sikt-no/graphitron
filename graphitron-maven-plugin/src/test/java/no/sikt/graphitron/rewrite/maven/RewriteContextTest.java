@@ -36,6 +36,6 @@ class RewriteContextTest {
 
     private static RewriteContext ctx(List<SchemaInput> schemaInputs) {
         return new RewriteContext(
-            schemaInputs, Path.of(""), Path.of(""), "pkg", "jooq");
+            schemaInputs, Path.of(""), "RewriteContextTest", Path.of(""), "pkg", "jooq");
     }
 }

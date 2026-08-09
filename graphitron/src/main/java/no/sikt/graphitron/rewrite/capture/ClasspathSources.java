@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
@@ -18,7 +19,8 @@ import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 
 /**
  * Records the {@code store_source} row for each classpath entry the class census came from, and
- * stamps it.
+ * stamps it; the SDL walk's schema-file sources share the stamping machinery through
+ * {@link #noteRegularFile}.
  *
  * <p>The stamp is a content hash rather than the {@code (path, size, last-modified)} triple a
  * per-process cache could get away with. That triple is a heuristic, tolerable while a wrong answer
@@ -30,11 +32,17 @@ import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
  * <p>A directory root is deliberately unstamped. It changes on every compile, so hashing it would
  * buy an invalidation that always fires while paying for a full walk to decide that.
  *
- * <p>The stamp is written after the rows it vouches for, not with them: {@link #record} inserts the
+ * <p>The stamp is written after the rows it vouches for, not with them: {@link #record} upserts the
  * source unstamped and {@link #commitStamps} fills the hashes in once the load has flushed. A run
  * killed part-way therefore leaves a partition whose stamp is null, which no refresh will retain,
  * so the failure mode of a crash is repeated work rather than a partition that claims to hold rows
  * it never finished writing.
+ *
+ * <p>Source rows are written as immediate upserts rather than through the sink's buffered batch:
+ * the store is shared between graphs and a source is store-global, so a row another graph already
+ * wrote is refreshed in place ({@code last_seen} forward, stamp reset for a rewrite) instead of
+ * colliding with it, and a row this run rewrites carries a null stamp from the moment its old
+ * partition stops being trustworthy.
  */
 final class ClasspathSources {
 
@@ -57,14 +65,40 @@ final class ClasspathSources {
             return name;
         }
         Path path = name.isEmpty() ? null : Path.of(name);
-        var row = sink.dsl().newRecord(STORE_SOURCE);
-        row.setSourceName(name);
-        row.setSourceKind(path != null && Files.isDirectory(path) ? DIRECTORY : JAR);
-        sink.add(row);
+        upsert(sink.dsl(), name, path != null && Files.isDirectory(path) ? DIRECTORY : JAR);
         if (path != null && Files.isRegularFile(path)) {
             recorded.add(path);
         }
         return name;
+    }
+
+    /**
+     * Writes or refreshes one {@code store_source} row now, ahead of the sink's buffered flush,
+     * so the rows that reference it always find it and a shared store's existing row is taken
+     * over rather than collided with. The stamp is deliberately reset to null: this run is about
+     * to (re)write the source's partition, and the null is what keeps a killed run re-walked.
+     */
+    static void upsert(DSLContext dsl, String sourceName, String sourceKind) {
+        var now = LocalDateTime.now();
+        dsl.insertInto(STORE_SOURCE)
+            .set(STORE_SOURCE.SOURCE_NAME, sourceName)
+            .set(STORE_SOURCE.SOURCE_KIND, sourceKind)
+            .set(STORE_SOURCE.STAMP, (String) null)
+            .set(STORE_SOURCE.LAST_SEEN, now)
+            .onDuplicateKeyUpdate()
+            .set(STORE_SOURCE.SOURCE_KIND, sourceKind)
+            .set(STORE_SOURCE.STAMP, (String) null)
+            .set(STORE_SOURCE.LAST_SEEN, now)
+            .execute();
+    }
+
+    /**
+     * Adds a path to the set {@link #commitStamps} hashes, for sources whose rows another walk
+     * writes: the SDL capture stamps each schema file that resolves to a regular file, so a
+     * currency check can re-hash a cold graph's files without building its module.
+     */
+    void noteRegularFile(Path path) {
+        recorded.add(path);
     }
 
     /**

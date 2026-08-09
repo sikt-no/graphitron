@@ -86,7 +86,7 @@ class GeneratorDeterminismTest {
     private static RewriteContext contextFor(Path outputDir) {
         return new RewriteContext(
             List.of(new SchemaInput(FIXTURE_SCHEMA.toString(), Optional.empty(), Optional.empty())),
-            FIXTURE_SCHEMA.getParent(),
+            FIXTURE_SCHEMA.getParent(), "GeneratorDeterminismTest",
             outputDir,
             OUTPUT_PACKAGE,
             JOOQ_PACKAGE

@@ -255,6 +255,47 @@ class AbstractRewriteMojoTest {
     }
 
     @Test
+    void workspaceRoot_resolvesToTheOutermostAggregator(@TempDir Path root) throws Exception {
+        // A nested aggregator tree: the workspace is the OUTERMOST root, not the intermediate
+        // aggregator, because two subgraph modules under different intermediate aggregators of
+        // one checkout have to land in one store to be composable at all.
+        Files.writeString(root.resolve("pom.xml"), aggregatorPom("group"));
+        Path group = Files.createDirectories(root.resolve("group"));
+        Files.writeString(group.resolve("pom.xml"), aggregatorPom("leaf"));
+        Path leaf = Files.createDirectories(group.resolve("leaf"));
+
+        assertThat(AbstractRewriteMojo.workspaceRoot(leaf))
+            .isEqualTo(root.toAbsolutePath().normalize());
+    }
+
+    @Test
+    void workspaceRoot_isTheSameFromTheRootAndFromALeafModule(@TempDir Path root) throws Exception {
+        // The property the whole segment rests on: building one module from inside its own
+        // directory and building it from the reactor root must resolve one workspace, or the
+        // sub-module build boots cold against a store one directory away.
+        Files.writeString(root.resolve("pom.xml"), aggregatorPom("group"));
+        Path group = Files.createDirectories(root.resolve("group"));
+        Files.writeString(group.resolve("pom.xml"), aggregatorPom("leaf"));
+        Path leaf = Files.createDirectories(group.resolve("leaf"));
+
+        assertThat(AbstractRewriteMojo.workspaceRoot(leaf))
+            .isEqualTo(AbstractRewriteMojo.workspaceRoot(root))
+            .isEqualTo(AbstractRewriteMojo.workspaceRoot(group));
+    }
+
+    @Test
+    void workspaceRoot_isTheModuleItselfWhenNoAncestorListsIt(@TempDir Path root) throws Exception {
+        // No aggregator on disk means the module genuinely is its own workspace: the fallback
+        // fires on a property of the tree, not on how Maven happened to resolve a parent.
+        Files.writeString(root.resolve("pom.xml"), aggregatorPom("someone-else"));
+        Files.createDirectories(root.resolve("someone-else"));
+        Path standalone = Files.createDirectories(root.resolve("standalone"));
+
+        assertThat(AbstractRewriteMojo.workspaceRoot(standalone))
+            .isEqualTo(standalone.toAbsolutePath().normalize());
+    }
+
+    @Test
     void singleProjectReactor_widensScanAndWalkToDeclaredSiblings(@TempDir Path root) throws Exception {
         // The sub-module-invocation shape the sibling-module widening targets: a reactor with an aggregator,
         // the spec module graphitron:dev runs from, and a sibling service module

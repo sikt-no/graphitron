@@ -62,7 +62,7 @@ class TaggedInputsPipelineTest {
                 new SchemaInput(cinema.toString(), Optional.empty(), Optional.of("Part of cinema feature.")),
                 new SchemaInput(shared.toString(), Optional.of("core"), Optional.of("Shared by every feature."))
             ),
-            tmp,
+            tmp, "TaggedInputsPipelineTest",
             tmp,
             DEFAULT_OUTPUT_PACKAGE,
             DEFAULT_JOOQ_PACKAGE

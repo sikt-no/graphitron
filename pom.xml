@@ -39,6 +39,12 @@
           Pure JVM, no native libraries, so it embeds in the Maven plugin and the LSP alike.
         -->
         <version.com.h2database>2.4.240</version.com.h2database>
+        <!--
+          The one glob dialect behind <schemaInputs> patterns: SchemaRecipe.expand in graphitron
+          owns the walk (plexus DirectoryScanner includes), so the build's own scan and the
+          recorded-recipe freshness replay cannot drift apart.
+        -->
+        <version.org.codehaus.plexus.plexus-utils>3.6.1</version.org.codehaus.plexus.plexus-utils>
         <version.org.junit>6.0.3</version.org.junit>
         <version.ch.qos.logback>1.5.32</version.ch.qos.logback>
         <version.postgresql>42.7.10</version.postgresql>
@@ -192,6 +198,11 @@
                 <groupId>org.slf4j</groupId>
                 <artifactId>slf4j-api</artifactId>
                 <version>2.0.17</version>
+            </dependency>
+            <dependency>
+                <groupId>org.codehaus.plexus</groupId>
+                <artifactId>plexus-utils</artifactId>
+                <version>${version.org.codehaus.plexus.plexus-utils}</version>
             </dependency>
             <dependency>
                 <groupId>org.assertj</groupId>

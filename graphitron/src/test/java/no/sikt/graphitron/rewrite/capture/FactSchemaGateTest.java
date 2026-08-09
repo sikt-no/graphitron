@@ -260,4 +260,163 @@ class FactSchemaGateTest {
             assertThat(orphans).as("fields with no declaration site").isEmpty();
         }
     }
+
+    /**
+     * The graph partition dimension, in exemption polarity: every base relation leads its primary
+     * key with {@code graph_name} unless its family is deliberately graph-free, so a new family is
+     * covered by default and its exemption has to be argued in. Three prefixes are exempt, each
+     * for a stated reason. {@code sql_} and {@code jvm_} partition by <em>source</em> rather than
+     * by graph (a jar or a generated package is shared between graphs, and which sources make up
+     * a graph is a membership question deferred with its first consumer), so the same gate holds
+     * them to leading with {@code source_name} instead: the exemption is not key-freedom.
+     * {@code store_} is the store's own bookkeeping and answers the question per relation rather
+     * than per prefix: {@code store_graph} is keyed on {@code graph_name} and its two recipe
+     * children lead with it, while {@code store_source} and {@code store_stamp} carry neither
+     * dimension, being store-global by design.
+     */
+    @Test
+    @DisplayName("every base relation leads its key with its partition dimension")
+    void everyRelationLeadsWithItsPartitionDimension() {
+        try (var store = GraphitronModelStore.open()) {
+            var leading = leadingPrimaryKeyColumns(store);
+            var offenders = new java.util.ArrayList<String>();
+            for (var entry : leading.entrySet()) {
+                String table = entry.getKey();
+                String column = entry.getValue();
+                String expected;
+                if (table.startsWith("sql_") || table.startsWith("jvm_")) {
+                    expected = "source_name";
+                } else if (table.startsWith("store_")) {
+                    expected = switch (table) {
+                        case "store_graph", "store_graph_schema_input", "store_graph_schema_extension"
+                            -> "graph_name";
+                        case "store_source", "store_stamp" -> column;
+                        default -> "graph_name";
+                    };
+                } else {
+                    expected = "graph_name";
+                }
+                if (!expected.equals(column)) {
+                    offenders.add(table + " leads with " + column + ", expected " + expected);
+                }
+            }
+            assertThat(offenders).as("relations keyed without their partition dimension").isEmpty();
+        }
+    }
+
+    /**
+     * A {@code graph_name} column with no foreign-key path to {@code store_graph} is a column the
+     * database will not defend: it admits rows naming a graph that was never captured, and the
+     * ownership-scoped delete would rely on a value nothing constrains. The presence gate above
+     * checks the column is there and leading; this one checks it means something. Walked as a
+     * closure over the declared foreign keys (the generated model's own rendering of them,
+     * regenerated from the DDL every build) rather than compared against a hand-kept list,
+     * because the parentless roots are exactly what an eye misses: nothing references them
+     * either, so they read as leaves. {@code store_graph} itself is the one excluded row, the
+     * anchor being unable to reach itself by a foreign key; excluding it silently would read as
+     * a gate that passes because it never ran, so it is stated.
+     */
+    @Test
+    @DisplayName("every graph-keyed relation reaches store_graph by foreign key")
+    void everyGraphKeyedRelationReachesTheAnchor() {
+        var reaches = new java.util.HashSet<org.jooq.Table<?>>();
+        reaches.add(no.sikt.graphitron.model.Tables.STORE_GRAPH);
+        boolean grew = true;
+        var tables = no.sikt.graphitron.model.Public.PUBLIC.getTables();
+        while (grew) {
+            grew = false;
+            for (org.jooq.Table<?> table : tables) {
+                if (reaches.contains(table)) {
+                    continue;
+                }
+                for (var reference : table.getReferences()) {
+                    if (reaches.contains(reference.getKey().getTable())) {
+                        reaches.add(table);
+                        grew = true;
+                        break;
+                    }
+                }
+            }
+        }
+        var unanchored = new java.util.ArrayList<String>();
+        for (org.jooq.Table<?> table : tables) {
+            boolean graphKeyed = table.field("GRAPH_NAME", String.class) != null
+                && table.getOptions().type() != org.jooq.TableOptions.TableType.VIEW
+                && !table.equals(no.sikt.graphitron.model.Tables.STORE_GRAPH);
+            if (graphKeyed && !reaches.contains(table)) {
+                unanchored.add(table.getName());
+            }
+        }
+        assertThat(unanchored).as("graph-keyed relations with no FK path to store_graph").isEmpty();
+    }
+
+    /**
+     * The two-graph fusion test the partition dimension's motivation promises, doubling as the
+     * enforcer for per-run single-graph capture now that a store legitimately holds many graphs:
+     * a run writes only under its own graph, and a pre-seeded sibling partition comes out of the
+     * run byte-identical.
+     */
+    @Test
+    @DisplayName("a run writes only under its own graph")
+    void aRunWritesOnlyUnderItsOwnGraph(@TempDir Path tmp) throws java.io.IOException {
+        Path siblingDir = java.nio.file.Files.createDirectories(tmp.resolve("sibling"));
+        Path ownDir = java.nio.file.Files.createDirectories(tmp.resolve("own"));
+        try (var store = GraphitronModelStore.open()) {
+            FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity("sibling", siblingDir),
+                CapturedStore.registryOf(siblingDir, "type Query { actors: [String!]! }"));
+            var before = partitionSnapshot(store, "sibling");
+
+            FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity("own", ownDir),
+                CapturedStore.registryOf(ownDir, FIXTURE));
+
+            assertThat(partitionSnapshot(store, "sibling"))
+                .as("the sibling's partition, after another graph's capture")
+                .isEqualTo(before);
+            for (org.jooq.Table<?> table : no.sikt.graphitron.model.Public.PUBLIC.getTables()) {
+                var graphField = table.field("GRAPH_NAME", String.class);
+                if (graphField == null
+                    || table.getOptions().type() == org.jooq.TableOptions.TableType.VIEW) {
+                    continue;
+                }
+                assertThat(store.dsl().selectDistinct(graphField).from(table).fetch(0, String.class))
+                    .as("graph names present in %s", table.getName())
+                    .isSubsetOf("sibling", "own");
+            }
+        }
+    }
+
+    /** Every graph-keyed relation's rows for {@code graphName}, rendered stably for comparison. */
+    private static java.util.List<String> partitionSnapshot(GraphitronModelStore store, String graphName) {
+        var rows = new java.util.ArrayList<String>();
+        for (org.jooq.Table<?> table : no.sikt.graphitron.model.Public.PUBLIC.getTables()) {
+            var graphField = table.field("GRAPH_NAME", String.class);
+            if (graphField == null
+                || table.getOptions().type() == org.jooq.TableOptions.TableType.VIEW) {
+                continue;
+            }
+            store.dsl().selectFrom(table).where(graphField.eq(graphName)).fetch()
+                .forEach(record -> rows.add(table.getName() + "|" + record));
+        }
+        java.util.Collections.sort(rows);
+        return rows;
+    }
+
+    /** The first primary-key column of every base relation, from the booted store's metadata. */
+    private static java.util.Map<String, String> leadingPrimaryKeyColumns(GraphitronModelStore store) {
+        var leading = new java.util.LinkedHashMap<String, String>();
+        store.dsl()
+            .select(field(name("TC", "TABLE_NAME"), String.class),
+                field(name("KCU", "COLUMN_NAME"), String.class))
+            .from(table(name("INFORMATION_SCHEMA", "TABLE_CONSTRAINTS")).as("TC"))
+            .join(table(name("INFORMATION_SCHEMA", "KEY_COLUMN_USAGE")).as("KCU"))
+            .on(field(name("KCU", "CONSTRAINT_NAME"), String.class)
+                .eq(field(name("TC", "CONSTRAINT_NAME"), String.class)))
+            .where(field(name("TC", "CONSTRAINT_TYPE"), String.class).eq("PRIMARY KEY"))
+            .and(field(name("TC", "TABLE_SCHEMA"), String.class).eq("PUBLIC"))
+            .and(field(name("KCU", "ORDINAL_POSITION"), Integer.class).eq(1))
+            .fetch()
+            .forEach(row -> leading.put(row.value1().toLowerCase(java.util.Locale.ROOT),
+                row.value2().toLowerCase(java.util.Locale.ROOT)));
+        return leading;
+    }
 }

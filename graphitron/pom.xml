@@ -48,6 +48,12 @@
             <artifactId>slf4j-api</artifactId>
         </dependency>
 
+        <!-- SchemaRecipe's one glob dialect; version pinned in the root pom's properties. -->
+        <dependency>
+            <groupId>org.codehaus.plexus</groupId>
+            <artifactId>plexus-utils</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>${project.groupId}</groupId>
             <artifactId>graphitron-sakila-service</artifactId>

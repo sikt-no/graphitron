@@ -50,7 +50,7 @@ class ServiceCatalogTest {
     private static RewriteContext stubRewriteContext() {
         return new RewriteContext(
             java.util.List.of(),
-            java.nio.file.Path.of("."),
+            java.nio.file.Path.of("."), "ServiceCatalogTest",
             java.nio.file.Path.of("."),
             "unused",
             "unused");

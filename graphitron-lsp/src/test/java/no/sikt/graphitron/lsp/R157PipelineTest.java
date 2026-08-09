@@ -201,7 +201,7 @@ class R157PipelineTest {
     private static RewriteContext testContextWithTestClasses() {
         Path testClasses = testClassesRoot();
         return new RewriteContext(
-            List.of(), Path.of(""), Path.of(""), "fake.output", JOOQ_PACKAGE, List.of(testClasses)
+            List.of(), Path.of(""), "R157PipelineTest", Path.of(""), "fake.output", JOOQ_PACKAGE, List.of(testClasses)
         );
     }
 

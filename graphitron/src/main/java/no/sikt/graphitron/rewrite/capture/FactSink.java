@@ -25,15 +25,27 @@ import java.util.Set;
  * of a single-application directive) never reaches the database as a duplicate insert. A primary-key
  * violation is therefore always a capture bug, which is exactly the constraint split the fact-base
  * architecture rests on: author mistakes become detection rows, never constraint violations.
+ *
+ * <p>The sink is <b>graph-scoped</b>: constructed with the run's graph name, it stamps the
+ * {@code graph_name} column on every buffered row whose relation carries the dimension, and
+ * namespaces those relations' claim keys by its own graph. The claims are the load-bearing half:
+ * they are a hand-maintained mirror of every natural key, and widening the database keys without
+ * widening the claim keys would relocate the fusion the partition dimension exists to prevent one
+ * layer up, where a two-graph load would first-wins-drop the second graph's types before the
+ * widened primary keys could see them. Scoping the sink leaves every SDL-family call site
+ * untouched and correct by construction; a future multi-graph load is a second sink.
  */
 final class FactSink {
 
     private final DSLContext dsl;
+    private final String graphName;
     private final Map<Table<?>, List<TableRecord<?>>> buckets = new LinkedHashMap<>();
     private final Map<Table<?>, Set<List<Object>>> claimed = new HashMap<>();
+    private final Map<Table<?>, Field<String>> graphFields = new HashMap<>();
 
-    FactSink(DSLContext dsl) {
+    FactSink(DSLContext dsl, String graphName) {
         this.dsl = dsl;
+        this.graphName = graphName;
     }
 
     /** The store this sink writes to; capture reads nothing back, but tests do. */
@@ -44,15 +56,42 @@ final class FactSink {
     /**
      * Registers {@code key} as taken on {@code table}, returning {@code true} the first time and
      * {@code false} for every repeat. Callers write the row only on {@code true}; the losing
-     * occurrence is the duplicate-declaration detection's business, not the database's.
+     * occurrence is the duplicate-declaration detection's business, not the database's. On a
+     * graph-keyed relation the key is namespaced by this sink's graph, mirroring the widened
+     * primary key, so a claim can never fuse two graphs' coordinates.
      */
     boolean claim(Table<?> table, Object... key) {
-        return claimed.computeIfAbsent(table, t -> new HashSet<>()).add(Arrays.asList(key));
+        var full = graphField(table) == null ? Arrays.asList(key) : withGraph(key);
+        return claimed.computeIfAbsent(table, t -> new HashSet<>()).add(full);
     }
 
-    /** Buffers one row. The row's table decides where it lands and when it flushes. */
+    /**
+     * Buffers one row, stamping the graph dimension on it when its relation carries one. The
+     * stamp lives here rather than at the call sites so every SDL-family writer stays untouched
+     * and correct by construction.
+     */
     void add(TableRecord<?> record) {
+        Field<String> graph = graphField(record.getTable());
+        if (graph != null) {
+            record.set(graph, graphName);
+        }
         buckets.computeIfAbsent(record.getTable(), t -> new ArrayList<>()).add(record);
+    }
+
+    private Field<String> graphField(Table<?> table) {
+        // Not computeIfAbsent: a graph-free relation maps to null, which computeIfAbsent
+        // would re-derive on every row of the largest family this sink writes.
+        if (!graphFields.containsKey(table)) {
+            graphFields.put(table, table.field("GRAPH_NAME", String.class));
+        }
+        return graphFields.get(table);
+    }
+
+    private List<Object> withGraph(Object... key) {
+        var full = new ArrayList<>(key.length + 1);
+        full.add(graphName);
+        full.addAll(Arrays.asList(key));
+        return full;
     }
 
     /**
@@ -75,15 +114,27 @@ final class FactSink {
                 continue;
             }
             Field<?>[] fields = table.fields();
-            var batch = dsl.batch(dsl.insertInto(table)
+            var insert = dsl.insertInto(table)
                 .columns(fields)
-                .values(new Object[fields.length]));
+                .values(new Object[fields.length]);
+            // The source-keyed families are shared between graphs, so two builds crawling the
+            // same new jar concurrently both land: the second writer's identical rows merge away
+            // instead of violating the key. Graph-keyed families stay plain inserts, where a
+            // duplicate is a capture bug the constraint must surface.
+            var batch = sharedFamily(table)
+                ? dsl.batch(insert.onDuplicateKeyIgnore())
+                : dsl.batch(insert);
             for (TableRecord<?> row : rows) {
                 batch = batch.bind(row.intoArray());
             }
             batch.execute();
         }
         buckets.clear();
+    }
+
+    private static boolean sharedFamily(Table<?> table) {
+        String name = table.getName().toLowerCase(java.util.Locale.ROOT);
+        return name.startsWith("jvm_") || name.startsWith("sql_");
     }
 
     /**

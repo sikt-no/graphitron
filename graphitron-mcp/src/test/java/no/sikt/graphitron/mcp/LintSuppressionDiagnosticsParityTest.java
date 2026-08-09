@@ -72,7 +72,7 @@ class LintSuppressionDiagnosticsParityTest {
         Files.writeString(schema, SDL);
         var ctx = new RewriteContext(
             List.of(new SchemaInput(schema.toString(), Optional.empty(), Optional.empty())),
-            tmp, tmp, "fake.output", JOOQ_PACKAGE
+            tmp, "LintSuppressionDiagnosticsParityTest", tmp, "fake.output", JOOQ_PACKAGE
         ).withLintConfig(lintConfig);
 
         var output = new GraphQLRewriteGenerator(ctx).buildOutput();

@@ -258,12 +258,13 @@ incompatible halves:
   `FactCapture.run`'s `storeDirectory` argument stays the seam that names the file, which is
   the same seam R610 re-points at the per-user home, so this item states a lifetime and
   inherits a location rather than deciding one.
-- A live handle, not a copy. `openReadOnly` hands back a private snapshot, and a reader on a
-  snapshot cannot see the round the writer just wrote, which is the one guarantee this section
-  exists to make. Under R610 that is no longer an in-process-only concern: mixed mode lets a
-  separate process attach to the live database, so the delivery guarantee extends to
-  cross-process readers instead of stopping at the JVM boundary, and the snapshot shape is
-  left to callers that genuinely want a fixed view of a run.
+- A live handle, not a copy. A reader on a private snapshot (the shape the store's deleted
+  read-only path used to hand back) cannot see the round the writer just wrote, which is the
+  one guarantee this section exists to make. Under R610 that is no longer an in-process-only
+  concern: mixed mode lets a separate process attach to the live database, so the delivery
+  guarantee extends to cross-process readers instead of stopping at the JVM boundary, and a
+  caller that genuinely wants a fixed view of a run takes a transaction on an attached
+  connection.
 - It coexists with capture without a protocol. H2 gives one process one database per file
   however many connections reach for it, which `GraphitronModelStore.close` already relies on
   (it withholds `SHUTDOWN` from a file-backed store for exactly that reason), so capture's

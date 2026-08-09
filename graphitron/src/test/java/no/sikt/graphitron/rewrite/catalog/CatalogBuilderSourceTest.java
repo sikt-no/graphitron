@@ -96,7 +96,7 @@ class CatalogBuilderSourceTest {
         return new RewriteContext(
             List.of(),
             RewriteContext.DEFAULT_SCHEMA_FILE_EXTENSIONS,
-            basedir,
+            basedir, "CatalogBuilderSourceTest",
             basedir.resolve("out"),
             basedir.resolve("res"),
             "fake.output",

@@ -13,7 +13,7 @@ public class TestConfiguration {
     public static RewriteContext testContext() {
         return new RewriteContext(
             List.of(),
-            Path.of(""),
+            Path.of(""), "TestConfiguration",
             Path.of(""),
             DEFAULT_OUTPUT_PACKAGE,
             DEFAULT_JOOQ_PACKAGE

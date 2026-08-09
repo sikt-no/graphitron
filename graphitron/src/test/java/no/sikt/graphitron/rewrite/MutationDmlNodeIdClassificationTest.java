@@ -28,7 +28,7 @@ class MutationDmlNodeIdClassificationTest {
 
     private static final RewriteContext NODEID_CTX = new RewriteContext(
         List.of(),
-        Path.of(""),
+        Path.of(""), "MutationDmlNodeIdClassificationTest",
         Path.of(""),
         "fake.code.generated",
         "no.sikt.graphitron.rewrite.nodeidfixture"
