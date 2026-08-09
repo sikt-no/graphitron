@@ -58,9 +58,15 @@ one blast radius as its consequence.
 - Foreign keys between the two families widen automatically, since they reference the
   widened keys. The `graphql_directive_site` union view gains the column in every arm.
 - A new `store_graph` relation anchors the partition: `graph_name` as key, `last_captured`
-  (the bookkeeping the eviction story below needs), and the graph's **build identity**,
-  `base_dir`, `build_file_path` and `build_file_stamp` (the module's pom, content-hashed;
-  all three NULL on a programmatic run with no build file). The seven family relations with
+  (the bookkeeping the eviction story below needs), `base_dir`, and the graph's **build
+  identity**, `build_file_path` and `build_file_stamp` (the module's pom, content-hashed; both
+  NULL on a programmatic run with no build file). `base_dir` is `NOT NULL` and deliberately not
+  grouped with that pair, which is the difference between a run having a build file and a run
+  having a directory: `RewriteContext` requires `basedir` of every caller, Maven and programmatic
+  alike, so every run has one to record. Letting it go NULL with the build file would disarm the
+  ownership check below for exactly the caller that check is written against, since a
+  programmatic caller handing over any string it likes is the collider the section names. The
+  seven family relations with
   no in-family parent (`graphql_type`, `graphql_root_operation`, `graphql_directive`,
   `graphql_schema_directive`, `graphql_duplicate_declaration`, `graphitron_link`,
   `graphitron_undecoded_argument`) get a direct FK to it; every other relation reaches it
@@ -79,9 +85,10 @@ one blast radius as its consequence.
   can: how to *find* the graph's schema files, including ones that do not exist yet. The
   `tag` and `description_note` columns are not optional fidelity: those appliers run above
   the capture cut, so replaying a graph's SDL capture without them would mint different rows
-  than the graph's own build. The shape is chosen to be absorbable: R612 explores promoting
-  resolved configuration to a fact family the scanner itself reads, and these relations are
-  its compatible first slice, adoptable without a rekey.
+  than the graph's own build. The shape is chosen to be absorbable: R612 promotes
+  resolved scan configuration to one typed recipe both the build's own scan and the freshness
+  replay run over, and these relations are its compatible first slice, which it adopts in place
+  without a rekey.
 - A recorded pattern is only worth as much as the glob engine that re-expands it, so the
   **dialect is part of the recipe's contract and gets one implementation**, in `graphitron`. The
   patterns are plexus `DirectoryScanner` includes, which is what `SchemaInputExpander.expand`
@@ -177,7 +184,7 @@ truthful for the graph that owns it instead of describing two trees by turns.
 `RewriteContext` requires the name non-blank at construction, the same non-null contract its
 other fields carry; Maven users never see the requirement because the mojo default always
 supplies a value. The programmatic construction sites state a name once each, and there are
-55 of them across 53 files in five modules (`graphitron`, `graphitron-lsp`,
+53 of them across 52 files in five modules (`graphitron`, `graphitron-lsp`,
 `graphitron-maven-plugin`, `graphitron-mcp`, `graphitron-sakila-example`): all six
 convenience overloads (fourteen-arg down to five-arg) delegate to the canonical constructor,
 so a required field reaches every caller of every one of them. That is the item's largest
@@ -373,8 +380,9 @@ it was the obvious move and it does not work: H2 refuses `AUTO_SERVER=TRUE` toge
 only thing the method adds over `openAt`, and an attach that quietly drops the flag would be a
 method whose name promises a guarantee its URL no longer carries. Deleting it is the better
 answer anyway, on this item's own reasoning: mixed mode makes a copy-to-temp snapshot
-redundant, no production caller exists (its only callers are two assertions in
-`PersistentStoreTest`, which go with it), and a reader wanting a fixed view now has a
+redundant, no production caller exists (its only callers are two whole test methods in
+`PersistentStoreTest`, `aSnapshotOpensBesideTheWriter` and `noSnapshotWithoutAStore`, which go
+with it), and a reader wanting a fixed view now has a
 transaction on an attached connection, which is where that requirement belongs once a consumer
 actually has it. Keeping a read-only entry point alive so it could be argued about later is
 how a store acquires two ways to be opened and one rationale that fits neither. And `openAt`'s
@@ -472,6 +480,11 @@ set, the existing stamp logic decides retain-or-rewrite; a source **not** in the
 never examined and never deleted, because a jar absent from this module's classpath may be
 another graph's live dependency. `store_source` and `store_graph` rows upsert with fresh
 `last_seen` / `last_captured` stamps and are never deleted by a run that does not own them.
+`StoreRefresh.wholesale()`'s exemption set gains the three new `store_` relations, and its
+comment naming "the two `store_` relations" goes stale with them. That is not bookkeeping: the
+set is written in exemption polarity over every generated relation, so a `store_` table left out
+of it is emptied outright on every warm run, which would drop the anchor and the recipe rows the
+ownership scoping and the freshness check both rest on.
 
 ### Freshness is heterogeneous by design
 
@@ -494,7 +507,11 @@ substrates, both shipping here:
   or shrink a sibling's match set with no edit to any file the store ever read; a check
   over recorded sources alone is blind to exactly that arrival. So the set question comes
   first: re-run the remembered recipe's globs over `base_dir` and compare the resulting
-  file set against `store_source`, which catches added and deleted schema files. Then the
+  file set against the graph's own recorded set, which catches added and deleted schema files.
+  The recorded side is the distinct `source_name` over that graph's declaration sites and
+  deliberately not `store_source`, which stays store-global: the source family can say what a
+  file hashed to, never which graph read it, so in a shared store a file a sibling already
+  recorded would read as no addition at all. Then the
   content question: re-hash the files both sides agree on against `store_source.stamp`,
   which catches edits. A partition is current only when the re-expansion reproduces the
   recorded set and every file in it re-hashes to its stamp; a new match, a lost match, and
@@ -731,10 +748,12 @@ has it, rather than by giving the shared table the `| CLI property` column the `
 has. That column earns its place there because all four `dev` parameters carry a property; on a
 table of eleven where one does, it would print ten empty cells that read as an absence rather
 than as an inapplicability, and it would rewrite every existing row to add them. One sentence
-where the reader is already looking is the proportionate answer. Two counts in the page's own
-prose go stale as this lands and are corrected with it: the `:description:` attribute says "the
-four shared `<configuration>` parameters" and the intro says `dev` "adds three of its own", both
-already wrong before this item and both cheaper to fix while the page is open than to leave for
+where the reader is already looking is the proportionate answer. Three counts in the page's own
+prose are wrong and are corrected while it is open: the `:description:` attribute says "the
+four shared `<configuration>` parameters" (nine today, eleven after this), the intro says `dev`
+"adds three of its own", and the `dev`-goal section's own lead-in says "Three watch-loop knobs
+unique to the `dev` goal" while the table under it lists four. All three were already wrong
+before this item and all three are cheaper to fix while the page is open than to leave for
 whoever notices next.
 
 ## Verification
