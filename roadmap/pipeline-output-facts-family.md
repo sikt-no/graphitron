@@ -1,7 +1,7 @@
 ---
 id: R603
 title: "A pipeline-output facts family in the model store"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 5
 theme: classification-model
