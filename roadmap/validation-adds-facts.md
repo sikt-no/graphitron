@@ -96,7 +96,17 @@ a violation.
 | `ArgumentRef.UnclassifiedArg` | name, typeName, nonNull, list, rejection | nothing (arguments have no classification projection) |
 | `GraphitronField.UnclassifiedField` | parent, name, location, **`definition`**, rejection | `FieldClassification.Unclassified(reason)` |
 | `GraphitronType.UnclassifiedType` | name, location, rejection | `TypeClassification.Unclassified(reason)` |
-| `InputFieldResolution.Unresolved` | fieldName, lookupColumn, prose | joined into one `Rejection.structural` per input type |
+| `InputFieldResolution.Unresolved` | fieldName, location, **`rejection`** | one located `ValidationError` per failure, minted at the failing field |
+
+**One row has already converged, independently.** `InputFieldResolution.Unresolved` reached the
+shape this item argues for through `input-field-resolution-typed-rejections` (R585, Done): a typed
+`Rejection` on the carrier, the failing field's own location, and each failure minting its own
+located `ValidationError` at the mint boundary (`BuildContext.mintInputFieldFailures`) where three
+fan-ins previously joined k failures into one prose sentence at the consuming coordinate. It is
+precedent, not a defect: the doctrine held on a real carrier in the pre-store world, which is the
+strongest evidence available that the remaining four rows are reachable. The relevant residue for
+this item is that the surface slice 5 lands on is already additive and already dedups by value at
+the mint, and the tests guarding it are count-asserted on purpose.
 
 **`UnboundField` is right on one axis and wrong on the other.** On retention it is the best carrier
 in the model: eight facts, and its javadoc explains why it keeps `attemptedColumnName` at all, so
@@ -216,10 +226,13 @@ lower to several), with no intermediate classification record between facts and 
 **Classifiers are pure, and the additive pattern already ships.** The
 `@splitQuery`-on-nesting-field branch in `FieldBuilder` already does what this item asks for: it
 mints a Deferred diagnostic into `ctx.diagnostics()`, keeps the classification and its subtree
-intact for the editor view, and fails the build through the validator's drain. It also carries the
-purity hazard to retire: it reads the accumulator to dedupe the shared-nesting case. Under
-coordinate-keyed claims that dedup is structural, per the key above; violations and registry
-entries come out of validation and planning, never out of classifiers.
+intact for the editor view, and fails the build through the validator's drain. Its dedup of the
+shared-nesting case (two hosts classifying the same nested coordinate) is no longer a purity
+hazard either: R585 moved dedup to the mint boundary, so the branch no longer reads the
+accumulator and the arm's own comment now says the case "collapses on `addDiagnostic`'s value
+idempotence". What this item changes there is the grain, not the direction: under coordinate-keyed
+claims the dedup is structural, a key rather than value equality at a mint, and violations and
+registry entries come out of validation and planning, never out of classifiers.
 
 ## Capture and derivation: two loads, then a stack of views
 
@@ -487,11 +500,17 @@ surfaces, so the item does not qualify for the internal-refactor exemption.
   work under the umbrella, not this item. With the store adopted, the fact schema DDL (the
   `graphitron-model` module) is the umbrella's normalised data model reified as SQL: created at
   startup, populated during a run, never migrated.
-- **`input-field-resolution-typed-rejections` (R585):** overlaps on one carrier, and its one open
-  design fork (fan many input-field failures into one prose rejection, or emit several) is decided
-  by this item's doctrine: violations are facts, one per failure. Whichever lands first settles the
-  fork once; let that item land first if both reach In Progress together (it is smaller and already
-  scoped).
+- **`input-field-resolution-typed-rejections` (R585, Done; see `roadmap/changelog.md`):** landed
+  first and settled its fork (fan many input-field failures into one prose rejection, or emit
+  several) the way this item's doctrine predicts: violations are facts, one per failure. It is this
+  item's precedent on the model-layer table above, and the surface slice 5 inherits.
+  Load-bearing for that slice: failures mint through `BuildContext.mintInputFieldFailures` at the
+  input field's own location, `addDiagnostic` is idempotent by value over a `LinkedHashSet` so
+  dedup happens at the mint rather than at any reader's drain, and `InputFieldFanInDiagnosticsTest`
+  is count-asserted throughout by design, because a cause gaining a second producer shows up only
+  as a count. Slice 5 re-keys those mints (definition-keyed for the malformed shape, use-keyed for
+  the cascade), so it moves counts and must say which, rather than treating churn there as
+  incidental.
 - **`validator-walks-plain-input-unbound-fields` (R221):** subsumed or narrowed by slice 5; see
   there.
 - **`mcp-aggregated-diagnostics` (R569):** a consumer, and the reason this surfaced. Every fact that
