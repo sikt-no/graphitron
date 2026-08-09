@@ -7,7 +7,7 @@ priority: 3
 theme: classification-model
 depends-on: []
 created: 2026-06-18
-last-updated: 2026-08-06
+last-updated: 2026-08-09
 ---
 
 # The Graphitron data model
@@ -154,7 +154,7 @@ erDiagram
         int column
     }
     AUTHORED_CLAIM {
-        key classifier PK "with the coordinate; one view arm per claiming intent_ relation"
+        key classifier PK "with the coordinate; one view arm per claiming graphitron_ relation"
         payload slots "decoded slot facts; provenance is the application and its location"
     }
     INFERRED_CLAIM {
@@ -191,7 +191,7 @@ The catalog, each row a fact with its own deep-dive below:
 | `errorGuard` | operation sub-fact | `@error` | on a throwing operation: a transport channel and an interned handler partition |
 | `capabilityTag` | 0..N (reserved) | `@capability` / `@exemplifies` | tags the coordinate with a stable slug from the capability catalog; knowledge-surface only, not yet shipped |
 | `sourceLocation` | 0..1, joined not stored | joined against `SourceWalker.Index` at request time | the `locate` value; a fact *about* the coordinate, keyed by the coordinate, never itself a key |
-| `authoredClaim` | 0..N, keyed `(coordinate, classifier)` | one view arm per claiming `intent_` relation | the classification axis's authored claims; the reduced view is the single-classification worldview planning reads (R589) |
+| `authoredClaim` | 0..N, keyed `(coordinate, classifier)` | one view arm per claiming `graphitron_` relation | the classification axis's authored claims; the reduced view is the single-classification worldview planning reads (R589) |
 | `inferredClaim` | 0..N, keyed `(coordinate, classifier)` | one derivation view per structural classifier | the masked structural reading, payload the classifier's join witnesses; resolution unions authored with inferred at uncovered coordinates (R589) |
 
 **The model is closed.** Every active directive's effect has an owning fact in this catalog; the
@@ -200,9 +200,10 @@ lowering, these facts (front) and the method graph that consumes them (back), me
 relation, detailed throughout the rest of this document.
 
 **The model has an executable home, and the division of labour is explicit.** The fact schema DDL in
-the `graphitron-model` module (R595) is this normalised model reified as SQL: the capture families
-(`graphql_` existence, `applied_` fidelity, `intent_` decoded directive semantics, `catalog_` jOOQ,
-`extension_` classpath) carry the base relations, and the derived stratum (the claim views, resolution,
+the `graphitron-model` module (R595) is this normalised model reified as SQL: the shipped families
+(`graphql_` total transcription, `graphitron_` decoded directive semantics, `sql_` catalog, `jvm_`
+classpath, `store_` bookkeeping, `javac_` compile diagnostics per R603, with `graph_name` leading the
+SDL-family keys per R610) carry the base relations, and the derived stratum (the claim views, resolution,
 reachability, demand, the diagnostics relations) lands consumer by consumer per R589's strangler frame.
 This document keeps the *why*: the justifications, the alternatives rejected, the key discipline, the
 back half. The *what* migrates into the DDL relation by relation, and where the two disagree the DDL
@@ -321,7 +322,7 @@ of parameters) is a lossy projection of that signature and is not the key; a pos
 "ambiguous" is an artifact of keying on the projection rather than the signature, and it disappears once the
 signature is the key. Parameter names are not part of the identity (they cannot disambiguate overloads); they
 ride along as payload the model already carries for argument mapping and hover. The DDL implements this as
-`extension_method`'s descriptor key (the JVM descriptor is the signature rendered canonically); the shipped
+`jvm_method`'s descriptor key (the JVM descriptor is the signature rendered canonically); the shipped
 `CompletionData.Method` still carries no descriptor, which is why the capture agreement test compares that
 projection descriptor-erased.
 
@@ -1476,7 +1477,7 @@ composite columns and the `operation` slot; 3NF on the split key-projection), an
 constraint on the edge relation). Taken to its end this looks like rebuilding a database, which raises the
 question honestly: should the generator just *use* one? This section originally answered no ("adopt the
 relational model as design discipline; do not adopt a relational runtime"), and that answer is
-**reversed**: the store is adopted (R595/R589), an embedded H2 in-memory database whose schema is this
+**reversed**: the store is adopted (R595/R589), an embedded H2 database whose schema is this
 model's DDL, queried through jOOQ codegen over that DDL in the `graphitron-model` module. The reversal is
 recorded argument by argument, because each of the original three objections was answered by evidence
 rather than overruled:
