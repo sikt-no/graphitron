@@ -1,7 +1,7 @@
 ---
 id: R613
 title: "Generated column filters compose beside the lookup VALUES join"
-status: Spec
+status: Ready
 bucket: feature
 priority: 1
 theme: legacy-migration
