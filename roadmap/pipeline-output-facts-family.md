@@ -1,7 +1,7 @@
 ---
 id: R603
 title: "A pipeline-output facts family in the model store"
-status: In Review
+status: Ready
 bucket: architecture
 priority: 5
 theme: classification-model
@@ -486,3 +486,67 @@ delete.
   the row is readable on the same handle afterwards, which is the delivery guarantee stated
   rather than assumed.
 - R569's tool pins run unchanged; no new wire assertions.
+
+## Review feedback: In Review -> Ready, 2026-08-09
+
+The delivery at `79b60a2` is close, and most of it lands as specified: the relation, its comments,
+the writer's transaction and ownership scoping, the derivational refresh finding, the `ORACLE` arm
+with both non-vacuous anchors, and the flattening's canonicalisation are all as the sections above
+fix them. `mvn install -Plocal-db` is green on the branch, no test asserts on generated method
+bodies, and the two prose-surface gates this transition carries are satisfied (no `docs/` changes,
+so the user-facing-doc check is skipped; no `Retired vocabulary` section is declared, so the
+retirement sweep is skipped, and the `severity` component rename is in fact fully swept: all three
+live call sites moved). Two things must change before the next pass.
+
+**1. The severity partition test cannot fail, and two javadocs claim it can.** The section above
+asked for a partition unit test over `Diagnostic.Kind.values()` "which is what fails when javac
+grows a `Kind`". `CompileDiagnosticTest.severityProjectionIsTotalOverJavacsKinds`
+(`graphitron/src/test/java/no/sikt/graphitron/rewrite/compile/CompileDiagnosticTest.java:59`)
+asserts, for each kind, that `severity()` is in `{error, warning}` and equals
+`kind == ERROR ? "error" : "warning"`. Against the shipped projection
+(`"ERROR".equals(kind) ? "error" : "warning"`, `CompileDiagnostic.java:49`) both assertions are
+tautologies for *any* enum constant: the ternary's catch-all makes the first true by construction,
+and enum-name uniqueness makes the second true for every present or future kind. A new
+`Kind.INFO` would project to `"warning"` and the test would still pass. The guard the spec asked
+for does not exist.
+
+Two shipped javadocs assert that it does, which is the part that has to go either way.
+`CompileDiagnostic.severity()`'s javadoc says the projection is "pinned total by a partition test
+so a new `Kind` fails a build instead of falling through silently somewhere downstream"
+(`CompileDiagnostic.java:41-47`), and the test's own javadoc says it "is what fails when javac
+grows a `Kind`" (`CompileDiagnosticTest.java:52-55`). Both are prose claiming to be pinned by a
+named live test, the second of the three honest forms in
+`docs/architecture/explanation/development-principles.adoc` § "Documentation names only live
+tests/code", where the claim is not the test's. That principle names this gate as its enforcer.
+
+The fix is the golden-set pin the catch-all needs, four lines beside the existing loop: assert
+`Diagnostic.Kind.values()` contains exactly the five kinds classified today, with an `as(...)`
+message telling whoever trips it to classify the new kind in `severity()` before widening the pin.
+The existing loop keeps its role (every classified kind lands in one of the two severities); the
+new assertion is what actually fires when javac grows the enum. Then both javadocs are true as
+written. Alternatively, drop the claim from both javadocs and say the projection is total by
+construction with `ERROR` alone projecting to `error`; that is honest too, but it gives up a
+property the design section deliberately asked for, so prefer the pin.
+
+**2. `CompileFacts.java` contains raw NUL bytes and git treats it as a binary file.** The ordinal
+map key at `graphitron/src/main/java/no/sikt/graphitron/rewrite/compile/CompileFacts.java:107`
+joins the position components with a literal U+0000 character typed into the char literals rather
+than the `'\0'` escape. NUL is a good separator here and the algorithm is right (dense, round
+order, verified by the ordinal tests); the spelling is what breaks. Git classifies the file as
+binary, so `git show 79b60a2 -- .../CompileFacts.java` prints "Binary files ... differ" instead of
+the class, and grep reports "binary file matches" instead of the matching line. This item's
+central new class is therefore invisible in its own landing diff, in `git log -p`, in `git blame`,
+and to every future reviewer of this gate, which is a real cost on a repo whose whole workflow is
+diff-based review. The fix is to spell the separator `'\0'` and re-save the file free of NUL
+bytes; nothing else about the writer needs to move. (`ValidationReportTest.java:67` carries the
+same slip in a deliberate fixture string and predates this item, so it is not this pass's to fix,
+but it is why no gate caught this one.)
+
+**Not blocking, worth folding into the same pass or filing as follow-ups.** The minted anchor row
+at `CompileFacts.java:79` writes `LAST_CAPTURED = LocalDateTime.now()` for a graph nothing has
+ever captured, while that column's comment reads "when this graph's own run last captured it" and
+names a future eviction surface as its reader. The column is `NOT NULL` so some value is owed, but
+now() overstates what the store knows; consider a sentinel with a sentence in the comment, or say
+in the writer's comment why now() is the honest choice. Separately, `CompileFacts.write` catches
+only `DataAccessException` while its class javadoc promises "a write that fails logs and returns";
+jOOQ makes that the normal wrapper so the gap is narrow, but the claim is broader than the catch.
