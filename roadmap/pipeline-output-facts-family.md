@@ -1,7 +1,7 @@
 ---
 id: R603
 title: "A pipeline-output facts family in the model store"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 5
 theme: classification-model
@@ -550,3 +550,16 @@ now() overstates what the store knows; consider a sentinel with a sentence in th
 in the writer's comment why now() is the honest choice. Separately, `CompileFacts.write` catches
 only `DataAccessException` while its class javadoc promises "a write that fails logs and returns";
 jOOQ makes that the normal wrapper so the gap is narrow, but the claim is broader than the catch.
+
+**Rework pass, same day.** All four points taken, the two blocking ones as the review prescribed.
+The golden-set pin lands beside the existing loop in
+`CompileDiagnosticTest.severityProjectionIsTotalOverJavacsKinds`: the enum must contain exactly
+the five kinds classified today, with the failure message directing whoever trips it to classify
+the new kind in `severity()` before widening the pin, and the test's javadoc now states which
+half fires and why the loop alone could not. Both javadocs stand as written. The ordinal
+separator is spelled `'\0'` and the file carries no NUL bytes, so `CompileFacts.java` diffs as
+text. Of the two notes, the writer's comment now says why now() is the honest `last_captured`
+for a minted anchor (the mint happens only where capture never ran, which is the in-memory store
+no eviction surface will ever see; on a shared file the first real capture replaces the row),
+and the class javadoc narrows its promise to the `DataAccessException` wrapper it actually
+catches, stating that anything else is a bug this class deliberately does not swallow.

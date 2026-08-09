@@ -50,13 +50,21 @@ class CompileDiagnosticTest {
     }
 
     /**
-     * The severity projection is total over javac's kinds, which is what fails when javac grows a
-     * {@code Kind}: every kind lands in one of the two severities, and {@code ERROR} alone lands
-     * in {@code "error"}.
+     * The severity projection's partition pin, in two halves. The loop states the projection over
+     * every kind the enum has (every kind lands in one of the two severities, {@code ERROR} alone
+     * in {@code "error"}), but against a ternary with a catch-all it is true for any constant, so
+     * on its own it can never fail. The golden set beside it is the half that actually fires when
+     * javac grows a {@code Kind}: the enum must contain exactly the kinds classified today, so a
+     * new one fails a build here instead of falling through to {@code "warning"} silently.
      */
     @Test
-    @DisplayName("the severity projection partitions every javac kind")
+    @DisplayName("the severity projection partitions every javac kind, and the kind set is pinned")
     void severityProjectionIsTotalOverJavacsKinds() {
+        assertThat(Diagnostic.Kind.values())
+            .as("javac grew a Diagnostic.Kind this projection has never classified; decide its "
+                + "severity in CompileDiagnostic.severity() before widening this pin")
+            .containsExactlyInAnyOrder(Diagnostic.Kind.ERROR, Diagnostic.Kind.WARNING,
+                Diagnostic.Kind.MANDATORY_WARNING, Diagnostic.Kind.NOTE, Diagnostic.Kind.OTHER);
         for (Diagnostic.Kind kind : Diagnostic.Kind.values()) {
             var diagnostic = new CompileDiagnostic("file:///gen/A.java", 1, 1, kind.name(), null, "m");
             assertThat(diagnostic.severity())
