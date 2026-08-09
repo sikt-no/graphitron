@@ -135,7 +135,10 @@ Two base relations, both keyed `(coordinate, classifier)`:
 Since the graph partition dimension shipped (R610, Done), `graph_name` leads every
 `graphitron_` base-relation key, so the claim views inherit the column by construction and the
 full key is `(graph_name, coordinate, classifier)`. A generator run works one graph; the prose
-here keeps writing the run-scoped key.
+here keeps writing the run-scoped key. Key structure is the default home for this kind of
+behavior: R610's own refresh scoping landed derivationally, a relation carrying the graph
+column ownership-cleared by construction rather than taught per relation, and these slices
+default to the same move.
 
 Separate relations rather than one relation with a tier tag keep each row type honest: the two
 provenance shapes never share a record, so no component goes nullable by kind, which is the
@@ -237,9 +240,8 @@ still runs upstream, invalid input never reaches capture), and the macros (`@asC
 `@asFacet`, federation key synthesis) expand during the same walk, their synthesized rows
 marked by provenance relations so the authored picture stays the anti-join.
 Source locations ride the raw facts so every later diagnostic inherits its location without
-re-walking SDL. The second load fills the `sql_` family straight off `JooqCatalog` (not the
-`CatalogFacts` projection, whose narrowings the store deliberately does not inherit) and the
-`jvm_` family from the full compile classpath, jars included. Capture is total: everything in
+re-walking SDL. The second load fills the `sql_` and `jvm_` families; the DDL header and the
+relation comments own their exact scope and filters. Capture is total: everything in
 the SDL is recorded, with no reachability pruning at capture time.
 
 Everything after capture is derivation, and classification stops being a phase. An authored
@@ -296,17 +298,14 @@ query order stays free, and an engine upgrade's corpus diff has a suspect list o
 crossings rather than every query.
 
 What the store materializes deserves naming precisely: the fact schema DDL is the umbrella's
-normalised data model reified as a SQL schema. As shipped (R595 slice 5, reshaped by R610's
-graph partition dimension) the store persists as an H2 file in the platform's per-user cache
-under a per-workspace segment, several graphs sharing one file with `graph_name` leading every
-SDL-family key, and both load-bearing properties survive the persistence because the file is a
-cache, never a state of record: the stamp (DDL hash plus generator version) names the store's
-directory segment, so a schema edit or a release opens a different file rather than migrating
-one, and a shared file is never discarded; refresh is ownership-scoped, the run's own graph
-partition clearing by `graph_name`, an owned stale classpath source clearing by source, and a
-source no run named never examined; the file opens in H2 mixed mode so parallel reactor
-modules attach, and a run that cannot open or attach falls back to in-memory and leaves the
-file alone. The DDL is source, and its home is the `graphitron-model` reactor module,
+normalised data model reified as a SQL schema. The store's persistence and refresh model has
+reshaped under each item that shipped against it (in-process at first, a build-directory
+cache at R595 slice 5, a per-workspace multi-graph file at R610), so this body stops
+mirroring it: the DDL header and the changelog entries are the authoritative statement of
+where the file lives and how it refreshes. What this item relies on is narrower and has held
+through every reshape: the file is a cache, never a state of record; no migration ever exists
+(a stamp mismatch opens a different file rather than converting one); and a run that cannot
+use the file falls back to in-memory. The DDL is source, and its home is the `graphitron-model` reactor module,
 which holds the DDL, runs jOOQ codegen over it (live H2 metadata over a store the build driver
 boots from the DDL, no external database process; `DDLDatabase` was tried and dropped, per the
 functions spike below), and builds before core: the `graphitron-sakila-db` shape made
@@ -332,6 +331,17 @@ explosion via a `SYSTEM_RANGE` join with `CARDINALITY` and `ARRAY_GET`) is there
 contingency, not a planned mechanism: adopted only if a derivation ever genuinely needs a
 parse SQL cannot express, with the spike's wiring as the recipe.
 
+Materialized derivations inherit a lifecycle question views do not have, and the doctrine
+answering it shipped with the `javac_` family (R603): in a store shared across graphs and
+never discarded, any row a post-capture writer mints (a violation a detection materializes,
+slice 4's shadow demand rows) outlives its inputs unless something owns clearing it. The DDL
+header states cadence as its own axis, and the recipe transfers verbatim: the writer owns its
+cadence and clears the run's own graph partition of its family before rewriting it, and every
+statement carries the graph predicate, because in a shared store an unscoped delete is one
+run erasing a sibling graph's rows. A stratum that stays a view computes on read and the
+question dissolves; view versus materialized rows is a per-stratum choice, made where each
+slice lands.
+
 ## Scope
 
 The slices are cut on the strangler frame: R595's substrate has shipped, and this item is the
@@ -349,8 +359,11 @@ throughout; what moves is where verdicts come from and what survives a failure.
 2. **The authored claim view ships, and the conflict rule reads it.** The view unions one arm
    per claiming `graphitron_` relation at both grains, classifier column a literal per arm; the
    arm list is the axis declaration. (The shipped DDL holds the `intent_` prefix in reserve for
-   exactly this derived stratum; whether the claim views take that name is an implementation
-   call.) One capture residual is load-bearing here: a decode arm that declines on a missing
+   exactly this derived stratum, and R603 gave the call firmer edges by testing the reserve: a
+   family is named for whose vocabulary its rows are written in, and a claim is the generator's
+   verdict, which fits; but the schema gates govern base relations and this layer is mostly
+   views, so whether views constitute a family at all is the open half of the naming call this
+   slice makes.) One capture residual is load-bearing here: a decode arm that declines on a missing
    required argument currently writes neither its decoded row nor a
    `graphitron_undecoded_argument` row (R609), so the claim view would silently miss that
    application; either that quarantine lands first, or this slice ships the companion detection
@@ -441,25 +454,20 @@ surfaces, so the item does not qualify for the internal-refactor exemption.
 ## Relationships
 
 - **`graphitron-model-captures-facts` (R595, Done; see `roadmap/changelog.md`):** the substrate
-  this architecture runs on, shipped, with real divergences from the plan this body's earlier
-  rounds cite. The families shipped as `graphql_` / `graphitron_` / `sql_` / `jvm_` / `store_`:
-  the fidelity family dissolved into the total `graphql_` transcription (re-emission is a
-  namespace query at emission, and a directive both re-emitted and decoded is a row in each
-  family, not a dual-write special case), the semantic stratum is `graphitron_`, and the DDL
-  header reserves `intent_` for the derived stratum this item builds. Constraints are captured
-  as the catalog declares them, straight off `JooqCatalog`; the class census covers the full
-  compile classpath, jars included; and the store persists as a stamped cache file, keeping
-  the no-migrations and no-state-of-record properties (persistence and refresh since reshaped
-  by R610; the materialization section above records the shipped shape). This item, the
-  classification-stage migration, is the store's first reader.
+  this architecture runs on, shipped with real divergences from the plan this body's earlier
+  rounds cite. The load-bearing ones here: the fidelity family dissolved into the total
+  `graphql_` transcription (re-emission is a namespace query at emission), the semantic
+  stratum is `graphitron_`, and the DDL header reserves `intent_` for the derived stratum
+  this item builds. For everything else the DDL header and the changelog entry are the
+  record; this body no longer mirrors the substrate. This item, the classification-stage
+  migration, is the store's first reader.
 - **Graph partition dimension (R610, Done; see `roadmap/changelog.md`):** `graph_name` leads
   every `graphql_` / `graphitron_` base-relation key, anchored by `store_graph`, so one store
   holds several graphs and the claim views this item builds are graph-scoped by construction:
   a view unioning graph-keyed relations carries the column, and `FactSchemaGateTest`'s
   partition-dimension and FK-closure gates cover new relations in exemption polarity, so slice
-  2 inherits the dimension with no case to make. R610 also reshaped persistence (per-user
-  cache with a per-workspace segment, stamp in the directory name, mixed-mode attach, a shared
-  file never discarded), as the materialization section records.
+  2 inherits the dimension with no case to make. R610 also reshaped persistence and refresh;
+  its changelog entry is the record.
 - **`javac_` oracle family (R603, Done; see `roadmap/changelog.md`):** the sixth family and
   the cadence doctrine: a post-capture writer gets its own vocabulary-named family on that
   writer's cadence, and capture clears the run's own graph partition of it before
