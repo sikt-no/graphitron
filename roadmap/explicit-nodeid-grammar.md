@@ -1,7 +1,7 @@
 ---
 id: R473
 title: "Explicit @nodeId grammar: Node.id is the only implicit nodeId; typeName-first decode resolution"
-status: Ready
+status: In Review
 bucket: architecture
 priority: 5
 theme: nodeid
@@ -82,54 +82,23 @@ What remains for this item is the grammar itself: rules 1-4 and 6 as build behav
 
 ## Implementation
 
-Ordering is a real seam here, so the sections below land as three commits, each independently green. The rejections must exist and be quiet before they can be turned on, and the fixture migration must be complete before the shims can go.
+**Landed.** Two commits rather than the three this section planned; the reasoning for each departure
+is in `Implementation notes` below, and the full pre-implementation text is in git history at
+`4a7202d` if a later reader needs the plan as it stood at the gate.
 
-### Rejections, off by default
+* **Rejections (rules 1 and 2), `71f27d0`.** Landed classifier-side rather than in
+  `GraphitronSchemaValidator`, which this section had prescribed; the classified model does not
+  expose the SDL a validator walk would need, and the classifier route carries the same source
+  location. Rule 2's existing verdict kept its placement and gained the remedy it never named.
+* **Flip and delete, `c97a8de`.** Rule 6's two arms replace the implicit readings, the three
+  synthesis arms and the table-first helper are deleted, and rule 3's inference is re-pointed onto
+  `NodeIndex.forTable`. The fixture migration this section planned as its own commit measured zero
+  and folded in; the build-level opt-in seam was dropped for the same reason.
+* **Gate rework, `f4dbbe3`.** Rule 6's argument arm resolves its target off the caller's unwrapped
+  element type name rather than the field's own type, so the shadowing answer no longer depends on
+  whether the return type is wrapped in a connection. `SkipMismatchedElement` retired with the arms
+  that produced it. Retirement sweep and the user-manual corrections the flip had left standing.
 
-Rules 1 and 2 are the rejections this commit carries. An earlier draft counted three here and folded rule 3 in; rule 3 turned out not to be a rejection at all once bare `@nodeId` generalised (see its bullet below), so re-read that bullet before sizing this commit. Both go in `GraphitronSchemaValidator`, not in the classifier: they are SDL-shape verdicts, they need no catalog or index state, and the validator's report already carries a source location per error, which is what makes the diagnostic actionable in the LSP. (Note the neighbour to reason from is *not* `validateNodeTypeIdUniqueness`, which lives in `TypeBuilder` and runs as part of classification. The validator's own SDL-shape precedent is `validateConnectionType`, which reads `type.schemaType()` and falls back to the type location when the AST node is absent.)
-
-The facts these rejections need are all reachable there. `GraphitronSchemaValidator.validate` takes the classified `GraphitronSchema`; `GraphitronType.InputType` and the object types expose `schemaType()` for the directive read, and `GraphitronField` carries `definition` for the argument walk. "Is the enclosing type a node type" is answerable straight off the classified model (a `GraphitronType.NodeType` arm), which is the post-classification form of the predicate `NodeDeclaration.isNodeType` answers for the pre-classification consumers; do not re-read `@node` at either site.
-
-* Rule 1: `typeName:` on the `id` field satisfying `Node` on a node type. The named type either agrees with the enclosing type (redundant) or contradicts it (a bug the author cannot have meant), so the argument is rejected rather than checked.
-* Rule 2: bare `@nodeId` on an output field of a type that is not a node type. **This one already rejects**, structurally, in `FieldBuilder.classifyChildFieldOnTableType`: "@nodeId requires the containing type to be a node type (via @node or KjerneJooqGenerator metadata)", a message that became true as written once R580 landed the metadata path. So the work here is not a new verdict, it is giving the existing one a source location and a message that names `typeName:` as the fix. Decide explicitly whether the classifier rejection stays as the mirror that "Rejections: validator mirrors classifier invariants" prescribes (it should) or moves; and note the classifier arm is reached only for a `@table`-backed parent, so a non-table-backed parent is a separate coordinate to check.
-* Rule 3 is **not** a third rejection, and an earlier draft had this backwards. It read "bare `@nodeId` on an input field or an argument" as a new verdict subsuming the two friendly diagnostics `BARE_NODE_ID_NO_OBJECT_TYPE` and `BARE_NODE_ID_AMBIGUOUS_OBJECT_TYPES`, on the grounds that it would "fire on the unique-match case too, which is the whole point". Under rule 2's generalisation the unique-match case is exactly what bare `@nodeId` is *for*, so `NodeIdLeafResolver.inferTypeName`'s table-lookup arm is kept rather than deleted, and those two diagnostics are its permanent absence and ambiguity rejections rather than casualties. What changes is the domain it resolves over: re-point it from `findGraphQLTypesForTable` (all `@table` types) to `NodeIndex.forTable` (node types only), so it answers "which node backs this table" instead of "which object type maps to it". That re-pointing is the substance of rule 3's implementation, and it belongs with rule 6's arm in the flip-and-delete commit rather than behind the rejection opt-in. It carries a small tail: both diagnostics describe the domain they used to resolve over ("no @table-annotated object type maps to table", "multiple object types map to table"), and the two `NodeIdPipelineTest` cases pin those substrings, so the message text and the assertions move with the domain. Neither fixture changes verdict under the narrowing: `BARE_NODE_ID_NO_OBJECT_TYPE`'s table has no object type at all, and `BARE_NODE_ID_AMBIGUOUS_OBJECT_TYPES`'s two types are both `@node`, so each still lands on the arm it was written for.
-
-  So the rejections commit covers rules 1 and 2 only. Keep the section's name or rename it; do not let the count "three distinct rejections" survive unexamined into the implementation.
-
-Land them behind a single build-level opt-in so the flip is one switch rather than three, and so the fixture migration below can proceed against a build that fails loudly for a session and quietly for everyone else. The opt-in mechanism is the implementer's call; a Mojo parameter is the obvious candidate, but if that adds a user-facing surface we would then have to retire, a package-private constant flipped in the fixture-migration commit is the cheaper answer. Decide before writing the rejection code, and say which in the commit.
-
-One constraint on that choice, because it decides where the rejection tests can live: a `static final` constant defaulting to false cannot be toggled per test, so the per-rule rejection cases cannot land in the same commit as the rejection code, and that commit ships branches nothing exercises. A test-settable seam (a package-private non-final field, or a value threaded through the build context) keeps rejection code and its tests in one commit, which is what "each independently green" should mean here. If the constant wins anyway, say in the commit message that the cases arrive with the fixture migration, so the gap is a recorded decision rather than an oversight.
-
-### Fixture migration
-
-Re-measured against the post-R580 tree on 2026-08-04 (re-measure again at pickup; the counts move, and a single-line grep undercounts because several fixture declarations span lines):
-
-* `graphitron-sakila-example`: no migration needed, but for two reasons rather than one. All 16 bare `@nodeId` sites across the five `.graphqls` files are `Node.id` on a node type, which rules 1 and 2 keep legal. **The claim in an earlier draft of this item that the sakila INSERT-input fixture writes the bare form on an input is stale and was the main reason this plan looked more expensive than it is**; `CreateKeyedNodeInput` does write `@nodeId(typeName: "KeyedNode")`. Separately, `schema.graphqls:163` carries the one directive-*less* site, `filmActorByNodeId(id: [ID!]! @lookupKey): [FilmActor!]!`, whose argument routes through the arm rule 6 replaces. It survives untouched precisely because rule 6 covers it: the argument is named `id`, `FilmActor` is a node type, so the node resolves off the return type. Under rule 3 alone it would have needed `@nodeId(typeName: "FilmActor")` added, and since `film_actor` has no `id` column it would otherwise have become an `unknownColumn` rejection. This is the coordinate that motivated rule 6.
-* Sakila's `FilmActor` in `schema.graphqls` is now the *fully* implicit rule-1 shape: `implements Node @table(name: "film_actor")` with a bare `id: ID!`, no `@node` and no `@nodeId`. `GraphQLQueryTest`'s `filmActorByNodeId` round-trip is therefore this item's execution-tier proof that rule 1 holds end to end, and it must stay green through the flip. The declared spelling over the same table is still covered by `federated-schema.graphqls`.
-* `graphitron/src/test`: **the 23 input-field and 2 argument bare-`@nodeId` sites no longer migrate at all.** Rule 2's generalisation makes bare `@nodeId` legal at those coordinates, inheriting the target, so they stay as written; only sites whose inherited target is absent or ambiguous need `typeName:`, and those are already the deliberately-failing fixtures that pin `BARE_NODE_ID_NO_OBJECT_TYPE` and `BARE_NODE_ID_AMBIGUOUS_OBJECT_TYPES`. The ~157 output-field sites are `Node.id`-shaped and stay as they are. This is the largest single change the pass-3 discussion made to the item's cost: the fixture migration was the bulk of the work and is now close to empty. **Re-measure at pickup rather than trusting this sentence**, and in particular re-check each of the 23 for an ambiguous target, since a shared table is what turns a legal bare form into a required `typeName:`.
-* **Rule 1's `typeName:` rejection has no in-tree migration cost either, measured 2026-08-08.** No site in the tree writes `@nodeId(typeName:)` on the `id` field of a type that is a node, by declaration or by inference; every explicit spelling sits on an input field or an argument, where rule 6 keeps it legal (`DeleteFilmActorByNodeIdInput`, `CreateKeyedNodeInput`, `UpdateEmailReplyInput`, `ModifyFilmActorRecordInput`, `FilmActorSingularNodeIdFilter` in sakila, and the `graphitron/src/test` sites alongside them). The census above counts the bare form, so this is the half it does not otherwise cover. Re-measure with the same predicate at pickup.
-* Of the two argument sites, `NodeIdPipelineTest`'s `barByIds(ids: [ID!]! @nodeId)` stays legal under rule 2 (`bar` carries one node type). `RejectNonIdNodeIdPipelineTest`'s `search(term: String @nodeId)` is a non-`ID` rejection fixture whose verdict must not change; check which rejection wins and pin the order deliberately, since rule 2 widening where bare `@nodeId` is *legal* must not weaken the non-`ID` rejection.
-
-Rule 6's own verdict cost sits in `NodeIdPipelineTest.LookupKeyCase`, whose three cases all reach the replaced arm with no `@nodeId` anywhere in the fixture. Behaviour decides each, not emit equality:
-
-* `SCALAR_NODEID_LOOKUP_COMPOSITE_PK` (`barById(id: ID @lookupKey): Bar`, `Bar implements Node @table @node`): argument named `id`, return type is a node type, so rule 6 covers it and the case stays green unchanged. This is rule 6's pipeline-tier proof.
-* `LIST_NODEID_LOOKUP_COMPOSITE_PK` (`barsByIds(ids: [ID!] @lookupKey)`): the argument is plural, so rule 6's name match misses and the directive is required. Migrate to `@nodeId(typeName: "Bar")` rather than renaming the argument; the case exists to cover the list shape, and the explicit spelling keeps it covering that.
-* `SCALAR_NODEID_NON_LOOKUP_COMPOSITE_PK_DEFERRED` (`bar(id: ID): Bar`, `type Bar @table(name: "bar")` with `id: ID! @field(name: "ID_1")`): `Bar` is *not* a node type, so neither rule 6 nor the old arm's premise applies and today's "composite-PK NodeType is only wired for @lookupKey" verdict is no longer reachable by this fixture. Re-derive the new verdict against the fixture catalog rather than assuming which rejection replaces it, and check whether the deferred-composite gap it was pinning still has a fixture that reaches it. If not, that coverage needs re-siting rather than deleting.
-
-Rule 4 has no fixture-migration cost of its own but does have a verdict cost: the cases that pin shim-synthesized node semantics on a directive-less `ID` are the ones whose expected outcome inverts. `NodeIdPipelineTest.InputCase.IMPLICIT_ID`, `EXPLICIT_PERSON_ID`, `R377_ORPHAN_INPUT_TYPEID_FALLBACK` and `R377_MULTI_NODE_REJECTS` all encode the old semantics; each either flips to plain column mapping or moves to a `@nodeId(typeName:)` spelling that keeps testing what it was there to test. Read each one's stated intent before rewriting it, and where the intent was the shim itself, delete rather than translate.
-
-### Flip and delete
-
-Turn the opt-in on by default and delete it, then delete in one commit:
-
-* The surviving synthesis shims: `FieldBuilder`'s output-side bare-scalar-`ID`-on-a-`NodeType` branch, now narrowed to fields *other* than `Node.id` (the `Node.id` arm above it is permanent and must be left alone), and `BuildContext.classifyInputField`'s two input-side sites (the qualifier-reverse-map arm feeding `buildInputNodeIdReference`, and the bare same-table arm guarded by `catalog.nodeIdMetadata`).
-* The directive-less implicit scalar-`ID` argument arm (`FieldBuilder.java:1580-1609`), **replaced rather than merely deleted**: rule 6's arm takes its place, keyed on the argument name matching the return `NodeType`'s `Node.id` field and resolving the decode through `NodeIndex.forName`. Shape it as the mirror of the `Node.id` output half at `FieldBuilder.java:7270`: it sits **ahead** of the argument's column resolution at `FieldBuilder.java:1664` (`argString(arg, DIR_FIELD, ARG_NAME).orElse(name)`) and, where a column of that name exists, rejects with both silencers named rather than resolving, per "One shadowing rule". The arm it replaces sits on the same side of that lookup, so the placement is not itself a change; what narrows is the predicate, from "any `ID` argument whose table carries metadata" to "an `ID` argument named for the target's `Node.id`". There is no existing notion of an argument or input field mapping to a *field* of the target type, so that name-match predicate is new code; today's binding is name-to-column only.
-* `BuildContext.resolveDecodeHelperForTable` with them, which leaves `resolveDecodeHelperForType`'s fallback arm dead; collapse that method to the `NodeIndex.forName` lookup and let it return the `Optional` rather than `null`.
-* `BuildContext.findGraphQLTypeForTable` (the singular, shim-only helper). **`NodeIdLeafResolver.inferTypeName`'s table-lookup arm is kept, not deleted**, per rule 3 above: it is generalized bare `@nodeId`'s resolution, re-pointed from `findGraphQLTypesForTable` onto `NodeIndex.forTable`. `findGraphQLTypesForTable` (plural) has exactly two callers today, the singular helper and that arm; the singular helper goes and the arm stops calling it, so the plural helper goes dead in the same motion and should be deleted with them.
-* The three deprecation WARNs at those sites: `FieldBuilder`'s "synthesizes an `@nodeId` carrier without the directive", and `BuildContext`'s two (`ID_REF_SHIM_LOGGER`, `NODE_ID_SHIM_LOGGER`). **`FieldBuilder.rejectShadowedIdColumn` must be left alone.** It sits in the same method, on the `Node.id` arm immediately above the surviving shim arm, so a sweep of "the diagnostics at this site" would wrongly take it out. It is not a deprecation and not a warning: it is the shipped output-coordinate half of "One shadowing rule", and this item's job is to grow it two siblings at the input and argument coordinates, not to touch it.
-* `IdReferenceShimWarnFormatTest`, which pins the qualifier-arm WARN's text. It is the only warn-format test in scope. **`AsConnectionSameTableWarnFormatTest` is not**, despite the similar name: it covers the `@asConnection` same-table warning and has nothing to do with these shims. No test asserts the `FieldBuilder` WARN's text at all, so that one needs no test change.
-
-R27 (`retire-synthesis-shims`) is the item that has carried the shim deletion; it should be discarded into this one rather than left to delete an empty set. **Done: R27 was discarded on 2026-08-09**, with its gate and its WARN-to-error flip both dissolved by this item and its migration recipe living on in the user manual. See the changelog entry.
 
 ## Tests
 
@@ -525,8 +494,8 @@ The next gate is In Review -> Done, which needs a reviewer different from the im
 
 ## Implementation notes, 2026-08-09
 
-Landed in two commits, not three. Full reactor green under `-Plocal-db`, 13/13 modules, including
-the `graphitron-sakila-example` compile and execution tiers.
+Landed in two commits, not three, plus a gate rework. Full reactor green under `-Plocal-db`,
+14/14 modules, including the `graphitron-sakila-example` compile and execution tiers.
 
 **The opt-in seam was dropped**, taking the option pass 5 left open. It was staging a fixture
 migration that measured zero on every axis, `Consumer migration` already ships rules 1 and 2 as
@@ -709,6 +678,51 @@ instructions, two of which the delivery deliberately contradicted (rejections in
 (`b48b0f8` for the rejections, `7eb474f` for the flip and delete) so the body is not read as an
 instruction to redo work that has landed.
 
+## Gate rework, 2026-08-09 (`f4dbbe3`)
+
+All four findings addressed; the two original commits stand unchanged.
+
+**1. The connection wrapper no longer changes the shadowing answer.** The diagnosis was exact: the
+arm read `fieldDef.getType()` while every caller of `resolveTableFieldComponents` passes the
+connection-unwrapped element type and a matching `rt`. The unwrapped name was already in hand as
+that method's `returnTypeName` and simply was not threaded down, so `classifyArguments` and
+`classifyArgument` now take it beside `rt`, with the javadoc stating why the two travel together.
+Pinned by a test that fails against the old code.
+
+Worth stating precisely, because the finding called this a third silent narrowing: the fix removes
+one rather than adding one. Before the flip that argument decoded (the retired arm keyed on the
+table's metadata and read no type name, so the wrapper was invisible to it); after the flip it bound
+the raw column; after the fix it decodes again. The narrowing set is back to the two the
+`Consumer migration` re-confirmation was taken over, and no further re-confirmation is owed.
+
+**2. The manual is corrected.** All six sites, plus three the finding did not list
+(`batch-lookups.adoc`, the `code-generation-triggers.adoc` variant table, and the sakila schema
+comment it flagged as pre-existing rot, which the variant's deletion turned into a dangling symbol).
+Migration steps 3 and 4 collapse into one step that says plainly that nothing in the build points at
+these, since both readings resolve; that is the honest instruction, and the old step 3 was the
+opposite.
+
+**3. The retirement sweep is done**, across main sources, tests and docs. The two
+`@asFacet`-on-`ID` rationales are restated on grounds that still exist rather than on closing an arm
+that is gone, which is the substantive half: their rejection is still right, and its reason had to
+stop naming a mechanism.
+
+**4. `SkipMismatchedElement` is deleted.** It had zero producers in main sources after the flip, and
+R378 had already recorded that it survives only on the shim arms, so retiring it was the documented
+endpoint rather than a fresh scoping call. `LookupRows` loses the `anySkip` branch, the
+effective-row counter and the two-arm switch; the two walker tests that hand-rolled it move to
+`ThrowOnMismatch`; three of the new assertions widen to `NodeIdDecodeKeys`, which is the claim they
+were making anyway. The `NodeIdDecodeKeys` category stays with one arm: consumers switch on "is this
+a nodeId decode" rather than on the failure mode, and the failure mode is the axis a future arm
+would vary.
+
+Both non-blocking notes fixed: the argument rejection no longer doubles its prefix (`projectFilters`
+already names the argument, so the shared message takes a blank coordinate there), and the module
+count is 14. The `Implementation` section's three subsections are collapsed to landed notes naming
+their commits, so the body no longer reads as an instruction to redo work that has shipped.
+
+Full reactor green under `-Plocal-db`, 14/14 modules, sakila compile and execution tiers included.
+
 ## Retired vocabulary
 
 Declared at the gate review above, so the Retirement sweep runs at the next In Review -> Done rather
@@ -719,7 +733,7 @@ than being skipped a second time. Each names a mechanism the flip deleted:
 * `node-reference synthesis shim`
 * `resolveDecodeHelperForTable`, `buildInputNodeIdReference`, `findGraphQLTypeForTable`,
   `findGraphQLTypesForTable`, `typeNamesByTableKey`
-* `SkipMismatchedElement`, conditional on finding 4's keep-or-delete call
+* `SkipMismatchedElement` (deleted at the gate rework; swept)
 
 ## Provenance
 
