@@ -25,11 +25,12 @@ the *same input value*, end to end and in production. Three things stand between
 recipe and that claim. The recipe's entries are glob patterns only, so a programmatic run
 records nothing and is not replayable. The row-to-recipe decode exists only inside a test, which
 hand-rolls it out of three columns, so nothing in production reads a recipe back. And the value
-the expansion produces is a raw `String` source name that capture and the freshness reader each
-re-classify with their own filesystem probe. This item closes all three: entries widen to
-pattern-or-literal so every run transcribes, the decode lands as production code held to
-identity by a round-trip anchor, and the source value becomes a sealed carrier so both sides
-switch on a kind the producer decided instead of re-asking a predicate at two unbound sites.
+the expansion produces is a raw `String` source name whose path-ness every consumer re-derives
+for itself, capture by a filesystem probe and the rest by `Paths.get` and an absolute-or-resolve
+branch. This item closes all three: entries widen to pattern-or-literal so every run transcribes,
+the decode lands as production code held to identity by a round-trip anchor, and the source value
+becomes a sealed carrier, so a consumer switches on a kind the producer decided instead of asking
+the filesystem what the producer already knew.
 The Backlog stub sketched a third shape, routing the build's own scan through the store rows; it
 is rejected below, on the record.
 
@@ -42,8 +43,28 @@ states but cannot yet honour.
 Its entries widen. `SchemaRecipe.Binding` carries a bare glob `String`, so `FactCapture`'s
 `GraphIdentity` takes a null recipe for a caller with no resolved `<schemaInputs>` and the
 graph, in the record's own words, is "not replayable". A literal entry retires that hole: every
-run transcribes, and the null recipe with it. An entry becomes a glob pattern or a literal
-source, keeping the optional tag and description note it already has.
+pipeline run has a recipe to transcribe. An entry becomes a glob pattern or a literal source,
+keeping the optional tag and description note it already has.
+
+The nullable field goes with it, and where it goes is a decision this item makes rather than
+leaves to the edit, because the obvious move is the wrong one. `GraphIdentity` is used in two
+roles today. It is the *coordinate*, a graph name plus the base directory ownership is checked
+against, which is all `CompileFacts` reads and all `writeGraph`'s ownership check needs; and it
+is capture's *subject*, the coordinate plus the recipe capture writes beside it. The nullable
+third component is what conflating the two costs, and making the component non-null would bill
+the conflation to the wrong callers: `CompileFacts` writes `javac_diagnostic` rows and holds no
+`<schemaInputs>` configuration, so it would have to synthesise a recipe it does not have, which
+is the derived-fact-that-can-disagree this item exists to abolish. An empty recipe is worse than
+a null one, since zero transcribed rows reads as "configured nothing" rather than "not asked".
+So `GraphIdentity` narrows back to `(name, baseDir)` and the recipe becomes a parameter of the
+capture entry points that write it, beside `registry` and `jooq`. Absence is then expressed by
+which entry point a caller reached for, the same way `capture`'s SDL-only overload already
+expresses "no catalog in hand", rather than by a field every construction site may leave null.
+The cost is real and mechanical: the three-arg `GraphIdentity` sites in `WarmStartRefreshTest`
+move their recipe to the call, `writeGraph` takes the recipe for its build-file hash, and the
+coordinate-only sites (`DevMojo`'s `CompileFacts` construction, `CapturedStore.graph`,
+`FactSchemaGateTest`, `PersistentStoreTest`, `FactCaptureAgreementTest`, `CompileFactsTest`)
+compile untouched, which is the point: they were never the callers with something to say.
 
 Its expansion returns a value rather than a file set. `SchemaRecipe.expand(Path baseDir)`
 returns a deduplicated `Set<Path>`, which is exactly right for the currency question it was
@@ -84,7 +105,10 @@ the same empty strings; the two agree because two pieces of code were written to
 expansion runs off the decoded recipe, and the empty-pattern diagnostics and the
 `MojoExecutionException` become the mojo-side rendering of the typed result. Whether a named
 decoder class remains or the decode stays a private method on the mojo is the implementer's
-judgment. The expansion's callers become: the build mojos (as today, before `RewriteContext`
+judgment. `SchemaRecipe`'s own class javadoc names the dissolving class ("the Maven plugin's
+`SchemaInputExpander` delegates to it") and is repointed at the mojo-side decode in the same
+edit; it is a `{@code}` reference, so neither the compiler nor the Javadoc reference gate will
+catch it going stale. The expansion's callers become: the build mojos (as today, before `RewriteContext`
 construction), the dev goal's per-regeneration re-expansion (each pass rebuilds the context
 through `buildContext`, so it inherits the seam), and the freshness replay, which decodes a
 sibling graph's recipe rows and runs the same expansion. Capture keeps writing the relations it
@@ -101,8 +125,9 @@ directory, so there is no second copy to collapse. The convenience overloads kee
 signatures verbatim and mint a literal recipe internally (each `SchemaInput` one literal entry,
 extensions defaulted as today), so their callers compile untouched, and a derived literal recipe
 cannot disagree with the list it was derived from. The two sites that pass an extension set
-explicitly (`buildContext` and `CatalogBuilderSourceTest`) move onto the recipe, and the five
-`with*` copy methods follow the compiler. Read sites keep compiling through the accessor.
+explicitly (`buildContext` and `CatalogBuilderSourceTest`) move onto the recipe, and the four
+`with*` copy methods (`withLintConfig`, `withSessionStateConfig`, `withTenantColumn`,
+`withDependencyVersions`) follow the compiler. Read sites keep compiling through the accessor.
 `RewriteContext` carries the recipe beside the expanded `schemaInputs` list, both produced by
 the one seam in `buildContext`, so the pair cannot disagree at the producer.
 
@@ -151,7 +176,9 @@ caller handed over. The recipe relation is one discriminated relation rather tha
 because the ordinal is the recipe's spine and splitting the relations would shatter the one
 ordering key; its `kind` column takes three values under a CHECK constraint (the shipped
 `store_graph_schema_input` carries a `pattern` column, which generalises to `kind` plus a value
-column, still keyed `(graph_name, ordinal)` with no rekey). `pattern` records a glob; the two
+column, still keyed `(graph_name, ordinal)` with no rekey; the shipped column comment, which
+says the value is "the include pattern as configured", stops being true of every row and is
+rewritten with the DDL). `pattern` records a glob; the two
 literal kinds transcribe which door the entry's source came through (the sealed carrier
 below): a `file` literal re-expands by identity plus an existence check, so the currency
 verdict covers programmatic graphs with no special case, a file literal that no longer
@@ -172,12 +199,25 @@ downstream (`CatalogBuilder` filters locations bearing
 `SchemaInput.sourceName` is a raw string that is an absolute normalised path on the Maven path
 and an arbitrary label anywhere else, since `SchemaInput.plain` and the canonical constructor
 take whatever a programmatic caller hands them (the applier tests pass a bare `t.graphqls`, a
-`/a`). Both probes R610 shipped read that string: `SdlFactCapture.regularFile` asks "does this
-resolve to a regular file" at stamp time, and `StoreRefresh` asks `Files.isRegularFile` again at
-read time, the same predicate over the same untyped string at two sites nothing binds together. This item owns the producer, so it takes the lift while
-it is cheap: the source is a sealed carrier with a file arm (carrying a `Path`) and a named
-arm (carrying the label), decided once where the source enters the system, and a new source
-kind is a compile error at every consumer that switches on it.
+`/a`). Exactly one consumer asks the filesystem what that string is: `SdlFactCapture.regularFile`
+asks "does this resolve to a regular file" at stamp time, because the walk is handed source
+*names* by graphql-java rather than the `SchemaInput` that produced them. That count is worth
+being precise about, since the capture package holds a second `Files.isRegularFile` that looks
+like its twin and is not: `StoreRefresh.freshSources` probes the classpath census's entries on
+the capture write path, and its own javadoc records the invariant that no schema-file path can
+reach that set. The two range over disjoint populations, so there is no duplicate pair here to
+collapse.
+
+The case for the carrier is therefore not deduplication but the second probe never written. The
+freshness replay is a reader that would otherwise have to ask the same question again, over a
+string it read back out of a row, at a site with even less context than capture has. This item
+builds that reader, so it is the item that decides whether the question gets asked a second time,
+and the honest moment to fix a producer is before its second consumer exists. The source becomes
+a sealed carrier with a file arm (carrying a `Path`) and a named arm (carrying the label),
+decided once where the source enters the system; a new source kind is then a compile error at
+every consumer that switches on it. What the carrier buys today is the consumers that re-derive
+path-ness from the untyped string, listed below; what it buys tomorrow is the probe the replay
+never writes.
 
 Who decides the arm: the producer that knows, never a guess. The expansion mints file arms,
 because a `DirectoryScanner` match is a regular file by construction, and its result carries
@@ -217,8 +257,9 @@ The carrier pays for itself at the consumers that today re-derive path-ness from
 `DevMojo.resolveSchemaRoots` runs `Paths.get(input.sourceName())` and switches to reading the
 file arm; `SchemaProblemDiagnostic.normaliseLoaded`'s absolute-or-resolve branch is dead once
 the arm carries an absolute normalised `Path`, and is deleted rather than ported;
-`SdlFactCapture.regularFile` becomes the stamp-time switch above and `StoreRefresh`'s read-time
-probe becomes the replay's row-kind dispatch.
+and `SdlFactCapture.regularFile` is replaced by the stamp-time switch above and deleted.
+`StoreRefresh` is deliberately untouched, for the reason given above: its probe is over the
+classpath census, not over schema source names, and the two only look alike.
 `RewriteSchemaLoader.load` narrows its parameter from `Collection<String>` to the file arm,
 rendering the canonical string internally at the `MultiSourceReader` handoff, and the
 generator's projection from `schemaInputs` to loadable sources
@@ -338,8 +379,10 @@ makes. `WarmStartRefreshTest`'s hand-rolled decode in
 `aRecipeReExpansionDiscoversAnAddedFile` reads the production decoder in the same edit, which is
 what stops the two from drifting. Non-vacuity is a requirement
 on the case, not a property of the
-shape: a literal entry re-expands by identity, so the anchor's fixture must include at least
-one pattern entry for the equality to test anything. A programmatic run's literal rows
+shape: a literal entry re-expands by identity, so a fixture of literals alone would satisfy the
+equality while testing nothing. The fixture therefore carries at least one pattern entry, and
+the case asserts that it does before it asserts the round trip, so a later edit that trims the
+fixture to literals fails the anchor instead of hollowing it out silently. A programmatic run's literal rows
 re-expanding to its literal list goes through the same anchor, beside the pattern case rather
 than instead of it, and pins something narrower stated honestly: literal re-expansion is
 identity, so that half verifies row encode/decode fidelity (the empty-tag collapse, the kind
@@ -355,10 +398,14 @@ in `graphitron`, beside the expansion it exercises. The existing applier tests
 hold the named arm's half of the same invariant already, passing labels that are not paths.
 
 `SchemaInputExpanderTest` retargets to the core expansion with its cases intact, except the
-two that assert `MojoExecutionException` (`singlePatternEmpty_throwsAggregateEmpty` and
-`expand_zeroMatchAfterExtensionFilter_throwsMojoExecutionException`), which become mojo-side
-rendering pins holding today's author-facing text for the aggregate-empty and
-per-pattern-empty variants. No user-visible configuration surface changes
+three that assert `MojoExecutionException`, which become mojo-side rendering pins holding
+today's author-facing text: `singlePatternEmpty_throwsAggregateEmpty` and
+`allPatternsEmpty_throwsAggregateEmpty` for the aggregate-empty variant, and
+`expand_zeroMatchAfterExtensionFilter_throwsMojoExecutionException` for the per-pattern-empty
+one. The multi-binding case is the load-bearing one of the three and must not be dropped as a
+duplicate of the single-binding case: its assertions are the only place the per-entry rendering
+(`entry #0` and `entry #1` with their patterns, one line each) is pinned, and that enumeration
+is the whole of what an author reads when several patterns miss at once. No user-visible configuration surface changes
 (`mojo-configuration.adoc` already documents the glob semantics this item preserves), so the
 first-client docs check is exempt.
 
@@ -369,5 +416,11 @@ first-client docs check is exempt.
 - `SchemaInputExpander` as a class name, dissolved into the shipped mojo-side decode and the
   core expansion.
 - "not replayable" said of a graph whose caller supplied no `<schemaInputs>` configuration, and
-  the null `SchemaRecipe` on `FactCapture.GraphIdentity` that the phrase describes. Every run
-  records a recipe once literal entries exist.
+  the null `SchemaRecipe` on `FactCapture.GraphIdentity` that the phrase describes. Every
+  pipeline run records a recipe once literal entries exist, and the recipe stops being a
+  component of `GraphIdentity` at all. The phrase appears in `FactCapture.GraphIdentity`'s
+  javadoc and again on `RewriteContext.schemaRecipe`'s; the sweep covers both.
+- `SdlFactCapture.regularFile`, and the "does this string resolve to a regular file" question it
+  asks of a `SchemaInput` source name. The file arm answers it at mint. This retires the method,
+  not the predicate: `StoreRefresh.freshSources` and `ClasspathSources` keep asking it of
+  classpath entries, which are not `SchemaInput` sources and gain no arm here.
