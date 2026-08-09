@@ -65,9 +65,10 @@ record components and become accessors reading the recipe; the fact is asserted 
 is nothing to hold in agreement. The convenience overloads keep their signatures verbatim and
 mint a literal recipe internally (each `SchemaInput` one literal entry, extensions defaulted
 as today), so their callers compile untouched, and a derived literal recipe cannot disagree
-with the list it was derived from. The canonical constructor takes the recipe; the few sites
-that pass an extension set explicitly (`buildContext`, `CatalogBuilderSourceTest`,
-`DevMojoTest`) move onto it. Read sites keep compiling through the accessors. `RewriteContext`
+with the list it was derived from. The canonical constructor takes the recipe; the two sites
+that pass an extension set explicitly (`buildContext` and `CatalogBuilderSourceTest`) move onto
+it, and the five `with*` copy methods follow the compiler onto the same component. Read sites
+keep compiling through the accessors. `RewriteContext`
 carries the recipe beside the expanded `schemaInputs` list, both produced by the one seam in
 `buildContext`, so the pair cannot disagree at the producer.
 
@@ -166,7 +167,9 @@ The arm does not reach every consumer as a field, and the one that has to recove
 here rather than discovered during implementation. `SdlFactCapture.captureSources` collects
 source names back out of graphql-java's `SourceLocation`s, not out of `SchemaInput`, so
 capture's stamp decision recovers the arm through a lookup keyed on the canonical rendering
-(the attribution map the run already built), switching exhaustively on what it finds; the
+(the attribution map the run already built, threaded into `SdlFactCapture.capture` as a
+parameter, since the walk holds only its sink, its registry and the node declaration today),
+switching exhaustively on what it finds; the
 lookup's one legitimate miss is `RewriteSchemaLoader.DIRECTIVES_SOURCE_NAME`, which appears in
 the registry's source set and in no `SchemaInput`, and which the reader surface already
 excludes. That is a switch over a lookup, not a filesystem probe, and it makes the rendering
@@ -181,10 +184,16 @@ file arm; `SchemaProblemDiagnostic.normaliseLoaded`'s absolute-or-resolve branch
 the arm carries an absolute normalised `Path`, and is deleted rather than ported; R610's two
 probe sites become the stamp-time switch above and the replay's row-kind dispatch.
 `RewriteSchemaLoader.load` narrows its parameter from `Collection<String>` to the file arm,
-rendering the canonical string internally at the `MultiSourceReader` handoff, so a named arm
-reaching the loader becomes a compile-time non-event where today it is a mid-parse
-"Schema file not found" `RuntimeException`; the generator's projection from `schemaInputs` to
-loadable sources becomes an exhaustive switch at that boundary.
+rendering the canonical string internally at the `MultiSourceReader` handoff, and the
+generator's projection from `schemaInputs` to loadable sources
+(`GraphQLRewriteGenerator.loadAttributedRegistry`, which hands the loader the attribution map's
+key set today) becomes an exhaustive switch at that boundary. The switch is checked for
+coverage, not for absence, so the named arm's branch is decided here rather than left to the
+edit: it throws, keeping today's mid-parse "Schema file not found" `RuntimeException` for a
+label that reaches a pipeline run instead of converting it into a silently short schema. No
+context in the tree carries a label into that projection, so the branch is a guard rather than
+a live path; what the narrowing buys is that the branch has to be written and read, where a
+`Collection<String>` parameter let the same value fall through to a parse-time surprise.
 
 One invariant is load-bearing and the compiler cannot hold it, so it is stated here and given
 an enforcer below. `SchemaInput`'s javadoc records that the source name is what
@@ -271,9 +280,13 @@ join the cross-graph consumer read surface, which stays SDL-derived families onl
 
 Full `mvn install -Plocal-db` green. The round-trip anchor is the item's enforcer: the run's
 recipe rows, decoded back into a `SchemaRecipe` and re-expanded by the shared expansion,
-reproduce the run's `RewriteContext.schemaInputs` exactly, two independent derivations
-(mojo-resolved value against row round-trip) meeting in one equality, in the same tier as
-`FactCaptureAgreementTest`. Non-vacuity is a requirement on the case, not a property of the
+reproduce the run's `RewriteContext.schemaInputs` exactly, the context's own value against that
+value round-tripped through the rows, in the same tier as `FactCaptureAgreementTest`. Both sides
+run the one `expand`, so what the equality pins is transcription fidelity plus glob determinism
+rather than two independent expansions, which is exactly the residue a single expansion path
+leaves to verify. The tier has no mojo, so the fixture mints the recipe directly and builds the
+context from its expansion, the same pairing `buildContext` makes. Non-vacuity is a requirement
+on the case, not a property of the
 shape: a literal entry re-expands by identity, so the anchor's fixture must include at least
 one pattern entry for the equality to test anything. A programmatic run's literal rows
 re-expanding to its literal list goes through the same anchor, beside the pattern case rather
