@@ -7,7 +7,7 @@ priority: 5
 theme: classification-model
 depends-on: []
 created: 2026-08-06
-last-updated: 2026-08-08
+last-updated: 2026-08-09
 ---
 
 # A pipeline-output facts family in the model store
@@ -68,8 +68,8 @@ it stands rather than of one still being built; each is carried through below ra
 and forgotten.
 
 The store stops being module-local. R610 moves the persisted file out of
-`<build>/graphitron-model` into a per-user cache home shared by every graphitron module the
-user builds, which turns a per-round `DELETE FROM javac_diagnostic` from a correct statement
+`<build>/graphitron-model` into a per-user cache home where one workspace's modules share a
+store file, which turns a per-round `DELETE FROM javac_diagnostic` from a correct statement
 into one dev session erasing a sibling module's diagnostics. The relation therefore takes
 R610's partition dimension, and every statement this item writes is scoped by it.
 
@@ -84,10 +84,13 @@ process attaches to the live database instead of falling back or reading a copy.
 the awkward half of the writer's delivery argument rather than complicating it: the shared
 handle stops being an in-process special case and becomes how every reader sees a round.
 
-R610 is in Spec and moving. What this item leans on is its core (the per-user shared store,
-ownership-scoped refresh, mixed mode, and the leading partition column), which has been stable
-across its revisions; if any of those changes shape, the sections below are what to re-read.
-Nothing here asks R610 to change, with one exception stated at the end.
+What this item leans on is R610's core (the per-user shared store, ownership-scoped refresh,
+mixed mode, and the leading partition column), and all four landed as the sections below
+assume; the claims here have been re-checked against the shipped DDL, gates and store code
+rather than the spec they were drafted from. Its review also hardened one edge this item
+inherits for free: a shared store is never discarded, so a failure to open or attach falls
+back to the in-memory store and leaves the file alone. The one thing this item used to ask of
+R610 is discharged; the section at the end records how.
 
 ## Design: an output fact is a transcription on a third cadence
 
@@ -142,13 +145,15 @@ before the round exists and `NOT NULL` on every row, so the writer cannot mint a
 one. A run captures one graph and a dev session compiles one graph's emitted sources, so a
 round's rows are single-valued in this column by construction, exactly as capture's are.
 
-It also means this family passes R610's new schema gate without an exemption, which is the
-outcome that gate's polarity was chosen to produce. R610 writes it in exemption polarity
-(every base relation leads its key with `graph_name` unless its family is argued in as
-graph-free, with `store_`, `sql_` and `jvm_` enumerated) precisely so a family arriving later
-is covered by default and has to make its case. `javac_` is such a family, it arrives after
-that list is written, and it has no case to make: it partitions by graph, so it satisfies the
-rule rather than joining the exemptions.
+It also means this family passes R610's schema gate without an exemption, which is the
+outcome that gate's polarity was chosen to produce. The shipped gate (in
+`FactSchemaGateTest`) is written in exemption polarity: every base relation leads its key with
+`graph_name` unless its exemption is argued in, and the exemptions are not key-freedom but a
+different leading dimension, `sql_` and `jvm_` held to a leading `source_name` and `store_`
+answered per relation. That polarity exists precisely so a family arriving later is covered by
+default and has to make its case. `javac_` is such a family, it arrives after that list was
+written, and it has no case to make: it partitions by graph, so it satisfies the rule rather
+than joining the exemptions.
 
 Where this family sits in R610's read discipline is worth stating, because R610's two
 categories do not obviously cover it. It is graph-keyed, like the SDL families, and it is
@@ -408,16 +413,18 @@ shape is R569's, and this item changes the value of one field it already has. No
 `docs/` renders either surface, so no user-doc draft is owed; the claim is "no doc changes",
 not "nothing a session can see".
 
-## The one thing this item asks of R610
+## The one thing this item asked of R610, discharged
 
-R610's *coordinate vocabulary widens with the keys* binds R589 by name: its claim relations,
-demand relation and occurrence-path key inherit the dimension by definition, and R610 asks
-R589's spec to say so at its next revision. This family is the same case and is not named
-there, because it did not exist when that section was written. The ask is one clause: the
-post-capture oracle families inherit the dimension too, on the same reasoning, so that R610's
-reviewer holds this item to it the way they will hold R589. Everything else here is written
-to R610 as it stands, and this item claims no right to edit another item's spec; the note is
-for whichever session next revises R610.
+While R610 was in flight this item asked its spec for one clause: that the post-capture oracle
+families inherit the partition dimension by definition, the same binding its *coordinate
+vocabulary widens with the keys* section placed on R589, so that R610's reviewer would hold
+this item to the dimension the way they held R589. R610 shipped with the binding made twice
+over, and nothing remains to ask. Mechanically, `FactSchemaGateTest`'s exemption polarity
+holds any arriving family to the leading `graph_name` with no one having to remember this item
+exists; on the record, R610's `roadmap/changelog.md` entry names R589 and R603 as inheriting
+the dimension by definition. What remains is this item's side of it, which the sections above
+already carry: the leading key, the structural FK to `store_graph`, and the ownership-scoped
+delete.
 
 ## Implementation
 
@@ -426,9 +433,9 @@ for whichever session next revises R610.
   its own sentence, not fused into prefix-picking; `CREATE TABLE javac_diagnostic` with
   `graph_name` leading the key and the FK to `store_graph`, plus `COMMENT ON`s per the
   conventions, the one-sided derivation boundary, the key-column sentinel rule, and the
-  graph-keyed-but-graph-private read note stated in them. R610 edits the same header
-  paragraph, so whichever lands second rebases its sentence onto the other's; the count is
-  written as a rise rather than a literal so the two edits do not fight over a number.
+  graph-keyed-but-graph-private read note stated in them. R610's header edit has landed (the
+  paragraph now opens on five families, `store_` among them), so this item rebases its
+  sentence onto that text and the count rises to six.
 - `CompileDiagnostic`: `severity` renamed to `kind`, new nullable `code` component, `from`
   canonicalises the file through the single canonical-URI site, and a named severity
   projection accessor beside the fact. The reshape moves the canonical constructor, so the
@@ -464,7 +471,8 @@ for whichever session next revises R610.
   canonical-URI agreement between the flattening and the schema channel's spelling; the
   `Diagnostic.Kind.values()` partition pin on the severity projection.
 - Pipeline tier: both `ORACLE` anchors; agreement closure still holds with no skip list; the
-  relation satisfies R610's leading-`graph_name` gate without joining its exemption list.
+  relation satisfies `FactSchemaGateTest`'s leading-`graph_name` gate without joining its
+  exemption list.
 - Maven-plugin tier: `reportCompile` writes through on the existing `DevMojoTest` seam, and
   the row is readable on the same handle afterwards, which is the delivery guarantee stated
   rather than assumed.

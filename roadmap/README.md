@@ -22,7 +22,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R569` | Aggregated diagnostics commands for the MCP server | Spec | 2026-08-08 <sub>created 2026-08-03</sub> | [plan](mcp-aggregated-diagnostics.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
-| `R603` | A pipeline-output facts family in the model store | Ready | 2026-08-08 <sub>created 2026-08-06</sub> | [plan](pipeline-output-facts-family.md) |
+| `R603` | A pipeline-output facts family in the model store | Ready | 2026-08-09 <sub>created 2026-08-06</sub> | [plan](pipeline-output-facts-family.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-08-06 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
