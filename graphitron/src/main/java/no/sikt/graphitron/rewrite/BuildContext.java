@@ -1226,9 +1226,8 @@ class BuildContext {
      * Builds the {@link Rejection} for an FK-name lookup that did not produce a
      * {@link JooqCatalog.ForeignKeyResolution.Resolved} variant. Sibling of
      * {@link #unknownTableRejection}; surfaces a Levenshtein-ranked candidate hint over the
-     * catalog's FK names so a typo in {@code @reference(key: "...")} (or in the inferred FK name
-     * picked up by the {@code IdReference} synthesis shim) reaches the schema author with a fix-it
-     * suggestion rather than just a "not in catalog" string.
+     * catalog's FK names so a typo in {@code @reference(key: "...")} reaches the schema author with
+     * a fix-it suggestion rather than just a "not in catalog" string.
      *
      * <p><b>Namespace.</b> {@link JooqCatalog#findForeignKey} resolves a key in either the SQL
      * constraint namespace or the jOOQ Java-constant {@code TABLE__CONSTRAINT} namespace, so the
@@ -1253,9 +1252,9 @@ class BuildContext {
      * mean" candidate lookup (the author spelled a real name; what they need is to scope it, not a
      * typo fix). Names the colliding schemas and the schema-qualified forms so the fix is actionable.
      *
-     * <p>Reached only from the author-facing name-lookup sites (the {@code {key:}} path element, the
-     * IdReference synthesis shim, and the explicit {@code @reference(key:)} record-FK site) when the
-     * source table did not scope the collision away. {@link #synthesizeFkJoin} never surfaces this:
+     * <p>Reached only from the author-facing name-lookup sites (the {@code {key:}} path element and
+     * the explicit {@code @reference(key:)} record-FK site) when the source table did not scope the
+     * collision away. {@link #synthesizeFkJoin} never surfaces this:
      * the FK there is resolved by class identity, so ambiguity is impossible past the
      * name-lookup boundary.
      */
@@ -2767,8 +2766,8 @@ class BuildContext {
      * {@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch}: an
      * authored input-field {@code @nodeId} filter leaf throws a {@code GraphitronClientException}
      * on a malformed or wrong-type encoded id rather than silently dropping it to "no row matches".
-     * This matches the argument-level filter leaves in {@link FieldBuilder#classifyArgument}; the
-     * legacy synthesis-shim arms (not reachable from here) keep {@code SkipMismatchedElement}.
+     * This matches the argument-level filter leaves in {@link FieldBuilder#classifyArgument}, and
+     * it is now the only failure mode the carrier admits.
      */
     private InputFieldResolution inputFieldFromNodeIdResolved(
             NodeIdLeafResolver.Resolved resolved, String parentTypeName,
@@ -2815,8 +2814,10 @@ class BuildContext {
      * next; divergent wording would be the first step towards divergent semantics.
      *
      * <p>{@code coordinate} is the already-qualified label for the site ({@code field 'Baz.id'},
-     * {@code input field 'DeleteBazInput.id'}, {@code argument 'baz(id:)'}), so the reader is told
-     * which of the three they are looking at without the message changing shape.
+     * {@code input field 'DeleteBazInput.id'}), so the reader is told which of the three they are
+     * looking at without the message changing shape. Pass it blank where the consuming site
+     * already prefixes one, as the argument projection does; the label is then supplied once
+     * rather than twice.
      *
      * <p>Prose rather than a structured repair: both remedies are directive insertions after the
      * coordinate's type, and graphql-java records a type node's start location but not its end, so
@@ -2832,7 +2833,7 @@ class BuildContext {
             : "'" + nodeType.name() + "' is a node type over table '" + tableSqlName
                 + "', which also has a column named '" + shadowedColumn + "'";
         return Rejection.structural(
-            coordinate + ": " + because
+            (coordinate.isBlank() ? "" : coordinate + ": ") + because
             + ", so '" + name + "' is ambiguous. Add `@nodeId` to select the node id, or"
             + " `@field(name: \"" + shadowedColumn + "\")` to select the raw column.");
     }

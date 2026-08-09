@@ -139,12 +139,10 @@ public sealed interface LookupMapping permits LookupMapping.ColumnMapping {
              * always {@code Direct}, so {@link InputColumnBinding.RecordBinding} omits it.
              *
              * <p>Failure-mode lives on the carrier as
-             * {@link CallSiteExtraction.NodeIdDecodeKeys}:
-             * {@link CallSiteExtraction.NodeIdDecodeKeys.ThrowOnMismatch ThrowOnMismatch} on
-             * synthesised lookup-key paths (a wrong-type id is an authored-input contract violation),
-             * {@link CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement SkipMismatchedElement}
-             * on the same-table {@code @nodeId} filter path (a malformed id drops silently to
-             * "no row matches" instead of a 500). The emitter branches on the arm at the per-row
+             * {@link CallSiteExtraction.NodeIdDecodeKeys}, whose sole
+             * {@link CallSiteExtraction.NodeIdDecodeKeys.ThrowOnMismatch ThrowOnMismatch} arm applies
+             * on lookup-key and filter paths alike: a wrong-type id is an authored-input contract
+             * violation wherever it arrives. The emitter reads the decode helper at the per-row
              * decode site.
              */
             record DecodedRecord(

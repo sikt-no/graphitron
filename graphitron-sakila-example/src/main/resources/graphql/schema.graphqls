@@ -289,7 +289,7 @@ type Query {
     filmsBySameTableNodeId(filter: FilmSameTableNodeIdInput): [Film!]!
     # R106: argument-level same-table @nodeId — encoded ids supplied as a top-level GraphQL
     # arg lift to a `WHERE film_id IN (...)` filter on QueryTableField. Each opaque ID
-    # decodes once via SkipMismatchedElement (malformed ids drop silently) and feeds the
+    # decodes once via ThrowOnMismatch (a malformed id fails the field) and feeds the
     # PK-IN predicate alongside any sibling filters. Pre-R106 this path implicitly promoted
     # to the keyed root lookup (N×M derived-table); the lift puts same-table @nodeId on the
     # same rail as ordinary scalar filter args. Add `@lookupKey` to opt back into the lookup

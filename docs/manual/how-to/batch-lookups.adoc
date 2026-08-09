@@ -70,7 +70,7 @@ type Query {
 
 The output list is one element per opaque id, ordered by input position; the FilmActor type's two-column primary key (`actor_id`, `film_id`) is encoded into each id and decoded into the `VALUES` row.
 
-*Same-table `@nodeId` arg path* (`@nodeId(typeName: T)` on an `[ID]` arg whose `T` matches the field's return type). Same lookup-by-id semantics, but with filter-style failure handling: a malformed id silently drops to "no row matches" via `CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement`. The classifier synthesises `isLookupKey: true` for this arm, so an explicit `@lookupKey` on the same arg is rejected (`@nodeId already implies @lookupKey for same-table; the explicit directive is redundant`).
+*Same-table `@nodeId` arg path* (`@nodeId(typeName: T)` on an `[ID]` arg whose `T` matches the field's return type). Same lookup-by-id semantics. A malformed or wrong-type id fails the field rather than narrowing the result set, which is the same answer every `@nodeId` decode gives. The classifier synthesises `isLookupKey: true` for this arm, so an explicit `@lookupKey` on the same arg is rejected (`@nodeId already implies @lookupKey for same-table; the explicit directive is redundant`).
 
 [source,graphql]
 ----

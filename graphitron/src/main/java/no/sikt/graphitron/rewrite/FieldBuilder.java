@@ -686,7 +686,7 @@ class FieldBuilder {
             warnAsConnectionSameTable(fieldDef, plan);
         }
         var classifyErrors = new ArrayList<String>();
-        var refs = classifyArguments(fieldDef, table, plan, classifyErrors);
+        var refs = classifyArguments(fieldDef, table, returnTypeName, plan, classifyErrors);
         var rejections = new ArrayList<Rejection>();
         for (String e : classifyErrors) rejections.add(Rejection.structural(e));
         return projectForFilter(refs, fieldDef, table, returnTypeName, rejections);
@@ -1388,19 +1388,27 @@ class FieldBuilder {
      * <p>{@code rt} is the target {@link TableRef} used to resolve scalar column args; every
      * current caller passes the field's resolved table, so this method does not accept
      * {@code null}.
+     *
+     * <p>{@code targetTypeName} is the GraphQL type {@code rt} belongs to, already unwrapped past
+     * any connection by the caller. It travels with {@code rt} rather than being re-derived from
+     * {@code fieldDef.getType()} because the two have to agree: on an {@code @asConnection} field
+     * the field's own type is the connection wrapper while {@code rt} is the element's table, and
+     * an argument arm reading the wrapper would answer a different question from the one the table
+     * answers.
      */
-    List<ArgumentRef> classifyArguments(GraphQLFieldDefinition fieldDef, TableRef rt, NodeIdArgPlan plan, List<String> errors) {
+    List<ArgumentRef> classifyArguments(GraphQLFieldDefinition fieldDef, TableRef rt, String targetTypeName,
+                                        NodeIdArgPlan plan, List<String> errors) {
         var fieldCondition = ctx.readConditionDirective(fieldDef);
         boolean fieldOverride = fieldCondition != null && fieldCondition.override();
         var refs = new ArrayList<ArgumentRef>();
         for (var arg : fieldDef.getArguments()) {
-            refs.add(classifyArgument(fieldDef, arg, rt, fieldOverride, plan, errors));
+            refs.add(classifyArgument(fieldDef, arg, rt, targetTypeName, fieldOverride, plan, errors));
         }
         return List.copyOf(refs);
     }
 
     private ArgumentRef classifyArgument(GraphQLFieldDefinition fieldDef, GraphQLArgument arg,
-                                         TableRef rt, boolean fieldOverride,
+                                         TableRef rt, String targetTypeName, boolean fieldOverride,
                                          NodeIdArgPlan plan, List<String> errors) {
         String name = arg.getName();
         GraphQLType type = arg.getType();
@@ -1500,8 +1508,8 @@ class FieldBuilder {
 
         // @nodeId-decorated ID arg routes through NodeIdLeafResolver to pick same-table
         // (filter; explicit @lookupKey opts back into lookup shape) vs FK-target (filter)
-        // shape. Sits before the implicit scalar-ID arm below, which owns synthesised paths
-        // (no @nodeId declared, parent table has nodeId metadata).
+        // shape. Sits before the implicit arm below, which owns the directive-less reading of a
+        // coordinate named for its target's `id`.
         if ("ID".equals(typeName) && arg.hasAppliedDirective(DIR_NODE_ID)) {
             // Composition rejections: @nodeId is incompatible with @field(name:) (the two
             // target different binding axes — key columns come from the resolved NodeType,
@@ -1585,8 +1593,7 @@ class FieldBuilder {
         if ("ID".equals(typeName)
                 && NODE_INTERFACE_ID_FIELD.equals(name)
                 && !arg.hasAppliedDirective(DIR_FIELD)) {
-            String returnTypeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(fieldDef.getType())).getName();
-            var targetNode = ctx.nodes.forName(returnTypeName);
+            var targetNode = ctx.nodes.forName(targetTypeName);
             if (targetNode.isPresent()) {
                 NodeType node = targetNode.get();
                 // Resolves ahead of the column lookup below, so a real column of this name is a
@@ -1595,9 +1602,11 @@ class FieldBuilder {
                 var shadowed = ctx.catalog.findColumn(rt.tableName(), name);
                 if (shadowed.isPresent()) {
                     return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                        BuildContext.rejectShadowedNodeId(
-                            "argument '" + fieldDef.getName() + "(" + name + ":)'",
-                            name, node, shadowed.get().sqlName()));
+                        // Blank coordinate: projectFilters already prefixes this rejection with
+                        // `argument '<name>': `, and the enclosing field is named by the
+                        // ValidationError's own coordinate, so a self-prefix here would say it
+                        // twice.
+                        BuildContext.rejectShadowedNodeId("", name, node, shadowed.get().sqlName()));
                 }
                 boolean isLookupKey = arg.hasAppliedDirective(DIR_LOOKUP_KEY);
                 // Key columns come off the NodeType, which is TypeBuilder's reconciled answer for
@@ -7326,10 +7335,10 @@ class FieldBuilder {
         // rejectShadowedIdColumn. Both silencers reach this method earlier: `@nodeId` in the
         // directive arm above, `@field` through hasFieldDirective.
         //
-        // This arm is deliberately narrower than the deprecated synthesis shim below: that one
-        // fires for *any* bare `ID` field on a node type, `externalId: ID` included. Applying that
-        // predicate here would reroute every such field from its column to a nodeId encode, so the
-        // permanent rule is pinned to `Node.id`.
+        // This arm is deliberately pinned to `Node.id` rather than to any bare `ID` field on a node
+        // type. The wider predicate is what the retired synthesis arm used, and applying it here
+        // would reroute every such field, `externalId: ID` included, from its column to a nodeId
+        // encode.
         if (tableType instanceof NodeType nodeType
                 && NODE_INTERFACE_ID_FIELD.equals(name)
                 && isScalarId

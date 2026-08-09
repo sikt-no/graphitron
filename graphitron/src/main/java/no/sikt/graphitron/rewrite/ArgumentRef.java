@@ -141,8 +141,8 @@ public sealed interface ArgumentRef {
          * classify time with a deferred-emission hint.
          *
          * <p>{@code extraction} narrows to {@link CallSiteExtraction.NodeIdDecodeKeys} at every
-         * arity: input filters are not contract-violation surfaces, so the failure mode is
-         * {@code SkipMismatchedElement} (malformed ids drop silently to "no row matches").
+         * arity, whose one failure mode throws: a malformed or wrong-type id on an authored filter
+         * is a client mistake rather than a narrower result set.
          *
          * <p>No {@code isLookupKey} slot: FK-target is a filter, not a lookup. The carrier flows
          * through {@code projectFilters} into the standard {@code GeneratedConditionFilter}

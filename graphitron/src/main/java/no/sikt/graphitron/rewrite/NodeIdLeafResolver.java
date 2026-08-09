@@ -61,8 +61,8 @@ import static no.sikt.graphitron.rewrite.BuildContext.argString;
  * input-field side; {@link ArgumentRef.ScalarArg.ColumnBackedArg} /
  * {@link ArgumentRef.ScalarArg.ColumnBackedReferenceArg} on the argument side).
  *
- * <p>Failure mode is fixed at {@link CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement}:
- * malformed ids drop silently to "no match". The implicit scalar-{@code ID} arm in
+ * <p>Failure mode is fixed at {@link CallSiteExtraction.NodeIdDecodeKeys.ThrowOnMismatch}:
+ * a malformed or wrong-type id fails the field. The implicit arm in
  * {@code FieldBuilder.classifyArgument} (no {@code @nodeId} declared) uses
  * {@code ThrowOnMismatch}; that arm covers synthesised lookup-key paths where a
  * wrong-type id is a contract violation rather than a filter miss.
@@ -96,9 +96,8 @@ final class NodeIdLeafResolver {
          * side this folds onto column-shaped successors.
          *
          * <p>The {@code decodeMethod} is exposed directly rather than wrapped in an extraction
-         * arm because the failure-mode choice (Skip vs Throw) is caller-specific: input-field
-         * filter leaves want {@code SkipMismatchedElement} ("malformed id → no match"),
-         * argument-level lookup leaves want {@code ThrowOnMismatch} (the {@code @lookupKey}
+         * arm, a shape that dates from when the failure mode was caller-specific. Every caller now
+         * wraps it in {@code ThrowOnMismatch} (the {@code @lookupKey}
          * contract; lookup-key dispatch on a wrong-type id is a contract violation rather than
          * a silent miss).
          *

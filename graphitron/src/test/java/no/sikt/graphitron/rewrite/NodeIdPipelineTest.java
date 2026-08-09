@@ -376,8 +376,7 @@ class NodeIdPipelineTest {
                 // JooqConvert for the varchar key). The claim is the absence of a node decode,
                 // not the presence of any particular conversion.
                 assertThat(leafExtraction(bp))
-                    .isNotInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch.class)
-                    .isNotInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
+                    .isNotInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.NodeIdDecodeKeys.class);
             }),
 
         EXPLICIT_NODE_ID_DIRECTIVE(
@@ -692,7 +691,6 @@ class NodeIdPipelineTest {
         tc.assertions.accept(TestSchemaHelper.buildSchema(tc.sdl, FIXTURE_CTX));
     }
 
-    // ===== FK-qualifier synthesis shim =====
 
     // ===== Same-table @nodeId filter =====
 
@@ -1793,8 +1791,7 @@ class NodeIdPipelineTest {
         assertThat(bp.column().sqlName()).isEqualTo("id_1");
         assertThat(leafExtraction(bp))
             .as("no decode: the FK qualifier no longer outranks the column of the same name")
-            .isNotInstanceOf(CallSiteExtraction.ThrowOnMismatch.class)
-            .isNotInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
+            .isNotInstanceOf(CallSiteExtraction.NodeIdDecodeKeys.class);
     }
 
     @org.junit.jupiter.api.Test
@@ -1815,8 +1812,7 @@ class NodeIdPipelineTest {
         assertThat(bp.column().sqlName()).isEqualTo("name");
         assertThat(bp.extraction())
             .as("the argument names a column, not the node's `id`, so nothing decodes")
-            .isNotInstanceOf(CallSiteExtraction.ThrowOnMismatch.class)
-            .isNotInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
+            .isNotInstanceOf(CallSiteExtraction.NodeIdDecodeKeys.class);
     }
 
     @org.junit.jupiter.api.Test

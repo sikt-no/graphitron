@@ -107,22 +107,27 @@ public sealed interface CallSiteExtraction
     }
 
     /**
-     * Decode a base64 NodeId at the call-site root into typed key values. Sealed sub-taxonomy with
-     * two arms differing only in how a {@code null} return from
-     * {@link HelperRef.Decode decode<TypeName>} (malformed input or typeId mismatch) surfaces:
+     * Decode a base64 NodeId at the call-site root into typed key values. One arm, describing how
+     * a {@code null} return from {@link HelperRef.Decode decode<TypeName>} (malformed input or
+     * typeId mismatch) surfaces:
      *
      * <ul>
-     *   <li>{@link SkipMismatchedElement}: a {@code null} return short-circuits the bad element to
-     *       "no row matches"; never throws. Produced only by the legacy {@code __NODE_*} synthesis
-     *       shims; authored {@code @nodeId} filters classify to {@link ThrowOnMismatch}.</li>
-     *   <li>{@link ThrowOnMismatch}: every authored {@code @nodeId} argument or input-object-field
-     *       filter ({@code [ID!] @nodeId(typeName: T)} and the scalar analogue), plus {@code @nodeId}
-     *       lookup / mutation keys. A {@code null} return is a client mistake and surfaces as a
+     *   <li>{@link ThrowOnMismatch}: every {@code @nodeId} argument or input-object-field filter
+     *       ({@code [ID!] @nodeId(typeName: T)} and the scalar analogue), the implicit reading of a
+     *       coordinate named for its target's {@code id}, plus {@code @nodeId} lookup / mutation
+     *       keys. A {@code null} return is a client mistake and surfaces as a
      *       {@code GraphitronClientException} (a {@code GraphQLError}), not a silent drop; the decode
      *       helper's message distinguishes a structurally-malformed id from a well-formed wrong-type
      *       id. For filters this gives up the Relay heterogeneous-id-source pattern by design:
      *       one bad element fails the whole field rather than narrowing the set.</li>
      * </ul>
+     *
+     * <p>The category survives its own second arm on purpose. A silent-drop sibling existed for the
+     * legacy metadata-driven carriers, which were the only producers that could not tell a client
+     * mistake from a schema the author never wrote; with those retired, every decode on this carrier
+     * is one the author asked for, and dropping a bad element silently would hide the mistake. The
+     * interface stays because consumers switch on "is this a nodeId decode" rather than on the
+     * failure mode, and because the failure mode is the axis a future arm would vary.
      *
      * <p>The third failure mode (NullOnMismatch) is dispatcher-driven (Query.node, Query.nodes,
      * federated _entities) and does not appear here as a carrier arm; see
@@ -132,18 +137,11 @@ public sealed interface CallSiteExtraction
      * the call-site emitter reaches the per-Node {@code decode<TypeName>} helper through a typed
      * structural reference rather than reconstructing names from a typeId string.
      */
-    sealed interface NodeIdDecodeKeys extends CallSiteExtraction permits SkipMismatchedElement, ThrowOnMismatch {
+    sealed interface NodeIdDecodeKeys extends CallSiteExtraction permits ThrowOnMismatch {
 
         /** The pre-resolved {@code decode<TypeName>} helper reference. */
         HelperRef.Decode decodeMethod();
     }
-
-    /**
-     * Skip the bad element on a {@code null} decode return. Produced only by the legacy
-     * {@code __NODE_*} synthesis shims; authored {@code @nodeId} filters classify to
-     * {@link ThrowOnMismatch} instead.
-     */
-    record SkipMismatchedElement(HelperRef.Decode decodeMethod) implements NodeIdDecodeKeys {}
 
     /**
      * Throw the generated {@code GraphitronClientException} (a {@code GraphQLError}) on a

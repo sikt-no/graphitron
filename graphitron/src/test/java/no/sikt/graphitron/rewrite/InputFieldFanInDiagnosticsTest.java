@@ -219,9 +219,9 @@ class InputFieldFanInDiagnosticsTest {
      * fixture catalog. A row moving off {@code Structural} is progress and must be recorded here;
      * a row moving onto it is a regression this test fails on.
      *
-     * <p>The producers not reachable from this catalog are the id-reference synthesis shim's four
-     * arms, the FK-target key-mismatch case, and the two NodeId decode-helper failures, all of which
-     * need {@code KjerneJooqGenerator} node metadata; {@code NodeIdPipelineTest} and
+     * <p>The producers not reachable from this catalog are the FK-target key-mismatch case and the
+     * NodeId decode-helper failures, which need {@code KjerneJooqGenerator} node metadata;
+     * {@code NodeIdPipelineTest} and
      * {@code NodeInferencePipelineTest} cover those against the fixture context, including the
      * key-mismatch case's {@link Rejection.Deferred} arm.
      */

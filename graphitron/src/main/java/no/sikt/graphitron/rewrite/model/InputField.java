@@ -65,8 +65,7 @@ public sealed interface InputField extends GraphitronField
      *     other single-scalar shapes imply arity 1 by the constructor invariant;
      *     {@link CallSiteExtraction.NodeIdDecodeKeys} (NodeId-encoded filter) is the only
      *     extraction producing a multi-column tuple and is required at arity &ge; 2. The body
-     *     emitter pairs {@link CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement} with
-     *     {@link BodyParam.RowEq RowEq} (scalar same-table NodeId equality) or
+     *     emitter pairs it with {@link BodyParam.RowEq RowEq} (scalar same-table NodeId equality) or
      *     {@link BodyParam.RowIn RowIn} (list filter) on the composite shape.
      */
     record ColumnBackedField(

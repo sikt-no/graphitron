@@ -161,9 +161,9 @@ class FacetedConnectionPipelineTest {
 
     @Test
     void asFacetOnIdField_rejected() {
-        // Rejecting the ID type outright (not just @nodeId co-occurrence) also closes the
-        // node-reference synthesis shim, which classifies a bare ID column-hit as a reference
-        // carrier with no directive trace.
+        // Rejecting the ID type outright, not just @nodeId co-occurrence, keeps the rule readable
+        // off the SDL: ID is where a node-id reading can arise without a directive to point at, and
+        // the v1 direct-column facet emitter serves only plain columns.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             input FilmFilter {

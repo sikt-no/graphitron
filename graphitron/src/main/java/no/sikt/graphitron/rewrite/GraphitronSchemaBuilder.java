@@ -1000,10 +1000,11 @@ public class GraphitronSchemaBuilder {
      * coordinates. An input type shared by connection and non-connection consumers is fine:
      * {@code @asFacet} surfaces facets at the connection use sites and is inert at the others.
      *
-     * <p>Rejecting {@code ID} fields outright (rather than only {@code @nodeId} co-occurrence)
-     * also closes the node-reference synthesis shim: a bare {@code ID} field whose column hits the
-     * qualifier map classifies as a reference carrier with no directive trace, which the v1
-     * direct-column facet emitter cannot serve.
+     * <p>Rejecting {@code ID} fields outright, rather than only {@code @nodeId} co-occurrence,
+     * keeps the rule readable off the SDL: an {@code ID} field is where a node-id reading can arise
+     * without a directive to point at, and the v1 direct-column facet emitter serves only plain
+     * columns. A narrower rule would have to re-derive which readings are node ids to say which
+     * {@code ID} fields are admissible.
      *
      * <p>The carrier scan is sourced off the connection-synthesis relation's directive-driven
      * rows (the validator mirrors the classifier: exactly the carriers the walk promoted are the

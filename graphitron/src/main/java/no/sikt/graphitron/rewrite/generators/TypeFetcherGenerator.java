@@ -3758,7 +3758,7 @@ public class TypeFetcherGenerator {
      *       {@code lookupKey<i>.value1()} (the per-row decode local, declared above) and the
      *       wrapping {@code DSL.val} keeps the typed column-data-type binding.</li>
      *   <li>{@link InputColumnBindingGroup.DecodedRecordGroup} — emits one decode local
-     *       (with {@code ThrowOnMismatch} / {@code SkipMismatchedElement} null handling) above,
+     *       (with {@code ThrowOnMismatch} null handling) above,
      *       and N {@code t.col_k.eq(lookupKey<i>.value<k+1>())} chained equalities into the
      *       WHERE expression.</li>
      * </ul>
@@ -3865,10 +3865,9 @@ public class TypeFetcherGenerator {
     /**
      * Declares a per-row decode local {@code recLocal} reading {@code mapLocal.get(sourceField)},
      * with {@code ThrowOnMismatch} producing a {@code GraphqlErrorException} on a null decode
-     * return (lookup-key paths: wrong-type id is an authored-input contract violation) or
-     * {@code SkipMismatchedElement} dropping silently via "no row matches" semantics — at the
-     * single-row mutation site, a malformed id surfaces as a runtime failure regardless of arm,
-     * because there is no per-row "skip" semantics in the SET / DELETE WHERE shape.
+     * return: a wrong-type id is an authored-input contract violation. At the single-row mutation
+     * site a malformed id would surface as a runtime failure in any case, because the SET / DELETE
+     * WHERE shape has no per-row skip semantics to fall back on.
      */
     private static void appendDecodeLocal(
             CodeBlock.Builder locals,

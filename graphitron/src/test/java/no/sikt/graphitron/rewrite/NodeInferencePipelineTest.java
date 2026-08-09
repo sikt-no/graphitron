@@ -252,8 +252,7 @@ class NodeInferencePipelineTest {
             .findFirst().orElseThrow();
         var leaf = ((CallSiteExtraction.NestedInputField) filter.callParams().get(0).extraction()).leaf();
         return switch (leaf) {
-            case CallSiteExtraction.ThrowOnMismatch t -> t.decodeMethod().methodName();
-            case CallSiteExtraction.SkipMismatchedElement s -> s.decodeMethod().methodName();
+            case CallSiteExtraction.NodeIdDecodeKeys d -> d.decodeMethod().methodName();
             default -> throw new AssertionError("not a decoding leaf: " + leaf);
         };
     }
@@ -481,7 +480,8 @@ class NodeInferencePipelineTest {
             """);
 
         assertThat(((GraphitronField.UnclassifiedField) schema.field("Query", "baz")).reason())
-            .contains("argument 'baz(id:)'")
+            // Named once, by the projection's own prefix rather than by the rejection body.
+            .contains("argument 'id':")
             .contains("'id' is ambiguous")
             .contains("`@nodeId`")
             .contains("`@field(name: \"id\")`");
@@ -500,6 +500,28 @@ class NodeInferencePipelineTest {
             type Query { baz(id: ID @nodeId): Baz }
             """);
         assertThat(new GraphitronSchemaValidator().validate(node)).isEmpty();
+    }
+
+    @Test
+    void argument_theShadowingAnswerDoesNotDependOnTheReturnTypeWrapper() {
+        // The wrapper is not a coordinate. An `@asConnection` field's arguments bind against the
+        // same element table as the plain-list spelling, so wrapping the return type must not
+        // change whether `id` is the node id or the column. Pinned because the target used to be
+        // read off `fieldDef.getType()`, which sees `BazConnection` where the rest of the
+        // classifier has already unwrapped to `Baz`, and the arm silently missed.
+        var connection = schema("""
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
+            type BazConnection { edges: [BazEdge!]! pageInfo: PageInfo! }
+            type BazEdge { node: Baz! cursor: String! }
+            type PageInfo { hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String }
+            type Query { bazes(id: ID, first: Int, after: String): BazConnection @asConnection }
+            """);
+
+        assertThat(((GraphitronField.UnclassifiedField) connection.field("Query", "bazes")).reason())
+            .as("the connection spelling must reject exactly as the plain-list one does")
+            .contains("'id' is ambiguous")
+            .contains("`@nodeId`")
+            .contains("`@field(name: \"id\")`");
     }
 
     // ===== The Relay root fields =====
@@ -609,8 +631,8 @@ class NodeInferencePipelineTest {
 
     @Test
     void theShadowingRuleDoesNotReachOtherIdFieldsOnANodeType() {
-        // The implementation trap this rule had to avoid. The deprecated synthesis shim fires for
-        // *any* bare `ID` field on a node type, so hoisting its predicate above column resolution
+        // The implementation trap this rule had to avoid. The retired synthesis arm fired for
+        // *any* bare `ID` field on a node type, so hoisting that predicate above column resolution
         // would have rerouted every such field from its column to a nodeId encode. Only `Node.id`
         // is hoisted, so an `ID` field that resolves to a column still gets the column.
         var schema = schema("""

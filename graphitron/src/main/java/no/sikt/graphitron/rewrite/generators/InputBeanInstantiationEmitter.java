@@ -361,7 +361,7 @@ final class InputBeanInstantiationEmitter {
      * {@code List} of base64 NodeIds, materialise one record per element through the singular
      * {@link #buildRecordDecodeHelper} helper, and collect. A present-but-wrong-type element throws
      * (the singular helper already throws on mismatch), because an input-bean member is materialized
-     * input, not a query predicate; there is no silent-drop {@code SkipMismatchedElement} path here.
+     * input, not a query predicate; there is no silent-drop path here, nor anywhere else.
      *
      * <pre>
      *   private static List<SakRecord> decodeSakRecordList(Object wire) {

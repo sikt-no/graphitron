@@ -253,14 +253,6 @@ public final class LookupRows {
                 decodeArgs.putIfAbsent(slot.argName(), slot.decodeBinding());
             }
         }
-        boolean anySkip = decodeArgs.values().stream()
-            .anyMatch(db -> db.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement);
-        if (anySkip) {
-            // Effective row count tracks how many rows survived the per-row Skip checks; the
-            // tail trims rows[] to this length when shorter than n, and the call site's
-            // existing empty-rows short-circuit catches the all-skipped case.
-            builder.addStatement("int effective = 0");
-        }
         builder.beginControlFlow("for (int i = 0; i < n; i++)");
 
         ClassName graphqlErr = ClassName.get("graphql", "GraphqlErrorException");
@@ -278,31 +270,20 @@ public final class LookupRows {
             builder.addStatement("$T $L = ($L instanceof $T _s) ? $T.$L(_s) : null",
                 recordType, recLocal, rawElem, String.class, encoderClass, methodName);
             builder.beginControlFlow("if ($L == null)", recLocal);
-            switch (db.extraction()) {
-                case CallSiteExtraction.NodeIdDecodeKeys.ThrowOnMismatch t ->
-                    builder.addStatement("throw $T.newErrorException().message($S).build()", graphqlErr,
-                        "Decoded NodeId did not match the expected type for argument '" + argName + "'");
-                case CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement s ->
-                    builder.addStatement("continue");
-            }
+            // One failure mode left on this carrier: a malformed or wrong-type id is a client
+            // mistake and fails the field. The silent-drop alternative went with the arms that
+            // produced it.
+            builder.addStatement("throw $T.newErrorException().message($S).build()", graphqlErr,
+                "Decoded NodeId did not match the expected type for argument '" + argName + "'");
             builder.endControlFlow();
         }
 
         CodeBlock cells = ValuesJoinRowBuilder.cellsCode(
             slots, Slot::targetColumn, CodeBlock.of("$T.inline(i)", DSL), "table",
             (slot, idx) -> slotValueExpr(slot, roots.get(slot.argName())));
-        if (anySkip) {
-            builder.addStatement("rows[effective++] = $T.row($L)", DSL, cells);
-        } else {
-            builder.addStatement("rows[i] = $T.row($L)", DSL, cells);
-        }
+        builder.addStatement("rows[i] = $T.row($L)", DSL, cells);
         builder.endControlFlow();
-        if (anySkip) {
-            builder.addStatement("return effective < n ? $T.copyOf(rows, effective) : rows",
-                ClassName.get("java.util", "Arrays"));
-        } else {
-            builder.addStatement("return rows");
-        }
+        builder.addStatement("return rows");
     }
 
     private static String decodeRecordLocal(String rootLocalName) {
