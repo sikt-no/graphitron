@@ -27,6 +27,52 @@ capture and the replay switch on source kind instead of re-asking a filesystem p
 unbound sites. The Backlog stub sketched a third shape, routing the build's own scan through
 the store rows; it is rejected below, on the record.
 
+## Open: R610 landed more of this than R610's spec described
+
+The second Spec to Ready pass ran after R610's implementation reached trunk, and the overlap the
+first pass recorded has recurred and grown. The section below was written against R610's spec
+text, which promised a static `SchemaRecipe.expand(baseDir, patterns, extensions)` primitive.
+What R610 actually landed is most of "One recipe value, both paths": `SchemaRecipe` is already a
+record (`Path buildFile`, `List<Binding> bindings` carrying pattern plus optional tag and note in
+configuration order, `List<String> extensions`) with an instance `expand(Path baseDir)`; the
+decode already happens at the mojo boundary in `AbstractRewriteMojo.buildSchemaRecipe`, called
+from the `buildContext` path; the recipe already rides `RewriteContext` as a component; capture
+already transcribes it (`FactCapture.writeRecipe`, `FactCapture.GraphIdentity`); and the replay
+already decodes it back and re-expands (the `WarmStartRefreshTest` cases construct recipes
+directly). Rewriting the section is the author's scope call, not a reviewer's edit, so the
+residue and the new questions are recorded here rather than patched in place.
+
+What is left, and is still worth the item:
+
+- **The duplication is now concrete rather than preventive.** `RewriteContext` carries
+  `schemaFileExtensions`, `basedir` *and* `schemaRecipe`, whose `extensions` is the same set,
+  which is exactly the "same fact asserted twice with nothing binding the copies" the section
+  argues against. The accessor collapse below is a fix to landed code.
+- **The sealed source carrier**, `SchemaInput.plain`'s retirement, and the two probes it deletes.
+  Both probes are live as landed: `SdlFactCapture.regularFile` is the stamp-time one and
+  `StoreRefresh`'s `Files.isRegularFile` is the read-time twin.
+- **Literal entries and the `kind` column**, so programmatic runs transcribe at all.
+  `SchemaRecipe.Binding.pattern` is a bare `String` today and `buildFile` is null on a
+  programmatic run, so the widening still has its target.
+- **The shared extension predicate**, whose duplicate pair has moved: it is now the private
+  `SchemaRecipe.matchesExtension` against `SchemaProblemDiagnostic.matchesExtension`.
+  `SchemaInputExpander.matchesExtension`, named below, no longer exists.
+- **The typed rejection** and **the round-trip anchor**.
+
+Three questions the next pass owes an answer to:
+
+- `SchemaRecipe.buildFile` is new, nullable, and Maven-shaped (the module's pom). The
+  containment rule below says core assumes no Maven vocabulary, and the sealed-carrier section
+  rejects null-shaped defaults on exactly this reasoning. Whether it stays a component, becomes
+  an arm, or moves is undecided here.
+- The landed instance `expand(Path baseDir)` returns a deduplicated `Set<Path>`: no per-binding
+  grouping, no tag or note attribution, no configuration order. The typed result this item wants
+  needs all three, so it replaces that method rather than taking "R610's walk and dialect as the
+  body", and the per-pattern static is what `SchemaInputExpander` still uses to keep its
+  per-binding empty diagnostics.
+- The Retired vocabulary entry misdescribes the landed static, which takes one pattern rather
+  than a pattern list. Whether it is retired at all depends on the previous question.
+
 ## One recipe value, both paths
 
 `SchemaRecipe` graduates from R610's primitive into the typed value, and one name survives the
@@ -168,7 +214,7 @@ here rather than discovered during implementation. `SdlFactCapture.captureSource
 source names back out of graphql-java's `SourceLocation`s, not out of `SchemaInput`, so
 capture's stamp decision recovers the arm through a lookup keyed on the canonical rendering
 (the attribution map the run already built, threaded into `SdlFactCapture.capture` as a
-parameter, since the walk holds only its sink, its registry and the node declaration today),
+parameter, since the walk holds no `SchemaInput` data today),
 switching exhaustively on what it finds; the
 lookup's one legitimate miss is `RewriteSchemaLoader.DIRECTIVES_SOURCE_NAME`, which appears in
 the registry's source set and in no `SchemaInput`, and which the reader surface already
