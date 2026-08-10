@@ -1,13 +1,13 @@
 ---
 id: R617
 title: "Lookup misses drop rows instead of holding their position"
-status: Backlog
+status: In Review
 bucket: bug
 priority: 1
 theme: codegen-correctness
 depends-on: []
 created: 2026-08-09
-last-updated: 2026-08-09
+last-updated: 2026-08-10
 ---
 
 # Lookup misses drop rows instead of holding their position
