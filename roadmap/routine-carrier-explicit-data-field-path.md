@@ -5,7 +5,7 @@ status: Backlog
 bucket: feature
 priority: 10
 theme: routine
-depends-on: [routine-mutation-payload-carrier-return, validation-adds-facts]
+depends-on: [validation-adds-facts]
 created: 2026-08-10
 last-updated: 2026-08-10
 ---
