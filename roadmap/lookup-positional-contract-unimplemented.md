@@ -1,7 +1,7 @@
 ---
 id: R617
 title: "Lookup misses drop rows instead of holding their position"
-status: In Review
+status: Ready
 bucket: bug
 priority: 1
 theme: codegen-correctness
@@ -101,3 +101,82 @@ rows match the same key, only one is returned" and conflated two unrelated thing
 Uniqueness is a property of the *columns* a key binds to, not of the values a caller sends: binding
 a key to a non-unique column is a schema mistake, while repeating a value is ordinary and supported.
 The bullet now separates them on both pages.
+
+## Rework from the In Review gate
+
+Build green (`mvn install -Plocal-db`, 511 test classes). The emit change itself reviews clean: the
+scatter, the `List<Record>` value type, the dropped `ORDER BY`, the `fetchOne` single arm (which also
+quietly repairs a value-type/body mismatch that arm carried before), and the execution-tier coverage
+of repeated, unordered and missed keys are all right. Two things block the gate.
+
+### The manual gained a false positional claim on a coordinate that has no positions
+
+`batch-lookups.adoc:82` now reads: "`filmsByNodeIdArg(ids: [<film_2>, "garbage", <film_4>])` returns
+two films at positions 0 and 2 and skips position 1 entirely". `filmsByNodeIdArg` is not a lookup.
+`FieldBuilder.java:1983` states it outright, "isLookupKey == false when @nodeId targets the field's
+own table", and the arg projects to `BodyParam.In` / `RowIn`: a `WHERE film_id IN (...)` filter with
+no `VALUES` table, no `idx`, and no scatter. There is nothing positional to describe.
+
+The claimed behaviour is also the opposite of what the field does. `GraphQLQueryTest.java:997`,
+`filmsByNodeIdArg_mixedValidAndMalformed_surfacesClientError`, pins the live answer: one malformed id
+fails the whole field, error raised, field null, no partial result. Two more give-aways sit in view:
+the sentence contradicts its own paragraph four lines up (`batch-lookups.adoc:73`, "A malformed or
+wrong-type id fails the field rather than narrowing the result set"), and a two-element list cannot
+hold elements at positions 0 and 2.
+
+Half of this predates the item (the "skips the malformed id" reading was already there). What the
+item added is the positional framing, which is exactly the thing it exists to make true, in the page
+whose truthfulness is its deliverable. That is why it blocks rather than becoming a follow-up.
+
+Two sibling errors in the same subsection are worth clearing in the same pass, since they are why the
+wrong sentence looked plausible:
+
+- `batch-lookups.adoc:73` "The classifier synthesises `isLookupKey: true` for this arm" is inverted
+  against `FieldBuilder.java:1983`. The rejection of an explicit `@lookupKey` on the same arg is
+  real; the stated reason for it is not.
+- `batch-lookups.adoc:129` "The decode failure mode is `Skip` (filter semantics, malformed ids drop
+  silently)" names an arm that does not exist. `CallSiteExtraction.java:140` seals
+  `NodeIdDecodeKeys permits ThrowOnMismatch` and nothing else.
+
+Worth noting while rewriting: `filmsByNodeIdArg_emptyList_returnsUnfilteredBaseline`
+(`GraphQLQueryTest.java:1234`) returns all five films, so the page's empty-input short-circuit bullet
+does not describe this coordinate either. The whole subsection presents a filter path as "a flavor of
+NodeId-driven lookup"; the honest fix is probably to stop doing that and point at the filter docs,
+rather than to patch the one sentence.
+
+### The new build-time rejection is pinned by nothing
+
+`GraphitronSchemaValidator.validateRootLookup`'s nullable-element rejection landed without a test.
+`RootLookupValidationTest` is its canonical home and is built as an exhaustive cube over exactly the
+wrapper verdicts that method makes, but no cell varies item nullability: `cell()` at
+`RootLookupValidationTest.java:60` hardcodes `new FieldWrapper.List(true, true)`. Delete the
+rejection and the reactor stays green. The example-schema and plugin-IT edits prove only the accepted
+side; the compile and execution tiers never see a rejected schema.
+
+The item's own body calls this "a consumer-visible schema requirement" and "a build-time rejection
+rather than a runtime surprise". Today the only thing keeping it honest is that no coordinate in the
+tree declares `[Film!]!`. Add the reject cells to the cube, asserted by rejection kind and message
+substring per the validator-unit-test convention in `docs/architecture/how-to/testing.adoc`.
+
+### Not blocking, worth doing while here
+
+- `RootLauncherRenderer.java:412` writes the scatter alias as a bare `"__idx__"` literal.
+  `ReservedAliases` exists to hold precisely this ("the invariant is cross-package: writer alias
+  equals reader alias"); the reader goes through `SplitRowsMethodEmitter.IDX_COLUMN`, and the
+  analogous writer at `BatchedRowsFragments.java:281` uses the constant. One-line swap.
+- `ReservedAliases.IDX`'s javadoc describes its writer as the batched launcher body. The root lookup
+  launcher is now a second writer.
+- `scatterLookupByIdx`'s first-row-wins tie-break is an explicit decision (documented in
+  `SplitRowsMethodEmitter` and in the manual as "one of them is returned") that nothing pins.
+  `ScatterSingleByIdxTest` is the precedent for testing an emitted helper's runtime behaviour
+  directly. Fine as a follow-up item if it does not fit this pass.
+
+Reviewed clean, for the record: the user-facing-doc marker check (no roadmap vocabulary on either
+manual page); the retirement sweep (this item declares nothing retired, and it correctly *un*-retires
+the positional-null vocabulary in `roadmap/lookup-generated-column-filters.md` so that item's own
+Done sweep will not strip phrasing that is live again); and the code-string ban, which the delivery
+respects everywhere except `RootLauncherRendererTest`, where body-string assertions are the file's
+established convention and the renderer-arm paragraph of
+`docs/architecture/how-to/testing.adoc` blesses per-arm structural assertions on command-driven
+emission. That paragraph and `development-principles.adoc`'s "banned at every tier" do not agree with
+each other, but the disagreement predates this item and is not its to settle.
