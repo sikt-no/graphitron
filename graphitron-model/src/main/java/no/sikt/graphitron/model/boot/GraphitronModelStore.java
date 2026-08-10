@@ -279,13 +279,68 @@ public final class GraphitronModelStore implements AutoCloseable {
         return ddlHash().substring(0, 16) + "-" + generatorVersion();
     }
 
+    /**
+     * Executes the DDL one statement at a time rather than as a single script: H2 evaluates a
+     * multi-statement command as a {@code CommandList} whose execution recurses once per
+     * remaining statement, so a script past roughly a thousand statements overflows the thread
+     * stack, at a depth that varies with the caller's own stack. Per-statement execution keeps
+     * the boot flat regardless of how the schema grows, and a boot failure names the exact
+     * statement instead of the script.
+     */
     private static void create(Connection connection) {
+        String current = null;
         try (Statement statement = connection.createStatement()) {
-            statement.execute(readDdl());
+            for (String sql : splitStatements(readDdl())) {
+                current = sql;
+                statement.execute(sql);
+            }
         } catch (SQLException e) {
             closeQuietly(connection);
-            throw new IllegalStateException("the fact schema DDL did not execute: " + e.getMessage(), e);
+            throw new IllegalStateException("the fact schema DDL did not execute: " + e.getMessage()
+                + (current == null ? "" : " (statement: " + current + ")"), e);
         }
+    }
+
+    /**
+     * Splits the DDL on its top-level semicolons, tracking single-quote string state (with the
+     * doubled-quote escape, whose adjacent quotes just toggle through) and {@code --} line
+     * comments, so a semicolon inside a {@code COMMENT ON} literal or inside prose commentary
+     * never splits a statement. The comment text stays in the emitted fragments; H2 ignores it,
+     * and a fragment that is only commentary strips to nothing and is dropped.
+     */
+    private static java.util.List<String> splitStatements(String ddl) {
+        var statements = new java.util.ArrayList<String>();
+        var current = new StringBuilder();
+        boolean inQuote = false;
+        boolean inLineComment = false;
+        for (int i = 0; i < ddl.length(); i++) {
+            char c = ddl.charAt(i);
+            if (inLineComment) {
+                if (c == '\n') {
+                    inLineComment = false;
+                }
+            } else if (c == '\'') {
+                inQuote = !inQuote;
+            } else if (!inQuote && c == '-' && i + 1 < ddl.length() && ddl.charAt(i + 1) == '-') {
+                inLineComment = true;
+            } else if (!inQuote && c == ';') {
+                addNonComment(statements, current);
+                continue;
+            }
+            current.append(c);
+        }
+        addNonComment(statements, current);
+        return statements;
+    }
+
+    /** Adds the buffered fragment when it holds more than commentary, and resets the buffer. */
+    private static void addNonComment(java.util.List<String> statements, StringBuilder current) {
+        String sql = current.toString().strip();
+        current.setLength(0);
+        if (sql.isEmpty() || sql.lines().allMatch(l -> l.isBlank() || l.stripLeading().startsWith("--"))) {
+            return;
+        }
+        statements.add(sql);
     }
 
     private static void stamp(Connection connection) {

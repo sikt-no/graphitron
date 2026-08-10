@@ -273,7 +273,10 @@ public final class SdlFactCapture {
      * Records the root-operation bindings and the schema definition's own directive applications
      * ({@code @link}, the federation opt-in, lives here). The base definition and every schema
      * extension contribute; a re-binding of one operation cannot reach capture, since the registry
-     * rejects it at parse.
+     * rejects it at parse. A document with no schema definition binds its roots by the name
+     * convention, and those bindings are rows too, with all three position columns null exactly as
+     * the relation's comments state: the relation is total over the effective roots, which is what
+     * lets the reachability derivation seed from it without re-deriving the convention.
      */
     private void captureSchema() {
         var definitions = new ArrayList<Node<?>>();
@@ -327,6 +330,36 @@ public final class SdlFactCapture {
                     sink.add(row);
                 }
             }
+        }
+        if (registry.schemaDefinition().isEmpty()) {
+            captureConventionRoots();
+        }
+    }
+
+    /**
+     * The name-convention arm of {@link #captureSchema}: with no schema definition, an object
+     * type named for an operation is that operation's root. Runs after the explicit bindings (a
+     * schema extension may bind an operation even without a base definition, and the claim guard
+     * keeps the spelled binding); the row's positions are null because no SDL line spells the
+     * binding.
+     */
+    private void captureConventionRoots() {
+        for (String operation : List.of("QUERY", "MUTATION", "SUBSCRIPTION")) {
+            String typeName = switch (operation) {
+                case "QUERY" -> "Query";
+                case "MUTATION" -> "Mutation";
+                default -> "Subscription";
+            };
+            if (registry.getTypeOrNull(typeName, ObjectTypeDefinition.class) == null) {
+                continue;
+            }
+            if (!sink.claim(GRAPHQL_ROOT_OPERATION, operation)) {
+                continue;
+            }
+            var record = sink.dsl().newRecord(GRAPHQL_ROOT_OPERATION);
+            record.setOperation(operation);
+            record.setTypeName(typeName);
+            sink.add(record);
         }
     }
 

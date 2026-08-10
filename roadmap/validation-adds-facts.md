@@ -1131,6 +1131,25 @@ only when the follow-up item flips the detection to read demand, so the scaffold
 only production wiring is the write-only capture-cadence writer above; nothing reads the rows
 in production, the full-build corpus signal stays unchanged, and slice 4 gates nothing.
 
+**Landed with two substrate fixes and three named fidelity notes.** First fix:
+`graphql_root_operation`'s comments promised name-convention default rows (null positions), but
+capture wrote rows only from explicit schema definitions; the relation gained its first
+consumer here and the promise is now kept (`SdlFactCapture.captureConventionRoots`, firing only
+when no schema definition exists, after the explicit bindings so a spelled binding wins the
+claim). Second fix: the DDL had grown past what H2 executes as one script; a multi-statement
+command recurses once per remaining statement, so booting the store overflowed the thread
+stack at a depth that varied with the caller's own stack (surfacing as an order-dependent test
+failure, with `openAt`'s in-memory fallback masking the cause). `GraphitronModelStore.create`
+now executes the DDL one statement at a time through a quote- and comment-aware splitter, flat
+at any schema size, and a boot failure names the exact statement. The fidelity notes, each a
+named population in the sweep: the facet shapes are subtracted from the domain comparison
+(capture's connection expansion records the `@asFacet` marker but does not synthesize the facet
+types; closes when it does), the five spec built-in scalars may be walk-registered without a
+demand reading (one of their reaching edges, a built-in directive's argument, exists only in
+the assembled schema, never in the registry capture transcribes), and the corpus sweep appends
+the Relay `Node` interface to the captured document when absent so both sides parse the same
+text (the walk harness injects it).
+
 ## Retired vocabulary (expected; finalise at the Done gate)
 
 - `FieldBuilder.PairVerdict` / `pairVerdict` / `reduceDirectiveConflict`: the pairwise reduction,

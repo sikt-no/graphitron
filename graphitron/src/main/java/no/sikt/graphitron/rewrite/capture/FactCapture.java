@@ -8,6 +8,7 @@ import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.derive.AuthoredClaimConflicts;
 import no.sikt.graphitron.rewrite.derive.ClaimDomain;
+import no.sikt.graphitron.rewrite.derive.ReachabilityRows;
 import no.sikt.graphitron.rewrite.schema.input.SchemaRecipe;
 import org.jooq.DSLContext;
 import org.jooq.exception.DataAccessException;
@@ -223,6 +224,10 @@ public final class FactCapture {
             SdlFactCapture.capture(sink, registry, nodes, sources);
             CatalogFactCapture.capture(sink, jooq, extensions, sources);
             sink.flush();
+            // The capture-cadence derivation stratum: materialized derivations re-derive from
+            // the flushed rows inside the same transaction, so they are current exactly when
+            // the partition they derive from is.
+            ReachabilityRows.derive(txDsl, graph.name());
             sources.commitStamps(txDsl);
         });
     }

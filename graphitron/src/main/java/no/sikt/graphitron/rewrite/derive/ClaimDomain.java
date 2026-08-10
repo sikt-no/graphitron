@@ -15,9 +15,12 @@ import java.util.Set;
  * detector, and an ungated detection would move the accept line exactly there.
  *
  * <p>A scaffold with a stated removal criterion: this value is the unreified demand relation.
- * When demand and exemption rows land in the store, they are diffed against exactly this value,
- * and the gate dissolves into the detection reading the demand relation instead of the walked
- * model.
+ * The demand and exemption derivations now exist in the store ({@code intent_type_domain}, the
+ * rule views and the resolved reductions over them) and are diffed against exactly this value
+ * by their shadow agreement (see {@code no.sikt.graphitron.rewrite.derive.DemandShadowTest}),
+ * with the populations the store cannot yet express named by {@link DemandResidue}. The gate
+ * dissolves when the detection reads the demand relation instead of the walked model, which is
+ * the gate-flip follow-up's work, not the shadow's.
  */
 public record ClaimDomain(Set<String> typeNames, Set<FieldCoordinates> fieldCoordinates) {
 

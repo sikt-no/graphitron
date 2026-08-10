@@ -79,16 +79,24 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       reachability-pruned, so the honest relation is that the store contains the model.</li>
  *   <li>{@link Arm#EQUALITY} for the catalog and scanner censuses, which are the same walk reduced
  *       two ways.</li>
- *   <li>{@link Arm#DERIVED} for shipped views. A pure re-projection ({@code graphql_directive_site})
- *       registers the base relations it projects and its agreement is vacuous by construction; a
- *       semantic derivation (the {@code intent_} claim views) registers with its own anchor
- *       instead, which lives with its reader's test
+ *   <li>{@link Arm#DERIVED} for shipped derivations: views, and the materialized capture-cadence
+ *       derivation {@code intent_type_domain}, which a writer re-derives inside every capture
+ *       (materialized only because H2 has no safe recursive view form for a cyclic type graph;
+ *       its cadence and clearing follow the derivation, not an oracle, and the warm/cold census
+ *       anchors its lifecycle like any capture-written rows). A pure re-projection
+ *       ({@code graphql_directive_site}) registers the base relations it projects and its
+ *       agreement is vacuous by construction; a semantic derivation (the {@code intent_} claim
+ *       views and the demand stratum) registers with its own anchor instead, which lives with
+ *       its reader's test
  *       ({@code no.sikt.graphitron.rewrite.derive.AuthoredClaimConflictsTest} binds the lookup arm
  *       to {@code LookupFacts.triggersFor} and the routine arm to its base relation's distinct
  *       coordinates; {@code no.sikt.graphitron.rewrite.derive.ColumnMatchClaimTest} binds the
  *       column-match view and the reduction over it to the classification walk's fall-through arm
- *       over the spec-by-example corpus). Later derivation strata land as registrations here, not
- *       as exemptions.</li>
+ *       over the spec-by-example corpus;
+ *       {@code no.sikt.graphitron.rewrite.derive.DemandShadowTest} binds the domain, the demand
+ *       and exemption rules and their resolved reductions to the walked registries via
+ *       {@code ClaimDomain}, residues named and disagreement directions pinned). Later derivation
+ *       strata land as registrations here, not as exemptions.</li>
  *   <li>{@link Arm#ORACLE} for relations a post-capture oracle writer owns, where no independent
  *       second walk can re-derive the oracle's verdict without re-running the oracle. Two anchors,
  *       both non-vacuous: a two-graph lifecycle anchor (seeded rows, so "cleared" is
@@ -159,6 +167,13 @@ class FactCaptureAgreementTest {
         registrations.put("intent_authored_type_claim", Arm.DERIVED);
         registrations.put("intent_column_match_claim", Arm.DERIVED);
         registrations.put("intent_resolved_field_claim", Arm.DERIVED);
+        registrations.put("intent_type_domain", Arm.DERIVED);
+        registrations.put("intent_field_demand_rule", Arm.DERIVED);
+        registrations.put("intent_field_exemption_rule", Arm.DERIVED);
+        registrations.put("intent_type_demand", Arm.DERIVED);
+        registrations.put("intent_type_exemption", Arm.DERIVED);
+        registrations.put("intent_resolved_field_demand", Arm.DERIVED);
+        registrations.put("intent_resolved_type_demand", Arm.DERIVED);
         registrations.put("javac_diagnostic", Arm.ORACLE);
         return Map.copyOf(registrations);
     }

@@ -40,14 +40,16 @@
 -- row is still a transcription: it says what a directive application spelled, in graphitron's
 -- vocabulary instead of the document's. intent_ is what gets derived on top of that, once
 -- something resolves and combines those readings into what the generator will actually do. The
--- residents are views (in their own section below); that changes nothing about the name, since
--- a family is named for whose vocabulary its rows are written in and materialization is not the
--- discriminator. The stratum has two layers, and a new resident picks one deliberately: the
--- claim derivations (the authored claim views, one per grain, and the structural classifier
--- views, one per classifier so each carries exactly its own witness columns), and the reduction
--- over them (intent_resolved_field_claim, the resolution expression a planning reader joins).
--- No relation should acquire the prefix by drifting into it; each new derived resident is its
--- own change.
+-- residents are views (in their own section below) plus one materialized derivation
+-- (intent_type_domain, whose table comment owns why it cannot be a view); that changes nothing
+-- about the name, since a family is named for whose vocabulary its rows are written in and
+-- materialization is not the discriminator. The stratum has two layers, and a new resident
+-- picks one deliberately: the base derivations (the authored claim views, one per grain; the
+-- structural classifier views, one per classifier so each carries exactly its own witness
+-- columns; the demand and exemption rule views, stated at the grain their rules are authored
+-- at), and the reductions over them (intent_resolved_field_claim and the resolved demand
+-- views, the resolution expressions a planning reader joins). No relation should acquire the
+-- prefix by drifting into it; each new derived resident is its own change.
 --
 -- The graphql_ family is therefore a total transcription, with no hole where graphitron's
 -- namespace was. Whether an application survives into the emitted schema is a namespace query
@@ -2369,6 +2371,18 @@ COMMENT ON COLUMN javac_diagnostic.message IS 'javac''s own rendered text (root 
 -- (a @routine missing its name, a @mutation missing typeName) writes no semantic row; the
 -- presence arms keep the claim view presence-faithful exactly there. @lookupKey gets no
 -- presence arm: it is an argument-less marker whose decode is total.
+--
+-- The stratum's second resident group is the demand side: which coordinates require a
+-- classification verdict at all, and why the rest are skipped. intent_type_domain is the
+-- traversal surface those rules quantify over; the rule views state each demand and exemption
+-- rule at the grain it is authored at (every rule shipped so far is a property of the parent
+-- type, so the rules are type-keyed and the field grain is a join, legible as a projection);
+-- the resolved views are the per-grain reductions that answer with one verdict per coordinate.
+-- The rules state the intended model, not the walk's incidental holes: a coordinate the walk
+-- silently loses (a DELETE carrier's data field, a renamed root's fields) is demanded here,
+-- and the shadow agreement pins the difference as a named population instead of transcribing
+-- the defect. Nothing gates on these rows yet; the anti-join of demand against the resolved
+-- claim view becoming a build rule is follow-up work.
 
 CREATE VIEW intent_authored_field_claim
   (graph_name, type_name, field_name, classifier, trigger, decoded,
@@ -2619,3 +2633,248 @@ COMMENT ON COLUMN intent_resolved_field_claim.type_name IS 'the claimed field''s
 COMMENT ON COLUMN intent_resolved_field_claim.field_name IS 'the claimed field''s name within the owning type';
 COMMENT ON COLUMN intent_resolved_field_claim.classifier IS 'the classification kind the claim is for, the union of the claim views'' closed vocabularies';
 COMMENT ON COLUMN intent_resolved_field_claim.tier IS 'AUTHORED from the authored view, INFERRED from a classifier view surviving the anti-join; names which relation carries this claim''s provenance';
+
+CREATE TABLE intent_type_domain (
+  graph_name VARCHAR NOT NULL,
+  type_name  VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, type_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type (graph_name, type_name)
+);
+COMMENT ON TABLE intent_type_domain IS 'The classification domain''s type members: every named type, of every kind, the generator''s intended traversal reaches from its seeds. Named for the assertion, not the graph operation, because the seeds are generator policy rather than neutral schema reachability: root operation bindings, @node types, @table types implementing Node (an over-approximation of node inference until the jOOQ node-metadata constants are captured into the classpath family; the shadow agreement asserts the excess is empty), @key carriers, and the argument types of directive definitions that survive into the emitted schema, where the survivor set is bound as a query parameter from the generator''s own directive vocabulary, so this relation''s content is a function of that Java constant and is not self-describing from the DDL alone. Materialized, not a view: the closure over cyclic type graphs has no safe H2 view form (a recursive UNION does not terminate on cycles, and the path-guarded form enumerates simple paths). Written by a capture-cadence derivation writer that clears its own graph partition and re-derives after every flush, per the header''s cadence doctrine, so on any settled store these rows are current for every captured graph.';
+COMMENT ON COLUMN intent_type_domain.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN intent_type_domain.type_name IS 'a member of the graph''s classification domain; lands only on captured types, which is what makes the type FK structural';
+
+CREATE VIEW intent_field_demand_rule (graph_name, type_name, rule) AS
+SELECT r.graph_name, r.type_name, 'ROOT_OPERATION'
+  FROM graphql_root_operation r
+  JOIN graphql_type t ON t.graph_name = r.graph_name AND t.type_name = r.type_name
+   AND t.kind = 'OBJECT'
+UNION
+SELECT gt.graph_name, gt.type_name, 'TABLE_TYPE'
+  FROM graphitron_table gt
+  JOIN graphql_type t ON t.graph_name = gt.graph_name AND t.type_name = gt.type_name
+   AND t.kind = 'OBJECT'
+ WHERE gt.type_name NOT LIKE '\_%' ESCAPE '\'
+UNION
+SELECT ge.graph_name, ge.type_name, 'ERROR_TYPE'
+  FROM graphitron_error ge
+  JOIN graphql_type t ON t.graph_name = ge.graph_name AND t.type_name = ge.type_name
+   AND t.kind = 'OBJECT'
+ WHERE ge.type_name NOT LIKE '\_%' ESCAPE '\'
+UNION
+SELECT p.graph_name, p.payload_name, 'PRODUCER_PAYLOAD'
+  FROM (SELECT s.graph_name, f.named_type AS payload_name
+          FROM graphitron_service s
+          JOIN graphql_field f ON f.graph_name = s.graph_name
+           AND f.type_name = s.type_name AND f.field_name = s.field_name
+         WHERE s.class_name IS NOT NULL AND s.method IS NOT NULL
+        UNION
+        SELECT e.graph_name, f.named_type
+          FROM graphitron_external_field e
+          JOIN graphql_field f ON f.graph_name = e.graph_name
+           AND f.type_name = e.type_name AND f.field_name = e.field_name
+         WHERE e.class_name IS NOT NULL
+        UNION
+        SELECT m.graph_name, f.named_type
+          FROM graphitron_mutation m
+          JOIN graphql_field f ON f.graph_name = m.graph_name
+           AND f.type_name = m.type_name AND f.field_name = m.field_name) p
+  JOIN graphql_type t ON t.graph_name = p.graph_name AND t.type_name = p.payload_name
+   AND t.kind = 'OBJECT'
+ WHERE p.payload_name NOT LIKE '\_%' ESCAPE '\';
+COMMENT ON VIEW intent_field_demand_rule IS 'The types whose fields require a classification verdict, one rule literal per arm. Type-keyed by design: every rule shipped so far is a property of the parent type, so this is the rule''s authored grain and the field grain is a join in the resolved view, legible as a projection rather than materialized into the rule literal. The root arm is keyed by the root operation binding, not the conventional names, so it states the intended rule; today''s walk dispatches on the literal names Query and Mutation, and a renamed root''s fields are a known demanded-but-unregistered population the shadow agreement pins. The producer arm covers the payload types whose producers capture can see (@service and @externalField references that decoded to a class, and every DML @mutation payload); a DELETE payload''s data field is thereby demanded even though today''s walk loses its verdict on every path but the ID-element repayment, which is the other pinned population. The underscore masks transcribe the walk''s short-circuit: an underscore-prefixed type never classifies, whatever it carries, while a root binding is checked before that short-circuit and stays unmasked. Each rule''s witnesses live one join away in the arm''s base relation; this view carries the rule key only, so no arm''s witness columns go nullable on the others.';
+COMMENT ON COLUMN intent_field_demand_rule.graph_name IS 'the owning graph''s partition, carried through from every arm''s base relation';
+COMMENT ON COLUMN intent_field_demand_rule.type_name IS 'the parent type whose fields the rule demands verdicts for';
+COMMENT ON COLUMN intent_field_demand_rule.rule IS 'why the fields are demanded; a closed vocabulary (ROOT_OPERATION, TABLE_TYPE, ERROR_TYPE, PRODUCER_PAYLOAD) the reading side decodes into a typed value';
+
+CREATE VIEW intent_field_exemption_rule (graph_name, type_name, reason) AS
+SELECT t.graph_name, t.type_name, 'INTERFACE_TYPE'
+  FROM graphql_type t WHERE t.kind = 'INTERFACE'
+UNION
+SELECT t.graph_name, t.type_name, 'INPUT_TYPE'
+  FROM graphql_type t WHERE t.kind = 'INPUT_OBJECT'
+UNION
+SELECT t.graph_name, t.type_name, 'UNDERSCORE_TYPE'
+  FROM graphql_type t
+ WHERE t.kind = 'OBJECT' AND t.type_name LIKE '\_%' ESCAPE '\'
+UNION
+SELECT machinery.graph_name, machinery.type_name, 'CONNECTION_MACHINERY'
+  FROM (SELECT ef.graph_name, ef.type_name
+          FROM graphql_field ef
+          JOIN graphql_type et ON et.graph_name = ef.graph_name
+           AND et.type_name = ef.named_type AND et.kind = 'OBJECT'
+          JOIN graphql_field nf ON nf.graph_name = ef.graph_name
+           AND nf.type_name = ef.named_type AND nf.field_name = 'node'
+         WHERE ef.field_name = 'edges'
+           AND EXISTS (SELECT 1 FROM graphql_field cf
+                        WHERE cf.graph_name = ef.graph_name
+                          AND cf.named_type = ef.type_name)
+        UNION
+        SELECT ef.graph_name, ef.named_type
+          FROM graphql_field ef
+          JOIN graphql_type et ON et.graph_name = ef.graph_name
+           AND et.type_name = ef.named_type AND et.kind = 'OBJECT'
+          JOIN graphql_field nf ON nf.graph_name = ef.graph_name
+           AND nf.type_name = ef.named_type AND nf.field_name = 'node'
+         WHERE ef.field_name = 'edges'
+           AND EXISTS (SELECT 1 FROM graphql_field cf
+                        WHERE cf.graph_name = ef.graph_name
+                          AND cf.named_type = ef.type_name)
+        UNION
+        SELECT t.graph_name, t.type_name
+          FROM graphql_type t
+         WHERE t.type_name = 'PageInfo' AND t.kind = 'OBJECT'
+           AND (EXISTS (SELECT 1 FROM graphitron_connection c
+                         WHERE c.graph_name = t.graph_name)
+                OR EXISTS (SELECT 1 FROM graphql_field ef2
+                             JOIN graphql_field nf2 ON nf2.graph_name = ef2.graph_name
+                              AND nf2.type_name = ef2.named_type AND nf2.field_name = 'node'
+                            WHERE ef2.graph_name = t.graph_name
+                              AND ef2.field_name = 'edges'))) machinery
+UNION
+SELECT t.graph_name, t.type_name, 'NESTING_TARGET'
+  FROM graphql_type t
+ WHERE t.kind = 'OBJECT'
+   AND t.type_name NOT LIKE '\_%' ESCAPE '\'
+   AND NOT EXISTS (SELECT 1 FROM graphql_root_operation r
+                    WHERE r.graph_name = t.graph_name AND r.type_name = t.type_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_table gt
+                    WHERE gt.graph_name = t.graph_name AND gt.type_name = t.type_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_error ge
+                    WHERE ge.graph_name = t.graph_name AND ge.type_name = t.type_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_service s
+                    JOIN graphql_field f ON f.graph_name = s.graph_name
+                     AND f.type_name = s.type_name AND f.field_name = s.field_name
+                    WHERE s.graph_name = t.graph_name AND f.named_type = t.type_name
+                      AND s.class_name IS NOT NULL AND s.method IS NOT NULL)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_external_field e
+                    JOIN graphql_field f ON f.graph_name = e.graph_name
+                     AND f.type_name = e.type_name AND f.field_name = e.field_name
+                    WHERE e.graph_name = t.graph_name AND f.named_type = t.type_name
+                      AND e.class_name IS NOT NULL)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_mutation m
+                    JOIN graphql_field f ON f.graph_name = m.graph_name
+                     AND f.type_name = m.type_name AND f.field_name = m.field_name
+                    WHERE m.graph_name = t.graph_name AND f.named_type = t.type_name);
+COMMENT ON VIEW intent_field_exemption_rule IS 'The types whose fields are intentionally not demanded, a reason per arm, type-keyed like the demand rules. Arms are unmasked against each other and against demand, so overlapping readings survive as rows (a structural connection type is also a directiveless object, and both rows are true); one-reason-per-coordinate is the resolved view''s job, per the same masked-reading argument the column-match classifier records. The interface arm is the census''s largest population (no interface''s fields ever classify); the input arm makes the trace-only input coordinates explicit rows; the underscore arm transcribes the walk''s name short-circuit at the field-bearing object kind (interfaces and inputs are already covered by their kind arms); the machinery arm is the structural connection recognition (an object with an edges field whose object element has a node field, reached by some carrier field, plus that shape''s edge type, plus the SDL-declared PageInfo when any promotion would fire), whose fields the connection emitter owns; the nesting-target arm is the walk''s own absence-shaped rule (a plain object with no classifying directive, no root binding and no store-visible producer resolves through its embedding edge, or is an orphan whose rejection surfaces at the referencing field), stated by its own predicate rather than as an anti-join of the demand view, so the two relations state their rules independently and the resolved view owns their meet. Types bound only through the reflection fixed point (accessor chains, record-composite carriers) are deliberately in neither this view nor the demand view; that population is the shadow residue whose store-side closure lands with the binding-walk classifier migration.';
+COMMENT ON COLUMN intent_field_exemption_rule.graph_name IS 'the owning graph''s partition, carried through from every arm''s base relation';
+COMMENT ON COLUMN intent_field_exemption_rule.type_name IS 'the parent type whose fields the rule exempts';
+COMMENT ON COLUMN intent_field_exemption_rule.reason IS 'why the fields are exempt; a closed vocabulary (INTERFACE_TYPE, INPUT_TYPE, UNDERSCORE_TYPE, CONNECTION_MACHINERY, NESTING_TARGET). Named reason, not classifier: classifier is reserved family-wide for classification kinds';
+
+CREATE VIEW intent_type_demand (graph_name, type_name, rule) AS
+SELECT r.graph_name, r.type_name, 'ROOT_OPERATION'
+  FROM graphql_root_operation r
+  JOIN graphql_type t ON t.graph_name = r.graph_name AND t.type_name = r.type_name
+   AND t.kind = 'OBJECT'
+UNION
+SELECT gt.graph_name, gt.type_name, 'TABLE_TYPE'
+  FROM graphitron_table gt
+  JOIN graphql_type t ON t.graph_name = gt.graph_name AND t.type_name = gt.type_name
+   AND t.kind = 'OBJECT'
+ WHERE gt.type_name NOT LIKE '\_%' ESCAPE '\'
+UNION
+SELECT ge.graph_name, ge.type_name, 'ERROR_TYPE'
+  FROM graphitron_error ge
+  JOIN graphql_type t ON t.graph_name = ge.graph_name AND t.type_name = ge.type_name
+   AND t.kind = 'OBJECT'
+ WHERE ge.type_name NOT LIKE '\_%' ESCAPE '\'
+UNION
+SELECT t.graph_name, t.type_name, 'INTERFACE_TYPE'
+  FROM graphql_type t
+ WHERE t.kind = 'INTERFACE' AND t.type_name NOT LIKE '\_%' ESCAPE '\'
+UNION
+SELECT t.graph_name, t.type_name, 'UNION_TYPE'
+  FROM graphql_type t
+ WHERE t.kind = 'UNION' AND t.type_name NOT LIKE '\_%' ESCAPE '\'
+UNION
+SELECT m.graph_name, m.type_name, 'CONNECTION_MACHINERY'
+  FROM intent_field_exemption_rule m
+ WHERE m.reason = 'CONNECTION_MACHINERY'
+UNION
+SELECT d.graph_name, d.type_name, 'PRODUCER_PAYLOAD'
+  FROM intent_field_demand_rule d
+ WHERE d.rule = 'PRODUCER_PAYLOAD';
+COMMENT ON VIEW intent_type_demand IS 'The types that require a type-grain classification verdict. Directly type-grain (no projection involved): the root arm states the intended binding-keyed rule (today''s walk mints RootType for the three literal names, so a renamed root type is a pinned demanded-but-unregistered population, the same hole as its fields); every reachable interface and union classifies at its own visit, so those arms are kind-wide less the underscore short-circuit; connection machinery types are registered by the promotion that recognizes them, so the machinery reading appears here as demand while the same types'' fields are exempt, and the arm reuses the exemption view''s recognition rather than restating it; producer payloads take a carrier or result verdict at their producing edge, reused from the field-rule arm the same way. Directiveless objects with no producer are deliberately absent from both this view and the type exemption: whether such a type ends registered (a nesting target some edge embeds) or absent (an orphan) is decided by the embedding walk and the reflection fixed point, which is the type grain''s shadow residue until those arms migrate. Leaf kinds (scalar, enum, input) are the exemption view''s named deferral rather than absent rows.';
+COMMENT ON COLUMN intent_type_demand.graph_name IS 'the owning graph''s partition, carried through from every arm''s base relation';
+COMMENT ON COLUMN intent_type_demand.type_name IS 'the type the rule demands a verdict for';
+COMMENT ON COLUMN intent_type_demand.rule IS 'why the type is demanded; a closed vocabulary (ROOT_OPERATION, TABLE_TYPE, ERROR_TYPE, INTERFACE_TYPE, UNION_TYPE, CONNECTION_MACHINERY, PRODUCER_PAYLOAD)';
+
+CREATE VIEW intent_type_exemption (graph_name, type_name, reason) AS
+SELECT t.graph_name, t.type_name, 'UNDERSCORE_TYPE'
+  FROM graphql_type t
+ WHERE t.type_name LIKE '\_%' ESCAPE '\'
+UNION
+SELECT t.graph_name, t.type_name, 'LEAF_KIND_DEFERRED'
+  FROM graphql_type t
+ WHERE t.kind IN ('SCALAR', 'ENUM', 'INPUT_OBJECT');
+COMMENT ON VIEW intent_type_exemption IS 'The types whose type-grain verdict is intentionally not demanded yet. The underscore arm transcribes the walk''s name short-circuit at every kind (a federation-injected _Service or _Entity, and any author-declared underscore type, never classifies). The leaf-kind deferral arm is a bound carried as rows rather than a test-side filter: reachable scalars, enums and input objects do receive verdicts today, but their demand rules belong to those classifiers'' own migration slices, so this arm retires arm-by-arm as they land and the shadow agreement reads the bound as data. Arms are unmasked; the resolved view owns precedence.';
+COMMENT ON COLUMN intent_type_exemption.graph_name IS 'the owning graph''s partition, carried from graphql_type';
+COMMENT ON COLUMN intent_type_exemption.type_name IS 'the exempted type';
+COMMENT ON COLUMN intent_type_exemption.reason IS 'why the type''s verdict is not demanded; a closed vocabulary (UNDERSCORE_TYPE, LEAF_KIND_DEFERRED)';
+
+CREATE VIEW intent_resolved_field_demand (graph_name, type_name, field_name, verdict, rule) AS
+SELECT f.graph_name, f.type_name, f.field_name,
+       CASE WHEN dm.pr IS NOT NULL THEN 'DEMANDED' ELSE 'EXEMPT' END,
+       CASE WHEN dm.pr IS NOT NULL THEN
+              CASE dm.pr WHEN 1 THEN 'ROOT_OPERATION' WHEN 2 THEN 'TABLE_TYPE'
+                         WHEN 3 THEN 'ERROR_TYPE' ELSE 'PRODUCER_PAYLOAD' END
+            ELSE
+              CASE ex.pr WHEN 1 THEN 'INTERFACE_TYPE' WHEN 2 THEN 'INPUT_TYPE'
+                         WHEN 3 THEN 'UNDERSCORE_TYPE' WHEN 4 THEN 'CONNECTION_MACHINERY'
+                         ELSE 'NESTING_TARGET' END
+       END
+  FROM graphql_field f
+  JOIN intent_type_domain dom
+    ON dom.graph_name = f.graph_name AND dom.type_name = f.type_name
+  JOIN graphql_type t
+    ON t.graph_name = f.graph_name AND t.type_name = f.type_name
+   AND t.kind IN ('OBJECT', 'INTERFACE', 'INPUT_OBJECT')
+  LEFT JOIN (SELECT graph_name, type_name,
+                    MIN(CASE rule WHEN 'ROOT_OPERATION' THEN 1 WHEN 'TABLE_TYPE' THEN 2
+                                  WHEN 'ERROR_TYPE' THEN 3 ELSE 4 END) AS pr
+               FROM intent_field_demand_rule GROUP BY graph_name, type_name) dm
+    ON dm.graph_name = f.graph_name AND dm.type_name = f.type_name
+  LEFT JOIN (SELECT graph_name, type_name,
+                    MIN(CASE reason WHEN 'INTERFACE_TYPE' THEN 1 WHEN 'INPUT_TYPE' THEN 2
+                                    WHEN 'UNDERSCORE_TYPE' THEN 3
+                                    WHEN 'CONNECTION_MACHINERY' THEN 4 ELSE 5 END) AS pr
+               FROM intent_field_exemption_rule GROUP BY graph_name, type_name) ex
+    ON ex.graph_name = f.graph_name AND ex.type_name = f.type_name
+ WHERE dm.pr IS NOT NULL OR ex.pr IS NOT NULL;
+COMMENT ON VIEW intent_resolved_field_demand IS 'The field-grain demand reduction: one verdict per accounted coordinate of the classification domain, over every field-bearing parent kind (input coordinates resolve EXEMPT here rather than falling outside the domain). Demand beats exemption where both relations carry the parent (a @table type shaped like a connection classifies its fields, so the demand reading wins, matching the walk); within each side the rule is the first arm in the vocabularies'' declared order, so the more specific reading names the row (machinery beats the directiveless catch-all). A domain coordinate with neither reading has no row: by construction the nesting-target arm complements the demand arms over plain objects, so absence marks the shadow residue (reflection-bound parents), and the agreement''s coverage gate counts resolved rows against domain coordinates to keep that construction honest. The future demand gate is this view''s DEMANDED rows anti-joined against the resolved claim view; nothing gates on it in shadow.';
+COMMENT ON COLUMN intent_resolved_field_demand.graph_name IS 'the owning graph''s partition, carried from the domain';
+COMMENT ON COLUMN intent_resolved_field_demand.type_name IS 'the coordinate''s owning type';
+COMMENT ON COLUMN intent_resolved_field_demand.field_name IS 'the coordinate''s field name';
+COMMENT ON COLUMN intent_resolved_field_demand.verdict IS 'DEMANDED when any demand rule covers the parent, else EXEMPT; a closed two-value vocabulary';
+COMMENT ON COLUMN intent_resolved_field_demand.rule IS 'the winning rule or reason literal, drawn from the rule views'' closed vocabularies in their declared precedence order';
+
+CREATE VIEW intent_resolved_type_demand (graph_name, type_name, verdict, rule) AS
+SELECT dom.graph_name, dom.type_name,
+       CASE WHEN dm.pr IS NOT NULL THEN 'DEMANDED' ELSE 'EXEMPT' END,
+       CASE WHEN dm.pr IS NOT NULL THEN
+              CASE dm.pr WHEN 1 THEN 'ROOT_OPERATION' WHEN 2 THEN 'TABLE_TYPE'
+                         WHEN 3 THEN 'ERROR_TYPE' WHEN 4 THEN 'INTERFACE_TYPE'
+                         WHEN 5 THEN 'UNION_TYPE' WHEN 6 THEN 'CONNECTION_MACHINERY'
+                         ELSE 'PRODUCER_PAYLOAD' END
+            ELSE
+              CASE ex.pr WHEN 1 THEN 'UNDERSCORE_TYPE' ELSE 'LEAF_KIND_DEFERRED' END
+       END
+  FROM intent_type_domain dom
+  LEFT JOIN (SELECT graph_name, type_name,
+                    MIN(CASE rule WHEN 'ROOT_OPERATION' THEN 1 WHEN 'TABLE_TYPE' THEN 2
+                                  WHEN 'ERROR_TYPE' THEN 3 WHEN 'INTERFACE_TYPE' THEN 4
+                                  WHEN 'UNION_TYPE' THEN 5 WHEN 'CONNECTION_MACHINERY' THEN 6
+                                  ELSE 7 END) AS pr
+               FROM intent_type_demand GROUP BY graph_name, type_name) dm
+    ON dm.graph_name = dom.graph_name AND dm.type_name = dom.type_name
+  LEFT JOIN (SELECT graph_name, type_name,
+                    MIN(CASE reason WHEN 'UNDERSCORE_TYPE' THEN 1 ELSE 2 END) AS pr
+               FROM intent_type_exemption GROUP BY graph_name, type_name) ex
+    ON ex.graph_name = dom.graph_name AND ex.type_name = dom.type_name
+ WHERE dm.pr IS NOT NULL OR ex.pr IS NOT NULL;
+COMMENT ON VIEW intent_resolved_type_demand IS 'The type-grain demand reduction over the classification domain, mirroring the field-grain reduction: demand beats exemption, first declared arm wins within a side, and a domain member with neither reading has no row, which marks the type grain''s shadow residue (directiveless objects whose registration is decided by the embedding walk and the reflection fixed point). The shadow agreement splits that absent population into its named parts rather than treating it as one structural bucket.';
+COMMENT ON COLUMN intent_resolved_type_demand.graph_name IS 'the owning graph''s partition, carried from the domain';
+COMMENT ON COLUMN intent_resolved_type_demand.type_name IS 'the domain member the verdict is about';
+COMMENT ON COLUMN intent_resolved_type_demand.verdict IS 'DEMANDED when any type demand rule covers the member, else EXEMPT; a closed two-value vocabulary';
+COMMENT ON COLUMN intent_resolved_type_demand.rule IS 'the winning rule or reason literal, drawn from the rule views'' closed vocabularies in their declared precedence order';
