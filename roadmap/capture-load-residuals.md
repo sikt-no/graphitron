@@ -17,10 +17,11 @@ its contract did not demand, recorded in its body so a later pass could take or 
 spec file deletes on Done, so this item preserves them. None is a defect; each is a sharpening a
 consumer migration or a capture pass can pick up, and they need not ship together.
 
-A fourth residual, the retained-partition scan skip, left this ledger for R620
-(`retained-partition-scan-skip`) when it turned out to be the one entry whose framing the code did
-not support: the skip is not reachable from the scan's caller, and buying it means giving the store
-its first production reader. The four below are unchanged and still consumer-gated.
+One of the five, the retained-partition scan skip, left this ledger and is recorded under R620
+(`dev-loop-duplicate-classpath-scan`) as a route not taken: it was the one entry whose framing the
+code did not support, the skip being unreachable from the scan's caller and gated on the store
+gaining its first production reader. R620 carries the reachable saving in that area instead, the dev
+loop's duplicate scan. The four below are unchanged and still consumer-gated.
 
 - **A declined decode leaves no semantic-stratum record.** A decode arm that hits a missing
   required argument returns without writing either its decoded row or a
