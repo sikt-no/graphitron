@@ -7,7 +7,7 @@ priority: 4
 theme: classification-model
 depends-on: []
 created: 2026-08-08
-last-updated: 2026-08-08
+last-updated: 2026-08-10
 ---
 
 # Capture-load residuals from the fact-store delivery
@@ -16,6 +16,11 @@ The fact-store item (R595, shipped; see `roadmap/changelog.md`) closed with a se
 its contract did not demand, recorded in its body so a later pass could take or leave them. The
 spec file deletes on Done, so this item preserves them. None is a defect; each is a sharpening a
 consumer migration or a capture pass can pick up, and they need not ship together.
+
+A fourth residual, the retained-partition scan skip, left this ledger for R620
+(`retained-partition-scan-skip`) when it turned out to be the one entry whose framing the code did
+not support: the skip is not reachable from the scan's caller, and buying it means giving the store
+its first production reader. The four below are unchanged and still consumer-gated.
 
 - **A declined decode leaves no semantic-stratum record.** A decode arm that hits a missing
   required argument returns without writing either its decoded row or a
@@ -28,11 +33,6 @@ consumer migration or a capture pass can pick up, and they need not ship togethe
   `JooqCatalog` and re-walks the catalog and the classpath (`GraphQLRewriteGenerator`) while
   `buildOutput` reuses the `catalogFacts` it already has. Shadow-period cost only, cheap to thread
   through.
-- **The classpath scan still runs for retained partitions.** The warm store retains an unchanged
-  jar's rows, but the reference list is built before capture and the LSP path needs it whole, so
-  the jar is still re-read every run. Skipping the scan for a retained partition is a change to
-  the scan's caller, not to the store, and is where the remaining two thirds of the slice-4 cost
-  sits.
 - **The nested-class filter is disclosed, not resolved.** `jvm_class` skips any simple name
   containing `$`, stated in its comment. A nested class named in `@record` resolves through the
   codegen loader and would be reported unknown by a resolution detection over this relation, the
