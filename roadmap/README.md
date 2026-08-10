@@ -17,9 +17,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R617` | Lookup misses drop rows instead of holding their position | Ready | 2026-08-10 <sub>created 2026-08-09</sub> | [plan](lookup-positional-contract-unimplemented.md) |
 | `R621` | Legacy v9: split GeneratedExceptionToErrorMappingProvider under the 64KiB method limit | Spec | 2026-08-10 | [plan](legacy-exception-provider-method-size.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
-| `R618` | Routine mutation: admit a payload carrier return with a typed errors channel | Ready | 2026-08-10 | [plan](routine-mutation-payload-carrier-return.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-10 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R612` | The schema scan and its freshness replay share one typed recipe | Ready | 2026-08-10 <sub>created 2026-08-08</sub> | [plan](maven-config-fact-family.md) |
+| `R618` | Routine mutation: admit a payload carrier return with a typed errors channel | In Progress | 2026-08-10 | [plan](routine-mutation-payload-carrier-return.md) |
 | `R589` | Classification is a relation; validation adds facts | In Progress | 2026-08-10 <sub>created 2026-08-04</sub> | [plan](validation-adds-facts.md) |
 | `R569` | Aggregated diagnostics commands for the MCP server | Spec | 2026-08-10 <sub>created 2026-08-03</sub> | [plan](mcp-aggregated-diagnostics.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
@@ -280,7 +280,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### routine
 
-- `R618` [**Routine mutation: admit a payload carrier return with a typed errors channel**](routine-mutation-payload-carrier-return.md) — Ready, feature
+- `R618` [**Routine mutation: admit a payload carrier return with a typed errors channel**](routine-mutation-payload-carrier-return.md) — In Progress, feature
 - `R454` [**Routine write result shapes: procedures, scalar/void routines, single-node Mutation @routine**](routine-write-result-shapes.md) — Backlog, feature
 - `R622` [**Routine carrier: admit the explicit data-field reference path, single- and multi-hop**](routine-carrier-explicit-data-field-path.md) — Backlog, feature, blocked by [routine-mutation-payload-carrier-return](routine-mutation-payload-carrier-return.md), [validation-adds-facts](validation-adds-facts.md)
 - `R448` [**Routine chains: ordering, binding, and corpus residue**](routine-chain-residue.md) — Backlog, improvement
