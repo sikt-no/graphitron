@@ -1021,69 +1021,115 @@ the same fixed point. Two predicates are purely structural and transcribe direct
 effective roots (name-convention defaults are rows with null positions), which the DDL wrote
 down in advance as this derivation's seed. `NodeDeclaration.isNodeType`'s inference conjunct
 reads jOOQ node-metadata constants that capture does not hold, so the seed transcription is
-`@node` union (`@table` and `implements Node`), recorded as an over-seed fidelity note whose
-only exposure is a metadata-less such type that no field reaches.
+`@node` union (`@table` and `implements Node`), an over-seed treated as a named residue with a
+removal criterion below; its only exposure is a metadata-less such type that no field reaches.
 
-**The reachability relation is materialized; everything above it stays views.** This item's own
-H2 facts paragraph rules out the recursive-CTE `UNION` form (non-termination on cyclic graphs,
-and type graphs are routinely cyclic) and the path-guarded form enumerates simple paths, which
-explodes on dense schemas; the semi-naive loop is monotone and bounded by the type count, and it
-is exactly the `INSERT..SELECT` stratum shape the derivation-vehicle decision names. A
-derive-package writer (`ReachabilityRows`) clears the run's own graph partition, inserts the
-seeds (root operations, `@node` rows, the inference approximation above, `@key` carriers, and
-survivor-directive argument types with the generator-only exclusion bound from
-`DeclaredDirectives.names()` as a query parameter, so the live Java vocabulary is not duplicated
-into DDL literals), then iterates one frontier statement (field targets, argument types, union
-members, implements in both directions with the reverse edge narrowed to object implementors,
-input-object field types) to a fixed point. `intent_reachable_type` records every reached named
-type of every kind; the cadence doctrine's clearing rule is the writer's, and the graph-keyed
-column keeps `StoreRefresh.graphScoped` covering persisted staleness with no edit. In shadow the
-writer is invoked by the agreement tests only; no production path runs it.
+**The domain relation is materialized, written at capture cadence in production; everything
+above it stays views.** This item's own H2 facts paragraph rules out the recursive-CTE `UNION`
+form (non-termination on cyclic graphs, and type graphs are routinely cyclic) and the
+path-guarded form enumerates simple paths, which explodes on dense schemas; the semi-naive loop
+is monotone and bounded by the type count, and it is exactly the `INSERT..SELECT` stratum shape
+the derivation-vehicle decision names. A derive-package writer (`ReachabilityRows`) clears the
+run's own graph partition, inserts the seeds (root operations, `@node` rows, the inference
+approximation above, `@key` carriers, and survivor-directive argument types with the
+generator-only exclusion bound from `DeclaredDirectives.names()` as a query parameter, so the
+live Java vocabulary is not duplicated into DDL literals; the writer's javadoc `{@link}`s the
+vocabulary so the reference gate holds the linkage, and the table comment states that the seed
+set is parameterized, since a relation on the agent-facing SQL surface whose content depends on
+a Java constant is not self-describing from DDL alone), then iterates one frontier statement
+(field targets, argument types, union members, implements in both directions with the reverse
+edge narrowed to object implementors, input-object field types) under a counted bound that
+throws past the graph's type count, so a non-monotone edit fails loudly instead of hanging a
+build. `intent_type_domain` records every reached named type of every kind, named for the
+assertion (the classification domain's type members) rather than the graph operation, so a
+reader does not join an intended-traversal surface as neutral schema reachability. The
+architect consult rejected the test-only-writer shape this record first held: a materialized
+relation no production path writes is cleared by `StoreRefresh.graphScoped` on every capture
+and never repopulated, leaving a declared relation whose zero rows are plausible, and it makes
+the partition-dimension gates pass vacuously (the failure mode `FactSchemaGateTest`'s own
+javadoc names). The writer therefore runs inside capture after the flush, at capture cadence
+per the lifecycle doctrine; nothing reads the rows in production, so output identity is
+untouched, the warm/cold census anchors the lifecycle with no new machinery, and the clear
+rule is real. `FactCaptureAgreementTest`'s `DERIVED` arm doc widens to say materialized
+capture-cadence derivations register there too, anchored like views, so the closed-four-arm
+doc stays true.
 
-**Demand is positive arms; exemptions carry the why; the reflection population is a named
-residue.** `intent_demanded_field` unions the store-visible demanding parents, a rule literal
-per arm: root-operation fields (keyed by `graphql_root_operation`, so the relation states the
-intended root rule and the renamed-root hole becomes a visible diff rather than a transcribed
-defect), `@table`-type fields, `@error`-type fields, and producer-payload fields (parents that
-are the return type of an `@service`, `@externalField` or DML `@mutation` field, the grounding
-capture can see). The DELETE carrier's data field is deliberately demanded, not exempted: the
-census records its verdict loss as a defect, and the acceptance text names it as what the future
-gate flip changes, so the demand relation carries the intended rule and the diff pins today's
-shortfall. `intent_field_exemption` unions the intended skips with a classifier per arm:
-interface-parent fields, input-object fields (the census's trace-only population, made explicit
-as rows), underscore-prefixed parents, connection machinery (the structural recognition above),
-and the directiveless nesting target as the masked catch-all (anti-joined against the demanding
-parents so a coordinate carries one why). Types bound only through the reflection fixed point
-(accessor-chain propagation, the two-level record-composite carrier) are in neither relation;
-they are the slice's transcription residue, their store-side closure lands with the structural
-classifier arms that migrate the binding walk, and the agreement computes the population from
-the walked model and pins that every disagreement falls inside it. `intent_demanded_type`
-states the type-grain rule for the composite kinds only (object arms as above plus every
-reachable interface and union), which is exactly the population `SchemaReachability.reachableTypeNames`
-records and the tests' reachable-implies-classified invariant quantifies over; leaf-kind demand
-(scalar, enum, input verdicts) lands with those classifiers' own migration. Support types need
-no exemption arm at either grain: they are reachable only through generator-only directive
-argument edges, which are not walk edges, so the retained-published case classifies as an
-ordinary reachable leaf and the rest never enter the domain.
+**Rules are stated at their authored grain, arms stay unmasked, and a reduction per grain owns
+the one-why answer.** Every demand and exemption rule this slice transcribes is a property of
+the parent type, so the rules land type-keyed and the field grain is a mechanical join, made
+legible as such rather than materialized into rule literals (the consult's grain finding; a
+future genuinely field-grain rule unions into the reduction marked as what it is).
+`intent_field_demand_rule` holds the demanding parents, a rule literal per arm: root-operation
+types (keyed by `graphql_root_operation`, so the relation states the intended root rule and the
+renamed-root hole becomes a visible diff rather than a transcribed defect), `@table` types,
+`@error` types, and producer payloads (return types of an `@service`, `@externalField` or DML
+`@mutation` field, the grounding capture can see), every arm narrowed to OBJECT kind. The
+DELETE carrier's data field is deliberately demanded through the producer-payload arm, not
+exempted: the census records its verdict loss as a defect, and the acceptance text names it as
+what the future gate flip changes. `intent_field_exemption_rule` holds the intended skips with
+a `reason` per arm (`classifier` stays reserved family-wide for classification kinds):
+interface parents, input-object parents (the census's trace-only population, made explicit as
+rows), underscore-prefixed parents, connection machinery (the structural recognition above),
+and the directiveless nesting target stated by its own absence-shaped predicate (no classifying
+directive, no root binding, no store-visible producer), which is the walk's own rule
+transcribed, not an anti-join against the demand view; arms overlap where two readings are
+true (a connection type is also directiveless) and both rows survive, per slice 3's
+masked-reading argument. `intent_resolved_field_demand` is the field-grain reduction over the
+domain, the rules and `graphql_field`: demand beats exemption, machinery beats the catch-all,
+one row per reachable output coordinate carrying its winning rule or reason; the future gate
+flip reads this view. The type-verdict grain mirrors the shape: `intent_type_demand` (arms as
+above plus an explicit root-operation arm, since `RootType` is a registered verdict today, plus
+every reachable interface and union), `intent_type_exemption` (underscore prefixes, and a
+named leaf-kind deferral arm for scalar, enum and input verdicts whose comment states it
+retires when those classifiers migrate, so the bound is a row-level fact rather than a
+test-side filter), and `intent_resolved_type_demand`. Support types need no exemption arm at
+either grain, and the reason is load-bearing rather than observational: they are reachable
+only through generator-only directive argument edges, which are not walk edges, so the
+retained-published case classifies as an ordinary reachable leaf and the rest never enter the
+domain; the coverage gate below is the enforcer, because a drifted seed parameter would make
+support types reachable and fail it loudly.
 
-**Agreement.** The three relations and the exemption view register in
-`FactCaptureAgreementTest`'s `DERIVED` arm per its own doc (registration in the driver, anchor
-with the reader's test); the anchor is a new derive-package corpus sweep in the slice-3 shape
-(one store, each `ClassifiedCorpus` example captured as its own graph, walked through the legacy
-classifier). Per graph it asserts: the materialized reachable set restricted to composite kinds
-equals `SchemaReachability.reachableTypeNames`; demanded field coordinates equal
-`ClaimDomain.fieldCoordinates` outside the reflection residue, with the two containments pinned
-directionally (registered-but-undemanded rows only under reflection-bound parents,
-demanded-but-unregistered rows only at DELETE-carrier data fields and renamed-root fields); every
-reachable output coordinate is demanded, exempted or residue (the coverage gate, so no population
-is silently unaccounted); and the composite type-grain demand equals `ClaimDomain.typeNames`'s
-composite subset outside the directiveless-object residue. Targeted fixtures pin the renamed
-subscription root (demand strictly exceeds the registry there, the hole made visible), a failing
-and a succeeding DELETE carrier (the data field demanded in both, registered only where the
-IdElement repayment fires), the interface and machinery exemption rows, and the closed rule and
-classifier vocabularies. `ClaimDomain`'s javadoc updates to name the diff that now exists; the
-gate itself dissolves only when the follow-up item flips the detection to read demand, so the
-scaffold stays. No production wiring changes; slice 4 gates nothing.
+**The residues are named, store-derivable where pinned, and carry removal criteria.** Types
+bound only through the reflection fixed point (accessor-chain propagation, the two-level
+record-composite carrier) are in neither rule relation; they are the slice's transcription
+residue. The population gets the shape `ClaimDomain` already has: a named value in the derive
+package built from the walked model (class-backed `ResultType` parents), javadoc stating it is
+a scaffold whose removal criterion is the binding-walk classifiers' migration to captured
+facts, so the scaffold is discoverable from the production package rather than one test's
+helper. The two demanded-but-unregistered populations are derived from the store, not from
+Java-side coordinate lists (slice 3's residue discipline): DELETE-carrier data fields from
+`graphitron_mutation`, non-conventional root bindings from `graphql_root_operation`, so a
+third instance of the same hole class fails the diff instead of hiding. The node-inference
+over-seed is likewise a named residue, not a fidelity note: its removal criterion is capturing
+the jOOQ node-metadata constants into the classpath family (the gap also blocks the
+Relationships section's commitment that `NodeDeclaration` becomes a derivation), and the sweep
+asserts the over-seeded population is empty over the corpus so the exposure claim has an
+enforcer. The type-grain residue splits into the same named populations rather than one
+directiveless-object bucket, so a renamed root type and the over-seed excess cannot hide
+inside a broader structural property.
+
+**Agreement.** The seven relations register in `FactCaptureAgreementTest`'s `DERIVED` arm per
+its own (widened) doc: registration in the driver, anchor with the reader's test, which is a
+new derive-package corpus sweep in the slice-3 shape (one store, each `ClassifiedCorpus`
+example captured as its own graph, walked through the legacy classifier). Per graph it
+asserts: the materialized domain restricted to composite kinds equals
+`SchemaReachability.reachableTypeNames`; resolved field demand equals
+`ClaimDomain.fieldCoordinates` outside the named residues, with the two disagreement
+directions pinned against store-derived populations (registered-but-undemanded rows only under
+reflection-bound parents, demanded-but-unregistered rows only at DELETE-carrier data fields
+and non-conventional root bindings) and each pinned population asserted non-empty on the
+fixtures that create it, so the pins cannot go vacuous; every reachable output coordinate is
+demanded, exempted or residue (the coverage gate, so no population is silently unaccounted);
+and resolved type demand agrees with `ClaimDomain.typeNames` under the same discipline, the
+leaf-kind deferral rows carrying the bound as data. Targeted fixtures pin the renamed
+subscription root (demand strictly exceeds the registry there, the hole made visible), a
+failing and a succeeding DELETE carrier (the data field demanded in both, registered only
+where the IdElement repayment fires), the interface and machinery exemption rows with an
+overlap surviving unmasked in the rule relation, and the closed rule and reason vocabularies.
+`ClaimDomain`'s javadoc updates to name the diff that now exists; the gate itself dissolves
+only when the follow-up item flips the detection to read demand, so the scaffold stays. The
+only production wiring is the write-only capture-cadence writer above; nothing reads the rows
+in production, the full-build corpus signal stays unchanged, and slice 4 gates nothing.
 
 ## Retired vocabulary (expected; finalise at the Done gate)
 
