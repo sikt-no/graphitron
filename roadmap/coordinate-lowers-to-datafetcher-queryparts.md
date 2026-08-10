@@ -7,7 +7,7 @@ priority: 3
 theme: classification-model
 depends-on: []
 created: 2026-06-18
-last-updated: 2026-08-09
+last-updated: 2026-08-10
 ---
 
 # The Graphitron data model
@@ -190,7 +190,7 @@ The catalog, each row a fact with its own deep-dive below:
 | `discrimination` | 0..1 | `@discriminate` / `@discriminator` / `@error` | concrete-type recovery, over the **row** or **exception** signal domain |
 | `errorGuard` | operation sub-fact | `@error` | on a throwing operation: a transport channel and an interned handler partition |
 | `capabilityTag` | 0..N (reserved) | `@capability` / `@exemplifies` | tags the coordinate with a stable slug from the capability catalog; knowledge-surface only, not yet shipped |
-| `sourceLocation` | 0..1, joined not stored | joined against `SourceWalker.Index` at request time | the `locate` value; a fact *about* the coordinate, keyed by the coordinate, never itself a key |
+| `sourceLocation` | 0..1, split by namespace | SDL positions stored as capture columns; Java/Javadoc positions joined against `SourceWalker.Index` at request time | the `locate` value; a fact *about* the coordinate, never itself a key (see *Location*) |
 | `authoredClaim` | 0..N, keyed `(coordinate, classifier)` | one view arm per claiming `graphitron_` relation | the classification axis's authored claims; the reduced view is the single-classification worldview planning reads (R589) |
 | `inferredClaim` | 0..N, keyed `(coordinate, classifier)` | one derivation view per structural classifier | the masked structural reading, payload the classifier's join witnesses; resolution unions authored with inferred at uncovered coordinates (R589) |
 
@@ -205,11 +205,14 @@ the `graphitron-model` module (R595) is this normalised model reified as SQL: th
 classpath, `store_` bookkeeping, `javac_` compile diagnostics per R603, with `graph_name` leading the
 SDL-family keys per R610) carry the base relations, and the derived stratum (the claim views, resolution,
 reachability, demand, the diagnostics relations) lands consumer by consumer per R589's strangler frame.
+The stage vocabulary over that home is three verbs, each stage only ever adding rows: **classification
+gathers** (capture loads the base relations and the claim views read them), **validation derives** (a
+violated constraint becomes a located violation fact; the claims stay), and **planning joins** facts
+directly into command records, which are the parse targets.
 This document keeps the *why*: the justifications, the alternatives rejected, the key discipline, the
 back half. The *what* migrates into the DDL relation by relation, and where the two disagree the DDL
-wins; the base families above that the first DDL iteration defers (routines, resolution facts,
-effective values, the whole derived stratum) are marked in R595's leave-outs, so a reader should not
-expect a relation per deep-dive yet.
+wins; which relations exist at any given moment is the DDL header's record, not this document's, so a
+reader should not expect a relation per deep-dive yet.
 
 ## The natural keys
 
@@ -599,9 +602,9 @@ because it lets each node sit at its own granularity. Reading the current output
   values*, returning a jOOQ `Condition`, its body shape (`eq` / `in` / `row(...).eq` for composite) driven
   by the input surface, not by the field. One coordinate mints a method whose identity and body are a
   function of the inputs the field merely carries. No per-field model can express that; the method can.
-- **Type-granular (a fold).** `<Type>.$fields(sel, table, env)`: one method per table-bound type that
+- **Type-granular (a fold).** `<Type>.$project(grouped, table, env)`: one method per table-bound type that
   folds in its own scalar/inline fields, recurses through nested types in the same method, and opts in the
-  columns Split children need projected. Many coordinates, one method.
+  columns batched (table-sourced) children need projected. Many coordinates, one method.
 - **Anchor-granular.** `lookup<X>` / `load<X>` rows-methods: one per SELECT-launching coordinate.
 - **Dedup-by-class / boundary helpers.** `createBean` / `createRecord` / `scatterByIdx` / `<field>OrderBy`
   / `<field>InputRows`: emitted once per class, or per boundary they serve.
@@ -618,9 +621,9 @@ graph, but as **node-kind attributes**, not as the top-level structure:
 - **`graphql.schema.DataFetcher`** is the resolve-side node kind, and it is the field-granular one above:
   every coordinate emits exactly one, total. The "graphitron field" identity lives here, and only here.
 - **`org.jooq.QueryPart`** is *not* an emit target at codegen. The SQL projection is assembled at runtime
-  from the client's `DataFetchingFieldSelectionSet` inside `$fields`; the `QueryPart` is the per-request
+  from the client's `DataFetchingFieldSelectionSet` inside `$project`; the `QueryPart` is the per-request
   value those methods produce, not a thing we generate. The SQL-side node kinds are the **methods that
-  emit QueryParts** (`$fields`, the rows-methods, the condition methods), at the granularities above.
+  emit QueryParts** (`$project`, the rows-methods, the condition methods), at the granularities above.
 
 So the model is one graph; the resolve/SQL split and the two library types are how its nodes are *typed*,
 not two parallel emit targets. (Why the `QueryPart` is runtime-only, with the emitter evidence: Discovery
@@ -801,7 +804,7 @@ to-many child rows. With it, column-ref and table-ref differ *only* in `target.s
 differ *only* in direction; `resolvedTable` is the destination table B in every cell. A `List(Column)` child
 reference is not a cheap scalar variant: being to-many it needs the same machinery as a to-many table field
 (a `Child` source, an anchor, a rows-method, batched or aggregated), projecting one column instead of
-`$fields`. It is "a to-many table field minus the nested projection."
+`$project`. It is "a to-many table field minus the nested projection."
 
 `reference` is **authored or inferred**, and the inference is total with a typed failure. `@reference`
 supplies it explicitly. Absent that, it is inferred from the foreign keys between `source.table` and the
@@ -878,7 +881,7 @@ omits the table because this fact owns it). Consumers then read one fact instead
 
 ### The table expression
 
-`resolvedTable` is the table's **class**: its columns, its record shape, what `$fields` projects. How a table
+`resolvedTable` is the table's **class**: its columns, its record shape, what `$project` projects. How a table
 **node** enters the query is a separate fact, `tableExpr`, the node's materialization:
 
 > **`tableExpr(node) → arm`**, the materialization of a table node (the projected node, or any join target):
@@ -1592,7 +1595,7 @@ vocabulary as code, the `OperationMember` per-coordinate member multiset, with t
 map onto.
 
 Two things the crosswalk makes visible. First, `select` lands on **two** seams (the projected column list in
-`$fields`, and the FROM/launch in the Query unit), the back-half echo of `target` being read by two views in
+`$project`, and the FROM/launch in the Query unit), the back-half echo of `target` being read by two views in
 the front half (wrapper by the DataFetcher, shape by the `select` operation). Second, the additive
 dissolution is now end-to-end: a coordinate's operation set is a *union* of rows, each row is one seam, and
 "more facts trigger more operations" is "more seams composed into the one Query unit," never a new leaf
@@ -1692,10 +1695,15 @@ numbers were measured 2026-06-18/19 and drift with trunk; the class and member n
 citations (all re-verified live 2026-07-13). Since then the R549/R552/R563 programmes retired several of
 the walked emitters and carriers, so the threads and the baseline tables below are **lineage**, read with
 this mapping rather than re-anchored line by line: `TypeClassGenerator` and `collectRequiredProjection`
-became `render/ProjectionUnitRenderer` over `plan/ProjectionCommands`; `TypeConditionsGenerator` became
-`render/ConditionGlueRenderer`; `LookupValuesJoinEmitter` became the render values-join family
-(`LookupRows`); the main-source `methodgraph` package was deleted (the recompile graph is a typed
-projection over the plan; the test-side oracles survive); `ParentProjectionContainmentCheck` was deleted
+became `render/ProjectionUnitRenderer` over `plan/ProjectionCommands`, and the emitted projection method
+was renamed `$fields(sel, table, env)` to `$project(grouped, table, env)` in the same re-platforming;
+the per-arm `Inline*` projection emitters (`InlineColumnReferenceFieldEmitter`, `InlineTableFieldEmitter`,
+`InlineLookupTableFieldEmitter`) dissolved into `ProjectionUnitRenderer`'s command-driven arms;
+`TypeConditionsGenerator` became `render/ConditionGlueRenderer`, and `FkTargetConditionEmitter` became
+the model record `FkTargetConditionFilter` rendered via `ConditionCommands`; `LookupValuesJoinEmitter`
+became the render values-join family (`LookupRows`); the main-source `methodgraph` package was deleted
+(the recompile graph is a typed projection over the plan; the test-side oracles survive);
+`ParentProjectionContainmentCheck` was deleted
 with it; `SplitTableField` / `RecordTableField` merged to `BatchedTableField` (R432) and the
 `ColumnField` family to `ColumnBackedField` (R508); the `Operation` seal became the `OperationMember`
 member multiset (R563). The claims the threads ground stand; the pinned coordinates are of their date.
@@ -1839,7 +1847,7 @@ Target topology, uniform across root / child / service:
   - the **Query unit** (the SELECT launcher; today's rows-method, generalized), invoked *directly* (root)
     or *batched through a DataLoader plus scatter* (child); or
   - a **service-call unit** (the service-backed arm).
-- The **Query unit** composes across further seams into the **query-part units**: Projection (`$fields`),
+- The **Query unit** composes across further seams into the **query-part units**: Projection (`$project`),
   Join, Condition, OrderBy, and so on.
 
 **Seam-placement rule.** A seam belongs wherever a unit is (a) chosen by a runtime strategy/dispatch,
@@ -1863,41 +1871,45 @@ regime; the R2 rows plus the missing seams of thread K are the promotion worklis
 | Pair (node) | Node it mints | Granularity | Whole-method emitter today | Outbound edges to pairs | Naming regime |
 |---|---|---|---|---|---|
 | Fetcher | `<Type>Fetchers.<field>(env)` | field, 1:1, total | `FetcherEmitter`, `DataLoaderFetcherEmitter` (body via `TypeFetcherGenerator`) | Projection (root), Rows-method (child), Bean/Record, OrderBy | class R2, method R1 |
-| Projection | `<Type>.$fields(sel, table, env)` | type-bound fold | `TypeClassGenerator` | Projection (recursive; cyclic), Condition/Join | R2 |
-| Rows-method | `rows<X>` / `load<X>` | anchor (SELECT launcher) | `SplitRowsMethodEmitter`, `MultiTablePolymorphicEmitter` | Projection, Scatter, InputRows | R1 |
-| Scatter | `scatter*ByIdx` | dedup-by-class | `SplitRowsMethodEmitter` | leaf | R2 |
+| Projection | `<Type>.$project(grouped, table, env)` | type-bound fold | `ProjectionUnitRenderer` over `plan/ProjectionCommands` (command-driven; R549) | Projection (recursive; cyclic), Condition/Join | R1 (`GeneratedUnits`) |
+| Rows-method | `rows<X>` / `load<X>` | anchor (SELECT launcher) | `SplitRowsMethodEmitter`, `MultiTablePolymorphicEmitter`, `RootLauncherRenderer` (root/lookup) | Projection, Scatter, InputRows | R1 |
+| Scatter | `scatter*ByIdx` | dedup-by-class | `SplitRowsMethodEmitter`, `RootLauncherRenderer` (lookup scatter, R617) | leaf | R2 |
 | Condition | `<field>Condition` | one glue method per `(coordinate, table)` row | `ConditionGlueRenderer` (command-driven; landed 2026-07-29, R552) | Join | R1 (`GeneratedUnits`) |
 | Join | join-path helper (`MethodRef` target) | per join path | `JoinPathEmitter` | leaf | R1 |
-| InputRows | `<field>InputRows` | per lookup field | `LookupValuesJoinEmitter` | Join | R2 |
+| InputRows | `<field>InputRows` | per lookup field | `LookupRows` (render values-join family) | Join | R2 |
 | Bean/Record | `create<Bean>` / `create<Record>` / `decode<Record>` | dedup-by-class | `InputBeanInstantiationEmitter`, `JooqRecordInstantiationEmitter` | leaf | R2 |
 | OrderBy | `<field>OrderBy` | per orderable field | `OrderByResultClassGenerator` | leaf | R2 |
 
 The cyclic core is three pairs (Fetcher to Projection to Rows-method to Projection), thread F's cycle.
-**Pair = whole emitted method.** Emitters that render only an *arm* are sub-renderers that fold into a
-pair, not pairs: the three `Inline*` arms of `$fields`; `ServiceMethodCall` / `ChannelCatchArm` /
-`ChannelEarlyReturn` in the fetcher body; the `ArgCall` fragments. That partition resolves the
+**Pair = whole emitted method.** Renderers that produce only an *arm* are sub-renderers that fold into a
+pair, not pairs: `ProjectionUnitRenderer`'s per-contribution arms inside `$project`; `ServiceMethodCall` /
+`ChannelCatchArm` / `ChannelEarlyReturn` in the fetcher body; the `ArgCall` fragments. That partition
+resolves the
 node-relation granularity fork (one pair per emitted-method-kind), and the seam-placement rule of thread K
 governs *which* methods exist in the target.
 
 ### Emitter inventory (grounding for E and F)
 
-The twenty-two `*Emitter` classes divide by what they emit:
+The emitting classes (eighteen `*Emitter`s plus the command-driven `render/` layer, re-measured
+2026-08-10 after the R549/R552 re-platforming) divide by what they emit:
 
 - *Resolve side (DataFetcher), field-granular or finer:* `FetcherEmitter` (one field to one DataFetcher),
   `DataLoaderFetcherEmitter` (one DataLoader-backed DataFetcher method), `ServiceMethodCallEmitter` /
-  `ChannelCatchArmEmitter` / `ChannelEarlyReturnEmitter` (fragments inside a fetcher body),
-  `InputBeanInstantiationEmitter` / `JooqRecordInstantiationEmitter` (boundary helpers).
-- *SQL projection arms (pieces of `$fields`):* `InlineColumnReferenceFieldEmitter`,
-  `InlineTableFieldEmitter`, `InlineLookupTableFieldEmitter`.
-- *SQL sub-SELECT fragments (shared):* `JoinPathEmitter`, `ArgCallEmitter`, `LookupValuesJoinEmitter`,
-  `RoutineCallEmitter` (R435), `FkTargetConditionEmitter` (R330).
-- *SQL anchors (launch a SELECT, call `$fields`):* `SplitRowsMethodEmitter`, `MultiTablePolymorphicEmitter`
+  `ChannelCatchArmEmitter` / `ChannelEarlyReturnEmitter` / `TenantDslEmitter` (fragments inside a
+  fetcher body), `InputBeanInstantiationEmitter` / `JooqRecordInstantiationEmitter` (boundary helpers).
+- *SQL projection arms (pieces of `$project`):* `ProjectionUnitRenderer`'s per-contribution arms, driven
+  by `plan/ProjectionCommands` rows (the former per-arm `Inline*Emitter` classes, dissolved).
+- *SQL sub-SELECT fragments (shared):* `JoinPathEmitter`, `ArgCallEmitter`, `RoutineCallEmitter` (R435),
+  the `LookupRows` values-join family, and `FkTargetConditionFilter` rendered via `ConditionCommands` /
+  `ConditionGlueRenderer` (R552).
+- *SQL anchors (launch a SELECT, call `$project`):* `SplitRowsMethodEmitter`,
+  `MultiTablePolymorphicEmitter`, `RootLauncherRenderer`
   (plus the root and lookup paths in `TypeFetcherGenerator` and `SelectMethodBody`).
 - *Schema side (SDL and wiring):* `AppliedDirectiveEmitter`, `DirectiveDefinitionEmitter`,
   `FetcherRegistrationsEmitter`, `GraphQLValueEmitter`, `SchemaSdlEmitter`.
 
-The projection-arm emitters are pieces of one node (`$fields`); the anchor emitters are nodes with
-outbound `$fields` edges. That split is the evidence for E and F.
+The projection arms are pieces of one node (`$project`); the anchor emitters are nodes with
+outbound `$project` edges. That split is the evidence for E and F.
 
 ### First slice (the beachhead)
 
@@ -1914,7 +1926,8 @@ outbound `$fields` edges. That split is the evidence for E and F.
 
 `SplitTableField` / `RecordTableField` is the cheapest honest demonstration of the cut. Both child sides
 lower to the same `load<X>` rows-method and the same fetcher; Split's only extra is the key projection,
-which relocates to the parent type's `$fields` (where `collectRequiredProjection` already puts it).
+which relocates to the parent type's projection unit (at the walk's date `collectRequiredProjection`;
+today `ProjectionCommands`' gated correlation-key rows).
 Collapsing the two with zero residue, gated on `sourceShape`, retires one cross-product axis with no
 generator rewrite and produces the lowering's first executable proof. It is the smallest instance of
 cross-anchor key relocation, so it exercises the address-as-name-resolution machinery on exactly one
@@ -1939,9 +1952,10 @@ contribution.
   > source-shape-gated batched fetcher; `4abde9e` the DTO-parent re-entry leaf dissolved onto the
   > record-sourced `BatchedTableField`; `4e04345` the row-15 verdict pinned + root service leaves documented;
   > `11122a4` the named DML reentry rows companions; `1158c14` `dispatchPerformsReFetch` retired
-  > for the reentry implementedness guard). Thread I's level-2 command/name registry exists in
-  > main source (`no.sikt.graphitron.rewrite.methodgraph`), populated for the whole reentry
-  > family and joined bidirectionally by `ReentryCommandClosureTest`. The DML correlation
+  > for the reentry implementedness guard). Thread I's level-2 command/name registry landed in
+  > main source (the `methodgraph` package), populated for the whole reentry
+  > family and joined bidirectionally by `ReentryCommandClosureTest`; the R549 programme later
+  > retired that registry in favour of the command relations themselves (2026-07-30, see *Scope*). The DML correlation
   > rendering residue (keys-IN vs the VALUES-join primitive) shipped 2026-07-21 (R489,
   > `0ef2353` + rework `1f8340e`, see `changelog.md`): the companion renders the VALUES-join
   > primitive at bulk cardinality and plain key equality at single, with the correlation
@@ -2110,7 +2124,7 @@ The gaps, in resolution order:
 - **DataFetcher totality vs synthetic nodes. Resolved (2026-07-04): confirmed against the emit.**
   Every coordinate has exactly one DataFetcher (an SDL field has one resolver), so there is no
   "synthetic DataFetcher"; and there is likewise no synthetic *coordinate* in the current emit: the
-  parent-key projection rides the projection opt-in into the parent type's `$fields`
+  parent-key projection rides the projection opt-in into the parent type's `$project`
   (`collectRequiredProjection` at resolution time, now the `ProjectionCommands` opt-in rows;
   a QueryPart owned by the splitting coordinate, addressed to the enclosing anchor), and the
   `__idx__` scatter column is a synthetic *column* inside one query scope, never a fabricated SDL
