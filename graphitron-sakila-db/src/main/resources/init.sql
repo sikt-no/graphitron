@@ -638,6 +638,37 @@ AS $$
     SELECT count(*)::int FROM rental WHERE customer_id = p_customer_id
 $$;
 
+-- Routine-carrier RLS fixture: a table whose read policy is keyed on the mounted
+-- app.user_id identity, written by a SECURITY DEFINER routine. The definer (this script's
+-- superuser owner) bypasses the policy, so the write always succeeds; a caller whose mounted
+-- identity does not match the fresh row's owner then commits a row it cannot read back —
+-- the post-commit re-read legitimately returns nothing while the errors channel stays empty.
+-- RLS is ENABLEd but deliberately not FORCEd: the owner bypass is what lets the definer
+-- insert rows for arbitrary owners. The table and routine live here (not in a test's
+-- @BeforeAll) so jOOQ codegen puts them in the catalog and @table / @routine can resolve
+-- them; the non-superuser probe role and its grants are per-test concerns.
+CREATE TABLE public.secure_note (
+    note_id  SERIAL PRIMARY KEY,
+    owner_id TEXT NOT NULL,
+    note     TEXT NOT NULL
+);
+
+CREATE OR REPLACE FUNCTION public.create_secure_note(
+    p_owner TEXT,
+    p_note  TEXT
+) RETURNS TABLE(note_id INTEGER)
+LANGUAGE sql VOLATILE SECURITY DEFINER
+AS $$
+    INSERT INTO secure_note (owner_id, note)
+    VALUES (p_owner, p_note)
+    RETURNING secure_note.note_id
+$$;
+
+ALTER TABLE public.secure_note ENABLE ROW LEVEL SECURITY;
+CREATE POLICY secure_note_owner ON public.secure_note
+    USING (owner_id = nullif(current_setting('app.user_id', true), ''))
+    WITH CHECK (owner_id = nullif(current_setting('app.user_id', true), ''));
+
 -- R328 fixture: self-FK @nodeId reference on a Graphitron-owned DML input — the neutral
 -- `email` / `mailbox` form of the CAMPUS self-FK case. `email` has a composite PK
 -- (mailbox_id, message_no). Two foreign keys share the `mailbox_id` child column:

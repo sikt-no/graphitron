@@ -41,6 +41,47 @@ type Rental @table(name: "rental") {
     customerId:  Int! @field(name: "customer_id")
 }
 
+# The routine-carrier error channel on the @routine pillar, mirroring
+# FilmCreateLocalContextPayload on the DML pillar: the payload is a plain SDL Object, so the
+# structural routine-carrier scan admits it and the channel binds ErrorChannel.LocalContext.
+# The data field must be nullable (the classifier's zero-row rule): the post-commit re-read is
+# the data field's own SELECT and can legitimately return no row.
+type RentFilmConstraintViolation @error(handlers: [{
+        handler: GENERIC,
+        className: "org.jooq.exception.IntegrityConstraintViolationException"
+    }]) {
+    path: [String!]!
+    message: String!
+}
+
+union RentFilmError = RentFilmConstraintViolation
+
+type RentFilmPayload {
+    rental: Rental
+    errors: [RentFilmError]
+}
+
+# Routine-carrier RLS fixture (see init.sql's secure_note block): the write commits through a
+# SECURITY DEFINER routine while the caller's read policy hides the fresh row, so the payload's
+# data field legitimately resolves null with an empty errors channel.
+type SecureNote @table(name: "secure_note") {
+    noteId:  Int!    @field(name: "note_id")
+    ownerId: String! @field(name: "owner_id")
+    note:    String!
+}
+
+type SecureNoteCreateFailed @error(handlers: [{handler: DATABASE}]) {
+    path: [String!]!
+    message: String!
+}
+
+union CreateSecureNoteError = SecureNoteCreateFailed
+
+type CreateSecureNotePayload {
+    secureNote: SecureNote
+    errors: [CreateSecureNoteError]
+}
+
 # Sibling filter inputs whose fields share one name (`name`) over different columns; consumed
 # together on Query.customersByTwoNames so one glue body binds both (outer-qualified locals).
 input CustomerFirstNameOnly { name: String @field(name: "first_name") }
@@ -3008,6 +3049,29 @@ type Mutation {
             argMapping: "pInventoryId: inventoryId, pCustomerId: customerId"
         )
         @reference(path: [{table: "rental"}])
+
+    # The hop-less routine carrier: the same rent_film write returning a payload carrier
+    # instead of the chained @table. Step 1 captures the routine's returned rental_id under
+    # rental's key field inside the per-field transaction; the payload's `rental` data field
+    # owns the post-commit re-read (the implicit single name-matched hop), and `errors` is the
+    # typed LocalContext channel.
+    rentFilmPayload(inventoryId: Int!, customerId: Int!): RentFilmPayload
+        @routine(
+            name: "rent_film"
+            argMapping: "pInventoryId: inventoryId, pCustomerId: customerId"
+        )
+
+    # The routine carrier's RLS outcome: create_secure_note is SECURITY DEFINER, so the write
+    # runs as the function owner and commits regardless of the caller's visibility; the
+    # caller's post-commit re-read runs under its own mounted identity and the secure_note
+    # read policy hides the fresh row, so the response renders
+    # { secureNote: null, errors: null } with no field error — the zero-row re-read as a
+    # first-class success path.
+    createSecureNote(owner: String!, note: String!): CreateSecureNotePayload
+        @routine(
+            name: "create_secure_note"
+            argMapping: "pOwner: owner, pNote: note"
+        )
 
     # R22 Phase 2: INSERT emitter with TableBoundReturnType return. The fetcher emits
     # `dsl.insertInto(film, title, language_id).values(...).returningResult(<$project>).fetchOne(r -> r)`.

@@ -9,45 +9,46 @@ Supported schema shapes are enumerated below by output sealed-leaf class. Each s
 
 === RootField
 
-* *DmlTableField*: The direct-return DML mutation: `@mutation(typeName:)` on a field returning the
+* *DmlTableField*: The direct-return DML mutation: `+@mutation(typeName:)+` on a field returning the
 * *MutationBulkDmlRecordField*: A record-returning DML mutation with bulk DML input and a list-shaped
 * *MutationDmlRecordField*: A record-returning DML mutation: the schema field carries
 * *MutationRoutineWriteField*: A mutation field whose table chain starts with a database routine: the routine call
+* *MutationRoutineWriteRecordField*: A mutation field whose write is a hop-less `+@routine+` call and whose return is a
 * *MutationServicePolymorphicField*: A mutation field backed by a developer-provided service method that returns a multitable
 * *MutationServiceRecordField*: A mutation field backed by a developer-provided service method, returning a non-table type
 * *MutationServiceTableField*: A mutation field backed by a developer-provided service method, returning a table-mapped type
-* *MutationServiceTableInterfaceField*: The mutation analogue of `QueryField.QueryServiceTableInterfaceField`: a root
-* *QueryInterfaceField*: A root query field returning a multi-table `GraphitronType.InterfaceType`
+* *MutationServiceTableInterfaceField*: The mutation analogue of `+QueryField.QueryServiceTableInterfaceField+`: a root
+* *QueryInterfaceField*: A root query field returning a multi-table `+GraphitronType.InterfaceType+`
 * *QueryNodeField*
 * *QueryNodesField*
 * *QueryServicePolymorphicField*: A root query field backed by a developer-provided service method that returns a multitable
 * *QueryServiceRecordField*: A root query field backed by a developer-provided service method, returning a non-table type
 * *QueryServiceTableField*: A root query field backed by a developer-provided service method, returning a table-mapped type
-* *QueryServiceTableInterfaceField*: A root `@service` field returning a single-table discriminated interface
+* *QueryServiceTableInterfaceField*: A root `+@service+` field returning a single-table discriminated interface
 * *QueryTableField*: A root table read whose FROM starts at the return type's own table or a routine chain
 * *QueryTableInterfaceField*
-* *QueryUnionField*: A root query field returning a multi-table `GraphitronType.UnionType`
+* *QueryUnionField*: A root query field returning a multi-table `+GraphitronType.UnionType+`
 
 === ChildField
 
 * *BatchedInterfaceField*: A list- or connection-cardinality child field returning a multi-table
-* *BatchedPivotField*: The batched (`@splitQuery`) `@pivot` leaf: the same projection as
+* *BatchedPivotField*: The batched (`+@splitQuery+`) `+@pivot+` leaf: the same projection as
 * *BatchedTableField*: A DataLoader-batched keyed re-query anchor: the field launches its own SELECT keyed on a
 * *BatchedUnionField*: A list- or connection-cardinality child field returning a multi-table
 * *ColumnBackedField*: A column-backed output carrier on a table-backed parent: the field's value is produced
 * *ColumnBackedReferenceField*: A column-backed output carrier on a table-backed parent reached through a
-* *ComputedField*: A child field using `@externalField`: the developer provides a static method
-* *ErrorsField*: The `errors` field on a payload type. Lift target for the payload-side of a
+* *ComputedField*: A child field using `+@externalField+`: the developer provides a static method
+* *ErrorsField*: The `+errors+` field on a payload type. Lift target for the payload-side of a
 * *InterfaceField*: A single-cardinality child field returning a multi-table
 * *NestingField*: A nesting child field whose value is a fragment of the parent's table-bound projection
-* *ParticipantColumnReferenceField*: A scalar field on a `GraphitronType.TableInterfaceType` participant that
-* *PivotField*: The inline `@pivot` leaf: a discriminator-keyed aggregate projection folded into the
-* _(not yet supported)_ *PivotSlotField*: One projection slot of a `@pivot` field's return type, carrying exactly one fact: its
-* *RecordCompositeField*: The single data field on an `@service` record-composite carrier payload. The
+* *ParticipantColumnReferenceField*: A scalar field on a `+GraphitronType.TableInterfaceType+` participant that
+* *PivotField*: The inline `+@pivot+` leaf: a discriminator-keyed aggregate projection folded into the
+* _(not yet supported)_ *PivotSlotField*: One projection slot of a `+@pivot+` field's return type, carrying exactly one fact: its
+* *RecordCompositeField*: The single data field on an `+@service+` record-composite carrier payload. The
 * *RecordReadField*: A value read off a record-backed parent's in-memory source object: the scalar / enum /
-* *ServiceRecordField*: A child field backed by a developer-provided service method (`@service`), where the
-* *ServiceTableField*: A child field backed by a developer-provided service method (`@service`), where the
-* *SingleRecordIdField*: The single data field on an `@service` source-record carrier: an ID-typed scalar
+* *ServiceRecordField*: A child field backed by a developer-provided service method (`+@service+`), where the
+* *ServiceTableField*: A child field backed by a developer-provided service method (`+@service+`), where the
+* *SingleRecordIdField*: The single data field on an `+@service+` source-record carrier: an ID-typed scalar
 * *SingleRecordIdFieldFromReturning*: The single data field on a payload-returning DELETE carrier: an ID-typed scalar encoding
 * *TableField*
 * *TableInterfaceField*
@@ -56,7 +57,7 @@ Supported schema shapes are enumerated below by output sealed-leaf class. Each s
 === InputField
 
 * *ColumnBackedField*: An input field successfully resolved to one or more SQL columns on the consuming
-* *ColumnBackedReferenceField*: An input field that uses `@reference` (or an
+* *ColumnBackedReferenceField*: An input field that uses `+@reference+` (or an
 * *NestingField*: An input field whose GraphQL type is itself an input
 * *UnboundField*: Input field that does not bind to a SQL column. The defining property is the absence of a
 
@@ -64,26 +65,26 @@ Supported schema shapes are enumerated below by output sealed-leaf class. Each s
 
 * *Backed*: A payload carrier whose backing class was reflected from its
 * *ConnectionType*: A Relay connection object type — the outer wrapper whose fields are
-* *EdgeType*: A Relay edge object type — the inner wrapper whose fields are `cursor: String!` and
-* *EnumType*: A GraphQL enum type, recorded so `schema.types()` is complete for emission
-* *ErrorType*: An object type annotated with `@error`. Maps Java exceptions to GraphQL error responses
+* *EdgeType*: A Relay edge object type — the inner wrapper whose fields are `+cursor: String!+` and
+* *EnumType*: A GraphQL enum type, recorded so `+schema.types()+` is complete for emission
+* *ErrorType*: An object type annotated with `+@error+`. Maps Java exceptions to GraphQL error responses
 * *FacetValueType*: A synthesised, cross-schema-reusable facet value type, e.g
 * *FacetsType*: The synthesised per-connection facets container, e.g
-* *InterfaceType*: An interface with no directives. Participating types may be table-bound (`ParticipantRef.TableBound`)
-* *JavaRecordInputType*: A non-table input type backed by a Java `record` class
-* *JavaRecordType*: A result type whose producer's reflected return is a Java `record` class
-* *JooqRecordInputType*: A non-table input type backed by a jOOQ `Record<?>` (not table-bound)
-* *JooqRecordType*: A result type whose producer's reflected return is a jOOQ `Record<?>` (not table-bound)
-* *JooqTableRecordInputType*: A non-table input type backed by a jOOQ `TableRecord<?>`
+* *InterfaceType*: An interface with no directives. Participating types may be table-bound (`+ParticipantRef.TableBound+`)
+* *JavaRecordInputType*: A non-table input type backed by a Java `+record+` class
+* *JavaRecordType*: A result type whose producer's reflected return is a Java `+record+` class
+* *JooqRecordInputType*: A non-table input type backed by a jOOQ `+Record<?>+` (not table-bound)
+* *JooqRecordType*: A result type whose producer's reflected return is a jOOQ `+Record<?>+` (not table-bound)
+* *JooqTableRecordInputType*: A non-table input type backed by a jOOQ `+TableRecord<?>+`
 * *JooqTableRecordType*: A result type whose runtime carrier is a jOOQ record of a resolved table
-* *NestingType*: A nesting projection: a directiveless SDL object type embedded under a `@table`-bound
-* *NodeType*: A GraphQL object type annotated with both `@table` and `@node`
-* *PageInfoType*: The Relay `PageInfo` object type. Exactly one instance per schema; the classifier
+* *NestingType*: A nesting projection: a directiveless SDL object type embedded under a `+@table+`-bound
+* *NodeType*: A GraphQL object type carrying `+@table+` that has published the Relay `+Node+`
+* *PageInfoType*: The Relay `+PageInfo+` object type. Exactly one instance per schema; the classifier
 * *PojoInputType*: A non-table input type backed by a plain Java class (POJO), or one for which no producer
 * *RootType*: A root operation type (Query or Mutation). Unmapped — no source context, no SQL until
-* *ScalarType*: A GraphQL scalar type whose Java type and `GraphQLScalarType` constant (or inline
-* *TableInterfaceType*: An interface annotated with `@table` and `@discriminate`, where implementing
-* *TableType*: A GraphQL object type annotated with `@table`, without `@node`
-* *UnclassifiedType*: A type that could not be classified — examples include an unresolvable `@table`
-* *UnionType*: A union type whose member types all have `@table`
+* *ScalarType*: A GraphQL scalar type whose Java type and `+GraphQLScalarType+` constant (or inline
+* *TableInterfaceType*: An interface annotated with `+@table+` and `+@discriminate+`, where implementing
+* *TableType*: A GraphQL object type annotated with `+@table+`, without `+@node+`
+* *UnclassifiedType*: A type that could not be classified — examples include an unresolvable `+@table+`
+* *UnionType*: A union type whose member types all have `+@table+`
 

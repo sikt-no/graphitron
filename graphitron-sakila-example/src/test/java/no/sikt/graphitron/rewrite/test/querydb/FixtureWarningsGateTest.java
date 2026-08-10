@@ -91,7 +91,7 @@ class FixtureWarningsGateTest {
                     .contains("'ids'")
                     .contains("every page of @asConnection would equal the input set");
 
-                // The field sits at schema.graphqls line 341; fields added above it shift this
+                // The field sits at schema.graphqls line 382; fields added above it shift this
                 // line. Update the expected line if the field moves.
                 assertThat(warning.location()).isNotNull();
                 assertThat(warning.location().getSourceName())
@@ -99,7 +99,7 @@ class FixtureWarningsGateTest {
                     .endsWith("schema.graphqls");
                 assertThat(warning.location().getLine())
                     .as("warning is attributed to the filmsConnectionByRequiredIds field definition")
-                    .isEqualTo(341);
+                    .isEqualTo(382);
             });
 
         assertThat(warnings)

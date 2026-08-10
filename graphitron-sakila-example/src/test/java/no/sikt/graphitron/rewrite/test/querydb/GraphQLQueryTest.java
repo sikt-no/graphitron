@@ -5185,6 +5185,88 @@ class GraphQLQueryTest {
             .isEqualTo(countBefore);
     }
 
+    // ===== Routine payload carrier: the hop-less @routine write with a typed errors channel =====
+    //
+    // rentFilmPayload classifies as MutationRoutineWriteRecordField: the same rent_film write as
+    // rentFilm above, returning a payload carrier instead of the chained @table. The fetcher owns
+    // step 1 alone (the routine call plus the key capture inside transactionResult); the payload's
+    // `rental` data field runs the post-commit re-read, and the errors field is the LocalContext
+    // channel, exactly as on createFilmWithErrors' DML pillar.
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void rentFilmPayload_happyPath_dataFieldReReadsCommittedRow() {
+        // Outcome: the routine succeeded and the row is visible. The data field's post-commit
+        // SELECT projects the committed rental; errors stays null (no localContext was set).
+        int countBefore = dsl.fetchCount(org.jooq.impl.DSL.table("rental"));
+        Integer rentalId = null;
+        try {
+            var rawResult = executeRaw("""
+                mutation {
+                    rentFilmPayload(inventoryId: 2, customerId: 3) {
+                        rental { rentalId inventoryId customerId }
+                        errors { __typename }
+                    }
+                }
+                """);
+            assertThat(rawResult.getErrors()).as("top-level errors: %s", rawResult.getErrors()).isEmpty();
+            Map<String, Object> data = rawResult.getData();
+            var payload = assertThat(data).extractingByKey("rentFilmPayload", as(MAP));
+            payload.containsEntry("errors", null);
+            var rental = (Map<String, Object>) ((Map<String, Object>) data.get("rentFilmPayload")).get("rental");
+            assertThat(rental).containsEntry("inventoryId", 2).containsEntry("customerId", 3);
+            rentalId = (Integer) rental.get("rentalId");
+            assertThat(rentalId).isNotNull();
+
+            // Committed, not merely visible inside a still-open transaction.
+            assertThat(dsl.fetchCount(org.jooq.impl.DSL.table("rental")))
+                .as("rentFilmPayload committed exactly one rental row")
+                .isEqualTo(countBefore + 1);
+        } finally {
+            if (rentalId != null) {
+                dsl.deleteFrom(org.jooq.impl.DSL.table("rental"))
+                    .where(org.jooq.impl.DSL.field("rental_id").eq(rentalId))
+                    .execute();
+            }
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void rentFilmPayload_failingRoutine_routesThroughLocalContextErrorChannel() {
+        // Outcome (a): the routine raised (FK violation: inventory 999999 does not exist). The
+        // catch arm returns the non-null all-null-column sentinel so graphql-java traverses
+        // into the errors field; the data field's null-key SELECT renders null, and the typed
+        // error surfaces inside data, not as a top-level field error. Nothing is committed.
+        int countBefore = dsl.fetchCount(org.jooq.impl.DSL.table("rental"));
+        graphql.ExecutionResult result = executeRaw("""
+            mutation {
+                rentFilmPayload(inventoryId: 999999, customerId: 3) {
+                    rental { rentalId }
+                    errors {
+                        __typename
+                        ... on RentFilmConstraintViolation { path message }
+                    }
+                }
+            }
+            """);
+        assertThat(result.getErrors()).as("top-level errors: %s", result.getErrors()).isEmpty();
+        Map<String, Object> data = result.getData();
+        var payload = assertThat(data).extractingByKey("rentFilmPayload", as(MAP));
+        payload.containsEntry("rental", null);
+        var only = payload.extractingByKey("errors", as(list(Map.class)))
+            .hasSize(1)
+            .element(0, as(MAP));
+        only.containsEntry("__typename", "RentFilmConstraintViolation");
+        only.extractingByKey("path", as(LIST))
+            .containsExactly("rentFilmPayload", "errors", "0", "path");
+        only.extractingByKey("message", as(STRING))
+            .containsIgnoringCase("foreign key");
+        assertThat(dsl.fetchCount(org.jooq.impl.DSL.table("rental")))
+            .as("the failed routine write committed nothing")
+            .isEqualTo(countBefore);
+    }
+
     @Test
     void assignFilmRecord_decodesNodeIdIntoJooqRecordMember() {
         // A @service input bean whose member is a jOOQ FilmRecord backed by
