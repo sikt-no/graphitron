@@ -63,8 +63,10 @@ expresses "no catalog in hand", rather than by a field every construction site m
 The cost is real and mechanical, and the three-arg sites are enumerated because the production
 one is the whole point of the narrowing rather than a footnote to it.
 `GraphQLRewriteGenerator.graphIdentity` is that site: it reads `ctx.schemaRecipe()` into the third
-component today, and under the narrowing it returns the coordinate while `captureFacts` passes the
-recipe to `FactCapture.run` beside the registry and the jOOQ handle. `WarmStartRefreshTest`'s
+component today, and under the narrowing it returns the coordinate while its two callers pass the
+recipe to `FactCapture.run` beside the registry and the jOOQ handle. There are two, not one, and
+both are production: `captureFacts` on the generate path, and `buildOutput` on the LSP and dev-loop
+path, which is the one that runs again on every regeneration. `WarmStartRefreshTest`'s
 three-arg sites move their recipe to the call the same way, and `writeGraph` takes the recipe for
 its build-file hash. The coordinate-only sites (`DevMojo`'s `CompileFacts` construction,
 `DevMojoTest`, `CapturedStore.graph`, `FactSchemaGateTest`, `PersistentStoreTest`,
@@ -273,9 +275,13 @@ rebuilds it from `ctx.schemaInputs()` instead: `SchemaInputAttribution.build` is
 list, so the rebuilt map is the same map by construction, and the choice costs one call rather than
 a component. The parameter still has to reach the walk, so `SdlFactCapture.capture` takes it and
 `FactCapture.run` plus the three public `FactCapture.capture` overloads pass it through, beside the
-recipe they gain for the same reason. One knock-on the reference gate will catch loudly is worth
-pre-empting: `WarmStartRefreshTest`'s class javadoc names a `FactCapture.capture` overload by its
-full parameter list in a `{@link}`, so that link is repointed in the same edit.
+recipe they gain for the same reason. One knock-on that *nothing* will catch is worth naming, since
+the instinct is to trust the build here: `WarmStartRefreshTest`'s
+`aWarmRefreshOverAMultiPackageCatalogCompletes` carries a `{@link}` naming a `FactCapture.capture`
+overload by its full parameter list. That is a method javadoc in a test source, and the reference
+gate runs the `javadoc` goal, which reads main sources only, so neither the compiler nor the gate
+holds it, exactly like `SchemaRecipe`'s `{@code}` reference above. It is repointed in the same edit
+or it rots silently.
 
 The lookup has two legitimate misses, not one, and the count is stated here because getting it
 wrong ships a failure the suite cannot see. Both are source names the generator injects itself, so
@@ -296,6 +302,24 @@ What the pair is not is a third arm on the sealed source. An arm is a claim a pr
 could mint and every construction site would have to ignore. The honest shape is that these are
 generator-injected names the lookup does not expect to find, which is a property of the lookup and
 belongs beside it.
+
+The miss set above is stated over the *production* population, where the map is rebuilt from a real
+`ctx.schemaInputs()`. The capture tier's own fixtures are a second population, and what the lookup
+does there is decided here because the obvious reading reddens a test that exists today.
+`CapturedStore.registryOf` builds a registry straight out of
+`RewriteSchemaLoader.load(List.of(path))` with no `RewriteContext` anywhere, and it is how nearly
+every capture-tier call reaches capture: `CapturedStore.of`, the `FactCapture.run` and
+`FactCapture.capture` sites in `WarmStartRefreshTest` and `PersistentStoreTest`, and
+`FactSchemaGateTest`'s two-graph fixture. Their map is empty, so every schema file in them is a
+miss, and a stamp decision that stamps only what the map resolves stops stamping them, which
+`WarmStartRefreshTest.aSchemaFileStampMatchesUntilTheFileChanges` catches directly: it asserts the
+recorded stamp is non-null and equal to a re-hash of the file. So the fixtures move rather than the
+rule. `registryOf` hands back the inputs it minted beside the registry (one `SchemaInput.file` for
+the file it wrote), and the capture calls pass the map built from them, which is also what makes
+those fixtures state the same claim about their sources that a production run does. The alternative,
+keeping a filesystem fallback for a name the map does not resolve, is rejected: it is
+`SdlFactCapture.regularFile` under another name, and it would leave the two production sentinels
+absorbed by a probe instead of named, which is the failure the paragraph above exists to prevent.
 
 The carrier pays for itself at the consumers that today re-derive path-ness from the string:
 `DevMojo.resolveSchemaRoots` runs `Paths.get(input.sourceName())` and switches to reading the
