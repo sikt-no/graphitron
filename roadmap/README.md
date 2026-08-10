@@ -17,7 +17,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R613` | Generated column filters compose beside the lookup VALUES join | In Review | 2026-08-09 <sub>created 2026-08-08</sub> | [plan](lookup-generated-column-filters.md) |
 | `R617` | Lookup misses drop rows instead of holding their position | In Review | 2026-08-10 <sub>created 2026-08-09</sub> | [plan](lookup-positional-contract-unimplemented.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
-| `R612` | The schema scan and its freshness replay share one typed recipe | Spec | 2026-08-09 <sub>created 2026-08-08</sub> | [plan](maven-config-fact-family.md) |
+| `R612` | The schema scan and its freshness replay share one typed recipe | Spec | 2026-08-10 <sub>created 2026-08-08</sub> | [plan](maven-config-fact-family.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-09 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R589` | Classification is a relation; validation adds facts | Spec | 2026-08-10 <sub>created 2026-08-04</sub> | [plan](validation-adds-facts.md) |
 | `R569` | Aggregated diagnostics commands for the MCP server | Spec | 2026-08-09 <sub>created 2026-08-03</sub> | [plan](mcp-aggregated-diagnostics.md) |

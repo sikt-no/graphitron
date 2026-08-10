@@ -7,7 +7,7 @@ priority: 3
 theme: classification-model
 depends-on: []
 created: 2026-08-08
-last-updated: 2026-08-09
+last-updated: 2026-08-10
 ---
 
 # The schema scan and its freshness replay share one typed recipe
@@ -60,11 +60,16 @@ So `GraphIdentity` narrows back to `(name, baseDir)` and the recipe becomes a pa
 capture entry points that write it, beside `registry` and `jooq`. Absence is then expressed by
 which entry point a caller reached for, the same way `capture`'s SDL-only overload already
 expresses "no catalog in hand", rather than by a field every construction site may leave null.
-The cost is real and mechanical: the three-arg `GraphIdentity` sites in `WarmStartRefreshTest`
-move their recipe to the call, `writeGraph` takes the recipe for its build-file hash, and the
-coordinate-only sites (`DevMojo`'s `CompileFacts` construction, `CapturedStore.graph`,
-`FactSchemaGateTest`, `PersistentStoreTest`, `FactCaptureAgreementTest`, `CompileFactsTest`)
-compile untouched, which is the point: they were never the callers with something to say.
+The cost is real and mechanical, and the three-arg sites are enumerated because the production
+one is the whole point of the narrowing rather than a footnote to it.
+`GraphQLRewriteGenerator.graphIdentity` is that site: it reads `ctx.schemaRecipe()` into the third
+component today, and under the narrowing it returns the coordinate while `captureFacts` passes the
+recipe to `FactCapture.run` beside the registry and the jOOQ handle. `WarmStartRefreshTest`'s
+three-arg sites move their recipe to the call the same way, and `writeGraph` takes the recipe for
+its build-file hash. The coordinate-only sites (`DevMojo`'s `CompileFacts` construction,
+`DevMojoTest`, `CapturedStore.graph`, `FactSchemaGateTest`, `PersistentStoreTest`,
+`FactCaptureAgreementTest`, `CompileFactsTest`) compile untouched, which is the point: they were
+never the callers with something to say.
 
 Its expansion returns a value rather than a file set. `SchemaRecipe.expand(Path baseDir)`
 returns a deduplicated `Set<Path>`, which is exactly right for the currency question it was
@@ -176,16 +181,28 @@ caller handed over. The recipe relation is one discriminated relation rather tha
 because the ordinal is the recipe's spine and splitting the relations would shatter the one
 ordering key; its `kind` column takes three values under a CHECK constraint (the shipped
 `store_graph_schema_input` carries a `pattern` column, which generalises to `kind` plus a value
-column, still keyed `(graph_name, ordinal)` with no rekey; the shipped column comment, which
-says the value is "the include pattern as configured", stops being true of every row and is
-rewritten with the DDL). `pattern` records a glob; the two
+column, still keyed `(graph_name, ordinal)` with no rekey; two shipped comments stop being true of
+every row and are rewritten with the DDL, the column comment that says the value is "the include
+pattern as configured" and the table comment that says the relation holds "one row per resolved
+`<schemaInputs>` binding", which a literal row from a programmatic run is not). `pattern` records a glob; the two
 literal kinds transcribe which door the entry's source came through (the sealed carrier
 below): a `file` literal re-expands by identity plus an existence check, so the currency
 verdict covers programmatic graphs with no special case, a file literal that no longer
 resolves being a lost match exactly as a pattern whose file set shrank; a `named` literal (a
-bare programmatic label, of which the applier tests carry several) is skipped by the replay
-by its kind, and its row records that it was an input all the same. The replay recovers the
-arm from the row instead of re-asking a filesystem question about a stored string. Literal
+bare programmatic label, of which the applier tests carry several) re-expands to itself and is
+excluded from the currency verdict, its row recording that it was an input all the same. The
+replay recovers the arm from the row instead of re-asking a filesystem question about a stored
+string.
+
+Which layer drops a named entry is a decision rather than an implementation detail, because the
+two candidate layers disagree about a verification claim below. The expansion passes a named entry
+through unchanged, and the currency reader is what excludes it, switching on the named arm the
+entry carries. Putting the skip in the decode or the expansion instead would make the round-trip
+anchor unsatisfiable for a programmatic fixture: a re-expansion short by the named entries cannot
+reproduce the run's `schemaInputs`, which is precisely what that half of the anchor asserts. The
+existence check on a `file` literal belongs to the expansion for the mirror-image reason: a file
+that stopped resolving is a lost match, and a lost match is the observation the reader is asking
+the expansion for rather than one it can make for itself. Literal
 entries bypass the extension filter, as the literal list does today. The bundled
 `directives.graphqls` is not a recipe entry under any of this and needs no carve-out:
 `RewriteSchemaLoader` hands that resource to the parser directly rather than through a
@@ -241,17 +258,44 @@ visibly, and stays outside freshness coverage by its own declaration.
 The arm does not reach every consumer as a field, and the one that has to recover it is named
 here rather than discovered during implementation. `SdlFactCapture.captureSources` collects
 source names back out of graphql-java's `SourceLocation`s, not out of `SchemaInput`, so
-capture's stamp decision recovers the arm through a lookup keyed on the canonical rendering
-(the attribution map the run already built, threaded into `SdlFactCapture.capture` as a
-parameter, since the walk holds no `SchemaInput` data today),
-switching exhaustively on what it finds; the
-lookup's one legitimate miss is `RewriteSchemaLoader.DIRECTIVES_SOURCE_NAME`, which appears in
-the registry's source set and in no `SchemaInput`, and which the reader surface already
-excludes. That is a switch over a lookup, not a filesystem probe, and it makes the rendering
-invariant below load-bearing for capture too, not only for attribution. The recipe row's
-`kind` and the source arm remain distinct axes even though the literal kinds transcribe the
-arm: a pattern entry is one row that expands to many file arms, so neither axis is the other's
-transcription.
+capture's stamp decision recovers the arm through a lookup keyed on the canonical rendering,
+switching exhaustively on what it finds. That is a switch over a lookup, not a filesystem probe,
+and it makes the rendering invariant below load-bearing for capture too, not only for attribution.
+The recipe row's `kind` and the source arm remain distinct axes even though the literal kinds
+transcribe the arm: a pattern entry is one row that expands to many file arms, so neither axis is
+the other's transcription.
+
+The map the lookup reads is `SchemaInputAttribution.build`'s, but not the instance the load built,
+and the difference is worth a sentence because the cheaper option is not the obvious one.
+`loadAttributedRegistry` keeps `bySource` as a local and `AttributedRegistry` does not carry it, so
+ferrying the built map to capture would mean widening that record for a passenger. The capture site
+rebuilds it from `ctx.schemaInputs()` instead: `SchemaInputAttribution.build` is pure over the input
+list, so the rebuilt map is the same map by construction, and the choice costs one call rather than
+a component. The parameter still has to reach the walk, so `SdlFactCapture.capture` takes it and
+`FactCapture.run` plus the three public `FactCapture.capture` overloads pass it through, beside the
+recipe they gain for the same reason. One knock-on the reference gate will catch loudly is worth
+pre-empting: `WarmStartRefreshTest`'s class javadoc names a `FactCapture.capture` overload by its
+full parameter list in a `{@link}`, so that link is repointed in the same edit.
+
+The lookup has two legitimate misses, not one, and the count is stated here because getting it
+wrong ships a failure the suite cannot see. Both are source names the generator injects itself, so
+no `SchemaInput` produced either. The first is `RewriteSchemaLoader.DIRECTIVES_SOURCE_NAME`, the
+bundled directive resource the reader surface already excludes. The second is
+`TagLinkSynthesiser.SYNTHESISED_SOURCE_NAME`, stamped on the `extend schema @link(import: ["@tag"])`
+that synthesiser adds when a binding carries a tag and the author wrote no federation `@link`. That
+extension is added above the capture cut, before `loadAttributedRegistry` takes its pre-synthesis
+snapshot, and `captureSources` walks `registry.getSchemaExtensionDefinitions()`, so the sentinel is
+in the set capture switches over whenever the tag feature is used. Today's filesystem probe absorbs
+it silently by returning empty, which is why the second name has never had to be thought about; a
+lookup that tolerates one name would not absorb it. The pair is therefore the miss set, named once
+where the lookup reads it, and the sentinel's constant widens from package-private to public so
+capture can name it.
+
+What the pair is not is a third arm on the sealed source. An arm is a claim a producer makes about a
+`SchemaInput`, and there is no `SchemaInput` behind either name, so an arm would be a value no door
+could mint and every construction site would have to ignore. The honest shape is that these are
+generator-injected names the lookup does not expect to find, which is a property of the lookup and
+belongs beside it.
 
 The carrier pays for itself at the consumers that today re-derive path-ness from the string:
 `DevMojo.resolveSchemaRoots` runs `Paths.get(input.sourceName())` and switches to reading the
@@ -307,9 +351,18 @@ print, and recovering that from a composed string means parsing prose the mojo w
 A typed result is what lets one expansion serve a renderer and a decider at once. The redesign
 follows
 `docs/architecture/explanation/typed-rejection.adoc` instead. The core expansion returns a
-sealed result: resolved sources beside per-pattern empty-match observations, or an
-every-pattern-matched-nothing variant, each a typed fact. The mojo renders the aggregate-empty
-variant as the build failure and the per-pattern observations as warnings, preserving today's
+sealed result: resolved sources beside per-pattern empty-match observations, an
+every-pattern-matched-nothing variant, or a scanner-trouble variant carrying the failing entry's
+index, its pattern and the cause, each a typed fact. The third arm rests on the same argument as the
+second and is named because today's per-entry attribution is an accident of who drives the loop.
+`SchemaInputExpander` can wrap a `DirectoryScanner` failure as "scanner error (entry #i)" only
+because the mojo iterates the bindings itself; once the instance expansion owns that loop, a
+propagated `RuntimeException` arrives with the index gone. No test pins that message, so nothing
+would fail, and a walk that blew up is no more a currency verdict than a walk that matched nothing.
+The per-pattern static keeps propagating the scanner's own exception, as its javadoc already says it
+does; the instance expansion is the layer that catches and types it, which is also the only layer
+that knows which entry it was. The mojo renders the aggregate-empty and scanner-trouble variants as
+build failures and the per-pattern observations as warnings, preserving today's
 author-facing text; the freshness driver switches on the same variants to reach a verdict. The
 dev goal keeps rendering what it renders today, through the mojo, and the LSP is deliberately
 untouched: it boots inside the dev goal's codegen scope, after `buildContext` has already
@@ -396,6 +449,18 @@ on the elements the source declared. It closes the loop from a minted file arm, 
 parser, to a lookup keyed on what comes back, so any rendering divergence fails it; it lives
 in `graphitron`, beside the expansion it exercises. The existing applier tests
 hold the named arm's half of the same invariant already, passing labels that are not paths.
+
+The lookup's miss set gets the third enforcer, and it is the one this item would otherwise ship
+uncovered. No capture-running fixture configures a tag today: the two tagged pipeline cases
+(`TaggedInputsPipelineTest`, `ConnectionFederationTagPipelineTest`) stop at
+`loadAttributedRegistry` and never reach capture, `CapturedStore.ofPipeline` mints its one input
+untagged, and no pom in the tree sets a `<schemaInput>` tag. So the synthesised-`@link` sentinel
+reaches the stamp lookup only on a consumer's build, and a miss set that named one sentinel would
+ship green and fail at the first consumer to use tags. The case is a tagged capture: a pipeline
+capture whose input carries a tag, so `TagLinkSynthesiser` fires and its sentinel enters the
+captured registry's source set, asserting the capture completes and stamps the tagged file. It
+belongs beside `CapturedStore.ofPipeline`, which already runs the production load and captures the
+pre-synthesis handle, so the fixture change is the input's tag and nothing else.
 
 `SchemaInputExpanderTest` retargets to the core expansion with its cases intact, except the
 three that assert `MojoExecutionException`, which become mojo-side rendering pins holding
