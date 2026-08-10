@@ -182,7 +182,25 @@ directives claim is declared where the claim views are defined: each grain's vie
 per claiming semantic relation, so "classification-claiming" is data a query can answer rather
 than a hand-enumerated Java list; `@splitQuery`'s relation contributes no arm, and the `Composes`
 verdict dissolves rather than migrates. An arm is usually a projection of its relation's key
-columns; slice 2 names the one that is not.
+columns; slice 2 names the two that are not, each an exception of a different shape.
+
+**A claim is position-scoped.** Today's conflict machinery runs one detector site per position
+(the code comment's own phrase): the child-field list gates on the parent not being a root type,
+the query-root list on `isQueryRoot`, and mutation root fields see only the ad hoc `@service`
+with `@mutation` check. So which directives claim is a per-position fact, and each arm's
+position mask is part of the axis declaration. Transcribed: `@service` claims at all three
+positions, `@externalField` and `@nodeId` on child fields only, `@routine` on child and
+query-root fields, `@lookupKey` at the query root only, `@mutation` at the mutation root only.
+With the masks in the arms, the conflict detection itself stays position-blind: every coordinate
+has one position, so grouping the masked union reproduces today's per-position detected sets
+exactly, and `reduceDirectiveConflict`'s Deferred wording ("on a root field") stays reachable
+only at the query root, preserving its pinned cause identity. One fidelity note is deliberate:
+today's position predicate is name-keyed at every site (`RootType` is minted from the root type
+names, and `isQueryRoot` additionally requires the name `Query`), so a renamed root's fields
+take the child list today; the masks transcribe that, because the store-side alternative, a
+root-keyed join against `graphql_root_operation`, would move the accept/reject line at exactly
+the renamed-root hole the demand census names, and closing that hole is the demand follow-up's
+line move, not this item's.
 
 The in-memory precursor is already in the tree and should be read before slice 2 designs the arm
 list. `no.sikt.graphitron.facts.GatheredFacts` holds one named typed slot per registered visitor,
@@ -411,13 +429,23 @@ throughout; what moves is where verdicts come from and what survives a failure.
    R333 does not leave Ready.
 2. **The authored claim views ship, and the conflict rule reads them.** One view per grain, per
    the key decision above: the field-grain view and the type-grain view each union one arm per
-   claiming `graphitron_` relation at their grain, classifier column a literal per arm; the two
+   claiming `graphitron_` relation at their grain, classifier column a literal per arm, position
+   mask per arm per the position-scope paragraph above; the two
    arm lists are the axis declaration. An arm is usually a projection of its relation's key
-   columns, and one arm is not: `@lookupKey` claims on presence anywhere on the field's argument
-   surface, so its arm lifts the argument-grain `graphitron_argument_lookup_key` rows to field
-   grain and unions the transitive input-object closure (a recursive CTE, the vehicle the
-   derivation section settles), which is `LookupFacts.triggersFor` restated as a query; the
-   predicate keeps its single home by moving there, not by growing a duplicate.
+   columns, and two are not, in two different ways. `@lookupKey` claims on presence anywhere on
+   the field's argument surface, so its arm lifts the argument-grain
+   `graphitron_argument_lookup_key` rows to field grain and unions the transitive input-object
+   closure (a recursive CTE, the vehicle the derivation section settles), which is
+   `LookupFacts.triggersFor` restated as a query; the predicate keeps its single home by moving
+   there, not by growing a duplicate. The closure half is fidelity over a retired site:
+   `@lookupKey` on an input field rejects with a migration message today, so the closure only
+   ever produces rows on schemas the build already rejects, and it is kept because those
+   rejections' cause identity is pinned, not as a live classification path an implementer
+   should price as one. And `@routine` is repeatable, so `graphitron_routine`'s key carries the
+   application ordinal; a raw key projection would mint one claim per chain step, and a
+   two-step chain would trip the same-classifier key constraint as a phantom purity bug. The
+   routine arm collapses the ordinal grain to the field coordinate: the chain is one claim, and
+   its steps are the claim's slot facts.
    (The shipped DDL holds the `intent_` prefix in reserve for
    exactly this derived stratum, and R603 gave the call firmer edges by testing the reserve: a
    family is named for whose vocabulary its rows are written in, and a claim is the generator's
@@ -428,8 +456,8 @@ throughout; what moves is where verdicts come from and what survives a failure.
    `graphitron_undecoded_argument` row (R609), so the claim view would silently miss that
    application; either that quarantine lands first, or this slice ships the companion detection
    (a graphitron-namespace `graphql_` application with no decoded row). The conflict detection
-   is the same grouping query stated once per grain over its view (a grain is a key shape, not
-   a semantic difference); the
+   is the same grouping query stated once per grain over its view, and it is position-blind
+   because the position knowledge lives in the arm masks, not in the detection; the
    recognized-combinations rule refines `@routine` with `@lookupKey` to the Deferred kind (cause
    identity pinned: it stays a capability-gap rejection); and the four conflict sites dissolve
    into the two grain detections: the two hand-enumerated detector lists behind
@@ -499,7 +527,7 @@ corpus asserts that the reduced view is single-valued everywhere the corpus reac
 The MCP `schema(type:)` entry for a conflicted DELETE mutation. Today:
 
 ```json
-{"kind": "Unclassified", "reason": "@mutation, @service are mutually exclusive"}
+{"kind": "Unclassified", "reason": "@service, @mutation are mutually exclusive"}
 ```
 
 After slice 6 (shape illustrative; field names settle at implementation):
@@ -679,8 +707,9 @@ land in one of the scope's pieces.
 - **The axis declaration's home: closed by the store.** A directive's axis is which derivation
   views read its semantic relation, and the classification axis's declaration is literal: the
   claim views union one arm per claiming `graphitron_` relation, classifier column a literal
-  per arm, one view per grain since types claim too and the two grains' keys differ (the slice 2
-  decision). Today's four conflict sites all dissolve into the
+  per arm, position mask per arm since the detector sites differ by position, one view per
+  grain since types claim too and the two grains' keys differ (both slice 2
+  decisions). Today's four conflict sites all dissolve into the
   per-grain grouping detections over those views: the two hand-enumerated detector lists behind
   `FieldBuilder.reduceDirectiveConflict` (child fields: `@service`, `@externalField`, `@nodeId`,
   `@routine`; root query fields: `@service`, `@lookupKey` anywhere on the argument surface,
