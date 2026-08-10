@@ -438,14 +438,18 @@ no-row case is already handled by the existing null-keys guard. The question of 
 *should* declare a single wrapper over a many-row routine is a schema-review question, not one the
 model can answer.
 
-**Out of scope, landing as typed `Deferred`s pointing at one follow-up item:** the explicit
-data-field path declaration, single- and multi-hop alike (D2). The follow-up owns two questions
-this item deliberately leaves closed together: where an explicit path parses, given that the
-captured pairs are derived at grounding before field classification, and what correlation arm a
-residual path rides, given that `ParentCorrelation.checkCarrierInvariant` pairs a non-empty
+**Out of scope, landing as typed `Deferred`s pointing at the follow-up item
+`roadmap/routine-carrier-explicit-data-field-path.md`:** the explicit data-field path
+declaration, single- and multi-hop alike (D2). Of the two questions this item leaves closed
+together, one is already answered by the adopted fact-base architecture rather than open: the
+path exists as `graphitron_field_reference_step` rows from capture, phase-independent, so
+"where does an explicit path parse" dissolves into derivation views over that relation, and the
+follow-up is framed fact-base-first and sequenced with the strangler slice that migrates this
+classification neighbourhood (`roadmap/validation-adds-facts.md`). The genuinely open question
+is the read-side correlation arm: `ParentCorrelation.checkCarrierInvariant` pairs a non-empty
 `joinPath` only with a hop-anchored correlation while the carrier data field's correlation is
-the hop-less `OnLiftedSlots` over the captured slots. A residual path needs an arm that anchors
-on the captured record and walks onward from it, post-commit, as an ordinary read.
+the hop-less `OnLiftedSlots` over the captured slots, so a residual path needs an arm that
+anchors on the captured record and walks onward from it, post-commit, as an ordinary read.
 
 The semantics of that walk are recorded here as decided, not open, because they follow from the
 two-statements rule. Residual hops run at read time under the caller's identity, so read
