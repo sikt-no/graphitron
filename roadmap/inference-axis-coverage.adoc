@@ -57,11 +57,11 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | R618
 | `MutationRoutineWriteRecordField`
 | A mutation field whose write is a hop-less `+@routine+` call and whose return is a
-| 10
+| 20
 | pipeline
-| no
-| 0
-| DeliveryFactPinTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest
+| yes
+| 1
+| DeliveryFactPinTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
 | R618
 | `MutationServicePolymorphicField`
 | A mutation field backed by a developer-provided service method that returns a multitable
@@ -200,7 +200,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | R557
 | `BatchedTableField`
 | A DataLoader-batched keyed re-query anchor: the field launches its own SELECT keyed on a
-| 371
+| 381
 | pipeline
 | yes
 | 4
@@ -216,7 +216,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | -
 | `ColumnBackedField`
 | A column-backed output carrier on a table-backed parent: the field's value is produced
-| 2068
+| 2083
 | pipeline
 | yes
 | 19
@@ -240,7 +240,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | R109, R333, R54, R555, R569
 | `ErrorsField`
 | The `+errors+` field on a payload type. Lift target for the payload-side of a
-| 94
+| 104
 | pipeline
 | yes
 | 1
@@ -296,7 +296,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | -
 | `RecordReadField`
 | A value read off a record-backed parent's in-memory source object: the scalar / enum /
-| 418
+| 438
 | pipeline
 | yes
 | 1
@@ -438,7 +438,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | R333
 | `ErrorType`
 | An object type annotated with `+@error+`. Maps Java exceptions to GraphQL error responses
-| 104
+| 114
 | pipeline
 | yes
 | 1
@@ -510,7 +510,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | R221, R234
 | `JooqTableRecordType`
 | A result type whose runtime carrier is a jOOQ record of a resolved table
-| 195
+| 205
 | pipeline
 | yes
 | 1
@@ -574,7 +574,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | R278, R447, R558, R589
 | `TableType`
 | A GraphQL object type annotated with `+@table+`, without `+@node+`
-| 1604
+| 1609
 | pipeline
 | yes
 | 21
@@ -590,7 +590,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | R213, R333, R532, R544, R565, R589, R593, R608, R66, R92
 | `UnionType`
 | A union type whose member types all have `+@table+`
-| 94
+| 104
 | pipeline
 | yes
 | 1

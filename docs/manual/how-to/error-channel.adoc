@@ -139,12 +139,12 @@ Add a typed channel slot when an untyped fallthrough turns out to be a regular, 
 * *`VALIDATION` runs pre-execution.* The Bean-Validation handler intercepts before the service method runs; its results bypass the dispatch loop and route straight into the errors slot. There's at most one `VALIDATION` handler per channel.
 * *Cause-chain unwrap is per mapping, not per source-order step.* If a wrapping exception declares a handler at the channel and the wrapped exception declares a different one, the *wrapping* exception wins for any mapping it matches first — even if the wrapped exception would match a later mapping more specifically. Keep handler tuples disjoint across the wrap boundary.
 * *Unmatched flows redact.* If a developer expects a specific exception class to surface to the client and it doesn't, the most likely cause is "no `@error` type covers it"; check the redaction log for a correlation ID, then add the handler.
-* *No payload, no channel.* `@error` only takes effect when the type appears as (or in a union behind) an `errors:` field on a payload reachable from a `@service` field. A standalone `@error` type with no carrier is rejected at classify time.
+* *No payload, no channel.* `@error` only takes effect when the type appears as (or in a union behind) an `errors:` field on a payload one of the three producer families returns: a `@service` field, a payload-returning DML `@mutation`, or a payload-returning `@routine` Mutation write. A standalone `@error` type with no carrier is rejected at classify time.
 
 == See also
 
 * xref:../reference/directives/error.adoc[`@error`] is the directive surface and the handler-tuple specification.
-* xref:../reference/directives/service.adoc[`@service`] is the upstream of the errors channel: only service-returned payloads carry one.
+* Three producer families sit upstream of an errors channel: xref:../reference/directives/service.adoc[`@service`] payloads, payload-returning DML xref:../reference/directives/mutation.adoc[`@mutation`] carriers, and payload-returning xref:../reference/directives/routine.adoc[`@routine`] Mutation writes.
 * xref:result-types.adoc[How-to: Result-type variants] covers the payload's backing-class shape (reflected from its `@service` producer's return type), which the channel classifier reflects on to find the errors slot.
 
 xref:index.adoc[← How-to index]

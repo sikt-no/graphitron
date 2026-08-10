@@ -110,7 +110,11 @@ A hop *out of* a routine result has no foreign key to ride (a function result ca
 [[write]]
 == Writes on Mutation
 
-On a `Mutation` field, the routine call *is* the write, and it commits before the follow-up query runs. The supported shape is the chain form: `@routine` naming a `VOLATILE` set-returning function, plus at least one `@reference` hop landing the field's `@table` type.
+On a `Mutation` field, the routine call *is* the write, and it commits before the follow-up query runs. `@routine` names a `VOLATILE` set-returning function, and two return shapes are admitted: with `@reference`, the field returns the table the chain reaches; without it, the field returns a payload whose data field declares its own path.
+
+=== The chain form
+
+The chain form is `@routine` plus at least one `@reference` hop landing the field's `@table` type.
 
 [source,graphql]
 ----
@@ -132,7 +136,37 @@ The generated fetcher is two statements with a transaction boundary between them
 
 An SQL error from the routine rolls the transaction back and surfaces on the mutation field like any DML error; a read error in statement 2 cannot undo the already-committed write (the same caveat the DML mutations carry).
 
-Deferred write shapes, each reported with a pointer to the follow-up item: true procedures and scalar or void routines (jOOQ exposes them through a different call surface than table-valued functions), and the single-node Mutation `@routine` with no `@reference` hop (with no hop there is no post-commit table to re-read the response from). A chain whose first hop joins by `condition:` or carries a per-hop condition is likewise deferred: its predicate references the routine's result, which must not appear in the follow-up query, so no re-read anchor can be derived.
+=== The payload carrier
+
+Without `@reference`, the field returns a payload carrier: a plain Object wrapping exactly one `@table`-element data field, plus an optional errors-shaped field (the same carrier mold the DML and `@service` mutations admit).
+
+[source,graphql]
+----
+type RentFilmPayload {
+    rental: Rental              # the data field — must be nullable
+    errors: [RentFilmError]     # optional typed errors channel
+}
+
+type Mutation {
+    rentFilmPayload(inventoryId: Int!, customerId: Int!): RentFilmPayload
+        @routine(
+            name:       "rent_film"
+            argMapping: "pInventoryId: inventoryId, pCustomerId: customerId"
+        )
+}
+----
+
+The two statements become: the routine call and the key capture commit as statement 1; the data field's SELECT is the post-commit re-read, owned by the payload field rather than the mutation fetcher. The data field's path is implicit — the single name-matched hop to its own element's table: the element table's primary-key columns must be exposed, by SQL name, among the routine's result columns (`rent_film` exposes `rental_id`, rental's PK). When a key column is not exposed, the build error names it with a candidate hint; the fix is exposing the column from the routine — a `condition:` join is no escape hatch here, because a condition has no key tuple to capture.
+
+The errors-shaped field, when present, is the typed error channel: an exception the `@error` handlers match renders as `{ rental: null, errors: [<typed error>] }` with no field error (see xref:../../how-to/error-channel.adoc[the errors-channel how-to]).
+
+The data field must be nullable, and the reason is a second, distinct null-data outcome: the post-commit re-read runs at read time under the caller's identity, so a read policy (row-level security) can legitimately hide the row the routine just committed. That renders `{ rental: null, errors: null }` as a *success*, with nothing raised and nothing dispatched; a non-null data field would let non-null propagation null the whole payload and destroy the errors list, so it is rejected at build time.
+
+Two spellings are deliberately not admitted. `@routine` + `@reference` on the mutation field *with* a carrier return is rejected as a directive conflict: the reference path's seat is the payload's data field, the field whose rows it fetches, so drop `@reference` from the mutation field. And `@reference` on the data field itself (the explicit path declaration, single- and multi-hop alike) is deferred with a pointer to its follow-up; the implicit single name-matched hop is the shipped shape.
+
+=== Deferred write shapes
+
+Deferred write shapes, each reported with a pointer to the follow-up item: true procedures and scalar or void routines (jOOQ exposes them through a different call surface than table-valued functions), and the hop-less Mutation `@routine` whose return provides no re-read anchor — void, scalar, OUT-parameter binding, or a non-carrier Object. A chain whose first hop joins by `condition:` or carries a per-hop condition is likewise deferred: its predicate references the routine's result, which must not appear in the follow-up query, so no re-read anchor can be derived.
 
 == Fetch forms and @splitQuery
 
@@ -142,7 +176,7 @@ Because the batch is keyed by the routine's column-bound inputs, `@splitQuery` o
 
 == Constraints
 
-* The field's return type must be `@table`-bound, and the chain's last node must be that table. A non-`@table` return is rejected with `@routine requires a @table-annotated return type`; a routine-terminus mismatch is rejected with `@routine could not be resolved — the field's @table type ... does not match the routine's result table ...`.
+* With `@reference` on the field, the return type must be `@table`-bound, and the chain's last node must be that table. A non-`@table`, non-carrier return is rejected with `@routine requires a @table-annotated return type`; a routine-terminus mismatch is rejected with `@routine could not be resolved — the field's @table type ... does not match the routine's result table ...`. Without `@reference` on a Mutation field, the return may instead be a payload carrier (exactly one nullable `@table`-element data field plus an optional errors-shaped field); the carrier + `@reference` combination is rejected as a directive conflict, and `@reference` on the carrier's data field is deferred (see <<write,Writes on Mutation>>).
 * `name:` must resolve to a *table-valued function* in the jOOQ catalog. A name that resolves to nothing is rejected with `@routine could not be resolved — no table-valued function named ...`; a name that resolves to a plain table or view is rejected with `... resolves to a table or view, not a table-valued function`. A name that exists as a database routine but is not table-valued (a procedure, or a scalar or void function) is reported as deferred with a pointer to the follow-up item carrying that call surface; only a genuinely absent name gets the unknown-name rejection.
 * On a root field composing a chain (`Query` and `Mutation` alike), `@routine` must be the first directive application: a root chain has no implicit head, so the routine supplies it. `columnMapping` is likewise illegal at the head of a root chain (there is no previous table to bind from); bind root routine parameters from GraphQL arguments.
 * `argMapping:` / `columnMapping:` parameter names are the jOOQ-generated (camelCased) names. Binding a parameter to an argument the field does not declare, or to a column the previous table does not carry, is a build error (the column case lists the previous table's columns as candidates). A column-bound parameter's Java type must match the routine parameter's. Resolving the parameter names off the generated `Routines` method requires the consumer to compile their jOOQ sources with `-parameters`.
