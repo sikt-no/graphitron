@@ -7,7 +7,7 @@ priority: 5
 theme: diagnostics
 depends-on: []
 created: 2026-08-03
-last-updated: 2026-08-09
+last-updated: 2026-08-10
 ---
 
 # Aggregated diagnostics commands for the MCP server
@@ -83,14 +83,17 @@ currently make:
   missed them entirely.
 
 That leaves the message *within* the `AuthorError.Structural(String reason)` and
-`InvalidSchema.Structural(String reason)` catch-alls as the only genuinely untyped axis. Some
-retired-directive rejections live there (`@lookupKey` on a mutation input field, from both
-`FieldBuilder` and `MutationInputResolver.rejectInputFieldDirectives`, via `Rejection.structural`),
-alongside the mutation-argument-shape and payload-classification rows. The draft cited `@table` on an
-input type here; that example is stale, because the reopened `@table`-on-input deprecation window
-(accept, ignore, warn) deleted the rejection arm, so the directive now produces a `BuildWarning`
-rather than any `Rejection`. Nothing else in the design depended on the example, but it does mean the
-`Structural` residue open question 4 measures is smaller than the draft implied.
+`InvalidSchema.Structural(String reason)` catch-alls as the only genuinely untyped axis, and that
+residue has shrunk twice since the draft, both times by a shipped item rather than by anything this
+one does. The draft cited `@table` on an input type; the reopened `@table`-on-input deprecation
+window (accept, ignore, warn) deleted the rejection arm, so the directive produces a `BuildWarning`
+and no `Rejection` at all. The revision then cited `@lookupKey` on a mutation input field as living
+in `Structural` via both `FieldBuilder` and `MutationInputResolver.rejectInputFieldDirectives`; R585
+moved both sites, and `@notGenerated` with them, onto `Rejection.directiveConflict`. On today's tree
+no retired-directive rejection reaches the `Structural` arm: what is left there is the
+mutation-argument-shape and payload-classification rows. Nothing in the design depended on either
+example, but the residue reviewer decision 4 measures is smaller again, which is one more argument
+for that decision's default of omitting `messageTemplate`.
 
 ## What the model owns but does not yet expose
 
@@ -183,8 +186,9 @@ Three parts, each of which Spec should settle in shape and wire naming:
 
 `instructions.txt` should point an agent at the aggregate first when the diagnostic count is
 large, or the capability will go undiscovered in exactly the sessions that need it. This item writes
-that one routing sentence only; the file's structure, its diagnostics orientation, and the coverage pin
-that keeps routing honest belong to `mcp-server-instruction-routing`.
+that one routing line only. The file's structure, its diagnostics orientation, and the coverage pin
+that keeps routing honest shipped with R584 (see `roadmap/changelog.md`), which also means the
+routing line is not optional here: see the implementation site below.
 
 ## Faceted aggregation, not a fixed set of reports
 
@@ -247,7 +251,7 @@ and the view that computes the derived ones (see the first-reader section below)
 
 **Why not a real query language.** The first draft of this section priced a query surface at
 a grammar or a new pinned dependency plus unbounded semantics to validate, and half of that
-pricing is now stale: the day `graphitron-model-captures-facts` lands, SQL arrives with H2 and
+pricing is now stale: with the fact store shipped (R595), SQL arrives with H2 and
 jOOQ for free, no grammar to build and no new dependency to pin. What remains is the case
 that still decides it. A closed enum is discoverable from the tool's input schema in one
 shot and cannot fail to parse, whereas a query surface spends the exact resource this item is
@@ -279,22 +283,21 @@ change at once.
 
 **The prose fallback needs an enforcer, not a hedge.** Saying on the wire "these clusters are
 prose-derived" is honest but nothing fails when a message reword silently re-partitions the
-aggregate. The sharpest case is the retired directives: `@notGenerated` and `@lookupKey` on a
-mutation input field each carry *three* rejection identities today, only one of which is a typed
-`Rejection.directiveConflict`. A message template fuses them only *because a sentence is
-duplicated*, and splits them the day one is reworded, which for `@lookupKey` has already happened:
-`MutationInputResolver.rejectInputFieldDirectives` words it differently from the other two, so a
-template does not fuse those sites even now.
+aggregate. The sharpest case used to be the retired directives: `@notGenerated` and `@lookupKey` on
+a mutation input field each carried three rejection identities, only one of them a typed
+`Rejection.directiveConflict`, so a message template fused them only *because a sentence was
+duplicated* and split them the day one was reworded, which for `@lookupKey` had already happened.
+R585 converged all of them (five spellings, not the three counted here), so the sharpest case is
+gone from the tree and the `directives` pivot can trust its counts. `@multitableReference` needed no
+work: its retirement already routed through `Rejection.directiveConflict` from a single site, which
+is the target shape.
 
-Converging those identities turned out to be a change to the input-field resolution path rather than
-a rewrite of three call sites, so it is its own item and this one depends on it; see the carve-out
-under Phasing for the measured inventory. `@multitableReference` needs no work: its retirement
-already routes through `Rejection.directiveConflict` from a single site, which is the target shape.
-
-So: add the `directives` dimension on top of the converged identities, then measure what residue is
-left. Whatever prose clustering survives gets a partition test over `Rejection` leaves, so no coded or
-typed-key arm can reach the prose path and the heuristic's domain is a declared, shrinking set
-rather than the default bucket new arms fall into.
+The argument the case was making survives its own example, and that is the reason to keep the
+enforcer rather than drop it with the convergence. Nothing stopped those three identities from
+diverging except an item noticing, and nothing stops the next set: add the `directives` dimension,
+then measure what prose residue is left. Whatever prose clustering survives gets a partition test
+over `Rejection` leaves, so no coded or typed-key arm can reach the prose path and the heuristic's
+domain is a declared, shrinking set rather than the default bucket new arms fall into.
 
 **The one genuine cost to design around: group cardinality.** A composite `groupBy` over
 high-cardinality dimensions (`type` crossed with `attempt`, say) can produce nearly as many
@@ -459,29 +462,23 @@ step: the widened filters and the aggregate share the view and one null-safe `wh
 and splitting them is how the two parallel filter implementations this design exists to prevent
 get built.
 
-**Carved out at review, as a dependency: the retired-directive identity convergence.** Routing
-`@notGenerated` and `@lookupKey` through `Rejection.directiveConflict` so each cause has one identity
-shipped with R585 (see `roadmap/changelog.md`); five spellings converged, not the three counted here,
-and this item's `directives` pivot can now trust its counts. One adjacent hardening stays
-non-blocking: `directive-conflict-directives-contract-sweep` (R608, Backlog) pins the
-`DirectiveConflict.directives` no-counterfactual-entries contract at every producer site rather
-than the one site typed so far; the pivot's counts are right on today's tree either way, R608 is
-what keeps a future producer from quietly corrupting them. It was sized "small" across three
-files on the strength of the two `FieldBuilder` sites and `MutationInputResolver`, all of which already
-hand a `Rejection` to their caller. The third site does not:
-`BuildContext.classifyInputFieldInternal` returns `InputFieldResolution.Unresolved`, which carries prose
-and no `Rejection` at all, and both of its consumers join many failures into one `Rejection.structural`
-before one reaches a `ValidationError`. So the identity cannot move until the record and the fan-in
-move: sixteen producers, three consumers, and a real fork inside it (several rejections per input type,
-or one). That is a lift of a documented principle violation in its own right and does not belong inside
-a diagnostics-read item.
+**Carved out at review as a dependency, and since satisfied: the retired-directive identity
+convergence.** This item once blocked on routing `@notGenerated` and `@lookupKey` through
+`Rejection.directiveConflict` so each cause has one identity, because the `directives` dimension
+counts only rejections carrying a typed directive list and would otherwise have reported one row
+where three rejections concerned the same directive: a confidently wrong count in the very view this
+item builds to replace hedged ones. R585 shipped that convergence (see `roadmap/changelog.md`),
+converging five spellings rather than the three this item had counted, and it turned out to be a
+lift of the input-field resolution path rather than a rewrite of three call sites, which is why it
+was its own item. `InputFieldResolution.Unresolved` now carries `(fieldName, SourceLocation,
+Rejection)`, and `BuildContext.classifyInputFieldInternal`, the site whose prose-only `Unresolved`
+was the reason the identity could not move, mints `Rejection.directiveConflict` for both directives
+directly. Nothing here waits on it: the dependency is discharged and `depends-on` is empty.
 
-Unlike the `Coordinate` carve-out, this one is a **dependency** rather than a separation. The
-`directives` dimension counts only rejections carrying a typed directive list, so on today's tree it
-would report one row for `@notGenerated` where three rejections concern it. Shipping the dimension
-before the convergence would put a confidently wrong count in the very view this item builds to replace
-hedged counts. Nothing else in the design touches it, so the two can be worked in parallel provided the
-dependency lands first.
+One adjacent hardening stays non-blocking: `directive-conflict-directives-contract-sweep` (R608,
+Backlog) pins the `DirectiveConflict.directives` no-counterfactual-entries contract at every
+producer site rather than the one site pinned so far. The pivot's counts are right on today's tree
+either way; R608 is what keeps a future producer from quietly corrupting them.
 
 **The dependency chain now: everything in front has shipped, R589 deliberately not.**
 The store (R595), the graph partition dimension (R610), and the `javac_` oracle family (R603)
@@ -565,6 +562,10 @@ move and the later schema-arm swap (R589's detection-minted relation) invisible 
 - Live-server tier: the `GraphitronMcpServerTest` tool-list assertion gains
   `diagnostics.aggregate` (it pins the list with `containsExactlyInAnyOrder`, so it fails until
   updated), plus one end-to-end call asserting the structured shape and the snapshot axes.
+- `ServerInstructionsTest` needs no new case, but it gates this item's discovery surface and is the
+  reason the routing line and the manual row are not optional: see Implementation sites. Its existing
+  assertions cover the new tool by construction, since it derives the advertised surface from a booted
+  server rather than a hand-written list.
 
 Steps 1 to 3 pin at their own layers: `RejectionKindProjectionTest` for the actionable projection,
 and the existing LSP tests (`RejectionSeverityCoverageTest` reads each arm's stable code today) for
@@ -589,13 +590,20 @@ the collapsed `lspCodeOf`.
 - `GraphitronMcpServer`'s `tools` list: register the new tool. The `GraphitronMcpServerTest`
   tool-name assertion pins the list, so it fails until updated.
 - Both tool descriptions: the dimension vocabulary has to be enumerated somewhere for discovery.
-- `mcp/instructions.txt`: one sentence pointing at the aggregate when the diagnostic count is large.
-  The file carries no diagnostics guidance today (it routes only to the `catalog.*` tools), and writing
-  that orientation is `mcp-server-instruction-routing`'s scope, not this item's. If that item has not
-  landed, drop the sentence in wherever the file's structure then is and let it be folded in later.
+- `mcp/instructions.txt`: one routing line pointing at the aggregate when the diagnostic count is
+  large. R584 shipped the file's question-keyed routing table over all twelve tools plus the
+  `directives` resource, so the line goes into that table's diagnostics entry rather than anywhere
+  convenient, and it is written against a composed string carrying a 3600-character ceiling.
 - `docs/manual/how-to/mcp-agent-context.adoc`: the per-tool table gains a `diagnostics.aggregate`
   row beside the existing `diagnostics` one. This is the user-facing surface the shipped
   `docs.search` / `catalog.search` tools landed prose on, and the draft omitted it.
+- Neither of the two above is discretionary, and this is the sequencing fact most likely to surprise
+  the implementer. `ServerInstructionsTest`'s coverage pin is bidirectional and derives the advertised
+  surface from a booted server, asserting it against the ambient string per boot and against the
+  manual's tool table. Registering `diagnostics.aggregate` therefore fails the forward direction until
+  the routing line exists and the manual row exists, and writing either one early fails the reverse
+  direction until the tool is registered. R584 mutation-checked exactly this case. Land the tool, the
+  routing line, and the manual row in one commit.
 - `ValidationReport.canonicalUri` is declared the single canonical URI site, and a `file`
   dimension spanning both channels would group two spellings of one path apart. The compile
   side is already settled in the tree: `CompileDiagnostic.from` normalises the file through
@@ -647,26 +655,28 @@ the tool boundary, the preset, pure counts, the set-valued `directives` group, a
   canonical render: sort, then join, so `[routine, splitQuery]` and `[splitQuery, routine]` cannot
   split a group. One row, one group, counts still sum.
 
-  Two reasons this is the right key and not a lossy compromise. The co-occurrence cases are where
-  multi-element lists come from, and there the *pair* is the cause: `@splitQuery` alone is fine, and
-  attributing `[splitQuery, routine]` to `routine` would name the wrong culprit. Second, and this is
-  what rules out the exploded alternative today, the component is not "the directives on this field".
-  Its javadoc promises only "the bare directive names for downstream tooling", and one site
-  (`FieldBuilder`'s `@asConnection` on an inline `TableField`) lists a directive that is *absent*,
-  because adding it is the remedy. A per-directive count would therefore report `@splitQuery` as
-  implicated in diagnostics where writing `@splitQuery` is the fix, inverting the action the number
-  exists to drive.
+  The co-occurrence cases are where multi-element lists come from, and there the *pair* is the
+  cause: `@splitQuery` alone is fine, and attributing `[splitQuery, routine]` to `routine` would
+  name the wrong culprit. That reason stands on its own and is what settles the decision.
 
-  So the exploded per-directive dimension is deliberately deferred, not rejected. It needs the
-  component's contract pinned first (every listed directive present on the declaration). R585 stated
-  that contract on `DirectiveConflict`'s javadoc and pinned it at one producer site; sweeping it over
-  the rest is R608. It also needs the response to
-  declare its grain, since exploding makes group counts sum above the row count. Revisit as a second
-  dimension alongside this one once the contract holds, which is the coarse/fine grain pair this
-  design already uses elsewhere.
+  The draft gave a second reason that no longer holds and is recorded here so it is not
+  re-discovered as a live hazard: the component used to be looser than "the directives on this
+  field", and one site (`FieldBuilder`'s `@asConnection` on an inline `TableField`) listed
+  `@splitQuery`, a directive that is *absent*, because adding it is the remedy. A per-directive
+  count would have reported `@splitQuery` as implicated in diagnostics where writing it is the fix.
+  R585 stated the contract on `DirectiveConflict`'s javadoc (every listed directive is applied at
+  the rejection's own declaration; a remedy belongs in the prose) and fixed that site, so the
+  inversion is not reachable on today's tree.
 
-  Because of that gap between the name and the contract, the wire gloss says "the directive names
-  identifying this conflict", never "the directives on this field".
+  So the exploded per-directive dimension is deliberately deferred, not rejected, and on a narrower
+  basis than the draft's. The contract is stated but pinned at one of eleven producer sites, which
+  is a spot check rather than a contract; sweeping it is R608. Exploding also needs the response to
+  declare its grain, since it makes group counts sum above the row count. Revisit as a second
+  dimension alongside this one once R608 holds, which is the coarse/fine grain pair this design
+  already uses elsewhere.
+
+  Until the sweep lands, the wire gloss says "the directive names identifying this conflict", never
+  "the directives on this field".
 
 ## User documentation (first-client check)
 
@@ -702,8 +712,8 @@ in sixteen:
 >
 > *Derived from message text* (not stable across a rewording): `messageTemplate`.
 
-**`mcp/instructions.txt`**, the one sentence this item contributes to the diagnostics orientation that
-`mcp-server-instruction-routing` owns:
+**`mcp/instructions.txt`**, the one line this item contributes to the diagnostics entry of the
+question-keyed routing table R584 shipped:
 
 > When the schema has more than a page of diagnostics, call `diagnostics.aggregate` before
 > `diagnostics`. It answers what is broken and in what proportion in one small result, and its group
