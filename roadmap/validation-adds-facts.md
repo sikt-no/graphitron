@@ -7,7 +7,7 @@ priority: 4
 theme: classification-model
 depends-on: []
 created: 2026-08-04
-last-updated: 2026-08-09
+last-updated: 2026-08-10
 ---
 
 # Classification is a relation; validation adds facts
@@ -82,9 +82,9 @@ somewhere else". Its javadoc lists three cases under one record, two of which it
 schema-author bug, and the discriminator between them is component values: whether `condition` is
 present, whether it overrides, and whether the nullable `attemptedColumnName` was filled in. That is
 kind-dependent nullability standing in for a fact the model should carry outright, the same smell
-the principles doc names when it justifies `EdgeKind` as a label enum ("carries no kind-dependent
-nullability"). The consumer then re-derives violation-ness from those components rather than reading
-a violation.
+`EdgeKind`'s own javadoc names when it justifies the label-enum shape (the varying endpoint shape
+lives in `NodeRef`, so the enum "carries no kind-dependent nullability"). The consumer then
+re-derives violation-ness from those components rather than reading a violation.
 
 ## Three layers, and the leak is worst at the seam
 
@@ -150,6 +150,15 @@ behavior: R610's own refresh scoping landed derivationally, a relation carrying 
 column ownership-cleared by construction rather than taught per relation, and these slices
 default to the same move.
 
+`coordinate` in that key is grain-generic shorthand, and the grain question is decided here
+rather than left to the view definition. Types claim (`@table`, `@error`) and fields claim, and
+the two grains have different concrete keys in the shipped DDL (`(graph_name, type_name)`
+against `(graph_name, type_name, field_name)`), so the claim layer is one view per grain, two
+views on the authored side. A single view spanning both grains would need a nullable
+`field_name` column or a serialized coordinate string, which is exactly the kind-dependent
+nullability this item exists to remove; the grain split is the relational form of the same rule,
+and "the claim view" in the prose below means whichever grain's view covers the coordinate.
+
 Separate relations rather than one relation with a tier tag keep each row type honest: the two
 provenance shapes never share a record, so no component goes nullable by kind, which is the
 `UnboundField` smell above. The key is the purity statement: a classifier is a deterministic
@@ -169,10 +178,11 @@ derived, not because anything specially preserved it.
 **Claims cover the classification axis only.** Delivery (`@splitQuery`), reachable source shapes,
 and the other gathered axes stay their own coordinate-keyed relations; `GraphitronSchema` already
 carries eight, and the claim relations join that family rather than swallowing it. Which
-directives claim is declared where the claim view is defined: the view unions one arm per
-claiming semantic relation, so "classification-claiming" is data a query can answer rather than
-a hand-enumerated Java list; `@splitQuery`'s relation contributes no arm, and the `Composes`
-verdict dissolves rather than migrates.
+directives claim is declared where the claim views are defined: each grain's view unions one arm
+per claiming semantic relation, so "classification-claiming" is data a query can answer rather
+than a hand-enumerated Java list; `@splitQuery`'s relation contributes no arm, and the `Composes`
+verdict dissolves rather than migrates. An arm is usually a projection of its relation's key
+columns; slice 2 names the one that is not.
 
 The in-memory precursor is already in the tree and should be read before slice 2 designs the arm
 list. `no.sikt.graphitron.facts.GatheredFacts` holds one named typed slot per registered visitor,
@@ -183,7 +193,7 @@ in the shape the pre-store code could express it; the migration is to make the s
 a property of the view definition. `FieldBuilder.hasLookupKeyAnywhere` is the pattern's other half
 already applied to a claiming directive: it reads `LookupFacts.triggersFor` instead of re-walking
 the argument surface, and its javadoc names the visitor as the directive name's single lexical
-home. Slice 2's arm list should be reconciled against `FactVisitor`'s permits, not derived
+home. Slice 2's arm lists should be reconciled against `FactVisitor`'s permits, not derived
 independently.
 
 **Resolution is a relational expression, not a tag filter.** The view planning reads is the
@@ -399,9 +409,16 @@ throughout; what moves is where verdicts come from and what survives a failure.
    with the staleness audit's symbol refresh folded into the same pass (region list in
    `roadmap/audits/2026-08-06-fact-base-impact-sweep.md`). Reviewed through this item's gates;
    R333 does not leave Ready.
-2. **The authored claim view ships, and the conflict rule reads it.** The view unions one arm
-   per claiming `graphitron_` relation at both grains, classifier column a literal per arm; the
-   arm list is the axis declaration. (The shipped DDL holds the `intent_` prefix in reserve for
+2. **The authored claim views ship, and the conflict rule reads them.** One view per grain, per
+   the key decision above: the field-grain view and the type-grain view each union one arm per
+   claiming `graphitron_` relation at their grain, classifier column a literal per arm; the two
+   arm lists are the axis declaration. An arm is usually a projection of its relation's key
+   columns, and one arm is not: `@lookupKey` claims on presence anywhere on the field's argument
+   surface, so its arm lifts the argument-grain `graphitron_argument_lookup_key` rows to field
+   grain and unions the transitive input-object closure (a recursive CTE, the vehicle the
+   derivation section settles), which is `LookupFacts.triggersFor` restated as a query; the
+   predicate keeps its single home by moving there, not by growing a duplicate.
+   (The shipped DDL holds the `intent_` prefix in reserve for
    exactly this derived stratum, and R603 gave the call firmer edges by testing the reserve: a
    family is named for whose vocabulary its rows are written in, and a claim is the generator's
    verdict, which fits; but the schema gates govern base relations and this layer is mostly
@@ -411,15 +428,21 @@ throughout; what moves is where verdicts come from and what survives a failure.
    `graphitron_undecoded_argument` row (R609), so the claim view would silently miss that
    application; either that quarantine lands first, or this slice ships the companion detection
    (a graphitron-namespace `graphql_` application with no decoded row). The conflict detection
-   groups the view by coordinate; the
+   is the same grouping query stated once per grain over its view (a grain is a key shape, not
+   a semantic difference); the
    recognized-combinations rule refines `@routine` with `@lookupKey` to the Deferred kind (cause
    identity pinned: it stays a capability-gap rejection); and the four conflict sites dissolve
-   into the one detection: the two hand-enumerated detector lists behind
-   `reduceDirectiveConflict`, the ad hoc `@service` with `@mutation` check, and the type-level
-   `@table` with `@error` check. Violations mint into `diagnostics`; the claims stay; a
+   into the two grain detections: the two hand-enumerated detector lists behind
+   `reduceDirectiveConflict` and the ad hoc `@service` with `@mutation` check into the
+   field-grain grouping, the type-level `@table` with `@error` check into the type-grain one.
+   Violations mint into `diagnostics`; the claims stay; a
    conflicted coordinate stops tombstoning. The `Composes` row dies with the pairwise table
    (`@splitQuery` is a delivery-axis directive that never claims; the row is dead code today
-   regardless).
+   regardless). Whichever way the naming call falls, the shadow driver is part of this slice's
+   landing: `FactCaptureAgreementTest` enumerates the generated relations and fails on any
+   without a registered agreement source, and its `DERIVED` arm's doc already pre-decides where
+   derivation strata land ("as registrations here, not as exemptions"), so a claim view that
+   enters the DDL registers there on arrival rather than widening any skip list.
 3. **One inferred classifier proves the witness model.** The column-match classifier (a field
    name resolving against the parent's table) ships as a derivation view whose row carries its
    join witnesses, masked by the authored-coverage anti-join. Acceptance is agreement with the
@@ -427,7 +450,9 @@ throughout; what moves is where verdicts come from and what survives a failure.
    before any arm-by-arm migration.
 4. **Demand and exemptions become rows, in shadow.** The demand relation (reachable coordinates
    intersected with requiring rules) and the censused exemption populations land as derivations
-   with agreement instrumentation against the legacy registry's verdict population. They gate
+   with agreement instrumentation against the legacy registry's verdict population; the
+   instrumentation's home is `FactCaptureAgreementTest`, the driver the substrate shipped for
+   exactly this shadow-period shape, not a parallel harness. They gate
    nothing here: flipping the demand anti-join to a build-failing rule changes what the build
    accepts (the DELETE-carrier hole, the renamed subscription root) and is follow-up work with
    its own item.
@@ -653,9 +678,10 @@ land in one of the scope's pieces.
   closure.
 - **The axis declaration's home: closed by the store.** A directive's axis is which derivation
   views read its semantic relation, and the classification axis's declaration is literal: the
-  claim view unions one arm per claiming `graphitron_` relation, classifier column a literal
-  per arm, at both grains, since types claim too. Today's four conflict sites all dissolve into the
-  same grouping detection over that view: the two hand-enumerated detector lists behind
+  claim views union one arm per claiming `graphitron_` relation, classifier column a literal
+  per arm, one view per grain since types claim too and the two grains' keys differ (the slice 2
+  decision). Today's four conflict sites all dissolve into the
+  per-grain grouping detections over those views: the two hand-enumerated detector lists behind
   `FieldBuilder.reduceDirectiveConflict` (child fields: `@service`, `@externalField`, `@nodeId`,
   `@routine`; root query fields: `@service`, `@lookupKey` anywhere on the argument surface,
   `@routine`), the ad hoc `@service` with `@mutation` check in the mutation-field arm, and the
