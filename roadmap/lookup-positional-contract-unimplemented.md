@@ -1,7 +1,7 @@
 ---
 id: R617
 title: "Lookup misses drop rows instead of holding their position"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 1
 theme: codegen-correctness

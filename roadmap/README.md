@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R617` | Lookup misses drop rows instead of holding their position | In Progress | 2026-08-10 <sub>created 2026-08-09</sub> | [plan](lookup-positional-contract-unimplemented.md) |
+| `R617` | Lookup misses drop rows instead of holding their position | In Review | 2026-08-10 <sub>created 2026-08-09</sub> | [plan](lookup-positional-contract-unimplemented.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R618` | Routine mutation: admit a payload carrier return with a typed errors channel | Spec | 2026-08-10 | [plan](routine-mutation-payload-carrier-return.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-10 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
@@ -381,7 +381,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### codegen-correctness
 
-- `R617` [**Lookup misses drop rows instead of holding their position**](lookup-positional-contract-unimplemented.md) — In Progress, bug
+- `R617` [**Lookup misses drop rows instead of holding their position**](lookup-positional-contract-unimplemented.md) — In Review, bug
 - `R480` [**@oneOf definition augment defeated by descriptions quoting the definition; federated SDL fails Apollo composition**](oneof-augment-defeated-by-descriptions.md) — Backlog, bug
 - `R558` [**Validator mirrors for launcher-surfaced classification gaps**](root-family-validator-mirror-gaps.md) — Backlog, correctness
 - `R521` [**Generated-output readability and hygiene sweep**](generated-output-hygiene-sweep.md) — Backlog, cleanup
