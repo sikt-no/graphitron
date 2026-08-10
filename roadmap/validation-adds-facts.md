@@ -763,10 +763,121 @@ land in one of the scope's pieces.
   authored-value column, and it is still no kind-dependent nullability. `NodeProvenance` is the
   precedent a slot-fact origin column should follow.
 
+## Slice 2 implementation record (settled at implementation start, 2026-08-10)
+
+The design below was fixed before the first code change, checked against the live code (the
+wiring facts), probed empirically (the H2 facts), and reviewed through a principles-architect
+consult whose findings are folded in. It binds the slice's implementation; deviations get
+recorded here.
+
+**Wiring facts that shaped it.** Capture runs after classification today, and after validation
+on the generate path (`GraphQLRewriteGenerator.runPipeline`: build, validate, capture); the
+LSP path (`buildOutput`) captures before validating; the `validate()` goal never captures at
+all. `BuildContext` holds no store handle. The legacy detectors are AST-presence-based
+(`hasAppliedDirective`), while the semantic relations are decode-based, and the R609
+declined-decode gap is still open (`@routine` missing its name and `@mutation` missing
+`typeName` decline silently), so a decode-only claim view under-counts exactly where the
+presence-based detectors fire. The conflict checks' domain is the walk: interface fields,
+nesting-target fields, carrier data fields and embedded nested children never reach them (the
+demand census's negative space), and embedded nested children are classified through
+`classifyChildFieldOnTableType`, which bypasses the detector sites entirely.
+
+**H2 facts (probed on 2.4.240).** A recursive CTE with `UNION` does not terminate on a cyclic
+graph; it accumulates until the JVM dies, and cyclic input objects are legal GraphQL. The
+path-guarded form (`UNION ALL` with a visited-path column and a `POSITION` guard) terminates on
+cycles, short-circuits to zero rows on an empty seed, works inside a `CREATE VIEW`, and
+composes with plain arms under an outer `UNION ALL`. `ROW_NUMBER() OVER (PARTITION BY ...)`
+works inside a view. The lookup closure uses the path-guarded form; its seed is the retired
+input-field site, so on every accepted schema the recursion never expands.
+
+**The views.** The `intent_` reserve is taken: `intent_authored_field_claim` and
+`intent_authored_type_claim` are the derived stratum's first residents, and the DDL header's
+reserve paragraph updates to record that the stratum arrived as views (a family is named for
+whose vocabulary its rows are written in; materialization is not the discriminator). Columns:
+`graph_name`, the grain's coordinate columns, `classifier` (a classification-kind literal per
+arm, decoded Java-side into a sealed vocabulary whose enforcer is a test asserting the view's
+distinct values fall inside it), `trigger` (the claiming directive's name, for messages),
+`decoded` (boolean), and the application's own `source_name` / `source_line` / `source_column`.
+Classifier and trigger are separate columns because slice 3's inferred arms have classifiers
+with no directive and the first-client JSON already renders them as different fields. Each
+claiming relation contributes a decoded arm, and each claiming directive additionally
+contributes an undecoded presence arm (the site-family application rows anti-joined against the
+decoded relation, `decoded` false) so the view is presence-faithful where a decode declined;
+this is the R609 companion detection landing inside the view rather than beside it, keeping the
+axis declaration and the position masks in one place. `@lookupKey` gets no presence arm: it is
+an argument-less marker whose decode is total, stated in the view comment. The routine arms
+collapse the ordinal grain by picking the minimum-ordinal application's row via `ROW_NUMBER`,
+depending on no density invariant. The type-grain arms carry the root-name mask (transcribing
+`TypeBuilder`'s root short-circuit); their OBJECT-only co-occurrence is guaranteed upstream by
+assembly today (`@error` is declared `on OBJECT`), recorded in the view comment the way
+`graphitron_undecoded_argument` records its assembly dependency.
+
+**The detection.** `no.sikt.graphitron.rewrite.derive.AuthoredClaimConflicts`, the store's
+first reader: one grouping query per grain over its view, every statement graph-scoped. The
+reduction is typed over the classifier vocabulary: more than one claim mints
+`Rejection.directiveConflict` naming every claim in the fixed order service, externalField,
+nodeId, lookupKey, routine, mutation (which reproduces all three legacy per-site list orders),
+except claims equal to exactly the routine and lookup pair, which mints the pinned Deferred
+message verbatim. Violations are `ValidationError.forField` / `forType` values identical to
+what the validator mints from today's tombstones; mint locations join from the store
+(`graphql_field`'s own position, the type's base declaration site), not from the walked model.
+
+**The domain gate, a named scaffold.** The detection mints only at coordinates present in the
+walked model's registries, a membership test and nothing more (no `RootType` subtraction; the
+masks already keep roots claim-free). Its home is one typed value (`ClaimDomain`) built from
+the bundle, whose javadoc names the demand census and states that it is the unreified demand
+relation; slice 4's shadow demand rows diff against exactly this value, which is the scaffold's
+removal criterion. An ungated detection would move the accept line at the census's E0/F1/F3
+populations, which the out-of-scope pins forbid.
+
+**Wiring.** `FactCapture.runWithDetections(...)` returns the detection's violations through a
+typed seam (no raw `DSLContext` escapes; the class javadoc stops claiming nothing reads the
+store). `runPipeline` reorders capture ahead of validation and merges the violations into the
+error stream; `validate()` gains the same capture-and-detect step (today it would silently
+lose conflicts); `buildOutput` detects after its existing capture call and merges into the
+`ValidationReport`; all three share one private helper. Hosting capture inside `buildBundle`
+(the single-drain end state, where violations mint into `GraphitronSchema.diagnostics` before
+the model seals) was considered and deliberately deferred: `buildBundle` is the unit tier's
+entry point and an H2 boot per test multiplies suite cost with no verdict change. That end
+state arrives when capture moves ahead of classification under the umbrella.
+
+**Deletions.** The four conflict sites and both detector lists go
+(`detectChildFieldConflict`, `detectQueryFieldConflict`, the ad hoc `@service` with
+`@mutation` check, `TypeBuilder.detectTypeDirectiveConflict`), and `PairVerdict` /
+`pairVerdict` / `reduceDirectiveConflict` with them. `hasLookupKeyAnywhere` and
+`LookupFacts.triggersFor` stay live: the classifier arms still consult them, so the trigger
+predicate ends this slice with two homes, bound by an agreement anchor (the lookup arm's
+field set equals `triggersFor` over the anchor fixtures, a cyclic one included); the single
+home arrives with the arm-by-arm migration under the umbrella. The retirement rejections for
+`@notGenerated` and `@multitableReference` stay where they are; a schema combining one of
+them with two claiming directives now reports the retirement and the conflict.
+
+**Tests.** The five conflict rows in `GraphitronSchemaBuilderTest`'s three conflict enums
+migrate to a store-backed detection test (capture the fixture, build the bundle for the gate,
+assert the minted violations), which also carries the agreement anchors, a sibling-graph
+scoping guard (a second graph's conflict must not leak into this run's violations), and the
+undecoded-fallback cases. The claim views register in `FactCaptureAgreementTest`'s `DERIVED`
+arm, whose doc is softened to say a semantic derivation registers with its own anchor rather
+than claiming all view agreement vacuous.
+
+**Recorded corners, all verified against the corpus at landing.** Embedded nested-child
+conflicts surface today as an enriched rejection at the referencing parent; after
+de-tombstoning they surface as whatever the nested arm rejects at the parent, plus the
+detection at the child when the child coordinate classifies, so accept/reject is preserved
+while message and location churn at that corner. A DELETE-carrier data field that reaches the
+registry through `reclassify` is newly inside the gate. Until slice 6 lands the Conflicted
+projection arm, a conflicted coordinate renders its arm-order classification on the MCP and
+LSP surfaces with the violation on the diagnostics channel only; slice 6 restores the
+conflict signal to those surfaces, and this intermediate is deliberate rather than
+discovered.
+
 ## Retired vocabulary (expected; finalise at the Done gate)
 
 - `FieldBuilder.PairVerdict` / `pairVerdict` / `reduceDirectiveConflict`: the pairwise reduction,
   replaced by the authored-relation key constraint plus the recognized-combinations rule.
+- `FieldBuilder.detectChildFieldConflict` / `detectQueryFieldConflict` /
+  `TypeBuilder.detectTypeDirectiveConflict`: the per-position detector sites, dissolved into the
+  two grain detections (slice 2).
 - The three-cases-in-one-record reading of `InputField.UnboundField` and its `attemptedColumnName`
   null-as-discriminator semantics (the component itself may survive as an honest fact).
 - `UnclassifiedField.definition()` (candidate): the claim relations subsume the rich-error-context
