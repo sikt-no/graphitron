@@ -1,6 +1,6 @@
 type Query {
     films: [Film!]!
-    filmById(film_id: [ID] @lookupKey): [Film!]!
+    filmById(film_id: [ID] @lookupKey): [Film]!
 }
 
 type Film @table(name: "film") {

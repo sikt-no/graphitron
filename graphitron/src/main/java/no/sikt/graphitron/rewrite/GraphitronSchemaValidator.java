@@ -711,6 +711,21 @@ public class GraphitronSchemaValidator {
                     field.location()
                 ));
             }
+            // A list lookup answers one slot per key, and a key matching no row occupies its slot
+            // with null. Non-nullable elements make that unrepresentable: GraphQL propagates the
+            // null out of the list and the whole field returns null with an error, so a single
+            // unmatched key would discard every matched one. Rejected at build time, because the
+            // alternative is a schema that works until the first miss.
+            if (field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.List list
+                    && !list.itemNullable()) {
+                errors.add(new ValidationError(
+                    field.qualifiedName(),
+            Rejection.invalidSchema("Field '" + field.qualifiedName() + "': a lookup field's list "
+                + "elements must be nullable, since an unmatched key yields null at its output "
+                + "position; declare the element type without '!'"),
+                    field.location()
+                ));
+            }
         }
         if (field.orderBy() instanceof OrderBySpec.Argument) {
             errors.add(new ValidationError(

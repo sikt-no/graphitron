@@ -264,11 +264,10 @@ class RootLauncherSqlBaselineTest {
             .as("lookup root: the anchor joined to the input VALUES table over the key columns, "
                 + "input-ordered by the derived table's idx column")
             .containsExactly(
-                "select \"public\".\"language\".\"name\" "
+                "select \"public\".\"language\".\"name\", \"languagebykeyinput\".\"idx\" as \"__idx__\" "
                     + "from \"public\".\"language\" "
                     + "join (values (0, ?), (1, ?)) as \"languagebykeyinput\" (\"idx\", \"language_id\") "
-                    + "using (\"language_id\") "
-                    + "order by \"languagebykeyinput\".\"idx\"");
+                    + "using (\"language_id\")");
     }
 
     private Map<String, Object> execute(String query) {

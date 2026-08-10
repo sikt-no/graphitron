@@ -47,6 +47,8 @@ public final class RootLauncherRenderer {
     private static final ClassName RECORD = ClassName.get("org.jooq", "Record");
     private static final ClassName RESULT = ClassName.get("org.jooq", "Result");
     private static final ClassName LIST = ClassName.get("java.util", "List");
+    private static final ClassName ARRAY_LIST = ClassName.get("java.util", "ArrayList");
+    private static final ClassName FIELD = ClassName.get("org.jooq", "Field");
     private static final ClassName SORT_FIELD = ClassName.get("org.jooq", "SortField");
     private static final ClassName ENV = ClassName.get("graphql.schema", "DataFetchingEnvironment");
     private static final TypeName RESULT_OF_RECORD = ParameterizedTypeName.get(RESULT, RECORD);
@@ -201,7 +203,13 @@ public final class RootLauncherRenderer {
                     yield ParameterizedTypeName.get(LIST, ClassName.get(Object.class));
                 }
                 yield switch (row.result()) {
-                    case ResultShape.RecordList ignored2 -> RESULT_OF_RECORD;
+                    // The keyed lookup is the one list arm that does not hand back its fetch:
+                    // it scatters into one slot per input key, and a slot for an unmatched key
+                    // holds null, which a jOOQ Result does not carry.
+                    case ResultShape.RecordList ignored2 ->
+                        row.source() instanceof LaunchSource.KeyedLookup
+                            ? ParameterizedTypeName.get(LIST, RECORD)
+                            : RESULT_OF_RECORD;
                     case ResultShape.SingleRecord ignored2 -> RECORD;
                     case ResultShape.Connection connection -> className(connection.carrier());
                     case ResultShape.LoaderDelegated ignored2 -> throw new IllegalStateException(
@@ -370,32 +378,50 @@ public final class RootLauncherRenderer {
      * arguments (a same-class private the launcher calls unqualified, its ref minted beside the
      * launcher's own), the empty-input short-circuit returns the empty result with no statement
      * issued, and the VALUES derived table joins the anchor with {@code USING} over the mapping's
-     * key columns, input-ordered by the derived table's {@code idx} column (the arm's own
-     * entailed ordering; the result shape's ordering slot is absent by construction). The WHERE
-     * stays the condition local, the same glue-or-neutral fold every condition-bearing arm
-     * chains.
+     * key columns. The WHERE stays the condition local, the same glue-or-neutral fold every
+     * condition-bearing arm chains.
+     *
+     * <p>The list arm delivers one output slot per input key, null where the key matched no row,
+     * which is the lookup's whole point: the caller reads position {@code i} as the answer for
+     * key {@code i}. A join alone cannot do that, since an unmatched key contributes no row and
+     * silently shortens the result, so the derived table's {@code idx} rides the select list as
+     * {@code __idx__} and {@code scatterLookupByIdx} places each row at its key's position. That
+     * scatter is also what carries the input ordering, so the arm needs no {@code ORDER BY}.
+     *
+     * <p>The single arm needs none of it: one key has one slot, and an unmatched key is the
+     * {@code null} that {@code fetchOne} already returns.
      */
     private static CodeBlock lookupBody(LauncherCommand row, LaunchSource.KeyedLookup lookup,
             String tableLocal) {
         String fieldName = row.coordinate().getFieldName();
         String alias = LookupRows.inputTableAlias(fieldName);
         var mapping = lookup.mapping();
+        boolean isList = row.result() instanceof ResultShape.RecordList;
         var code = CodeBlock.builder();
         code.addStatement("$T rows = $L(env, $L)",
             LookupRows.rowArrayType(mapping, fieldName), lookup.inputRows().methodName(), tableLocal);
-        code.add("if (rows.length == 0) return dsl.newResult();\n");
+        code.add(isList
+            ? CodeBlock.of("if (rows.length == 0) return $T.of();\n", LIST)
+            : CodeBlock.of("if (rows.length == 0) return null;\n"));
         code.addStatement("$T input = $T.values(rows).as($L)",
             LookupRows.inputTableType(mapping, fieldName), DSL,
             LookupRows.aliasArgs(mapping, alias, fieldName));
-        code.add("return dsl\n")
+        var projection = ProjectionCall.fromEnvSelection(className(lookup.projection()), tableLocal);
+        if (isList) {
+            code.addStatement("$T<$T<?>> selectFields = new $T<>($L)", LIST, FIELD, ARRAY_LIST, projection);
+            code.addStatement("selectFields.add(input.field($S).as($S))", "idx", "__idx__");
+        }
+        code.add(isList ? CodeBlock.of("$T flat = dsl\n", RESULT_OF_RECORD) : CodeBlock.of("return dsl\n"))
             .indent()
-            .add(".select($L)\n", ProjectionCall.fromEnvSelection(className(lookup.projection()), tableLocal))
+            .add(".select($L)\n", isList ? CodeBlock.of("selectFields") : projection)
             .add(".from($L)\n", tableLocal)
             .add(".join(input).using($L)\n", LookupRows.usingArgs(mapping, tableLocal, fieldName))
             .add(".where(condition)\n")
-            .add(".orderBy(input.field($S))\n", "idx")
-            .add(".fetch();\n")
+            .add(isList ? ".fetch();\n" : ".fetchOne();\n")
             .unindent();
+        if (isList) {
+            code.addStatement("return scatterLookupByIdx(flat, rows.length)");
+        }
         return code.build();
     }
 

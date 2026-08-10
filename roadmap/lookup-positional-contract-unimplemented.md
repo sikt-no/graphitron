@@ -25,19 +25,55 @@ the middle.
 
 The contradiction was found while landing the generated-column-filter work on lookup coordinates,
 which had to state what a filtered-out key looks like on the wire and could not do so without
-first settling what a *missed* key looks like. That item corrected the manual to describe measured
-behaviour, because a manual that lies today is worse than one that describes a weaker contract. It
-deliberately did not touch the emit: which side is wrong is a design decision with consumer-visible
-consequences, and it is not that item's to make.
+first settling what a *missed* key looks like. That item recorded the divergence and left the emit
+alone, because which side is wrong is a design decision with consumer-visible consequences.
 
-So this item's question is which of the two the project wants. Making the code match the docs means
-a scatter step on the root lookup arm (the machinery already exists for the `@splitQuery`
-single-cardinality path, `scatterSingleByIdx`) plus a nullable element type on every lookup return,
-since a `[Film!]!` cannot hold a `null` at a position. Making the docs the truth is already done,
-and this item then reduces to deciding that the join semantics are the intended contract and
-re-checking the `@asConnection` rejection's stated rationale, which appeals to a positional contract
-that does not exist. A third possibility worth pricing: the positional reading may be what the
-migrating subgraph expects, in which case the answer is driven by consumer need rather than taste.
+## The decision
 
-Note the child coordinates are not in question. A lookup-keyed child list is a set narrowing per
-parent and is documented as such, correctly.
+The user settled it directly: `filmById(film_id: ["1", "999999", "2"])` must return three items,
+and that is critical. The documented contract is the intended one, so the generator is what changes.
+
+## What the contract forces
+
+The positional reading is not a free choice of representation, it forces the schema's hand. A slot
+holding a miss holds `null`, and `[Film!]!` cannot carry one: GraphQL propagates the null out of the
+list, so one unmatched key nulls the whole field and discards every matched row with it. Measured
+before the change rather than reasoned about: every root lookup in the example schema failed exactly
+that way, with `NonNullableFieldWasNullError` at `/filmById[1]` and `data: null`.
+
+So the element type of a list lookup must be nullable, `[Film]!` rather than `[Film!]!`, and this
+item makes that a build-time rejection rather than a runtime surprise. That is a consumer-visible
+schema requirement: every existing lookup coordinate declaring non-null elements has to drop the
+inner `!`. It is not a behaviour regression (those schemas were already returning short lists that
+silently misaligned with their inputs) but it is a required edit, and a consumer that does not make
+it gets a build error naming the field and the remedy.
+
+## What shipped
+
+`RootLauncherRenderer.lookupBody`'s list arm carries the derived table's `idx` out as `__idx__` and
+scatters through a new `scatterLookupByIdx` helper, one slot per input key. The scatter is also what
+carries input order, so the arm no longer emits `ORDER BY`, and the launcher's value type becomes
+`List<Record>` because a jOOQ `Result` cannot hold a null element. Duplicate keys keep the
+documented answer, first row wins, rather than the `scatterSingleByIdx` throw: that helper serves a
+primary-key join where a second row per key is a misconfiguration, while a lookup joins on author-
+declared columns the schema never required to be unique.
+
+`GraphitronSchemaValidator.validateRootLookup` gains the nullable-element rejection. The single-key
+arm needs none of this and now says so: one key has one slot, and `fetchOne` already returns null.
+
+Five execution-tier tests asserted the old drop-the-miss behaviour and now assert slots; the SQL
+baselines absorbed the `__idx__` column and the dropped `ORDER BY`. The manual's positional-contract
+statements, which the previous item had rewritten to describe measured behaviour, are restored and
+extended with the nullable-element requirement.
+
+## Not in scope
+
+Child coordinates. A lookup-keyed child list is a set narrowing per parent, correctly documented as
+such, and stays a plain list. The `@asConnection` rejection's stated rationale now holds again,
+since the positional contract it appeals to exists.
+
+## Process note
+
+Implementation ran straight from Backlog on the user's explicit direction, so this item never took a
+Spec to Ready sign-off; the design question the gate exists to settle is the one the user answered.
+The independent review happens once, at the Done gate.

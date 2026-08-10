@@ -113,6 +113,42 @@ public final class SplitRowsMethodEmitter {
     }
 
     /**
+     * Root-lookup sibling of {@link #buildScatterSingleByIdxHelper}. Builds the private static
+     * {@code scatterLookupByIdx(Result<Record>, int)} helper that turns the flat join result into
+     * a {@code List<Record>} holding one slot per input key, null where the key matched no row.
+     * That slot-per-key shape is the lookup's contract: the caller reads output position {@code i}
+     * as the answer for key {@code i}, and a miss has to occupy its position for that to hold.
+     *
+     * <p>Deliberately not the {@code scatterSingleByIdx} throw on a repeated idx. That helper
+     * serves a {@code terminal.pk = parentInput.fk_value} join, where a second row per key is a
+     * misconfiguration. A lookup joins on the author's declared key columns, which the schema
+     * does not require to be unique, and the documented answer there is that one of the matching
+     * rows is returned rather than that the request fails. First row wins, which under the
+     * {@code idx} ordering is the first the database yielded for that key.
+     */
+    public static MethodSpec buildScatterLookupByIdxHelper() {
+        TypeName resultRecord = ParameterizedTypeName.get(ClassName.get("org.jooq", "Result"), RECORD);
+        TypeName listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
+        ClassName arrays = ClassName.get("java.util", "Arrays");
+        return MethodSpec.methodBuilder("scatterLookupByIdx")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(listOfRecord)
+            .addParameter(resultRecord, "flat")
+            .addParameter(int.class, "keyCount")
+            .addCode(CodeBlock.builder()
+                .addStatement("$T[] out = new $T[keyCount]", RECORD, RECORD)
+                .beginControlFlow("for ($T r : flat)", RECORD)
+                .addStatement("int idx = r.get($S, $T.class)", IDX_COLUMN, Integer.class)
+                .beginControlFlow("if (out[idx] == null)")
+                .addStatement("out[idx] = r")
+                .endControlFlow()
+                .endControlFlow()
+                .addStatement("return $T.asList(out)", arrays)
+                .build())
+            .build();
+    }
+
+    /**
      * Single-cardinality sibling of {@link #buildScatterByIdxHelper}. Builds the private static
      * {@code scatterSingleByIdx(Result<Record>, int)} helper that turns a flat result into a
      * {@code List<Record>} indexed 1:1 with the DataLoader's key list (null where no match).

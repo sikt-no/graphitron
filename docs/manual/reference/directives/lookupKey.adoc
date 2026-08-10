@@ -1,8 +1,8 @@
 = @lookupKey
-:description: Mark arguments or input fields as batch-lookup keys so a list of keys resolves in a single query, in input order.
+:description: Mark arguments or input fields as batch-lookup keys so a single query returns one result per input position.
 :!toc:
 
-Promotes a query into a batch-lookup: the client sends a list of key values and the resolver returns the matched rows in the same order. The generator emits a `VALUES`-derived table joined against the target table so all keys resolve in a single round trip.
+Promotes a query into a batch-lookup: the client sends a list of key values and the resolver returns a list of results in the same order, with `null` for unmatched positions. The generator emits a `VALUES`-derived table joined against the target table so all keys resolve in a single round trip.
 
 == SDL signature
 
@@ -20,13 +20,13 @@ The example schema's root lookups cover the common shapes:
 [source,graphql]
 ----
 type Query {
-    filmById(film_id: [ID] @lookupKey): [Film!]!
+    filmById(film_id: [ID] @lookupKey): [Film]!
 
-    languageByKey(language_id: [Int] @lookupKey @field(name: "language_id")): [Language!]!
+    languageByKey(language_id: [Int] @lookupKey @field(name: "language_id")): [Language]!
 
-    customerById(customer_id: [ID] @lookupKey, store_id: ID @lookupKey): [Customer!]!
+    customerById(customer_id: [ID] @lookupKey, store_id: ID @lookupKey): [Customer]!
 
-    filmActorsByKey(key: [FilmActorKey!]! @lookupKey): [FilmActor!]!
+    filmActorsByKey(key: [FilmActorKey!]! @lookupKey): [FilmActor]!
 }
 
 input FilmActorKey {
@@ -35,7 +35,7 @@ input FilmActorKey {
 }
 ----
 
-`filmById` keys on a single scalar list. `customerById` shows two correlated keys: each pair `(customer_id[i], store_id[i])` matches one row. `filmActorsByKey` wraps a composite key in an input type, with `@lookupKey` re-applied per leaf field; the generator builds `VALUES(idx, film_id, actor_id)` and joins on both PK columns. A key that matches no row contributes no element, so the result can be shorter than the key list.
+`filmById` keys on a single scalar list. `customerById` shows two correlated keys: each pair `(customer_id[i], store_id[i])` matches one row. `filmActorsByKey` wraps a composite key in an input type, with `@lookupKey` re-applied per leaf field; the generator builds `VALUES(idx, film_id, actor_id)` and joins on both PK columns. Unmatched keys surface as `null` at the corresponding output index.
 
 A client query against `filmById`:
 
@@ -46,7 +46,7 @@ query {
 }
 ----
 
-returns the two matched films in input order: `{ title: "ACADEMY DINOSAUR" }`, `{ title: "ACE GOLDFINGER" }`. The unmatched `999999` occupies no position. The join preserves input order among the rows that come back, but positions do not line up with the key list once any key misses, so a client cannot pair results back to inputs by index.
+returns three positions in input order: `{ title: "ACADEMY DINOSAUR" }`, `null`, `{ title: "ACE GOLDFINGER" }`.
 
 == Constraints
 
@@ -54,9 +54,10 @@ returns the two matched films in input order: `{ title: "ACADEMY DINOSAUR" }`, `
 * Multiple `@lookupKey` arguments at the same call site must have the same length, and values at the same index are correlated. Wrap them in an input type when the framework should enforce that pairing.
 * `@lookupKey` on an input type (the argument itself) applies to every leaf scalar field of that input. `@lookupKey` on an individual input field applies only to that field; the rest of the input behaves normally.
 * Keys should uniquely identify a row. If multiple rows match the same key, only one is returned.
-* Non-key filterable arguments compose beside the lookup. An argument that is not a key on a lookup coordinate becomes an ordinary predicate in the `WHERE`, alongside the lookup join, whether it comes from the implicit xref:field.adoc[`@field(name:)`] path or from an authored xref:condition.adoc[`@condition`] method. The key argument itself never appears there: it rides the `VALUES` join and is not restated as a column predicate.
-* An empty or absent key list returns no rows. The lookup short-circuits before SQL rather than degrading into an unfiltered read, which is worth knowing when migrating from a generator that returned everything for an empty key list.
-* A key filtered out by a non-key predicate is indistinguishable from an unmatched key. Both simply contribute no element, so a filter narrows the result the same way a miss does, with nothing on the wire to tell the two apart.
+* The list elements must be nullable, because an unmatched key holds `null` at its position. `[Film]!` and `[Film]` are accepted; `[Film!]!` and `[Film!]` are rejected with a build error, since GraphQL would propagate that `null` out of the list and one unmatched key would discard every matched one.
+* Non-key filterable arguments compose beside the lookup. An argument that is not a key becomes an ordinary predicate in the `WHERE`, alongside the lookup join, whether it comes from the implicit xref:field.adoc[`@field(name:)`] path or from an authored xref:condition.adoc[`@condition`] method. The key argument itself never appears there: it rides the `VALUES` join and is not restated as a column predicate.
+* A key whose row fails a non-key predicate is indistinguishable from an unmatched key. Both hold `null` at their position, so a filter narrows which positions are populated rather than which positions exist.
+* An empty or absent key list returns no rows, short-circuiting before SQL rather than degrading into an unfiltered read. Worth knowing when migrating from a generator that returned everything for an empty key list.
 * Only arguments on root-level fields (or on their referenced input types) may be keys. The xref:mutation.adoc[`@mutation`] directive uses `@lookupKey` separately to identify the row to `UPDATE`, `DELETE`, or `UPSERT`; that's a distinct use of the same directive on `INPUT_FIELD_DEFINITION`.
 
 == See also

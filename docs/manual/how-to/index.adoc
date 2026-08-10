@@ -11,7 +11,7 @@ a|
 
 * xref:add-custom-conditions.adoc[Add custom conditions]: attach a developer-supplied predicate to a field, argument, or input field via `@condition`.
 * xref:apollo-federation.adoc[Apollo Federation transport]: wire the federation runtime around a Graphitron schema.
-* xref:batch-lookups.adoc[Batch lookups]: drive an ordered batch fetch with `@lookupKey` and get the matched rows in input-key order.
+* xref:batch-lookups.adoc[Batch lookups]: drive a positional batch fetch with `@lookupKey` and get one result per input position.
 * xref:computed-fields.adoc[Computed fields with `@externalField`]: project a derived column from a developer-supplied jOOQ `Field<T>`.
 * xref:condition-cascade.adoc[Stacking and overriding conditions]: when explicit `@condition` predicates stack with implicit ones, and what `override:` suppresses.
 * xref:connections.adoc[Cursor-paginated connections]: synthesised vs declared connection types, `totalCount` cost, and what the rewrite caps (and doesn't).

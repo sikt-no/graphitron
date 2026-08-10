@@ -95,7 +95,7 @@ type Query {
         textRating: TextRating @field(name: "TEXT_RATING"),
         maxRentalRate: Float @field(name: "RENTAL_RATE")
     ): [Film!]!
-    filmById(film_id: [ID] @lookupKey): [Film!]!
+    filmById(film_id: [ID] @lookupKey): [Film]!
     # @pivot coexistence fixtures: the TranslatedTexts projection type is reached three ways in
     # this schema — through the Film/FilmActor @pivot fields, as an ordinary nested object on
     # the pivot_nesting_host table (whose columns are named like the slots), and as a field of
@@ -135,7 +135,7 @@ type Query {
     # SELECT per typeId per tenant via EntityFetcherDispatch, scatters rows back to the
     # request's original positions. See QueryNodeFetcherClassGenerator.
     nodes(ids: [ID!]!): [Node]
-    languageByKey(language_id: [Int] @lookupKey @field(name: "language_id")): [Language!]!
+    languageByKey(language_id: [Int] @lookupKey @field(name: "language_id")): [Language]!
     # Condition-convergence fixture: an authored @condition on a lookup coordinate. The lookup
     # keys ride the VALUES join; the non-key authored filter is composed beside it (inline in
     # the lookup rows method before call-site convergence, one glue call after). override: true
@@ -145,7 +145,7 @@ type Query {
         name: String @field(name: "name") @condition(condition: {
             className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
             method: "languageNameStartsWith"}, override: true)
-    ): [Language!]!
+    ): [Language]!
     # Generated-filter twin of languagesByKeyFiltered above: the same VALUES join, the same
     # non-key column, but the predicate is the implicit column equality the generator builds
     # rather than an authored @condition method. The pair is the point — authored and generated
@@ -153,22 +153,22 @@ type Query {
     languagesByKeyGenerated(
         language_id: [Int] @lookupKey @field(name: "language_id"),
         name: String @field(name: "name")
-    ): [Language!]!
-    customerById(customer_id: [ID] @lookupKey, store_id: ID @lookupKey): [Customer!]!
-    storeById(store_id: [Int] @lookupKey @field(name: "store_id")): [Store!]!
-    categoryById(category_id: [Int] @lookupKey @field(name: "category_id")): [Category!]!
+    ): [Language]!
+    customerById(customer_id: [ID] @lookupKey, store_id: ID @lookupKey): [Customer]!
+    storeById(store_id: [Int] @lookupKey @field(name: "store_id")): [Store]!
+    categoryById(category_id: [Int] @lookupKey @field(name: "category_id")): [Category]!
     # R61 execution-tier fixture: lookup inventories by id to exercise the @externalField
     # TableRecord-lift paths (Inventory.filmRef and Inventory.filmCardData).
-    inventoryById(inventory_id: [Int!]! @lookupKey @field(name: "inventory_id")): [Inventory!]!
+    inventoryById(inventory_id: [Int!]! @lookupKey @field(name: "inventory_id")): [Inventory]!
     # argres Phase 3: composite-key lookup via a consumer-resolved input type. Each FilmActorKey carries
     # two @lookupKey scalar fields (film_id, actor_id); the generator materialises a VALUES
     # derived table with columns (idx, film_id, actor_id) and joins on both keys.
-    filmActorsByKey(key: [FilmActorKey!]! @lookupKey): [FilmActor!]!
+    filmActorsByKey(key: [FilmActorKey!]! @lookupKey): [FilmActor]!
     # R50 phase (g-C): composite-PK NodeId @lookupKey. Each opaque ID decodes once per row to
     # a Record2(actor_id, film_id) at the arg layer; the generator emits VALUES(idx, actor_id,
     # film_id) and joins on both PK columns. Decode-on-mismatch surfaces as
     # GraphqlErrorException via the ThrowOnMismatch contract. See lift-nodeid-out-of-model.md.
-    filmActorByNodeId(id: [ID!]! @lookupKey): [FilmActor!]!
+    filmActorByNodeId(id: [ID!]! @lookupKey): [FilmActor]!
     # R79 compilation-tier regression guard: composite-PK NodeId on a *non-lookupKey* arg, fed
     # through the consumer-resolved input type. Reaches FieldBuilder.compositeImplicitBodyParam →
     # BodyParam.RowIn → the condition glue's typed `DSL.row(table.c1, table.c2).in(ids)`

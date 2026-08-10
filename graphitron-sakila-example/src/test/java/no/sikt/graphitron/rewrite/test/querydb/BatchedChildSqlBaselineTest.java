@@ -128,10 +128,9 @@ class BatchedChildSqlBaselineTest {
                 + "page envelope, ROW_NUMBER() partitioned by the idx scatter key with the page "
                 + "bound riding the outer WHERE")
             .containsExactly(
-                "select \"public\".\"film\".\"film_id\" "
+                "select \"public\".\"film\".\"film_id\", \"filmbyidinput\".\"idx\" as \"__idx__\" "
                     + "from \"public\".\"film\" "
-                    + "join (values (0, ?)) as \"filmbyidinput\" (\"idx\", \"film_id\") using (\"film_id\") "
-                    + "order by \"filmbyidinput\".\"idx\"",
+                    + "join (values (0, ?)) as \"filmbyidinput\" (\"idx\", \"film_id\") using (\"film_id\")",
                 "select \"ranked\".\"first_name\", \"ranked\".\"actor_id\", \"ranked\".\"__idx__\", \"ranked\".\"__rn__\" "
                     + "from (select \"actorsconnection_a1\".\"first_name\", \"actorsconnection_a1\".\"actor_id\", "
                     + "\"parentinput\".\"idx\" as \"__idx__\", "
@@ -155,10 +154,9 @@ class BatchedChildSqlBaselineTest {
                 + "and the lookup-input narrowing on the @lookupKey columns (and, as pinned "
                 + "current behaviour, no ORDER BY on the batch)")
             .containsExactly(
-                "select \"public\".\"film\".\"film_id\" "
+                "select \"public\".\"film\".\"film_id\", \"filmbyidinput\".\"idx\" as \"__idx__\" "
                     + "from \"public\".\"film\" "
-                    + "join (values (0, ?), (1, ?)) as \"filmbyidinput\" (\"idx\", \"film_id\") using (\"film_id\") "
-                    + "order by \"filmbyidinput\".\"idx\"",
+                    + "join (values (0, ?), (1, ?)) as \"filmbyidinput\" (\"idx\", \"film_id\") using (\"film_id\")",
                 "select \"actorsbysplitlookup_a1\".\"first_name\", \"parentinput\".\"idx\" as \"__idx__\" "
                     + "from (values (0, ?), (1, ?)) as \"parentinput\" (\"idx\", \"film_id\") "
                     + "join \"public\".\"film_actor\" as \"actorsbysplitlookup_f0\" "
@@ -206,10 +204,9 @@ class BatchedChildSqlBaselineTest {
                 + "(key-preserving: a row-less parent keeps its group) with the filtered "
                 + "aggregates grouped by the idx scatter key")
             .containsExactly(
-                "select \"public\".\"film\".\"film_id\" "
+                "select \"public\".\"film\".\"film_id\", \"filmbyidinput\".\"idx\" as \"__idx__\" "
                     + "from \"public\".\"film\" "
-                    + "join (values (0, ?), (1, ?)) as \"filmbyidinput\" (\"idx\", \"film_id\") using (\"film_id\") "
-                    + "order by \"filmbyidinput\".\"idx\"",
+                    + "join (values (0, ?), (1, ?)) as \"filmbyidinput\" (\"idx\", \"film_id\") using (\"film_id\")",
                 "select max(\"titletranslationssplit_f0\".\"title_txt\") "
                     + "filter (where \"titletranslationssplit_f0\".\"lang_code\" = 'nno') as \"nn\", "
                     + "max(\"titletranslationssplit_f0\".\"title_txt\") "
@@ -230,10 +227,9 @@ class BatchedChildSqlBaselineTest {
                 + "by identity through the (idx, seq, pk...) VALUES table, ordered by the seq "
                 + "column so each parent bucket keeps the service's flatten order")
             .containsExactly(
-                "select \"public\".\"film\".\"film_id\" "
+                "select \"public\".\"film\".\"film_id\", \"filmbyidinput\".\"idx\" as \"__idx__\" "
                     + "from \"public\".\"film\" "
-                    + "join (values (0, ?)) as \"filmbyidinput\" (\"idx\", \"film_id\") using (\"film_id\") "
-                    + "order by \"filmbyidinput\".\"idx\"",
+                    + "join (values (0, ?)) as \"filmbyidinput\" (\"idx\", \"film_id\") using (\"film_id\")",
                 "select \"public\".\"film_actor\".\"actor_id\", \"public\".\"film_actor\".\"film_id\", "
                     + "\"public\".\"film_actor\".\"last_update\" "
                     + "from \"public\".\"film_actor\" "

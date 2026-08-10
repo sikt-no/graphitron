@@ -1358,19 +1358,21 @@ class GraphQLQueryTest {
         // Customers 1,2,4 are in store 1; 3,5 are in store 2
         Map<String, Object> data = execute(
             "{ customerById(customer_id: [\"1\", \"2\", \"4\", \"3\"], store_id: \"1\") { customerId } }");
-        // Only IDs 1, 2, 4 are in store 1
+        // Only IDs 1, 2, 4 are in store 1, so key "3" holds null at its own position rather than
+        // shortening the list: four keys in, four slots out, in input order.
         assertThat(data).extractingByKey("customerById", as(list(Map.class)))
-            .hasSize(3)
-            .extracting(c -> c.get("customerId"))
-            .containsExactlyInAnyOrder(1, 2, 4);
+            .hasSize(4)
+            .extracting(c -> c == null ? null : c.get("customerId"))
+            .containsExactly(1, 2, 4, null);
     }
 
     @Test
-    void customerById_noMatchForStore_returnsEmpty() {
-        // Customer 3 is in store 2, requesting store 1 → no match
+    void customerById_noMatchForStore_returnsOneNullSlot() {
+        // Customer 3 is in store 2, requesting store 1 → no match. One key in, one slot out,
+        // holding null. An empty list would mean "no keys asked", which is a different answer.
         Map<String, Object> data = execute(
             "{ customerById(customer_id: [\"3\"], store_id: \"1\") { customerId } }");
-        assertThat(data).extractingByKey("customerById", as(LIST)).isEmpty();
+        assertThat(data).extractingByKey("customerById", as(LIST)).containsExactly((Object) null);
     }
 
     // ===== filmsConnection — forward pagination =====
@@ -2732,13 +2734,14 @@ class GraphQLQueryTest {
     @Test
     void compositeKeyLookup_mismatchedPairExcluded() {
         // (film 4, actor 1) is NOT a row in film_actor (film 4's cast is actor 2 only). Both
-        // film 4 and actor 1 exist individually, but the composite JOIN rejects the pair.
-        // (film 1, actor 1) is a real pair → returned.
+        // film 4 and actor 1 exist individually, but the composite JOIN rejects the pair, so its
+        // slot holds null. (film 1, actor 1) is a real pair and lands at its own index.
         Map<String, Object> data = execute(
             "{ filmActorsByKey(key: [{filmId: 4, actorId: 1}, {filmId: 1, actorId: 1}]) { filmId actorId } }");
         assertThat(data).extractingByKey("filmActorsByKey", as(LIST))
-            .hasSize(1)
-            .first(as(MAP))
+            .hasSize(2)
+            .satisfies(rows -> assertThat(rows.get(0)).as("the rejected pair keeps its slot").isNull())
+            .element(1, as(MAP))
             .containsEntry("filmId", 1)
             .containsEntry("actorId", 1);
     }
@@ -2782,17 +2785,18 @@ class GraphQLQueryTest {
     }
 
     @Test
-    void compositeNodeIdLookup_unknownKey_excludedFromResult() {
-        // (actor=99, film=99) decodes successfully but no such film_actor row exists. The JOIN
-        // filters it out — the result includes the matching row only. Length-mismatch between
-        // inputs and outputs is allowed by design (cf. compositeKeyLookup_mismatchedPairExcluded).
+    void compositeNodeIdLookup_unknownKey_holdsItsSlot() {
+        // (actor=99, film=99) decodes successfully but no such film_actor row exists, so it holds
+        // null at index 0 rather than dropping out. Output length equals input length, which is
+        // what lets a caller pair an opaque id back to its answer by position.
         String real    = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 1, 1);
         String missing = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 99, 99);
         Map<String, Object> data = execute(
             "{ filmActorByNodeId(id: [\"" + missing + "\", \"" + real + "\"]) { filmId actorId } }");
         assertThat(data).extractingByKey("filmActorByNodeId", as(LIST))
-            .hasSize(1)
-            .first(as(MAP))
+            .hasSize(2)
+            .satisfies(rows -> assertThat(rows.get(0)).as("the unmatched id keeps its slot").isNull())
+            .element(1, as(MAP))
             .containsEntry("actorId", 1)
             .containsEntry("filmId", 1);
     }

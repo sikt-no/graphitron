@@ -149,9 +149,9 @@ class ConditionSqlBaselineTest {
                 + "carries the condition content composed inline today; this is the string the "
                 + "call-site convergence slice must keep green unchanged")
             .containsExactlyInAnyOrder(
-                "select \"public\".\"store\".\"store_id\" from \"public\".\"store\" "
-                    + "join (values (0, ?), (1, ?)) as \"storebyidinput\" (\"idx\", \"store_id\") using (\"store_id\") "
-                    + "order by \"storebyidinput\".\"idx\"",
+                "select \"public\".\"store\".\"store_id\", \"storebyidinput\".\"idx\" as \"__idx__\" "
+                    + "from \"public\".\"store\" "
+                    + "join (values (0, ?), (1, ?)) as \"storebyidinput\" (\"idx\", \"store_id\") using (\"store_id\")",
                 "select \"customersbyaddressdistrictsplit_c0\".\"last_name\", "
                     + "\"parentinput\".\"idx\" as \"__idx__\" "
                     + "from (values (0, ?), (1, ?)) as \"parentinput\" (\"idx\", \"store_id\") "
@@ -170,11 +170,10 @@ class ConditionSqlBaselineTest {
                 + "VALUES join, the authored prefix-match composes in the WHERE beside it; "
                 + "authored on lookup is an ordinary condition row, never a rejection")
             .containsExactly(
-                "select \"public\".\"language\".\"name\" "
+                "select \"public\".\"language\".\"name\", \"languagesbykeyfilteredinput\".\"idx\" as \"__idx__\" "
                     + "from \"public\".\"language\" "
                     + "join (values (0, ?), (1, ?)) as \"languagesbykeyfilteredinput\" (\"idx\", \"language_id\") using (\"language_id\") "
-                    + "where \"public\".\"language\".\"name\" like (replace(replace(replace(?, '!', '!!'), '%', '!%'), '_', '!_') || '%') escape '!' "
-                    + "order by \"languagesbykeyfilteredinput\".\"idx\"");
+                    + "where \"public\".\"language\".\"name\" like (replace(replace(replace(?, '!', '!!'), '%', '!%'), '_', '!_') || '%') escape '!'");
     }
 
     @Test
@@ -187,21 +186,20 @@ class ConditionSqlBaselineTest {
                 + "the generator builds for a non-key argument lands in the same WHERE slot the "
                 + "authored prefix-match occupies, beside the same VALUES join")
             .containsExactly(
-                "select \"public\".\"language\".\"language_id\" "
+                "select \"public\".\"language\".\"language_id\", \"languagesbykeygeneratedinput\".\"idx\" as \"__idx__\" "
                     + "from \"public\".\"language\" "
                     + "join (values (0, ?), (1, ?), (2, ?)) as \"languagesbykeygeneratedinput\" (\"idx\", \"language_id\") using (\"language_id\") "
-                    + "where \"public\".\"language\".\"name\" = ? "
-                    + "order by \"languagesbykeygeneratedinput\".\"idx\"");
+                    + "where \"public\".\"language\".\"name\" = ?");
 
         // The one behavioural consequence this item introduces, named rather than left implicit:
-        // a non-key predicate can now remove the row a key matched, and the result carries no
-        // trace of which key that was. The lookup result is the matched rows in input order, not
-        // one slot per key, so a filtered key and an unmatched key are the same absence — the
-        // list simply gets shorter, and a caller cannot pair outputs back to inputs by position
-        // once a filter is in play. Ordering survives among the rows that do come back.
+        // a non-key predicate can now remove the row a key matched, and the caller cannot tell
+        // that from a key that matched nothing. Both hold null at their own position, so the
+        // filter changes which positions are populated and never which positions exist. Three
+        // keys in, three slots out, with the filtered key at index 1 indistinguishable from the
+        // unmatched key at index 2.
         assertThat(data).extractingByKey("languagesByKeyGenerated", as(list(Map.class)))
-            .extracting(m -> m.get("languageId"))
-            .containsExactly(1);
+            .extracting(m -> m == null ? null : m.get("languageId"))
+            .containsExactly(1, null, null);
     }
 
     @Test
@@ -252,9 +250,9 @@ class ConditionSqlBaselineTest {
                 + "from the request context (the env, not the argument map) and binds into the "
                 + "batched statement's WHERE")
             .containsExactlyInAnyOrder(
-                "select \"public\".\"store\".\"store_id\" from \"public\".\"store\" "
-                    + "join (values (0, ?)) as \"storebyidinput\" (\"idx\", \"store_id\") using (\"store_id\") "
-                    + "order by \"storebyidinput\".\"idx\"",
+                "select \"public\".\"store\".\"store_id\", \"storebyidinput\".\"idx\" as \"__idx__\" "
+                    + "from \"public\".\"store\" "
+                    + "join (values (0, ?)) as \"storebyidinput\" (\"idx\", \"store_id\") using (\"store_id\")",
                 "select \"customersseenbyuser_c0\".\"first_name\", "
                     + "\"parentinput\".\"idx\" as \"__idx__\" "
                     + "from (values (0, ?)) as \"parentinput\" (\"idx\", \"store_id\") "
@@ -277,10 +275,9 @@ class ConditionSqlBaselineTest {
                     + "where (\"film_l0\".\"language_id\" = \"public\".\"film\".\"language_id\" "
                     + "and \"film_l0\".\"name\" like (replace(replace(replace(?, '!', '!!'), '%', '!%'), '_', '!_') || '%') escape '!') "
                     + "fetch next ? rows only) as t) as \"__rk_languagefiltered\", "
-                    + "\"public\".\"film\".\"title\" "
+                    + "\"public\".\"film\".\"title\", \"filmbyidinput\".\"idx\" as \"__idx__\" "
                     + "from \"public\".\"film\" "
-                    + "join (values (0, ?)) as \"filmbyidinput\" (\"idx\", \"film_id\") using (\"film_id\") "
-                    + "order by \"filmbyidinput\".\"idx\"");
+                    + "join (values (0, ?)) as \"filmbyidinput\" (\"idx\", \"film_id\") using (\"film_id\")");
     }
 
     private Map<String, Object> execute(String query) {

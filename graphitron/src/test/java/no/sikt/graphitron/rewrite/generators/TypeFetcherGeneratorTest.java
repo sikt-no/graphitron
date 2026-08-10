@@ -191,11 +191,13 @@ class TypeFetcherGeneratorTest {
     }
 
     @Test
-    void queryLookupField_dataFetcher_returnsResultRecord() {
+    void queryLookupField_dataFetcher_returnsSlotPerKeyList() {
         var field = lookupQueryField("filmById", List.of(listKeyParam("film_id", "FILM_ID", "java.lang.Integer")));
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
         assertThat(method(spec, "filmById").returnType().toString())
-            .isEqualTo("graphql.execution.DataFetcherResult<org.jooq.Result<org.jooq.Record>>");
+            .as("one slot per input key, null where the key matched no row, which a jOOQ Result "
+                + "cannot carry")
+            .isEqualTo("graphql.execution.DataFetcherResult<java.util.List<org.jooq.Record>>");
     }
 
     @Test
@@ -215,11 +217,11 @@ class TypeFetcherGeneratorTest {
     }
 
     @Test
-    void queryLookupField_rowsMethod_returnsResultRecord() {
+    void queryLookupField_rowsMethod_returnsSlotPerKeyList() {
         var field = lookupQueryField("filmById", List.of(listKeyParam("film_id", "FILM_ID", "java.lang.Integer")));
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
         assertThat(method(spec, "lookupFilmById").returnType().toString())
-            .isEqualTo("org.jooq.Result<org.jooq.Record>");
+            .isEqualTo("java.util.List<org.jooq.Record>");
     }
 
     @Test

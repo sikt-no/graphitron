@@ -457,6 +457,7 @@ public class TypeFetcherGenerator {
         // filter sites that decode a @nodeId argument lift a per-class private static helper through
         // it. collectInto co-locates construct and drain onto this class's builder so a lifted
         // helper can never be silently dropped.
+        boolean[] lookupScatterNeeded = new boolean[1];
         CompositeDecodeHelperRegistry.collectInto(builder, outputPackage, registry -> {
         for (var field : fields) {
             switch (field) {
@@ -497,6 +498,12 @@ public class TypeFetcherGenerator {
                             keyedLookup.mapping(), keyedLookup.inputRows().methodName(),
                             lookupTableClass, no.sikt.graphitron.render.LookupRows.ArgSource.ENV,
                             qtf.name()));
+                        // A list-returning lookup scatters its flat join into one slot per key.
+                        // Gated on the list arm because the single arm has one slot by
+                        // construction, and emitted once per class however many lookups it holds.
+                        if (launcherRow.result() instanceof no.sikt.graphitron.command.ResultShape.RecordList) {
+                            lookupScatterNeeded[0] = true;
+                        }
                     }
                 }
                 case ChildField.ServiceTableField stf -> {
@@ -862,6 +869,10 @@ public class TypeFetcherGenerator {
                     namingVocabulary.orderByHelperMethod(typeName, btf.name()).methodName(),
                     arg, names, tableRef, outputPackage));
             }
+        }
+
+        if (lookupScatterNeeded[0]) {
+            builder.addMethod(SplitRowsMethodEmitter.buildScatterLookupByIdxHelper());
         }
 
         // Emit list-shape scatterByIdx helper whenever any plain-list-cardinality Split* or

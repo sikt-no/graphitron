@@ -107,15 +107,16 @@ class CompositeKeyLookupQueryTest {
 
     @Test
     void compositeKeyLookup_subset_returnsOnlyMatchingPair() {
-        // (film 4, actor 1) is NOT a real film_actor row; (film 1, actor 1) is. The composite
-        // join filters out (4,1) and returns (1,1) only — load-bearing for the "missing slot
-        // is null/absent" lookup contract on composite keys.
+        // (film 4, actor 1) is NOT a real film_actor row; (film 1, actor 1) is. Both keys keep
+        // their slot: the unmatched composite holds null at index 0 and the matched one lands at
+        // index 1, which is the slot-per-key lookup contract on composite keys.
         Map<String, Object> data = execute(
             "{ filmActorsByKey(key: [{filmId: 4, actorId: 1}, {filmId: 1, actorId: 1}]) { filmId actorId } }");
 
         assertThat(data).extractingByKey("filmActorsByKey", as(LIST))
-            .hasSize(1)
-            .first(as(MAP))
+            .hasSize(2)
+            .satisfies(rows -> assertThat(rows.get(0)).as("the unmatched composite keeps its slot").isNull())
+            .element(1, as(MAP))
             .containsEntry("filmId", 1)
             .containsEntry("actorId", 1);
     }

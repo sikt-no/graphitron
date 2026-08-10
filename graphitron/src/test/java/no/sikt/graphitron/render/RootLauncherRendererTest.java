@@ -274,7 +274,10 @@ class RootLauncherRendererTest {
     void keyedLookupSource_preSeamUnitNameAndTheLauncherSignature() {
         var m = render(lookupRow(null));
         assertThat(m.name()).isEqualTo("lookupFilmById");
-        assertThat(m.returnType().toString()).isEqualTo("org.jooq.Result<org.jooq.Record>");
+        assertThat(m.returnType().toString())
+            .as("the list lookup scatters into one slot per key, and a slot for an unmatched key "
+                + "holds null, which a jOOQ Result does not carry")
+            .isEqualTo("java.util.List<org.jooq.Record>");
         assertThat(m.parameters()).extracting(p -> p.type().toString())
             .containsExactly("org.jooq.DSLContext", "graphql.schema.DataFetchingEnvironment");
     }
@@ -285,16 +288,21 @@ class RootLauncherRendererTest {
         assertThat(body)
             .as("the input-rows helper is a same-class call through the minted ref")
             .contains("rows = filmByIdInputRows(env, filmTable)");
-        assertThat(body).contains("if (rows.length == 0) return dsl.newResult();");
+        assertThat(body).contains("if (rows.length == 0) return java.util.List.of();");
         assertThat(body)
             .as("the VALUES derived table joins the anchor over the mapping's key columns")
             .contains(".values(rows).as(\"filmByIdInput\", \"idx\", \"film_id\")")
             .contains(".join(input).using(filmTable.FILM_ID)");
         assertThat(body)
-            .as("the WHERE stays the condition local; the ordering is the arm's entailed input order")
+            .as("the WHERE stays the condition local")
             .contains(".where(condition)")
-            .contains(".orderBy(input.field(\"idx\"))")
             .contains(".fetch();");
+        assertThat(body)
+            .as("input order and the per-key slot both come from the scatter, so the derived "
+                + "table's idx rides the select list and no ORDER BY is emitted")
+            .contains("selectFields.add(input.field(\"idx\").as(\"__idx__\"))")
+            .contains("return scatterLookupByIdx(flat, rows.length)")
+            .doesNotContain(".orderBy(");
     }
 
     @Test
