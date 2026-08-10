@@ -161,7 +161,8 @@ public record OperationMemberRelation(Map<FieldCoordinates, List<OperationMember
         boolean serviceTrigger = fieldDef != null && facts.service().rowFor(fieldDef).isPresent()
             && serviceCapable;
         boolean writeCapable = leaf instanceof DmlWriteField
-            || leaf instanceof MutationField.MutationRoutineWriteField;
+            || leaf instanceof MutationField.MutationRoutineWriteField
+            || leaf instanceof MutationField.MutationRoutineWriteRecordField;
         var writeRow = fieldDef == null || !writeCapable
             ? java.util.Optional.<no.sikt.graphitron.facts.WriteFacts.Row>empty()
             : facts.write().rowFor(fieldDef);
