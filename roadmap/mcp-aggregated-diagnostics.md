@@ -367,10 +367,30 @@ in mixed mode, falls back to a module-local in-memory store on any cache trouble
 the store's compatibility into the file path, so a reader that opened the persisted file
 itself could be reading a different store than the one the session writes. The shipped
 `CompileFacts` already holds this contract on the write side (it takes the dev session's
-store handle); the
-aggregate, the widened filters, and the schema-bridge loader hold the same contract on the
-read side: one handle, owned by the workspace, shared by every writer and reader in the
-session.
+store handle); the aggregate, the widened filters, and the schema-bridge loader hold the same
+contract on the read side.
+
+**Who owns that handle, since this item is the first reader outside `graphitron`.** The owner
+is `DevMojo`, not the workspace: it opens `sessionStore` once at startup, closes it in
+`cleanup`, and already hands `sessionStore.dsl()` to `CompileFacts` at construction. `Workspace`
+holds no handle and should not start: it is a sink for the report and the compile round alike,
+and giving a sink the store handle is what would make "one handle, shared by every writer and
+reader" false by adding a second owner. So the plumbing is explicit rather than assumed, and it
+is the one part of this design that reaches a module the rest of the item does not touch:
+
+- The write side needs none. The loader homes in `graphitron` (see the placement note below) and
+  takes a `DSLContext` the way `FactCapture.capture` does, so `DevMojo` constructs it beside
+  `CompileFacts` at the existing site and calls it where it already calls
+  `Workspace.setBuildOutput`.
+- The read side needs one edit: `GraphitronMcpServer`'s full constructor gains the handle, and
+  `DevMojo`'s single construction site passes `sessionStore.dsl()`. `graphitron-mcp` imports
+  neither `no.sikt.graphitron.model` nor `DSLContext` in main sources today, so this is that
+  module's first store dependency and its generated-classes containment argument applies here
+  first.
+- No degradation posture is needed, and inventing one would be the error. `DevMojo` opens the
+  store unconditionally and `openAt` falls back to an in-memory store rather than failing, so a
+  live dev session always has a handle. The `null` window the `compileFacts` field documents is
+  the unit tier's bare mojos, which run no MCP server, so the aggregate never meets it.
 
 **The bridge is a load, and saying so is part of the design.** The schema bridge relation is
 `ValidationReport`, loaded. A copy with exactly one writer, one source, and a graph-scoped
@@ -435,8 +455,23 @@ schema-bridge loader (one load instead of two slots plus a never-added third), n
 aggregate; it stays non-blocking. The aggregate's jOOQ queries live in `graphitron-mcp` beside
 the tool (the generated classes are the containment, per the rejected-facade reasoning in
 `validation-adds-facts`; `graphitron-model` hosts model code only), and the schema-bridge
-loader lives with its cadence owner, the workspace layer that already holds the report,
-mirroring where R603 put `CompileFacts` for the compile channel. A read-only SQL surface
+loader lives in `graphitron` beside the report's producer.
+
+That placement is the correction of an earlier draft's, and the correction matters enough to
+state rather than quietly apply. The draft put the loader at the workspace layer and claimed it
+was mirroring `CompileFacts`; R603 decided the opposite and argued it, homing `CompileFacts`
+with the round's producer *rather than* at the workspace layer, because the producer owning its
+transcription is what makes "one flattening, several sinks" true. The reason transfers whole.
+`ValidationReport` is produced by `GraphQLRewriteGenerator.buildOutput`, which returns it in
+`BuildOutput`; `Workspace` is one of its sinks, holding it exactly as it holds
+`compileDiagnostics`. Homing the loader at a sink would make the store a fourth thing the report
+is copied into by a consumer, which is the shape R603 rejected. So the loader sits in
+`graphitron`, and `graphitron-lsp` leaves the write side entirely.
+
+`FactCapture` supplies the entry shape as well as the address: `run(Path, ...)` opens and closes
+its own store for a self-contained run, `capture(DSLContext, ...)` takes a live handle for the
+dev session. The bridge wants the same pair for the same reason, and the dev arm is what
+`DevMojo` calls beside `CompileFacts`. A read-only SQL surface
 over the whole fact store, which the H2 spike floats as an agent capability, stays a separate
 future item: the derived stratum it would query barely exists yet, and its design question is
 different in kind; see the query-language section above. The whole-board context is
@@ -453,8 +488,8 @@ off today's wide shapes mean re-doing the DDL and the loader both.
 | 2 | `StubKey` splits into two permits, non-null `VariantClass` plus an inline-defer arm; the two `deferred` factories map to their own arm | `graphitron` | small |
 | 3 | `CodedRejection` capability lift; `Diagnostics.lspCodeOf` collapses to one `instanceof`; membership partition meta-test | `graphitron`, `graphitron-lsp` | small-medium (42 sites, mechanical) |
 | 4 | Bridge DDL: the graph-keyed schema bridge relation, its `directives` child relation, and the `diagnostic` union view (schema arm on the bridge, compile arm on the shipped `javac_diagnostic`), comments per the model conventions; the `BRIDGED` agreement arm with its one registration | `graphitron-model`, `graphitron` | small-medium |
-| 5 | The schema-bridge loader at the workspace layer: the single exhaustive-switch site filling typed columns per snapshot, every statement scoped to the session's graph, writing through the session's store handle | `graphitron-lsp` | small-medium |
-| 6 | The aggregate and the widened `diagnostics` filters as jOOQ over the view; the dimension enum as the wire-name-to-view-column mapping; tail rule via `HAVING` plus the elided-remainder aggregate; the new counts-only tool | `graphitron-mcp` | medium |
+| 5 | The schema-bridge loader beside the report's producer: the single exhaustive-switch site filling typed columns per snapshot, every statement scoped to the session's graph, taking a `DSLContext` in `FactCapture`'s two-entry shape; `DevMojo` constructs it beside `CompileFacts` and calls it where it sets the build output | `graphitron`, `graphitron-maven-plugin` | small-medium |
+| 6 | The aggregate and the widened `diagnostics` filters as jOOQ over the view; the dimension enum as the wire-name-to-view-column mapping; tail rule via `HAVING` plus the elided-remainder aggregate; the new counts-only tool; the handle reaching it through `GraphitronMcpServer`'s constructor from `DevMojo`'s one construction site | `graphitron-mcp`, `graphitron-maven-plugin` | medium |
 
 Steps 1 to 3 are each independently defensible and each improve the LSP or the watch formatter on
 their own, so they can be carved into separate items if parallelism is wanted. Step 6 stays one
@@ -516,13 +551,21 @@ path. Two reasons it separates cleanly:
 - Its blast radius is the widest and the least related. Beyond `WatchErrorFormatter` it reaches
   `DiagnosticsTool`'s filter comparison and wire `putIfNotNull`, and six `graphitron` test files
   assert on coordinate strings (`GraphitronSchemaBuilderTest`, `ConditionCommandsPipelineTest`,
-  `ConnectionTypeValidationTest`, `TenantScopeValidationTest`, `NodeIdPipelineTest`, and the typed-
-  rejection pipeline test). Carrying that into this item would also pull in
-  `graphitron-maven-plugin`, which nothing else here touches.
+  `ConnectionTypeValidationTest`, `TenantScopeValidationTest`, `NodeIdPipelineTest`, and
+  `R58TypedRejectionPipelineTest`). That reason carries the carve-out on its own, and it has to,
+  because the draft's second reason no longer holds: it argued that the lift would pull in
+  `graphitron-maven-plugin`, "which nothing else here touches", and the store-handle plumbing
+  this item needs touches it.
 
-Dropping it leaves this item spanning `graphitron`, `graphitron-model`, `graphitron-lsp`, and
-`graphitron-mcp`, which is a defensible blast radius for one item given steps 1 to 3 all exist to
-keep the aggregate a projection and step 4 is the first-reader DDL this item exists to consume.
+Dropping it leaves this item spanning `graphitron`, `graphitron-model`, `graphitron-lsp`,
+`graphitron-mcp`, and `graphitron-maven-plugin`. Five modules reads wide for one item, so the
+shape is worth stating plainly: three of them carry real work (the model lifts and the loader in
+`graphitron`, the DDL in `graphitron-model`, the tool in `graphitron-mcp`), `graphitron-lsp` is
+touched only by steps 1 and 3 collapsing two projections it already owns, and
+`graphitron-maven-plugin` is one constructor argument at one construction site. It stays
+defensible given steps 1 to 3 all exist to keep the aggregate a projection and step 4 is the
+first-reader DDL this item exists to consume, but a reviewer who wanted steps 1 to 3 carved off
+into their own item would have a fair case, and the Phasing note above already permits it.
 
 ## Tests
 
@@ -537,7 +580,11 @@ move and the later schema-arm swap (R589's detection-minted relation) invisible 
 - **Aggregate / drill-down parity.** Filtering `diagnostics` to a group's key returns exactly that
   group's count. This is the pin that makes the per-cluster examples a sample rather than a lossy
   summary, and it is the one test that would catch the two-filter-implementation drift.
-  `LintSuppressionDiagnosticsParityTest` is the module's precedent for this cross-view shape.
+  `graphitron-mcp`'s `LintSuppressionDiagnosticsParityTest` is the precedent for this cross-view
+  shape, and it is more than that: it already drives the real `GraphQLRewriteGenerator.buildOutput`
+  and publishes the result onto a `Workspace` the way the dev loop does, from this module. That is
+  the fixture shape the tier move above calls for, working today in the target module, so take it
+  as the template rather than designing one.
 - **Truncation honesty.** `minCount` / `limit` elision reports the elided group count and their
   combined count; a truncated aggregate never reads as complete.
 - **Cardinality guard.** A high-cardinality composite `groupBy` over a large fixture does not
@@ -579,9 +626,17 @@ the collapsed `lspCodeOf`.
   them).
 - The agreement driver in `graphitron`'s capture test root: the `BRIDGED` registration arm,
   its honesty javadoc, and the schema bridge's registration.
-- A loader class at the workspace layer in `graphitron-lsp`: the single exhaustive-switch site,
+- A loader class in `graphitron` beside the report's producer: the single exhaustive-switch site,
   writing per snapshot (schema channel only; the compile channel's writer, `CompileFacts`,
-  already ships), every statement graph-scoped, through the session's store handle.
+  already ships), every statement graph-scoped, taking a `DSLContext` in `FactCapture`'s
+  two-entry shape rather than opening its own store.
+- `DevMojo`: construct the loader beside the existing `CompileFacts` construction, call it where
+  the mojo already publishes the build output to the workspace, and pass `sessionStore.dsl()`
+  into the MCP server's constructor. Three edits at sites the mojo already owns; the store handle
+  and its lifetime are already there.
+- `GraphitronMcpServer`'s full constructor: accept the store handle. This is `graphitron-mcp`'s
+  first store dependency, so the generated-classes containment argument lands here rather than
+  being inherited.
 - `DiagnosticsTool.java`: the three inline `LinkedHashMap` builders plus `addLocation` /
   `addCompileLocation` become a projection of the `diagnostic` view's rows.
 - A new class in `graphitron-mcp` for the dimension enum (wire name to view column), the jOOQ
@@ -592,8 +647,12 @@ the collapsed `lspCodeOf`.
 - Both tool descriptions: the dimension vocabulary has to be enumerated somewhere for discovery.
 - `mcp/instructions.txt`: one routing line pointing at the aggregate when the diagnostic count is
   large. R584 shipped the file's question-keyed routing table over all twelve tools plus the
-  `directives` resource, so the line goes into that table's diagnostics entry rather than anywhere
-  convenient, and it is written against a composed string carrying a 3600-character ceiling.
+  `directives` resource, so the line joins that table beside the existing `diagnostics` entry and
+  takes its shape: a question, the tool, and at most one follow-on sentence. The ceiling is real
+  but not tight, and the measurement is here so the line does not get over-compressed to fit a
+  budget it comfortably clears: `ServerInstructionsTest`'s `AMBIENT_CHARACTER_BUDGET` is 3600, the
+  composed string measures 2816 (2564 base plus the 252-character execute tail), and the draft
+  below is 269. Roughly 780 characters of headroom.
 - `docs/manual/how-to/mcp-agent-context.adoc`: the per-tool table gains a `diagnostics.aggregate`
   row beside the existing `diagnostics` one. This is the user-facing surface the shipped
   `docs.search` / `catalog.search` tools landed prose on, and the draft omitted it.
@@ -712,12 +771,16 @@ in sixteen:
 >
 > *Derived from message text* (not stable across a rewording): `messageTemplate`.
 
-**`mcp/instructions.txt`**, the one line this item contributes to the diagnostics entry of the
-question-keyed routing table R584 shipped:
+**`mcp/instructions.txt`**, the one line this item contributes to the question-keyed routing table
+R584 shipped, sitting directly under its `What is broken right now: diagnostics` entry and matching
+that table's shape rather than the tool description's:
 
-> When the schema has more than a page of diagnostics, call `diagnostics.aggregate` before
-> `diagnostics`. It answers what is broken and in what proportion in one small result, and its group
-> keys feed straight back into `diagnostics` to read a single cluster's entries.
+> - What is broken in proportion, when there is more than a page of it: `diagnostics.aggregate`.
+>   Its group keys feed back into `diagnostics` to read one cluster's entries.
+
+The mechanics (exact counts, the tail rule, `groupBy` and `where`) deliberately stay out of it.
+R584's thesis is that ambient carries the question-to-tool mapping and local carries the rest, and
+the tool description below already states all of it.
 
 **`docs/manual/how-to/mcp-agent-context.adoc`**, a new row after the `diagnostics` one:
 
