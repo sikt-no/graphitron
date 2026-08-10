@@ -37,10 +37,12 @@ gained the presence probe that gate needs, the disjunction is already gone by th
 starts.
 
 Scope: fold the memo maps and accessors onto the capability, collapse the classify-time blocks to
-one, and unify the three table-agreement diagnostics without losing the per-family wording that
+one, and unify the table-agreement diagnostics without losing the per-family wording that
 existing fixtures pin (the DML block's "payload-returning DML mutations require child @table-bound
-fields to bind to the input table" and its siblings). The diagnostics are the real work; the
-structure is mechanical.
+fields to bind to the input table" and its siblings). Only two diagnostics are real: the routine
+block's agreement is tautological at its seat (its binding's table is read off the same data
+field the check would compare it to), so that block is a thin duplicate by design. The
+diagnostics are the real work; the structure is mechanical.
 
 Deliberately not folded into the carrier-return item: that item touches neither the DML nor the
 `@service` emit path, and pulling this in would put both families' emit into its acceptance surface
