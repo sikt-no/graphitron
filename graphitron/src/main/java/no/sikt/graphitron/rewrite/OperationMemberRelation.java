@@ -347,6 +347,7 @@ public record OperationMemberRelation(Map<FieldCoordinates, List<OperationMember
             // The write payload is the leaf's carried component, by identity (DmlWriteField).
             case DmlWriteField f -> f.write();
             case MutationField.MutationRoutineWriteField _ -> new OperationMember.Write.RoutineWrite();
+            case MutationField.MutationRoutineWriteRecordField _ -> new OperationMember.Write.RoutineWrite();
             default -> throw new IllegalStateException(
                 "write membership on a leaf with no write payload components: "
                 + leaf.getClass().getSimpleName());

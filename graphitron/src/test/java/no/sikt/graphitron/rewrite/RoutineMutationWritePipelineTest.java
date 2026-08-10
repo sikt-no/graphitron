@@ -72,8 +72,73 @@ class RoutineMutationWritePipelineTest {
             .isEqualTo(1);
     }
 
+    /** The hop-less carrier form: same routine, the payload return instead of the chain. */
+    private static final String CARRIER_SDL = """
+        type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
+            path: [String!]!
+            message: String!
+        }
+        union RentFilmError = DbErr
+        type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+        type RentFilmPayload {
+          rental: Rental
+          errors: [RentFilmError!]
+        }
+        type Query { rental: Rental }
+        type Mutation {
+          rentFilm(inventoryId: Int!, customerId: Int!): RentFilmPayload
+            @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+        }
+        """;
+
+    @Test
+    void routineCarrierFetcher_emitsStepOneOnly() {
+        // The mirror of the two-step pin above: the carrier fetcher owns step 1 alone (the
+        // routine call plus a projection of its own result columns inside one
+        // transactionResult), and NO follow-up .select( after the transaction — step 2 belongs
+        // to the payload data field's own fetcher. A regression that grows a follow-up SELECT
+        // here would put a read inside the mutation fetcher that the two-statements rule
+        // assigns to the data field.
+        String body = carrierFetcherBody();
+
+        long transactionResultCalls = countMatches(body, Pattern.compile("transactionResult\\("));
+        int firstTransactionResult = body.indexOf("transactionResult(");
+        int selectAfterTxn = body.indexOf(".select(", body.indexOf(".fetch", firstTransactionResult));
+        assertThat(transactionResultCalls)
+            .as("the routine carrier wraps step 1 in exactly one transactionResult(...)")
+            .isEqualTo(1);
+        assertThat(selectAfterTxn)
+            .as("no follow-up .select(...) after step 1's fetch — the post-commit re-read is "
+                + "the payload data field's, not this fetcher's")
+            .isEqualTo(-1);
+        long routineInvocations = countMatches(body, Pattern.compile("Routines\\.rentFilm\\("));
+        assertThat(routineInvocations)
+            .as("the generated Routines convenience method is invoked exactly once")
+            .isEqualTo(1);
+    }
+
+    @Test
+    void routineCarrierFetcher_catchArmCarriesSentinel() {
+        // Outcome (a): the routine raised. The catch arm must return the non-null
+        // all-null-column sentinel (DSL.using(SQLDialect.DEFAULT).newRecord(...)) so
+        // graphql-java traverses into the errors field instead of short-circuiting on a null
+        // parent; the data field's null-key SELECT then renders null.
+        String body = carrierFetcherBody();
+        assertThat(body)
+            .contains("dispatchToLocalContext")
+            .contains("newRecord(");
+    }
+
     private static String fetcherBody() {
-        var schema = TestSchemaHelper.buildSchema(SDL);
+        return fetcherBody(SDL);
+    }
+
+    private static String carrierFetcherBody() {
+        return fetcherBody(CARRIER_SDL);
+    }
+
+    private static String fetcherBody(String sdl) {
+        var schema = TestSchemaHelper.buildSchema(sdl);
         var mutationFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("MutationFetchers"))
             .findFirst()

@@ -149,6 +149,8 @@ public final class OperationMembers {
             shape(Set.of(Kind.WRITE), Set.of(Kind.REENTRY))),
         Map.entry(MutationField.MutationRoutineWriteField.class,
             shape(Set.of(Kind.WRITE), Set.of())),
+        Map.entry(MutationField.MutationRoutineWriteRecordField.class,
+            shape(Set.of(Kind.WRITE), Set.of())),
         Map.entry(MutationField.MutationServiceTableField.class,
             shape(Set.of(Kind.SERVICE_CALL), Set.of())),
         Map.entry(MutationField.MutationServiceRecordField.class,
@@ -246,6 +248,7 @@ public final class OperationMembers {
             // The write payload is the leaf's carried component, by identity (DmlWriteField).
             case DmlWriteField f -> List.of(f.write());
             case MutationField.MutationRoutineWriteField _ -> List.of(new Write.RoutineWrite());
+            case MutationField.MutationRoutineWriteRecordField _ -> List.of(new Write.RoutineWrite());
             case MutationField.MutationServiceTableField f -> List.of(structuredServiceCall(f.serviceMethodCall()));
             case MutationField.MutationServiceRecordField f -> List.of(structuredServiceCall(f.serviceMethodCall()));
             case MutationField.MutationServicePolymorphicField f -> List.of(structuredServiceCall(f.serviceMethodCall()));

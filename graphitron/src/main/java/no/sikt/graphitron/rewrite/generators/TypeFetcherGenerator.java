@@ -282,6 +282,7 @@ public class TypeFetcherGenerator {
         MutationField.MutationServiceTableInterfaceField.class,
         MutationField.DmlTableField.class,
         MutationField.MutationRoutineWriteField.class,
+        MutationField.MutationRoutineWriteRecordField.class,
         MutationField.MutationDmlRecordField.class,
         MutationField.MutationBulkDmlRecordField.class,
         MutationField.MutationServiceTableField.class,
@@ -634,6 +635,7 @@ public class TypeFetcherGenerator {
                 case MutationField.DmlTableField f -> builder.addMethod(buildDmlTableFetcher(ctx, f, outputPackage,
                     launchers.rowFor(f.parentTypeName(), f.name()).orElse(null), launchers.carrierDsl()));
                 case MutationField.MutationRoutineWriteField f -> builder.addMethod(buildMutationRoutineWriteFetcher(ctx, f, outputPackage));
+                case MutationField.MutationRoutineWriteRecordField f -> builder.addMethod(buildMutationRoutineWriteRecordFetcher(ctx, f, outputPackage));
                 case MutationField.MutationServiceTableField f -> builder.addMethod(buildMutationServiceTableFetcher(ctx, f, outputPackage));
                 case MutationField.MutationServiceRecordField f -> builder.addMethod(buildMutationServiceRecordFetcher(ctx, f, outputPackage));
                 case MutationField.MutationServicePolymorphicField f ->
@@ -1356,6 +1358,94 @@ public class TypeFetcherGenerator {
         builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.localContextTail()));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(catchArm(outputPackage, mrwf.errorChannel()));
+        builder.endControlFlow();
+
+        return builder.build();
+    }
+
+    /**
+     * The fetcher for a {@link MutationField.MutationRoutineWriteRecordField} — the routine
+     * carrier's step 1 alone: {@link #buildMutationRoutineWriteFetcher} truncated at the
+     * transaction boundary, returning the captured keys. The routine executes inside
+     * {@code dsl.transactionResult(...)}, the SELECT captures the leaf's
+     * {@code capturedPairs()} source columns off the routine's own result rows, and the commit
+     * happens when the lambda returns; there is no step 2 here — the post-commit re-read
+     * belongs to the payload's data field (its record-sourced
+     * {@link ChildField.BatchedTableField} fetcher), exactly as on the DML record carriers.
+     *
+     * <p>The captured tuple is projected under the <em>target table's</em> key fields (the
+     * {@code .coerce(...)} re-typing), not the routine result's same-named columns: the data
+     * field reads its correlation off this record by column, and the DML path this mirrors
+     * projects {@code Tables.<TARGET>.<PK>} directly, so matching that keeps the carried-key
+     * component and its reader agreeing by field identity rather than by jOOQ's name-lookup
+     * fallback.
+     *
+     * <p>The catch arm receives the same non-null all-null-column sentinel the DML carriers
+     * pass ({@link #singleRecordSentinelFor} / {@link #bulkRecordSentinelFor} per the data
+     * field's arrival), so graphql-java traverses into the {@code errors} field instead of
+     * short-circuiting on a null parent. The single shape's null-keys guard covers the routine
+     * legitimately returning no row: nothing was keyed, so the whole payload renders null.
+     */
+    private static MethodSpec buildMutationRoutineWriteRecordFetcher(TypeFetcherEmissionContext ctx,
+            MutationField.MutationRoutineWriteRecordField f, String outputPackage) {
+        var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(f.targetTable());
+        boolean isList = f.dataFieldArrival() == no.sikt.graphitron.rewrite.model.Arity.MANY;
+        var targetKeyCols = f.capturedPairs().stream()
+            .map(no.sikt.graphitron.rewrite.model.JoinSlot::targetSide)
+            .toList();
+        TypeName keyRowType = no.sikt.graphitron.rewrite.model.SourceKey.keyElementType(
+            new no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Record(), targetKeyCols);
+        TypeName valueType = isList
+            ? ParameterizedTypeName.get(RESULT, keyRowType)
+            : keyRowType;
+
+        var builder = MethodSpec.methodBuilder(f.name())
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(syncResultType(valueType))
+            .addParameter(ENV, "env");
+        builder.beginControlFlow("try");
+        CodeBlock startExpr = RoutineCallEmitter.emitCall(
+            new no.sikt.graphitron.rewrite.model.TableExpr.RoutineCall(f.routine(), f.routineResultTable()),
+            new PreviousNodeRef.None(), new ArgumentValueSource.Env());
+        builder.addStatement("$T source = $L", f.routineResultTable().tableClass(), startExpr);
+        var tenantDsl = TenantDslEmitter.resolve(ctx, f, outputPackage);
+        builder.addCode(tenantDsl.declaration());
+
+        // Step 1 — the whole emit. The write transaction contains the routine call and a
+        // projection of its own result columns, nothing else (the two-statements rule).
+        var step1 = CodeBlock.builder()
+            .add("$T keys = dsl.transactionResult(tx -> $T.using(tx)\n", valueType, DSL).indent()
+            .add(".select(");
+        for (int i = 0; i < f.capturedPairs().size(); i++) {
+            if (i > 0) step1.add(", ");
+            step1.add("source.$L", f.capturedPairs().get(i).sourceSide().javaName());
+        }
+        step1.add(")\n")
+            .add(".from(source)\n")
+            .add(".coerce(");
+        for (int i = 0; i < targetKeyCols.size(); i++) {
+            if (i > 0) step1.add(", ");
+            step1.add("$T.$L.$L", tablesOnly.tablesClass(), f.targetTable().javaFieldName(),
+                targetKeyCols.get(i).javaName());
+        }
+        step1.add(")\n")
+            .add(isList ? ".fetch());\n" : ".fetchOne());\n").unindent();
+        builder.addCode(step1.build());
+
+        if (!isList) {
+            // The routine returned no row: nothing was keyed, so the payload renders null —
+            // the same contract as the direct-return single shape's null-keys guard.
+            builder.addCode("if (keys == null) return $T.<$T>newResult().data(null).build();\n",
+                DATA_FETCHER_RESULT, valueType);
+        }
+
+        builder.addCode(returnSyncSuccess(valueType, "keys", tenantDsl.localContextTail()));
+        builder.nextControlFlow("catch ($T e)", Exception.class);
+        builder.addCode(catchArm(outputPackage,
+            f.errorChannel().map(c -> (ErrorChannel.RouterDispatched) c),
+            isList
+                ? bulkRecordSentinelFor(f.targetTable(), tablesOnly, targetKeyCols)
+                : singleRecordSentinelFor(f.targetTable(), tablesOnly, targetKeyCols)));
         builder.endControlFlow();
 
         return builder.build();

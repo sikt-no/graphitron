@@ -726,17 +726,20 @@ class BuildContext {
     /**
      * The carrier family the structural scan is run for. A named axis (not a flag set)
      * because the families differ on two coupled policies: the forbidden-directive set on the
-     * data field and the ID-element wrapper admission. DML (DELETE) carriers reject the
+     * data field and the ID-element admission. DML (DELETE) carriers reject the
      * list-of-nullable {@code [ID]} and Connection wrappers (every element of a successful
      * DELETE response is the encoded PK of an actually-deleted row, so the slot cannot be
      * null); {@code @service} carriers admit {@code [ID]} (the data field projects whatever
      * record list the service returned, and the opptak schemas declare the weaker {@code [ID]}
-     * contract) while still rejecting Connection. A third family extends the enum and gets
-     * exhaustiveness prompts at both policy sites.
+     * contract) while still rejecting Connection; {@code @routine} carriers keep the strict DML
+     * forbidden set and refuse the ID element outright, at any wrapper — the ID-element permit
+     * exists for the DELETE PK echo, and a routine write has no PK-echo shape at all. A new
+     * family extends the enum and gets exhaustiveness prompts at both policy sites.
      */
     private enum CarrierFamily {
         DML(FORBIDDEN_CARRIER_DATA_FIELD_DIRECTIVES),
-        SERVICE(FORBIDDEN_SERVICE_CARRIER_DATA_FIELD_DIRECTIVES);
+        SERVICE(FORBIDDEN_SERVICE_CARRIER_DATA_FIELD_DIRECTIVES),
+        ROUTINE(FORBIDDEN_CARRIER_DATA_FIELD_DIRECTIVES);
 
         final java.util.Set<String> forbiddenDataFieldDirectives;
         CarrierFamily(java.util.Set<String> forbiddenDataFieldDirectives) {
@@ -772,6 +775,73 @@ class BuildContext {
      */
     public DmlPayloadScan scanStructuralServiceCarrierPayload(String payloadSdlName) {
         return scanStructuralPayload(payloadSdlName, CarrierFamily.SERVICE);
+    }
+
+    /**
+     * The {@code @routine}-carrier variant of {@link #scanStructuralDmlPayload}: the return
+     * shape of a hop-less {@code @routine} Mutation write. Identical structural walk under the
+     * strict DML forbidden-directive set; the family's own policy is the outright ID-element
+     * refusal (see {@link CarrierFamily}). Consulted by the {@code @routine} carrier fork in
+     * {@code FieldBuilder.classifyMutationField}, the {@code RoutineEmitted} grounding in
+     * {@code RecordBindingResolver}, and {@code TypeBuilder.carrierBinding}.
+     */
+    public DmlPayloadScan scanStructuralRoutineCarrierPayload(String payloadSdlName) {
+        return scanStructuralPayload(payloadSdlName, CarrierFamily.ROUTINE);
+    }
+
+    /**
+     * Outcome of {@link #deriveRoutineCarrierPairs}: the name-matched pairs keying a routine
+     * carrier's capture, or the typed failure the carrier classification lands on the mutation
+     * field. Its own rejection rather than {@code synthesizeNameMatchedJoin}'s because that
+     * message's {@code condition:} fix clause is false here — a condition join has no key tuple
+     * to capture — so the one fix that works (expose the target's key column from the routine)
+     * is the only one stated.
+     */
+    public sealed interface RoutineCarrierKeying {
+        record Pairs(List<JoinSlot.FkSlot> pairs) implements RoutineCarrierKeying {
+            public Pairs {
+                pairs = List.copyOf(pairs);
+            }
+        }
+        record Unmatched(String message) implements RoutineCarrierKeying {}
+    }
+
+    /**
+     * The routine carrier's key derivation: one pure function over two catalog facts, the
+     * routine's result table and the data-field element table's primary key, producing the
+     * name-matched pairs (source side on the routine result, target side the element table's
+     * PK) or its typed failure. The single derivation site — grounded once into
+     * {@link no.sikt.graphitron.rewrite.model.ProducerBinding.RoutineEmitted} by
+     * {@code RecordBindingResolver}, with {@code FieldBuilder.classifyMutationField} re-invoking
+     * it only to surface the failure message when no binding grounded.
+     */
+    public static RoutineCarrierKeying deriveRoutineCarrierPairs(
+            TableRef routineResultTable, TableRef targetTable) {
+        if (targetTable.primaryKeyColumns().isEmpty()) {
+            return new RoutineCarrierKeying.Unmatched(
+                "cannot key the payload data field's re-read from '"
+                + routineResultTable.tableName() + "' (a routine result, which carries no FK "
+                + "metadata) to '" + targetTable.tableName() + "' — the target has no primary "
+                + "key to name-match");
+        }
+        var pairs = new ArrayList<JoinSlot.FkSlot>(targetTable.primaryKeyColumns().size());
+        for (ColumnRef keyCol : targetTable.primaryKeyColumns()) {
+            var sourceCol = routineResultTable.allColumns().stream()
+                .filter(c -> c.sqlName().equalsIgnoreCase(keyCol.sqlName()))
+                .findFirst();
+            if (sourceCol.isEmpty()) {
+                return new RoutineCarrierKeying.Unmatched(
+                    "cannot key the payload data field's re-read from '"
+                    + routineResultTable.tableName() + "' to '" + targetTable.tableName()
+                    + "' by name-match — the target's primary key column '" + keyCol.sqlName()
+                    + "' is not exposed by name on '" + routineResultTable.tableName() + "'"
+                    + candidateHint(keyCol.sqlName(),
+                        routineResultTable.allColumns().stream().map(ColumnRef::sqlName).toList())
+                    + "; expose the key column from the routine");
+            }
+            pairs.add(new JoinSlot.FkSlot(sourceCol.get(), keyCol));
+        }
+        return new RoutineCarrierKeying.Pairs(pairs);
     }
 
     /**
@@ -895,8 +965,17 @@ class BuildContext {
             } else if (elementType instanceof GraphitronType.ResultType rt && rt.fqClassName() != null) {
                 kind = new DmlElementKind.RecordElement(f.getName());
             } else if ("ID".equals(elementTypeName)) {
-                // ID-element wrapper-shape rules, per carrier family (see CarrierFamily);
-                // test fixtures pin these diagnostic wordings.
+                // ID-element rules, per carrier family (see CarrierFamily);
+                // test fixtures pin these diagnostic wordings. ROUTINE refuses the element
+                // outright, at any wrapper: the permit exists for the DELETE PK echo, and a
+                // routine write has no PK-echo shape at all.
+                if (family == CarrierFamily.ROUTINE) {
+                    return new DmlPayloadScan.Reject(
+                        "carrier field '" + f.getName() + "' has element type 'ID'; the "
+                        + "ID-element data field is the DELETE PK-echo permit, and a routine "
+                        + "write has no PK-echo shape, so a @routine carrier admits no "
+                        + "ID-element data field — use a @table-element data field");
+                }
                 var wrapper = buildWrapper(f);
                 if (family == CarrierFamily.DML
                         && wrapper instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.List list
@@ -916,6 +995,8 @@ class BuildContext {
                         case SERVICE -> "single-record carrier field '" + f.getName() + "' has element type 'ID' "
                             + "with a Connection wrapper; an @service-carrier ID data field requires "
                             + "a singleton (ID / ID!) or plain list ([ID] / [ID!] / [ID!]!) wrapper";
+                        case ROUTINE -> throw new IllegalStateException(
+                            "unreachable: the ROUTINE family refuses the ID element outright above");
                     });
                 }
                 kind = new DmlElementKind.IdElement();

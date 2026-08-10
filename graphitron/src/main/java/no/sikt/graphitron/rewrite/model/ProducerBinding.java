@@ -14,13 +14,15 @@ import java.util.Objects;
  * {@link RootService} for an {@code @service} method's return type, {@link RootTable} for an
  * SDL Object's {@code @table} resolution, {@link ParentAccessor} for an SDL parent's
  * accessor return type, and
- * {@link DmlEmitted} for a DML mutation fetcher's emitted output shape (the only arm whose
+ * {@link DmlEmitted} for a DML mutation fetcher's emitted output shape and
+ * {@link RoutineEmitted} for a routine-write mutation fetcher's (the two arms whose
  * source is generator-emitted rather than developer-authored reflection).
  */
 public sealed interface ProducerBinding
     permits ProducerBinding.RootService, ProducerBinding.RootTable,
             ProducerBinding.ParentAccessor,
-            ProducerBinding.DmlEmitted, ProducerBinding.ServiceEmitted {
+            ProducerBinding.DmlEmitted, ProducerBinding.ServiceEmitted,
+            ProducerBinding.RoutineEmitted {
 
     /** The reflected Java class this producer named for the SDL type. */
     Class<?> reflectedClass();
@@ -109,7 +111,7 @@ public sealed interface ProducerBinding
         DmlKind kind,
         Arity arrival,
         SourceLocation location
-    ) implements ProducerBinding {
+    ) implements ProducerBinding, EmittedCarrierBinding {
         public DmlEmitted {
             Objects.requireNonNull(reflectedClass, "reflectedClass");
             Objects.requireNonNull(tableRef, "tableRef");
@@ -163,7 +165,7 @@ public sealed interface ProducerBinding
         String serviceClassName,
         String methodName,
         SourceLocation location
-    ) implements ProducerBinding {
+    ) implements ProducerBinding, EmittedCarrierBinding {
         public ServiceEmitted {
             Objects.requireNonNull(reflectedClass, "reflectedClass");
             Objects.requireNonNull(tableRef, "tableRef");
@@ -182,6 +184,81 @@ public sealed interface ProducerBinding
         @Override public String describe() {
             return "@service-carrier (" + arrival + ") on " + parentTypeName + "."
                 + fieldName + " via " + serviceClassName + "." + methodName;
+        }
+    }
+
+    /**
+     * A routine-write mutation fetcher's emitted key shape, observed as the producer-side
+     * binding for the payload SDL type of a hop-less {@code @routine} Mutation field returning
+     * a payload carrier. The fetcher's {@code env.getSource()} carries {@code RecordN<...>}
+     * (single data field) or {@code Result<RecordN<...>>} (list data field) projected under the
+     * carried {@link TableRef}'s primary-key fields, captured off the routine's own result rows
+     * inside the write transaction.
+     *
+     * <p>Third sibling of {@link DmlEmitted} and {@link ServiceEmitted} (the
+     * {@link EmittedCarrierBinding} capability). What this arm carries that its siblings cannot:
+     * {@link #capturedPairs()}, the name-matched pairs keying the capture. A hop out of a
+     * routine result has no FK metadata to ride, so the pairing matches the target table's
+     * primary-key columns by SQL name against the routine's result columns; the pairs' target
+     * side is the target table's PK by construction (the same value
+     * {@link EmittedCarrierBinding#correlationColumns()} answers on every arm), and the pairs'
+     * source side is the routine-only fact step 1 alone consumes. Derived once, at grounding
+     * ({@code RecordBindingResolver}), from the routine's result table and the data-field
+     * element table's primary key; every reader reads this carried result.
+     *
+     * <p>{@code arrival} is the payload's <em>data-field</em> arrival (the data field's SDL
+     * wrapper, the only cardinality claim in the system for this shape).
+     *
+     * <p>Compact-constructor invariants mirror the siblings ({@code reflectedClass} equals the
+     * target {@code tableRef}'s record class) plus the capture's own: pairs non-empty and every
+     * pair name-matched (source and target column share an SQL name, case-insensitively).
+     */
+    record RoutineEmitted(
+        Class<?> reflectedClass,
+        TableRef tableRef,
+        Arity arrival,
+        String routineName,
+        TableRef routineResultTable,
+        java.util.List<JoinSlot.FkSlot> capturedPairs,
+        String parentTypeName,
+        String fieldName,
+        SourceLocation location
+    ) implements ProducerBinding, EmittedCarrierBinding {
+        public RoutineEmitted {
+            Objects.requireNonNull(reflectedClass, "reflectedClass");
+            Objects.requireNonNull(tableRef, "tableRef");
+            Objects.requireNonNull(arrival, "arrival");
+            Objects.requireNonNull(routineName, "routineName");
+            Objects.requireNonNull(routineResultTable, "routineResultTable");
+            Objects.requireNonNull(location, "location");
+            capturedPairs = java.util.List.copyOf(capturedPairs);
+            if (capturedPairs.isEmpty()) {
+                throw new IllegalArgumentException(
+                    "ProducerBinding.RoutineEmitted: capturedPairs must be non-empty; a "
+                        + "pair-less capture has no key for the data field's re-read");
+            }
+            for (var pair : capturedPairs) {
+                if (!pair.sourceSide().sqlName().equalsIgnoreCase(pair.targetSide().sqlName())) {
+                    throw new IllegalArgumentException(
+                        "ProducerBinding.RoutineEmitted: capturedPairs must be name-matched; "
+                            + "pair (" + pair.sourceSide().sqlName() + " -> "
+                            + pair.targetSide().sqlName() + ") is not");
+                }
+            }
+            String expected = tableRef.recordClass().reflectionName();
+            if (!reflectedClass.getName().equals(expected)) {
+                throw new IllegalArgumentException(
+                    "ProducerBinding.RoutineEmitted: reflectedClass (" + reflectedClass.getName()
+                        + ") must equal tableRef.recordClass().reflectionName() (" + expected
+                        + ") so the per-SDL-type binding fold matches RootTable for "
+                        + "the same TableRef");
+            }
+        }
+
+        @Override public String describe() {
+            return "@routine carrier (" + arrival + ") on " + parentTypeName + "."
+                + fieldName + " via routine '" + routineName + "' emitted from '"
+                + tableRef.tableName() + "'";
         }
     }
 }

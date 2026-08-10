@@ -156,6 +156,9 @@ class HierarchyKindRegistryTest {
         Map.entry(TenantScopes.class, HierarchyKind.WALKED_FACT),
         Map.entry(ScalarResolution.class, HierarchyKind.WALKED_FACT),
         Map.entry(ProducerBinding.class, HierarchyKind.WALKED_FACT),
+        // Capability seal over the emitted-carrier ProducerBinding arms; same provenance as
+        // its permits (the binding walk grounds every arm).
+        Map.entry(no.sikt.graphitron.rewrite.model.EmittedCarrierBinding.class, HierarchyKind.WALKED_FACT),
         Map.entry(AccessorProbe.class, HierarchyKind.WALKED_FACT),
         Map.entry(ParamSource.class, HierarchyKind.WALKED_FACT),
         Map.entry(ValueShape.class, HierarchyKind.WALKED_FACT),

@@ -154,6 +154,31 @@ class TypeBuilder {
     }
 
     /**
+     * The {@link no.sikt.graphitron.rewrite.model.ProducerBinding.RoutineEmitted} binding for an
+     * SDL payload type whose producer is a hop-less {@code @routine} Mutation field with a
+     * carrier-shaped payload. Mirrors {@link #dmlEmittedBinding}.
+     */
+    java.util.Optional<no.sikt.graphitron.rewrite.model.ProducerBinding.RoutineEmitted> routineEmittedBinding(String sdlTypeName) {
+        return bindings == null ? java.util.Optional.empty() : bindings.resolveRoutineEmitted(sdlTypeName);
+    }
+
+    /**
+     * The one-question presence probe over the emitted-carrier arms: the
+     * {@link no.sikt.graphitron.rewrite.model.EmittedCarrierBinding} bound to an SDL payload
+     * type, whichever producer family grounded it. This is the accessor the
+     * {@code activeChannel} gate in {@code FieldBuilder.transportForParent} reads, so a new
+     * emitted-carrier arm extends this method instead of a hand-maintained disjunction at the
+     * gate.
+     */
+    java.util.Optional<no.sikt.graphitron.rewrite.model.EmittedCarrierBinding> emittedCarrierBinding(String sdlTypeName) {
+        if (bindings == null) return java.util.Optional.empty();
+        return bindings.resolveDmlEmitted(sdlTypeName)
+            .<no.sikt.graphitron.rewrite.model.EmittedCarrierBinding>map(b -> b)
+            .or(() -> bindings.resolveServiceEmitted(sdlTypeName).map(b -> b))
+            .or(() -> bindings.resolveRoutineEmitted(sdlTypeName).map(b -> b));
+    }
+
+    /**
      * The {@code @service} producer's arrival cardinality for a payload SDL type, decided once at
      * the reflection boundary and read by the classify-time shape verdict at the {@code @service}
      * carrier seat. Mirrors {@link #serviceEmittedBinding}.
@@ -205,6 +230,10 @@ class TypeBuilder {
         // via the same producers classification uses (buildTableType / buildTableInterfaceType),
         // not from the registry, so they may be built before the walk.
         buildClassificationIndices();
+        // The routine-carrier grounding runs after the indices: its structural scan detects the
+        // payload's errors-shaped field through the ErrorIndex, which the root-producer pass
+        // predates. See RecordBindingResolver.groundRoutineCarriers.
+        bindings.groundRoutineCarriers();
         // Emit the directive-ignored warning in a dedicated pass over getAllTypesAsList so the
         // warning order is stable (SDL order) and independent of walk order. It reads only the
         // reflection-binding fixed point and SDL directives, never the registry.
@@ -293,9 +322,10 @@ class TypeBuilder {
     /**
      * The producer-bound backing for a directiveless single-record carrier payload. Registry-free:
      * derived from the structural carrier scans ({@link BuildContext#scanStructuralDmlPayload} /
-     * {@link BuildContext#scanStructuralServiceCarrierPayload}) plus the producer binding fixed
-     * point ({@code DmlEmitted} / {@code ServiceEmitted}), never from the in-progress type
-     * registry. A producer-backed carrier binds its wrapper to the producer's record, single or
+     * {@link BuildContext#scanStructuralServiceCarrierPayload} /
+     * {@link BuildContext#scanStructuralRoutineCarrierPayload}) plus the producer binding fixed
+     * point ({@code DmlEmitted} / {@code ServiceEmitted} / {@code RoutineEmitted}), never from
+     * the in-progress type registry. A producer-backed carrier binds its wrapper to the producer's record, single or
      * multi cardinality alike, so the inner data field reads off the record through the standard
      * record-backed path. Each producer family gates on its own scan; DML carriers keep the strict
      * forbidden-directive set, {@code @service} carriers tolerate {@code @splitQuery} on the data
@@ -327,6 +357,10 @@ class TypeBuilder {
     CarrierBinding carrierBinding(String name) {
         if (ctx.scanStructuralDmlPayload(name) instanceof BuildContext.DmlPayloadScan.Admit) {
             var table = dmlEmittedBinding(name).map(b -> b.tableRef()).orElse(null);
+            if (table != null) return new CarrierBinding.TableBacked(table);
+        }
+        if (ctx.scanStructuralRoutineCarrierPayload(name) instanceof BuildContext.DmlPayloadScan.Admit) {
+            var table = routineEmittedBinding(name).map(b -> b.tableRef()).orElse(null);
             if (table != null) return new CarrierBinding.TableBacked(table);
         }
         if (ctx.scanStructuralServiceCarrierPayload(name) instanceof BuildContext.DmlPayloadScan.Admit admit) {

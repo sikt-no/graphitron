@@ -108,8 +108,11 @@ class CommandSeamRatchetTest {
      * identity; the generator sites spell it with the nested-type import). Lowered 60 to 59
      * when the routine root folded onto the table read's source axis: the dedicated dispatch
      * arm deleted, the surviving arm's row fork living in the launcher row's source arm.
+     * Raised 59 to 60 when the routine carrier landed (the fetcher dispatch gained the
+     * {@code MutationRoutineWriteRecordField} arm, a new leaf's one dispatch site, not new
+     * dispatch on an existing leaf).
      */
-    private static final int GENERATOR_LEAF_CASE_PATTERNS = 59;
+    private static final int GENERATOR_LEAF_CASE_PATTERNS = 60;
 
     /**
      * Leaf references ({@code instanceof} plus {@code case}) inside {@code plan/}: the relocation
@@ -191,9 +194,11 @@ class CommandSeamRatchetTest {
      * table read's source-axis fork, the edge producer's routine null arm went with the leaf,
      * and the projection's address census folded its two pivot arms onto the
      * {@code PivotSpecField} seal (which this counting rule still chases in plan/, so the
-     * fold is one reference where two stood).
+     * fold is one reference where two stood). Raised 124 to 125 when the routine carrier
+     * landed (the fetcher edge producer's mutation switch gained the new leaf's
+     * condition-glue arm).
      */
-    private static final int PLAN_LEAF_REFERENCES = 124;
+    private static final int PLAN_LEAF_REFERENCES = 125;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide

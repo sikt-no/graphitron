@@ -71,6 +71,8 @@ class LeafReconstructionKeyTest {
             triple("table input args (the carried write arm)", "root", "DML return expression")),
         Map.entry(MutationField.MutationRoutineWriteField.class,
             triple("routine chain", "root", "table (post-commit terminus)")),
+        Map.entry(MutationField.MutationRoutineWriteRecordField.class,
+            triple("routine call", "root", "payload record")),
         Map.entry(MutationField.MutationServiceTableField.class,
             triple("service call", "root", "table")),
         Map.entry(MutationField.MutationServiceRecordField.class,

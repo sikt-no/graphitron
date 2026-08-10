@@ -43,6 +43,8 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_EXTERNAL_FIELD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_FIELD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_MUTATION;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_NODE_ID;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_ROUTINE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_SERVICE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE;
 import static no.sikt.graphitron.rewrite.BuildContext.argString;
@@ -99,6 +101,13 @@ final class RecordBindingResolver {
      * {@link #dmlEmittedMemo}.
      */
     private final Map<String, ProducerBinding.ServiceEmitted> serviceEmittedMemo = new LinkedHashMap<>();
+
+    /**
+     * Dedicated map for {@link ProducerBinding.RoutineEmitted} observations from hop-less
+     * {@code @routine} Mutation fields with carrier-shaped payloads. Mirrors
+     * {@link #dmlEmittedMemo}.
+     */
+    private final Map<String, ProducerBinding.RoutineEmitted> routineEmittedMemo = new LinkedHashMap<>();
 
     /**
      * The {@code @service} producer's arrival cardinality per carrier field, keyed by the field's
@@ -179,6 +188,15 @@ final class RecordBindingResolver {
      */
     Optional<ProducerBinding.ServiceEmitted> resolveServiceEmitted(String sdlTypeName) {
         return Optional.ofNullable(serviceEmittedMemo.get(sdlTypeName));
+    }
+
+    /**
+     * Resolves the optional {@link ProducerBinding.RoutineEmitted} observation for an SDL
+     * payload type whose producer is a hop-less {@code @routine} Mutation field with a
+     * carrier-shaped payload. Mirrors {@link #resolveDmlEmitted}.
+     */
+    Optional<ProducerBinding.RoutineEmitted> resolveRoutineEmitted(String sdlTypeName) {
+        return Optional.ofNullable(routineEmittedMemo.get(sdlTypeName));
     }
 
     /**
@@ -629,6 +647,95 @@ final class RecordBindingResolver {
         // observation.
         dmlEmittedMemo.putIfAbsent(payloadSdl, new ProducerBinding.DmlEmitted(
             recordClass, table, kind, arrival, locationOf(field)));
+    }
+
+    /**
+     * The {@link ProducerBinding.RoutineEmitted} grounding pass, run by
+     * {@link TypeBuilder#prepareForWalk()} <em>after</em> the classification indices are built
+     * rather than inside {@link #groundRootProducers}: the carrier scan's errors-field
+     * detection reads the {@link ErrorIndex}, which does not exist during the root-producer
+     * pass, and a carrier with an errors field would otherwise mis-scan (the errors field read
+     * as a second data field) and silently fail to ground. Safe to run late because the
+     * routine memo is a dedicated axis the result/input fold never reads.
+     */
+    void groundRoutineCarriers() {
+        ctx.schema.getAllTypesAsList().forEach(named -> {
+            if (!(named instanceof GraphQLObjectType obj)) return;
+            if (named.getName().startsWith("__")) return;
+            for (GraphQLFieldDefinition field : obj.getFieldDefinitions()) {
+                groundRoutineMutationField(obj, field);
+            }
+        });
+    }
+
+    /**
+     * Grounds a {@link ProducerBinding.RoutineEmitted} observation for the payload SDL type of
+     * a hop-less {@code @routine} Mutation field whose return scans as a routine carrier: the
+     * shape the {@code @routine} carrier fork in {@code FieldBuilder.classifyMutationField}
+     * classifies. The table is read straight off the scan's {@code DmlElementKind.Table}
+     * element, and the name-matched pairs are computed right here, from the routine's result
+     * table and that element table's primary key
+     * ({@link BuildContext#deriveRoutineCarrierPairs}) — the derivation's single site; every
+     * downstream reader (the mutation leaf's captured pairs, the data field's correlation)
+     * reads this carried result.
+     *
+     * <p>Reading the table off the scan calls into {@code TypeBuilder.lookAheadVerdict} while
+     * the binding fixed point is still forming; that is the sanctioned mid-fold probe pattern
+     * ({@code prepareForWalk} clears the look-ahead memo at its end, so only post-fixed-point
+     * verdicts stick), the same instance the DML grounding above already exercises.
+     *
+     * <p>Skipped cases, each silent (the walk grounds observations, the classify-phase
+     * resolvers diagnose): non-Mutation parents, a {@code @reference} beside the
+     * {@code @routine} (the chain shape), {@code @table}-bound returns (the direct-return
+     * shape), non-carrier scans, non-{@code Table} data-field elements, unresolvable routine
+     * names, a failed name-match derivation, and unloadable record classes.
+     */
+    private void groundRoutineMutationField(GraphQLObjectType parent, GraphQLFieldDefinition field) {
+        if (!"Mutation".equals(parent.getName())) return;
+        if (!field.hasAppliedDirective(DIR_ROUTINE)) return;
+        if (field.hasAppliedDirective(DIR_REFERENCE)) return;
+
+        String payloadSdl = unwrappedTypeName(field.getType());
+        if (payloadSdl == null) return;
+        if (!(ctx.schema.getType(payloadSdl) instanceof GraphQLObjectType payloadObj)) return;
+        // @table-bound returns are the direct-return shape (already grounded as RootTable);
+        // the carrier fork never fires for them.
+        if (payloadObj.hasAppliedDirective(DIR_TABLE)) return;
+
+        if (!(ctx.scanStructuralRoutineCarrierPayload(payloadSdl)
+                instanceof BuildContext.DmlPayloadScan.Admit admit)) return;
+        if (!(admit.element() instanceof BuildContext.DmlElementKind.Table tableElement)) return;
+
+        GraphQLAppliedDirective dir = field.getAppliedDirective(DIR_ROUTINE);
+        String routineName = Optional.ofNullable(dir.getArgument(ARG_NAME))
+            .map(a -> a.getValue()).map(Object::toString).orElse(null);
+        if (routineName == null || routineName.isBlank()) return;
+        if (!(ctx.catalog.resolveTableValuedFunction(routineName)
+                instanceof JooqCatalog.RoutineResolution.Resolved fn)) return;
+
+        TableRef targetTable = tableElement.table();
+        if (!(BuildContext.deriveRoutineCarrierPairs(fn.resultTable(), targetTable)
+                instanceof BuildContext.RoutineCarrierKeying.Pairs pairs)) {
+            // The typed Unmatched failure surfaces at classify time, on the mutation field.
+            return;
+        }
+
+        Class<?> recordClass;
+        try {
+            recordClass = Class.forName(
+                targetTable.recordClass().reflectionName(), false, ctx.codegenLoader());
+        } catch (ClassNotFoundException ignored) {
+            return;
+        }
+
+        Arity arrival =
+            GraphQLTypeUtil.unwrapNonNull(admit.dataField().getType()) instanceof GraphQLList
+                ? Arity.MANY
+                : Arity.ONE;
+
+        routineEmittedMemo.putIfAbsent(payloadSdl, new ProducerBinding.RoutineEmitted(
+            recordClass, targetTable, arrival, routineName, fn.resultTable(), pairs.pairs(),
+            parent.getName(), field.getName(), locationOf(field)));
     }
 
     private static DmlKind readDmlKind(GraphQLFieldDefinition field) {

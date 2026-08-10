@@ -682,6 +682,30 @@ public final class ClassifiedCorpus {
             """),
 
         /*
+         * @routine on Mutation without a @reference hop, returning a payload carrier: the
+         * hop-less form (MutationRoutineWriteRecordField, Mutation / RoutineWrite /
+         * Single(Record)). The routine call is the whole write transaction — step 1 captures
+         * the target table's key columns off the routine's own result rows — and the payload's
+         * data field owns the post-commit re-read, exactly as the DML record carriers' data
+         * fields do. The data field's path is the implicit single name-matched hop: rent_film's
+         * result exposes rental's primary key (rental_id) by name.
+         */
+        new Example("routine-mutation-carrier", """
+            type Rental @table(name: "rental") {
+              rentalId: Int! @field(name: "rental_id")
+            }
+            type RentFilmPayload {
+              rental: Rental @commits(source: CorrelatedChain, result: SingleRecord)
+            }
+            type Query { rental: Rental @commits(source: AnchorTable, result: SingleRecord) }
+            type Mutation {
+              rentFilm(inventoryId: Int!, customerId: Int!): RentFilmPayload
+                @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+                @classified(source: Mutation, operations: [RoutineWrite], target: Single, targetShape: Record)
+            }
+            """),
+
+        /*
          * A @table child under a jOOQ-TableRecord-backed parent, reached by @lookupKey. The record
          * handoff has already opened a new keyed scope, so the child re-queries (the new-query is
          * derived): `FilmDetails.language` is a lookup-keyed batched read (its @lookupKey makes the

@@ -379,6 +379,14 @@ public final class CatalogBuilder {
                     targetTableName(f.returnType()),
                     f.chain().routine().routinesClass().canonicalName(),
                     f.chain().routine().methodName());
+            // The routine carrier is still routine-backed: hover and jump-to-source route to
+            // the routine's call surface exactly as on the direct-return sibling; the reported
+            // table is the payload data field's target.
+            case MutationField.MutationRoutineWriteRecordField f ->
+                new FieldClassification.RoutineBacked(
+                    f.targetTable().tableName(),
+                    f.routine().routinesClass().canonicalName(),
+                    f.routine().methodName());
             // The verb, the table name and the input type name all project off the write arm
             // (the arms' input surfaces differ; the Dml seal and the helpers below fold them).
             case MutationField.DmlTableField f ->

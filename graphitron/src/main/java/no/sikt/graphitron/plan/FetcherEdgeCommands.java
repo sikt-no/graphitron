@@ -158,6 +158,11 @@ public final class FetcherEdgeCommands {
                 glueOnlyRow(f.parentTypeName(), f.name(), conditions, units);
             case MutationField.MutationRoutineWriteField f -> row(f.parentTypeName(), f.name(), units,
                 targets -> targets.add(units.typeClass(f.returnType().returnTypeName())));
+            // The routine carrier's fetcher is step 1 only (a raw key capture, no inline
+            // projection); the payload data field's re-fetch rides its own launcher row, so
+            // this row keeps only the condition-relation derivation, like the DML carriers.
+            case MutationField.MutationRoutineWriteRecordField f ->
+                glueOnlyRow(f.parentTypeName(), f.name(), conditions, units);
             case MutationField.MutationServiceTableField ignored -> null;
             case MutationField.MutationServiceRecordField ignored -> null;
             case MutationField.MutationServicePolymorphicField f ->

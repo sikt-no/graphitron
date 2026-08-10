@@ -166,16 +166,20 @@ class FieldBuilder {
     private static final Logger LOG = LoggerFactory.getLogger(FieldBuilder.class);
 
     /**
-     * Deferral prose for a single-node {@code @routine} on a Mutation root field (no
-     * {@code @reference} hop), landed by {@link #classifyMutationField}'s top check. The
-     * multi-node chain classifies via {@link #classifyMutationRoutineChain}; the single-node
-     * shape has no post-commit table to re-read from, so it defers as a recognised capability
-     * gap, not an authoring error.
+     * Deferral prose for a hop-less {@code @routine} on a Mutation root field whose return
+     * provides no re-read anchor, landed by {@link #classifyMutationField}'s {@code @routine}
+     * fork after the carrier scan declines. The multi-node chain classifies via
+     * {@link #classifyMutationRoutineChain}; the payload-carrier return classifies via the
+     * carrier fork ({@link MutationField.MutationRoutineWriteRecordField}). What still defers
+     * is the shape with no hop on the field <em>and</em> no payload data field to carry one —
+     * void, scalar, OUT-parameter binding, and non-carrier Object returns — a recognised
+     * capability gap, not an authoring error.
      */
     private static final String MUTATION_SINGLE_NODE_ROUTINE_DEFERRAL =
-        "@routine on a Mutation field without a @reference hop has no post-commit table to "
-        + "re-read the response from; the single-node result shape (void / scalar / OUT-parameter "
-        + "binding) is a recognised capability gap, not an authoring error, and does not emit yet";
+        "@routine on a Mutation field with no @reference hop and no payload data field to carry "
+        + "one has no anchor to re-read the response from; the remaining result shapes (void / "
+        + "scalar / OUT-parameter binding / non-carrier Objects) are a recognised capability "
+        + "gap, not an authoring error, and do not emit yet";
 
     private final BuildContext ctx;
     private final ServiceCatalog svc;
@@ -233,6 +237,27 @@ class FieldBuilder {
     java.util.Optional<no.sikt.graphitron.rewrite.model.ProducerBinding.DmlEmitted> dmlEmittedBinding(
             String sdlTypeName) {
         return typeBuilder == null ? java.util.Optional.empty() : typeBuilder.dmlEmittedBinding(sdlTypeName);
+    }
+
+    /**
+     * Sibling to {@link #dmlEmittedBinding}: resolves the optional
+     * {@link no.sikt.graphitron.rewrite.model.ProducerBinding.RoutineEmitted} binding for an
+     * SDL payload type produced by a hop-less {@code @routine} Mutation field.
+     */
+    java.util.Optional<no.sikt.graphitron.rewrite.model.ProducerBinding.RoutineEmitted> routineEmittedBinding(
+            String sdlTypeName) {
+        return typeBuilder == null ? java.util.Optional.empty() : typeBuilder.routineEmittedBinding(sdlTypeName);
+    }
+
+    /**
+     * The one-question presence probe over the emitted-carrier producer arms; see
+     * {@link TypeBuilder#emittedCarrierBinding}. The {@code activeChannel} gate in
+     * {@link #transportForParent} reads this instead of a per-arm disjunction, so a missed arm
+     * cannot silently bind the carrier's {@code errors} field to {@code PayloadAccessor}.
+     */
+    java.util.Optional<no.sikt.graphitron.rewrite.model.EmittedCarrierBinding> emittedCarrierBinding(
+            String sdlTypeName) {
+        return typeBuilder == null ? java.util.Optional.empty() : typeBuilder.emittedCarrierBinding(sdlTypeName);
     }
 
     /**
@@ -2597,6 +2622,30 @@ class FieldBuilder {
      */
     private GraphitronField classifyMutationRoutineChain(GraphQLFieldDefinition fieldDef,
             String parentTypeName, String name, SourceLocation location) {
+        // The fourth cell: @routine + @reference on the mutation field *with* a carrier return
+        // is the right fact asserted at the wrong grain — the path belongs to the payload's
+        // data field, whose rows it fetches, not to the field that runs the routine. Reject as
+        // a typed directive conflict (the @routine + @splitQuery precedent) rather than admit a
+        // second spelling: one fact stated at two grains would need an agreement check the
+        // data-field placement exists to make unrepresentable, and admitting the spelling later
+        // is additive while retiring it breaks published schemas. Seat-gated to this Mutation
+        // chain classifier so the diagnostic cannot leak onto Query chains, which share
+        // walkRoutineChain.
+        String rawReturnName = baseTypeName(fieldDef);
+        String elementReturnName = ctx.isConnectionType(rawReturnName)
+            ? ctx.connectionElementTypeName(rawReturnName) : rawReturnName;
+        if (!(ctx.resolveReturnType(elementReturnName, buildWrapper(fieldDef))
+                instanceof ReturnTypeRef.TableBoundReturnType)
+                && ctx.scanStructuralRoutineCarrierPayload(elementReturnName)
+                    instanceof BuildContext.DmlPayloadScan.Admit fourthCell) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                Rejection.directiveConflict(List.of(DIR_ROUTINE, DIR_REFERENCE),
+                    "a @routine Mutation field returning the payload carrier '" + elementReturnName
+                    + "' cannot also carry @reference — the reference path's seat is the payload's "
+                    + "data field ('" + fourthCell.dataField().getName() + "'), the field whose "
+                    + "rows it fetches, not the field that runs the routine; drop @reference from "
+                    + "the mutation field (the data field's single name-matched hop is implicit)"));
+        }
         return switch (walkRoutineChain(fieldDef, parentTypeName, name, /*headTable=*/null)) {
             case ChainWalk.Rejected r ->
                 new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());
@@ -2622,6 +2671,144 @@ class FieldBuilder {
                         walk.steps()));
             }
         };
+    }
+
+    /**
+     * The hop-less {@code @routine} fork of {@link #classifyMutationField}: the return shape
+     * classifies once, and the path's seat derives from it. A return that scans as a routine
+     * carrier ({@link BuildContext#scanStructuralRoutineCarrierPayload}) with a
+     * {@code Table}-element data field classifies as
+     * {@link MutationField.MutationRoutineWriteRecordField}; everything else keeps the typed
+     * {@code Deferred} ({@link #MUTATION_SINGLE_NODE_ROUTINE_DEFERRAL}). The captured pairs are
+     * read off the {@code RoutineEmitted} binding (derived once at grounding), never re-derived
+     * here; when no binding grounded, the pair derivation is re-invoked only to surface its
+     * typed failure as the field's rejection.
+     */
+    private GraphitronField classifyMutationRoutineCarrier(GraphQLFieldDefinition fieldDef,
+            String parentTypeName, String name, SourceLocation location) {
+        String rawTypeName = baseTypeName(fieldDef);
+        String elementTypeName = ctx.isConnectionType(rawTypeName)
+            ? ctx.connectionElementTypeName(rawTypeName) : rawTypeName;
+        var returnType = ctx.resolveReturnType(elementTypeName, buildWrapper(fieldDef));
+        // A @table-bound return with no hop is the direct shape minus its chain: no carrier,
+        // and no re-read anchor either, so it stays in the deferral.
+        if (returnType instanceof ReturnTypeRef.TableBoundReturnType) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                Rejection.deferred(MUTATION_SINGLE_NODE_ROUTINE_DEFERRAL));
+        }
+        return switch (ctx.scanStructuralRoutineCarrierPayload(elementTypeName)) {
+            case BuildContext.DmlPayloadScan.Admit admit ->
+                classifyAdmittedRoutineCarrier(fieldDef, parentTypeName, name, location,
+                    elementTypeName, returnType, admit);
+            case BuildContext.DmlPayloadScan.Reject reject ->
+                new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    Rejection.structural(reject.reason()));
+            case BuildContext.DmlPayloadScan.NotApplicable ignored -> {
+                // Would-admit-but-for-the-directive probe: @reference on the data field is the
+                // explicit path declaration, one follow-up question (single- and multi-hop
+                // alike), so it gets a pointed typed Deferred instead of the generic
+                // non-carrier fallthrough. The probe's family question ("would this admit as a
+                // DML carrier") transfers: the routine family shares the strict forbidden set.
+                var forbidden = ctx.diagnoseForbiddenCarrierDirective(elementTypeName);
+                if (forbidden.isPresent()
+                        && ("@" + DIR_REFERENCE).equals(forbidden.get().directiveName())) {
+                    yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                        Rejection.deferred(
+                            "@reference on a routine carrier's data field ('"
+                            + forbidden.get().dataFieldName() + "') declares an explicit "
+                            + "data-field path, which is not yet supported at any hop count; "
+                            + "the shipped shape is the implicit single name-matched hop on a "
+                            + "directiveless data field — remove @reference, or wait for the "
+                            + "explicit-path follow-up"));
+                }
+                yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    Rejection.deferred(MUTATION_SINGLE_NODE_ROUTINE_DEFERRAL));
+            }
+        };
+    }
+
+    /**
+     * The admitted-carrier tail of {@link #classifyMutationRoutineCarrier}: node resolution,
+     * binding read, the D7 nullability rule, and channel detection, landing the leaf.
+     */
+    private GraphitronField classifyAdmittedRoutineCarrier(GraphQLFieldDefinition fieldDef,
+            String parentTypeName, String name, SourceLocation location,
+            String payloadName, ReturnTypeRef returnType, BuildContext.DmlPayloadScan.Admit admit) {
+        if (admit.element() instanceof BuildContext.DmlElementKind.RecordElement re) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                "@routine mutation field '" + name + "' returns carrier '" + payloadName
+                + "' with a record-element data field ('" + re.fieldName() + "'); a routine "
+                + "carrier requires an @table-element data field, since the payload is re-read "
+                + "post-commit from a catalog table. Use a @service mutation for record-element "
+                + "carriers"));
+        }
+        if (!(admit.element() instanceof BuildContext.DmlElementKind.Table tableElement)) {
+            // IdElement is unreachable: the ROUTINE carrier family refuses it at the scan.
+            throw new IllegalStateException(
+                "routine carrier scan admitted an element kind the family refuses: "
+                + admit.element().getClass().getSimpleName());
+        }
+
+        var node = routineResolver.resolveCarrierNode(parentTypeName, fieldDef);
+        if (node instanceof RoutineDirectiveResolver.NodeResolved.Rejected rejected) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, rejected.rejection());
+        }
+        var resolvedNode = (RoutineDirectiveResolver.NodeResolved.Node) node;
+
+        var binding = routineEmittedBinding(payloadName);
+        if (binding.isEmpty()) {
+            // Grounding skipped: surface the name-match derivation's typed failure when that is
+            // the cause (the one failure the implicit form makes reachable from a directiveless
+            // field); anything else left the record class unloadable, a catalog-integrity fault.
+            if (BuildContext.deriveRoutineCarrierPairs(resolvedNode.resultTable(), tableElement.table())
+                    instanceof BuildContext.RoutineCarrierKeying.Unmatched unmatched) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    Rejection.structural(unmatched.message()));
+            }
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                "@routine mutation field '" + name + "' returns carrier '" + payloadName
+                + "', but no producer binding grounded for it — the data field's @table record "
+                + "class did not load from the jOOQ catalog"));
+        }
+        var routineEmitted = binding.get();
+
+        // D7: outcome (b) — the routine succeeded and the committed row is invisible to the
+        // post-commit re-read (a row-level-security read policy) — makes the zero-row re-read a
+        // first-class success path, so a non-null single data field would have graphql-java's
+        // non-null propagation null the whole payload and destroy the errors list. A list data
+        // field renders the zero-row read as an empty list and is exempt.
+        var dataWrapper = buildWrapper(admit.dataField());
+        if (dataWrapper instanceof FieldWrapper.Single single && !single.nullable()) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                "the routine carrier's data field ('" + admit.dataField().getName()
+                + "') must be nullable: the post-commit re-read can legitimately return no row "
+                + "(a row-level-security read policy may hide the row the routine just wrote), "
+                + "and non-null propagation would null the whole payload, destroying the errors "
+                + "list. Remove the '!' from the data field's type"));
+        }
+
+        var channelResult = detectStructuralDmlErrorChannel(payloadName);
+        if (channelResult instanceof StructuralDmlErrorChannel.RuleViolation violation) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                Rejection.structural(violation.reason()));
+        }
+        Optional<ErrorChannel.LocalContext> channel =
+            channelResult instanceof StructuralDmlErrorChannel.Present present
+                ? Optional.of(present.channel()) : Optional.empty();
+
+        // A grounded binding implies the carrier registered as a JooqTableRecordType at the
+        // producing edge (registerProducerBackedCarrier runs before this field classifies), so
+        // the return resolved as a ResultReturnType.
+        if (!(returnType instanceof ReturnTypeRef.ResultReturnType resultReturn)) {
+            throw new IllegalStateException(
+                "routine carrier '" + payloadName + "' has a grounded RoutineEmitted binding "
+                + "but its return did not resolve as a ResultReturnType; the producing-edge "
+                + "carrier registration must run before the field classifies");
+        }
+        return new MutationField.MutationRoutineWriteRecordField(parentTypeName, name, location,
+            resultReturn, resolvedNode.routine(), resolvedNode.resultTable(),
+            routineEmitted.capturedPairs(), routineEmitted.tableRef(),
+            routineEmitted.arrival(), channel);
     }
 
     /**
@@ -2941,7 +3128,7 @@ class FieldBuilder {
         // (the unit-tier rule table pinned by {@link ErrorsTransportSelectionTest}). The active-
         // channel gate ahead of the rule firing reads the producer-binding maps: a parent
         // is treated as having an active error channel iff a payload-returning producer
-        // (DmlEmitted or ServiceEmitted) is bound to it. Non-producer-bound parents (plain
+        // (an EmittedCarrierBinding arm) is bound to it. Non-producer-bound parents (plain
         // class-backed types reachable as service / query returns whose errors-shaped field is a
         // developer-owned slot) fall back to PayloadAccessor regardless of the rule's output.
         var transport = transportForParent(fieldDef, name, parentTypeName, parentBackingClass);
@@ -2964,7 +3151,8 @@ class FieldBuilder {
     private ChildField.Transport transportForParent(GraphQLFieldDefinition fieldDef,
             String errorsFieldName, String parentTypeName, Class<?> parentBackingClass) {
         // Active-channel gate: a parent qualifies as carrying an error channel iff a producer-
-        // returning mutation is bound to it (DML or @service). Non-producer-bound parents (plain
+        // returning mutation is bound to it (an EmittedCarrierBinding arm: DML, @service or
+        // @routine). Non-producer-bound parents (plain
         // class-backed types reachable as service / query returns whose errors-shaped field is a
         // developer-owned slot, or orphan carrier-shaped types unreachable through any producer)
         // fall back to PayloadAccessor.
@@ -2979,8 +3167,7 @@ class FieldBuilder {
         if (isRootServiceProducedPayload(parentTypeName)) {
             return new ChildField.Transport.WrapperArm();
         }
-        boolean activeChannel = dmlEmittedBinding(parentTypeName).isPresent()
-            || serviceEmittedBinding(parentTypeName).isPresent();
+        boolean activeChannel = emittedCarrierBinding(parentTypeName).isPresent();
         if (!activeChannel) {
             return new ChildField.Transport.PayloadAccessor();
         }
@@ -4114,7 +4301,10 @@ class FieldBuilder {
      */
     private sealed interface StructuralDmlErrorChannel {
         record None() implements StructuralDmlErrorChannel {}
-        record Present(ErrorChannel.RouterDispatched channel) implements StructuralDmlErrorChannel {}
+        // The narrow LocalContext type: a directiveless structural carrier has no developer
+        // payload class, so this detection can only ever produce LocalContext; the declaration
+        // puts that contract in the signature instead of in the producer's body.
+        record Present(ErrorChannel.LocalContext channel) implements StructuralDmlErrorChannel {}
         record RuleViolation(String reason) implements StructuralDmlErrorChannel {}
     }
 
@@ -4691,14 +4881,14 @@ class FieldBuilder {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
 
-        // Only the single-node degenerate chain reaches here (the multi-node chain
-        // classifies for real in classifyField's interception, landing MutationRoutineWriteField).
-        // With no @reference hop there is no post-commit table to re-read the response from, so
-        // the single-node shape stays a typed Deferred (see MUTATION_SINGLE_NODE_ROUTINE_DEFERRAL)
-        // rather than letting this method's generic "both absent" fallback bury the actual cause.
+        // Only the hop-less shape reaches here (the multi-node chain classifies for real in
+        // classifyField's interception, landing MutationRoutineWriteField). The carrier scan
+        // runs first: a payload-carrier return classifies as the new carrier shape
+        // (MutationRoutineWriteRecordField); everything else keeps the typed Deferred (see
+        // MUTATION_SINGLE_NODE_ROUTINE_DEFERRAL) rather than letting this method's generic
+        // "both absent" fallback bury the actual cause.
         if (fieldDef.hasAppliedDirective(DIR_ROUTINE)) {
-            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                Rejection.deferred(MUTATION_SINGLE_NODE_ROUTINE_DEFERRAL));
+            return classifyMutationRoutineCarrier(fieldDef, parentTypeName, name, location);
         }
 
         // A @service + @mutation combination is not intercepted here: both claims are rows in
@@ -5807,9 +5997,13 @@ class FieldBuilder {
      */
     private ChildField buildPayloadCarrierBatchedTableField(
             String parentTypeName, String name, SourceLocation location,
-            ReturnTypeRef.TableBoundReturnType tb) {
+            ReturnTypeRef.TableBoundReturnType tb,
+            no.sikt.graphitron.rewrite.model.EmittedCarrierBinding binding) {
         TableRef targetTable = tb.table();
-        List<ColumnRef> pkColumns = targetTable.primaryKeyColumns();
+        // The correlation columns come off the emitted-carrier capability's total accessor (the
+        // target table's PK columns, uniformly on every producer arm), not recomputed per
+        // family; the callers checked binding.tableRef() equals tb.table() upstream.
+        List<ColumnRef> pkColumns = binding.correlationColumns();
         boolean isList = tb.wrapper().isList();
         var lift = new KeyLift.ProducedRecords(isList ? Arity.MANY : Arity.ONE);
         SourceKey sourceKey = new SourceKey(pkColumns, lift.wrap());
@@ -5879,7 +6073,7 @@ class FieldBuilder {
                 // field re-projects the @table by correlating the record's PK to the catalog rows.
                 // The source envelope (DIRECT here) is derived at the type level by the generator
                 // (sourceIsOutcome), not carried on the key.
-                return buildPayloadCarrierBatchedTableField(parentTypeName, name, location, tb);
+                return buildPayloadCarrierBatchedTableField(parentTypeName, name, location, tb, binding);
             }
             // Non-@table, non-polymorphic children on DML payloads fall through to the
             // arms below.
@@ -5924,7 +6118,7 @@ class FieldBuilder {
                 // the @table by correlating the record's PK to the catalog rows. The source
                 // envelope (DIRECT vs OUTCOME_SUCCESS) is derived at the type level by the generator
                 // (sourceIsOutcome = hasWrapperArmErrors), not carried on the key.
-                return buildPayloadCarrierBatchedTableField(parentTypeName, name, location, tb);
+                return buildPayloadCarrierBatchedTableField(parentTypeName, name, location, tb, binding);
             }
             // ID-element data field on an @service carrier — the opptak
             // fjernSakTagg/fjernSakTagger @nodeId-from-record shape. The encoder resolution
@@ -5956,6 +6150,32 @@ class FieldBuilder {
                     scalarReturn, binding.tableRef(), idSourceKey, idEnvelope,
                     new no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys(nodeType.encodeMethod()));
             }
+        }
+
+        // @routine-carrier sibling. The producer is the routine-write fetcher's captured key
+        // record ({@code RecordN<...>} single, {@code Result<RecordN<...>>} list), observed as
+        // ProducerBinding.RoutineEmitted at grounding. A deliberately thin third block beside
+        // the two above: it reads the binding's total correlationColumns() and never re-derives
+        // the keying, and it carries no table-agreement diagnostic of its own — the binding's
+        // table was read off this same data field's element at grounding, so the agreement is
+        // tautological at this seat. (The diagnostic unification of the three blocks is the
+        // consolidation follow-up's inventory, not this seat's.)
+        var routineEmitted = routineEmittedBinding(parentTypeName);
+        if (routineEmitted.isPresent()) {
+            var binding = routineEmitted.get();
+            String rawTypeName2 = baseTypeName(fieldDef);
+            String elementTypeName2 = ctx.isConnectionType(rawTypeName2)
+                ? ctx.connectionElementTypeName(rawTypeName2) : rawTypeName2;
+            var resolvedReturnType = ctx.resolveReturnType(elementTypeName2, buildWrapper(fieldDef));
+            if (resolvedReturnType instanceof ReturnTypeRef.PolymorphicReturnType p) {
+                var lift = liftToErrorsField(fieldDef, parentTypeName, p, parentBackingClass);
+                if (lift != null) return lift;
+            }
+            if (resolvedReturnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
+                return buildPayloadCarrierBatchedTableField(parentTypeName, name, location, tb, binding);
+            }
+            // Non-@table, non-polymorphic children on routine payloads fall through to the
+            // arms below.
         }
 
         // The @service record-composite carrier's data field — a source-passthrough projection

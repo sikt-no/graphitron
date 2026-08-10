@@ -18,6 +18,7 @@ import java.util.Optional;
  */
 public sealed interface MutationField extends RootField, WithErrorChannel
     permits MutationField.DmlTableField, MutationField.MutationRoutineWriteField,
+            MutationField.MutationRoutineWriteRecordField,
             MutationField.MutationServiceTableField,
             MutationField.MutationServiceRecordField, MutationField.MutationServicePolymorphicField,
             MutationField.MutationServiceTableInterfaceField,
@@ -36,6 +37,9 @@ public sealed interface MutationField extends RootField, WithErrorChannel
             // Routine write: the response is the post-commit chain re-read projecting the
             // terminus @table type, a bare Table shape exactly as the read chain projects.
             case MutationRoutineWriteField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
+            // Routine carrier: the fetcher's value is the captured key record; step 2 belongs
+            // to the payload's data field, exactly as on the DML record carriers below.
+            case MutationRoutineWriteRecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
             case MutationServiceTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case MutationServiceRecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
             // Interface-only service-polymorphic return (union/table-interface rejected at classify).
@@ -163,9 +167,11 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * joining by {@link On.ColumnPairs} (the classifier's re-read-anchor verdict routes every
      * other shape to a typed {@code Deferred}, and the emitter's key capture reads the pairs).
      *
-     * <p>{@code errorChannel()} is pinned empty: the return is the direct terminus {@code @table}
-     * type (the terminus rule), never a payload carrying a typed {@code errors} field, so the
-     * fetcher wraps in the no-channel redacting catch arm. An SQL error from the routine rolls
+     * <p>{@code errorChannel()} is pinned empty: this leaf is the direct-terminus shape, whose
+     * return is the terminus {@code @table} type itself, so there is no payload field to put a
+     * typed {@code errors} list in; the fetcher wraps in the no-channel redacting catch arm. The
+     * carrier shape, whose payload return does carry a channel, is the sibling leaf
+     * {@link MutationRoutineWriteRecordField}. An SQL error from the routine rolls
      * the transaction back at the {@code transactionResult} boundary and surfaces exactly as DML
      * errors do.
      */
@@ -213,6 +219,96 @@ public sealed interface MutationField extends RootField, WithErrorChannel
 
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(returnType.table());
+        }
+    }
+
+    /**
+     * A mutation field whose write is a hop-less {@code @routine} call and whose return is a
+     * payload carrier (an SDL Object admitted by
+     * {@code BuildContext.scanStructuralRoutineCarrierPayload} as a single {@code @table}-element
+     * data field plus an optional errors-shaped field). Sibling to
+     * {@link MutationRoutineWriteField} exactly as {@link MutationDmlRecordField} sits beside
+     * {@link DmlTableField}: the direct leaf projects the terminus itself, this leaf's fetcher
+     * owns step 1 alone and step 2 belongs to the payload's data field (a record-sourced
+     * {@link ChildField.BatchedTableField}).
+     *
+     * <p><b>The two-statements rule.</b> The write transaction contains the routine call and a
+     * projection of the routine's own result columns, nothing else, ever: step 1 executes the
+     * routine inside {@code dsl.transactionResult(...)} and captures the {@link #capturedPairs()}
+     * source columns off the routine's result rows, projected under the target table's key
+     * fields; anything beyond that capture is a post-commit follow-up query owned by a payload
+     * field, running at read time under the caller's identity.
+     *
+     * <p>The compact constructor pins that rule into the type: the pairs are non-empty, their
+     * keying is name-matched (a name-matched hop 0 is precisely the case where step 1 needs no
+     * join), and their target side equals the target table's primary-key columns (the value the
+     * data field's hop-less {@code OnLiftedSlots} correlation reads back). No chain, no hops,
+     * no hop-count component; the data field's path is the implicit single name-matched hop,
+     * derived once at grounding ({@link ProducerBinding.RoutineEmitted}).
+     *
+     * <p>{@code dataFieldArrival} is the payload data field's SDL wrapper cardinality, the only
+     * cardinality claim in the system for this shape (jOOQ types every table-valued function as
+     * a {@code Table<R>}, so the catalog carries no per-call cardinality fact). It drives step
+     * 1's {@code fetch()} vs {@code fetchOne()} and the catch arm's sentinel shape.
+     *
+     * <p>The channel slot is the narrow {@link ErrorChannel.LocalContext}: a directiveless
+     * structural carrier has no developer payload class, so
+     * {@code FieldBuilder.detectStructuralDmlErrorChannel} can only ever produce
+     * {@code LocalContext}; declaring the narrow type puts that contract in the signature. The
+     * two null-data outcomes are distinct and only one goes through the channel: (a) the routine
+     * raised, the catch arm returns the all-null-column sentinel and {@code errors} populates;
+     * (b) the routine succeeded and the post-commit re-read cannot see the row (row-level
+     * security), data field null, {@code errors} empty, no sentinel involved.
+     */
+    record MutationRoutineWriteRecordField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        ReturnTypeRef.ResultReturnType returnType,
+        RoutineRef routine,
+        TableRef routineResultTable,
+        List<JoinSlot.FkSlot> capturedPairs,
+        TableRef targetTable,
+        Arity dataFieldArrival,
+        Optional<ErrorChannel.LocalContext> errorChannel
+    ) implements MutationField {
+
+        public MutationRoutineWriteRecordField {
+            Objects.requireNonNull(returnType, "returnType");
+            Objects.requireNonNull(routine, "routine");
+            Objects.requireNonNull(routineResultTable, "routineResultTable");
+            Objects.requireNonNull(targetTable, "targetTable");
+            Objects.requireNonNull(dataFieldArrival, "dataFieldArrival");
+            Objects.requireNonNull(errorChannel, "errorChannel");
+            capturedPairs = List.copyOf(capturedPairs);
+            if (capturedPairs.isEmpty()) {
+                throw new IllegalArgumentException(
+                    "MutationRoutineWriteRecordField requires non-empty capturedPairs: with no "
+                    + "captured key there is nothing for the payload data field's re-read to "
+                    + "correlate on");
+            }
+            // The two-statements rule as a type invariant: name-matched keying (step 1 needs no
+            // join) and the pairs' target side is exactly the target table's primary key (the
+            // value the data field's OnLiftedSlots correlation reads back).
+            for (var pair : capturedPairs) {
+                if (!pair.sourceSide().sqlName().equalsIgnoreCase(pair.targetSide().sqlName())) {
+                    throw new IllegalArgumentException(
+                        "MutationRoutineWriteRecordField capturedPairs must be name-matched; "
+                        + "pair (" + pair.sourceSide().sqlName() + " -> "
+                        + pair.targetSide().sqlName() + ") is not");
+                }
+            }
+            var targetSides = capturedPairs.stream().map(JoinSlot.FkSlot::targetSide).toList();
+            if (!targetSides.equals(targetTable.primaryKeyColumns())) {
+                throw new IllegalArgumentException(
+                    "MutationRoutineWriteRecordField capturedPairs' target side must equal the "
+                    + "target table's primary-key columns (" + targetTable.tableName() + "); the "
+                    + "data field's correlation reads the captured record by those columns");
+            }
+        }
+
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Record(targetTable);
         }
     }
 

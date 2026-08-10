@@ -7296,6 +7296,27 @@ class GraphitronSchemaBuilderTest {
         assertThat(p.methodClassName()).endsWith(".Routines");
     }
 
+    @Test
+    @ProjectionFor(MutationField.MutationRoutineWriteRecordField.class)
+    void mutationRoutineCarrierProjectionCarriesRoutineCoordinates() {
+        // The routine carrier is still routine-backed: hover and jump-to-source route to the
+        // routine's call surface exactly as on the direct-return sibling; the reported table
+        // is the payload data field's target.
+        var snapshot = buildSnapshot("""
+            type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+            type RentFilmPayload { rental: Rental }
+            type Query { rental: Rental }
+            type Mutation {
+              rentFilm(inventoryId: Int!, customerId: Int!): RentFilmPayload
+                @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+            }
+            """);
+        var p = (FieldClassification.RoutineBacked) snapshot.fieldClassificationsByCoord().get("Mutation.rentFilm");
+        assertThat(p.tableName()).isEqualToIgnoringCase("rental");
+        assertThat(p.methodName()).isEqualTo("rentFilm");
+        assertThat(p.methodClassName()).endsWith(".Routines");
+    }
+
     // ===== Order-significant @routine / @reference composition =====
     // The classifier reads the ordered field-level directive applications once, enforces the
     // root-head rule, and validates the single-node chain (including columnMapping against the
@@ -7976,10 +7997,11 @@ class GraphitronSchemaBuilderTest {
 
     @Test
     void mutationSingleNodeRoutineDefersToResultShapesFollowUp() {
-        // D2 — the single-node @routine on Mutation has no @reference hop, so there is no
-        // post-commit table to re-read the response from; it stays a typed Deferred from
-        // classifyMutationField's top, its summary naming the result-shapes follow-up that
-        // carries the void / scalar / OUT-parameter story.
+        // D2 — the hop-less @routine on Mutation with a direct @table return has no @reference
+        // hop and no payload data field to carry one, so it stays a typed Deferred from
+        // classifyMutationField's @routine fork, its summary worded around the anchor's seat
+        // and naming the shapes the result-shapes follow-up carries (void / scalar /
+        // OUT-parameter binding / non-carrier Objects).
         var schema = build(TILGANG_TYPE + """
             type Query { tilgang: Tilgang }
             type Mutation {
@@ -7989,7 +8011,235 @@ class GraphitronSchemaBuilderTest {
             """);
         var f = (UnclassifiedField) schema.field("Mutation", "tilganger");
         assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
-        assertThat(f.reason()).contains("no post-commit table");
+        assertThat(f.reason()).contains("no payload data field");
+    }
+
+    // ===== The @routine payload carrier (the hop-less form) =====
+
+    /** The single-cardinality carrier fixture over rent_film, with an errors channel. */
+    private static final String RENT_FILM_CARRIER = """
+        type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
+            path: [String!]!
+            message: String!
+        }
+        union RentFilmError = DbErr
+        type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+        type RentFilmPayload {
+          rental: Rental
+          errors: [RentFilmError!]
+        }
+        type Query { rental: Rental }
+        type Mutation {
+          rentFilm(inventoryId: Int!, customerId: Int!): RentFilmPayload
+            @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+        }
+        """;
+
+    @Test
+    void mutationRoutineCarrierWithErrorsFieldClassifiesWithLocalContextChannel() {
+        // The directiveless carrier admitted with an errors field: the leaf carries the routine
+        // call, the name-matched captured pairs (target side == rental's PK), the target table,
+        // the data field's arrival, and the narrow LocalContext channel.
+        var schema = build(RENT_FILM_CARRIER);
+        var f = (MutationField.MutationRoutineWriteRecordField) schema.field("Mutation", "rentFilm");
+        assertThat(f.routine().methodName()).isEqualTo("rentFilm");
+        assertThat(f.routineResultTable().tableName()).isEqualToIgnoringCase("rent_film");
+        assertThat(f.targetTable().tableName()).isEqualToIgnoringCase("rental");
+        assertThat(f.capturedPairs()).hasSize(1);
+        assertThat(f.capturedPairs().get(0).sourceSide().sqlName()).isEqualToIgnoringCase("rental_id");
+        assertThat(f.capturedPairs().get(0).targetSide().sqlName()).isEqualToIgnoringCase("rental_id");
+        assertThat(f.dataFieldArrival()).isEqualTo(Arity.ONE);
+        assertThat(f.errorChannel()).isPresent();
+        assertThat(f.errorChannel().get().mappingsConstantName()).isEqualTo("RENT_FILM_PAYLOAD");
+    }
+
+    @Test
+    void mutationRoutineCarrierErrorsFieldBindsLocalContextTransport() {
+        // The transport pin: the carrier's errors field classifies as ErrorsField with
+        // Transport.LocalContext. This is the assertion that fails if the activeChannel gate
+        // was not widened to the routine arm — the errors field would silently fall through to
+        // PayloadAccessor, the one transport a directiveless structural carrier cannot serve —
+        // and it fails at classify time rather than three tiers later in execution.
+        var schema = build(RENT_FILM_CARRIER);
+        var errors = (ErrorsField) schema.field("RentFilmPayload", "errors");
+        assertThat(errors.transport())
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.Transport.LocalContext.class);
+        // And the data field is the record-sourced re-fetch, correlated on the target's PK.
+        var data = (BatchedTableField) schema.field("RentFilmPayload", "rental");
+        assertThat(data.parentCorrelation())
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.ParentCorrelation.OnLiftedSlots.class);
+    }
+
+    @Test
+    void mutationRoutineCarrierWithoutErrorsFieldClassifiesWithEmptyChannel() {
+        // The carrier admitted without an errors field: same leaf, empty channel (the fetcher
+        // wraps in the redacting catch arm).
+        var schema = build("""
+            type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+            type RentFilmPayload { rental: Rental }
+            type Query { rental: Rental }
+            type Mutation {
+              rentFilm(inventoryId: Int!, customerId: Int!): RentFilmPayload
+                @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+            }
+            """);
+        var f = (MutationField.MutationRoutineWriteRecordField) schema.field("Mutation", "rentFilm");
+        assertThat(f.errorChannel()).isEmpty();
+    }
+
+    @Test
+    void mutationRoutineCarrierListDataFieldDrivesListCardinalityOnTheLeaf() {
+        // The data field's SDL wrapper is the only cardinality claim in the system (jOOQ types
+        // every table-valued function as a Table<R>), read at the data field's own seat and
+        // landing as the leaf's arrival component: a [Film!] data field means step 1 fetches
+        // the whole captured set.
+        var schema = build("""
+            type Film @table(name: "film") { title: String }
+            type FilmsPayload { films: [Film!] }
+            type Query { film: Film }
+            type Mutation {
+              filmsForActor(actorId: Int!, minLength: Int!): FilmsPayload
+                @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+            }
+            """);
+        var f = (MutationField.MutationRoutineWriteRecordField) schema.field("Mutation", "filmsForActor");
+        assertThat(f.dataFieldArrival()).isEqualTo(Arity.MANY);
+        assertThat(f.targetTable().tableName()).isEqualToIgnoringCase("film");
+    }
+
+    @Test
+    void mutationRoutineCarrierFourthCellRejectsAsDirectiveConflictNamingTheDataField() {
+        // @routine + @reference on the mutation field WITH a carrier return: the right fact at
+        // the wrong grain. Rejects as the typed directive conflict naming the data field as the
+        // path's seat, not the generic not-table-bound rejection.
+        var schema = build("""
+            type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+            type RentFilmPayload { rental: Rental }
+            type Query { rental: Rental }
+            type Mutation {
+              rentFilm(inventoryId: Int!, customerId: Int!): RentFilmPayload
+                @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+                @reference(path: [{table: "rental"}])
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Mutation", "rentFilm");
+        assertThat(f.rejection()).isInstanceOf(Rejection.InvalidSchema.DirectiveConflict.class);
+        assertThat(f.reason())
+            .contains("'rental'")
+            .contains("drop @reference")
+            .doesNotContain("@table-annotated return type");
+    }
+
+    @Test
+    void mutationRoutineCarrierUnmatchedTargetKeyRejectsWithCarrierSeatWording() {
+        // A routine result that does not expose the target's PK column by name rejects with the
+        // carrier seat's own wording: candidate hint over the routine's actual columns, the one
+        // fix that works, and no 'condition:' clause (a condition join has no key tuple to
+        // capture, so that fix would land the author in a second rejection).
+        var schema = build("""
+            type Actor @table(name: "actor") { firstName: String }
+            type ActorPayload { actor: Actor }
+            type Query { actor: Actor }
+            type Mutation {
+              filmsForActor(actorId: Int!, minLength: Int!): ActorPayload
+                @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Mutation", "filmsForActor");
+        assertThat(f.rejection()).isNotInstanceOf(Rejection.Deferred.class);
+        assertThat(f.reason())
+            .contains("actor_id")
+            .contains("film_id") // candidate hint lists the routine result's columns
+            .contains("expose the key column from the routine")
+            .doesNotContain("condition:");
+    }
+
+    @Test
+    void mutationRoutineCarrierReferenceOnDataFieldLandsPointedDeferred() {
+        // A data field carrying @reference is the explicit path declaration, the follow-up's
+        // question: the would-admit-but-for-the-directive probe lands a pointed typed Deferred
+        // naming it, instead of the generic non-carrier fallthrough.
+        var schema = build("""
+            type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+            type RentFilmPayload {
+              rental: Rental @reference(path: [{table: "rental"}])
+            }
+            type Query { rental: Rental }
+            type Mutation {
+              rentFilm(inventoryId: Int!, customerId: Int!): RentFilmPayload
+                @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Mutation", "rentFilm");
+        assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
+        assertThat(f.reason())
+            .contains("@reference on a routine carrier's data field ('rental')")
+            .contains("explicit");
+    }
+
+    @Test
+    void mutationRoutineCarrierRecordElementDataFieldRejectsWithRoutineWording() {
+        // A record-element data field (a class-backed non-@table element; here Details is
+        // record-bound through the @service producer) rejects at this seat with routine
+        // wording: the payload is re-read post-commit from a catalog table, which a record
+        // element does not have.
+        var schema = build("""
+            type Details { note: String }
+            type DetailsPayload { details: Details }
+            type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+            type Query {
+              rental: Rental
+              d: Details @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
+            type Mutation {
+              rentFilm(inventoryId: Int!, customerId: Int!): DetailsPayload
+                @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Mutation", "rentFilm");
+        assertThat(f.reason())
+            .contains("record-element data field ('details')")
+            .contains("@routine mutation field 'rentFilm'");
+    }
+
+    @Test
+    void mutationRoutineCarrierIdElementDataFieldRejectsWithRoutineWording() {
+        // The ID-element data field is the DELETE PK-echo permit; a routine write has no
+        // PK-echo shape, so the ROUTINE carrier family refuses the element outright.
+        var schema = build("""
+            type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+            type RentFilmPayload { rentalId: ID }
+            type Query { rental: Rental }
+            type Mutation {
+              rentFilm(inventoryId: Int!, customerId: Int!): RentFilmPayload
+                @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Mutation", "rentFilm");
+        assertThat(f.reason())
+            .contains("element type 'ID'")
+            .contains("routine write has no PK-echo shape");
+    }
+
+    @Test
+    void mutationRoutineCarrierNonNullDataFieldRejectsForNullability() {
+        // D7: outcome (b) — the routine succeeded and the committed row is invisible to the
+        // post-commit re-read — makes the zero-row re-read a first-class success path, so a
+        // non-null single data field is an author error naming the zero-row reason.
+        var schema = build("""
+            type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+            type RentFilmPayload { rental: Rental! }
+            type Query { rental: Rental }
+            type Mutation {
+              rentFilm(inventoryId: Int!, customerId: Int!): RentFilmPayload
+                @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Mutation", "rentFilm");
+        assertThat(f.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+        assertThat(f.reason())
+            .contains("must be nullable")
+            .contains("no row");
     }
 
     @Test

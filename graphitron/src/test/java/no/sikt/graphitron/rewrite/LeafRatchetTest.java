@@ -19,12 +19,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * rule every other leaf-set obligation uses, so this number cannot be re-derived differently by
  * the next reader.
  *
- * <p><b>These pins move only downward</b>, one dissolution slice at a time, each move recorded
- * as a history line on its constant in the same commit that folds the leaves. A rise is a new
- * operation-encoding leaf, which the dissolution programme exists to make unnecessary: add a
- * fact or a member row instead. Surviving leaf distinctions are source, delivery and target
- * grain; the acceptance for the programme is that the reconstruction key
- * {@code leaf = f(source, delivery, target)} holds with no operation term.
+ * <p><b>The pins move downward as dissolution slices land</b>, one slice at a time, each move
+ * recorded as a history line on its constant in the same commit that folds the leaves. A pin
+ * rises only for a distinction the reconstruction key names as surviving grain — source,
+ * delivery or target — declared as a new triple in {@link LeafReconstructionKeyTest} in the
+ * same commit; it never rises for an operation-encoding leaf, which the dissolution programme
+ * exists to make unnecessary: add a fact or a member row instead. The acceptance for the
+ * programme is that the reconstruction key {@code leaf = f(source, delivery, target)} holds
+ * with no operation term.
  */
 @UnitTier
 class LeafRatchetTest {
@@ -45,8 +47,15 @@ class LeafRatchetTest {
      * four DmlTableField verb leaves folded into one direct-return record and the four
      * payload-verb leaves onto the two record carriers; the verb identity and per-verb input
      * surfaces became the carried {@code OperationMember.Write.Dml} payload.
+     * 8 to 9 (2026-08-10): the routine carrier landed
+     * ({@code MutationRoutineWriteRecordField}), a grain addition on both the source and
+     * target terms — a bare routine call vs the sibling's routine chain, a payload record vs
+     * its post-commit terminus table — with the operation unchanged (the same routine write,
+     * the same {@code OperationMember.Write.RoutineWrite}). The count-preserving fold was
+     * rejected because it would give one leaf two targets, making
+     * {@code leaf = f(source, delivery, target)} untrue as a function.
      */
-    private static final int MUTATION_FIELD_LEAVES = 8;
+    private static final int MUTATION_FIELD_LEAVES = 9;
 
     /**
      * Installed at 24 (census 2026-08-02, unchanged from the 2026-08-01 baseline).
