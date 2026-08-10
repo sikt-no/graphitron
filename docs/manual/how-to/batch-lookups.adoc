@@ -57,7 +57,7 @@ Mutation row identification is different: `@mutation`'s `UPDATE`/`DELETE` identi
 
 == NodeId-encoded keys
 
-Two flavors of NodeId-driven lookup exist and they differ in failure mode:
+Three arms live here, and the axis that separates them is whether they are a lookup at all. Two are; the middle one only looks like one. Decode failure behaves the same on all three: a malformed or wrong-type id throws rather than dropping quietly.
 
 *Synthesised lookup-key path* (`@lookupKey` on an `[ID]` arg whose target type carries `@node`). Each opaque base64 id decodes once per row at the arg layer to a `Record<N>` of the target's primary-key columns; the generator emits `VALUES(idx, pk_col1, pk_col2, ...)` keyed on the decoded composite. Decode failure (a wrong-typename or malformed id) is a contract violation: it surfaces as `GraphqlErrorException` via `CallSiteExtraction.NodeIdDecodeKeys.ThrowOnMismatch`.
 
@@ -68,9 +68,9 @@ type Query {
 }
 ----
 
-The output list is one element per opaque id, ordered by input position; the FilmActor type's two-column primary key (`actor_id`, `film_id`) is encoded into each id and decoded into the `VALUES` row.
+The output holds one slot per opaque id, in input position, `null` where the id decoded cleanly but matched no row; the FilmActor type's two-column primary key (`actor_id`, `film_id`) is encoded into each id and decoded into the `VALUES` row.
 
-*Same-table `@nodeId` arg path* (`@nodeId(typeName: T)` on an `[ID]` arg whose `T` matches the field's return type). Same lookup-by-id semantics. A malformed or wrong-type id fails the field rather than narrowing the result set, which is the same answer every `@nodeId` decode gives. The classifier synthesises `isLookupKey: true` for this arm, so an explicit `@lookupKey` on the same arg is rejected (`@nodeId already implies @lookupKey for same-table; the explicit directive is redundant`).
+*Same-table `@nodeId` arg path, without `@lookupKey`* (`@nodeId(typeName: T)` on an `[ID]` arg whose `T` matches the field's return type). This one is *not* a lookup, despite looking like one: the decoded keys lift onto the ordinary filter rail as `WHERE pk IN (...)`, so there is no `VALUES` table, no `idx`, and no positional contract. It is listed here because the shape invites the lookup reading.
 
 [source,graphql]
 ----
@@ -79,7 +79,18 @@ type Query {
 }
 ----
 
-`filmsByNodeIdArg(ids: [<film_2>, "garbage", <film_4>])` returns two films at positions 0 and 2 and skips position 1 entirely; the malformed id never reaches the SQL pass. This contrasts with the `@lookupKey + @nodeId(typeName:)` case the generator rejects up front: pick one. For decode-side guidance on stable IDs, xref:global-id.adoc[How-to: Global object IDs] covers the encoder/decoder layout.
+Three consequences follow from its being a filter, and all three differ from a lookup. Result order is whatever the query yields, not input order. An empty list narrows by nothing and returns the unfiltered table rather than `[]`. And a malformed or wrong-type id fails the whole field with a client error rather than occupying a position: one bad element in `filmsByNodeIdArg(ids: [<film_2>, "garbage"])` nulls the field and names the offending id, with no partial result. Element non-nullability is therefore fine here, which is why the example above keeps `[Film!]!`.
+
+*Same-table `@nodeId` arg path, with `@lookupKey`.* Adding `@lookupKey` beside the `@nodeId` is the deliberate opt-in that turns the filter back into a lookup, with the `VALUES` join, the positional contract and the nullable-element requirement that implies:
+
+[source,graphql]
+----
+type Query {
+    filmsByNodeIdArgWithLookupKey(ids: [ID!]! @nodeId(typeName: "Film") @lookupKey): [Film]!
+}
+----
+
+The pairing is rejected only when the `@nodeId` targets a *different* table than the field returns (an FK-target `@nodeId`, where `@lookupKey` has nothing to key on): `@lookupKey is meaningless on an FK-target @nodeId arg`. For decode-side guidance on stable IDs, xref:global-id.adoc[How-to: Global object IDs] covers the encoder/decoder layout.
 
 == `@splitQuery` + `@lookupKey` (per-parent narrowed batch)
 
@@ -126,9 +137,10 @@ The same VALUES-pair join applies; the difference is purely on the parent side, 
 * Single-cardinality `@lookupKey` is rejected. Pass a list-returning field, or drop `@lookupKey`.
 * Two layers of lists (e.g. `[InList] @lookupKey` where `InList { field: [String] }`) is rejected. The lookup operates over a flat keyset; flatten the input or drop the inner list.
 * Multiple `@lookupKey` arguments at the same call site must have the same length; values at the same index are correlated. A scalar argument broadcasts to every position. Wrap correlated keys in an input type when the schema should enforce the pairing.
-* `@nodeId(typeName: T)` on the same arg implies `@lookupKey` when `T` matches the field's return type; the explicit `@lookupKey` is rejected as redundant. The decode failure mode is `Skip` (filter semantics, malformed ids drop silently). Synthesised lookup-key paths via `@lookupKey` on `[ID]` args use `Throw` (decode failure surfaces as `GraphqlErrorException`).
+* `@nodeId(typeName: T)` where `T` matches the field's return type does *not* imply `@lookupKey`; on its own it lifts onto the `WHERE pk IN (...)` filter rail, and `@lookupKey` beside it is the opt-in that promotes it back to a lookup. The pairing is rejected only on an FK-target `@nodeId`, where `T` names a different table than the field returns.
+* Every `@nodeId` decode fails loudly: a malformed or wrong-type id surfaces as `GraphqlErrorException` and nulls the field. No decode path drops a bad id silently, on either the lookup or the filter rail.
 * Composite keys cap at 21 columns plus the implicit `idx` cell. `ValuesJoinRowBuilder` enforces jOOQ's typed `Row<N+1>`/`Record<N+1>` arity limit of 22; exceeding it fails the build with the offending arity in the message.
-* Empty lookup-input short-circuits before SQL. Selecting `filmById(film_id: [])` returns `[]` without dispatching to the database.
+* Empty lookup-input short-circuits before SQL. Selecting `filmById(film_id: [])` returns `[]` without dispatching to the database. (A `@nodeId` arg on the filter rail is the opposite: an empty list narrows by nothing and returns the unfiltered table.)
 * A key must identify at most one row, since it is answered in one output slot. That is a property of the key's *columns*, not of the values sent: repeating a value is always fine, binding a key to a non-unique column is not. Several rows matching one key collapses to one returned row (driver-dependent which); use `@condition` for non-uniquely-keyed filtering, not `@lookupKey`.
 * `@lookupKey` args are exempt from the implicit `column = ?` predicate path. The cascade in xref:condition-cascade.adoc[Stacking and overriding conditions] excludes `@lookupKey`-bound names from `walkInputFieldConditions`, so a lookup arg doesn't double-filter via VALUES join AND a redundant `column IN (...)`. The exemption covers the key argument only. A non-key filterable argument on the same field keeps its implicit predicate and lands in the `WHERE` beside the lookup join, which is how a lookup narrows on something other than its keys. Such a filter narrows *rows*, not keys: a key whose row fails the predicate keeps its position and holds `null` there, exactly as an unmatched key does.
 * A lookup field's list elements must be nullable. `[Film]!` and `[Film]` are accepted, `[Film!]!` and `[Film!]` are rejected with a build error, since a miss has to be able to occupy its output position.

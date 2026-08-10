@@ -6,6 +6,7 @@ import no.sikt.graphitron.command.TenantStrategy;
 import no.sikt.graphitron.command.LaunchSource;
 import no.sikt.graphitron.command.LauncherCommand;
 import no.sikt.graphitron.command.Ordering;
+import no.sikt.graphitron.command.ReservedAliases;
 import no.sikt.graphitron.command.ResultShape;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
@@ -409,7 +410,10 @@ public final class RootLauncherRenderer {
         var projection = ProjectionCall.fromEnvSelection(className(lookup.projection()), tableLocal);
         if (isList) {
             code.addStatement("$T<$T<?>> selectFields = new $T<>($L)", LIST, FIELD, ARRAY_LIST, projection);
-            code.addStatement("selectFields.add(input.field($S).as($S))", "idx", "__idx__");
+            // Through ReservedAliases, not a literal: this is the writer half of the
+            // writer-alias-equals-reader-alias invariant that SplitRowsMethodEmitter's scatter
+            // helper reads back.
+            code.addStatement("selectFields.add(input.field($S).as($S))", "idx", ReservedAliases.IDX);
         }
         code.add(isList ? CodeBlock.of("$T flat = dsl\n", RESULT_OF_RECORD) : CodeBlock.of("return dsl\n"))
             .indent()

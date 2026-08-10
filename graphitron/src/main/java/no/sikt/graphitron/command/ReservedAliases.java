@@ -34,9 +34,11 @@ public final class ReservedAliases {
     public static final String DISCRIMINATOR = "__discriminator__";
 
     /**
-     * The batched delivery's scatter key: the parent-input VALUES table's index column projected
-     * under a synthetic name, written by the batched launcher body and read back by the per-class
-     * scatter helpers that regroup the flat result per DataLoader key.
+     * The scatter key: an input VALUES table's index column projected under a synthetic name and
+     * read back by the per-class scatter helpers that place each flat row at its key's position.
+     * Two writers mint it, for the same reason on different rails: the batched launcher body
+     * (regrouping per DataLoader key) and the root lookup's list arm (one output slot per input
+     * key, null where the key matched no row).
      */
     public static final String IDX = "__idx__";
 

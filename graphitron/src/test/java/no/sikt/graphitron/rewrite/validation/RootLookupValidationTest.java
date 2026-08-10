@@ -52,6 +52,9 @@ class RootLookupValidationTest {
         List.of(new OrderBySpec.ColumnOrderEntry(FILM_ID_COL, null, OrderBySpec.SortDirection.ASC)), true);
     private static final String CARDINALITY_MISMATCH =
         "Field 'Query.filmById': result type does not match input cardinality";
+    private static final String NONNULL_ITEM =
+        "Field 'Query.filmById': a lookup field's list elements must be nullable, since an "
+            + "unmatched key yields null at its output position; declare the element type without '!'";
 
     /** One cube cell: a lookup field varying key list-ness, return list-ness and filter list-ness. */
     private static QueryTableField cell(LookupResolution keyed, boolean listReturn, List<WhereFilter> filters) {
@@ -60,6 +63,19 @@ class RootLookupValidationTest {
                 listReturn ? new FieldWrapper.List(true, true) : new FieldWrapper.Single(true)),
             filters, listReturn ? PK_ORDER : new OrderBySpec.None(), null, keyed,
             RoutineResolution.None.INSTANCE);
+    }
+
+    /**
+     * A list-key lookup varying the return wrapper's two nullability slots independently, which
+     * the cardinality cube's {@link #cell} cannot do (it fixes both to nullable). Argument order
+     * mirrors {@link FieldWrapper.List}: outer list first, element second.
+     */
+    private static QueryTableField listReturn(boolean listNullable, boolean itemNullable,
+            List<WhereFilter> filters) {
+        return new QueryTableField("Query", "filmById", null,
+            new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE,
+                new FieldWrapper.List(listNullable, itemNullable)),
+            filters, PK_ORDER, null, LIST_KEYED_LOOKUP, RoutineResolution.None.INSTANCE);
     }
 
     /**
@@ -138,6 +154,47 @@ class RootLookupValidationTest {
 
         LIST_KEY_LIST_RETURN_LIST_FILTER("list key, list return, list filter — valid",
             cell(LIST_KEYED_LOOKUP, true, List.of(columnFilter("title", false, true))),
+            List.of()),
+
+        // The item-nullability axis, orthogonal to the cardinality cube above (whose cells all
+        // hold itemNullable true). A list lookup answers one slot per key and a missed key holds
+        // null in its slot, so non-null elements make the contract unrepresentable: GraphQL
+        // propagates the null out of the list and one miss discards every hit.
+        // `[Film!]!` — the shape every lookup coordinate in the example schema used to declare.
+        LIST_KEY_LIST_RETURN_NONNULL_ITEM("list key, `[Film!]!` — unrepresentable slot",
+            listReturn(false, false, List.of()),
+            List.of(NONNULL_ITEM)),
+
+        // `[Film!]` — a nullable list does not help; it is the *element* that has to carry null.
+        LIST_KEY_NULLABLE_LIST_NONNULL_ITEM("list key, `[Film!]` — still unrepresentable",
+            listReturn(true, false, List.of()),
+            List.of(NONNULL_ITEM)),
+
+        // `[Film]` — the remaining accepted cell beside the cube's `[Film]!`.
+        LIST_KEY_NULLABLE_LIST_NULLABLE_ITEM("list key, `[Film]` — valid",
+            listReturn(true, true, List.of()),
+            List.of()),
+
+        // The rejection is about the element, not the filter: a non-key filter beside the keys
+        // neither causes nor excuses it.
+        LIST_KEY_LIST_RETURN_NONNULL_ITEM_WITH_FILTER("list key, `[Film!]!`, non-key filter — still one error",
+            listReturn(false, false, List.of(columnFilter("title", false, false))),
+            List.of(NONNULL_ITEM)),
+
+        // Both wrapper rules fire independently: the cardinality mismatch does not mask the
+        // element rule, nor the reverse.
+        SCALAR_KEY_LIST_RETURN_NONNULL_ITEM("scalar key, `[Film!]!` return — cardinality AND element errors",
+            new QueryTableField("Query", "filmById", null,
+                new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE, new FieldWrapper.List(false, false)),
+                List.of(), PK_ORDER, null, KEYED_LOOKUP, RoutineResolution.None.INSTANCE),
+            List.of(CARDINALITY_MISMATCH, NONNULL_ITEM)),
+
+        // The single arm has one slot by construction and fetchOne already answers null in it,
+        // so nothing about element nullability applies; a non-null single return stays valid.
+        SCALAR_KEY_NONNULL_SINGLE_RETURN("scalar key, non-null single return — element rule does not reach the single arm",
+            new QueryTableField("Query", "filmById", null,
+                new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE, new FieldWrapper.Single(false)),
+                List.of(), new OrderBySpec.None(), null, KEYED_LOOKUP, RoutineResolution.None.INSTANCE),
             List.of()),
 
         VALID_WITH_TABLE_INPUT_TYPE_ARG("table-bound input type arg — skipped, empty filters, valid with single return",

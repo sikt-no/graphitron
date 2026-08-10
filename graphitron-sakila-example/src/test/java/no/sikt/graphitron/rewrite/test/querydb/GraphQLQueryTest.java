@@ -1243,6 +1243,32 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void filmsByNodeIdArgWithLookupKey_isALookupNotAFilter_soAMissHoldsItsSlot() {
+        // The @lookupKey opt-in on the same shape as filmsByNodeIdArg. The two coordinates differ
+        // only by that directive, and the difference is the whole filter-vs-lookup distinction
+        // batch-lookups.adoc draws: the filter above answers an empty list with the unfiltered
+        // table and drops nothing into positions, while this one answers per key.
+        String real = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 2);
+        String missing = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 999999);
+        Map<String, Object> data = execute(
+            "{ filmsByNodeIdArgWithLookupKey(ids: [\"" + real + "\", \"" + missing + "\", \"" + real + "\"])"
+            + " { filmId } }");
+        assertThat(data).extractingByKey("filmsByNodeIdArgWithLookupKey", as(list(Map.class)))
+            .as("three ids in, three slots out: the decodable-but-absent id holds null, and the "
+                + "repeated id is answered twice rather than deduplicated")
+            .extracting(f -> f == null ? null : f.get("filmId"))
+            .containsExactly(2, null, 2);
+    }
+
+    @Test
+    void filmsByNodeIdArgWithLookupKey_emptyList_shortCircuitsToEmpty() {
+        // The lookup rail's empty-input answer, and the sharpest contrast with its filter sibling:
+        // no keys asked means no slots, not the unfiltered table.
+        Map<String, Object> data = execute("{ filmsByNodeIdArgWithLookupKey(ids: []) { filmId } }");
+        assertThat(data).extractingByKey("filmsByNodeIdArgWithLookupKey", as(LIST)).isEmpty();
+    }
+
+    @Test
     void films_filteredBySameTableNodeId_emptyListReturnsUnfilteredBaseline() {
         // An empty list on a fetch-path list-IN filter narrows by nothing
         // (DSL.noCondition() identity) rather than emitting `IN ()`, which jOOQ renders as the
@@ -2785,8 +2811,9 @@ class GraphQLQueryTest {
     // opaque ID decodes once per row at the arg layer to a Record2<Integer,Integer> and the
     // generator emits a VALUES(idx, actor_id, film_id) derived table joined on the full
     // composite key. Carrier-driven ThrowOnMismatch surfaces typeId mismatches as
-    // GraphqlErrorException; missing rows are simply absent (positional output is dense, not
-    // sparse, since orderBy(idx) is on the input, not the join target).
+    // GraphqlErrorException. The output is one slot per input id, holding null where the id
+    // matched no row: the scatter over the input's idx places each row at its own id's position,
+    // so output length always equals input length.
 
     @Test
     void compositeNodeIdLookup_listIds_returnsRowsInInputOrder() {

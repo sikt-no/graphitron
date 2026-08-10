@@ -301,8 +301,14 @@ type Query {
     # PK-IN predicate alongside any sibling filters. Pre-R106 this path implicitly promoted
     # to the keyed root lookup (N×M derived-table); the lift puts same-table @nodeId on the
     # same rail as ordinary scalar filter args. Add `@lookupKey` to opt back into the lookup
-    # shape (see filmsByNodeIdArgWithLookupKey below if exercised).
+    # shape — filmsByNodeIdArgWithLookupKey below is that opt-in, and the pair is what makes
+    # the filter-vs-lookup contrast in batch-lookups.adoc name two live coordinates.
     filmsByNodeIdArg(ids: [ID!]! @nodeId(typeName: "Film")): [Film!]!
+    # The @lookupKey opt-in on the same shape: promotes the filter rail back to the keyed
+    # lookup, so this one carries the positional contract (one slot per input id, null where
+    # the id matched no row) and must therefore declare nullable elements. Its sibling above
+    # is the filter and keeps [Film!]!; the two differ only by @lookupKey.
+    filmsByNodeIdArgWithLookupKey(ids: [ID!]! @nodeId(typeName: "Film") @lookupKey): [Film]!
     # R377 compilation backstop: same-table @nodeId arg over film_endorsement, which is backed by
     # TWO object types — the FilmEndorsement projection (below) and the FilmEndorsementNode @node.
     # The @node carries a customized numeric @node(typeId: "920534") distinct from its type name, so

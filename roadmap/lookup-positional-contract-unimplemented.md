@@ -1,7 +1,7 @@
 ---
 id: R617
 title: "Lookup misses drop rows instead of holding their position"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 1
 theme: codegen-correctness
@@ -132,8 +132,11 @@ Two sibling errors in the same subsection are worth clearing in the same pass, s
 wrong sentence looked plausible:
 
 - `batch-lookups.adoc:73` "The classifier synthesises `isLookupKey: true` for this arm" is inverted
-  against `FieldBuilder.java:1983`. The rejection of an explicit `@lookupKey` on the same arg is
-  real; the stated reason for it is not.
+  against `FieldBuilder.java:1983`. (Correcting the review's own first reading: the *rejection* the
+  same sentence claims is not real either. `FieldBuilder.java:4595` and
+  `NodeIdPipelineTest.SAME_TABLE_WITH_EXPLICIT_LOOKUP_KEY` both say an explicit `@lookupKey` beside a
+  same-table `@nodeId` is the deliberate opt-in *back into* the lookup shape. The only rejected
+  pairing is the FK-target one.)
 - `batch-lookups.adoc:129` "The decode failure mode is `Skip` (filter semantics, malformed ids drop
   silently)" names an arm that does not exist. `CallSiteExtraction.java:140` seals
   `NodeIdDecodeKeys permits ThrowOnMismatch` and nothing else.
@@ -180,3 +183,44 @@ established convention and the renderer-arm paragraph of
 `docs/architecture/how-to/testing.adoc` blesses per-arm structural assertions on command-driven
 emission. That paragraph and `development-principles.adoc`'s "banned at every tier" do not agree with
 each other, but the disagreement predates this item and is not its to settle.
+
+## Rework delivered
+
+Both blocking findings are closed, and all three of the non-blocking notes with them.
+
+*The NodeId subsection now names three arms instead of two, split on whether the arm is a lookup at
+all.* The middle one, `@nodeId(typeName: T)` alone with `T` matching the return type, is a filter, and
+the page now says so and spells out the three ways it differs: order is whatever the query yields, an
+empty list returns the unfiltered table rather than `[]`, and one bad id nulls the whole field instead
+of occupying a position. Its `[Film!]!` is correct precisely because it has no slots to fill. The
+third arm is the `@lookupKey` opt-in that promotes it back to a lookup, which the constraints bullets
+now state in the right direction, along with the fact that no decode path drops an id silently.
+
+*That third arm was documented but unexercised, so it now exists.* Writing the subsection meant
+naming a coordinate for the opt-in, and the example schema had only a comment promising one
+("see filmsByNodeIdArgWithLookupKey below if exercised"). Rather than name a coordinate no consumer
+could look up, `filmsByNodeIdArgWithLookupKey` is now a real fixture beside its filter sibling, the
+two differing only by `@lookupKey`. Two execution tests pin the contrast the page draws: three ids in
+(one absent, one repeated) answer as three slots with a null and no deduplication, and the empty list
+short-circuits to `[]` where the filter sibling returns all five films. This also puts the
+NodeId-decoded lookup arm on the execution tier for the first time.
+
+*The nullable-element rejection now has six cells in `RootLookupValidationTest`.* A `listReturn`
+helper varies the return wrapper's two nullability slots independently, which the cardinality cube's
+`cell` cannot (it fixes both nullable). `[Film!]!` and `[Film!]` reject, `[Film]` accepts, a non-key
+filter beside the keys changes nothing, a scalar key with `[Film!]!` raises both wrapper errors
+independently, and a non-null *single* return stays valid because that arm has one slot by
+construction and `fetchOne` already answers null in it.
+
+*The scatter alias goes through `ReservedAliases.IDX`* at the writer as well as the reader, and that
+constant's javadoc now names both of its writers.
+
+*`scatterLookupByIdx` gained direct coverage* in `ScatterLookupByIdxTest`, modelled on its
+`scatterSingleByIdx` sibling. The tie-break is what earns a unit test rather than an execution one:
+slot-per-key and null-for-a-miss are already pinned against PostgreSQL, but "two rows on one key keeps
+the first" is a deliberate divergence from the sibling's throw that the example schema's
+uniquely-keyed fixtures will not reliably produce.
+
+*One stale comment swept.* The composite-PK NodeId section header in `GraphQLQueryTest` still asserted
+"missing rows are simply absent (positional output is dense, not sparse)", directly contradicting the
+tests beneath it that the first pass had already flipped to slot assertions.
