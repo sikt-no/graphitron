@@ -40,11 +40,14 @@
 -- row is still a transcription: it says what a directive application spelled, in graphitron's
 -- vocabulary instead of the document's. intent_ is what gets derived on top of that, once
 -- something resolves and combines those readings into what the generator will actually do. The
--- stratum's first residents are the authored claim views (intent_authored_field_claim and
--- intent_authored_type_claim, in their own section below); that they arrived as views changes
--- nothing about the name, since a family is named for whose vocabulary its rows are written in
--- and materialization is not the discriminator. No relation should acquire the prefix by
--- drifting into it; each new derived resident is its own change.
+-- residents are views (in their own section below); that changes nothing about the name, since
+-- a family is named for whose vocabulary its rows are written in and materialization is not the
+-- discriminator. The stratum has two layers, and a new resident picks one deliberately: the
+-- claim derivations (the authored claim views, one per grain, and the structural classifier
+-- views, one per classifier so each carries exactly its own witness columns), and the reduction
+-- over them (intent_resolved_field_claim, the resolution expression a planning reader joins).
+-- No relation should acquire the prefix by drifting into it; each new derived resident is its
+-- own change.
 --
 -- The graphql_ family is therefore a total transcription, with no hole where graphitron's
 -- namespace was. Whether an application survives into the emitted schema is a namespace query
@@ -69,7 +72,7 @@ CREATE TABLE store_graph (
   last_captured    TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name)
 );
-COMMENT ON TABLE store_graph IS 'A graph the store holds: the anchor of the graph_name partition dimension, one row per module ever captured into this store. Two discriminators keep the DDL''s FK conventions readable against this relation. First, why the SDL roots carry an FK here while the SDL-to-store_source FK was declined: the graph is ambient before the walk begins and NOT NULL on every row, while the source rows are a summary collected last and nullable at schema-level sites, so the FK doctrine admits one and not the other. Second, a recorded exemption: any derivation joining an SDL fact to a catalog or classpath fact (graphitron_service''s class name against jvm_class, graphitron_table''s table reference against sql_table) is underdetermined in a shared store until a membership relation says which sources are the joining graph''s; such joins are deferred with their consumers, and the membership relation lands with them.';
+COMMENT ON TABLE store_graph IS 'A graph the store holds: the anchor of the graph_name partition dimension, one row per module ever captured into this store. Two discriminators keep the DDL''s FK conventions readable against this relation. First, why the SDL roots carry an FK here while the SDL-to-store_source FK was declined: the graph is ambient before the walk begins and NOT NULL on every row, while the source rows are a summary collected last and nullable at schema-level sites, so the FK doctrine admits one and not the other. Second: any derivation joining an SDL fact to a catalog or classpath fact (graphitron_service''s class name against jvm_class, graphitron_table''s table reference against sql_table) is underdetermined in a shared store until a membership relation says which sources are the joining graph''s; store_graph_source below is that relation, landed with its first consumer (the inferred claim view), and such a join scopes its catalog side through it.';
 COMMENT ON COLUMN store_graph.graph_name IS 'the graph''s configured name (the Maven <graphName> parameter, defaulting to the module''s artifactId); the value every partitioned key leads with';
 COMMENT ON COLUMN store_graph.base_dir IS 'the capturing run''s base directory, absolute and normalized. NOT NULL and deliberately not grouped with the nullable build-identity pair: every run has a directory (RewriteContext requires basedir of every caller) even when it has no build file, and this column is what the ownership check reads when a run''s graph_name is already recorded against a different directory';
 COMMENT ON COLUMN store_graph.build_file_path IS 'the module''s build file (its pom), absolute and normalized; NULL on a programmatic run with no build file';
@@ -112,6 +115,16 @@ CREATE TABLE store_source (
   PRIMARY KEY (source_name),
   CHECK (source_kind IN ('SCHEMA_FILE', 'DIRECTORY', 'JAR', 'JOOQ_SCHEMA'))
 );
+CREATE TABLE store_graph_source (
+  graph_name  VARCHAR NOT NULL,
+  source_name VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, source_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+);
+COMMENT ON TABLE store_graph_source IS 'The membership relation store_graph''s comment defers to: which sources are the joining graph''s. One row per source the graph''s run actually read, every kind alike (schema files, jOOQ schema packages, classpath entries), because kind is an axis on store_source and a kind-filtered membership would make completeness a function of which consumers had shipped, leaving a reader unable to tell "not this graph''s" from "kind not captured yet". What the run read, not configuration: the recipe rows above hold patterns the run held in hand, including files that do not exist yet, while a row here names a source the walk met. Graph-keyed, so a warm capture clears and rewrites exactly its own graph''s rows. Any derivation joining a graph-keyed fact to a source-keyed one (the column-match claim view is the first) scopes its catalog side through this relation, which is what keeps one graph''s resolution from seeing a sibling module''s tables in a shared store.';
+COMMENT ON COLUMN store_graph_source.graph_name IS 'the member graph, anchored by store_graph';
+COMMENT ON COLUMN store_graph_source.source_name IS 'a source the graph''s run read, anchored by store_source; the scan''s hand-built stand-ins record against the empty source name like their class rows do';
 COMMENT ON TABLE store_source IS 'A source the store read, store-global rather than graph-keyed: it can say what a file hashed to, never which graph read it. Every base relation is partitionable by the source that produced it: a refresh deletes exactly the rows one source wrote and re-walks it, so a relation unreachable from a source row is one the store can only ever discard wholesale.';
 COMMENT ON COLUMN store_source.source_name IS 'the schema file path, the classpath entry path, or the generated package a jOOQ schema lives in, as the reader spelled it';
 COMMENT ON COLUMN store_source.source_kind IS 'a closed taxonomy: a schema file, a directory root, a jar, or a generated jOOQ schema package. The last names jOOQ deliberately, unlike the sql_ family: a family is named for whose vocabulary its rows are written in and jOOQ owns none of SQL''s, but a source is named for what it is, and a generated package is jOOQ''s artefact';
@@ -2061,191 +2074,6 @@ COMMENT ON COLUMN graphitron_type_directive_synthesis.ordinal IS 'capture-assign
 COMMENT ON COLUMN graphitron_type_directive_synthesis.macro IS 'which expansion synthesized the application';
 
 
--- ==== Derived stratum: authored claims ============================================
--- The intent_ family's first residents. A claim row says the author's directives claim a
--- coordinate for a classification kind; the conflict detection is one grouping query per grain
--- over these views (more than one distinct classifier at a coordinate violates), and the
--- per-arm position masks transcribe the classification walk's per-position detector gates so
--- the detection reproduces exactly the sets those detectors saw. Views, not tables: the rows
--- derive on read from the two transcription strata above, so capture writes nothing here and
--- a claim can never drift stale against the applications it is derived from.
---
--- Each claiming relation contributes a decoded arm, and each claiming directive additionally
--- contributes an undecoded presence arm: the site-family application rows anti-joined against
--- the decoded relation at the coordinate grain, decoded FALSE. The legacy detectors were
--- AST-presence-based while the semantic relations are decode-based, and a decode that declines
--- (a @routine missing its name, a @mutation missing typeName) writes no semantic row; the
--- presence arms keep the claim view presence-faithful exactly there. @lookupKey gets no
--- presence arm: it is an argument-less marker whose decode is total.
-
-CREATE VIEW intent_authored_field_claim
-  (graph_name, type_name, field_name, classifier, trigger, decoded,
-   source_name, source_line, source_column) AS
-WITH RECURSIVE lookup_bearing(graph_name, type_name, path) AS (
-  SELECT DISTINCT graph_name, type_name, '/' || type_name || '/'
-    FROM graphitron_field_lookup_key
-  UNION ALL
-  SELECT f.graph_name, f.type_name, b.path || f.type_name || '/'
-    FROM graphql_field f
-    JOIN graphql_type pt
-      ON pt.graph_name = f.graph_name AND pt.type_name = f.type_name AND pt.kind = 'INPUT_OBJECT'
-    JOIN lookup_bearing b
-      ON b.graph_name = f.graph_name AND b.type_name = f.named_type
-   WHERE POSITION('/' || f.type_name || '/' IN b.path) = 0
-)
-SELECT s.graph_name, s.type_name, s.field_name, 'SERVICE', 'service', TRUE,
-       s.source_name, s.source_line, s.source_column
-  FROM graphitron_service s
-UNION ALL
-SELECT d.graph_name, d.type_name, d.field_name, 'SERVICE', 'service', FALSE,
-       d.source_name, d.source_line, d.source_column
-  FROM graphql_field_directive d
- WHERE d.directive_name = 'service'
-   AND NOT EXISTS (SELECT 1 FROM graphitron_service s
-                    WHERE s.graph_name = d.graph_name AND s.type_name = d.type_name
-                      AND s.field_name = d.field_name)
-UNION ALL
-SELECT e.graph_name, e.type_name, e.field_name, 'EXTERNAL_FIELD', 'externalField', TRUE,
-       e.source_name, e.source_line, e.source_column
-  FROM graphitron_external_field e
- WHERE e.type_name NOT IN ('Query', 'Mutation', 'Subscription')
-UNION ALL
-SELECT d.graph_name, d.type_name, d.field_name, 'EXTERNAL_FIELD', 'externalField', FALSE,
-       d.source_name, d.source_line, d.source_column
-  FROM graphql_field_directive d
- WHERE d.directive_name = 'externalField'
-   AND d.type_name NOT IN ('Query', 'Mutation', 'Subscription')
-   AND NOT EXISTS (SELECT 1 FROM graphitron_external_field e
-                    WHERE e.graph_name = d.graph_name AND e.type_name = d.type_name
-                      AND e.field_name = d.field_name)
-UNION ALL
-SELECT n.graph_name, n.type_name, n.field_name, 'NODE_ID', 'nodeId', TRUE,
-       n.source_name, n.source_line, n.source_column
-  FROM graphitron_field_node_id n
- WHERE n.type_name NOT IN ('Query', 'Mutation', 'Subscription')
-UNION ALL
-SELECT d.graph_name, d.type_name, d.field_name, 'NODE_ID', 'nodeId', FALSE,
-       d.source_name, d.source_line, d.source_column
-  FROM graphql_field_directive d
- WHERE d.directive_name = 'nodeId'
-   AND d.type_name NOT IN ('Query', 'Mutation', 'Subscription')
-   AND NOT EXISTS (SELECT 1 FROM graphitron_field_node_id n
-                    WHERE n.graph_name = d.graph_name AND n.type_name = d.type_name
-                      AND n.field_name = d.field_name)
-UNION ALL
-SELECT f.graph_name, f.type_name, f.field_name, 'LOOKUP_KEY', 'lookupKey', TRUE,
-       direct.source_name, direct.source_line, direct.source_column
-  FROM graphql_field f
-  LEFT JOIN (SELECT k.graph_name, k.type_name, k.field_name,
-                    k.source_name, k.source_line, k.source_column,
-                    ROW_NUMBER() OVER (PARTITION BY k.graph_name, k.type_name, k.field_name
-                                       ORDER BY a.ordinal) AS rn
-               FROM graphitron_argument_lookup_key k
-               JOIN graphql_argument a
-                 ON a.graph_name = k.graph_name AND a.type_name = k.type_name
-                AND a.field_name = k.field_name AND a.argument_name = k.argument_name) direct
-    ON direct.graph_name = f.graph_name AND direct.type_name = f.type_name
-   AND direct.field_name = f.field_name AND direct.rn = 1
- WHERE f.type_name = 'Query'
-   AND (direct.graph_name IS NOT NULL
-        OR EXISTS (SELECT 1 FROM graphql_argument a
-                    WHERE a.graph_name = f.graph_name AND a.type_name = f.type_name
-                      AND a.field_name = f.field_name
-                      AND EXISTS (SELECT 1 FROM lookup_bearing b
-                                   WHERE b.graph_name = a.graph_name
-                                     AND b.type_name = a.named_type)))
-UNION ALL
-SELECT picked.graph_name, picked.type_name, picked.field_name, 'ROUTINE', 'routine', TRUE,
-       picked.source_name, picked.source_line, picked.source_column
-  FROM (SELECT r.graph_name, r.type_name, r.field_name,
-               r.source_name, r.source_line, r.source_column,
-               ROW_NUMBER() OVER (PARTITION BY r.graph_name, r.type_name, r.field_name
-                                  ORDER BY r.ordinal) AS rn
-          FROM graphitron_routine r) picked
- WHERE picked.rn = 1 AND picked.type_name NOT IN ('Mutation', 'Subscription')
-UNION ALL
-SELECT picked.graph_name, picked.type_name, picked.field_name, 'ROUTINE', 'routine', FALSE,
-       picked.source_name, picked.source_line, picked.source_column
-  FROM (SELECT d.graph_name, d.type_name, d.field_name,
-               d.source_name, d.source_line, d.source_column,
-               ROW_NUMBER() OVER (PARTITION BY d.graph_name, d.type_name, d.field_name
-                                  ORDER BY d.ordinal) AS rn
-          FROM graphql_field_directive d
-         WHERE d.directive_name = 'routine'
-           AND NOT EXISTS (SELECT 1 FROM graphitron_routine r
-                            WHERE r.graph_name = d.graph_name AND r.type_name = d.type_name
-                              AND r.field_name = d.field_name)) picked
- WHERE picked.rn = 1 AND picked.type_name NOT IN ('Mutation', 'Subscription')
-UNION ALL
-SELECT m.graph_name, m.type_name, m.field_name, 'MUTATION', 'mutation', TRUE,
-       m.source_name, m.source_line, m.source_column
-  FROM graphitron_mutation m
- WHERE m.type_name = 'Mutation'
-UNION ALL
-SELECT d.graph_name, d.type_name, d.field_name, 'MUTATION', 'mutation', FALSE,
-       d.source_name, d.source_line, d.source_column
-  FROM graphql_field_directive d
- WHERE d.directive_name = 'mutation'
-   AND d.type_name = 'Mutation'
-   AND NOT EXISTS (SELECT 1 FROM graphitron_mutation m
-                    WHERE m.graph_name = d.graph_name AND m.type_name = d.type_name
-                      AND m.field_name = d.field_name);
-COMMENT ON VIEW intent_authored_field_claim IS 'The author''s field-grain classification claims. One arm pair per claiming directive (@service, @externalField, @nodeId, @lookupKey, @routine, @mutation): the decoded arm reads the semantic relation, the presence arm falls back to the raw application where the decode declined. The per-arm type_name masks transcribe the walk''s per-position detector gates: @service claims at every position, @externalField and @nodeId nowhere on a root, @routine not on Mutation or Subscription (a Mutation @routine is the walk''s own typed deferral, never a conflict slot), @lookupKey only on Query, @mutation only on Mutation. The @lookupKey arm fires on the whole argument surface, matching LookupFacts.triggersFor: a directly marked argument, or an argument whose named type is in the transitive lookup-bearing input closure (the recursive path-guarded closure above, seeded from the retired input-field site, so on accepted schemas the recursion never expands). The @routine arms collapse the repeatable ordinal grain to the minimum-ordinal application''s row.';
-COMMENT ON COLUMN intent_authored_field_claim.graph_name IS 'the owning graph''s partition, carried through from every arm''s base relation';
-COMMENT ON COLUMN intent_authored_field_claim.type_name IS 'the claimed field''s owning type';
-COMMENT ON COLUMN intent_authored_field_claim.field_name IS 'the claimed field''s name within the owning type';
-COMMENT ON COLUMN intent_authored_field_claim.classifier IS 'the classification kind the claim is for; a closed vocabulary the reading side decodes into a typed value (SERVICE, EXTERNAL_FIELD, NODE_ID, LOOKUP_KEY, ROUTINE, MUTATION), separate from the trigger because a derived claim may have no directive at all';
-COMMENT ON COLUMN intent_authored_field_claim.trigger IS 'the claiming directive''s name, without the leading @; what a conflict message names';
-COMMENT ON COLUMN intent_authored_field_claim.decoded IS 'TRUE from a semantic-relation arm; FALSE from a presence arm, meaning the application exists but its decode declined';
-COMMENT ON COLUMN intent_authored_field_claim.source_name IS 'the claiming application''s own position; NULL on a closure-triggered @lookupKey claim, whose application sits on a remote input field';
-COMMENT ON COLUMN intent_authored_field_claim.source_line IS 'source line of the claiming application, 1-based';
-COMMENT ON COLUMN intent_authored_field_claim.source_column IS 'source column of the claiming application, 1-based';
-
-CREATE VIEW intent_authored_type_claim
-  (graph_name, type_name, classifier, trigger, decoded,
-   source_name, source_line, source_column) AS
-SELECT t.graph_name, t.type_name, 'TABLE', 'table', TRUE,
-       t.source_name, t.source_line, t.source_column
-  FROM graphitron_table t
- WHERE t.type_name NOT IN ('Query', 'Mutation', 'Subscription')
-UNION ALL
-SELECT picked.graph_name, picked.type_name, 'TABLE', 'table', FALSE,
-       picked.source_name, picked.source_line, picked.source_column
-  FROM (SELECT d.graph_name, d.type_name, d.source_name, d.source_line, d.source_column,
-               ROW_NUMBER() OVER (PARTITION BY d.graph_name, d.type_name
-                                  ORDER BY d.ordinal) AS rn
-          FROM graphql_type_directive d
-         WHERE d.directive_name = 'table'
-           AND NOT EXISTS (SELECT 1 FROM graphitron_table t
-                            WHERE t.graph_name = d.graph_name AND t.type_name = d.type_name)) picked
- WHERE picked.rn = 1 AND picked.type_name NOT IN ('Query', 'Mutation', 'Subscription')
-UNION ALL
-SELECT e.graph_name, e.type_name, 'ERROR', 'error', TRUE,
-       e.source_name, e.source_line, e.source_column
-  FROM graphitron_error e
- WHERE e.type_name NOT IN ('Query', 'Mutation', 'Subscription')
-UNION ALL
-SELECT picked.graph_name, picked.type_name, 'ERROR', 'error', FALSE,
-       picked.source_name, picked.source_line, picked.source_column
-  FROM (SELECT d.graph_name, d.type_name, d.source_name, d.source_line, d.source_column,
-               ROW_NUMBER() OVER (PARTITION BY d.graph_name, d.type_name
-                                  ORDER BY d.ordinal) AS rn
-          FROM graphql_type_directive d
-         WHERE d.directive_name = 'error'
-           AND NOT EXISTS (SELECT 1 FROM graphitron_error e
-                            WHERE e.graph_name = d.graph_name AND e.type_name = d.type_name)) picked
- WHERE picked.rn = 1 AND picked.type_name NOT IN ('Query', 'Mutation', 'Subscription');
-COMMENT ON VIEW intent_authored_type_claim IS 'The author''s type-grain classification claims: @table and @error, decoded arm plus presence fallback each, with the root names masked out (transcribing the walk''s root short-circuit, which classifies a root before any type directive is read). That a conflict here can only occur on an OBJECT is guaranteed upstream by assembly (@error is declared on OBJECT), the same assembly dependency graphitron_undecoded_argument records; a lone @table claim on an INPUT_OBJECT or INTERFACE is an honest single claim that conflicts with nothing. The applications sit at the type grain even when applied on an extension site; the presence arms collapse a base-plus-extension double application to the minimum-ordinal row.';
-COMMENT ON COLUMN intent_authored_type_claim.graph_name IS 'the owning graph''s partition, carried through from every arm''s base relation';
-COMMENT ON COLUMN intent_authored_type_claim.type_name IS 'the claimed type';
-COMMENT ON COLUMN intent_authored_type_claim.classifier IS 'the classification kind the claim is for; a closed vocabulary the reading side decodes into a typed value (TABLE, ERROR), separate from the trigger because a derived claim may have no directive at all';
-COMMENT ON COLUMN intent_authored_type_claim.trigger IS 'the claiming directive''s name, without the leading @; what a conflict message names';
-COMMENT ON COLUMN intent_authored_type_claim.decoded IS 'TRUE from a semantic-relation arm; FALSE from a presence arm, meaning the application exists but its decode declined';
-COMMENT ON COLUMN intent_authored_type_claim.source_name IS 'the claiming application''s own position file';
-COMMENT ON COLUMN intent_authored_type_claim.source_line IS 'source line of the claiming application, 1-based';
-COMMENT ON COLUMN intent_authored_type_claim.source_column IS 'source column of the claiming application, 1-based';
-
-
 -- ==== SQL catalog facts ===========================================================
 -- What the consumer's database declares, in SQL's vocabulary. jOOQ's generated model is the
 -- reader, not the owner: reading INFORMATION_SCHEMA directly instead would leave every relation
@@ -2520,3 +2348,274 @@ COMMENT ON COLUMN javac_diagnostic.ordinal IS 'tie-breaker assigned in round ord
 COMMENT ON COLUMN javac_diagnostic.kind IS 'javax.tools.Diagnostic.Kind.name(). An open column: a CHECK enumerating an externally owned taxonomy would be a hand-maintained copy of javac''s enum, the closed-CHECK convention covering only taxonomies the model owns';
 COMMENT ON COLUMN javac_diagnostic.code IS 'Diagnostic.getCode(), the compiler''s stable diagnostic identifier; NULL exactly where javac returns none, and the typed dimension a display list never had';
 COMMENT ON COLUMN javac_diagnostic.message IS 'javac''s own rendered text (root locale); a transcribed fact because the oracle authored it, but display material: never a dimension, never an agreement anchor';
+
+-- ==== Derived stratum: claims =====================================================
+-- The intent_ family. A claim row says something claims a coordinate for a classification
+-- kind: the author's directives (the authored views, one per grain) or the schema's structure
+-- joined with catalog facts (the classifier views, one per structural classifier so each
+-- carries exactly its own witness columns and none goes nullable by kind). The conflict
+-- detection is one grouping query per grain over the authored views (more than one distinct
+-- classifier at a coordinate violates), and the per-arm position masks transcribe the
+-- classification walk's per-position detector gates so the detection reproduces exactly the
+-- sets those detectors saw. intent_resolved_field_claim is the stratum's second layer: the
+-- reduction over the claim views, authored winning coordinate-wise. Views, not tables: the
+-- rows derive on read from the transcription strata above, so capture writes nothing here and
+-- a claim can never drift stale against the applications it is derived from.
+--
+-- Each claiming relation contributes a decoded arm, and each claiming directive additionally
+-- contributes an undecoded presence arm: the site-family application rows anti-joined against
+-- the decoded relation at the coordinate grain, decoded FALSE. The legacy detectors were
+-- AST-presence-based while the semantic relations are decode-based, and a decode that declines
+-- (a @routine missing its name, a @mutation missing typeName) writes no semantic row; the
+-- presence arms keep the claim view presence-faithful exactly there. @lookupKey gets no
+-- presence arm: it is an argument-less marker whose decode is total.
+
+CREATE VIEW intent_authored_field_claim
+  (graph_name, type_name, field_name, classifier, trigger, decoded,
+   source_name, source_line, source_column) AS
+WITH RECURSIVE lookup_bearing(graph_name, type_name, path) AS (
+  SELECT DISTINCT graph_name, type_name, '/' || type_name || '/'
+    FROM graphitron_field_lookup_key
+  UNION ALL
+  SELECT f.graph_name, f.type_name, b.path || f.type_name || '/'
+    FROM graphql_field f
+    JOIN graphql_type pt
+      ON pt.graph_name = f.graph_name AND pt.type_name = f.type_name AND pt.kind = 'INPUT_OBJECT'
+    JOIN lookup_bearing b
+      ON b.graph_name = f.graph_name AND b.type_name = f.named_type
+   WHERE POSITION('/' || f.type_name || '/' IN b.path) = 0
+)
+SELECT s.graph_name, s.type_name, s.field_name, 'SERVICE', 'service', TRUE,
+       s.source_name, s.source_line, s.source_column
+  FROM graphitron_service s
+UNION ALL
+SELECT d.graph_name, d.type_name, d.field_name, 'SERVICE', 'service', FALSE,
+       d.source_name, d.source_line, d.source_column
+  FROM graphql_field_directive d
+ WHERE d.directive_name = 'service'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_service s
+                    WHERE s.graph_name = d.graph_name AND s.type_name = d.type_name
+                      AND s.field_name = d.field_name)
+UNION ALL
+SELECT e.graph_name, e.type_name, e.field_name, 'EXTERNAL_FIELD', 'externalField', TRUE,
+       e.source_name, e.source_line, e.source_column
+  FROM graphitron_external_field e
+ WHERE e.type_name NOT IN ('Query', 'Mutation', 'Subscription')
+UNION ALL
+SELECT d.graph_name, d.type_name, d.field_name, 'EXTERNAL_FIELD', 'externalField', FALSE,
+       d.source_name, d.source_line, d.source_column
+  FROM graphql_field_directive d
+ WHERE d.directive_name = 'externalField'
+   AND d.type_name NOT IN ('Query', 'Mutation', 'Subscription')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_external_field e
+                    WHERE e.graph_name = d.graph_name AND e.type_name = d.type_name
+                      AND e.field_name = d.field_name)
+UNION ALL
+SELECT n.graph_name, n.type_name, n.field_name, 'NODE_ID', 'nodeId', TRUE,
+       n.source_name, n.source_line, n.source_column
+  FROM graphitron_field_node_id n
+ WHERE n.type_name NOT IN ('Query', 'Mutation', 'Subscription')
+UNION ALL
+SELECT d.graph_name, d.type_name, d.field_name, 'NODE_ID', 'nodeId', FALSE,
+       d.source_name, d.source_line, d.source_column
+  FROM graphql_field_directive d
+ WHERE d.directive_name = 'nodeId'
+   AND d.type_name NOT IN ('Query', 'Mutation', 'Subscription')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_field_node_id n
+                    WHERE n.graph_name = d.graph_name AND n.type_name = d.type_name
+                      AND n.field_name = d.field_name)
+UNION ALL
+SELECT f.graph_name, f.type_name, f.field_name, 'LOOKUP_KEY', 'lookupKey', TRUE,
+       direct.source_name, direct.source_line, direct.source_column
+  FROM graphql_field f
+  LEFT JOIN (SELECT k.graph_name, k.type_name, k.field_name,
+                    k.source_name, k.source_line, k.source_column,
+                    ROW_NUMBER() OVER (PARTITION BY k.graph_name, k.type_name, k.field_name
+                                       ORDER BY a.ordinal) AS rn
+               FROM graphitron_argument_lookup_key k
+               JOIN graphql_argument a
+                 ON a.graph_name = k.graph_name AND a.type_name = k.type_name
+                AND a.field_name = k.field_name AND a.argument_name = k.argument_name) direct
+    ON direct.graph_name = f.graph_name AND direct.type_name = f.type_name
+   AND direct.field_name = f.field_name AND direct.rn = 1
+ WHERE f.type_name = 'Query'
+   AND (direct.graph_name IS NOT NULL
+        OR EXISTS (SELECT 1 FROM graphql_argument a
+                    WHERE a.graph_name = f.graph_name AND a.type_name = f.type_name
+                      AND a.field_name = f.field_name
+                      AND EXISTS (SELECT 1 FROM lookup_bearing b
+                                   WHERE b.graph_name = a.graph_name
+                                     AND b.type_name = a.named_type)))
+UNION ALL
+SELECT picked.graph_name, picked.type_name, picked.field_name, 'ROUTINE', 'routine', TRUE,
+       picked.source_name, picked.source_line, picked.source_column
+  FROM (SELECT r.graph_name, r.type_name, r.field_name,
+               r.source_name, r.source_line, r.source_column,
+               ROW_NUMBER() OVER (PARTITION BY r.graph_name, r.type_name, r.field_name
+                                  ORDER BY r.ordinal) AS rn
+          FROM graphitron_routine r) picked
+ WHERE picked.rn = 1 AND picked.type_name NOT IN ('Mutation', 'Subscription')
+UNION ALL
+SELECT picked.graph_name, picked.type_name, picked.field_name, 'ROUTINE', 'routine', FALSE,
+       picked.source_name, picked.source_line, picked.source_column
+  FROM (SELECT d.graph_name, d.type_name, d.field_name,
+               d.source_name, d.source_line, d.source_column,
+               ROW_NUMBER() OVER (PARTITION BY d.graph_name, d.type_name, d.field_name
+                                  ORDER BY d.ordinal) AS rn
+          FROM graphql_field_directive d
+         WHERE d.directive_name = 'routine'
+           AND NOT EXISTS (SELECT 1 FROM graphitron_routine r
+                            WHERE r.graph_name = d.graph_name AND r.type_name = d.type_name
+                              AND r.field_name = d.field_name)) picked
+ WHERE picked.rn = 1 AND picked.type_name NOT IN ('Mutation', 'Subscription')
+UNION ALL
+SELECT m.graph_name, m.type_name, m.field_name, 'MUTATION', 'mutation', TRUE,
+       m.source_name, m.source_line, m.source_column
+  FROM graphitron_mutation m
+ WHERE m.type_name = 'Mutation'
+UNION ALL
+SELECT d.graph_name, d.type_name, d.field_name, 'MUTATION', 'mutation', FALSE,
+       d.source_name, d.source_line, d.source_column
+  FROM graphql_field_directive d
+ WHERE d.directive_name = 'mutation'
+   AND d.type_name = 'Mutation'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_mutation m
+                    WHERE m.graph_name = d.graph_name AND m.type_name = d.type_name
+                      AND m.field_name = d.field_name);
+COMMENT ON VIEW intent_authored_field_claim IS 'The author''s field-grain classification claims. One arm pair per claiming directive (@service, @externalField, @nodeId, @lookupKey, @routine, @mutation): the decoded arm reads the semantic relation, the presence arm falls back to the raw application where the decode declined. The per-arm type_name masks transcribe the walk''s per-position detector gates: @service claims at every position, @externalField and @nodeId nowhere on a root, @routine not on Mutation or Subscription (a Mutation @routine is the walk''s own typed deferral, never a conflict slot), @lookupKey only on Query, @mutation only on Mutation. The @lookupKey arm fires on the whole argument surface, matching LookupFacts.triggersFor: a directly marked argument, or an argument whose named type is in the transitive lookup-bearing input closure (the recursive path-guarded closure above, seeded from the retired input-field site, so on accepted schemas the recursion never expands). The @routine arms collapse the repeatable ordinal grain to the minimum-ordinal application''s row.';
+COMMENT ON COLUMN intent_authored_field_claim.graph_name IS 'the owning graph''s partition, carried through from every arm''s base relation';
+COMMENT ON COLUMN intent_authored_field_claim.type_name IS 'the claimed field''s owning type';
+COMMENT ON COLUMN intent_authored_field_claim.field_name IS 'the claimed field''s name within the owning type';
+COMMENT ON COLUMN intent_authored_field_claim.classifier IS 'the classification kind the claim is for; a closed vocabulary the reading side decodes into a typed value (SERVICE, EXTERNAL_FIELD, NODE_ID, LOOKUP_KEY, ROUTINE, MUTATION), separate from the trigger because a derived claim may have no directive at all';
+COMMENT ON COLUMN intent_authored_field_claim.trigger IS 'the claiming directive''s name, without the leading @; what a conflict message names';
+COMMENT ON COLUMN intent_authored_field_claim.decoded IS 'TRUE from a semantic-relation arm; FALSE from a presence arm, meaning the application exists but its decode declined';
+COMMENT ON COLUMN intent_authored_field_claim.source_name IS 'the claiming application''s own position; NULL on a closure-triggered @lookupKey claim, whose application sits on a remote input field';
+COMMENT ON COLUMN intent_authored_field_claim.source_line IS 'source line of the claiming application, 1-based';
+COMMENT ON COLUMN intent_authored_field_claim.source_column IS 'source column of the claiming application, 1-based';
+
+CREATE VIEW intent_authored_type_claim
+  (graph_name, type_name, classifier, trigger, decoded,
+   source_name, source_line, source_column) AS
+SELECT t.graph_name, t.type_name, 'TABLE', 'table', TRUE,
+       t.source_name, t.source_line, t.source_column
+  FROM graphitron_table t
+ WHERE t.type_name NOT IN ('Query', 'Mutation', 'Subscription')
+UNION ALL
+SELECT picked.graph_name, picked.type_name, 'TABLE', 'table', FALSE,
+       picked.source_name, picked.source_line, picked.source_column
+  FROM (SELECT d.graph_name, d.type_name, d.source_name, d.source_line, d.source_column,
+               ROW_NUMBER() OVER (PARTITION BY d.graph_name, d.type_name
+                                  ORDER BY d.ordinal) AS rn
+          FROM graphql_type_directive d
+         WHERE d.directive_name = 'table'
+           AND NOT EXISTS (SELECT 1 FROM graphitron_table t
+                            WHERE t.graph_name = d.graph_name AND t.type_name = d.type_name)) picked
+ WHERE picked.rn = 1 AND picked.type_name NOT IN ('Query', 'Mutation', 'Subscription')
+UNION ALL
+SELECT e.graph_name, e.type_name, 'ERROR', 'error', TRUE,
+       e.source_name, e.source_line, e.source_column
+  FROM graphitron_error e
+ WHERE e.type_name NOT IN ('Query', 'Mutation', 'Subscription')
+UNION ALL
+SELECT picked.graph_name, picked.type_name, 'ERROR', 'error', FALSE,
+       picked.source_name, picked.source_line, picked.source_column
+  FROM (SELECT d.graph_name, d.type_name, d.source_name, d.source_line, d.source_column,
+               ROW_NUMBER() OVER (PARTITION BY d.graph_name, d.type_name
+                                  ORDER BY d.ordinal) AS rn
+          FROM graphql_type_directive d
+         WHERE d.directive_name = 'error'
+           AND NOT EXISTS (SELECT 1 FROM graphitron_error e
+                            WHERE e.graph_name = d.graph_name AND e.type_name = d.type_name)) picked
+ WHERE picked.rn = 1 AND picked.type_name NOT IN ('Query', 'Mutation', 'Subscription');
+COMMENT ON VIEW intent_authored_type_claim IS 'The author''s type-grain classification claims: @table and @error, decoded arm plus presence fallback each, with the root names masked out (transcribing the walk''s root short-circuit, which classifies a root before any type directive is read). That a conflict here can only occur on an OBJECT is guaranteed upstream by assembly (@error is declared on OBJECT), the same assembly dependency graphitron_undecoded_argument records; a lone @table claim on an INPUT_OBJECT or INTERFACE is an honest single claim that conflicts with nothing. The applications sit at the type grain even when applied on an extension site; the presence arms collapse a base-plus-extension double application to the minimum-ordinal row.';
+COMMENT ON COLUMN intent_authored_type_claim.graph_name IS 'the owning graph''s partition, carried through from every arm''s base relation';
+COMMENT ON COLUMN intent_authored_type_claim.type_name IS 'the claimed type';
+COMMENT ON COLUMN intent_authored_type_claim.classifier IS 'the classification kind the claim is for; a closed vocabulary the reading side decodes into a typed value (TABLE, ERROR), separate from the trigger because a derived claim may have no directive at all';
+COMMENT ON COLUMN intent_authored_type_claim.trigger IS 'the claiming directive''s name, without the leading @; what a conflict message names';
+COMMENT ON COLUMN intent_authored_type_claim.decoded IS 'TRUE from a semantic-relation arm; FALSE from a presence arm, meaning the application exists but its decode declined';
+COMMENT ON COLUMN intent_authored_type_claim.source_name IS 'the claiming application''s own position file';
+COMMENT ON COLUMN intent_authored_type_claim.source_line IS 'source line of the claiming application, 1-based';
+COMMENT ON COLUMN intent_authored_type_claim.source_column IS 'source column of the claiming application, 1-based';
+
+CREATE VIEW intent_column_match_claim
+  (graph_name, type_name, field_name, classifier, matched_name, matched_by,
+   table_source_name, table_schema, table_name, column_name,
+   source_name, source_line, source_column) AS
+WITH bound_table AS (
+  SELECT t.graph_name, t.type_name,
+         st.source_name, st.table_schema, st.table_name,
+         COUNT(*) OVER (PARTITION BY t.graph_name, t.type_name) AS candidates
+    FROM graphitron_table t
+    JOIN store_graph_source m ON m.graph_name = t.graph_name
+    JOIN sql_table st ON st.source_name = m.source_name
+     AND CASE WHEN POSITION('.' IN COALESCE(t.table_ref, t.type_name)) > 0
+          THEN UPPER(st.table_schema) = UPPER(SUBSTRING(COALESCE(t.table_ref, t.type_name)
+                 FROM 1 FOR POSITION('.' IN COALESCE(t.table_ref, t.type_name)) - 1))
+           AND UPPER(st.table_name) = UPPER(SUBSTRING(COALESCE(t.table_ref, t.type_name)
+                 FROM POSITION('.' IN COALESCE(t.table_ref, t.type_name)) + 1))
+          ELSE UPPER(st.table_name) = UPPER(COALESCE(t.table_ref, t.type_name))
+          END
+)
+SELECT graph_name, type_name, field_name, 'TABLE_COLUMN', matched_name, matched_by,
+       table_source_name, table_schema, table_name, column_name,
+       source_name, source_line, source_column
+  FROM (SELECT f.graph_name, f.type_name, f.field_name,
+               COALESCE(fb.name_ref, f.field_name) AS matched_name,
+               CASE WHEN UPPER(c.jooq_name) = UPPER(COALESCE(fb.name_ref, f.field_name))
+                    THEN 'JOOQ_NAME' ELSE 'SQL_NAME' END AS matched_by,
+               bt.source_name AS table_source_name, bt.table_schema, bt.table_name,
+               c.column_name,
+               f.source_name, f.source_line, f.source_column,
+               ROW_NUMBER() OVER (
+                 PARTITION BY f.graph_name, f.type_name, f.field_name
+                 ORDER BY CASE WHEN UPPER(c.jooq_name)
+                                    = UPPER(COALESCE(fb.name_ref, f.field_name))
+                               THEN 0 ELSE 1 END, c.ordinal) AS rn
+          FROM graphql_field f
+          JOIN graphql_type leaf
+            ON leaf.graph_name = f.graph_name AND leaf.type_name = f.named_type
+           AND leaf.kind IN ('SCALAR', 'ENUM')
+          JOIN bound_table bt
+            ON bt.graph_name = f.graph_name AND bt.type_name = f.type_name
+           AND bt.candidates = 1
+          LEFT JOIN graphitron_field_binding fb
+            ON fb.graph_name = f.graph_name AND fb.type_name = f.type_name
+           AND fb.field_name = f.field_name
+          JOIN sql_column c
+            ON c.source_name = bt.source_name AND c.table_schema = bt.table_schema
+           AND c.table_name = bt.table_name
+           AND (UPPER(c.jooq_name) = UPPER(COALESCE(fb.name_ref, f.field_name))
+                OR UPPER(c.column_name) = UPPER(COALESCE(fb.name_ref, f.field_name)))
+         WHERE f.type_name NOT IN ('Query', 'Mutation', 'Subscription')) matched
+ WHERE rn = 1;
+COMMENT ON VIEW intent_column_match_claim IS 'The column-match structural classifier: a field whose name resolves against its parent''s bound table claims TABLE_COLUMN, no directive involved. One view per structural classifier, so the row''s columns are exactly this classifier''s join witnesses. The reading transcribes the classification walk''s fall-through arm: the field''s named type has kind SCALAR or ENUM, the parent''s @table reference (or the type name where the argument was omitted) resolves against the catalog (a qualified reference splits on its first dot, an unqualified one matches its table name case-insensitively across the graph''s member sources, and a non-unique candidate set yields no claim, transcribing the walk''s Ambiguous verdict; distinguishing that decline from a name not in the catalog at all is a future resolution-stratum detection over graphitron_table, not something this view''s absence encodes), and the effective name matches a column, generated-Java-name tier before SQL-name tier, both case-insensitive, collapsed to the first match in tier-then-ordinal order. The effective name is the @field binding where one decoded, else the field name; the arm needs no undecoded presence fallback because a declined @field decode leaves the COALESCE on the field name, which is the walk''s own fallback. The catalog side scopes through store_graph_source, so a sibling graph''s tables never resolve here. Deliberately mask-light: only the three root names are excluded (roots classify before any table binding is read). No parent-kind gate and no directive knowledge: masking against authored claims is the reduction''s job, and the raw structural reading surviving here is what lets a diagnostic say "would classify as a table column; @service overrides it".';
+COMMENT ON COLUMN intent_column_match_claim.graph_name IS 'the owning graph''s partition, carried from graphql_field';
+COMMENT ON COLUMN intent_column_match_claim.type_name IS 'the claimed field''s owning type';
+COMMENT ON COLUMN intent_column_match_claim.field_name IS 'the claimed field''s name within the owning type';
+COMMENT ON COLUMN intent_column_match_claim.classifier IS 'always TABLE_COLUMN; stated as a column so claim views union at the classifier grain';
+COMMENT ON COLUMN intent_column_match_claim.matched_name IS 'the effective name the classifier resolved: the @field binding where one decoded, else the field name. The classifier''s own product rather than a projection of either input, which is what earns it a column here';
+COMMENT ON COLUMN intent_column_match_claim.matched_by IS 'which tier matched: JOOQ_NAME (the generated Java field name) or SQL_NAME. Makes the two-tier precedence visible data instead of a hidden pick';
+COMMENT ON COLUMN intent_column_match_claim.table_source_name IS 'witness: the resolved table''s catalog partition, the first column of the sql_column key this row names';
+COMMENT ON COLUMN intent_column_match_claim.table_schema IS 'witness: the resolved table''s SQL schema';
+COMMENT ON COLUMN intent_column_match_claim.table_name IS 'witness: the resolved table''s SQL name';
+COMMENT ON COLUMN intent_column_match_claim.column_name IS 'witness: the matched column''s SQL name. With the three columns above this is sql_column''s full key; the column''s other facts (its jOOQ name, type, nullability) are one join away, per the referenced-side discipline sql_referential_constraint states';
+COMMENT ON COLUMN intent_column_match_claim.source_name IS 'the claimed field''s own declaration file; the position a diagnostic would carry';
+COMMENT ON COLUMN intent_column_match_claim.source_line IS 'source line of the field declaration, 1-based';
+COMMENT ON COLUMN intent_column_match_claim.source_column IS 'source column of the field declaration, 1-based';
+
+CREATE VIEW intent_resolved_field_claim
+  (graph_name, type_name, field_name, classifier, tier) AS
+SELECT graph_name, type_name, field_name, classifier, 'AUTHORED'
+  FROM intent_authored_field_claim
+UNION ALL
+SELECT i.graph_name, i.type_name, i.field_name, i.classifier, 'INFERRED'
+  FROM intent_column_match_claim i
+ WHERE NOT EXISTS (SELECT 1 FROM intent_authored_field_claim a
+                    WHERE a.graph_name = i.graph_name AND a.type_name = i.type_name
+                      AND a.field_name = i.field_name);
+COMMENT ON VIEW intent_resolved_field_claim IS 'The field-grain claim resolution: the authored relation unioned with the inferred rows at coordinates the authored relation does not cover. Masking is this join''s job, never a classifier''s guard, and the anti-join sits at the coordinate grain: any authored claim at a coordinate masks every structural reading there, presence arms included, because a directive whose decode declined still diverted the walk. The projection is the claim key plus tier, no trigger, decoded or witness component, so nothing goes nullable by kind; a reader wanting provenance joins the tier''s own view, and tier is a column precisely so that home is a read rather than a hand-maintained classifier-to-relation mapping. The stratum''s second layer, and what a planning reader eventually joins.';
+COMMENT ON COLUMN intent_resolved_field_claim.graph_name IS 'the owning graph''s partition, carried from the claim views';
+COMMENT ON COLUMN intent_resolved_field_claim.type_name IS 'the claimed field''s owning type';
+COMMENT ON COLUMN intent_resolved_field_claim.field_name IS 'the claimed field''s name within the owning type';
+COMMENT ON COLUMN intent_resolved_field_claim.classifier IS 'the classification kind the claim is for, the union of the claim views'' closed vocabularies';
+COMMENT ON COLUMN intent_resolved_field_claim.tier IS 'AUTHORED from the authored view, INFERRED from a classifier view surviving the anti-join; names which relation carries this claim''s provenance';

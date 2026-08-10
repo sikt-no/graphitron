@@ -175,6 +175,7 @@ public final class SdlFactCapture {
         addExtensionSources(names, registry.inputObjectTypeExtensions());
 
         for (String name : names) {
+            GraphSourceMembership.note(sink, name);
             if (!sink.claim(STORE_SOURCE, name)) {
                 continue;
             }

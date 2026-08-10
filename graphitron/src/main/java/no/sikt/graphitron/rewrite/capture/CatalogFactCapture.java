@@ -90,6 +90,9 @@ final class CatalogFactCapture {
             String schema = table.getSchema() == null ? "" : table.getSchema().getName();
             sourceByTable.put(schema + "." + table.getName(), packageOf(table));
         }
+        for (String source : new LinkedHashSet<>(sourceByTable.values())) {
+            GraphSourceMembership.note(sink, source);
+        }
         clearSchemaSources(sink, new LinkedHashSet<>(sourceByTable.values()));
         for (JooqCatalog.TableEntry entry : jooq.allTableEntries()) {
             Table<?> table = entry.table();
@@ -342,6 +345,9 @@ final class CatalogFactCapture {
     private static void captureExtensions(FactSink sink, ClasspathSources sources,
                                           List<CompletionData.ExternalReference> extensions) {
         for (CompletionData.ExternalReference reference : extensions) {
+            // Membership is noted ahead of the class claim: a warm run pre-claims a retained
+            // partition's classes, and the retained partition is still this graph's read.
+            GraphSourceMembership.note(sink, reference.sourceName());
             String className = reference.className();
             if (!sink.claim(JVM_CLASS, className)) {
                 continue;

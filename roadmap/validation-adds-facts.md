@@ -893,6 +893,111 @@ now reports the walk's single-node routine deferral and the detection's `@servic
 `@mutation` conflict, where the legacy order reported the deferral alone; both sides reject,
 the second message is additive.
 
+## Slice 3 implementation record (settled at implementation start, 2026-08-10)
+
+Fixed before the first code change, same discipline as slice 2: wiring facts checked against the
+live code, H2 facts probed on 2.4.240, principles-architect consult folded in; deviations get
+recorded here.
+
+**Wiring facts that shaped it.** The legacy column-match arm is the fall-through of
+`FieldBuilder.classifyChildFieldOnTableType`: a scalar-or-enum-returning field on a table-backed
+parent, undiverted by any directive branch, resolves `@field(name:)`-or-the-SDL-name through
+`ServiceCatalog.resolveColumn` into `JooqCatalog.findColumn`, whose match is two-tiered (generated
+Java name first, SQL name second, both case-insensitive) over the parent's resolved table. Table
+resolution (`findTable`) accepts qualified refs split on the first dot and unqualified refs matched
+case-insensitively across every schema of the run's catalog, with a multi-schema collision minting
+`TableResolution.Ambiguous`, which un-backs the type. The arm's product is uniquely identifiable
+from outside: it is the only mint of `ColumnBackedField` carrying `CallSiteCompaction.Direct` (the
+other two mints are node-id carriers with `NodeIdEncodeKeys`), which is what the agreement reads.
+The arm's domain matches the walked registries: interface fields, input fields, and embedded
+nested-type children never register coordinates, so the walked-domain gate (slice 2's
+`ClaimDomain`) is the agreement's comparison population, not a per-case exclusion list.
+
+**The membership relation, a recorded deferral landing.** `store_graph` carries a recorded
+exemption: an SDL-to-catalog join is underdetermined in a shared store "until a membership relation
+says which sources are the joining graph's; such joins are deferred with their consumers, and the
+membership relation lands with them." The inferred claim view is the first such consumer, so
+`store_graph_source (graph_name, source_name)` lands in this slice: total over every source kind
+the run touches (schema files, jOOQ schema packages, classpath entries), because kind is an axis
+on `store_source`, not on membership: a kind-filtered relation's completeness would be a function
+of which consumers had shipped, so a reader could not tell "not this graph's" from "kind not
+captured yet". Written through the sink (graph-stamped, FK-ordered); cleared by the derived
+graph-scoped clear with no `StoreRefresh` edit, since the clear enumerates relations by their
+`graph_name` column. The comment distinguishes it from the recipe rows beside it: the recipe is
+configuration the run held in hand (patterns, including files that do not exist yet), membership
+is what the run actually read. The `store_graph` comment updates from deferral to pointer.
+
+**The views.** `intent_column_match_claim` is the classifier's own derivation view, named for the
+classifier rather than for the inferred tier (the consult's strongest push, adopted: the census
+names some twenty structural arms whose witness sets differ, so a tier-named view is a gravity
+well toward nullable-by-kind witness columns, the `UnboundField` smell itself; each structural
+classifier lands as its own view, mirroring how each claiming relation contributes its own
+authored arm). Classifier literal `TABLE_COLUMN`: a `graphql_field` whose named type has kind
+SCALAR or ENUM, whose parent carries a `graphitron_table` row resolved uniquely against
+`sql_table` through the graph's membership (qualified split, case-insensitive halves, a
+non-unique candidate set yields no claim, transcribing `Ambiguous`; the comment records that
+distinguishing `Ambiguous` from `NotInCatalog` is a future resolution-stratum detection over
+`graphitron_table`, not something this view's absence encodes), and whose effective name
+(`COALESCE` of the `@field` binding and the field name) matches a `sql_column`: jOOQ-name tier
+before SQL-name tier, collapsed to one row per coordinate by `ROW_NUMBER` ordered
+tier-then-ordinal, all probed on H2 inside a view. The `@field` arm needs no presence fallback and
+the comment says so in the `@lookupKey` note's shape: a declined `@field` decode writes no binding
+row and the `COALESCE` lands on the field name, which is the walk's own `.orElse(name)`. The row
+carries its join witnesses (`table_source_name`, `table_schema`, `table_name`, `column_name`, together the
+`sql_column` key with its other columns one join away per the `sql_referential_constraint`
+discipline, plus `matched_name` and `matched_by`, the classifier's own products) and the field's own source
+position. Masks: the three root names only (transcribing that roots classify before any table
+binding is read). No parent-kind gate and no directive knowledge: an INTERFACE or INPUT_OBJECT
+`@table` parent yields honest structural rows the domain gate excludes, exactly as slice 2's type
+view treats a lone INPUT_OBJECT `@table` claim. `intent_resolved_field_claim` is the reduction the
+design body names ("the authored relation unioned with the inferred rows at coordinates the
+authored relation does not cover"): the projection `(graph_name, type_name, field_name,
+classifier, tier)`, the anti-join at the coordinate grain, `tier` a literal per arm (`AUTHORED` |
+`INFERRED`) so which relation carries a claim's provenance is a column read rather than a
+hand-maintained classifier-to-relation mapping in every reader; no trigger/decoded/witness
+component crosses, so nothing goes nullable by kind. No type-grain twin: no inferred type arm
+exists yet, and a pure re-projection would register vacuous. The alternative, baking the authored
+anti-join into the classifier view, was rejected because the masked structural reading must
+survive as data ("would classify as a table column; `@service` overrides it"), and an anti-join
+inside the classifier relation destroys exactly those rows. The DDL header's `intent_` paragraph
+updates to record the stratum's two-layer shape (per-classifier derivations, then the reduction
+over them), so the next resident picks a layer deliberately. Mechanically, the derived-stratum
+section moves to the DDL's tail: the file executes sequentially, and the classifier view is the
+stratum's first reader of the `sql_` family, which the old section position preceded.
+
+**Transitional residue, recorded as two cases.** First, the diverting directives: `@reference`,
+`@pivot` and `@sourceRow` divert the legacy walk ahead of the column arm but are not authored
+claims, so the anti-join does not mask them; a diverted coordinate whose name happens to match a
+parent column carries a column-match claim the walk contradicts until those arms migrate under the
+umbrella, at which point the same anti-join masks them with no view edit. The sweep expresses this
+exception relationally, an anti-join against the diverting applications in
+`graphql_field_directive` rather than a Java skip-list, so a new diverting directive
+announces itself as a sweep failure. Second, and not the same shape: a `Node.id` field on a node
+type whose table also has a literal `id` column carries no directive at all, so nothing authored
+can mask it; the walk rejects it (`rejectShadowedIdColumn`) while the view claims `TABLE_COLUMN`.
+That coordinate is the first live instance of two structural readings on one coordinate (the
+node-id reading is a future inferred arm, and `BuildContext.rejectShadowedNodeId` is the
+structural-ambiguity rule's named migration target), so the pin frames it as one claim showing
+where the target model shows two claims and a violation, not as a masking story.
+
+**Agreement.** A new derive-package test is the shadow reader and the registered anchor: the two
+views register in `FactCaptureAgreementTest`'s `DERIVED` arm, while `store_graph_source` is a
+capture-written base relation and registers `EQUALITY`, with its anchor beside the other store
+anchors (the run's resolved input set reduced two ways, under two graphs so ownership is
+distinguishable). The corpus sweep opens one store and captures every `ClassifiedCorpus` example
+as its own graph (the example id as `graph_name`: one H2 boot, not one per example, declining
+the cost shape slice 2's record already declined once; the partition dimension exists for exactly
+this, and it makes sibling-graph scoping a property of the sweep itself), walks each example
+through the legacy classifier, and asserts two-way agreement over the walked domain: every
+`ColumnBackedField`+`Direct` coordinate has exactly one masked column-match claim whose witnesses
+name the walk's resolved table and column, and every masked claim at a domain coordinate is such
+a classification, less the relationally-expressed residue above. Targeted fixtures pin the
+witness content, the `@field` rename, the jOOQ-name-tier precedence, the ambiguity decline, the
+authored-coverage mask with the raw row surviving, sibling-graph scoping through the membership
+relation, the two residue cases, and the closed value vocabularies (`classifier`, `matched_by`,
+`tier`). No production wiring changes: slice 3 is a shadow slice, and the full-build corpus
+signal stays unchanged by construction.
+
 ## Retired vocabulary (expected; finalise at the Done gate)
 
 - `FieldBuilder.PairVerdict` / `pairVerdict` / `reduceDirectiveConflict`: the pairwise reduction,

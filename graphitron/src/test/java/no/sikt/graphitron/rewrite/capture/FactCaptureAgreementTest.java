@@ -59,6 +59,7 @@ import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static no.sikt.graphitron.model.Tables.STORE_STAMP;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
@@ -84,7 +85,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       instead, which lives with its reader's test
  *       ({@code no.sikt.graphitron.rewrite.derive.AuthoredClaimConflictsTest} binds the lookup arm
  *       to {@code LookupFacts.triggersFor} and the routine arm to its base relation's distinct
- *       coordinates). Later derivation strata land as registrations here, not as exemptions.</li>
+ *       coordinates; {@code no.sikt.graphitron.rewrite.derive.ColumnMatchClaimTest} binds the
+ *       column-match view and the reduction over it to the classification walk's fall-through arm
+ *       over the spec-by-example corpus). Later derivation strata land as registrations here, not
+ *       as exemptions.</li>
  *   <li>{@link Arm#ORACLE} for relations a post-capture oracle writer owns, where no independent
  *       second walk can re-derive the oracle's verdict without re-running the oracle. Two anchors,
  *       both non-vacuous: a two-graph lifecycle anchor (seeded rows, so "cleared" is
@@ -146,12 +150,15 @@ class FactCaptureAgreementTest {
             "sql_index_column", "jvm_class", "jvm_method",
             "jvm_method_parameter", "jvm_record_component",
             "jvm_scalar_type_field", "store_source", "store_stamp",
-            "store_graph", "store_graph_schema_input", "store_graph_schema_extension")) {
+            "store_graph", "store_graph_schema_input", "store_graph_schema_extension",
+            "store_graph_source")) {
             registrations.put(relation, Arm.EQUALITY);
         }
         registrations.put("graphql_directive_site", Arm.DERIVED);
         registrations.put("intent_authored_field_claim", Arm.DERIVED);
         registrations.put("intent_authored_type_claim", Arm.DERIVED);
+        registrations.put("intent_column_match_claim", Arm.DERIVED);
+        registrations.put("intent_resolved_field_claim", Arm.DERIVED);
         registrations.put("javac_diagnostic", Arm.ORACLE);
         return Map.copyOf(registrations);
     }
@@ -969,6 +976,84 @@ class FactCaptureAgreementTest {
                 .where(STORE_SOURCE.SOURCE_KIND.eq("SCHEMA_FILE"))
                 .fetch(STORE_SOURCE.SOURCE_NAME));
             assertThat(sources).containsAll(declared);
+        }
+    }
+
+    /**
+     * The membership relation's equality anchor: the run's read-set reduced two ways, once by
+     * capture's own notes and once by re-enumerating the run's inputs here (the SDL registry's
+     * source census, the catalog's schema packages, the scan's entry names). Two graphs in one
+     * store, one catalog-bearing and one SDL-only, so "this graph's sources" is distinguishable
+     * from "sources anyone read": the SDL-only graph must not inherit the sibling's catalog
+     * membership, and capturing it must leave the sibling's rows standing.
+     */
+    @Test
+    @DisplayName("graph-to-source membership equals the run's own read-set, per graph")
+    void graphSourceMembershipEqualsTheRunsReadSet(@TempDir Path tmp) throws java.io.IOException {
+        var ctx = testContext();
+        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        List<CompletionData.ExternalReference> extensions = CatalogBuilder.buildExternalReferences(ctx);
+        Path aDir = java.nio.file.Files.createDirectories(tmp.resolve("a"));
+        Path bDir = java.nio.file.Files.createDirectories(tmp.resolve("b"));
+        try (var store = GraphitronModelStore.open()) {
+            var aRegistry = CapturedStore.registryOf(aDir, FIXTURE);
+            FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity("a", aDir), aRegistry,
+                jooq, extensions, new NodeDeclaration(null));
+
+            var expectedA = new LinkedHashSet<>(sdlSourceNames(aRegistry));
+            for (var entry : jooq.allTableEntries()) {
+                expectedA.add(entry.table().getSchema().getClass().getPackageName());
+            }
+            for (var reference : extensions) {
+                expectedA.add(reference.sourceName() == null ? "" : reference.sourceName());
+            }
+            assertThat(membership(store, "a")).isEqualTo(expectedA);
+
+            var bRegistry = CapturedStore.registryOf(bDir, "type Query { ping: String }");
+            FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity("b", bDir), bRegistry);
+            assertThat(membership(store, "b"))
+                .as("an SDL-only capture's membership is its own file census, no inherited catalog")
+                .isEqualTo(new LinkedHashSet<>(sdlSourceNames(bRegistry)));
+            assertThat(membership(store, "a"))
+                .as("a sibling's capture leaves this graph's membership standing")
+                .isEqualTo(expectedA);
+        }
+    }
+
+    /** The graph's membership rows, as a set for order-free comparison. */
+    private static Set<String> membership(GraphitronModelStore store, String graphName) {
+        return new LinkedHashSet<>(store.dsl()
+            .select(STORE_GRAPH_SOURCE.SOURCE_NAME)
+            .from(STORE_GRAPH_SOURCE)
+            .where(STORE_GRAPH_SOURCE.GRAPH_NAME.eq(graphName))
+            .fetch(STORE_GRAPH_SOURCE.SOURCE_NAME));
+    }
+
+    /**
+     * The registry's source-name census, mirroring the SDL walk's own enumeration (types, scalars,
+     * directive definitions, the schema definition and its extensions, and every type-extension
+     * map), which is what makes the membership comparison a second reduction of the same input.
+     */
+    private static Set<String> sdlSourceNames(graphql.schema.idl.TypeDefinitionRegistry registry) {
+        var names = new LinkedHashSet<String>();
+        registry.schemaDefinition().ifPresent(node -> addSourceName(names, node));
+        registry.getSchemaExtensionDefinitions().forEach(node -> addSourceName(names, node));
+        registry.getDirectiveDefinitions().values().forEach(node -> addSourceName(names, node));
+        registry.types().values().forEach(node -> addSourceName(names, node));
+        registry.scalars().values().forEach(node -> addSourceName(names, node));
+        registry.objectTypeExtensions().values().forEach(sites -> sites.forEach(node -> addSourceName(names, node)));
+        registry.interfaceTypeExtensions().values().forEach(sites -> sites.forEach(node -> addSourceName(names, node)));
+        registry.unionTypeExtensions().values().forEach(sites -> sites.forEach(node -> addSourceName(names, node)));
+        registry.enumTypeExtensions().values().forEach(sites -> sites.forEach(node -> addSourceName(names, node)));
+        registry.scalarTypeExtensions().values().forEach(sites -> sites.forEach(node -> addSourceName(names, node)));
+        registry.inputObjectTypeExtensions().values().forEach(sites -> sites.forEach(node -> addSourceName(names, node)));
+        return names;
+    }
+
+    private static void addSourceName(Set<String> names, graphql.language.Node<?> node) {
+        if (node != null && node.getSourceLocation() != null
+                && node.getSourceLocation().getSourceName() != null) {
+            names.add(node.getSourceLocation().getSourceName());
         }
     }
 
