@@ -148,19 +148,31 @@ or three accessors. Strip `DmlKind` and `DmlEmitted` and `ServiceEmitted` are th
 consumer-facing shape, differing only in provenance, which `describe()` and the multi-producer
 rejection consume.
 
-The third instance is therefore the point at which the axis wants reifying rather than extending.
-Introduce a capability over the emitted-carrier arms exposing `tableRef()`, `arrival()`, and the
-captured key columns from the convergence section, with one `emittedCarrierBinding(sdlTypeName)`
-accessor and one classify-time block; provenance stays per-arm for diagnostics. The key columns are
-what makes this more than tidying: they are the slot that turns the captured-key agreement into an
-enforced component, and they are also the honest one-line answer to "what does this arm carry that
-its siblings cannot".
+The third instance is therefore the point at which the axis wants reifying rather than extending,
+but only half of that reification belongs here. The two halves separate cleanly:
 
-The cost is that the capability widens the diff into the DML and `@service` paths, which this item
-otherwise does not touch. The fallback, if the reviewer wants the narrower blast radius, is a plain
-`ProducerBinding.RoutineEmitted` sibling arm justified by the key columns rather than by the absent
-`DmlKind`, with the capability filed as a follow-up. Either way the arm carries the same components
-and the same compact-constructor class-identity invariant
+**Taken: the capability and its total accessors.** Introduce `EmittedCarrierBinding` over the three
+emitted-carrier arms, exposing `tableRef()`, `arrival()`, and the captured key columns from the
+convergence section. This is not tidying, it is what makes this item's own invariant enforceable:
+without a *total* `correlationColumns()` accessor, `buildPayloadCarrierBatchedTableField` would have
+to fork on "does this binding carry key columns, else compute `primaryKeyColumns()`", which is a
+fork on absence and reintroduces the two-derivations problem one level up. With it, the DML and
+`@service` arms answer `tableRef.primaryKeyColumns()` (the value they compute today), the routine arm
+answers its captured tuple, and the call site reads one accessor. The key columns are also the honest
+one-line answer to what the new arm carries that its siblings cannot, which is the justification the
+model asks of a new sub-taxonomy; "it has no `DmlKind`" is not one.
+
+**Declined: the consumer-side merge.** Folding the three memo maps on `RecordBindingResolver`, the
+three `xEmittedBinding` accessors, the three near-duplicate blocks in
+`classifyChildFieldOnResultType`, and the three probes in `TypeBuilder.carrierBinding` into one seam
+is a real consolidation, and this item makes it tempting rather than necessary. The blocks differ in
+their table-agreement diagnostics, whose wording existing fixtures pin, so unifying them is the
+actual work and it is diagnostic work, not structural. Taking it here would also put the DML and
+`@service` emit paths, which this item otherwise does not touch at all, inside its acceptance
+surface. Filed as `roadmap/emitted-carrier-binding-consumer-consolidation.md`.
+
+So this item adds a plain `ProducerBinding.RoutineEmitted` arm implementing the new capability,
+carrying the same compact-constructor class-identity invariant its siblings do
 (`reflectedClass.getName().equals(tableRef.recordClass().reflectionName())`), so the per-SDL-type
 binding fold still agrees with `RootTable` for the same table. Grounding needs no chain walk: a
 Mutation field carrying `@routine` whose return is a non-`@table` Object, with the table read
@@ -187,13 +199,29 @@ convenient one: it already separates those two DML leaves on the *target* term o
 leaf's triple is ("routine chain", "root", "payload record"). That is a target-grain distinction,
 which the reconstruction key names as a surviving axis.
 
-This raises `LeafRatchetTest.MUTATION_FIELD_LEAVES` from 8 to 9, and that constant's javadoc says
-the pins move only downward, with a rise being "a new operation-encoding leaf". This one is not:
-the operation is unchanged (the same routine write), and the new leaf encodes target grain. The
-rise is legitimate under the ratchet's own stated rule, and the constant's history line must say so
-in the same commit rather than just bumping the number. Flagged for the reviewer as the single most
-contestable decision in this plan; if the reviewer reads the ratchet as a harder floor, the
-fallback is a sealed return-shape fact on the existing leaf, at the cost of a fork inside it.
+This raises `LeafRatchetTest.MUTATION_FIELD_LEAVES` from 8 to 9, against a constant whose javadoc
+says the pins move only downward. That javadoc is worth reading precisely: what it names as the
+illegitimate rise is "a new *operation-encoding* leaf, which the dissolution programme exists to
+make unnecessary: add a fact or a member row instead", and it names the surviving distinctions as
+"source, delivery and target grain". This rise is the second kind. The operation is unchanged (the
+same routine write, the same `OperationMember`), and what the new leaf encodes is target grain,
+which the same sentence protects.
+
+The alternative was weighed and is worse, for a reason that is structural rather than aesthetic. A
+sealed return-shape fact on the existing leaf keeps the count at 8, but `LeafReconstructionKeyTest`
+declares triples as a `Map<Class<?>, String>`, one per leaf class, and `MutationField.target()` is a
+total switch with one arm per leaf class. Under the fold, `MutationRoutineWriteField` would have two
+targets ("table (post-commit terminus)" and "payload record") and its `target()` arm would have to
+switch on an inner fact to say which. The leaf would stop determining its own target, so
+`leaf = f(source, delivery, target)` would stop holding as a function, which is the single-valued-
+slot-for-a-multi-valued-relation fault that the dissolution programme spent eight slices removing.
+Keeping a count low by making the reconstruction key untrue is the wrong trade against a test whose
+stated purpose is to enforce that key.
+
+So: take the rise, and the constant's history line records it in the same commit as a target-grain
+addition with this reasoning, in the format its existing downward moves use. A ratchet that can
+never rise for any reason is a count, not an invariant; the javadoc does not claim that, and this
+item should not be the one to pretend it does.
 
 ### D5: the error channel, and what the pin's retirement means
 
@@ -239,6 +267,16 @@ this item's to answer: its `RETURNING` always yields a row, so the failure has n
 
 **In scope:** a single-`@reference`-hop routine write chain returning a carrier, with and without
 an errors-shaped field, at both data-field cardinalities.
+
+Both cardinalities, and no constraint tying the data field's wrapper to the routine's own result
+shape, because there is no fact to constrain against. jOOQ generates every table-valued function as
+a `Table<R>`, so "set-returning" is the kind, not a cardinality statement about any particular call;
+a `RETURNS TABLE` function yielding one row is indistinguishable in the catalog from one yielding
+many. The SDL wrapper is therefore the only cardinality claim in the system, exactly as it is on the
+direct-return path, which already admits both. A single-cardinality data field means step 1 emits
+`fetchOne()`, and the no-row case is already handled by the existing null-keys guard. The question
+of whether an author *should* declare a single wrapper over a many-row routine is a schema-review
+question, not one the model can answer.
 
 **Out of scope, landing as a typed `Deferred` pointing at a follow-up item:** the multi-hop carrier.
 The deferral is stated over the *emitter*, not over the leaf's shape, and the leaf carries no hop
@@ -313,13 +351,27 @@ record-element and ID-element data-field shapes (the first rejected at the seat,
   carries an `@error` type and union plus `FilmCreateLocalContextPayload` as the `LocalContext`
   precedent. Add a `RentFilmPayload` carrier over `Rental` and round-trip the happy path (data field
   populated, errors empty) and the error path (data field null, typed error in `errors`).
-* **Execution, outcome (b)**: only assertable against a real policy, so it needs fixture surface
-  that does not exist yet: a table with an RLS policy that hides freshly-written rows from their
-  writer, plus a `VOLATILE` routine writing into it, in `graphitron-sakila-db`'s `init.sql`. Named
-  here rather than discovered during implementation, because it is the one piece of this item with
-  genuinely new infrastructure cost. If the reviewer judges it disproportionate, the honest
-  fallback is a routine that commits a row the follow-up SELECT filters out by an ordinary
-  predicate, which exercises the same code path with a weaker story about why the row is invisible.
+* **Execution, outcome (b)**: a real RLS policy, not a predicate-filter stand-in. The infrastructure
+  this looked like it needed mostly exists: `SessionHookExecutionTest` already stands up a
+  non-superuser role, a table with `enable`/`force row level security`, and a fail-closed policy
+  keyed on `current_setting('app.user_id', true)`, and it already asserts the neighbouring claim
+  that a mutation's post-commit read-back sees only permitted rows. Its comment header also records
+  the trap worth inheriting: the pooled test DataSource connects as `postgres`, and superusers
+  bypass RLS outright, so the probe connection must be opened as the dedicated role.
+
+  Two things are genuinely new. The probe table there is created in `@BeforeAll`, which is after
+  jOOQ codegen, so it is invisible to the catalog; this item's table and its `VOLATILE` routine must
+  live in `graphitron-sakila-db`'s `init.sql` instead, so `@routine` and `@table` can resolve them.
+  And that test drives the emitted hook over raw JDBC, whereas this one must run the *generated
+  fetcher* over a probe-role connection (`TenantDivinedRoutingExecutionTest` is the precedent for
+  per-test connection config).
+
+  The fixture that reproduces the motivating schema rather than approximating it: a `SECURITY
+  DEFINER` routine, so the write runs as owner and succeeds, inserting a row whose owner column does
+  not match the caller's mounted identity, under a policy that hides it. The caller then commits a
+  real row it cannot read, which is the consumer's situation exactly (read access requires a role
+  assignment the fresh row has not got yet). A predicate-filter substitute would exercise the same
+  code path while pinning a different claim, and outcome (b) is the claim this item exists to make.
 * The `@classified` corpus entry for the new coordinate, per the classified-corpus loop.
 
 ## User documentation (first-client check)
@@ -341,22 +393,29 @@ third counterexample. Reword to name the three producer families.
 If the reference page cannot state the carrier rule in a sentence without reaching for the word
 "terminus", the design is wrong and the shape should change before implementation.
 
-## Open questions for the reviewer
+## Where this plan is most likely to be wrong
 
-* D4's ratchet rise is the one to push on. Is a target-grain leaf a legitimate rise under a
-  constant whose javadoc says the pins move only downward, or does the fallback (a sealed
-  return-shape fact on the existing leaf) better serve the dissolution programme? The
-  reconstruction key and `target()` both say leaf; the ratchet's prose says think twice.
-* D3's blast radius: reify the emitted-carrier capability now, touching the DML and `@service`
-  paths this item otherwise leaves alone, or land the narrower `RoutineEmitted` arm and file the
-  capability as a follow-up? The third instance is the natural moment, but "natural moment" is not
-  the same as "this item's job".
-* The outcome-(b) execution fixture's infrastructure cost (new RLS surface in `init.sql`) against
-  the weaker predicate-filter substitute.
-* Should the data field's cardinality be constrained against the routine's own result shape? A
-  set-returning function backing a single-cardinality data field is representable (step 1 would
-  `fetchOne`), and the direct-return path already admits both, so the plan admits both here too.
-  If that is wrong, it is wrong on both paths and the constraint belongs upstream of this item.
+Not questions to answer before implementation; the decisions above are taken. These are the load
+points a fresh reader should test the reasoning at, because if the plan fails it fails here.
+
+* **D4's ratchet rise (8 to 9).** The argument is that the rise is target grain, which the
+  constant's own javadoc protects, rather than operation encoding, which it forbids, and that the
+  count-preserving alternative would make `leaf = f(source, delivery, target)` untrue as a function.
+  If that reading of the javadoc is wrong, the rest of D4 falls with it and the fold becomes the
+  answer despite its cost.
+* **The captured-key component.** The whole design rests on the claim that hop 0's target side is
+  the terminus PK for every single-hop shape that reaches this leaf, which rests in turn on
+  `synthesizeNameMatchedJoin` being the only keying available out of an FK-less routine result. If
+  some hop-0 shape reaches the leaf without going through it, the carried key is silently wrong
+  rather than loudly absent, and the classifier needs the `On.Keying.NameMatchedKey` pin the current
+  leaf does not carry.
+* **D6's nullability rule.** It is a new authoring restriction justified by a runtime consequence
+  (non-null propagation destroying the errors list). If a reviewer can show a shape where a non-null
+  data field is both safe and useful, the rule is over-broad and should become a warning.
+* **The multi-hop deferral's framing.** Stated over the emitter on the argument that the model then
+  acquires no hop-count axis. If the terminus-key-capture emit turns out to be infeasible in-
+  transaction for a reason not visible from here, the deferral is really about shape after all and
+  the wording will have misled whoever picks the follow-up up.
 
 Adjacent, deliberately not folded in: the routine-kind axis (procedures, scalar and void
 routines, and the single-node Mutation `@routine` with no `@reference` hop) is
