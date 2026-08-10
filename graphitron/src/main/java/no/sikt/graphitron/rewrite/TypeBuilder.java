@@ -654,7 +654,8 @@ class TypeBuilder {
             container.getAppliedDirective(DIR_RECORD), "Remove the redundant @record");
 
         // Shadowed by @table. A @table + @record combination is not a hard conflict
-        // (detectTypeDirectiveConflict ignores @record), so OBJECT carriers reach this site;
+        // (@record never claims a classification, so the authored-claim conflict detection
+        // ignores it), so OBJECT carriers reach this site;
         // @table wins and @record is ignored. The arm is OBJECT-only because @table on an input
         // contributes nothing to binding: it shadows nothing there, so an input carrying both
         // falls through to the Matches / Disagrees arms on the reflected class alone.
@@ -1059,10 +1060,10 @@ class TypeBuilder {
             if (ROOT_TYPE_NAMES.contains(name)) {
                 return new RootType(name, location);
             }
-            var typeConflict = detectTypeDirectiveConflict(objType);
-            if (typeConflict != null) {
-                return new UnclassifiedType(name, location, typeConflict);
-            }
+            // A @table + @error combination is no longer intercepted here: both claims are rows
+            // in the store's authored claim views, and the conflict is that relation's grouping
+            // rule, reported as a located ValidationError while the type classifies by arm order
+            // (@table first) instead of tombstoning.
             if (objType.hasAppliedDirective(DIR_TABLE)) {
                 return buildTableType(objType);
             }
@@ -1954,36 +1955,6 @@ class TypeBuilder {
             return "@error handler {handler: " + handlerKind + ", className: \"" + className
                 + "\"} could not be loaded on the classifier classpath";
         }
-    }
-
-    // ===== Conflict detection =====
-
-    /**
-     * Returns a conflict rejection when mutually exclusive type-classification directives appear
-     * together on one OBJECT, or {@code null} when the combination is allowed.
-     *
-     * <p>{@code @table} and {@code @error} are mutually exclusive: {@code @table} resolves columns
-     * from jOOQ metadata; {@code @error} declares an SDL-side error shape whose runtime source is
-     * the matched throwable itself.
-     *
-     * <p>{@code @record} is deprecated and ignored, so its mere presence is not a conflict: a
-     * {@code @table} + {@code @record} or {@code @error} + {@code @record} combination classifies
-     * ({@code @table}/{@code @error} wins) and surfaces the directive-ignored warning in
-     * {@link #emitDirectiveIgnoredWarning} rather than a hard rejection.
-     */
-    private static Rejection.InvalidSchema.DirectiveConflict detectTypeDirectiveConflict(GraphQLObjectType objType) {
-        boolean hasTable = objType.hasAppliedDirective(DIR_TABLE);
-        boolean hasError = objType.hasAppliedDirective(DIR_ERROR);
-        int present = (hasTable ? 1 : 0) + (hasError ? 1 : 0);
-        if (present > 1) {
-            var bareNames = new java.util.ArrayList<String>();
-            var atNames = new java.util.ArrayList<String>();
-            if (hasTable)  { bareNames.add(DIR_TABLE);  atNames.add("@" + DIR_TABLE); }
-            if (hasError)  { bareNames.add(DIR_ERROR);  atNames.add("@" + DIR_ERROR); }
-            return new Rejection.InvalidSchema.DirectiveConflict(
-                bareNames, String.join(", ", atNames) + " are mutually exclusive");
-        }
-        return null;
     }
 
     // ===== Structural helpers =====

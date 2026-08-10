@@ -151,10 +151,21 @@ public record OperationMemberRelation(Map<FieldCoordinates, List<OperationMember
         boolean onMutationRoot = isRoot && preRewriteSchema.getMutationType() != null
             && leaf.parentTypeName().equals(preRewriteSchema.getMutationType().getName());
 
-        boolean serviceTrigger = fieldDef != null && facts.service().rowFor(fieldDef).isPresent();
-        var writeRow = fieldDef == null ? java.util.Optional.<no.sikt.graphitron.facts.WriteFacts.Row>empty()
+        // The service and write triggers additionally read the leaf's carrier capability: on a
+        // claim-conflicted coordinate (reported by the store-backed authored-claim detection)
+        // the leaf classifies by arm order, so the losing directive's trigger fact still exists
+        // while the leaf carries no payload for it, and its kind must not fire. On every
+        // conflict-free schema the capability read is a tautology: the walk either followed the
+        // trigger or tombstoned the coordinate out of this mint's domain.
+        boolean serviceCapable = leaf instanceof ServiceField || leaf instanceof MethodBackedField;
+        boolean serviceTrigger = fieldDef != null && facts.service().rowFor(fieldDef).isPresent()
+            && serviceCapable;
+        boolean writeCapable = leaf instanceof DmlWriteField
+            || leaf instanceof MutationField.MutationRoutineWriteField;
+        var writeRow = fieldDef == null || !writeCapable
+            ? java.util.Optional.<no.sikt.graphitron.facts.WriteFacts.Row>empty()
             : facts.write().rowFor(fieldDef);
-        boolean routineWrite = onMutationRoot && fieldDef != null
+        boolean routineWrite = onMutationRoot && fieldDef != null && writeCapable
             && fieldDef.hasAppliedDirective(BuildContext.DIR_ROUTINE);
         boolean writeTrigger = writeRow.isPresent() || routineWrite;
         boolean nodeTrigger = isRoot && !onMutationRoot && fieldDef != null

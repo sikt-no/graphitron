@@ -78,9 +78,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       reachability-pruned, so the honest relation is that the store contains the model.</li>
  *   <li>{@link Arm#EQUALITY} for the catalog and scanner censuses, which are the same walk reduced
  *       two ways.</li>
- *   <li>{@link Arm#DERIVED} for shipped views, which register the base relations they project so
- *       their agreement is vacuous by construction. Later derivation strata land as registrations
- *       here, not as exemptions.</li>
+ *   <li>{@link Arm#DERIVED} for shipped views. A pure re-projection ({@code graphql_directive_site})
+ *       registers the base relations it projects and its agreement is vacuous by construction; a
+ *       semantic derivation (the {@code intent_} claim views) registers with its own anchor
+ *       instead, which lives with its reader's test
+ *       ({@code no.sikt.graphitron.rewrite.derive.AuthoredClaimConflictsTest} binds the lookup arm
+ *       to {@code LookupFacts.triggersFor} and the routine arm to its base relation's distinct
+ *       coordinates). Later derivation strata land as registrations here, not as exemptions.</li>
  *   <li>{@link Arm#ORACLE} for relations a post-capture oracle writer owns, where no independent
  *       second walk can re-derive the oracle's verdict without re-running the oracle. Two anchors,
  *       both non-vacuous: a two-graph lifecycle anchor (seeded rows, so "cleared" is
@@ -146,6 +150,8 @@ class FactCaptureAgreementTest {
             registrations.put(relation, Arm.EQUALITY);
         }
         registrations.put("graphql_directive_site", Arm.DERIVED);
+        registrations.put("intent_authored_field_claim", Arm.DERIVED);
+        registrations.put("intent_authored_type_claim", Arm.DERIVED);
         registrations.put("javac_diagnostic", Arm.ORACLE);
         return Map.copyOf(registrations);
     }

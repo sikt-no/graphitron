@@ -14,6 +14,7 @@ import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
+import no.sikt.graphitron.rewrite.derive.ClaimDomain;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.lint.LintConfig;
 import no.sikt.graphitron.rewrite.lint.LintEngine;
@@ -62,6 +63,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -214,9 +216,9 @@ public class GraphQLRewriteGenerator {
         var catalog = CatalogBuilder.build(jooq, bundle.assembled(), ctx);
         var snapshot = CatalogBuilder.buildSnapshot(attributed.registry(), bundle.model(), catalog);
         var catalogFacts = CatalogBuilder.buildCatalogFacts(jooq);
-        FactCapture.run(ctx.storeDirectory(), graphIdentity(), attributed.preSynthesisRegistry(),
-            jooq, catalog.externalReferences(), new NodeDeclaration(jooq));
-        var errors = new GraphitronSchemaValidator().validate(bundle.model());
+        var detections = captureFactsAndDetect(attributed, bundle.model(), jooq, catalog.externalReferences());
+        var errors = new ArrayList<>(new GraphitronSchemaValidator().validate(bundle.model()));
+        errors.addAll(detections);
         var warnings = withLintFindings(bundle.model(), attributed);
         var report = ValidationReport.from(errors, warnings);
         return new BuildOutput(new BuildArtifacts(catalog, snapshot, catalogFacts), report);
@@ -259,7 +261,7 @@ public class GraphQLRewriteGenerator {
         var bundle = GraphitronSchemaBuilder.buildBundle(attributed, ctx);
         var schema = bundle.model();
         logWarnings(withLintFindings(schema, attributed));
-        var errors = validateAndLogErrors(schema);
+        var errors = validateAndLogErrors(schema, captureFactsAndDetect(attributed, schema));
         if (!errors.isEmpty()) {
             throw new ValidationFailedException(errors);
         }
@@ -299,23 +301,37 @@ public class GraphQLRewriteGenerator {
     }
 
     /**
-     * Runs the capture loads into a fact store for this pass and discards it. The store shadows
-     * the live pipeline: nothing reads it, so a capture that recorded the wrong thing cannot
-     * change what the build accepts, rejects, emits, or reports. Consumers migrate onto it one at
-     * a time, and until the first one does, the agreement tests are what keep the shadow honest.
+     * Runs the capture loads into a fact store for this pass, runs the store-backed detections
+     * over it, and returns their violations for the caller's error stream. The detections are
+     * the store's first read: the authored-claim conflict rule reports from the claim views,
+     * gated on the walked model's {@link no.sikt.graphitron.rewrite.derive.ClaimDomain}. Every
+     * other relation still shadows the live pipeline unread, kept honest by the agreement tests
+     * until its own consumer migrates.
      *
      * <p>Both loads read exactly what the pipeline beside them reads: the parsed registry (before
      * the synthesis rewrites, which is what {@link AttributedRegistry#preSynthesisRegistry()}
      * hands back), the jOOQ catalog projection, and the classpath scan.
      */
-    private void captureFacts(AttributedRegistry attributed) {
+    private List<ValidationError> captureFactsAndDetect(AttributedRegistry attributed, GraphitronSchema schema) {
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
-        FactCapture.run(ctx.storeDirectory(),
+        return captureFactsAndDetect(attributed, schema, jooq, CatalogBuilder.buildExternalReferences(ctx));
+    }
+
+    /**
+     * The shared capture-and-detect step behind all three generator paths; the LSP path passes
+     * its already-built catalog and external references so the classpath is scanned once per
+     * pass, the build paths use the convenience overload above.
+     */
+    private List<ValidationError> captureFactsAndDetect(AttributedRegistry attributed, GraphitronSchema schema,
+                                                        JooqCatalog jooq,
+                                                        List<CompletionData.ExternalReference> extensions) {
+        return FactCapture.runWithDetections(ctx.storeDirectory(),
             graphIdentity(),
             attributed.preSynthesisRegistry(),
             jooq,
-            CatalogBuilder.buildExternalReferences(ctx),
-            new NodeDeclaration(jooq));
+            extensions,
+            new NodeDeclaration(jooq),
+            ClaimDomain.of(schema));
     }
 
     /** The graph this run writes under, assembled from the context's identity fields. */
@@ -331,12 +347,12 @@ public class GraphQLRewriteGenerator {
 
         logWarnings(withLintFindings(schema, attributed));
 
-        var errors = validateAndLogErrors(schema);
+        // Capture runs ahead of validation: the store-backed detections feed the error stream,
+        // so the store has to be filled before the verdict is pronounced.
+        var errors = validateAndLogErrors(schema, captureFactsAndDetect(attributed, schema));
         if (!errors.isEmpty()) {
             throw new ValidationFailedException(errors);
         }
-
-        captureFacts(attributed);
 
         String outputPackage = ctx.outputPackage();
 
@@ -591,8 +607,10 @@ public class GraphQLRewriteGenerator {
         });
     }
 
-    private static List<ValidationError> validateAndLogErrors(GraphitronSchema schema) {
-        var errors = new GraphitronSchemaValidator().validate(schema);
+    private static List<ValidationError> validateAndLogErrors(GraphitronSchema schema,
+                                                              List<ValidationError> detections) {
+        var errors = new ArrayList<>(new GraphitronSchemaValidator().validate(schema));
+        errors.addAll(detections);
         errors.forEach(e -> {
             var loc = e.location();
             String label = e.kind().messageLabel();

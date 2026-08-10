@@ -4,7 +4,10 @@ import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.NodeDeclaration;
+import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.derive.AuthoredClaimConflicts;
+import no.sikt.graphitron.rewrite.derive.ClaimDomain;
 import no.sikt.graphitron.rewrite.schema.input.SchemaRecipe;
 import org.jooq.DSLContext;
 import org.jooq.exception.DataAccessException;
@@ -30,9 +33,11 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SCHEMA_INPUT;
  * reachability pruning; a primary-key violation on any base relation is therefore a capture bug,
  * never something an author's schema can provoke.
  *
- * <p>Nothing reads the store yet. It is populated beside the live pipeline, so a capture that
- * produced nothing useful cannot change what the build accepts, rejects, emits, or reports.
- * Consumers migrate onto it one at a time.
+ * <p>The store has its first reader: {@link #runWithDetections} runs the authored-claim
+ * conflict rule ({@link AuthoredClaimConflicts}) over the freshly captured rows and returns its
+ * violations for the caller's error stream, so what that detection reports is decided by the
+ * store's content. Every other relation is still populated beside the live pipeline and read by
+ * nothing; consumers migrate onto it one at a time.
  *
  * <p>A run captures exactly one graph; the store may hold many. The persisted store is shared by
  * every module of a workspace, so a warm open reconciles only what this run owns, and any cache
@@ -94,23 +99,55 @@ public final class FactCapture {
     public static void run(Path storeDirectory, GraphIdentity graph, TypeDefinitionRegistry registry,
                            JooqCatalog jooq, List<CompletionData.ExternalReference> extensions,
                            NodeDeclaration nodes) {
+        runInternal(storeDirectory, graph, registry, jooq, extensions, nodes, null);
+    }
+
+    /**
+     * {@link #run}, then the store-backed detections over the store the capture just filled,
+     * before it closes. Returns the detections' violations (today the authored-claim conflict
+     * rule, {@link AuthoredClaimConflicts}, gated on {@code domain}) for the caller's error
+     * stream; the store handle never escapes. The detection runs against whichever store the
+     * capture landed in, shared file and in-memory fallback alike, so a cache demotion changes
+     * cost and never verdicts.
+     */
+    public static List<ValidationError> runWithDetections(Path storeDirectory, GraphIdentity graph,
+                                                          TypeDefinitionRegistry registry, JooqCatalog jooq,
+                                                          List<CompletionData.ExternalReference> extensions,
+                                                          NodeDeclaration nodes, ClaimDomain domain) {
+        Objects.requireNonNull(domain, "domain");
+        return runInternal(storeDirectory, graph, registry, jooq, extensions, nodes, domain);
+    }
+
+    private static List<ValidationError> runInternal(Path storeDirectory, GraphIdentity graph,
+                                                     TypeDefinitionRegistry registry, JooqCatalog jooq,
+                                                     List<CompletionData.ExternalReference> extensions,
+                                                     NodeDeclaration nodes, ClaimDomain domain) {
         if (storeDirectory != null) {
             try (GraphitronModelStore store = GraphitronModelStore.openAt(storeDirectory)) {
                 if (store.location().isEmpty()) {
                     // openAt already fell back to an in-memory store; use it as-is.
                     capture(store.dsl(), false, graph, registry, jooq, extensions, nodes);
-                    return;
+                    return detect(store.dsl(), graph, domain);
                 }
                 if (!store.warm() || ownsGraph(store.dsl(), graph)) {
                     if (captureWithRetry(store, graph, registry, jooq, extensions, nodes)) {
-                        return;
+                        return detect(store.dsl(), graph, domain);
                     }
                 }
             }
         }
         try (GraphitronModelStore store = GraphitronModelStore.open()) {
             capture(store.dsl(), false, graph, registry, jooq, extensions, nodes);
+            return detect(store.dsl(), graph, domain);
         }
+    }
+
+    /** The detection pass over a freshly captured store; a {@code null} domain is {@link #run}'s no-detection arm. */
+    private static List<ValidationError> detect(DSLContext dsl, GraphIdentity graph, ClaimDomain domain) {
+        if (domain == null) {
+            return List.of();
+        }
+        return AuthoredClaimConflicts.detect(dsl, graph.name(), domain);
     }
 
     /**

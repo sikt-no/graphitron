@@ -2440,9 +2440,8 @@ class FieldBuilder {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
 
-        // The root position is read once here and feeds both the hoisted query
-        // conflict detector below and the chain interception's Query-only root arm, so no
-        // second string-comparison site appears.
+        // The root position is read once here and feeds the chain interception's root arms
+        // below, so no second string-comparison site appears.
         boolean isRoot = parentType instanceof RootType;
         boolean isQueryRoot = isRoot && parentTypeName.equals("Query");
         boolean isMutationRoot = isRoot && parentTypeName.equals("Mutation");
@@ -2465,24 +2464,10 @@ class FieldBuilder {
                 "@multitableReference is no longer supported. Remove the directive; the rewrite generates multi-table interface dispatch from @discriminate / @discriminator without an explicit multitable-reference path. For a per-participant join path that auto-discovery cannot derive, use @referenceFor(type:, path:) instead (one application per participant)."));
         }
 
-        if (!(parentType instanceof RootType)) {
-            var conflict = detectChildFieldConflict(fieldDef);
-            if (conflict != null) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, conflict);
-            }
-        }
-
-        // The query conflict detector runs before the chain interception below (one detector
-        // site per position: child above, Query here), so @service @routine on a Query field
-        // rejects as a DirectiveConflict at every shape, single-node and multi-node chain alike,
-        // instead of the interception silently routing the multi-node chain to the routine
-        // classifier.
-        if (isQueryRoot) {
-            var conflict = detectQueryFieldConflict(fieldDef);
-            if (conflict != null) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, conflict);
-            }
-        }
+        // Mutually exclusive claiming directives are no longer intercepted here: every claim is
+        // a row in the store's authored claim views, and the conflict is that relation's
+        // grouping rule, reported as a located ValidationError while the coordinate classifies
+        // by arm order instead of tombstoning.
 
         // Order-significant @routine / @reference composition. The ordered field-level
         // applications compose the field's table chain, and this is the only pass that reads
@@ -4716,12 +4701,9 @@ class FieldBuilder {
                 Rejection.deferred(MUTATION_SINGLE_NODE_ROUTINE_DEFERRAL));
         }
 
-        if (fieldDef.hasAppliedDirective(DIR_SERVICE) && fieldDef.hasAppliedDirective(DIR_MUTATION)) {
-            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.directiveConflict(
-                List.of(DIR_SERVICE, DIR_MUTATION),
-                "@" + DIR_SERVICE + ", @" + DIR_MUTATION + " are mutually exclusive"));
-        }
-
+        // A @service + @mutation combination is not intercepted here: both claims are rows in
+        // the store's authored claim views, whose grouping rule reports the conflict while this
+        // method classifies the field by arm order (@service first).
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
             return switch (serviceResolver.resolve(parentTypeName, fieldDef, List.of())) {
                 case ServiceDirectiveResolver.Resolved.Rejected r ->
@@ -5785,124 +5767,6 @@ class FieldBuilder {
      */
     private boolean hasLookupKeyAnywhere(GraphQLFieldDefinition fieldDef) {
         return ctx.facts.lookup().triggersFor(fieldDef);
-    }
-
-    // ===== Conflict detection helpers =====
-    // Each method returns a human-readable reason string when mutually exclusive directives are
-    // found together, or {@code null} when no conflict exists. Callers produce an
-    // {@link UnclassifiedField} or {@link GraphitronType.UnclassifiedType} carrying the reason,
-    // which the validator then reports as a standard error.
-
-
-    /**
-     * The verdict for an unordered pair of classification-claiming directives. Two
-     * source-claiming directives conflict by default; the table below ({@link #pairVerdict})
-     * records the two exceptions {@code @routine} draws. The sealed shape lets
-     * {@link #reduceDirectiveConflict} switch exhaustively.
-     */
-    private sealed interface PairVerdict permits PairVerdict.Conflict, PairVerdict.Deferred, PairVerdict.Composes {
-        /** Two source-claiming directives that cannot co-occur. The default for any pair. */
-        record Conflict() implements PairVerdict {}
-        /** A recognised-but-unsupported combination. */
-        record Deferred() implements PairVerdict {}
-        /** A combination that legitimately composes (no rejection). */
-        record Composes() implements PairVerdict {}
-    }
-
-    /**
-     * The pairwise conflict verdict for an unordered pair of classification-claiming
-     * directives. Two source-claiming directives conflict by default; this records the exceptions
-     * {@code @routine} draws: {@code @routine} × {@code @lookupKey} is a capability gap (typed
-     * {@code Deferred}), and {@code @routine} × {@code @splitQuery} composes.
-     * {@link #reduceDirectiveConflict} projects this over the directives present at a
-     * position; making it a table rather than a slot count with a carve-out is what lets the
-     * reducer evaluate every pair (so {@code @routine @lookupKey @service} rejects the
-     * {@code @service} conflicts rather than short-circuiting on the {@code @routine} × {@code
-     * @lookupKey} defer).
-     */
-    private static PairVerdict pairVerdict(String a, String b) {
-        var pair = Set.of(a, b);
-        if (pair.equals(Set.of(DIR_ROUTINE, DIR_LOOKUP_KEY))) {
-            return new PairVerdict.Deferred();
-        }
-        if (pair.equals(Set.of(DIR_ROUTINE, DIR_SPLIT_QUERY))) {
-            return new PairVerdict.Composes();
-        }
-        return new PairVerdict.Conflict();
-    }
-
-    /**
-     * Reduces the classification-claiming directives present at a position to a single
-     * verdict via the pairwise {@link #pairVerdict} table. Enumerates every unordered pair, looks
-     * up its verdict, and reduces with Conflict-dominates-Deferred precedence: any {@code Conflict}
-     * pair yields a {@link Rejection.InvalidSchema.DirectiveConflict} naming the participating
-     * directives; absent a conflict, the first {@code Deferred} pair yields its typed
-     * {@link Rejection.Deferred}; all-{@code Composes} (or fewer than two present) yields
-     * {@code null}. The precedence (rather than short-circuiting on the first non-{@code Composes}
-     * pair) is what closes the three-directive hole a pre-count carve-out would reintroduce.
-     */
-    private Rejection reduceDirectiveConflict(List<String> present) {
-        var conflicting = new LinkedHashSet<String>();
-        boolean sawDeferred = false;
-        for (int i = 0; i < present.size(); i++) {
-            for (int j = i + 1; j < present.size(); j++) {
-                switch (pairVerdict(present.get(i), present.get(j))) {
-                    case PairVerdict.Conflict ignored -> {
-                        conflicting.add(present.get(i));
-                        conflicting.add(present.get(j));
-                    }
-                    case PairVerdict.Deferred ignored -> sawDeferred = true;
-                    case PairVerdict.Composes ignored -> { }
-                }
-            }
-        }
-        if (!conflicting.isEmpty()) {
-            var names = List.copyOf(conflicting);
-            String at = names.stream().map(n -> "@" + n).collect(Collectors.joining(", "));
-            return Rejection.directiveConflict(names, at + " are mutually exclusive");
-        }
-        if (sawDeferred) {
-            // The only Deferred pair the table mints is @routine × @lookupKey.
-            return Rejection.deferred(
-                "@" + DIR_ROUTINE + " with @" + DIR_LOOKUP_KEY
-                + " on a root field classifies but does not emit yet");
-        }
-        return null;
-    }
-
-    /**
-     * Returns a {@link Rejection} when the child-field classification-claiming directives present
-     * conflict (via {@link #reduceDirectiveConflict}), or {@code null} when at most one is present
-     * or the combination composes.
-     *
-     * <p>Note: {@code @reference} is a path-annotation directive, not a classification directive,
-     * so it composes with any of these and is not listed. {@code @routine} <em>is</em> a
-     * classification directive: a valid child {@code @routine} chain carries only
-     * {@code @routine} (+ {@code @reference}), so it stays a single slot here; {@code @routine}
-     * combined with any other source-claiming directive conflicts.
-     */
-    private Rejection detectChildFieldConflict(GraphQLFieldDefinition fieldDef) {
-        var present = new ArrayList<String>();
-        if (fieldDef.hasAppliedDirective(DIR_SERVICE))        present.add(DIR_SERVICE);
-        if (fieldDef.hasAppliedDirective(DIR_EXTERNAL_FIELD)) present.add(DIR_EXTERNAL_FIELD);
-        if (fieldDef.hasAppliedDirective(DIR_NODE_ID))        present.add(DIR_NODE_ID);
-        if (fieldDef.hasAppliedDirective(DIR_ROUTINE))        present.add(DIR_ROUTINE);
-        return reduceDirectiveConflict(present);
-    }
-
-    /**
-     * Returns a {@link Rejection} when the query-field classification-claiming directives present
-     * conflict or compose to a capability gap (via {@link #reduceDirectiveConflict}), or
-     * {@code null}. The set is {@code @service}, {@code @lookupKey} (detected anywhere on the
-     * argument surface), and {@code @routine}; {@code @routine} ×
-     * {@code @lookupKey} lands the typed {@code Deferred} that extends the child verdict to root.
-     */
-    private Rejection detectQueryFieldConflict(GraphQLFieldDefinition fieldDef) {
-        var present = new ArrayList<String>();
-        if (fieldDef.hasAppliedDirective(DIR_SERVICE))      present.add(DIR_SERVICE);
-        if (hasLookupKeyAnywhere(fieldDef))                 present.add(DIR_LOOKUP_KEY);
-        if (fieldDef.hasAppliedDirective(DIR_ROUTINE))      present.add(DIR_ROUTINE);
-        return reduceDirectiveConflict(present);
     }
 
     /**

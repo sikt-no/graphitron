@@ -871,6 +871,28 @@ LSP surfaces with the violation on the diagnostics channel only; slice 6 restore
 conflict signal to those surfaces, and this intermediate is deliberate rather than
 discovered.
 
+**Deviations discovered at implementation (recorded per the rule above).**
+`OperationMemberRelation`'s mint carried an invariant the design had not surfaced: its
+membership half fires member kinds from the raw trigger facts and its payload half throws when
+the classified leaf carries no matching payload capability, a pairing that was consistent only
+because conflicted coordinates tombstoned out of the mint's domain (`UnclassifiedField` is not
+an `OutputField`). With conflicts de-tombstoned the losing directive's trigger fact survives
+beside an arm-order winner that cannot carry its payload, and the mint crashed the build
+(`buildBundle`, so the LSP path too) instead of letting the detection report. The fix gates the
+service and write triggers on the leaf's carrier capability, reading the capability the same
+way the membership half already reads `SqlGeneratingField` and `LookupResolution`; on every
+conflict-free schema the gate is a tautology (the walk either followed the trigger or
+tombstoned the coordinate), so only formerly-crashing shapes change behaviour. Second, the test
+migration was larger than the five enum rows the record counted: five named
+`GraphitronSchemaBuilderTest` methods (the `@service` with `@routine` conflicts at child, root
+single-node and root chain positions, the root `@routine` with `@lookupKey` deferral, and the
+three-directive dominance rule) and the typed directives-list assertion in
+`R58TypedRejectionPipelineTest` asserted the same tombstones and migrated to the detection test
+alongside them. Third, a Mutation field carrying `@routine` beside `@service` and `@mutation`
+now reports the walk's single-node routine deferral and the detection's `@service`,
+`@mutation` conflict, where the legacy order reported the deferral alone; both sides reject,
+the second message is additive.
+
 ## Retired vocabulary (expected; finalise at the Done gate)
 
 - `FieldBuilder.PairVerdict` / `pairVerdict` / `reduceDirectiveConflict`: the pairwise reduction,

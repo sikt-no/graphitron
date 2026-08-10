@@ -98,26 +98,10 @@ class R58TypedRejectionPipelineTest {
         assertThat(unknown.message()).startsWith("service method could not be resolved — ");
     }
 
-    @Test
-    void directiveConflict_serviceMutationCarriesTypedDirectivesList() {
-        var schema = TestSchemaHelper.buildSchema("""
-            type Query { x: String }
-            type Mutation {
-                bothDirectives(in: String): String
-                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
-                    @mutation(typeName: INSERT)
-            }
-            """);
-
-        var field = schema.field("Mutation", "bothDirectives");
-        assertThat(field).isInstanceOf(UnclassifiedField.class);
-
-        var rejection = ((UnclassifiedField) field).rejection();
-        assertThat(rejection).isInstanceOf(Rejection.InvalidSchema.DirectiveConflict.class);
-
-        var conflict = (Rejection.InvalidSchema.DirectiveConflict) rejection;
-        assertThat(conflict.directives()).containsExactly("service", "mutation");
-    }
+    // directiveConflict_serviceMutationCarriesTypedDirectivesList migrated to the store-backed
+    // detection's test (AuthoredClaimConflictsTest.serviceAndMutationMintOneFieldViolation): the
+    // conflict is no longer a builder tombstone, and the typed directives-list assertion now
+    // reads the minted ValidationError's rejection.
 
     // TableRecordCombination_recordIgnored_noLongerRejects moved to
     // RecordDirectiveIgnoredWarningTest (the one place applied @record remains), which pins that
