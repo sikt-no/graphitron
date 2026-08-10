@@ -18,8 +18,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R617` | Lookup misses drop rows instead of holding their position | In Review | 2026-08-10 <sub>created 2026-08-09</sub> | [plan](lookup-positional-contract-unimplemented.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R618` | Routine mutation: admit a payload carrier return with a typed errors channel | Spec | 2026-08-10 | [plan](routine-mutation-payload-carrier-return.md) |
-| `R612` | The schema scan and its freshness replay share one typed recipe | Spec | 2026-08-10 <sub>created 2026-08-08</sub> | [plan](maven-config-fact-family.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-09 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
+| `R612` | The schema scan and its freshness replay share one typed recipe | Ready | 2026-08-10 <sub>created 2026-08-08</sub> | [plan](maven-config-fact-family.md) |
 | `R589` | Classification is a relation; validation adds facts | Ready | 2026-08-10 <sub>created 2026-08-04</sub> | [plan](validation-adds-facts.md) |
 | `R569` | Aggregated diagnostics commands for the MCP server | Spec | 2026-08-10 <sub>created 2026-08-03</sub> | [plan](mcp-aggregated-diagnostics.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
@@ -229,7 +229,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R234` [**Support jOOQ embedded and UDT records as non-table input backings**](jooq-embedded-and-udt-input-backings.md) — Backlog, architecture
 - `R523` [**Carry field SourceLocations through the tenant-binding fold rejections**](tenant-fold-rejection-source-locations.md) — Backlog, tech-debt
 - `R333` [**The Graphitron data model**](coordinate-lowers-to-datafetcher-queryparts.md) — Ready, structural
-- `R612` [**The schema scan and its freshness replay share one typed recipe**](maven-config-fact-family.md) — Spec, architecture
+- `R612` [**The schema scan and its freshness replay share one typed recipe**](maven-config-fact-family.md) — Ready, architecture
 - `R609` [**Capture-load residuals from the fact-store delivery**](capture-load-residuals.md) — Backlog, architecture
 - `R589` [**Classification is a relation; validation adds facts**](validation-adds-facts.md) — Ready, architecture
 - `R574` [**Clear the residual inaccuracies the @table-on-input deprecation reopen left behind**](table-on-input-deprecation-sweep-residuals.md) — Backlog, architecture

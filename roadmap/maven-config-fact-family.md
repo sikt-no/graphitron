@@ -1,7 +1,7 @@
 ---
 id: R612
 title: "The schema scan and its freshness replay share one typed recipe"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 3
 theme: classification-model
