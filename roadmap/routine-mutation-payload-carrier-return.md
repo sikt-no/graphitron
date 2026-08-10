@@ -130,6 +130,14 @@ argument. The resolver then knows nothing about position *or* return shape, whic
 contract, and the read seats (query root, child) call the same function and get the identity
 result, behaviour-identical.
 
+The function inherits the Connection peel the resolver does today (`isConnectionType` then
+`connectionElementTypeName`, ahead of `resolveReturnType`), so "identity" means identity over the
+*carrier* axis, not a shorter computation. Dropping the peel would not fail loudly in the obvious
+place: a Connection-returning routine field would stop resolving table-bound and take the
+not-table-bound rejection instead of reaching `routineChainVerdict`'s Connection fork, silently
+replacing a pinned diagnostic (`a routine-terminus chain does not support Connection return types`)
+with a misleading one. That the pin exists is why this is a note rather than a risk.
+
 ### D3: the producer observation carries the key, and the third arm is where the axis wants reifying
 
 The carrier's data field classifies through `FieldBuilder.classifyChildFieldOnResultType`, which
@@ -140,36 +148,57 @@ except `DmlKind`, and a routine write has no DML verb. Widening `DmlKind` with a
 would put a non-verb in the enum that `OperationMember.Write.Dml` and the per-verb emit switches
 read.
 
-But "it has no `DmlKind`" is a weak reason to mint an arm, and taken alone it multiplies four
+But "it has no `DmlKind`" is a weak reason to mint an arm, and taken alone it multiplies five
 parallel structures: a third memo map on `RecordBindingResolver`, a third `xEmittedBinding`
-accessor, a third near-duplicate block in `classifyChildFieldOnResultType`, and a third probe in
-`TypeBuilder.carrierBinding`. No consumer forks on the arm's identity; every one reads the same two
+accessor, a third near-duplicate block in `classifyChildFieldOnResultType`, a third probe in
+`TypeBuilder.carrierBinding`, and a third disjunct in `FieldBuilder.transportForParent`'s
+`activeChannel` gate. No consumer forks on the arm's identity; every one reads the same two
 or three accessors. Strip `DmlKind` and `DmlEmitted` and `ServiceEmitted` are the same
 consumer-facing shape, differing only in provenance, which `describe()` and the multi-producer
 rejection consume.
 
-The third instance is therefore the point at which the axis wants reifying rather than extending,
+The fifth is not more of the same, and it is the reason the capability below is load-bearing rather
+than tidy. The other four duplicate a shape; `activeChannel` is
+`dmlEmittedBinding(...).isPresent() || serviceEmittedBinding(...).isPresent()`, and an unrecognized
+parent does not fail there, it falls through to `ChildField.Transport.PayloadAccessor`. A
+directiveless structural carrier has no developer payload class to read an accessor off, so the
+routine carrier's `errors` field would bind the one transport that cannot work, quietly, while
+`selectErrorsTransport` (which would have answered `Transport.LocalContext`) never runs. That is
+D5's outcome (a) failing at the transport seat rather than at the channel, and it is not
+compiler-checked: a boolean is silently false where a sealed switch would have demanded an arm.
+Whatever shape the capability takes, it must expose "is an emitted-carrier binding bound to this
+SDL type" as one question, so this gate stops being a hand-maintained disjunction over the arms.
+
+The third arm is therefore the point at which the axis wants reifying rather than extending,
 but only half of that reification belongs here. The two halves separate cleanly:
 
 **Taken: the capability and its total accessors.** Introduce `EmittedCarrierBinding` over the three
-emitted-carrier arms, exposing `tableRef()`, `arrival()`, and the captured key columns from the
-convergence section. This is not tidying, it is what makes this item's own invariant enforceable:
-without a *total* `correlationColumns()` accessor, `buildPayloadCarrierBatchedTableField` would have
-to fork on "does this binding carry key columns, else compute `primaryKeyColumns()`", which is a
-fork on absence and reintroduces the two-derivations problem one level up. With it, the DML and
+emitted-carrier arms, exposing `tableRef()`, `arrival()`, the captured key columns from the
+convergence section, and the one presence probe the `activeChannel` gate needs. This is not tidying,
+it is what makes this item's own invariant enforceable: without a *total* `correlationColumns()`
+accessor, `buildPayloadCarrierBatchedTableField` would have to fork on "does this binding carry key
+columns, else compute `primaryKeyColumns()`", which is a fork on absence and reintroduces the
+two-derivations problem one level up. With it, the DML and
 `@service` arms answer `tableRef.primaryKeyColumns()` (the value they compute today), the routine arm
 answers its captured tuple, and the call site reads one accessor. The key columns are also the honest
 one-line answer to what the new arm carries that its siblings cannot, which is the justification the
 model asks of a new sub-taxonomy; "it has no `DmlKind`" is not one.
 
 **Declined: the consumer-side merge.** Folding the three memo maps on `RecordBindingResolver`, the
-three `xEmittedBinding` accessors, the three near-duplicate blocks in
-`classifyChildFieldOnResultType`, and the three probes in `TypeBuilder.carrierBinding` into one seam
-is a real consolidation, and this item makes it tempting rather than necessary. The blocks differ in
-their table-agreement diagnostics, whose wording existing fixtures pin, so unifying them is the
-actual work and it is diagnostic work, not structural. Taking it here would also put the DML and
-`@service` emit paths, which this item otherwise does not touch at all, inside its acceptance
-surface. Filed as `roadmap/emitted-carrier-binding-consumer-consolidation.md`.
+three `xEmittedBinding` accessors, and the three near-duplicate blocks in
+`classifyChildFieldOnResultType` into one seam is a real consolidation, and this item makes it
+tempting rather than necessary. The blocks differ in their table-agreement diagnostics, whose
+wording existing fixtures pin, so unifying them is the actual work and it is diagnostic work, not
+structural. Taking it here would also put the DML and `@service` emit paths, which this item
+otherwise does not touch at all, inside its acceptance surface. Filed as
+`roadmap/emitted-carrier-binding-consumer-consolidation.md`.
+
+Two of the five sites are not on that declined list, because this item cannot work without them:
+`TypeBuilder.carrierBinding`'s probe (without it the payload never registers as a carrier) and the
+`activeChannel` gate (without it the errors field binds the wrong transport). Both arrive
+three-armed here; what defers is the diagnostic unification of the three classify blocks. The
+follow-up item's inventory is worded to match, so it does not inherit a site this one already had to
+touch.
 
 So this item adds a plain `ProducerBinding.RoutineEmitted` arm implementing the new capability,
 carrying the same compact-constructor class-identity invariant its siblings do
@@ -177,6 +206,16 @@ carrying the same compact-constructor class-identity invariant its siblings do
 binding fold still agrees with `RootTable` for the same table. Grounding needs no chain walk: a
 Mutation field carrying `@routine` whose return is a non-`@table` Object, with the table read
 straight off the carrier scan's `DmlElementKind.Table`.
+
+Reading the table off the scan means the grounding walk calls into `TypeBuilder` while the binding
+fixed point is still forming, which looks like a layering violation and is not one. `TypeBuilder`'s
+own `lookAheadVerdict` javadoc records the rule: during `prepareForWalk` the inputs are still
+forming (it names the DML grounding probing the payload scan mid-fold as the existing instance), so
+`prepareForWalk` clears the memo at its end and only post-fixed-point verdicts stick. The routine
+arm is the second instance of a pattern already reasoned about, not a new hazard. Noted here so the
+implementer does not spend the cycle re-deriving it, or "fix" it by threading the table in from the
+field instead, which is possible but buys nothing: the data field's element type is where the table
+actually lives.
 
 ### D4: a sibling leaf, and the ratchet
 
@@ -207,6 +246,15 @@ make unnecessary: add a fact or a member row instead", and it names the survivin
 same routine write, the same `OperationMember`), and what the new leaf encodes is target grain,
 which the same sentence protects.
 
+The sibling test settles the reading better than parsing the ratchet's own wording does.
+`LeafReconstructionKeyTest`'s class javadoc contemplates exactly this move: a new leaf "fails here
+until it declares its triple, which is the moment to ask whether the distinction it encodes is
+source, delivery or target grain, or an operation term that belongs on a member row." That is the
+programme describing a legitimate new leaf and naming the question to answer before adding one, in a
+test whose stated purpose is enforcing the reconstruction key. The two tests are one programme, so a
+rise that answers that question with "target grain" is the case the pair was written to admit, not a
+loophole in one of them.
+
 The alternative was weighed and is worse, for a reason that is structural rather than aesthetic. A
 sealed return-shape fact on the existing leaf keeps the count at 8, but `LeafReconstructionKeyTest`
 declares triples as a `Map<Class<?>, String>`, one per leaf class, and `MutationField.target()` is a
@@ -220,8 +268,15 @@ stated purpose is to enforce that key.
 
 So: take the rise, and the constant's history line records it in the same commit as a target-grain
 addition with this reasoning, in the format its existing downward moves use. A ratchet that can
-never rise for any reason is a count, not an invariant; the javadoc does not claim that, and this
-item should not be the one to pretend it does.
+never rise for any reason is a count, not an invariant.
+
+The class javadoc has to move with the constant, not just gain a history line. Its standing sentence
+is the flat "**These pins move only downward**", and after this item that sentence is false as
+written, whatever the qualifying sentences after it say. Reword it to the rule the rest of the
+paragraph already implies: the pins move downward as dissolution slices land, and rise only for a
+distinction the reconstruction key names as surviving grain, never for an operation-encoding leaf.
+Leaving a false flat claim above a constant that just contradicted it is the version of this change
+that rots, and it teaches the next reader that the ratchet is decorative.
 
 ### D5: the error channel, and what the pin's retirement means
 
@@ -305,7 +360,7 @@ record-element and ID-element data-field shapes (the first rejected at the seat,
   `scanStructuralRoutineCarrierPayload` entry point beside its two siblings.
 * The carrier-unwrap-or-identity function (D2): takes the mutation field, returns either a
   `ReturnTypeRef.TableBoundReturnType` or the not-table-bound rejection. Sole home of that
-  diagnostic afterwards.
+  diagnostic afterwards, and it keeps the Connection element peel the resolver does today.
 * `RoutineDirectiveResolver.resolve` and `FieldBuilder.walkRoutineChain`: take the resolved
   terminus shape as a parameter instead of deriving it from the field. Read seats pass the identity
   result; behaviour-identical.
@@ -323,15 +378,33 @@ record-element and ID-element data-field shapes (the first rejected at the seat,
   `RecordBindingResolver` grounding, its `TypeBuilder.carrierBinding` recognition, and the
   `classifyChildFieldOnResultType` branch. `buildPayloadCarrierBatchedTableField` gains the carried
   key tuple as its correlation source instead of recomputing `primaryKeyColumns()`.
+* `FieldBuilder.transportForParent`: the `activeChannel` gate admits the routine carrier, so its
+  `errors` field reaches `selectErrorsTransport` and binds `Transport.LocalContext` instead of
+  falling through to `PayloadAccessor` (D3). Silent if missed, and it is what makes outcome (a)
+  reach the client at all, so it carries its own classification test rather than riding the
+  data field's.
 * `TypeFetcherGenerator`: a step-1-only fetcher for the new leaf. It is
   `buildMutationRoutineWriteFetcher` truncated at the transaction boundary, returning the captured
   keys, with `catchArm` given the `singleRecordSentinelFor` sentinel the DML carrier passes. The
-  existing two-step fetcher stays for the direct-return leaf.
+  existing two-step fetcher stays for the direct-return leaf. Step 1 projects the captured tuple
+  under the *terminus table's* key fields, not the routine result's same-named columns: the data
+  field reads its correlation off that record by column, and the DML path it mirrors projects
+  `Tables.<TARGET>.<PK>` directly, so matching that keeps the carried-key component and its reader
+  agreeing by field identity rather than by jOOQ's name-lookup fallback.
 * `GraphitronSchemaValidator`: an arm for the new leaf mirroring the classifier's pins, including
   D6.
+* The operation-member declarations, all landing `Write.RoutineWrite()` exactly as the sibling leaf
+  does (D4's "the same `OperationMember`"): an `OperationMembers.DECLARED_SHAPES` entry, a
+  `membersOf` arm, and an `OperationMemberRelation.writePayloadOf` arm. The first two are
+  compiler- or test-enforced; `writePayloadOf` ends in `default -> throw`, so a missing arm is a
+  generation-time throw rather than a build failure at the edit site.
+* `CatalogBuilder`'s `FieldClassification` arm for the new leaf. The sibling projects
+  `RoutineBacked` (hover and jump-to-source route to the routine's call surface); the carrier leaf
+  wants the same, since the routine is still what backs it.
 * `FetcherEdgeCommands`, `LeafReconstructionKeyTest`'s triple map, `LeafRatchetTest`'s constant plus
-  its history line, and the generated `docs/manual/_generated/supported-schema-shapes.adoc`
-  (regenerated by the roadmap tool, not hand-edited).
+  its history line *and* the rewording of its class javadoc's downward-only sentence (D4), and the
+  generated `docs/manual/_generated/supported-schema-shapes.adoc` (regenerated by the roadmap tool,
+  not hand-edited).
 
 ## Tests
 
@@ -340,7 +413,10 @@ record-element and ID-element data-field shapes (the first rejected at the seat,
   a non-null data field rejected per D6; multi-hop carrier lands the typed `Deferred`; a carrier
   whose data-field element table disagrees with the chain terminus rejects on the terminus rule; a
   `[Film!]` data field drives list cardinality (the D2 hazard, which would pass silently as
-  `Single` under a type-name-only unwrap); direct-return shapes unchanged.
+  `Single` under a type-name-only unwrap); direct-return shapes unchanged. Plus the transport pin:
+  the carrier's `errors` field classifies as `ChildField.ErrorsField` with
+  `Transport.LocalContext`, which is the assertion that fails if the `activeChannel` gate was not
+  widened, and fails at classify time rather than three tiers later in execution.
 * **Pipeline** (`RoutineMutationWritePipelineTest`): the carrier fetcher emits exactly one
   `transactionResult(...)` and *no* follow-up `.select(` after it, the mirror of the existing
   two-step pin. Same fingerprint style, no source-text matching. Plus the outcome-(a) shape claim:

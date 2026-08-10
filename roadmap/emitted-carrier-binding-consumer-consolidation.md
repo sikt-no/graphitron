@@ -21,12 +21,20 @@ multi-producer rejection.
 
 The carrier-return item lands the `EmittedCarrierBinding` capability over the three arms, so the
 shared accessors are read once and totally. What it deliberately leaves alone is the consumer side,
-which by then carries the same structure four times over: three memo maps on
-`RecordBindingResolver`, three `xEmittedBinding` accessors, three near-duplicate blocks in
+which by then carries the same structure three times over: three memo maps on
+`RecordBindingResolver`, three `xEmittedBinding` accessors, and three near-duplicate blocks in
 `FieldBuilder.classifyChildFieldOnResultType` (resolve binding, resolve return type, lift a
 polymorphic errors field, check the table agreement, call
-`buildPayloadCarrierBatchedTableField`), and three probes in `TypeBuilder.carrierBinding`. No
-consumer forks on the arm's identity; every one reads the same two or three accessors.
+`buildPayloadCarrierBatchedTableField`). No consumer forks on the arm's identity; every one reads
+the same two or three accessors.
+
+Two sibling sites are *not* in this item's scope, because the carrier-return item has to touch them
+to work at all: `TypeBuilder.carrierBinding`'s per-family probe (without a routine probe the payload
+never registers as a carrier) and `FieldBuilder.transportForParent`'s `activeChannel` disjunction
+(without a routine disjunct the carrier's errors field binds `Transport.PayloadAccessor`, which a
+directiveless structural carrier cannot satisfy). They arrive already three-armed; if the capability
+gained the presence probe that gate needs, the disjunction is already gone by the time this item
+starts.
 
 Scope: fold the memo maps and accessors onto the capability, collapse the classify-time blocks to
 one, and unify the three table-agreement diagnostics without losing the per-family wording that
