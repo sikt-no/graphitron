@@ -77,3 +77,25 @@ since the positional contract it appeals to exists.
 Implementation ran straight from Backlog on the user's explicit direction, so this item never took a
 Spec to Ready sign-off; the design question the gate exists to settle is the one the user answered.
 The independent review happens once, at the Done gate.
+
+## The framing the manual was missing
+
+Reviewing the restored pages surfaced a second defect, conceptual rather than factual. The manual
+described `@lookupKey` as a "batch lookup" and never named what it actually is: a Relay
+https://graphql.org/learn/global-object-identification/[plural identifying root field]. That framing
+is what makes the positional contract follow rather than seem like an implementation detail, and its
+absence let two claims drift.
+
+The first is the "batch" word itself, which invites the reading that the generator resolves a *key
+set*. It does not, and never did: the `VALUES` table carries one row per input position, so repeated
+keys are answered as many times as they were asked and caller order is never normalised. Measured,
+not assumed: `filmById(film_id: ["1", "1", "1", "1", "1"])` returns five copies, and
+`languageByKey(language_id: [2, 1, 2, 99, 1])` answers `2, 1, 2, null, 1`. Both are now pinned at the
+execution tier, since a per-key contract that only prose asserts is one an optimisation can quietly
+take away.
+
+The second is the uniqueness bullet, which read "keys should uniquely identify a row; if multiple
+rows match the same key, only one is returned" and conflated two unrelated things under one word.
+Uniqueness is a property of the *columns* a key binds to, not of the values a caller sends: binding
+a key to a non-unique column is a schema mistake, while repeating a value is ordinary and supported.
+The bullet now separates them on both pages.

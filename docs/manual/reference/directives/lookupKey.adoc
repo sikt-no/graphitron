@@ -1,8 +1,10 @@
 = @lookupKey
-:description: Mark arguments or input fields as batch-lookup keys so a single query returns one result per input position.
+:description: Mark arguments or input fields as batch-lookup keys, making the field a plural identifying root field that answers one result per input position.
 :!toc:
 
-Promotes a query into a batch-lookup: the client sends a list of key values and the resolver returns a list of results in the same order, with `null` for unmatched positions. The generator emits a `VALUES`-derived table joined against the target table so all keys resolve in a single round trip.
+Promotes a query into a Relay https://graphql.org/learn/global-object-identification/[plural identifying root field]: the client sends a list of key values and the field answers each one at its own output position. The result list is the same length as the key list, in the same order, holding `null` where a key identified nothing. The generator emits a `VALUES`-derived table joined against the target table so all keys resolve in a single round trip.
+
+The contract is per key, not per row. Each key is answered independently of the others, so keys are never deduplicated, reordered, or collapsed: asking for the same id five times returns five results, one at each of the five positions. A caller can therefore read the answer for key `i` at index `i` without matching anything up.
 
 == SDL signature
 
@@ -53,7 +55,8 @@ returns three positions in input order: `{ title: "ACADEMY DINOSAUR" }`, `null`,
 * Keys must be one-dimensional lists. Two layers of lists (e.g. `[InList] @lookupKey` where `InList { field: [String] }`) is rejected: the lookup operates over a flat keyset.
 * Multiple `@lookupKey` arguments at the same call site must have the same length, and values at the same index are correlated. Wrap them in an input type when the framework should enforce that pairing.
 * `@lookupKey` on an input type (the argument itself) applies to every leaf scalar field of that input. `@lookupKey` on an individual input field applies only to that field; the rest of the input behaves normally.
-* Keys should uniquely identify a row. If multiple rows match the same key, only one is returned.
+* A key must identify at most one row, because it is answered in one output slot. This is a property of the *columns* the key binds to, not of the values a caller sends: repeating a value is always fine, while binding a key to a non-unique column is not. If several rows do match one key, one of them is returned and the rest are dropped, which is a schema mistake rather than a filter. Use xref:condition.adoc[`@condition`] for narrowing on a non-identifying column.
+* Repeated keys are not deduplicated. Five occurrences of the same id produce five results, one per position, and each is resolved on its own. Key order is likewise never normalised.
 * The list elements must be nullable, because an unmatched key holds `null` at its position. `[Film]!` and `[Film]` are accepted; `[Film!]!` and `[Film!]` are rejected with a build error, since GraphQL would propagate that `null` out of the list and one unmatched key would discard every matched one.
 * Non-key filterable arguments compose beside the lookup. An argument that is not a key becomes an ordinary predicate in the `WHERE`, alongside the lookup join, whether it comes from the implicit xref:field.adoc[`@field(name:)`] path or from an authored xref:condition.adoc[`@condition`] method. The key argument itself never appears there: it rides the `VALUES` join and is not restated as a column predicate.
 * A key whose row fails a non-key predicate is indistinguishable from an unmatched key. Both hold `null` at their position, so a filter narrows which positions are populated rather than which positions exist.

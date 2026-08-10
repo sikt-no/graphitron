@@ -1351,6 +1351,32 @@ class GraphQLQueryTest {
             .first(as(MAP)).containsEntry("languageId", 3);
     }
 
+    @Test
+    void languageByKey_repeatedAndUnorderedKeys_areNeverDeduplicatedOrReordered() {
+        // A lookup field is a plural identifying root field: each key is answered on its own, at
+        // its own position. So a repeated key is answered as many times as it was asked, the
+        // caller's order survives untouched, and a miss holds its slot among them. This is what
+        // lets a client read the answer for key i at index i without matching anything up, and
+        // it is a property of the VALUES table carrying one row per input position rather than a
+        // set of distinct keys.
+        Map<String, Object> data = execute("{ languageByKey(language_id: [2, 1, 2, 99, 1]) { languageId } }");
+        assertThat(data).extractingByKey("languageByKey", as(list(Map.class)))
+            .extracting(l -> l == null ? null : l.get("languageId"))
+            .containsExactly(2, 1, 2, null, 1);
+    }
+
+    @Test
+    void filmById_sameIdFiveTimes_returnsFiveInstances() {
+        // The degenerate case of the same rule, spelled out because "batch lookup" invites the
+        // assumption that the generator resolves a key set. It does not: five occurrences of one
+        // id are five questions with five answers.
+        Map<String, Object> data = execute("{ filmById(film_id: [\"1\", \"1\", \"1\", \"1\", \"1\"]) { title } }");
+        assertThat(data).extractingByKey("filmById", as(list(Map.class)))
+            .hasSize(5)
+            .extracting(f -> f.get("title"))
+            .containsOnly("ACADEMY DINOSAUR");
+    }
+
     // ===== customerById lookup query =====
 
     @Test
