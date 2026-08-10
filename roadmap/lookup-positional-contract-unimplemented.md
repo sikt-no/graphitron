@@ -53,10 +53,12 @@ it gets a build error naming the field and the remedy.
 `RootLauncherRenderer.lookupBody`'s list arm carries the derived table's `idx` out as `__idx__` and
 scatters through a new `scatterLookupByIdx` helper, one slot per input key. The scatter is also what
 carries input order, so the arm no longer emits `ORDER BY`, and the launcher's value type becomes
-`List<Record>` because a jOOQ `Result` cannot hold a null element. Duplicate keys keep the
-documented answer, first row wins, rather than the `scatterSingleByIdx` throw: that helper serves a
-primary-key join where a second row per key is a misconfiguration, while a lookup joins on author-
-declared columns the schema never required to be unique.
+`List<Record>` because a jOOQ `Result` cannot hold a null element. Repeated *keys* need no handling
+at all and get none: they arrive as separate `VALUES` rows with separate `idx` values and scatter to
+separate slots. What the scatter does decide is the case of two *rows* landing on one key, where it
+keeps the first rather than throwing as `scatterSingleByIdx` does: that helper serves a primary-key
+join where a second row per key is a misconfiguration, while a lookup joins on author-declared
+columns the schema never required to be unique.
 
 `GraphitronSchemaValidator.validateRootLookup` gains the nullable-element rejection. The single-key
 arm needs none of this and now says so: one key has one slot, and `fetchOne` already returns null.
