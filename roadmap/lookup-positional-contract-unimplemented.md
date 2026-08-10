@@ -1,7 +1,7 @@
 ---
 id: R617
 title: "Lookup misses drop rows instead of holding their position"
-status: In Review
+status: Ready
 bucket: bug
 priority: 1
 theme: codegen-correctness
@@ -101,126 +101,91 @@ rows match the same key, only one is returned" and conflated two unrelated thing
 Uniqueness is a property of the *columns* a key binds to, not of the values a caller sends: binding
 a key to a non-unique column is a schema mistake, while repeating a value is ordinary and supported.
 The bullet now separates them on both pages.
+## What has shipped
 
-## Rework from the In Review gate
+Two passes, each green on `mvn install -Plocal-db`:
 
-Build green (`mvn install -Plocal-db`, 511 test classes). The emit change itself reviews clean: the
-scatter, the `List<Record>` value type, the dropped `ORDER BY`, the `fetchOne` single arm (which also
-quietly repairs a value-type/body mismatch that arm carried before), and the execution-tier coverage
-of repeated, unordered and missed keys are all right. Two things block the gate.
+- The scatter, the `List<Record>` value type, the dropped `ORDER BY`, the `fetchOne` single arm and
+  the nullable-element rejection shipped at `1f249c0`; the plural-identifying-root-field framing and
+  the repeated/unordered-key execution pins at `bce87ad`.
+- The first Done gate's two blocking findings and its three non-blocking notes shipped at `ed79266`,
+  with the fixture-warnings line re-pin at `fc93d75`.
 
-### The manual gained a false positional claim on a coordinate that has no positions
+## Rework from the second In Review gate
 
-`batch-lookups.adoc:82` now reads: "`filmsByNodeIdArg(ids: [<film_2>, "garbage", <film_4>])` returns
-two films at positions 0 and 2 and skips position 1 entirely". `filmsByNodeIdArg` is not a lookup.
-`FieldBuilder.java:1983` states it outright, "isLookupKey == false when @nodeId targets the field's
-own table", and the arg projects to `BodyParam.In` / `RowIn`: a `WHERE film_id IN (...)` filter with
-no `VALUES` table, no `idx`, and no scatter. There is nothing positional to describe.
+Full reactor build green (`mvn install -Plocal-db`, all 14 modules, exit 0). Everything the first
+gate held is closed and verified. `RootLookupValidationTest`'s six new nullability cells make the
+rejection load-bearing (delete it and the cube goes red); `ScatterLookupByIdxTest` pins the
+first-wins tie-break that PostgreSQL cannot observe on uniquely-keyed fixtures; the scatter alias
+runs through `ReservedAliases.IDX` at writer and reader alike; and the NodeId section now splits on
+whether an arm is a lookup at all, with `filmsByNodeIdArgWithLookupKey` a real fixture pinned at the
+execution tier. The emit itself reviews clean. One finding blocks.
 
-The claimed behaviour is also the opposite of what the field does. `GraphQLQueryTest.java:997`,
-`filmsByNodeIdArg_mixedValidAndMalformed_surfacesClientError`, pins the live answer: one malformed id
-fails the whole field, error raised, field null, no partial result. Two more give-aways sit in view:
-the sentence contradicts its own paragraph four lines up (`batch-lookups.adoc:73`, "A malformed or
-wrong-type id fails the field rather than narrowing the result set"), and a two-element list cannot
-hold elements at positions 0 and 2.
+### The manual states the positional contract, and its build rejection, as universal over `@lookupKey`
 
-Half of this predates the item (the "skips the malformed id" reading was already there). What the
-item added is the positional framing, which is exactly the thing it exists to make true, in the page
-whose truthfulness is its deliverable. That is why it blocks rather than becoming a follow-up.
+Three claims added by this item quantify over every `@lookupKey` shape, but describe only the root
+arm:
 
-Two sibling errors in the same subsection are worth clearing in the same pass, since they are why the
-wrong sentence looked plausible:
+- `batch-lookups.adoc:9` — "Every `@lookupKey` shape compiles to the same generator pattern ... The
+  output list is the same length as the input key list; unmatched keys produce `null` at their input
+  position ... a lookup field declaring `[Film!]!` is rejected at build time."
+- `batch-lookups.adoc:146` — "A lookup field's list elements must be nullable. `[Film]!` and `[Film]`
+  are accepted, `[Film!]!` and `[Film!]` are rejected with a build error."
+- `lookupKey.adoc`'s matching constraint bullet, "The list elements must be nullable ... `[Film!]!`
+  and `[Film!]` are rejected with a build error."
 
-- `batch-lookups.adoc:73` "The classifier synthesises `isLookupKey: true` for this arm" is inverted
-  against `FieldBuilder.java:1983`. (Correcting the review's own first reading: the *rejection* the
-  same sentence claims is not real either. `FieldBuilder.java:4595` and
-  `NodeIdPipelineTest.SAME_TABLE_WITH_EXPLICIT_LOOKUP_KEY` both say an explicit `@lookupKey` beside a
-  same-table `@nodeId` is the deliberate opt-in *back into* the lookup shape. The only rejected
-  pairing is the FK-target one.)
-- `batch-lookups.adoc:129` "The decode failure mode is `Skip` (filter semantics, malformed ids drop
-  silently)" names an arm that does not exist. `CallSiteExtraction.java:140` seals
-  `NodeIdDecodeKeys permits ThrowOnMismatch` and nothing else.
+None of that is true of a child lookup coordinate. `GraphitronSchemaValidator.java:719` is the only
+`itemNullable` check in the validator; it sits inside `validateRootLookup`, whose single caller is
+`validateQueryTableField` at `:682`, so a child `@lookupKey` field never reaches it. The example
+schema declares five child lookups with non-null elements and the full build is green with all of
+them: `schema.graphqls:1434` (`FilmDetails.actorsByLookup`), `:1604` (`Film.actors`), `:1619`
+(`Film.actorsBySplitLookup`), `:1850` (`FilmInfo.castByKey`), `:1877` (`Film.actorsByKey`), every one
+`[Actor!]!`. The behaviour differs too, not just the validation: `GraphQLQueryTest.java:2380`,
+`splitLookupTableField_filterExcludesActorsNotInFilm`, pins `actorsBySplitLookup(actor_id: [3])`
+returning `[]` for film 1 rather than one slot holding null, and `ProjectionUnitRenderer.java:432`
+shows the inline child arm still emitting `.orderBy(input.field("idx"))` with no scatter. So the
+"same generator pattern" clause is false in the mechanism it names as well as in its consequence.
 
-Worth noting while rewriting: `filmsByNodeIdArg_emptyList_returnsUnfilteredBaseline`
-(`GraphQLQueryTest.java:1234`) returns all five films, so the page's empty-input short-circuit bullet
-does not describe this coordinate either. The whole subsection presents a filter path as "a flavor of
-NodeId-driven lookup"; the honest fix is probably to stop doing that and point at the filter docs,
-rather than to patch the one sentence.
+The page says the right thing 137 lines later, at `batch-lookups.adoc:109`: "absence of an actor in a
+film yields no row (not `null`) at the child position, since this is a list output, not a positional
+one." And this item's own scope section says it: child coordinates stay a plain list, correctly
+documented as such.
 
-### The new build-time rejection is pinned by nothing
+This blocks rather than becoming a follow-up for the same reason the first gate's manual finding did.
+Making the manual's positional claims true is the deliverable, and the claim is consumer-actionable in
+the wrong direction: a consumer with `actorsBySplitLookup: [Actor!]!` reads the bullet, is told to
+edit their schema for a build error that will never fire, and the edit hands them a nullable element
+type that never holds null. Note also that the pre-change text at `:9` was a *true* universal ("a key
+matching no row contributes no element" held on both arms); the delivery replaced it with a false one.
 
-`GraphitronSchemaValidator.validateRootLookup`'s nullable-element rejection landed without a test.
-`RootLookupValidationTest` is its canonical home and is built as an exhaustive cube over exactly the
-wrapper verdicts that method makes, but no cell varies item nullability: `cell()` at
-`RootLookupValidationTest.java:60` hardcodes `new FieldWrapper.List(true, true)`. Delete the
-rejection and the reactor stays green. The example-schema and plugin-IT edits prove only the accepted
-side; the compile and execution tiers never see a rejected schema.
-
-The item's own body calls this "a consumer-visible schema requirement" and "a build-time rejection
-rather than a runtime surprise". Today the only thing keeping it honest is that no coordinate in the
-tree declares `[Film!]!`. Add the reject cells to the cube, asserted by rejection kind and message
-substring per the validator-unit-test convention in `docs/architecture/how-to/testing.adoc`.
+Worth scoping in the same pass, same root cause: the `@asConnection` rationale at `:9` and `:136`
+("pagination would shift positions and break the positional contract") is also root-only, since
+`:115` extends that rejection to `@splitQuery` children which have no positions to shift.
 
 ### Not blocking, worth doing while here
 
-- `RootLauncherRenderer.java:412` writes the scatter alias as a bare `"__idx__"` literal.
-  `ReservedAliases` exists to hold precisely this ("the invariant is cross-package: writer alias
-  equals reader alias"); the reader goes through `SplitRowsMethodEmitter.IDX_COLUMN`, and the
-  analogous writer at `BatchedRowsFragments.java:281` uses the constant. One-line swap.
-- `ReservedAliases.IDX`'s javadoc describes its writer as the batched launcher body. The root lookup
-  launcher is now a second writer.
-- `scatterLookupByIdx`'s first-row-wins tie-break is an explicit decision (documented in
-  `SplitRowsMethodEmitter` and in the manual as "one of them is returned") that nothing pins.
-  `ScatterSingleByIdxTest` is the precedent for testing an emitted helper's runtime behaviour
-  directly. Fine as a follow-up item if it does not fit this pass.
+- `RootLauncherSqlBaselineTest.java:261` is named `lookupRoot_valuesJoinKeyedAndInputOrdered` and its
+  `.as(...)` at `:264` still says "input-ordered by the derived table's idx column", against a
+  baseline the same commit stripped the `ORDER BY` from. Same stale-prose class the delivery already
+  swept out of `GraphQLQueryTest`'s composite-PK section header.
+- `LookupMapping.java:29` — "ordered by `input.idx` to preserve input ordering" — and
+  `ResultShape.java:46` — "unless the source arm entails its own, the lookup's `idx` order" — both
+  describe the `ORDER BY` this item removed from the root arm.
+- `LookupMapping.java:11` carries the same `Skip`-arm inversion the rework just corrected at
+  `batch-lookups.adoc:129`: "carrying a `NodeIdDecodeKeys` arm (Throw on synthesised lookup-key
+  paths, Skip on the same-table `@nodeId` filter path)". `CallSiteExtraction.java:140` seals the
+  interface to `ThrowOnMismatch` alone, and `LookupMapping.java:147` states it correctly 136 lines
+  below. Pre-existing, not introduced here; a follow-up item is fine if it does not fit this pass.
 
-Reviewed clean, for the record: the user-facing-doc marker check (no roadmap vocabulary on either
-manual page); the retirement sweep (this item declares nothing retired, and it correctly *un*-retires
-the positional-null vocabulary in `roadmap/lookup-generated-column-filters.md` so that item's own
-Done sweep will not strip phrasing that is live again); and the code-string ban, which the delivery
-respects everywhere except `RootLauncherRendererTest`, where body-string assertions are the file's
-established convention and the renderer-arm paragraph of
-`docs/architecture/how-to/testing.adoc` blesses per-arm structural assertions on command-driven
-emission. That paragraph and `development-principles.adoc`'s "banned at every tier" do not agree with
-each other, but the disagreement predates this item and is not its to settle.
+### Reviewed clean, for the record
 
-## Rework delivered
-
-Both blocking findings are closed, and all three of the non-blocking notes with them.
-
-*The NodeId subsection now names three arms instead of two, split on whether the arm is a lookup at
-all.* The middle one, `@nodeId(typeName: T)` alone with `T` matching the return type, is a filter, and
-the page now says so and spells out the three ways it differs: order is whatever the query yields, an
-empty list returns the unfiltered table rather than `[]`, and one bad id nulls the whole field instead
-of occupying a position. Its `[Film!]!` is correct precisely because it has no slots to fill. The
-third arm is the `@lookupKey` opt-in that promotes it back to a lookup, which the constraints bullets
-now state in the right direction, along with the fact that no decode path drops an id silently.
-
-*That third arm was documented but unexercised, so it now exists.* Writing the subsection meant
-naming a coordinate for the opt-in, and the example schema had only a comment promising one
-("see filmsByNodeIdArgWithLookupKey below if exercised"). Rather than name a coordinate no consumer
-could look up, `filmsByNodeIdArgWithLookupKey` is now a real fixture beside its filter sibling, the
-two differing only by `@lookupKey`. Two execution tests pin the contrast the page draws: three ids in
-(one absent, one repeated) answer as three slots with a null and no deduplication, and the empty list
-short-circuits to `[]` where the filter sibling returns all five films. This also puts the
-NodeId-decoded lookup arm on the execution tier for the first time.
-
-*The nullable-element rejection now has six cells in `RootLookupValidationTest`.* A `listReturn`
-helper varies the return wrapper's two nullability slots independently, which the cardinality cube's
-`cell` cannot (it fixes both nullable). `[Film!]!` and `[Film!]` reject, `[Film]` accepts, a non-key
-filter beside the keys changes nothing, a scalar key with `[Film!]!` raises both wrapper errors
-independently, and a non-null *single* return stays valid because that arm has one slot by
-construction and `fetchOne` already answers null in it.
-
-*The scatter alias goes through `ReservedAliases.IDX`* at the writer as well as the reader, and that
-constant's javadoc now names both of its writers.
-
-*`scatterLookupByIdx` gained direct coverage* in `ScatterLookupByIdxTest`, modelled on its
-`scatterSingleByIdx` sibling. The tie-break is what earns a unit test rather than an execution one:
-slot-per-key and null-for-a-miss are already pinned against PostgreSQL, but "two rows on one key keeps
-the first" is a deliberate divergence from the sibling's throw that the example schema's
-uniquely-keyed fixtures will not reliably produce.
-
-*One stale comment swept.* The composite-PK NodeId section header in `GraphQLQueryTest` still asserted
-"missing rows are simply absent (positional output is dense, not sparse)", directly contradicting the
-tests beneath it that the first pass had already flipped to slot assertions.
+The user-facing-doc marker check (no roadmap vocabulary, `Phase <n>`, TODO or slug reference in the
+item's `docs/` diff). The retirement sweep, which this item skips: it declares no retired vocabulary,
+and the un-retirement it made in the generated-column-filter item's body is settled, that item having
+reached Done and deleted its file. The code-string ban: the only body-string assertions are in
+`RootLauncherRendererTest`, which carried 29 of them before this item and is a renderer arm test, the
+species `docs/architecture/how-to/testing.adoc` names as the preferred home for per-arm structural
+assertions on command-driven emission. Its disagreement with `development-principles.adoc`'s "banned
+at every tier" predates this item and is not its to settle. `RootLookupValidationTest` asserts on
+`ValidationError::message` exactly rather than by rejection kind plus substring, which is the file's
+own convention throughout rather than a deviation introduced here.
