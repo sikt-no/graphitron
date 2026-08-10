@@ -84,6 +84,17 @@ moves the drift set:
   symbol flag. R589's Spec already tracks R585's new record shape correctly (`:99`,
   `:101`), so the fact-base derivation item is current, not stale.
 
+A board-wide safety sweep also surfaced a **previously-untracked driver**: a family
+of projection/condition `*Emitter` names (`InlineColumnReferenceFieldEmitter`,
+`InlineTableFieldEmitter`, `InlineLookupTableFieldEmitter`, `FkTargetConditionEmitter`,
+and the phantom `MutationConditions`) that six items cite as live emitter classes,
+with file:line coordinates, but which are **`grep` = 0 in every main tree** at this HEAD.
+The work they name lives in the render layer today (`ProjectionUnitRenderer` /
+`ConditionGlueRenderer` / `ConditionCommands`) and the model record `FkTargetConditionFilter`.
+This adds **no new flagged items** (all six, R333/R462/R85/R447/R288/R7, were already
+flagged for the tracked dissolution drift), but it is a distinct driver folded into their
+recommended actions and recorded as §C.9.
+
 Net: **1 §A / 9 §B / 24 §C / 0 §D.** Flag total moves **30 → 34**: R209 (§A), R66
 and R34 (§B) and R569 (§C) are new; R213 moves §C→§B (no count change); R222's
 discard row already left last window. The long-standing dissolution drift
@@ -206,9 +217,9 @@ retirement.
 | **R213** input-field-rejection-attribution | Backlog | **Escalated §C→§B this window.** R585 **inverted the load-bearing premise**: `:43`/`:48`/`:69` state `InputFieldResolution.Unresolved` "has no `SourceLocation`" and "missing a location field", but the record now carries one; and the first Direction bullet (`:54`, "`Unresolved` grows a `SourceLocation` field") is **shipped**. The carried §C.6 stale cite also persists (`:64` "route through `TableInputType` classification", `grep` = 0 since R519). | **Re-spec** against the shipped located-typed-rejection record: drop the "grows a `SourceLocation`" / "has no `SourceLocation`" claims and the co-design note (R585 resolved it); re-baseline the surviving deliverable (`condErrors` → `List<LocatedRejection>`, `Resolution.Rejected` list-carrying, `validateUnclassifiedField` fan-out) onto `(fieldName, SourceLocation, Rejection)`; fix the `TableInputType` cite to per-consumer resolution. Per the fact-base note, re-check residue after R589 slice 5. |
 | **R34** nodeid-migration-quickfix | Backlog | **New this window.** Title "driven by shim facts" and the "The gap" (`:16-24`) / "Shape of the fix" step 1 (`:30-33`) convert three shim WARN sites to `BuildWarning`s, but **R473 deleted all three sites and their loggers** and **R27 was discarded**. The discard commit half-reconciled the item (Sequencing `:45` and Out-of-scope `:52` now acknowledge deletion), leaving the body **self-contradictory**: the mechanism sections still name the deleted sites as the live gap. | **Re-spec:** the "shim facts" driver is void. The migration goal (ergonomic `@nodeId` fixes across ~250 sis sites) survives, but its source must be re-derived: R473's landed grammar rejections/warnings, or (per the item's own fact-base note) the R589 claim relation once inferred claims carry join witnesses. Retitle off "shim facts". |
 | **R122** compound-entity-mutations | Backlog | Carried. "Design space narrows under R222" leans on R222's discarded recursive `InputUsage` model as a live design input; R222 left the board 2026-08-06 and R122 was not edited since. `TableTargetField` (which this item adds) is live. | **Re-spec the "narrows under R222" section**: drop the dependence on the discarded `InputUsage` carrier; re-express the cross-table nested-input model against the captured `intent_`/`applied_` relations the fact-base architecture adopted (`2026-08-06-fact-base-impact-sweep.md` §R222). Keep the compound-mutation goal, `@reference(path:)` flattening, and `TableTargetField`. |
-| **R462** nested-fetcher-outgoing-field-edges | Spec | Carried. Central target `CompileDependencyGraphBuilder.addFieldEdges` deleted (`grep` = 0); the body's own stated dissolution condition (`:163`) has occurred. | **Re-derive against the plan-projected recompile graph.** Confirm at the symbol whether the nested-fetcher per-field edge is now modeled under `EmitPlan`; if closed, **discard** and record it, else **re-spec** onto the plan-projection. |
+| **R462** nested-fetcher-outgoing-field-edges | Spec | Carried. Central target `CompileDependencyGraphBuilder.addFieldEdges` deleted (`grep` = 0); the body's own stated dissolution condition (`:163`) has occurred. Also cites the absent `FkTargetConditionEmitter.emitTerm` (`:45`) and phantom `MutationConditions` (`:57`) as live (§C.9). | **Re-derive against the plan-projected recompile graph.** Confirm at the symbol whether the nested-fetcher per-field edge is now modeled under `EmitPlan`; if closed, **discard** and record it, else **re-spec** onto the plan-projection. In the same pass, repoint `FkTargetConditionEmitter.emitTerm` → `FkTargetConditionFilter` via `ConditionCommands`, and drop the `MutationConditions` shim name. |
 | **R545** model-free-of-emit-vocabulary | Backlog | Carried. `RowsMethodBody` / `RowsMethodSkeleton` deleted, so the diagnosis and second deliverable are gone. First deliverable survives: `ClassName` / `TypeName` are still model-pervasive. | **Re-spec.** Drop the `RowsMethodBody` diagnosis and second deliverable; keep and re-baseline the first (`JavaTypeRef` replacing `TypeName` / `ClassName`) against the post-R549 model. |
-| **R85** helper-emission-non-fetcher-hosts | Backlog | Carried. Both named edit-target generators deleted: `QueryConditionsGenerator` (R552), `TypeClassGenerator` (R549). Successors `render/ConditionGlueRenderer` / `render/ProjectionUnitRenderer` live. | **Re-derive against the new `render/` layer.** Determine whether the renderers still exhibit the duplicated helper-emission problem; drop every dead `QueryConditionsGenerator.java:NNN` cite. |
+| **R85** helper-emission-non-fetcher-hosts | Backlog | Carried. Both named edit-target generators deleted: `QueryConditionsGenerator` (R552), `TypeClassGenerator` (R549). Successors `render/ConditionGlueRenderer` / `render/ProjectionUnitRenderer` live. Also names `InlineTableFieldEmitter.java:144` / `InlineLookupTableFieldEmitter.java:218` (`:20-21`, `:45-46`) as live host files to delete; both absent (§C.9). | **Re-derive against the new `render/` layer.** Determine whether the renderers still exhibit the duplicated helper-emission problem; drop every dead `QueryConditionsGenerator.java:NNN` cite and the two absent `Inline*Emitter.java:NNN` file cites (the `$fields` host is now `ProjectionUnitRenderer`). |
 | **R221** validator-walks-plain-input-unbound-fields | Backlog | Carried, also fact-base-annotated. R519 deleted `TableInputType` / `validateTableInputType`; successor `collectInputFieldRejections` live; R566 removed `@table`-input classification. | **Close as subsumed or re-derive.** The fact-base sweep names this in R589 slice 4/5. If not building against the store, re-derive around `collectInputFieldRejections`; either way the `validateTableInputType` cites must go. |
 | **R71** recordn-key-parity-lifter-and-non-jooq-record-parents | Backlog | Carried. R431 (Done) deleted the target surface: the body cites `SourceKey.Reader.SourceRowsCall` as "the live surface", but `SourceKey` is a plain record with no `Reader`. Successors `KeyLift` / `LifterRef` / sealed `Wrap` live; "R431 ... plans to decompose" reads present tense but R431 is Done. | **Re-spec the current-state / approach section** against the decomposed `KeyLift` / `LifterRef` / `Wrap` model; drop the `SourceKey.Reader.SourceRowsCall` re-anchor note and the tense error. The goal is intact. |
 
@@ -217,6 +228,8 @@ retirement.
 Substance intact; names and line numbers drifted. Twenty-three carry verbatim from the
 2026-08-07 audit (minus R213, promoted to §B); **R569 is new** this window (R585 reshape).
 Every driving symbol re-verified still `grep` = 0, none repointed in place this window.
+§C.9 records a driver (absent `*Emitter` names) that hits six already-listed rows without
+adding a distinct item.
 
 ### C.0 `Operation` seal fully retired (carried; R563 slice 7)
 
@@ -253,7 +266,7 @@ R484 removed `Rejection.Deferred.planSlug`; R431 removed the `SourceKey.Reader` 
 | Item | Status | Stale reference | Recommended action |
 |---|---|---|---|
 | **R454** routine-write-result-shapes | Backlog | `:18` names deferred shapes as "typed `Deferred`s pointing at this item's planSlug"; gone. | **Re-anchor:** deferred shapes surface via `StubKey.VariantClass`. |
-| **R447** routine-chain-fetch-form-breadth | Backlog | `:18`/`:33` "`planSlug` points here"; `:24`/`:26` name `SplitLookupTableField` / `RecordTableField` as live. | **Re-anchor:** drop the `planSlug` phrasing; repoint to `BatchedTableField` (lookup twin: **+ lookup member**). |
+| **R447** routine-chain-fetch-form-breadth | Backlog | `:18`/`:33` "`planSlug` points here"; `:24`/`:26` name `SplitLookupTableField` / `RecordTableField` as live; `:23` names the absent `InlineTableFieldEmitter` as live beside the real `SplitRowsMethodEmitter` (§C.9). | **Re-anchor:** drop the `planSlug` phrasing; repoint to `BatchedTableField` (lookup twin: **+ lookup member**); drop the `InlineTableFieldEmitter` cite (render projection layer). |
 | **R180** record-parent-column-read-helper | Spec | `:35` says "R431 ... now In Progress" (R431 is **Done**) and names `SourceKey.Reader.AccessorCall` as live. | **Re-anchor** the `AccessorCall` carrier onto the decomposed model; fix the R431 tense. |
 | **R505** tenant-index-parent-row-routing | Backlog | `:21` names "a column read off the parent row (the `SourceKey.Reader` family)". Live via `KeyLift.FkColumns`. | **Re-anchor** the one parenthetical. |
 
@@ -265,9 +278,9 @@ R484 removed `Rejection.Deferred.planSlug`; R431 removed the `SourceKey.Reader` 
 |---|---|---|---|
 | **R109** list-valued-external-field-multiset | Spec | `:51`'s planned enum arm asserts "`RecordTableField` with `BatchKey.AccessorKeyedMany`". | **Re-anchor** to `BatchedTableField`. |
 | **R242** dml-payload-positional-alignment | Spec | `:37-38`'s R305 lineage note "collapsed it into `RecordTableField`"; `:107`/`:148`/`:150`/`:284` cite `LookupValuesJoinEmitter`. | **Re-anchor** to `BatchedTableField`; repoint `LookupValuesJoinEmitter` to the render values-join family. |
-| **R288** inline-interface-and-tablemethod-children | Backlog | `:33-34` name `SplitTableField` / `RecordTableField`. Emitter fine. | **Re-anchor** the two variant names to `BatchedTableField`. |
+| **R288** inline-interface-and-tablemethod-children | Backlog | `:33-34` name `SplitTableField` / `RecordTableField`; `:24` cites the absent `InlineTableFieldEmitter` as the child-field emitter (§C.9). `SplitRowsMethodEmitter` fine. | **Re-anchor** the two variant names to `BatchedTableField`; drop the `InlineTableFieldEmitter` cite (render projection layer). |
 | **R116** composite-key-row2-source-row-coverage | Backlog | `:15`'s planned case "classifies as `RecordTableField` with a `LifterPathKeyed`". | **Re-anchor** to `BatchedTableField`. |
-| **R7** decompose-typefetchergenerator | Backlog | `:30` proposes a hypothetical `SplitTableFieldEmitter`; `:32` lists `LookupValuesJoinEmitter`. | **Low priority:** refresh to `BatchedTableFieldEmitter`; repoint the `LookupValuesJoinEmitter` cite. |
+| **R7** decompose-typefetchergenerator | Backlog | `:30` proposes a hypothetical `SplitTableFieldEmitter`; `:32` lists `LookupValuesJoinEmitter`, and `:31` labels the absent `InlineLookupTableFieldEmitter` as "Existing" (§C.9). | **Low priority:** refresh to `BatchedTableFieldEmitter`; repoint the `LookupValuesJoinEmitter` cite; drop the "Existing `InlineLookupTableFieldEmitter`" claim (render projection layer). |
 | **R323** nestingfield-multiparent-batchkey-leaves | Backlog | `:18`/`:30` list `SplitTableField`, `SplitLookupTableField`, `RecordTableField`, `RecordLookupTableField`. | **Re-anchor** the four names (lookup twins: **+ lookup member**). |
 
 ### C.5 `ColumnBackedField` dissolution drift (carried; R508)
@@ -293,7 +306,7 @@ Condition emission is `render/ConditionGlueRenderer`; projection `render/Project
 
 | Item | Status | Stale reference | Recommended action |
 |---|---|---|---|
-| **R333** coordinate-lowers-to-datafetcher-queryparts | Ready | **Refresh still incomplete, and grew again.** Unchanged from the prior audit at the symbol: still 6× `TypeClassGenerator`, 5× `collectRequiredProjection`, 5× `methodgraph`, 3× `LookupValuesJoinEmitter`, 2× `ParentProjectionContainmentCheck`, 1× `TypeConditionsGenerator`, plus the §C.0/§C.5 carriers. The window's edit caught R333 up to shipped R610/R603 (fact-base content) **without** repointing any retired symbol, so it is now more internally inconsistent than at the prior audit. | **Finish the refresh in one pass** (this row + §C.0 + §C.5 + §C.6 + §C.1): repoint `TypeClassGenerator` / `collectRequiredProjection` → `ProjectionUnitRenderer` / `ProjectionCommands`; drop the `TypeConditionsGenerator`, `ParentProjectionContainmentCheck`, `methodgraph`, `operation()` cites; re-anchor `LookupValuesJoinEmitter` to the render lookup family and the `Operation` seal cites to `OperationMember`. The fact-base sweep's R333 section maps the same regions; rows citing `SplitRowsMethodEmitter` stay (live). |
+| **R333** coordinate-lowers-to-datafetcher-queryparts | Ready | **Refresh still incomplete, and grew again.** Unchanged from the prior audit at the symbol: still 6× `TypeClassGenerator`, 5× `collectRequiredProjection`, 5× `methodgraph`, 3× `LookupValuesJoinEmitter`, 2× `ParentProjectionContainmentCheck`, 1× `TypeConditionsGenerator`, plus the §C.0/§C.5 carriers. The window's edit caught R333 up to shipped R610/R603 (fact-base content) **without** repointing any retired symbol, so it is now more internally inconsistent than at the prior audit. Its "twenty-two `*Emitter`" current-state inventory (`:1888-1893`) also lists five absent names (§C.9). | **Finish the refresh in one pass** (this row + §C.0 + §C.5 + §C.6 + §C.1 + §C.9): repoint `TypeClassGenerator` / `collectRequiredProjection` → `ProjectionUnitRenderer` / `ProjectionCommands`; drop the `TypeConditionsGenerator`, `ParentProjectionContainmentCheck`, `methodgraph`, `operation()` cites; re-anchor `LookupValuesJoinEmitter` to the render lookup family and the `Operation` seal cites to `OperationMember`; replace the `InlineColumnReferenceFieldEmitter` / `InlineTableFieldEmitter` / `InlineLookupTableFieldEmitter` projection-arm names with the render projection layer and `FkTargetConditionEmitter (R330)` with `FkTargetConditionFilter` via `ConditionCommands`. The fact-base sweep's R333 section maps the same regions; rows citing `SplitRowsMethodEmitter` stay (live). |
 | **R231** emit-text-mapped-enum-fields-as-enum-type | Backlog | `:39` locates "the field-type-emit fork (likely in `TypeClassGenerator` or ...)". | **Re-anchor** the investigation locus to `ProjectionUnitRenderer` / `plan/ProjectionCommands`. |
 | **R35** source-orientation-javadocs | Backlog | `:42` enumerates classes for a javadoc sweep, including `TypeClassGenerator` and `TypeConditionsGenerator`, both deleted. | **Re-anchor** the enumeration: drop the two deleted names. Low priority; scope illustrative. |
 
@@ -306,6 +319,31 @@ item carries a single stale line.
 | Item | Status | Stale reference | Recommended action |
 |---|---|---|---|
 | **R569** mcp-aggregated-diagnostics | Spec | `:472` states `BuildContext.classifyInputFieldInternal` "returns `InputFieldResolution.Unresolved`, which carries prose and no `Rejection` at all", used as the premise that "the identity cannot move until the record ... changes". R585 **inverted** this: `Unresolved` now carries a typed `Rejection`. The method name itself (`classifyInputFieldInternal`) is still live. The window's edit updated R569 for R610/R603 but not for R585. | **Re-anchor (not full re-spec).** Restate `:472` against the shipped record: the third fan-in already hands a typed `Rejection`; the identity constraint the paragraph rests on is (at least partly) satisfied by R585. Also tidy the departed-slug prose note (`:487` "if `mcp-server-instruction-routing` has not [landed]" — R584 is Done). The MCP-aggregation subject is intact. |
+
+### C.9 Absent projection/condition `*Emitter` names (new driver; render-layer refactor)
+
+A board-wide sweep surfaced a driver no prior audit tracked: a family of per-arm
+projection/condition emitter names that six items cite as **live** current-state classes,
+several with file:line coordinates and one (`FkTargetConditionEmitter (R330)`) attributed as
+shipped, but which are **`grep` = 0 across every main tree** at this HEAD. Whether they were
+retired by the R549/R563 render-layer refactor or were never more than planned decomposition
+names, the projection and condition work they describe lives today in `ProjectionUnitRenderer`
+/ `ProjectionCommands` (SQL projection arms), `ConditionGlueRenderer` / `ConditionCommands`
+(condition emission), and the model record `FkTargetConditionFilter` (FK-target conditions).
+The phantom `MutationConditions` env-shim name has zero hits anywhere (its sibling
+`QueryConditions` exists only as generated output).
+
+This subsection adds **no distinct flagged item**: every citer is already listed above for the
+tracked dissolution drift. It is recorded here so the repoint is not lost, and folded into each
+row's recommended action.
+
+| Absent name | Cited-as-live in | Live successor |
+|---|---|---|
+| `InlineColumnReferenceFieldEmitter` | R333 (`:1890`) | render projection layer (`ProjectionUnitRenderer` / `ProjectionCommands`) |
+| `InlineTableFieldEmitter` | R333 (`:1752`,`:1891`), R85 (`:20`,`:45`, with `.java:144`), R447 (`:23`), R288 (`:24`) | render projection layer |
+| `InlineLookupTableFieldEmitter` | R333 (`:1891`), R85 (`:21`,`:46`, with `.java:218`), R7 (`:31`) | render projection layer |
+| `FkTargetConditionEmitter` | R333 (`:1893`), R462 (`:45`, `.emitTerm`) | `FkTargetConditionFilter` via `ConditionCommands` |
+| `MutationConditions` (phantom) | R462 (`:57`) | none; drop the shim name |
 
 ## D. Structural: (0)
 
@@ -352,7 +390,15 @@ Two **pre-existing, non-blocking** hygiene notes, surviving unchanged:
    so it is current, not stale. Items whose fact-base notes defer "re-check after R589 slice N"
    (R213, R221, R565) still wait on that Spec, not on shipped code.
 
-5. **The Ready set is where stale prose bites soonest, and R333 remains the worst case.** R333,
+5. **Some drift hides behind names that were never in the tree.** The `Inline*Emitter` /
+   `FkTargetConditionEmitter` family (§C.9) is not a retirement the changelog records; the names
+   are `grep` = 0 at HEAD and appear only in roadmap prose, cited as live classes with concrete
+   file:line coordinates. A symbol-retirement audit keyed only on "what the changelog retired"
+   would miss them; the catch was a whole-board reverse sweep of every class-shaped cite against
+   the current tree. Worth keeping as a standing check: a cited `*.java:NNN` coordinate that
+   resolves to no file is stale regardless of whether the symbol ever shipped.
+
+6. **The Ready set is where stale prose bites soonest, and R333 remains the worst case.** R333,
    R427, R467 and R555 are picked up next. R333 carries the most stale cites on the board (five
    drivers) and grew *again* this window (catching up to R610/R603) without repointing, so it is
    more internally inconsistent than at the prior audit. Its refresh, mapped identically by §C.5,
