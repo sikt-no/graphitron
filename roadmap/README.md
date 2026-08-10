@@ -14,7 +14,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R613` | Generated column filters compose beside the lookup VALUES join | In Review | 2026-08-09 <sub>created 2026-08-08</sub> | [plan](lookup-generated-column-filters.md) |
 | `R617` | Lookup misses drop rows instead of holding their position | In Review | 2026-08-10 <sub>created 2026-08-09</sub> | [plan](lookup-positional-contract-unimplemented.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R618` | Routine mutation: admit a payload carrier return with a typed errors channel | Spec | 2026-08-10 | [plan](routine-mutation-payload-carrier-return.md) |
@@ -405,7 +404,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### legacy-migration
 
-- `R613` [**Generated column filters compose beside the lookup VALUES join**](lookup-generated-column-filters.md) — In Review, feature
 - `R360` [**Retire the @enum directive; infer enum Java backing from producers**](retire-enum-directive.md) — Backlog, cleanup
 - `R540` [**mutation.adoc documents UPSERT the generator refuses at dispatch**](upsert-docs-match-dispatch-refusal.md) — Backlog, docs
 
