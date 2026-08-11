@@ -8,11 +8,16 @@ A guide to how GraphQL schema patterns drive Graphitron's code generation. This 
 
 `GraphitronSchemaBuilder` reads the schema once and classifies every type and field into a sealed
 hierarchy. The generators then operate on these classified models ; they never re-read directives.
+The walk and the `GraphitronSchema` model it produces are the *transitional producer surface* of the
+strangler migration described in the xref:../explanation/pipeline-overview.adoc[Pipeline overview]:
+directives are also decoded by capture into the fact store's `graphitron_` relations, consumers
+re-source from the walk's model onto the store one at a time, and new facts land only in the store,
+never as new leaf types.
 
 ----
 GraphQL Schema
       ↓
-GraphitronSchemaBuilder  (the only place directives are read)
+GraphitronSchemaBuilder  (classification walk ; transitional producer surface)
       ↓
 GraphitronSchema
   ├── Map<String, GraphitronType>                      types         (one per GraphQL type)

@@ -4,6 +4,8 @@ A DataLoader-backed source-side field carries five orthogonal pieces of dispatch
 
 This page is the chapter narrative for that contract. Reference detail (the per-arm record components, the per-axis enum/sealed values) lives on the source: javadoc on `SourceKey`, `KeyLift`, `SourceKey.Wrap`, `SourceEnvelope`, `Arity`, and `LoaderRegistration`. (R431 decomposed the former six-component `SourceKey` onto these facts; the pre-decomposition shape of this chapter is in the git history.)
 
+The carriers live on the classified leaf model, which is the transitional producer surface of the strangler migration (see the xref:pipeline-overview.adoc[Pipeline overview]); the axis decomposition itself is the durable part. Each axis is an independent functional dependency of the coordinate, which is exactly the shape a fact relation stores, so the axes migrate as facts while the leaf carriers that hold them today drain.
+
 == The axes
 
 Three classify-time model values carry the dispatch axes between them: a `SourceKey` per batch-keyed field (the key residue), a `KeyLift` on the batched re-query leaves (how the key tuple is lifted off the parent's held object; total on the merged leaves since R432), and a `LoaderRegistration` per field (DataLoader identity).

@@ -2,27 +2,67 @@
 :description: How a .graphqls schema flows through the Graphitron generator from parse to consumer compile.
 :!toc:
 
-The generator turns `.graphqls` files into Java sources in a fixed pipeline: parse, classify, validate, emit, write, and (for the reference consumer) compile.
+The generator turns `.graphqls` files plus a jOOQ-generated database catalog into Java sources. The architecture is fact-oriented: a run transcribes everything it reads into a relational fact store, derives claims and violations as views over those base facts, joins facts into complete command rows, and folds a render shell over the committed commands. During the current strangler window a classification walk still produces the model most consumers read; that walk is a transitional surface, named as such below, and must not be mistaken for the destination.
 
 [source,mermaid]
 ----
 flowchart LR
     A[".graphqls files"] --> B["RewriteSchemaLoader<br/>(parse + auto-inject<br/>directives.graphqls)"]
-    B --> C["GraphitronSchemaBuilder<br/>(classify into<br/>GraphitronSchema)"]
-    C --> D["GraphitronSchemaValidator<br/>(reject Unclassified*,<br/>surface diagnostics)"]
-    D --> E["Generators<br/>(TypeFetcher / TypeClass /<br/>TypeConditions /<br/>QueryConditions / ...)"]
-    E --> F["JavaFile.writeToPath<br/>(idempotent writes,<br/>orphan sweep)"]
-    F --> G["consumer compile<br/>(graphitron-sakila-example<br/>verifies type + behaviour)"]
+    B --> C["GraphitronSchemaBuilder<br/>(classification walk;<br/>transitional surface)"]
+    B --> D["FactCapture<br/>(total transcription into<br/>the store's base relations)"]
+    D --> E["Derived strata<br/>(intent_ claim views,<br/>violation facts)"]
+    C --> F["GraphitronSchemaValidator<br/>(fused with store-derived<br/>violations)"]
+    E --> F
+    F --> G["EmitPlan<br/>(join facts into<br/>command relations)"]
+    G --> H["Render shell<br/>(fold over committed<br/>commands)"]
+    H --> I["JavaFile.writeToPath<br/>(idempotent writes,<br/>orphan sweep)"]
+    I --> J["consumer compile<br/>(graphitron-sakila-example)"]
 ----
 
-Three things to know about this pipeline that the diagram doesn't show:
+The stages below appear in the order `GraphQLRewriteGenerator.runPipeline` runs them. Each stage has a verb: capture transcribes, classification gathers, validation derives, planning joins, the shell folds.
 
-. *The loader auto-injects `directives.graphqls`* from the `graphitron` jar before parse, so consumer schemas never re-declare the canonical directives. This is what lets the classifier treat directive presence as ground truth one stage later: the schema loader has already fed every directive declaration into the parsed schema, regardless of whether the consumer's `.graphqls` files mentioned them.
+== Parse and attribute
 
-. *Classification is the only place directives are read.* `GraphitronSchemaBuilder` reads each directive once and resolves everything the generator needs into typed model values: table names, column references, method names, extraction strategies, batch keys. Generators downstream see the classified model and never touch directive syntax. The boundary keeps the model "what to emit," never "what to interpret."
+`RewriteSchemaLoader` merges the consumer's `.graphqls` files and auto-injects `directives.graphqls` from the `graphitron` jar before parse, so consumer schemas never re-declare the canonical directives and every later stage can treat directive presence as ground truth. The attribution pipeline then applies the schema-level rewrites (federation `@link` handling, tag and description notes) and cuts a read-only pre-synthesis snapshot of the registry before `KeyNodeSynthesiser` rewrites federation keys. Capture reads that snapshot: the store records what the author wrote, with synthesis recorded as provenance rows rather than silently merged into the authored picture.
 
-. *The writer's idempotency contract is unconditional.* On every run, `JavaFile.writeToPath` writes only files whose rendered content differs from disk (SHA-256 comparison) and deletes orphans in rewrite-owned sub-packages. Both halves run on every emit, not just full builds; this is what keeps the dev-loop's IDE-recompile times proportional and what stops a delete-a-type cycle from leaving stale files behind. Pinned by `IdempotentWriterTest` and `GeneratorDeterminismTest`.
+== Classification gathers (transitional)
 
-The xref:../reference/code-generation-triggers.adoc[Code Generation Triggers] page is a zoomed-in view of the middle three stages (schema → classified model → generators). This page names the loader, the validator, the writer's idempotency contract, and the consumer compile that closes the loop.
+`GraphitronSchemaBuilder` walks the attributed registry once and classifies every type and field into the sealed `GraphitronSchema` model, gathering per-trigger facts as it goes. This walk and the leaf model it produces are the transitional producer surface of the strangler migration: they stay live until each consumer re-sources onto the store, and they are a surface being drained, not a place to extend. New facts land only in the store; a new capability is added by adding a fact relation, never a new leaf type or walk-side registry. The zoomed-in view of this surface, the classification taxonomy and what each verdict drives, is xref:../reference/code-generation-triggers.adoc[Code Generation Triggers].
+
+== Capture transcribes: the fact store
+
+`FactCapture` opens the fact store, an H2 database booted by `GraphitronModelStore` from `graphitron-model`'s own DDL (`graphitron-model.sql`), and transcribes everything the run read in one transaction: the parsed SDL into the `graphql_` relations, the decoded graphitron and federation directives into the `graphitron_` relations, the jOOQ catalog into `sql_`, and the compile-classpath class census into `jvm_`, with `store_` bookkeeping rows anchoring the graph, its sources and their content hashes. Capture is total and tolerant: it transcribes what is there, including shapes later stages reject, so the store is a faithful record rather than a filtered one. A warm store is reconciled per source hash (`StoreRefresh`) instead of recaptured wholesale, and a persisted store lives outside `target/` keyed by DDL hash and generator version, so an incompatible upgrade opens a fresh file instead of migrating. Two derivations materialize at capture cadence inside the same transaction (`ReachabilityRows`, `InputOccurrencePaths`) because H2 cannot state them as safe views.
+
+== The derived strata: claims and violations as facts
+
+Above the base relations the DDL defines the `intent_` stratum as views: the authored claim views (`intent_authored_field_claim`, `intent_authored_type_claim`) union one arm per claiming relation, the resolved views reduce them, and `intent_authored_claim_conflict` detects coordinates carrying contradictory claims. `AuthoredClaimConflicts` reads that view and projects each conflict row into the same located `ValidationError` the retired walk-side detector sites used to produce. Violations are located facts, not log lines: the diagnostics stratum (`rejection_`, `lint_`, `build_warning_`, `javac_` relations) records rejection, lint, advisory and compile rows, unioned by the deliberately prefix-less `diagnostic` read surface that the MCP diagnostics tools serve. The diagnostics writers run in the dev session, which holds a live store handle across builds.
+
+== Validation derives
+
+`GraphitronSchemaValidator` derives the run's verdict from the classified model, fused with the store-derived violations from the conflict detection. Rejection is a typed value end to end, never parsed prose; the taxonomy and its contract are xref:typed-rejection.adoc[Typed rejection]. A failing verdict throws before any file is written.
+
+== Planning joins
+
+`EmitPlan.produce` joins the model's facts into the command relations the run will render: the launcher relation (one row per covered coordinate), the condition relation (one row per filtered coordinate and resolved table), the projection relation (one row per projection unit), the fetcher-edge relation, the type-unit relation, and the global commands. A command is complete: everything the renderer needs is on the row, and the shell downstream decides nothing. The `command` / `plan` / `render` package triangle keeps producers and consumers apart, enforced by `PackageImportDirectionTest`.
+
+== Render: the shell folds
+
+`GraphQLRewriteGenerator.runPipeline` folds over each committed relation and hands every row to its renderer (`RootLauncherRenderer`, `ConditionGlueRenderer`, `ProjectionUnitRenderer`, and the schema, record and global emitters). The fold enforces closure in both directions: a renderer emitting a unit the plan never committed fails the run, and a committed unit no renderer emitted fails it too. The emitted method call graph is closed, pinned by `MethodClosureOracleTest` (every callee name in every emitted body resolves to a method the generator also emitted) and `LauncherRelationClosureTest` (every covered coordinate has exactly one launcher row, every row resolves to an emitted method, and no two rows claim the same method).
+
+== Write: the idempotency contract (unchanged)
+
+On every run, `JavaFile.writeToPath` writes only files whose rendered content differs from disk (SHA-256 comparison) and the generator deletes orphans in rewrite-owned sub-packages. Both halves run on every emit, not just full builds; this is what keeps the dev-loop's IDE-recompile times proportional and what stops a delete-a-type cycle from leaving stale files behind. Pinned by `IdempotentWriterTest` and `GeneratorDeterminismTest`.
+
+== Consumer compile
+
+`graphitron-sakila-example` compiles the emitted sources with `<release>17</release>` and runs the execution tier against a real PostgreSQL, closing the loop: the pipeline's output is verified as compiling, type-correct, behaviorally-tested Java, not just rendered text.
+
+== The strangler frame
+
+The store shipped beside the live walk, not instead of it, and the migration drains one consumer at a time. What that means concretely today:
+
+* Capture is total, but most relations are populated ahead of their readers. The store's production readers today are the authored-claim conflict detection (whose verdicts also feed the LSP/MCP conflict overlay) and the `diagnostic` view; planning still joins facts gathered by the classification walk. `FactCaptureAgreementTest` keeps the two pictures honest with a mechanical driver over every generated relation and no skip list, so a new relation cannot arrive unchecked.
+* `GraphitronSchema` and the leaf classifier stay live until each consumer re-sources onto the store. Extending them is migration debt; the rule during the window is that new facts land only in the store.
+* The schema gates (`FactSchemaGateTest`) hold the store's own invariants: total comment coverage, dense ordinals, verbatim-transcription twins for every decode, and the graph-partition rules. A failure there is a capture bug or a DDL defect, never an author error.
 
 xref:index.adoc[← Explanation index]
