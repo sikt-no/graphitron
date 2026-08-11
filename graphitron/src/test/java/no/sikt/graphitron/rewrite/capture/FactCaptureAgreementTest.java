@@ -196,6 +196,13 @@ class FactCaptureAgreementTest {
         // is vacuous by construction on the graphql_directive_site precedent; the arm-specific
         // derived columns are pinned by DiagnosticFactsTest against their Java spellings.
         registrations.put("diagnostic", Arm.DERIVED);
+        // The schema self-description stratum: views over row values authored in the DDL itself,
+        // so capture never writes them and agreement with the walk is vacuous by construction.
+        // Their anchors are the roster gates in FactSchemaGateTest, which close the family rows
+        // against the observed relations in both directions on every build.
+        registrations.put("meta_family", Arm.DERIVED);
+        registrations.put("meta_prefixless_relation", Arm.DERIVED);
+        registrations.put("meta_relation_family", Arm.DERIVED);
         registrations.put("javac_diagnostic", Arm.ORACLE);
         registrations.put("walk_claim_domain_type", Arm.ORACLE);
         registrations.put("walk_claim_domain_field", Arm.ORACLE);

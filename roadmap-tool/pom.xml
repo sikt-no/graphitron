@@ -47,6 +47,19 @@
             <version>${version.snakeyaml}</version>
         </dependency>
 
+        <!--
+          The fact store: render-schema-reference boots it from the DDL and reads the relation
+          census, comments and meta rows back through the shared catalog reader, so the generated
+          schema reference and the store can never disagree about what relations exist. Kept off
+          the production classpath the same way the rest of this module is: deploy-skipped,
+          consumed only by build-time exec executions.
+        -->
+        <dependency>
+            <groupId>no.sikt</groupId>
+            <artifactId>graphitron-model</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
         <dependency>
             <groupId>org.duckdb</groupId>
             <artifactId>duckdb_jdbc</artifactId>

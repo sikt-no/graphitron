@@ -252,13 +252,20 @@ not blocked on tooling.
 
 ## Open questions (to settle at Ready)
 
-- **The accepted AsciiDoc subset.** Comments interpolate into `.adoc` pages, so no renderer
-  dependency is needed (asciidoctor in the docs build is the renderer). What remains is the
-  subset the renderability gate accepts: inline markup certainly, and where the line is drawn on
-  block content (lists yes; tables and block macros probably not, a comment wanting a table is a
-  smell that the content belongs in a `meta_` row or the page template). The roadmap-tool's
-  `InertSpans` is the in-tree starting point for the span mechanics. Decide when slice 4 is
-  picked up; the gate can start strict and widen.
+- **The accepted AsciiDoc subset.** Settled with slice 4, narrower than the Decisions bullet's
+  "monospace, emphasis, lists": the gate (`CommentRenderabilityGateTest`, beside the coverage gate) accepts
+  plain prose plus paired single-backtick monospace spans only. Emphasis is rejected outright,
+  because a deliberate `_pair_` and the accidental-activation pair the gate exists to catch are
+  mechanically indistinguishable; lists needed no rule, because a comment is one SQL literal on
+  one physical line and the control-character rule pins that, so block content is impossible by
+  construction. Attribute references, bracketed inline macros and autolinking URL schemes are
+  rejected as live substitutions; the subset widens by deliberate gate edit, never by drift.
+  `InertSpans` was evaluated and deliberately not reused: it polices *generated* AsciiDoc for
+  markdown-sourced spans an emitter forgot to neutralize (a paired backtick span is its
+  finding), while this gate polices *authored* AsciiDoc for subset membership (a paired
+  backtick span is its accepted construct); the gate's javadoc carries the argument. The
+  positive direction, accepted-therefore-renders, is held by the docs render's WARN gate over
+  the generated pages.
 
 ## Acceptance
 

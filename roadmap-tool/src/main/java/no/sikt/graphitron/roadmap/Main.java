@@ -124,6 +124,11 @@ public final class Main {
             if (rc != 0) System.exit(rc);
             return;
         }
+        if ("render-schema-reference".equals(mode)) {
+            int rc = SchemaReferencePages.run(sliceArgs(args, 1));
+            if (rc != 0) System.exit(rc);
+            return;
+        }
         if (args.length < 2) {
             usage();
         }
@@ -164,6 +169,7 @@ public final class Main {
         System.err.println("  check-coverage-agent-wiring <repo-root>");
         System.err.println("  check-transient-citations <repo-root>");
         System.err.println("  check-module-enumeration <repo-root>");
+        System.err.println("  render-schema-reference <output-dir>");
         System.exit(64);
     }
 

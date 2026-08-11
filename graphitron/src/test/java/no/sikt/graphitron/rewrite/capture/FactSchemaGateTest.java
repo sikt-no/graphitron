@@ -19,6 +19,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.META_FAMILY;
+import static no.sikt.graphitron.model.Tables.META_PREFIXLESS_RELATION;
+import static no.sikt.graphitron.model.Tables.META_RELATION_FAMILY;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.jooq.impl.DSL.count;
 import static org.jooq.impl.DSL.field;
@@ -101,6 +104,126 @@ class FactSchemaGateTest {
                 .and(field(name("REMARKS"), String.class).isNull())
                 .fetch(0, String.class);
             assertThat(columns).as("uncommented columns").isEmpty();
+        }
+    }
+
+    @Test
+    @DisplayName("every relation resolves to one family page or carries an exemption row")
+    void everyRelationHasExactlyOneDocumentationHome() {
+        try (var store = GraphitronModelStore.open()) {
+            var unhoused = store.dsl()
+                .select(META_RELATION_FAMILY.RELATION_NAME)
+                .from(META_RELATION_FAMILY)
+                .where(META_RELATION_FAMILY.PREFIX.isNull())
+                .and(META_RELATION_FAMILY.EXEMPTED.isFalse())
+                .fetch(0, String.class);
+            assertThat(unhoused)
+                .as("relations outside every family and carrying no exemption row; add the"
+                    + " meta_family row or argue the meta_prefixless_relation exemption in")
+                .isEmpty();
+
+            var doublyHoused = store.dsl()
+                .select(META_RELATION_FAMILY.RELATION_NAME)
+                .from(META_RELATION_FAMILY)
+                .where(META_RELATION_FAMILY.PREFIX.isNotNull())
+                .and(META_RELATION_FAMILY.EXEMPTED.isTrue())
+                .fetch(0, String.class);
+            assertThat(doublyHoused)
+                .as("exemption rows for relations a family already covers")
+                .isEmpty();
+
+            var duplicated = store.dsl()
+                .select(META_RELATION_FAMILY.RELATION_NAME)
+                .from(META_RELATION_FAMILY)
+                .groupBy(META_RELATION_FAMILY.RELATION_NAME)
+                .having(count().gt(1))
+                .fetch(0, String.class);
+            assertThat(duplicated)
+                .as("relations the census matched more than once; no family prefix may prefix another")
+                .isEmpty();
+        }
+    }
+
+    @Test
+    @DisplayName("every family row covers at least one observed relation")
+    void everyFamilyRowHasAnObservedRelation() {
+        try (var store = GraphitronModelStore.open()) {
+            var vacant = store.dsl()
+                .select(META_FAMILY.PREFIX)
+                .from(META_FAMILY)
+                .whereNotExists(select().from(META_RELATION_FAMILY)
+                    .where(META_RELATION_FAMILY.PREFIX.eq(META_FAMILY.PREFIX)))
+                .fetch(0, String.class);
+            assertThat(vacant)
+                .as("family rows no observed relation carries; a roster entry outlived its family")
+                .isEmpty();
+        }
+    }
+
+    /**
+     * The keys a table would take from the engine, held by gate instead: the meta relations are
+     * views over row values, so prefix and ordinal uniqueness cannot be a PRIMARY KEY, and the
+     * census's exact-prefix match is only unambiguous while no family prefix prefixes another.
+     */
+    @Test
+    @DisplayName("the family roster is well-formed: unique prefixes and ordinals, exact-match safe")
+    void theFamilyRosterIsWellFormed() {
+        try (var store = GraphitronModelStore.open()) {
+            var rows = store.dsl()
+                .select(META_FAMILY.PREFIX, META_FAMILY.ORDINAL)
+                .from(META_FAMILY)
+                .fetch();
+            assertThat(rows).as("family rows to gate").isNotEmpty();
+            var prefixes = rows.map(org.jooq.Record2::value1);
+            assertThat(prefixes)
+                .as("family prefixes, the roster's key")
+                .doesNotHaveDuplicates();
+            assertThat(prefixes)
+                .as("family prefixes end with their underscore")
+                .allSatisfy(prefix -> assertThat(prefix).endsWith("_"));
+            var nested = new java.util.ArrayList<String>();
+            for (String outer : prefixes) {
+                for (String inner : prefixes) {
+                    if (!outer.equals(inner) && outer.startsWith(inner)) {
+                        nested.add(inner + " prefixes " + outer);
+                    }
+                }
+            }
+            assertThat(nested)
+                .as("family prefixes that prefix another; the census's exact match relies on none")
+                .isEmpty();
+            assertThat(rows.map(org.jooq.Record2::value2))
+                .as("family ordinals, the reference's page order")
+                .doesNotHaveDuplicates();
+        }
+    }
+
+    @Test
+    @DisplayName("every exemption row names an observed relation and a resolvable page")
+    void everyExemptionRowResolves() {
+        try (var store = GraphitronModelStore.open()) {
+            var danglingRelations = store.dsl()
+                .select(META_PREFIXLESS_RELATION.RELATION_NAME)
+                .from(META_PREFIXLESS_RELATION)
+                .whereNotExists(select().from(META_RELATION_FAMILY)
+                    .where(META_RELATION_FAMILY.RELATION_NAME
+                        .eq(META_PREFIXLESS_RELATION.RELATION_NAME)))
+                .fetch(0, String.class);
+            assertThat(danglingRelations)
+                .as("exemption rows naming relations the schema does not declare")
+                .isEmpty();
+
+            var danglingPages = store.dsl()
+                .select(META_PREFIXLESS_RELATION.RELATION_NAME)
+                .from(META_PREFIXLESS_RELATION)
+                .where(META_PREFIXLESS_RELATION.PAGE.isNotNull())
+                .andNotExists(select().from(META_FAMILY)
+                    .where(META_FAMILY.PREFIX.eq(META_PREFIXLESS_RELATION.PAGE)))
+                .fetch(0, String.class);
+            assertThat(danglingPages)
+                .as("exemption rows whose page is not a family prefix; NULL means the index,"
+                    + " anything else must resolve")
+                .isEmpty();
         }
     }
 

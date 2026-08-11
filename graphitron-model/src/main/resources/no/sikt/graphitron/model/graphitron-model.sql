@@ -12,69 +12,21 @@
 -- writes the child while standing on the parent, never on a reference the author spells by
 -- name; every table and column carries a COMMENT ON so INFORMATION_SCHEMA and the generated
 -- Javadoc are self-describing; closed taxonomies are CHECK constraints; VARCHAR is unbounded;
--- source order is an explicit ordinal column.
+-- source order is an explicit ordinal column. Comment prose, and the meta_ rows' definition
+-- and reason text, is AsciiDoc (inline subset only), interpolated verbatim into the generated
+-- schema reference; the renderability gate beside the coverage gate holds that line.
 --
--- Picking a prefix for a new relation. Ten families, each named for whose vocabulary the row
--- is written in, never for its reader or its role. graphql_ is reserved for generic GraphQL: a
--- row any SDL reader could produce from the document without knowing graphitron exists, which
--- is every declaration, every directive definition, and every directive application including
--- graphitron's own. graphitron_ is what graphitron makes of that document: the decoded
--- directives, and the provenance of the rows macro expansion mints. sql_ is what the consumer's
--- database declares, read through jOOQ's generated model; jvm_ is what the classfiles on the
--- compile classpath declare. Naming a family for its reader (jooq_) or a presumed role
--- (extension_) is what these two replace: jOOQ defines neither table nor column nor foreign
--- key, and an ObjectMapper on the classpath extends nothing yet still earns a row. store_ is
--- the store's own record: what it read, what it was built from, and which graphs it holds. Its
--- rows are never a reading of the consumer's schema, database or classpath, which is what the
--- other transcription prefixes are named for; the graph recipe rows are configuration the run
--- held in hand, which is what keeps them in this family rather than making them a family of
--- their own. javac_ is what the JDK compiler reports about the emitted sources, written in
--- javax.tools.Diagnostic's terms. walk_ is what the legacy classification walk registered,
--- transcribed as membership rows in the walk's own vocabulary (its registries' reach); naming
--- the family for the retiring walk gives the name its own retirement clock, because when the
--- walk is gone the family has no referent. rejection_ is the legacy walk's verdicts,
--- transcribed in the sealed Rejection hierarchy's own spellings (kind, variant, lsp_code,
--- attempt_kind, stub_key are all that hierarchy's words) and carrying the same retirement
--- clock as walk_: transitional by construction, drained family by family as detections
--- migrate store-native, and deliberately not named validator_, both because that names a role
--- and because the validation phase outlives the hierarchy and may one day want its own name.
--- lint_ is the linter's vocabulary (lint_rule is LintRule.id()), its own family because a lint
--- finding's severity is a function of its rule, never a rejection kind, and because lint rules
--- are predicates over classified facts that should be free to migrate store-native without
--- contending for another family's relation. build_warning_ is the sealed BuildWarning
--- hierarchy's advisory arm in that hierarchy's own words (message and location are NoRule's
--- entire component list), with the arm selector in the relation name per the
--- jvm_scalar_type_field precedent since the sibling arm lives in lint_; not graphitron_,
--- whose definition above (decoded directives and macro provenance) an advisory is neither of,
--- and not walk_, because a family may not be named for its producer and both of the arm's
--- producers outlive the walk.
+-- Picking a prefix for a new relation: a family is named for whose vocabulary its rows are
+-- written in, never for its reader or its role. The family roster, each family's charter and
+-- the placement of the deliberately prefix-less relations are authored rows in the meta_
+-- views at the tail of this file, closed against the observed relations by the schema gates
+-- and rendered into the generated schema reference, so the roster cannot drift from the file
+-- the way a prose enumeration in this header once did.
 --
 -- Cadence is its own axis, orthogonal to the vocabulary a prefix names. A family whose writer
 -- runs after capture (javac_ is the first) has its own writer on that writer's cadence, and
 -- capture clears the run's own graph partition of such a family before regenerating, because
 -- its rows describe an emitted tree the run is about to replace.
---
--- The SDL strata stack, graphql_ under graphitron_ under a third name, intent_. A graphitron_
--- row is still a transcription: it says what a directive application spelled, in graphitron's
--- vocabulary instead of the document's. intent_ is what gets derived on top of that, once
--- something resolves and combines those readings into what the generator will actually do. The
--- residents are views (in their own section below) plus the materialized derivations
--- (intent_type_domain and the input occurrence-path pair, whose table comments own why they
--- cannot be views); that changes nothing
--- about the name, since a family is named for whose vocabulary its rows are written in and
--- materialization is not the discriminator. The stratum has two layers, and a new resident
--- picks one deliberately: the base derivations (the authored claim views, one per grain; the
--- structural classifier views, one per classifier so each carries exactly its own witness
--- columns; the demand and exemption rule views, stated at the grain their rules are authored
--- at), and the reductions over them (intent_resolved_field_claim and the resolved demand
--- views, the resolution expressions a planning reader joins). No relation should acquire the
--- prefix by drifting into it; each new derived resident is its own change.
---
--- The graphql_ family is therefore a total transcription, with no hole where graphitron's
--- namespace was. Whether an application survives into the emitted schema is a namespace query
--- over graphql_directive at emission time, not something capture decides by choosing a table,
--- and a directive that is both re-emitted and decoded (federation's @key) is simply a row in
--- each family rather than a special case.
 
 -- ==== Store bookkeeping ===========================================================
 -- The store's own family: the record of what it read, what it was built from, and which graphs
@@ -3296,3 +3248,51 @@ COMMENT ON COLUMN diagnostic.directory IS 'the file''s directory, the canonical 
 COMMENT ON COLUMN diagnostic.source_line IS 'the location''s line, 1-based in both channels; NULL in the absent bucket (javac''s NOPOS normalised here)';
 COMMENT ON COLUMN diagnostic.source_column IS 'the location''s column, on the same terms as source_line';
 COMMENT ON COLUMN diagnostic.message IS 'the row''s rendered message, whichever oracle authored it; display material, never a dimension, never an agreement anchor';
+
+-- ==== Schema self-description (meta_) =============================================
+-- The schema describing itself: the family roster, the placement of relations no prefix
+-- covers, and the census that closes both against the observed schema. Stated as views over
+-- row values rather than tables, so the rows are constants versioned with the DDL by
+-- construction: a warm refresh cannot empty what holds no rows of its own, and a run cannot
+-- write what the file already states. The uniqueness a table would take from a PRIMARY KEY
+-- is gated instead (FactSchemaGateTest), which also closes the roster against the observed
+-- relations in both directions; the generated schema reference and the docs drift guard read
+-- these relations through the shared catalog reader rather than re-deriving the match.
+
+CREATE VIEW meta_family (prefix, title, ordinal, definition) AS VALUES
+  ('store_', 'The store''s own record', 0, 'The store''s own record: what it read, what it was built from, and which graphs it holds. Its rows are never a reading of the consumer''s schema, database or classpath, which is what the transcription families are named for; the graph recipe rows are configuration the run held in hand, which is what keeps them in this family rather than making them a family of their own.'),
+  ('graphql_', 'Generic SDL transcription', 1, 'Generic GraphQL: a row any SDL reader could produce from the document without knowing graphitron exists, which is every declaration, every directive definition, and every directive application including graphitron''s own. The family is a total transcription, with no hole where graphitron''s namespace was: whether an application survives into the emitted schema is a namespace query over graphql_directive at emission time, not something capture decides by choosing a table, and a directive that is both re-emitted and decoded (federation''s @key) is simply a row in each family rather than a special case.'),
+  ('graphitron_', 'The decoded graphitron reading', 2, 'What graphitron makes of the SDL document: the decoded directives, and the provenance of the rows macro expansion mints. A row here is still a transcription, not a conclusion: it says what a directive application spelled, in graphitron''s vocabulary instead of the document''s.'),
+  ('sql_', 'The consumer database catalog', 3, 'What the consumer''s database declares, read through jOOQ''s generated model. Not jooq_: naming a family for its reader is what this name replaces, because jOOQ defines neither table nor column nor foreign key.'),
+  ('jvm_', 'The compile classpath census', 4, 'What the classfiles on the compile classpath declare. Not extension_: naming a family for a presumed role is what this name replaces, because an ObjectMapper on the classpath extends nothing yet still earns a row.'),
+  ('javac_', 'The compile oracle''s verdicts', 5, 'What the JDK compiler reports about the emitted sources, written in javax.tools.Diagnostic''s terms.'),
+  ('walk_', 'The legacy walk''s reach', 6, 'What the legacy classification walk registered, transcribed as membership rows in the walk''s own vocabulary (its registries'' reach). Naming the family for the retiring walk gives the name its own retirement clock: when the walk is gone, the family has no referent.'),
+  ('intent_', 'Derived intent', 7, 'The SDL strata stack''s third layer, graphql_ under graphitron_ under this name: what gets derived once something resolves and combines those readings into what the generator will actually do. The residents are views plus the materialized derivations whose table comments own why they cannot be views; that changes nothing about the name, since a family is named for whose vocabulary its rows are written in and materialization is not the discriminator. The stratum has two layers, and a new resident picks one deliberately: the base derivations (the authored claim views, one per grain; the structural classifier views, one per classifier so each carries exactly its own witness columns; the demand and exemption rule views, stated at the grain their rules are authored at), and the reductions over them (intent_resolved_field_claim and the resolved demand views, the resolution expressions a planning reader joins). No relation should acquire the prefix by drifting into it; each new derived resident is its own change.'),
+  ('rejection_', 'The legacy walk''s verdicts', 8, 'The legacy walk''s verdicts, transcribed in the sealed Rejection hierarchy''s own spellings (kind, variant, lsp_code, attempt_kind and stub_key are all that hierarchy''s words) and carrying the same retirement clock as walk_: transitional by construction, drained family by family as detections migrate store-native. Deliberately not validator_, both because that names a role and because the validation phase outlives the hierarchy and may one day want its own name.'),
+  ('lint_', 'The linter''s findings', 9, 'The linter''s vocabulary (lint_rule is LintRule.id()), its own family because a lint finding''s severity is a function of its rule, never a rejection kind, and because lint rules are predicates over classified facts that should be free to migrate store-native without contending for another family''s relation.'),
+  ('build_warning_', 'The advisory arm', 10, 'The sealed BuildWarning hierarchy''s advisory arm in that hierarchy''s own words (message and location are NoRule''s entire component list), with the arm selector in the relation name per the jvm_scalar_type_field precedent, since the sibling arm lives in lint_. Not graphitron_, whose decoded-directives-and-macro-provenance charter an advisory is neither of, and not walk_, because a family may not be named for its producer and both of the arm''s producers outlive the walk.'),
+  ('meta_', 'The schema describing itself', 11, 'The schema''s own description: the family roster, the placement of relations no prefix covers, and the census that closes both against the observed schema. Authored as constant rows stated as views, so the description is versioned with the DDL it describes and can never be refreshed apart from it; not store_, because these rows are a statement of what this file declares, never a record of what a run read.');
+COMMENT ON VIEW meta_family IS 'The family roster: one row per relation-name prefix, keyed by the prefix under the schema''s naming discipline (a family is named for whose vocabulary its rows are written in, never for its reader or its role). The definition column carries each family''s charter, migrated out of this file''s header so the roster has one home; the generated schema reference renders one page per row, ordered by ordinal, and the schema gates close the roster against the observed relations in both directions.';
+COMMENT ON COLUMN meta_family.prefix IS 'the family''s relation-name prefix, trailing underscore included; the roster''s key, unique by gate since a view carries no PRIMARY KEY, and no prefix may be a prefix of another (gated), which is what lets the census match exactly';
+COMMENT ON COLUMN meta_family.title IS 'the family''s rendered page title in the generated schema reference; plain prose, display material only';
+COMMENT ON COLUMN meta_family.ordinal IS 'the family''s position in the reference''s page order and index roster, 0-based; unique by gate';
+COMMENT ON COLUMN meta_family.definition IS 'the family''s charter: whose vocabulary its rows are written in and why the name is right, rendered as the family page''s preamble';
+
+CREATE VIEW meta_prefixless_relation (relation_name, page, reason) AS VALUES
+  ('diagnostic', CAST(NULL AS VARCHAR), 'The diagnostics stratum''s read surface unions five arms across four families'' vocabularies; a read-side union across vocabularies has no family, so it renders on the reference''s index, the one cross-family surface.');
+COMMENT ON VIEW meta_prefixless_relation IS 'The placement exemptions: one row per relation deliberately outside every family, in the exemption polarity the schema gates use throughout, so a new prefix-less relation fails the roster gate until an authored row argues it in. The page column places the relation in the generated reference; the reason column carries the no-family argument beside the relation''s own comment.';
+COMMENT ON COLUMN meta_prefixless_relation.relation_name IS 'the exempted relation''s name as declared; the exemption''s key, and it must resolve to an observed relation (gated)';
+COMMENT ON COLUMN meta_prefixless_relation.page IS 'the family page that renders the relation, a meta_family prefix; NULL in the stated absent bucket: the relation belongs on no family''s page and renders on the reference''s index instead';
+COMMENT ON COLUMN meta_prefixless_relation.reason IS 'why no family covers the relation, rendered beside the relation in the reference';
+
+CREATE VIEW meta_relation_family (relation_name, relation_type, prefix, exempted) AS
+SELECT LOWER(t.table_name), t.table_type, f.prefix, x.relation_name IS NOT NULL
+  FROM INFORMATION_SCHEMA.TABLES t
+  LEFT JOIN meta_family f ON LEFT(LOWER(t.table_name), CHAR_LENGTH(f.prefix)) = f.prefix
+  LEFT JOIN meta_prefixless_relation x ON LOWER(t.table_name) = x.relation_name
+ WHERE t.table_schema = 'PUBLIC';
+COMMENT ON VIEW meta_relation_family IS 'The census that closes the roster: every relation in the schema, its kind, the family whose prefix covers it, and whether an exemption row places it. The one relational answer to which family a relation belongs to: the schema gates, the generated reference and the docs drift guard all read this view rather than re-deriving the match, so two mechanisms of different fidelity can never answer the question differently.';
+COMMENT ON COLUMN meta_relation_family.relation_name IS 'the relation''s name as declared, lowercased from the engine''s catalog spelling';
+COMMENT ON COLUMN meta_relation_family.relation_type IS 'the engine''s kind for the relation: BASE TABLE or VIEW; both carry comments and columns and both render in the reference, but only base tables additionally carry keys and constraints';
+COMMENT ON COLUMN meta_relation_family.prefix IS 'the covering family''s prefix, by exact prefix match against meta_family; NULL where no family covers the relation, which the gates require an exemption row to justify';
+COMMENT ON COLUMN meta_relation_family.exempted IS 'whether a meta_prefixless_relation row places this relation; TRUE must hold exactly where prefix is NULL, in both directions (gated)';
