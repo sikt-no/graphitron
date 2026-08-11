@@ -322,9 +322,11 @@ descendants. No new emitter shape.
    consuming argument's own). Every classified input field carries its own
    `@condition` override flag. The per-call-site classifier handles input-field
    column resolution directly against the consuming field's table with the
-   existing `catalog.findColumn` + `@field(name:)` path; a column-miss under an
-   active override is admitted as an `InputField.UnboundField` rather than
-   rejected.
+   existing `catalog.findColumn` + `@field(name:)` path. A field whose own
+   `@condition(override: true)` owns the predicate classifies as
+   `InputField.ConditionOwnedField` whether or not a column also resolves; a
+   genuine column-miss without one is `InputField.UnboundField`, admitted at
+   consumption under an enclosing override cascade.
 
 2. *`GraphitronSchemaValidator`.* No new structural validation:
    graphql-java enforces `on INPUT_FIELD_DEFINITION` placement at

@@ -6,7 +6,7 @@ theme: diagnostics
 bucket: architecture
 depends-on: []
 created: 2026-05-21
-last-updated: 2026-08-06
+last-updated: 2026-08-11
 ---
 
 # Validator walks PlainInputArg.fields() for UnboundField rejection
@@ -32,3 +32,5 @@ Surfaced by the R215 self-review: alf flagged that the architect's brief glossed
 
 Subsumed: R589 slice 5 delivers exactly this reachability (the definition-keyed disjunct is `validateInputUnboundField`'s existing predicate; the cascade disjunct evaluates over the derived occurrence path). This item closes as subsumed when that slice lands; do not build a second walker entry point in the meantime.
 Context and the whole-board picture: `roadmap/audits/2026-08-06-fact-base-impact-sweep.md`.
+
+Update (2026-08-11): R589 slice 5 landed. The malformed `@condition(override: false)` shape now mints a definition-and-table-keyed diagnostic at the classification funnel (`BuildContext.classifyInputField`), unconditional on cascade context, covering plain inputs and `@table` inputs alike; `validateInputUnboundField` is retired. The hole this item names is closed; the file stays as the Backlog tombstone and deletes when R589 reaches Done.

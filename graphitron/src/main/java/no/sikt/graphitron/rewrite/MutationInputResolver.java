@@ -452,22 +452,23 @@ final class MutationInputResolver {
             if (f instanceof InputField.ColumnBackedReferenceField) {
                 continue;
             }
-            // UnboundField with @condition(override: true) admits on UPDATE / DELETE; the
-            // developer takes over the WHERE half via the explicit condition method. INSERT has
-            // no WHERE clause for the override to bind into, so the carrier rejects there.
-            // UnboundField with condition.isEmpty() or @condition(override:false) is never a
-            // valid mutation input shape: the field has nothing to write and no filter slot.
-            if (f instanceof InputField.UnboundField uf) {
-                if (uf.condition().isPresent() && uf.condition().get().override()) {
-                    if (kind == DmlKind.INSERT) {
-                        return Rejection.structural(
-                            "@mutation input '" + typeName + "' field '" + uf.name()
-                            + "': @condition(override: true) on a @mutation(typeName: INSERT) "
-                            + "input field is not supported; INSERT has no WHERE clause for the "
-                            + "override condition to bind into");
-                    }
-                    continue;
+            // ConditionOwnedField admits on UPDATE / DELETE; the developer takes over the WHERE
+            // half via the explicit condition method. INSERT has no WHERE clause for the
+            // override to bind into, so the carrier rejects there.
+            if (f instanceof InputField.ConditionOwnedField cof) {
+                if (kind == DmlKind.INSERT) {
+                    return Rejection.structural(
+                        "@mutation input '" + typeName + "' field '" + cof.name()
+                        + "': @condition(override: true) on a @mutation(typeName: INSERT) "
+                        + "input field is not supported; INSERT has no WHERE clause for the "
+                        + "override condition to bind into");
                 }
+                continue;
+            }
+            // UnboundField (the genuine column miss, with or without an override:false
+            // @condition) is never a valid mutation input shape: the field has nothing to
+            // write and no filter slot.
+            if (f instanceof InputField.UnboundField uf) {
                 return Rejection.structural(
                     "@mutation input '" + typeName + "' field '" + uf.name()
                     + "': field has no column binding and no @condition(override: true); "

@@ -202,16 +202,13 @@ public final class UpdateRowsWalker {
                     c.name(), c.list(), c.columns(), wrap(c.extraction(), prefix, c.name(), outerArgName), false, c.condition(), c.location(), errors, contributions);
                 case InputField.ColumnBackedReferenceField c -> classifyColumnCarrier(
                     c.name(), c.list(), c.liftedSourceColumns(), wrap(c.extraction(), prefix, c.name(), outerArgName), c.selfReference(), c.condition(), c.location(), errors, contributions);
-                case InputField.UnboundField u -> {
-                    if (u.condition().isPresent() && u.condition().get().override()) {
-                        errors.add(new UpdateRowsError.OverrideConditionNotSupported(u.name(), u.location()));
-                    } else {
-                        errors.add(new UpdateRowsError.UnsupportedInputFieldShape(
-                            u.name(), "UnboundField",
-                            "the field binds no column and carries no @condition(override: true); "
-                            + "UPDATE input fields must bind a column"));
-                    }
-                }
+                case InputField.ConditionOwnedField c ->
+                    errors.add(new UpdateRowsError.OverrideConditionNotSupported(c.name(), c.location()));
+                case InputField.UnboundField u ->
+                    errors.add(new UpdateRowsError.UnsupportedInputFieldShape(
+                        u.name(), "UnboundField",
+                        "the field binds no column and carries no @condition(override: true); "
+                        + "UPDATE input fields must bind a column"));
                 case InputField.NestingField n -> {
                     if (n.list()) {
                         errors.add(new UpdateRowsError.UnsupportedInputFieldShape(

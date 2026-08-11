@@ -113,16 +113,13 @@ public final class DeleteRowsWalker {
                     c.name(), c.list(), c.columns(), wrap(c.extraction(), prefix, c.name(), outerArgName), c.condition(), c.location(), errors, contributions);
                 case InputField.ColumnBackedReferenceField c -> classifyColumnCarrier(
                     c.name(), c.list(), c.liftedSourceColumns(), wrap(c.extraction(), prefix, c.name(), outerArgName), c.condition(), c.location(), errors, contributions);
-                case InputField.UnboundField u -> {
-                    if (u.condition().isPresent() && u.condition().get().override()) {
-                        errors.add(new DeleteRowsError.OverrideConditionNotSupported(u.name(), u.location()));
-                    } else {
-                        errors.add(new DeleteRowsError.UnsupportedInputFieldShape(
-                            u.name(), "UnboundField",
-                            "the field binds no column and carries no @condition(override: true); "
-                            + "DELETE input fields must bind a column"));
-                    }
-                }
+                case InputField.ConditionOwnedField c ->
+                    errors.add(new DeleteRowsError.OverrideConditionNotSupported(c.name(), c.location()));
+                case InputField.UnboundField u ->
+                    errors.add(new DeleteRowsError.UnsupportedInputFieldShape(
+                        u.name(), "UnboundField",
+                        "the field binds no column and carries no @condition(override: true); "
+                        + "DELETE input fields must bind a column"));
                 case InputField.NestingField n -> {
                     if (n.list()) {
                         errors.add(new DeleteRowsError.UnsupportedInputFieldShape(

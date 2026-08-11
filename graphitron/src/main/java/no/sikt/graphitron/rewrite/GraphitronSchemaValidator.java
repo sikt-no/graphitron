@@ -329,7 +329,8 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.InputField.ColumnBackedField f     -> {} // column resolution guaranteed by the builder; arity/extraction invariants enforced by the record ctor
             case no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField f -> validateInputColumnBackedReferenceField(f, errors);
             case no.sikt.graphitron.rewrite.model.InputField.NestingField f          -> validateInputNestingField(f, errors);
-            case no.sikt.graphitron.rewrite.model.InputField.UnboundField f          -> validateInputUnboundField(f, errors);
+            case no.sikt.graphitron.rewrite.model.InputField.UnboundField f          -> {} // the malformed @condition(override:false) fact is minted at classification (BuildContext.classifyInputField, definition-and-table keyed); the cascade verdict is use-keyed and minted by the consumer walk
+            case no.sikt.graphitron.rewrite.model.InputField.ConditionOwnedField f   -> {} // the explicit @condition(override:true) method owns the predicate; the carrier's compact constructor pins the shape and the DML walkers own the write-side rejections
             case no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField f -> validateUnclassifiedField(f, errors);
         }
         validatePaginationRequiresOrdering(field, errors);
@@ -519,7 +520,8 @@ public class GraphitronSchemaValidator {
      */
     private static void validateInputFieldRecursive(no.sikt.graphitron.rewrite.model.InputField field, List<ValidationError> errors) {
         switch (field) {
-            case no.sikt.graphitron.rewrite.model.InputField.UnboundField uf -> validateInputUnboundField(uf, errors);
+            case no.sikt.graphitron.rewrite.model.InputField.UnboundField uf -> {} // the malformed @condition(override:false) fact is minted at classification; the DML walkers own the write-side consequence
+            case no.sikt.graphitron.rewrite.model.InputField.ConditionOwnedField cof -> {} // shape pinned by the carrier's compact constructor; write-side admission is the DML walkers' arm
             case no.sikt.graphitron.rewrite.model.InputField.NestingField nf -> {
                 for (var nested : nf.fields()) {
                     validateInputFieldRecursive(nested, errors);
@@ -1415,26 +1417,6 @@ public class GraphitronSchemaValidator {
     }
     private void validateInputNestingField(no.sikt.graphitron.rewrite.model.InputField.NestingField field, List<ValidationError> errors) {
         // Nested field columns are resolved at classification time; no additional structural checks needed.
-    }
-    /**
-     * An {@link no.sikt.graphitron.rewrite.model.InputField.UnboundField} with
-     * {@code @condition(override: false)} present is a structural bug — the field has no column
-     * to bind and the explicit condition method does not own the predicate (override: false
-     * means the implicit column predicate is required to compose with the condition). The
-     * classifier admits this shape so consumer-side rejection paths stay uniform; the validator
-     * rejects it at the field's source location with a directed diagnostic.
-     */
-    private static void validateInputUnboundField(no.sikt.graphitron.rewrite.model.InputField.UnboundField field, List<ValidationError> errors) {
-        if (field.condition().isPresent() && !field.condition().get().override()) {
-            errors.add(new ValidationError(
-                field.qualifiedName(),
-                Rejection.structural("Input field '" + field.qualifiedName()
-                    + "': @condition(override: false) on a field with no resolving column is not "
-                    + "supported; either add a matching column to the resolving table, or set "
-                    + "override: true so the condition method owns the WHERE predicate entirely"),
-                field.location()
-            ));
-        }
     }
     private void validateUnclassifiedType(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType type, List<ValidationError> errors) {
         errors.add(ValidationError.forType(type.name(), type.rejection(), type.location()));

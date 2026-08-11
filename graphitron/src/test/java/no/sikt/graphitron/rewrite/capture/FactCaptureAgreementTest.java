@@ -95,7 +95,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       over the spec-by-example corpus;
  *       {@code no.sikt.graphitron.rewrite.derive.DemandShadowTest} binds the domain, the demand
  *       and exemption rules and their resolved reductions to the walked registries via
- *       {@code ClaimDomain}, residues named and disagreement directions pinned). Later derivation
+ *       {@code ClaimDomain}, residues named and disagreement directions pinned;
+ *       {@code no.sikt.graphitron.rewrite.derive.InputOccurrenceShadowTest} binds the input
+ *       occurrence-path pair and the enclosing-override view to a structural reference
+ *       enumeration and to the walk's use-keyed cascade verdicts). Later derivation
  *       strata land as registrations here, not as exemptions.</li>
  *   <li>{@link Arm#ORACLE} for relations a post-capture oracle writer owns, where no independent
  *       second walk can re-derive the oracle's verdict without re-running the oracle. Two anchors,
@@ -174,6 +177,9 @@ class FactCaptureAgreementTest {
         registrations.put("intent_type_exemption", Arm.DERIVED);
         registrations.put("intent_resolved_field_demand", Arm.DERIVED);
         registrations.put("intent_resolved_type_demand", Arm.DERIVED);
+        registrations.put("intent_input_occurrence_path", Arm.DERIVED);
+        registrations.put("intent_input_occurrence_path_step", Arm.DERIVED);
+        registrations.put("intent_input_occurrence_override", Arm.DERIVED);
         registrations.put("javac_diagnostic", Arm.ORACLE);
         return Map.copyOf(registrations);
     }

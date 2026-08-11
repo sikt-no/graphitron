@@ -64,8 +64,12 @@ class LeafRatchetTest {
      */
     private static final int CHILD_FIELD_LEAVES = 22;
 
-    /** Installed at 4 (census 2026-08-02, unchanged from the 2026-08-01 baseline). */
-    private static final int INPUT_FIELD_LEAVES = 4;
+    /**
+     * Installed at 4 (census 2026-08-02, unchanged from the 2026-08-01 baseline).
+     * 4 to 5 (2026-08-11): ConditionOwnedField split out of UnboundField, so the
+     * override-owned shape stops demoting a resolved coordinate into the unbound arm.
+     */
+    private static final int INPUT_FIELD_LEAVES = 5;
 
     @Test
     void leafCountsHoldAtTheirPins() {

@@ -2800,34 +2800,56 @@ class BuildContext {
         if (colEntry.isPresent()) {
             var e = colEntry.get();
             Optional<ArgConditionRef> cond = buildInputFieldCondition(field, parentTypeName, name, conditionFailures);
-            // @condition(override: true) on a field collapses to UnboundField regardless
-            // of whether the column resolves. The column is unused by construction (the explicit
-            // condition method owns the predicate entirely), so recording it on a ColumnBackedField is
-            // dead storage. UnboundField is the canonical structural answer; the consumer's switch
-            // becomes one-axis exhaustive over enclosingOverride × variant.
+            // @condition(override: true) means the explicit method owns the predicate entirely;
+            // the resolved column is unused by construction, so the carrier is ConditionOwnedField
+            // and the column is deliberately not recorded (both classification outcomes, column
+            // resolved and column missing, mint the same carrier).
             if (cond.isPresent() && cond.get().override()) {
-                return new InputFieldResolution.Resolved(new InputField.UnboundField(
+                return new InputFieldResolution.Resolved(new InputField.ConditionOwnedField(
                     parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                    cond, columnName));
+                    cond.get()));
             }
             return new InputFieldResolution.Resolved(new InputField.ColumnBackedField(
                 parentTypeName, name, locationOf(field), typeName, nonNull, list,
                 List.of(new ColumnRef(e.sqlName(), e.javaName(), e.columnClass(), e.columnType())), cond,
                 new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct()));
         }
-        // Column-miss lifts to InputField.UnboundField uniformly. The classifier emits the
-        // structural variant once; the validator catches @condition(override:false) shapes at the
-        // directive's location, and the consumer applies the cascade (admit when enclosingOverride
-        // is true, reject at the field's source location otherwise).
+        // Column miss. @condition(override: true) lifts to ConditionOwnedField (the method owns
+        // the predicate; whether a column also resolved is not the carrier's fact). Otherwise the
+        // field is genuinely unbound: with an authored @condition (override: false, required to
+        // compose with an implicit predicate that has no column to bind) the malformed-shape fact
+        // is minted here, keyed by this definition and the resolving table, unconditional on any
+        // enclosing cascade; with no @condition the carrier is cascade-dependent and the
+        // consumer's walk applies the use-keyed verdict.
         //
-        // When the field carries @condition (any override flag), build it once so the carrier
-        // records the explicit predicate. A failing condition build still emits UnboundField with
-        // condition.empty() so the consumer-side path stays uniform; the condition error rides on
-        // the errors list independent of variant choice.
+        // The malformed-shape mint reads the authored directive rather than the built
+        // ArgConditionRef: a failing condition build empties the carrier's condition by design
+        // (the reflection error rides the errors list), and the fact asserted is about the
+        // authored shape.
         var conditionDirective = readConditionDirective(field);
         Optional<ArgConditionRef> unboundCond = Optional.empty();
         if (conditionDirective != null) {
             unboundCond = buildInputFieldCondition(field, parentTypeName, name, conditionFailures);
+        }
+        if (unboundCond.isPresent() && unboundCond.get().override()) {
+            return new InputFieldResolution.Resolved(new InputField.ConditionOwnedField(
+                parentTypeName, name, locationOf(field), typeName, nonNull, list,
+                unboundCond.get()));
+        }
+        if (conditionDirective != null && !conditionDirective.override()) {
+            // Typed as UnknownName so the attempted column and the Levenshtein candidates
+            // survive for LSP fix-its, with the malformed-shape remedy in the summary.
+            addDiagnostic(new ValidationError(
+                parentTypeName + "." + name,
+                Rejection.unknownColumn(
+                    "Input field '" + parentTypeName + "." + name
+                        + "': @condition(override: false) requires the implicit column predicate "
+                        + "to compose, and no column resolves on table '" + tableName
+                        + "'; either add a matching column, or set override: true so the "
+                        + "condition method owns the WHERE predicate entirely",
+                    columnName,
+                    catalog.columnSqlNamesOf(tableName)),
+                locationOf(field)));
         }
         return new InputFieldResolution.Resolved(new InputField.UnboundField(
             parentTypeName, name, locationOf(field), typeName, nonNull, list,

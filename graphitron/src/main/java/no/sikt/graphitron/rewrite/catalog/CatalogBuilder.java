@@ -466,6 +466,15 @@ public final class CatalogBuilder {
                     f.condition().map(c -> c.filter().className()).orElse(null),
                     f.condition().map(c -> c.filter().methodName()).orElse(null),
                     f.condition().map(c -> c.override()).orElse(false));
+            // Value-identical to what the pre-split collapse projected for the same authored
+            // shape. The arm is unreachable until input fields contribute projection entries
+            // (input-member coordinates, umbrella work), which is also when the input-side
+            // classification vocabulary gets its own honest arms.
+            case InputField.ConditionOwnedField f ->
+                new FieldClassification.InputUnbound(
+                    f.condition().filter().className(),
+                    f.condition().filter().methodName(),
+                    true);
 
             // --- Unclassified ---
             case GraphitronField.UnclassifiedField f ->

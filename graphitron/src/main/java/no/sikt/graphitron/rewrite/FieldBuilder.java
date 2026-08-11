@@ -694,8 +694,8 @@ class FieldBuilder {
      *                       the {@code *Conditions} class name for any generated filter method
      */
     private TableFieldComponents resolveTableFieldComponents(
-            GraphQLFieldDefinition fieldDef, TableRef table, String returnTypeName, NodeIdArgPlan plan) {
-        return resolveTableFieldComponents(fieldDef, table, returnTypeName, plan, true);
+            String parentTypeName, GraphQLFieldDefinition fieldDef, TableRef table, String returnTypeName, NodeIdArgPlan plan) {
+        return resolveTableFieldComponents(parentTypeName, fieldDef, table, returnTypeName, plan, true);
     }
 
     /**
@@ -705,7 +705,7 @@ class FieldBuilder {
      *        participants via {@link #warnAsConnectionSameTable} instead.
      */
     private TableFieldComponents resolveTableFieldComponents(
-            GraphQLFieldDefinition fieldDef, TableRef table, String returnTypeName, NodeIdArgPlan plan,
+            String parentTypeName, GraphQLFieldDefinition fieldDef, TableRef table, String returnTypeName, NodeIdArgPlan plan,
             boolean emitAsConnectionAdvisory) {
         if (emitAsConnectionAdvisory) {
             warnAsConnectionSameTable(fieldDef, plan);
@@ -714,7 +714,7 @@ class FieldBuilder {
         var refs = classifyArguments(fieldDef, table, returnTypeName, plan, classifyErrors);
         var rejections = new ArrayList<Rejection>();
         for (String e : classifyErrors) rejections.add(Rejection.structural(e));
-        return projectForFilter(refs, fieldDef, table, returnTypeName, rejections);
+        return projectForFilter(refs, parentTypeName, fieldDef, table, returnTypeName, rejections);
     }
 
     /**
@@ -764,7 +764,7 @@ class FieldBuilder {
      * mismatched branch at the consumer's javac (mirroring @reference's concrete-parameter semantics).
      */
     private ParticipantFiltersResult lowerParticipantFilters(
-            GraphQLFieldDefinition fieldDef, List<ParticipantRef> participants) {
+            String parentTypeName, GraphQLFieldDefinition fieldDef, List<ParticipantRef> participants) {
         var result = new ArrayList<ParticipantFilters>();
         boolean advisoryEmitted = false;
         for (var p : participants) {
@@ -777,7 +777,7 @@ class FieldBuilder {
                 warnAsConnectionSameTable(fieldDef, plan);
                 advisoryEmitted = true;
             }
-            var components = resolveTableFieldComponents(fieldDef, tb.table(), tb.typeName(), plan, false);
+            var components = resolveTableFieldComponents(parentTypeName, fieldDef, tb.table(), tb.typeName(), plan, false);
             if (components instanceof TableFieldComponents.Rejected rj) {
                 return new ParticipantFiltersResult.Rejected(rj.rejection());
             }
@@ -922,7 +922,7 @@ class FieldBuilder {
             if (referencePath.terminalTargetVerdict() instanceof BuildContext.TerminalTargetVerdict.Mismatch mismatch) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(mismatch.diagnostic()));
             }
-            var components = resolveTableFieldComponents(fieldDef, returnType.table(), elementTypeName,
+            var components = resolveTableFieldComponents(parentTypeName, fieldDef, returnType.table(), elementTypeName,
                 buildNodeIdArgPlan(fieldDef, returnType.table()));
             if (components instanceof TableFieldComponents.Rejected rj) return new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
             var tfc = (TableFieldComponents.Ok) components;
@@ -993,7 +993,7 @@ class FieldBuilder {
             if (referencePath.terminalTargetVerdict() instanceof BuildContext.TerminalTargetVerdict.Mismatch mismatch) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(mismatch.diagnostic()));
             }
-            var components = resolveTableFieldComponents(fieldDef, tableInterfaceType.table(), elementTypeName,
+            var components = resolveTableFieldComponents(parentTypeName, fieldDef, tableInterfaceType.table(), elementTypeName,
                 buildNodeIdArgPlan(fieldDef, tableInterfaceType.table()));
             if (components instanceof TableFieldComponents.Rejected rj) return new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
             var tfc = (TableFieldComponents.Ok) components;
@@ -1843,9 +1843,10 @@ class FieldBuilder {
      * {@link #classifyArguments} output as the single source of truth about each argument:
      * one classification + one projection step. See {@code docs/argument-resolution.md}.
      */
-    private TableFieldComponents projectForFilter(List<ArgumentRef> refs, GraphQLFieldDefinition fieldDef,
+    private TableFieldComponents projectForFilter(List<ArgumentRef> refs, String parentTypeName,
+                                                  GraphQLFieldDefinition fieldDef,
                                                   TableRef rt, String returnTypeName, List<Rejection> errors) {
-        var filters = projectFilters(refs, fieldDef, rt, returnTypeName, errors);
+        var filters = projectFilters(refs, parentTypeName, fieldDef, rt, returnTypeName, errors);
         if (filters == null) return new TableFieldComponents.Rejected(foldRejections(errors));
         ConditionFilter fieldCondition;
         switch (conditionResolver.resolveField(fieldDef)) {
@@ -1935,13 +1936,18 @@ class FieldBuilder {
      * input fields are grouped into a single {@link GeneratedConditionFilter} entry. The condition
      * class is named {@code <returnTypeName>Conditions} and the method {@code <fieldName>Condition}.
      */
-    private List<WhereFilter> projectFilters(List<ArgumentRef> refs, GraphQLFieldDefinition fieldDef,
+    private List<WhereFilter> projectFilters(List<ArgumentRef> refs, String parentTypeName,
+                                             GraphQLFieldDefinition fieldDef,
                                              TableRef rt, String returnTypeName, List<Rejection> errors) {
         var bodyParams = new ArrayList<BodyParam>();
         var argConditions = new ArrayList<WhereFilter>();
         boolean hadError = false;
         var fieldCond = ctx.readConditionDirective(fieldDef);
         boolean fieldOverride = fieldCond != null && fieldCond.override();
+        // The use-site half of the occurrence-path identity the cascade verdict is keyed by;
+        // serialized as <Type>.<field>(<argument>)/<nested>/.../<leaf>, the same format the
+        // derived occurrence-path relation uses as its key.
+        String useSiteCoordinate = parentTypeName + "." + fieldDef.getName();
         for (var ref : refs) {
             switch (ref) {
                 case ArgumentRef.OrderByArg ignored -> {}                     // handled by OrderByResolver
@@ -1965,7 +1971,7 @@ class FieldBuilder {
                     var implicitParams = new ArrayList<BodyParam>();
                     int errorsBefore = errors.size();
                     String tiaSummary = "plain input type '" + tia.typeName() + "'";
-                    walkInputFieldConditions(tia.fields(), tia.name(), List.of(),
+                    walkInputFieldConditions(tia.fields(), useSiteCoordinate, tia.name(), List.of(),
                         enclosingOverride, tia.nonNull(),
                         lookupBoundNames, implicitParams, argConditions, errors,
                         tia.inputTable(), tiaSummary);
@@ -1981,7 +1987,7 @@ class FieldBuilder {
                         || pia.argCondition().map(ArgConditionRef::override).orElse(false);
                     var implicitParams = new ArrayList<BodyParam>();
                     int errorsBefore = errors.size();
-                    walkInputFieldConditions(pia.fields(), pia.name(), List.of(),
+                    walkInputFieldConditions(pia.fields(), useSiteCoordinate, pia.name(), List.of(),
                         enclosingOverride, pia.nonNull(),
                         Set.of(), implicitParams, argConditions, errors, rt,
                         "plain input type '" + pia.typeName() + "'");
@@ -2136,7 +2142,7 @@ class FieldBuilder {
      * the runtime null guard only when every enclosing level is statically non-null.
      */
     private void walkInputFieldConditions(
-            List<InputField> fields, String outerArgName, List<String> pathPrefix,
+            List<InputField> fields, String useSiteCoordinate, String outerArgName, List<String> pathPrefix,
             boolean enclosingOverride, boolean effectiveNonNull, Set<String> lookupBoundNames,
             List<BodyParam> implicitBodyParams,
             List<WhereFilter> out,
@@ -2221,36 +2227,37 @@ class FieldBuilder {
                     nf.condition().ifPresent(c -> out.add(conditionResolver.rewrapForNested(c.filter(), outerArgName, leafPath)));
                     boolean nestOverride = enclosingOverride
                         || nf.condition().map(ArgConditionRef::override).orElse(false);
-                    walkInputFieldConditions(nf.fields(), outerArgName, leafPath,
+                    walkInputFieldConditions(nf.fields(), useSiteCoordinate, outerArgName, leafPath,
                         nestOverride, effectiveNonNull && nf.nonNull(),
                         lookupBoundNames, implicitBodyParams, out, walkRejections,
                         resolvingTable, containerSummary);
                 }
+                case InputField.ConditionOwnedField cof ->
+                    // The explicit @condition(override: true) method owns the WHERE predicate
+                    // entirely. Every authored @condition produces SQL (the cascade doctrine in
+                    // manual/how-to/migrating-from-legacy.adoc), and there is no implicit
+                    // predicate to suppress by construction, so no cascade branch exists here.
+                    out.add(conditionResolver.rewrapForNested(cof.condition().filter(), outerArgName, leafPath));
                 case InputField.UnboundField uf -> {
-                    // UnboundField is the no-column-bound carrier. Per condition-cascade
-                    // docs (manual/how-to/migrating-from-legacy.adoc,
-                    // "behavior-divergence-condition-cascade") every @condition the author
-                    // writes produces SQL; the override flag controls only the *implicit*
-                    // column predicate, which UnboundField doesn't have. So the cascade case
-                    // (inner @condition under outer override:true) still fires the inner method.
-                    //
-                    // Reject at the consumer outside the cascade when either the shape is
-                    // structurally malformed (condition.isPresent() && !override on a no-column
-                    // field; override:false implies the implicit predicate is required to
-                    // compose, and there's no column to bind) or the field has no filter
-                    // contribution at all (condition.isEmpty()). The validator has no
-                    // plain-input walk, so this consumer-side reject is the safety net for
-                    // plain inputs. @table inputs are caught by
-                    // GraphitronSchemaValidator.validateInputUnboundField at the directive's
-                    // location independent of this path.
-                    boolean rejectAtConsumer = !enclosingOverride
-                        && (uf.condition().isEmpty()
-                            || !uf.condition().get().override());
-                    if (rejectAtConsumer) {
-                        walkRejections.add(unboundFieldConsumerRejection(uf, resolvingTable, containerSummary));
-                    } else {
-                        uf.condition().ifPresent(c -> out.add(
-                            conditionResolver.rewrapForNested(c.filter(), outerArgName, leafPath)));
+                    // UnboundField is the genuine column-miss carrier. With an authored
+                    // @condition (override: false by the carrier's invariant) the method still
+                    // fires (every authored @condition produces SQL) while the malformed-shape
+                    // fact, minted at classification keyed by the definition and the resolving
+                    // table, fails the build. Without one, the field is cascade-dependent:
+                    // admitted when an enclosing @condition(override: true) resolves it, and
+                    // otherwise the use-keyed cascade verdict mints into the build diagnostics
+                    // at this use-site join, with the consuming field keeping one consequence
+                    // rejection.
+                    if (uf.condition().isPresent()) {
+                        out.add(conditionResolver.rewrapForNested(
+                            uf.condition().get().filter(), outerArgName, leafPath));
+                    } else if (!enclosingOverride) {
+                        mintCascadeVerdict(uf, resolvingTable, containerSummary,
+                            useSiteCoordinate, outerArgName, leafPath);
+                        walkRejections.add(Rejection.structural(containerSummary
+                            + ": input field '" + uf.name() + "' has no column binding and no "
+                            + "@condition; the field cannot resolve without an enclosing "
+                            + "@condition(override: true) cascade"));
                     }
                 }
             }
@@ -2258,34 +2265,38 @@ class FieldBuilder {
     }
 
     /**
-     * Consumer-side rejection for an {@link InputField.UnboundField} reached at a call site
-     * with no enclosing {@code @condition(override: true)} cascade. The field carries no column
-     * binding and either no {@code @condition} of its own or one with {@code override:false}
-     * (the latter is also caught by the validator at the directive's location). The rejection
-     * prose names the field as {@code <parentTypeName>.<name>} so log readers can locate it
-     * without consulting the surrounding UnclassifiedField context.
+     * Mints the use-keyed cascade verdict for an {@link InputField.UnboundField} with no
+     * {@code @condition} of its own, reached at a use site with no enclosing
+     * {@code @condition(override: true)} cascade. The fact is about one occurrence: the same
+     * input field consumed elsewhere under an override cascade is admitted, so the minted
+     * value carries the serialized occurrence path (the same
+     * {@code <Type>.<field>(<argument>)/<nested>/.../<leaf>} format the derived
+     * occurrence-path relation keys by; a named fixture in the shadow agreement test pins the
+     * two serializations equal) and the resolving table. The occurrence identity riding in the
+     * message is a recorded deferral: it becomes a typed component when the diagnostics
+     * surface grows one.
      *
-     * <p>When {@link InputField.UnboundField#attemptedColumnName()} is non-null and a resolving
-     * table is in hand, the rejection lifts to {@link Rejection.AuthorError.UnknownName} with the
-     * attempted column name and the Levenshtein candidates against the table; LSP fix-its and
-     * watch-mode formatters consume the structured payload. Otherwise (no attempt, or no table
-     * context) it folds to a structural rejection.
+     * <p>The rejection lifts to {@link Rejection.AuthorError.UnknownName} with the attempted
+     * column name and the Levenshtein candidates against the resolving table when one is in
+     * hand (LSP fix-its and watch-mode formatters consume the structured payload); with no
+     * table context it folds to a structural fact. The mint is located at the leaf field's own
+     * definition, the fan-in doctrine's located-cause rule; the consumer keeps a consequence
+     * rejection beside it.
      */
-    private Rejection unboundFieldConsumerRejection(InputField.UnboundField uf, TableRef resolvingTable,
-                                                    String containerSummary) {
-        String attempted = uf.attemptedColumnName();
-        String summary = containerSummary + ": input field '" + uf.name() + "'";
-        if (attempted != null && resolvingTable != null) {
-            return Rejection.unknownColumn(summary, attempted,
-                ctx.catalog.columnSqlNamesOf(resolvingTable.tableName()));
-        }
-        if (attempted == null) {
-            return Rejection.structural(summary
-                + ": has no column binding and no @condition; the field cannot resolve "
-                + "without an enclosing @condition(override: true) cascade");
-        }
-        return Rejection.structural(summary + ": no column '" + attempted
-            + "' found on the resolving table");
+    private void mintCascadeVerdict(InputField.UnboundField uf, TableRef resolvingTable,
+                                    String containerSummary, String useSiteCoordinate,
+                                    String outerArgName, List<String> leafPath) {
+        String path = useSiteCoordinate + "(" + outerArgName + ")/" + String.join("/", leafPath);
+        String summary = containerSummary + ": input field '" + uf.name() + "' at occurrence '"
+            + path + "'";
+        Rejection rejection = resolvingTable != null
+            ? Rejection.unknownColumn(
+                summary + " against table '" + resolvingTable.tableName() + "'",
+                uf.attemptedColumnName(),
+                ctx.catalog.columnSqlNamesOf(resolvingTable.tableName()))
+            : Rejection.structural(summary + ": has no column binding and no @condition; the "
+                + "field cannot resolve without an enclosing @condition(override: true) cascade");
+        ctx.addDiagnostic(new ValidationError(uf.qualifiedName(), rejection, uf.location()));
     }
 
     /**
@@ -4787,7 +4798,7 @@ class FieldBuilder {
                     // The plan was built against `lookupReturnType.table()` which equals `tb.table()`
                     // for the lookup-promotion path (resolveAtRoot.Ok preserves the table); reuse
                     // it rather than rebuilding.
-                    var components = resolveTableFieldComponents(fieldDef, tb.table(), lookupTypeName, lookupPlan);
+                    var components = resolveTableFieldComponents(parentTypeName, fieldDef, tb.table(), lookupTypeName, lookupPlan);
                     yield switch (components) {
                         case TableFieldComponents.Rejected rj ->
                             new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
@@ -4824,7 +4835,7 @@ class FieldBuilder {
             // and the cast would crash. The field resolves cleanly against the index verdict; the
             // collision still hard-fails the build at validateNodeTypeIdUniqueness before generation.
             var returnType = new ReturnTypeRef.TableBoundReturnType(elementTypeName, tbt.table(), wrapper);
-            var components = resolveTableFieldComponents(fieldDef, returnType.table(), elementTypeName,
+            var components = resolveTableFieldComponents(parentTypeName, fieldDef, returnType.table(), elementTypeName,
                 buildNodeIdArgPlan(fieldDef, returnType.table()));
             if (components instanceof TableFieldComponents.Rejected rj) return new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
             var tfc = (TableFieldComponents.Ok) components;
@@ -4842,7 +4853,7 @@ class FieldBuilder {
                     + " returning a single-table discriminated interface ('" + elementTypeName
                     + "') is not yet supported; return the list shape instead"));
             }
-            var components = resolveTableFieldComponents(fieldDef, tableInterfaceType.table(), elementTypeName,
+            var components = resolveTableFieldComponents(parentTypeName, fieldDef, tableInterfaceType.table(), elementTypeName,
                 buildNodeIdArgPlan(fieldDef, tableInterfaceType.table()));
             if (components instanceof TableFieldComponents.Rejected rj) return new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
             var tfc = (TableFieldComponents.Ok) components;
@@ -4853,7 +4864,7 @@ class FieldBuilder {
                 tfc.filters(), tfc.orderBy(), tfc.pagination());
         }
         if (elementType instanceof InterfaceType interfaceType) {
-            var lowered = lowerParticipantFilters(fieldDef, interfaceType.participants());
+            var lowered = lowerParticipantFilters(parentTypeName, fieldDef, interfaceType.participants());
             if (lowered instanceof ParticipantFiltersResult.Rejected rj) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
             }
@@ -4863,7 +4874,7 @@ class FieldBuilder {
                 ((ParticipantFiltersResult.Ok) lowered).participantFilters());
         }
         if (elementType instanceof UnionType unionType) {
-            var lowered = lowerParticipantFilters(fieldDef, unionType.participants());
+            var lowered = lowerParticipantFilters(parentTypeName, fieldDef, unionType.participants());
             if (lowered instanceof ParticipantFiltersResult.Rejected rj) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
             }
@@ -6227,7 +6238,7 @@ class FieldBuilder {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
             }
             var ok = (SourceRowDirectiveResolver.Resolved.Ok) sourceRowResult;
-            var components = resolveTableFieldComponents(fieldDef, ok.tbReturnType().table(), elementTypeName,
+            var components = resolveTableFieldComponents(parentTypeName, fieldDef, ok.tbReturnType().table(), elementTypeName,
                 buildNodeIdArgPlan(fieldDef, ok.tbReturnType().table()));
             if (components instanceof TableFieldComponents.Rejected rj) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
@@ -6342,7 +6353,7 @@ class FieldBuilder {
         }
         return switch (resolvedReturnType) {
             case ReturnTypeRef.TableBoundReturnType tb -> {
-                var components = resolveTableFieldComponents(fieldDef, tb.table(), elementTypeName,
+                var components = resolveTableFieldComponents(parentTypeName, fieldDef, tb.table(), elementTypeName,
                     buildNodeIdArgPlan(fieldDef, tb.table()));
                 if (components instanceof TableFieldComponents.Rejected rj) yield new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
                 var tfc = (TableFieldComponents.Ok) components;

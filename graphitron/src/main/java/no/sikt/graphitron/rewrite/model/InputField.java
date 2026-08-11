@@ -19,6 +19,7 @@ import java.util.Optional;
 public sealed interface InputField extends GraphitronField
         permits InputField.ColumnBackedField, InputField.ColumnBackedReferenceField,
                 InputField.NestingField, InputField.UnboundField,
+                InputField.ConditionOwnedField,
                 InputField.LookupKeyField, InputField.SetField {
 
     /**
@@ -193,34 +194,69 @@ public sealed interface InputField extends GraphitronField
     ) implements InputField {}
 
     /**
-     * Input field that does not bind to a SQL column. The defining property is the absence of a
-     * column binding, regardless of whether an explicit {@code @condition} is present.
+     * Input field whose explicit {@code @condition(override: true)} method owns the WHERE
+     * predicate entirely. No implicit column predicate is emitted by construction, so whether the
+     * field's name also resolves a column on the resolving table is deliberately not recorded:
+     * the column would be dead storage either way, and both classification outcomes (column
+     * resolved, column missing) mint this one carrier so it means exactly one thing.
      *
-     * <p>{@code condition} distinguishes three cases:
+     * <p>The compact constructor pins the defining fact: the condition is present with
+     * {@code override: true}. Consumers branch on carrier identity, never on a
+     * {@code condition().isPresent() && override()} re-derivation: the filter walk fires the
+     * method unconditionally (every authored {@code @condition} produces SQL), the DML walkers
+     * reject it as an unsupported write shape at their own arms, and the mutation admission
+     * admits it on UPDATE / DELETE and rejects it on INSERT (no WHERE clause to bind into).
+     *
+     * <p>Not a {@link LookupKeyField} / {@link SetField}: those rails require a column tuple to
+     * drive the VALUES+JOIN or INSERT/UPDATE columnlist.
+     */
+    record ConditionOwnedField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        String typeName,
+        boolean nonNull,
+        boolean list,
+        ArgConditionRef condition
+    ) implements InputField {
+
+        public ConditionOwnedField {
+            java.util.Objects.requireNonNull(condition, "condition");
+            if (!condition.override()) {
+                throw new IllegalArgumentException(
+                    "InputField.ConditionOwnedField '" + name
+                    + "' requires @condition(override: true); got override: false");
+            }
+        }
+    }
+
+    /**
+     * Input field that does not bind to a SQL column: the classifier looked
+     * {@code attemptedColumnName} up against the resolving table and found nothing. A field whose
+     * explicit {@code @condition(override: true)} owns the predicate is {@link ConditionOwnedField},
+     * never this carrier, so the miss here is always a genuine one.
+     *
+     * <p>{@code condition} distinguishes the two remaining cases:
      * <ul>
-     *   <li>{@code condition.isPresent() && condition.get().override()}: the field carries an
-     *       explicit {@code @condition(override: true)} (with or without a matching column on the
-     *       resolving table). The condition method owns the WHERE predicate entirely; no implicit
-     *       column predicate is emitted by construction.</li>
-     *   <li>{@code condition.isPresent() && !condition.get().override()}: the field carries
-     *       {@code @condition(override: false)} but has no matching column. Validator-side
-     *       rejection (the classifier admits to keep call-site cascade resolution honest, but
-     *       this shape is a schema author bug and {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator GraphitronSchemaValidator} catches it
-     *       at the directive's location).</li>
-     *   <li>{@code condition.isEmpty()}: the field has no {@code @condition} of its own and no
-     *       column resolves on the consuming field's table. Admitted at consumption when the
-     *       enclosing arg- or field-level {@code @condition(override: true)} cascade resolves it;
-     *       rejected at the field's source location otherwise.</li>
+     *   <li>{@code condition.isPresent()} ({@code override: false} by construction, the
+     *       {@code override: true} shape being {@link ConditionOwnedField}): the malformed shape.
+     *       {@code override: false} means the implicit column predicate is required to compose
+     *       with the explicit method, and there is no column to bind. The fact is minted into the
+     *       build diagnostics at classification, keyed by this definition and the resolving
+     *       table; the consumer's walk still fires the authored method (every {@code @condition}
+     *       produces SQL) while the diagnostic fails the build.</li>
+     *   <li>{@code condition.isEmpty()}: the field has no {@code @condition} of its own. Admitted
+     *       at consumption when an enclosing arg- or field-level
+     *       {@code @condition(override: true)} cascade resolves it; the use-keyed cascade verdict
+     *       is minted otherwise.</li>
      * </ul>
      *
      * <p>Not a {@link LookupKeyField} / {@link SetField}: those rails require a column tuple to
      * drive the VALUES+JOIN or INSERT/UPDATE columnlist; unbound carriers have neither.
      *
-     * <p>{@code attemptedColumnName} carries the name the classifier looked up against the
-     * resolving table when {@code condition.isEmpty()} reached the column-miss fall-through; the
-     * consumer-side rejection uses it for the Levenshtein "did you mean" hint. {@code null} when
-     * no column lookup was attempted (override:true with a matching column, where the classifier
-     * collapsed eagerly).
+     * <p>{@code attemptedColumnName} is always the name the lookup missed with ({@code @field}
+     * binding or the SDL name); the cascade verdict renders it into the Levenshtein "did you
+     * mean" hint.
      */
     record UnboundField(
         String parentTypeName,
@@ -231,5 +267,18 @@ public sealed interface InputField extends GraphitronField
         boolean list,
         Optional<ArgConditionRef> condition,
         String attemptedColumnName
-    ) implements InputField {}
+    ) implements InputField {
+
+        public UnboundField {
+            java.util.Objects.requireNonNull(attemptedColumnName, "attemptedColumnName");
+            condition.ifPresent(c -> {
+                if (c.override()) {
+                    throw new IllegalArgumentException(
+                        "InputField.UnboundField '" + name + "' with @condition(override: true) is"
+                        + " the ConditionOwnedField carrier's shape; UnboundField carries only the"
+                        + " genuine miss");
+                }
+            });
+        }
+    }
 }

@@ -1265,6 +1265,19 @@ projection test follows the carrier split, the malformed-shape boundary test ass
 diagnostic where it asserted a consumer tombstone, and the bare-miss consumer test asserts the
 cause in diagnostics and the consequence on the consumer.
 
+**Deviations discovered at implementation (recorded per the rule above).** One: the
+malformed-shape mint is typed `Rejection.AuthorError.UnknownName` rather than structural. The
+retired consumer arm carried the attempted column and the Levenshtein candidates for exactly
+this shape, and dropping to prose would have moved a producer row backwards in the fan-in
+test's honest-record partition; the malformed remedy lives in the summary, so the fact reads
+as both the shape violation and the name miss it is. Both new producer rows are therefore
+`UnknownName` rows. Two: the leaf ratchet moved 4 to 5 for the `InputField` pin (the carrier
+split adds a permit), with the history line in `LeafRatchetTest` naming the split; the
+projection-coverage and enum-truth-table obligations gained their `ConditionOwnedField`
+instruments in the same commit (the projection test retargets to the new carrier, the
+truth table gains a `CONDITION_OWNED_FIELD` case, and the admitted-cascade acceptance test
+becomes `UnboundField`'s instrument).
+
 ## Retired vocabulary (expected; finalise at the Done gate)
 
 - `FieldBuilder.PairVerdict` / `pairVerdict` / `reduceDirectiveConflict`: the pairwise reduction,

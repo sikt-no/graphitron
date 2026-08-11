@@ -205,10 +205,11 @@ class InputFieldFanInDiagnosticsTest {
     }
 
     /**
-     * One producer of {@link InputFieldResolution.Unresolved}, and the arm it is expected to pick.
-     * {@code messagePart} selects the producer's own fact at {@code coordinate}: a coordinate can
-     * legitimately carry more than one fact (in a cycle it is both a cause and a consequence), so the
-     * row names which one it is about.
+     * One producer of a located input-field diagnostic (a {@link InputFieldResolution.Unresolved}
+     * fan-in mint, or one of the classify- and walk-time verdicts minted directly), and the arm it
+     * is expected to pick. {@code messagePart} selects the producer's own fact at
+     * {@code coordinate}: a coordinate can legitimately carry more than one fact (in a cycle it is
+     * both a cause and a consequence), so the row names which one it is about.
      */
     private record ProducerCase(String label, String sdl, String coordinate, String messagePart,
                                 Class<?> arm, String note) {}
@@ -304,7 +305,25 @@ class InputFieldFanInDiagnosticsTest {
                 """ + FILM + "type Query { films(filter: A): [Film!]! }\n",
                 "A.b", "circular input type reference detected",
                 Rejection.AuthorError.Structural.class,
-                "genuinely structural: a cycle names nothing to look up"));
+                "genuinely structural: a cycle names nothing to look up"),
+
+            new ProducerCase("use-keyed cascade verdict (bare unbound, no enclosing override)",
+                """
+                input PlainFilter { foo: String }
+                """ + FILM + "type Query { films(filter: PlainFilter): [Film!]! }\n",
+                "PlainFilter.foo", "at occurrence 'Query.films(filter)/foo'",
+                Rejection.AuthorError.UnknownName.class, null),
+
+            new ProducerCase("malformed shape (@condition(override: false) with no column)",
+                """
+                input PlainFilter {
+                  foo: String
+                    @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "lifterFieldCondition"})
+                }
+                """ + FILM + "type Query { films(filter: PlainFilter): [Film!]! }\n",
+                "PlainFilter.foo", "@condition(override: false)",
+                Rejection.AuthorError.UnknownName.class,
+                "definition-and-table keyed; minted at classification, unretracted by any cascade"));
     }
 
     @Test

@@ -40,8 +40,9 @@
 -- row is still a transcription: it says what a directive application spelled, in graphitron's
 -- vocabulary instead of the document's. intent_ is what gets derived on top of that, once
 -- something resolves and combines those readings into what the generator will actually do. The
--- residents are views (in their own section below) plus one materialized derivation
--- (intent_type_domain, whose table comment owns why it cannot be a view); that changes nothing
+-- residents are views (in their own section below) plus the materialized derivations
+-- (intent_type_domain and the input occurrence-path pair, whose table comments own why they
+-- cannot be views); that changes nothing
 -- about the name, since a family is named for whose vocabulary its rows are written in and
 -- materialization is not the discriminator. The stratum has two layers, and a new resident
 -- picks one deliberately: the base derivations (the authored claim views, one per grain; the
@@ -2383,6 +2384,16 @@ COMMENT ON COLUMN javac_diagnostic.message IS 'javac''s own rendered text (root 
 -- and the shadow agreement pins the difference as a named population instead of transcribing
 -- the defect. Nothing gates on these rows yet; the anti-join of demand against the resolved
 -- claim view becoming a build rule is follow-up work.
+--
+-- The stratum's third resident group is the input occurrence surface: the path relation and
+-- its step child at the DDL tail enumerate every occurrence of the input surface under a use
+-- site (an occurrence path is its own identity, so this lands ahead of any input-member
+-- coordinate work), and intent_input_occurrence_override states the condition cascade's
+-- enclosing-override fact as a predicate over path prefixes with its witness kept. The
+-- classification walk still evaluates that fact as a boolean threaded through its recursion
+-- (capture runs after classification, so the walk cannot read these rows); the shadow
+-- agreement binds the two evaluations, and the walk-side re-derivation retires when capture
+-- moves ahead of classification.
 
 CREATE VIEW intent_authored_field_claim
   (graph_name, type_name, field_name, classifier, trigger, decoded,
@@ -2878,3 +2889,85 @@ COMMENT ON COLUMN intent_resolved_type_demand.graph_name IS 'the owning graph''s
 COMMENT ON COLUMN intent_resolved_type_demand.type_name IS 'the domain member the verdict is about';
 COMMENT ON COLUMN intent_resolved_type_demand.verdict IS 'DEMANDED when any type demand rule covers the member, else EXEMPT; a closed two-value vocabulary';
 COMMENT ON COLUMN intent_resolved_type_demand.rule IS 'the winning rule or reason literal, drawn from the rule views'' closed vocabularies in their declared precedence order';
+
+CREATE TABLE intent_input_occurrence_path (
+  graph_name         VARCHAR NOT NULL,
+  path               VARCHAR NOT NULL,
+  root_type_name     VARCHAR NOT NULL,
+  root_field_name    VARCHAR NOT NULL,
+  root_argument_name VARCHAR NOT NULL,
+  root_input_type    VARCHAR NOT NULL,
+  leaf_named_type    VARCHAR NOT NULL,
+  depth              INT     NOT NULL,
+  PRIMARY KEY (graph_name, path),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, root_type_name, root_field_name, root_argument_name)
+    REFERENCES graphql_argument (graph_name, type_name, field_name, argument_name)
+);
+COMMENT ON TABLE intent_input_occurrence_path IS 'One occurrence of the input surface under a use site: an argument whose named type is an input object, or a nested input field reached from one by descending through input-object-typed fields. The key is the serialized path, <root type>.<root field>(<argument>)[/<input field>...]: an occurrence path is its own identity (no minted coordinate is involved), the relation is re-derived each run so the value key costs nothing, and the step child carries the same data relationally so no consumer parses the key. Every prefix of a path is itself a row. Materialized by a capture-cadence derivation writer for the same reason as intent_type_domain (cyclic input nesting is legal GraphQL and has no safe recursive H2 view form); the expansion stops descending when the leaf type is already visited on the path, which is the classification walk''s own first-visit guard (ClassifyContext.expandingTypes) restated, so the row population equals the recursion tree the build already walks and simple-path enumeration adds no new asymptotic class here.';
+COMMENT ON COLUMN intent_input_occurrence_path.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN intent_input_occurrence_path.path IS 'the serialized occurrence path; the value key';
+COMMENT ON COLUMN intent_input_occurrence_path.root_type_name IS 'the use site''s owning type';
+COMMENT ON COLUMN intent_input_occurrence_path.root_field_name IS 'the use site''s field name within the owning type';
+COMMENT ON COLUMN intent_input_occurrence_path.root_argument_name IS 'the argument this occurrence descends from';
+COMMENT ON COLUMN intent_input_occurrence_path.root_input_type IS 'the argument''s named input object type, the traversal''s entry type';
+COMMENT ON COLUMN intent_input_occurrence_path.leaf_named_type IS 'the named type of the path''s last step (the argument''s own type at depth 0); the expansion descends from here when the type has kind INPUT_OBJECT and is not already visited on the path';
+COMMENT ON COLUMN intent_input_occurrence_path.depth IS 'the number of input-field steps below the argument; 0 for the argument occurrence itself, and equal to the highest step ordinal otherwise';
+
+CREATE TABLE intent_input_occurrence_path_step (
+  graph_name          VARCHAR NOT NULL,
+  path                VARCHAR NOT NULL,
+  ordinal             INT     NOT NULL,
+  container_type_name VARCHAR NOT NULL,
+  field_name          VARCHAR NOT NULL,
+  named_type          VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, path, ordinal),
+  FOREIGN KEY (graph_name, path) REFERENCES intent_input_occurrence_path (graph_name, path),
+  FOREIGN KEY (graph_name, container_type_name, field_name)
+    REFERENCES graphql_field (graph_name, type_name, field_name)
+);
+COMMENT ON TABLE intent_input_occurrence_path_step IS 'The ordinal-keyed decomposition of an occurrence path: one row per input-field step, 1-based, so no consumer parses the serialized key. Homogeneous over input-field steps only: the use-site field and argument are fixed by construction (every path has exactly one of each) and live on the parent row, so no column here is nullable by kind. The row at ordinal = depth is the path''s leaf.';
+COMMENT ON COLUMN intent_input_occurrence_path_step.graph_name IS 'the owning graph''s partition, anchored through the parent path; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN intent_input_occurrence_path_step.path IS 'the owning occurrence path';
+COMMENT ON COLUMN intent_input_occurrence_path_step.ordinal IS '1-based position of this input-field step below the argument';
+COMMENT ON COLUMN intent_input_occurrence_path_step.container_type_name IS 'the input object type this step''s field is declared on';
+COMMENT ON COLUMN intent_input_occurrence_path_step.field_name IS 'the input field''s name within its container';
+COMMENT ON COLUMN intent_input_occurrence_path_step.named_type IS 'the step''s named type; the type the traversal is in after taking this step';
+
+CREATE VIEW intent_input_occurrence_override
+  (graph_name, path, override_type_name, override_field_name, override_argument_name) AS
+SELECT graph_name, path, override_type_name, override_field_name, override_argument_name
+  FROM (SELECT o.graph_name, o.path, o.override_type_name, o.override_field_name,
+               o.override_argument_name,
+               ROW_NUMBER() OVER (PARTITION BY o.graph_name, o.path ORDER BY o.nearness DESC) AS rn
+          FROM (SELECT p.graph_name, p.path,
+                       fc.type_name AS override_type_name, fc.field_name AS override_field_name,
+                       CAST(NULL AS VARCHAR) AS override_argument_name, 0 AS nearness
+                  FROM intent_input_occurrence_path p
+                  JOIN graphitron_field_condition fc
+                    ON fc.graph_name = p.graph_name AND fc.type_name = p.root_type_name
+                   AND fc.field_name = p.root_field_name AND fc.override = TRUE
+                UNION ALL
+                SELECT p.graph_name, p.path,
+                       ac.type_name, ac.field_name, ac.argument_name, 1
+                  FROM intent_input_occurrence_path p
+                  JOIN graphitron_argument_condition ac
+                    ON ac.graph_name = p.graph_name AND ac.type_name = p.root_type_name
+                   AND ac.field_name = p.root_field_name
+                   AND ac.argument_name = p.root_argument_name AND ac.override = TRUE
+                UNION ALL
+                SELECT p.graph_name, p.path,
+                       fc.type_name, fc.field_name, CAST(NULL AS VARCHAR), 1 + s.ordinal
+                  FROM intent_input_occurrence_path p
+                  JOIN intent_input_occurrence_path_step s
+                    ON s.graph_name = p.graph_name AND s.path = p.path AND s.ordinal < p.depth
+                  JOIN graphitron_field_condition fc
+                    ON fc.graph_name = s.graph_name AND fc.type_name = s.container_type_name
+                   AND fc.field_name = s.field_name AND fc.override = TRUE) o) w
+ WHERE rn = 1;
+COMMENT ON VIEW intent_input_occurrence_override IS 'The cascade fact as a predicate over path prefixes: one row per occurrence path with an enclosing @condition(override: true), which in the classification walk is the enclosingOverride boolean threaded through the recursion. A path''s enclosing sites are the use-site field''s own @condition, the argument''s @condition, and the @condition of every step strictly above the leaf (the leaf''s own override is the condition-owned carrier''s fact, not a cascade fact). Absence is the no-override reading, which is what the use-keyed cascade verdict fires on when the leaf is unbound. The witness columns name the nearest enclosing overriding site (deepest step first, then the argument, then the field), the row the admitted-because message and the future fix-it need; a NULL argument name means the witness is a field-site condition row, the witness''s own key shape across the two condition relations.';
+COMMENT ON COLUMN intent_input_occurrence_override.graph_name IS 'the owning graph''s partition, carried from the path';
+COMMENT ON COLUMN intent_input_occurrence_override.path IS 'the overridden occurrence path';
+COMMENT ON COLUMN intent_input_occurrence_override.override_type_name IS 'witness: the overriding @condition site''s owning type (an input object type for a step witness)';
+COMMENT ON COLUMN intent_input_occurrence_override.override_field_name IS 'witness: the overriding site''s field name';
+COMMENT ON COLUMN intent_input_occurrence_override.override_argument_name IS 'witness: the overriding site''s argument name; NULL when the witness is a field-site condition (graphitron_field_condition''s key shape), non-NULL when it is the argument-site relation''s row';

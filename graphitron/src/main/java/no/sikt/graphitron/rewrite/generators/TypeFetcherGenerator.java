@@ -319,7 +319,8 @@ public class TypeFetcherGenerator {
         InputField.ColumnBackedField.class,
         InputField.ColumnBackedReferenceField.class,
         InputField.NestingField.class,
-        InputField.UnboundField.class);
+        InputField.UnboundField.class,
+        InputField.ConditionOwnedField.class);
 
     /**
      * Maps each unimplemented field variant class to the {@link Rejection.Deferred} that both the

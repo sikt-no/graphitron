@@ -242,7 +242,7 @@ class UpdateRowsWalkerTest {
     void unsupportedShapes_collectedAcrossLoopWithoutShortCircuit() {
         var result = walker.walk(null, table("film"), List.of(
             listNestingField("nested"),
-            unboundField("orphan", false)
+            unboundField("orphan")
         ), PUBLIC, "input");
 
         var errors = errors(result);
@@ -256,7 +256,7 @@ class UpdateRowsWalkerTest {
     void overrideConditionField_rejectsWithOverrideConditionNotSupported() {
         var loc = new SourceLocation(7, 3);
         var result = walker.walk(null, table("film"), List.of(
-            unboundFieldAt("syntheticName", true, loc)
+            conditionOwnedFieldAt("syntheticName", loc)
         ), PUBLIC, "input");
 
         var err = only(result);
@@ -386,13 +386,13 @@ class UpdateRowsWalkerTest {
         return new InputField.NestingField("In", name, loc(), "Nested", false, true, List.of(), Optional.empty());
     }
 
-    private static InputField.UnboundField unboundField(String name, boolean override) {
-        return unboundFieldAt(name, override, loc());
+    private static InputField.UnboundField unboundField(String name) {
+        return new InputField.UnboundField("In", name, loc(), "String", false, false, Optional.empty(), name);
     }
 
-    private static InputField.UnboundField unboundFieldAt(String name, boolean override, SourceLocation location) {
-        var condition = override ? Optional.of(new ArgConditionRef(null, true)) : Optional.<ArgConditionRef>empty();
-        return new InputField.UnboundField("In", name, location, "String", false, false, condition, null);
+    private static InputField.ConditionOwnedField conditionOwnedFieldAt(String name, SourceLocation location) {
+        return new InputField.ConditionOwnedField("In", name, location, "String", false, false,
+            new ArgConditionRef(null, true));
     }
 
     private static CallSiteExtraction.NodeIdDecodeKeys dummyDecode(List<ColumnRef> columns) {

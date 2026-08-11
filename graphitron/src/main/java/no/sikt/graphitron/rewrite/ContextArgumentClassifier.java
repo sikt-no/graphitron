@@ -143,6 +143,7 @@ public final class ContextArgumentClassifier {
             case InputField.ColumnBackedReferenceField f -> f.condition().ifPresent(ac -> collectFromMethodRef(ac.filter(), byName));
             case InputField.NestingField f -> f.condition().ifPresent(ac -> collectFromMethodRef(ac.filter(), byName));
             case InputField.UnboundField f -> f.condition().ifPresent(ac -> collectFromMethodRef(ac.filter(), byName));
+            case InputField.ConditionOwnedField f -> collectFromMethodRef(f.condition().filter(), byName);
             default -> { /* non-input fields handled by collectFromField */ }
         }
     }

@@ -271,6 +271,9 @@ final class EnumMappingResolver {
                 case InputField.UnboundField ignored -> {
                     // Unbound carrier has no column binding; not enum-mappable.
                 }
+                case InputField.ConditionOwnedField ignored -> {
+                    // The explicit condition method owns the predicate; no column to enum-map.
+                }
             }
         }
         return List.copyOf(groups);
