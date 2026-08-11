@@ -467,6 +467,55 @@ class GraphitronMcpServerTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void schemaRendersConflictedClaimsAndUnresolvableReasonOnTheWire() throws Exception {
+        // The first-client contract for the failure arms: a conflicted field renders every rival
+        // claim with its decoded slot facts under the store's classifier vocabulary (the same
+        // dmlKind/tableName keys a healthy DmlMutation renders), and an unresolvable field
+        // renders its rejection reason. Pins the JSON keys, not just the catalog records.
+        try (var server = new GraphitronMcpServer(loopback(0), conflictedWorkspace());
+             var client = connect(server.port())) {
+            client.initialize();
+
+            var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("schema")
+                .arguments(Map.of("type", "Mutation")).build()));
+            var types = (List<Map<String, Object>>) structured.get("types");
+            assertThat(types).singleElement().satisfies(t -> {
+                var fields = (List<Map<String, Object>>) t.get("fields");
+                assertThat(fields).extracting(f -> f.get("fieldRef"))
+                    .containsExactly("Mutation.broken", "Mutation.deleteFilm");
+
+                var broken = (Map<String, Object>) fields.get(0).get("classification");
+                assertThat(broken).containsEntry("kind", "Unresolvable")
+                    .containsEntry("reason", "no matching classification rule");
+
+                var conflicted = (Map<String, Object>) fields.get(1).get("classification");
+                assertThat(conflicted).containsEntry("kind", "Conflicted")
+                    .containsEntry("violation", "@service, @mutation are mutually exclusive");
+                var claims = (List<Map<String, Object>>) conflicted.get("claims");
+                assertThat(claims).hasSize(2);
+                assertThat(claims.get(0))
+                    .containsEntry("classifier", "Service")
+                    .containsEntry("methodClassName", "com.example.FilmService")
+                    .containsEntry("methodName", "delete")
+                    .containsEntry("trigger", "@service")
+                    .containsEntry("decoded", true);
+                // An unpositioned claim omits the location field rather than emitting null.
+                assertThat(claims.get(0)).doesNotContainKey("location");
+                assertThat(claims.get(1))
+                    .containsEntry("classifier", "Mutation")
+                    .containsEntry("dmlKind", "DELETE")
+                    .containsEntry("tableName", "film")
+                    .containsEntry("trigger", "@mutation")
+                    .containsEntry("decoded", true);
+                var location = (Map<String, Object>) claims.get(1).get("location");
+                assertThat(location).containsEntry("uri", "file:///schema.graphqls")
+                    .containsEntry("line", 11);
+            });
+        }
+    }
+
+    @Test
     void schemaReportsUnavailableBeforeFirstBuild() throws Exception {
         try (var server = new GraphitronMcpServer(loopback(0), new Workspace());
              var client = connect(server.port())) {
@@ -1181,6 +1230,21 @@ class GraphitronMcpServerTest {
         var catalog = new CompletionData(List.of(), List.of(), List.of(),
             Map.of("Film", new CompletionData.NodeMetadata("FilmType", List.of("film_id"))));
         return builtWorkspace(catalog, snapshot, ValidationReport.empty());
+    }
+
+    private static Workspace conflictedWorkspace() {
+        var conflicted = new FieldClassification.Conflicted(List.of(
+            new FieldClassification.Claim.Service("com.example.FilmService", "delete", "service", true, null),
+            new FieldClassification.Claim.Mutation("DELETE", "film", "mutation", true,
+                new CompletionData.SourceLocation("file:///schema.graphqls", 11, 2))),
+            "@service, @mutation are mutually exclusive");
+        Map<String, FieldClassification> fields = Map.of(
+            "Mutation.deleteFilm", conflicted,
+            "Mutation.broken", new FieldClassification.Unresolvable("no matching classification rule"));
+        var snapshot = new LspSchemaSnapshot.Built.Current(
+            List.of(), Map.of(), Map.of(), fields,
+            Map.of("Mutation", new TypeClassification.Root("mutation")), Map.of());
+        return builtWorkspace(CompletionData.empty(), snapshot, ValidationReport.empty());
     }
 
     private static Workspace diagnosticsWorkspace() {

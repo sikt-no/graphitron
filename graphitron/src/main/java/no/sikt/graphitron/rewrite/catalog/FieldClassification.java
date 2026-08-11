@@ -515,7 +515,10 @@ public sealed interface FieldClassification
          * faithfully) and the {@code table:} argument as written; either is {@code null} when
          * omitted. The table slot is the directive's own decoded argument and nothing more:
          * the write-target precedence keeps its single producer in the classification walk,
-         * so this claim never asserts a table the classifier would refuse.
+         * so this claim never asserts a table the classifier would refuse. The verb component
+         * is named {@code dmlKind} to match the wire key a healthy {@link DmlMutation} /
+         * {@link DmlRecord} projection renders (the derive-side payload keeps the store's
+         * {@code operation}); a client reads the same key on the broken and healthy shapes.
          */
         record Mutation(String dmlKind, String tableName, String trigger, boolean decoded,
                         CompletionData.SourceLocation location) implements Claim, TableClaiming {}

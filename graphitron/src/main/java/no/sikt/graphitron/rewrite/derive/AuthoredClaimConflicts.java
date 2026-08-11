@@ -6,6 +6,7 @@ import no.sikt.graphitron.rewrite.model.Rejection;
 import org.jooq.DSLContext;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -181,7 +182,7 @@ public final class AuthoredClaimConflicts {
                 return;
             }
             var enriched = rows.stream()
-                .sorted(java.util.Comparator.comparing(ClaimRow::classifier))
+                .sorted(Comparator.comparing(ClaimRow::classifier))
                 .map(row -> enrich(dsl, graphName, coordinate, row))
                 .toList();
             var rejection = reduce(present);

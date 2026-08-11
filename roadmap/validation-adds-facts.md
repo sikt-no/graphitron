@@ -1368,7 +1368,11 @@ asserted rather than narrated: a reverse-edge test in graphitron-mcp pins that t
 DELETE appears under its target table, so `Conflicted` joining `EDGE_BEARING_FIELDS` has a
 live instrument instead of repeating the pinned-but-unreachable mistake this item criticizes.
 The rename sweeps the projection, hover and MCP tests that assert `Unclassified` at field
-grain.
+grain. A self-review pass before the In Review handoff added the one instrument the first
+round missed: a server round-trip in `GraphitronMcpServerTest` pinning the claim JSON itself
+(the `classifier` / `dmlKind` / `tableName` / `violation` keys and the omitted-when-absent
+location), since the catalog records, hover text and edges were pinned but the first-client
+wire keys were not.
 
 ## Retired vocabulary (expected; finalise at the Done gate)
 
