@@ -48,10 +48,13 @@ transient space:
   list; two homes for the *what* is the drift this pivot just finished eliminating. The
   reference documentation is **generated** from the DDL's own `COMMENT ON` text, so it cannot
   drift from the schema by construction.
-- **Comments are the reference prose, and may use markdown.** The `COMMENT ON` convention is
+- **Comments are the reference prose, and may use AsciiDoc.** The `COMMENT ON` convention is
   already universal in the DDL; this item promotes it to the documentation source. Comment text
-  may use markdown syntax (code spans, emphasis, lists); the doc generator renders it. This
-  keeps the reference documentation in the same file as the model, reviewed in the same diff.
+  may use AsciiDoc inline syntax (monospace, emphasis, lists); the doc generator interpolates it
+  into the rendered pages, and asciidoctor, already in the docs build, is the only renderer
+  involved. AsciiDoc over markdown because the site is AsciiDoc: markdown prose would need a
+  converter dependency or a lossy subset, plus escaping at the embedding boundary. This keeps
+  the reference documentation in the same file as the model, reviewed in the same diff.
 - **The explanation/reference split follows Diátaxis, and the division of labour is R333's.**
   The generated reference owns the *what* (relations, columns, keys, constraints, their
   comments). A new authored explanation page owns the *why* (the modeling discipline, the
@@ -66,16 +69,19 @@ transient space:
   fails when it breaks). Target-state claims stay in R333, which carries a `status:` telling the
   reader it is a plan; a durable page asserting the destination as the state would be misleading
   in exactly the way the current pipeline overview is.
-- **Prose in `COMMENT ON`; structure in meta-relations.** The reference's *prose* is the
-  comment markdown, bound to its object by the engine. The reference's *skeleton*, what the
-  renderer needs beyond prose (the family definitions, their titles and page order, any grouping
-  of relations within a page), is authored as rows in meta-relations in the same DDL file,
-  starting with a family relation (working name `store_family`: prefix as the key, a rendered
-  title, an ordinal, a markdown definition). Parsing structure out of comment prose is rejected;
-  so is hardcoding it in the generator. The family-definition prose migrates from the DDL's
-  header comment into those rows (one home); the header keeps the conventions and rationale that
-  are about the schema as a whole. Whether the meta-relations sit in the `store_` family or earn
-  a prefix of their own is decided at Ready against the header's own prefix-picking guidance.
+- **Prose in `COMMENT ON`; structure in meta-relations, under the `meta_` prefix.** The
+  reference's *prose* is the comment text, bound to its object by the engine. The reference's
+  *skeleton*, what the renderer needs beyond prose (the family definitions, their titles and
+  page order, any grouping of relations within a page), is authored as rows in meta-relations in
+  the same DDL file, starting with `meta_family` (prefix as the key, a rendered title, an
+  ordinal, an AsciiDoc definition). Parsing structure out of comment prose is rejected; so is
+  hardcoding it in the generator. The family-definition prose migrates from the DDL's header
+  comment into those rows (one home); the header keeps the conventions and rationale that are
+  about the schema as a whole. The prefix is `meta_`, a new family, by the header's own naming
+  rule (a family is named for whose vocabulary its rows are written in): these rows are the
+  schema describing itself, not the store's runtime record of what it read, so `store_` would be
+  the wrong home. The `meta_` family describes itself like any other: `meta_family` carries its
+  own family row.
 - **One catalog reader, many views.** Everything that needs "what relations exist" (the doc
   generator, the drift guard) reads it from one place: the booted store's metadata plus the
   meta-relations, exposed by `graphitron-model`. The page set and the guard's prefix set derive
@@ -185,8 +191,8 @@ ordering, and index preamble all read from the family rows, the per-object prose
 comments. Nothing about the page structure is parsed from prose or hardcoded in the generator.
 This slice introduces the meta-relations and their bidirectional gates (the Decisions bullet),
 and migrates the family-definition prose from the header comment into the rows. Comment text
-renders as markdown. The output is generated at build and never committed; the DDL is the only
-authored artifact, so the reference cannot drift.
+interpolates as AsciiDoc into the rendered `.adoc` pages. The output is generated at build and
+never committed; the DDL is the only authored artifact, so the reference cannot drift.
 
 Generated-not-committed removes the failure signal the committed precedent
 (`docs/manual/_generated/supported-directives.adoc`, verify-gated) gets for free, so the slice
@@ -196,10 +202,12 @@ carries its own enforcers:
   relation in the catalog appears on exactly one page, and every rendered relation carries
   non-empty comment text. A generator that renders a plausible empty reference fails loudly.
 - **A comment renderability gate** beside the existing comment-coverage gate in the
-  `FactSchemaGateTest` family: every comment parses under the accepted markdown subset. This
-  lands the failure where the comment is authored (`graphitron-model`) instead of surfacing as
-  an Asciidoctor `WARN` in the docs render two modules away (whose `failIf` severity would
-  otherwise break the site build with a diagnostic pointing at generated output).
+  `FactSchemaGateTest` family: every comment conforms to the accepted AsciiDoc subset, and the
+  gate specifically rejects markdown-isms (`**bold**`, pipe-separator tables, `[text](url)`
+  links), the same slip `check-adoc-tables` guards in authored pages. This lands the failure
+  where the comment is authored (`graphitron-model`) instead of surfacing as an Asciidoctor
+  `WARN` in the docs render two modules away (whose `failIf` severity would otherwise break the
+  site build with a diagnostic pointing at generated output).
 - The generation and its floors bind into the base build, not the docs render profile, following
   the docs pom's own argument for `check-adoc-xrefs` ("only render-site lives in that profile").
 
@@ -216,19 +224,16 @@ guard makes slice 2's page unable to rot the way the pipeline overview did. Can 
 
 ## Open questions (to settle at Ready)
 
-- **Markdown rendering dependency.** Rendering comment markdown needs either a small renderer
-  (e.g. commonmark-java, to be pinned in the root pom per the dependency rule) or a deliberately
-  conservative subset the generator handles itself. The renderability gate in slice 4 makes the
-  subset the cheap option, since the subset then has an enforcer rather than a convention;
-  decide when slice 4 is picked up. The comment convention (markdown allowed) is decided now
-  either way.
+- **The accepted AsciiDoc subset.** Comments interpolate into `.adoc` pages, so no renderer
+  dependency is needed (asciidoctor in the docs build is the renderer). What remains is the
+  subset the renderability gate accepts: inline markup certainly, and where the line is drawn on
+  block content (lists yes; tables and block macros probably not, a comment wanting a table is a
+  smell that the content belongs in a `meta_` row or the page template). Decide when slice 4 is
+  picked up; the gate can start strict and widen.
 - **Where slice 4's render step runs.** The catalog reader lives in `graphitron-model` (decided
   above); the render step that consumes it can sit in the `docs` module (which already stages
   `architecture/**`) or beside the reader. Leaning docs-module for site-build cohesion, with the
   non-vacuity floors staying in the base build either way.
-- **Output format of the generated reference.** Render `.adoc` into the staging tree (uniform
-  with the site) or HTML directly (avoids markdown-inside-asciidoc escaping). Decide with the
-  renderer choice.
 
 ## Acceptance
 
