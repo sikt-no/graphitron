@@ -48,6 +48,8 @@ You want to *understand rejections*, what `AUTHOR_ERROR` / `INVALID_SCHEMA` / `D
 
 You're *integrating an editor or agent with the dev loop*, what the `dev` Mojo wires up, what the LSP / schema watcher / classpath watcher each watch, why idempotent writes matter. → xref:how-to/dev-loop-internals.adoc#dev-loop-detail[Dev loop internals].
 
+You want to know *how the architecture got here*, why the model is keyed by coordinate, what the sealed-leaf hierarchy was right about, and what measurement redirected the work onto a relational core. → xref:../history/road-to-the-relational-core.adoc[The road to the relational core].
+
 You want to *read the classification taxonomy*, every variant the transitional classification walk produces and what each drives. → xref:reference/code-generation-triggers.adoc[Code Generation Triggers]. For where that walk sits in the strangler migration, start at xref:explanation/pipeline-overview.adoc[Pipeline overview].
 
 You're looking for a *deeper reference*, the architectural principles that govern both classifier and emitter, the test-tier rubric, the unified argument-resolution lift, the dispatch-axis model behind DataLoader-backed source-side fields. → see xref:explanation/development-principles.adoc[Graphitron Development Principles], xref:how-to/testing.adoc[Test-tier guide], xref:reference/argument-resolution.adoc[Argument Resolution], xref:explanation/dispatch-axes.adoc[Dispatch axes]. The module map is at xref:reference/modules.adoc[Modules]; the pipeline overview at xref:explanation/pipeline-overview.adoc[Pipeline overview].

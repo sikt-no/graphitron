@@ -1,0 +1,253 @@
+= The road to the relational core
+:description: How the generator's model went from a sealed-leaf hierarchy to a relational fact store, and what each step was right about.
+:!toc:
+
+This page is history. It explains how the generator's model arrived at its current shape, which
+parts of that shape are settled conclusions, and which are the latest position in a sequence that
+has already moved several times. It does not describe current behaviour: where this page and a
+present-tense page disagree, the present-tense page wins, and where either disagrees with
+`graphitron-model/src/main/resources/no/sikt/graphitron/model/graphitron-model.sql`, the DDL wins.
+
+Read it for two reasons. The design decisions that look arbitrary from the outside are mostly
+answers to a specific failure that had already happened, and the approaches that were tried and
+retired are the project's most expensive knowledge, worth stating once so they are not
+re-proposed by whoever did not read the item that retired them.
+
+Work is cited by roadmap id. Ids of shipped items stay recoverable from `roadmap/changelog.md`,
+which records discards as well as landings; the per-item files under `roadmap/` are deleted when
+an item ships, so they are named here as provenance rather than linked.
+
+== The vocabulary came first, March 2026
+
+The rewrite's first ninety-five commits were squashed into a single commit when the module landed.
+They were recovered from unreachable objects and preserved on the `graphitron-rewrite-history`
+branch, tip `26e651f49`, running from 2026-03-27 to 2026-04-04. Almost none of them are code.
+
+The first commit adds a document, `docs/field-taxonomy.md`, whose subject line is "Add field
+taxonomy document with agreed vocabulary". The forty-odd commits that follow it over five days
+edit that document and nothing else: renaming the field types, collapsing pairs of them that
+turned out to be one thing, flattening intermediate levels out of the hierarchy, dropping suffixes
+that carried no distinction. `PassThroughChildField` becomes `NestingChildField`, then loses its
+suffix along with every other leaf. Union subtypes collapse into leaves. Two whole intermediate
+types are removed from the child hierarchy in a single commit for being a level that classified
+nothing.
+
+The first code arrives on 2026-04-01, five days in, as empty sealed interface skeletons, and the
+commit after it adds validation tests for all thirty-five leaf types. The model was argued to a
+settled vocabulary before it was allowed to exist, which is why the sealed hierarchy arrived whole
+rather than accreting.
+
+Two things in that week outlast everything built on top of them. The first is a discipline visible
+in the commit subjects themselves: null and `Optional` error signals replaced by sealed
+hierarchies, nullable condition and ordering slots replaced by variants, a reference path element
+replaced by a sealed hierarchy, all within seventy-two hours of the first code. What later became
+an axiom was a reflex from the first week.
+
+The second is the key. On 2026-03-31, before any code existed, the plan document defined the
+container as a flat map keyed by the GraphQL specification's own coordinate type:
+
+[quote]
+____
+`GraphitronField` instances are stored in a flat map keyed by `FieldCoordinates`, the
+GraphQL-spec-standardised `(typeName, fieldName)` pair provided by GraphQL Java. This is the same
+type used as the key in `GraphQLCodeRegistry` for data fetcher registration, so the two maps are
+parallel by construction.
+____
+
+The model was coordinate-keyed on its fifth day. That key was then progressively buried, as leaf
+identity became the thing consumers dispatched on and the coordinate became an address you looked
+a leaf up by rather than the thing the model was about. Everything the June normalization argument
+later says about the schema coordinate as the model's natural key is a recovery of this decision,
+not an invention. The project's most consequential idea was correct on day five and had to be
+found again eleven weeks later.
+
+A note on reading history before 2026-07-01: the reactor moved to the repository root on that date
+(R182) and the move rewrote the metadata of every rewrite-line commit, so author dates and commit
+dates diverge across April to June, and path-based queries go blind before it.
+
+== The sealed-leaf model, April to May 2026
+
+The unit of knowledge was the sealed leaf. Every classifiable schema position resolved to exactly
+one variant of a sealed Java interface, and the model was the closed set of those variants plus
+the compiler-enforced exhaustive switches over them. Classification produced a leaf or a typed
+rejection; emission pattern-matched the leaf. The theory was settled in March and was not
+seriously questioned in this period, only extended: thirty-five leaves at the model's birth on
+2026-04-01, around forty by the end of April, and growing.
+
+It was right about a great deal, and most of it still holds. Decisions are made once, at the
+parse boundary. The compiler, not a convention, enforces that every consumer handles every case.
+Rejection is a typed variant rather than a string, which is why
+xref:../architecture/explanation/typed-rejection.adoc[typed rejection] is still the shape today.
+
+What it was silent about was representation for more than one consumer. A leaf is an excellent
+answer when a single traversal exploits it and a poor one when the same knowledge has to be asked
+about from several directions, because the only way to ask is to walk it again. Three separate
+items name that cost within weeks of each other in May: R123 cites the project's own principle by
+name, that two consumers evaluate the same predicate over a model field; R220 finds three
+near-duplicate shape predicates that drifted apart because each consumer re-derived its own; R218
+finds binding provenance that is only ever re-inferrable because nothing carries it.
+
+The cost of the leaf model itself was also named, and accepted, before it was understood. R258, on
+2026-05-29, weighs two designs in writing and chooses the one it knows is worse for the model's
+size, because under the theory in force the alternative reintroduced conditional slots: option (b)
+"avoids a leaf explosion but reintroduces a kind-conditional Optional slot", and the item leans
+(a) anyway. The leaf count grew deliberately.
+
+Three items filed on a single day, 2026-05-08, seeded vocabulary that outlived everything around
+them. R119 introduced the schema coordinate as a first-class addressing scheme for tooling. R115
+proposed capability as a stable namespace of what the generator delivers. R117 proposed a queryable
+model of everything the generator knows about itself, covering the parsed SDL, the classifications,
+the generated code, the runtime trace, the documentation and the roadmap. R117 also stated the
+constraint that kept the idea out of the architecture for three months: keep the store a
+projection, "rebuilt on every build, never a competing source of truth". The store the generator
+runs on today is that idea with that clause removed.
+
+== Four theories in seven weeks, June 2026
+
+June is the fastest period of model change in the project and the hardest to reconstruct from
+memory, because the model was re-theorised four times.
+
+It opens with the dimensional model of R222: the leaf's identity decomposed into a cross-product
+of three enums, `carrier`, `intent` and `mapping`, carried on one field type.
+
+On 2026-06-16 an audit (`roadmap/audits/2026-06-16-source-operation-target-reframe.md`) argues
+that `mapping` is not a real dimension, because it conflates the shape of the output with a
+catalog-versus-Java polarity that belongs independently to each endpoint. It proposes instead that
+a field is an edge from a source to a target, spanned by an operation. The audit prices its own
+churn before recommending the change, noting that the pivot "re-vocabularises freshly-settled
+work" and listing three items that had landed under the old vocabulary within the preceding weeks.
+This is the period's characteristic move: each reframe states what it invalidates before it is
+adopted.
+
+On 2026-06-18 two things happen in one day. R316 ships the reframe, deleting `Carrier`, `Intent`,
+`Mapping` and `SourceCardinality` outright behind a test that fails if any of them reappears. And
+R333 is filed, reframing the model again, from the leaf to the schema coordinate plus a set of
+independently discovered facts. Its diagnosis is the origin of everything that follows, under a
+heading that reads "Normalization: the leaf zoo is a denormalized view": composite fields are a
+repeating group, a first-normal-form violation, and split or re-fetch addressing is a transitive
+dependency on the parent query rather than a property of the child coordinate.
+
+The same document, the same day, states the other half: functional core and imperative shell,
+with commands as the addressed output rather than a third concept, and the law that the core
+decides the entire emit while the shell renders and never assembles.
+
+Both halves of the eventual architecture are written down on 2026-06-18, in one item. They ship
+seven weeks apart, because one of them was implementable immediately and the other needed a
+substrate that did not exist yet.
+
+One day later R333 overturns its own founding claim. Its discovery log records that there is no
+complete query at codegen, since projection is assembled per request from the client's selection
+set, so the unit the generator emits cannot be a query part. It is the method that emits query
+parts. That correction is where the method call graph, and therefore commands, actually comes
+from.
+
+== Commands, and the measurement that redirected them, July 2026
+
+July made the functional-core half real. The command relation was proven across three unrelated
+families: R314 landed the re-entry family, R552 the condition family, replacing an entire layer of
+generated condition classes, and R541 the root SELECT family, where every root coordinate becomes
+a command row rendered by a total function that takes no schema, and roughly a thousand lines of
+inline SQL building left the fetcher generator. R549 is the umbrella these ship under. Each proof
+retired a legacy layer rather than patching it, which is what made the pattern credible.
+
+Then, on 2026-07-26, the project measured its distance from the functional-core ideal it was
+working toward (`roadmap/audits/2026-07-26-fcis-command-layer-distance.md`). Its headline is the
+size of the gap.
+
+[cols="3,>1,>1", options="header"]
+|===
+| Package | Lines | Files
+
+| `rewrite/generators/`, the shell candidate
+| 29,837
+| 73
+
+| `rewrite/model/`, the core data
+| 12,690
+| 124
+
+| `rewrite/methodgraph/`, all command infrastructure
+| 124
+| 2
+|===
+
+Branch density in the shell ran about 1.6 times the model's, and just over a thousand JavaPoet
+builder calls sat interleaved with 1,641 branches in the same files, so that, in the audit's
+words, nothing structural stopped a decision from sitting between two code-block additions.
+
+Two findings mattered more than the size gap. The one command mechanism that existed ran
+backwards: the shell called it and it returned a name, so commands were minted during rendering as
+an after-the-fact audit trail rather than produced by the core. And the underlying defect was not
+about purity at all. The audit states it directly: the emit call graph is derived twice, once by
+the emitters that emit the calls and once by a hand-maintained switch that predicts them, and the
+gap between the two had already produced a recurring class of bugs.
+
+Two derivations of one relation is a normalization complaint. It is not fixable by moving effects
+to the edge, which is why the next step changed the substrate rather than the discipline.
+
+== The substrate changes, August 2026
+
+The decision took eleven days and is unusually well documented, because it was spiked before it
+was adopted.
+
+R595 and R589 were filed on 2026-08-04 with the open question stated as materialization: Java
+records over the existing classified-schema components, or a real embedded relational store. Two
+spikes ran on 2026-08-05. The first measured encoding of rich values, deterministic ordering and
+latency, and concluded in favour, with the reason that matters for the whole architecture: because
+derivation is the model, no classifier code holds hidden state, so purity "stops being a
+discipline and becomes a property". The second spike failed, productively. Table-valued functions
+could not drive derivations, and the parser rejected the alias declarations that schema-first code
+generation needed, so derivations stay ordinary SQL statements, insert-select strata and views
+including recursive ones, and code generation moved to a live database build driver.
+
+The four documents of 2026-08-06 converted those verdicts into board state, including the
+retirement of the standing dimensional-model umbrella to a lineage record. Then the store shipped:
+R595 landed the `graphitron-model` module, its DDL and capture on 2026-08-08; R610 and R603
+followed on 2026-08-09; R589 landed the derived claim stratum on 2026-08-10, closing on the line
+that classification is a relation and validation adds facts.
+
+R610 is the item that shows the move was necessary rather than merely tidy. Its motivation is
+federation: the same type name in two subgraphs is deliberately two different types, and
+type-name-only keys would merge them into a fiction or a constraint violation. Multi-graph keying
+is not expressible in a leaf model at all.
+
+R563, shipping in the same window, is where the leaf population finally fell, from 51 output
+leaves to 40, with plan leaf references dropping from 156 to 124, after more than a year of
+growth.
+
+== What the sequence shows
+
+No step in this history retracts its predecessor.
+
+Classifying once at the parse boundary survives as capture. The functional core survives as
+derived relations, which are pure by construction rather than by discipline. Sealed hierarchies
+survive both in the model and as the shape of the DDL's own keys and constraints, which is why the
+honest description of the move is that the schema became the sealed hierarchy, not that types were
+replaced by tables. Commands survive untouched.
+
+What changed at each step was the answer to a different question. Legacy Graphitron answered what
+to generate. The March vocabulary answered when to decide, and keyed the answer by coordinate. The
+sealed-leaf model answered how the decision is computed. The relational core answers what the
+decision is made of, and in doing so recovers the key the leaf hierarchy had buried.
+
+Each was a correct and incomplete answer, and each was exposed not by argument but by a new
+consumer: the language server, the model context protocol server, the roadmap tooling and the
+documentation itself all needed to ask the model questions that a traversal-shaped model could
+only answer by being walked again. That is the reason the current architecture has multiple shells
+over one relational core rather than a single shell. The plural was earned by the failure mode,
+not chosen in advance.
+
+== Where the present is described
+
+* xref:../architecture/explanation/development-principles.adoc[Graphitron Development Principles]
+  for the axioms in force.
+* xref:../architecture/explanation/pipeline-overview.adoc[Pipeline overview] for the stages as
+  they run today.
+* xref:../architecture/explanation/typed-rejection.adoc[Typed rejection] for the rejection
+  taxonomy.
+* `roadmap/changelog.md` for the per-item record, including discards.
+* `roadmap/audits/` for the dated working papers cited above.
+* The `graphitron-rewrite-history` branch for the pre-squash March commits, which exist nowhere
+  else.
+
+xref:index.adoc[← History]

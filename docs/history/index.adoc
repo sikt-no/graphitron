@@ -1,0 +1,12 @@
+= History
+:description: How the Graphitron generator's architecture arrived at its current shape.
+:!toc:
+
+How the generator got here, as distinct from what it does now. These pages are narrative and
+dated; the present-tense description lives under xref:../architecture/index.adoc[Architecture],
+and where the two disagree, Architecture wins.
+
+* xref:road-to-the-relational-core.adoc[The road to the relational core]: from a sealed-leaf
+  hierarchy to a relational fact store, and what each step along the way was right about.
+
+xref:../index.adoc[← Graphitron]
