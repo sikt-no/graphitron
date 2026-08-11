@@ -10,11 +10,12 @@
     </style>
     <!--
       Self-hosted GraphiQL. The version-pinned bundle (built by tools/graphiql-build) ships as
-      classpath resources under this package's graphiql/ directory; GraphqlResource streams them
+      classpath resources under this package's graphiql/ directory; GraphiqlBundle streams them
       from the assets endpoint, so the playground works offline, behind a strict CSP, and on
       air-gapped networks with no runtime CDN dependency. {{ASSET_BASE}} is rewritten at serve
-      time to the absolute .../graphql/assets/ prefix so the entry files resolve correctly wherever
-      the resource is mounted; every downstream chunk/worker/font resolves relative to them.
+      time to the absolute .../assets/ prefix under whatever path served the page, so the entry
+      files resolve correctly wherever the bundle is mounted (the built-in /graphql resource, or a
+      consumer's own); every downstream chunk/worker/font resolves relative to them.
       Self-hosting trades a leaner runtime jar for the small, known consumer set (see R416); an
       opt-in -graphiql artifact is the escape hatch if that trade-off ever pinches a consumer.
     -->

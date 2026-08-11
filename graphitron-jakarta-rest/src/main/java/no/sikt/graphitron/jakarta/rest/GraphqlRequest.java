@@ -4,7 +4,7 @@ import java.util.Map;
 
 /**
  * The GraphQL-over-HTTP request body shape: {@code query}, {@code operationName}, {@code variables},
- * {@code extensions}. Parsed from the raw request body by {@link GraphqlResource}'s {@code Jsonb}
+ * {@code extensions}. Parsed from the raw request body by {@link GraphqlHttpHandler}'s {@code Jsonb}
  * binder; wire-format decoding stays at the HTTP boundary, never in the model.
  *
  * <p>Unknown top-level members are ignored rather than rejected, per the spec ("The server SHOULD

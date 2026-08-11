@@ -1,6 +1,6 @@
 # GraphiQL build
 
-One-shot Vite build for the self-hosted GraphiQL playground served by `graphitron-jakarta-rest`. The output (a version-pinned GraphiQL 5 + React bundle) is committed under [`../../src/main/resources/no/sikt/graphitron/jakarta/rest/graphiql/`](../../src/main/resources/no/sikt/graphitron/jakarta/rest/graphiql/), where `GraphqlResource` streams it from its `assets/{name}` endpoint. The committed bundle is the artifact consumers depend on; this recipe is the receipt that reproduces it.
+One-shot Vite build for the self-hosted GraphiQL playground served by `graphitron-jakarta-rest`. The output (a version-pinned GraphiQL 5 + React bundle) is committed under [`../../src/main/resources/no/sikt/graphitron/jakarta/rest/graphiql/`](../../src/main/resources/no/sikt/graphitron/jakarta/rest/graphiql/), where `GraphiqlBundle` streams it from its `assets/{name}` endpoint. The committed bundle is the artifact consumers depend on; this recipe is the receipt that reproduces it.
 
 **The Maven build does not invoke node.** This directory exists so the bundle is reproducible when upgrading GraphiQL or React. There is no `<build>` binding, no exec-maven or frontend plugin; CI never touches node.
 
@@ -28,4 +28,4 @@ The committed output should always be in sync with the inputs in this directory;
 
 ## Output layout
 
-The build emits fixed-name entry files (`graphiql.js`, `graphiql.css`) that the shell references directly, plus hash-named code-split chunks, monaco web workers, and the codicon font. `vite.config.js` uses `base: './'` so every chunk, worker, and font resolves relative to the entry files' served URL; only the two entry files need the absolute `{{ASSET_BASE}}` prefix that `GraphqlResource` injects into `graphiql.html` at serve time.
+The build emits fixed-name entry files (`graphiql.js`, `graphiql.css`) that the shell references directly, plus hash-named code-split chunks, monaco web workers, and the codicon font. `vite.config.js` uses `base: './'` so every chunk, worker, and font resolves relative to the entry files' served URL; only the two entry files need the absolute `{{ASSET_BASE}}` prefix that `GraphiqlBundle` injects into `graphiql.html` at serve time.

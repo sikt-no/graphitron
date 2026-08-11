@@ -39,6 +39,18 @@ public interface GraphitronApplication {
      * {@code variables} / {@code operationName} / {@code extensions} from the HTTP body on top,
      * then executes.
      *
+     * <p>This runs after the resource method that delegated to the library, so a
+     * {@code @RequestScoped} holder the resource populated (claims read from an {@code Authorization}
+     * header, a path parameter, anything else resolved per request) is visible here.
+     *
+     * <p>Throwing a {@link jakarta.ws.rs.WebApplicationException} from this method is the supported
+     * way to answer a client fault: {@link jakarta.ws.rs.NotAuthorizedException} for {@code 401},
+     * {@link jakarta.ws.rs.ForbiddenException} for {@code 403}, and so on. The library re-throws it
+     * unredacted so the container maps the status the adapter chose. Every <em>other</em> exception
+     * escaping this method is treated as an internal fault and redacted to a reference-only
+     * {@code 500}, with the real cause logged under a correlation id, so no adapter internals reach
+     * the client.
+     *
      * @return a builder pre-wired with this request's per-request context
      */
     ExecutionInput.Builder newExecutionInput();
@@ -71,6 +83,38 @@ public interface GraphitronApplication {
      * @return {@code true} to serve GraphiQL, {@code false} to return {@code 404} for the HTML page
      */
     default boolean graphiqlEnabled() {
+        return true;
+    }
+
+    /**
+     * Whether the library's own {@link GraphqlResource} answers on {@code /graphql}. Defaults to
+     * {@code true}. Override to {@code false} when the subgraph mounts
+     * {@link GraphqlHttpHandler} on a path of its own and the ungated built-in route would be a hole
+     * in that boundary: bean discovery registers the built-in resource automatically, so a consumer
+     * cannot simply decline to use it.
+     *
+     * <p><strong>This is a 404 gate, not a de-registration.</strong> With the toggle off the
+     * resource class is still discovered, still on the routing table, and still occupies the
+     * {@code /graphql} namespace; every one of its routes answers {@code 404}. A consumer that needs
+     * the route genuinely gone declares a {@link jakarta.ws.rs.core.Application} subclass with an
+     * explicit {@code getClasses()}, which needs no support from this library. The trade-off is why
+     * this toggle exists at all: in Quarkus such a declaration becomes definitive for the whole
+     * application, which is a large hammer for excluding one resource.
+     *
+     * <p>Note also that mounting under {@code /graphql/{something}} shadows the built-in resource's
+     * sub-paths whatever this toggle says, because Jakarta REST prefers the class with more literal
+     * characters; see {@link GraphqlHttpHandler} for what that costs. The toggle governs the routes
+     * that still reach the built-in resource, of which bare {@code /graphql} is the one that
+     * matters.
+     *
+     * <p>The toggle rides this SPI seam for the same reason {@link #graphiqlEnabled()} does: the
+     * library pulls no config framework, so a consumer that wants this wired to its own
+     * configuration overrides the method.
+     *
+     * @return {@code true} to serve the built-in {@code /graphql} endpoint, {@code false} to answer
+     *         {@code 404} on all of its routes
+     */
+    default boolean builtInEndpointEnabled() {
         return true;
     }
 }

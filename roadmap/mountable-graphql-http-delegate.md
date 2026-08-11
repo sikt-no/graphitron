@@ -1,7 +1,7 @@
 ---
 id: R629
 title: "Mountable GraphQL-over-HTTP delegate with an explicit operation policy"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 3
 theme: runtime-connection
@@ -13,6 +13,8 @@ last-updated: 2026-08-11
 # Mountable GraphQL-over-HTTP delegate with an explicit operation policy
 
 ## In one paragraph
+
+Stated in the tense it was planned in; "What landed" below is the present tense.
 
 `graphitron-jakarta-rest` serves exactly one endpoint shape: `GraphqlResource` is annotated
 `@Path("/graphql")`, and its whole execution pipeline (JSON parsing, the GET-mutation guard, the
@@ -56,591 +58,106 @@ current `execute` (the consumer's seam throwing `NotAuthorizedException` for 401
 property this consumer actively relies on: it must be preserved, and documented more prominently
 than it is today.
 
-## What exists today
-
-All references are to
-`graphitron-jakarta-rest/src/main/java/no/sikt/graphitron/jakarta/rest/`.
-
-- **`GraphqlResource`** carries the entire surface: the class-level `@Path("/graphql")`, the
-  `post` / `get` / `graphiql` / `asset` / `schema` resource methods, the shared static `JSONB`
-  binder and `GRAPHIQL_HTML` resource, the public `GRAPHQL_RESPONSE_JSON` constant, and the private
-  helpers `execute`, `statusFor`, `operationType`, `requestError`, `serialise`, `errorBody`,
-  `responseType`, `isLegacy`, `parseMapParam`, `assetMediaType`, `loadResource`. The operation guard
-  lives in `execute` behind `if (isGet)` and hard-codes 405 plus `Allow: POST`.
-- **`GraphqlEngine`** caches `application.engineBuilder().build()` at application scope. Unchanged by
-  this item; the delegate injects it exactly as the resource does now.
-- **`GraphitronApplication`** is the consumer-implemented SPI: `schema()`, `newExecutionInput()`,
-  and the defaulted `engineBuilder()` / `graphiqlEnabled()`. Its javadoc states the vendor-neutral
-  constraint (no Quarkus or RESTEasy types, no dependency outside the parent pom's pinned set) that
-  binds everything below.
-- **`AbstractGraphitronApplication`** is the boilerplate-removing base with the cached schema.
-  Unchanged.
-- **`GraphqlRequest`** is the request-body record. Unchanged, and it stays an implementation detail:
-  the handler's published entry points take a raw body or the GET query parameters, so this record
-  never appears in a consumer-facing signature. What moves is its javadoc pointer at
-  `GraphqlResource`, which names the binder that parses it.
-- **`META-INF/beans.xml`** marks the jar for annotated bean discovery; its comment enumerates what
-  the container is expected to find and gains the delegate.
-
-## Design
-
-### 1. Two delegates, split on the axis consumers actually fork on
-
-Two public, `@ApplicationScoped` CDI beans, with every JAX-RS input passed as a parameter rather
-than injected with `@Context`. Both are stateless, so application scope is correct, and neither
-names a vendor type: `Response`, `HttpHeaders`, `UriInfo` are all `jakarta.ws.rs.core`.
-
-```java
-// GraphqlHttpHandler: the decode/decide/execute/encode pipeline.
-// Injects GraphqlEngine and GraphitronApplication, exactly as the resource does now.
-public Response post(String body, HttpHeaders headers);
-public Response post(String body, HttpHeaders headers, OperationPolicy policy);
-public Response get(String query, String operationName, String variables, String extensions,
-                    HttpHeaders headers);
-public String schema();
-public static OperationDefinition.Operation resolveOperation(String query, String operationName);
-
-// GraphiqlBundle: the self-hosted page and its classpath assets.
-// Injects GraphitronApplication only, for the graphiqlEnabled() gate.
-public Response page(UriInfo uriInfo);
-public Response asset(String name);
-```
-
-Putting all of it on one bean would have reproduced `GraphqlResource` with the annotations stripped
-off. The two groups share nothing: the pipeline is the decode/encode boundary (body and `Accept` in,
-typed `GraphqlRequest` and a policy decision in the middle, `toSpecification()` plus the status
-watershed out) and needs the engine, the SPI, JSON-B and graphql-java; the bundle is a classpath
-streamer with a placeholder rewrite and an allowlist, coupled to the rest only through
-`graphiqlEnabled()`. Fused, every consumer who mounts POST also drags in a class initialiser that
-eagerly reads `graphiql.html` into a `static final` String, and the public method set becomes the
-cross-product of surface and mount point. Split, each consumer mounts what it serves. It is the same
-code in two files.
-
-`schema()` is a one-line `new SchemaPrinter().print(application.schema())`. It is not a third axis;
-it sits on the handler because that is where the SPI is already injected.
-
-`resolveOperation` is public because it is the decision a consumer may legitimately want to make for
-itself (metrics, logging, its own routing), and because it makes the guard's decision table testable
-without a container. The pipeline calls exactly this method, so the test covers the real path rather
-than a restatement of it. It returns `null` when no operation resolves and propagates graphql-java's
-parse exception, both documented. It stays on the handler rather than moving to `OperationPolicy`
-because it is a decode, raw document text to a typed `Operation`, and the handler is the decode
-boundary; the policy is the decision taken *over* that typed value. A `static` on a CDI bean is an
-odd-looking published shape, and the alternative homes are worse: on `OperationPolicy` it conflates
-resolution with permission, and a third type carrying one method earns nothing.
-
-GET takes no policy overload. The spec's queries-only-with-405 rule is the only meaningful policy
-for GET, and letting a consumer weaken it would let a consumer break conformance; a consumer that
-wants GET disabled simply does not declare a GET method. State the corollary in the javadoc, because
-a consumer reading "trust boundary" will assume otherwise: **the policy governs the verbs the
-consumer routes through it.** A consumer mounting both verbs has "no mutation runs here" enforced by
-its policy on POST and by the spec's 405 rule on GET, two paths with different statuses. That is
-sound (the GET rule is strictly stricter for a queries-only endpoint) but it must be said out loud.
-
-**There is no public `execute(GraphqlRequest, ...)`.** The pre-parsed entry point stays private, for
-a reason stronger than surface economy: because the 405 rule rides `get`, a public no-policy
-`execute` is the one way a consumer could route GET through the pipeline with no rule attached at
-all, and get there by writing something that looks entirely reasonable. Without it, every verb a
-consumer can route carries its rule structurally (POST carries the consumer's policy or none, GET
-always carries `SPEC_GET`) rather than by a javadoc warning the consumer has to read and heed. It is
-also surface nothing has asked for: the driving consumer posts a raw body, and a consumer that
-genuinely must pre-parse (multipart, its own `MessageBodyReader`) is a Backlog item to file when
-someone asks, which a new public overload makes cheap to answer additively.
-
-`get`'s four adjacent `String` parameters are the one uncomfortable signature here: inside a JAX-RS
-resource `@QueryParam` makes order irrelevant, and across a plain method call it does not, so a
-transposed `variables`/`extensions` pair compiles and misbehaves quietly. A params carrier was
-considered and does not help: the consumer would write the same four positional strings into a
-constructor instead of a call, moving the hazard rather than removing it. The mitigation that does
-work is showing it, so the consumer example below carries a GET arm whose forwarding call sits
-directly under the consumer's own `@QueryParam`-annotated parameters, where a transposition is
-visible in the diff. Keep the `@param` names in the javadoc matching the query-string names exactly.
-
-### 2. `OperationPolicy`: a configuration value, not a value object
-
-A public final class with static factories and no public constructor, in the same package:
-
-```java
-public final class OperationPolicy {
-    public static OperationPolicy queriesOnly(Response.StatusType status);
-    public static OperationPolicy queriesOnly(Response.StatusType status, String message);
-    public static OperationPolicy allowing(Set<OperationDefinition.Operation> allowed,
-                                           Response.StatusType status, String message);
-
-    public boolean permits(OperationDefinition.Operation operation);
-}
-```
-
-Not a record. A record would have to publish the two things that exist only for the library's own
-GET rule: a message that interpolates the rejected operation kind ("GraphQL **mutation** operations
-must use POST, not GET.") and a header map that carries `Allow: POST` and nothing else. Those are an
-internal constant's shape leaking into the public API of a Maven-Central-published artifact, and
-three of the four record components would sit unfilled at every consumer callsite. A record whose
-component is a `Function` also has structurally meaningless `equals`, which is the symptom of asking
-one shape to express both a hardcoded conformance rule and a consumer configuration.
-
-The final class keeps one enforcement path without publishing either. Internally it holds the
-allowed set plus a `Function<Operation, Rejection>` where `Rejection` is a package-private
-`(StatusType status, String message, Map<String, String> headers)`, and the GET rule is one more
-instance of the same type: a package-private `OperationPolicy.SPEC_GET` with `allowed = {QUERY}`,
-405, the interpolated message, and `Allow: POST`. One type, one guard, no second rule to keep in
-agreement. Identity `equals` is correct for a configuration value and no longer misleading.
-
-Only `permits` is published, not an `allowed()` accessor: the set is the factory's input, and every
-stated use is the permission question, so an accessor would be a second way to ask it.
-
-`Response.StatusType` rather than `int`: it is already on the module's provided classpath, and it is
-what `Response.status(...)` consumes. It does *not* remove the factory's validation, and the first
-draft's claim that it replaces the range check was wrong: `StatusType` constrains nothing, so
-`queriesOnly(Response.Status.OK)` would compile and produce a rejection no client can read as one.
-The factories reject an empty `allowed` set, and reject a status outside the `CLIENT_ERROR` and
-`SERVER_ERROR` families (`status.getFamily()`). Both families stay open rather than narrowing to
-4xx, because `501 Not Implemented` is a defensible answer for "this endpoint serves no subscription
-transport" and nothing is gained by forbidding it.
-
-The two `queriesOnly` overloads exist because the consumer needs both wordings: the one-argument
-form produces the library's own operation-interpolated wording ("GraphQL subscription operations are
-not supported on this endpoint."), which is what a fixed consumer string gets wrong the moment a
-subscription rather than a mutation arrives. `allowing` earns its place on the one policy neither
-`queriesOnly` nor the absent-policy case expresses: queries and mutations permitted, subscriptions
-refused, which is exactly the shape of a read-write endpoint on a library that serves no
-subscription transport.
-
-**Rejection is not legacy-downgraded.** Today's GET guard returns 405 regardless of the negotiated
-media type (only the body's media type varies), because it is an HTTP-level rule rather than a
-GraphQL request error. The generalised policy keeps that: a rejection returns the policy's status
-for both modern and legacy clients, with the error body serialised in the negotiated type. This is
-what the consumer needs, since 400 is the required answer for their non-production endpoints
-regardless of what the caller sends in `Accept`.
-
-### 3. No policy is an absent argument, never a permissive policy value
-
-The pre-parse the policy needs (`Parser.parse`, inside `resolveOperation`) does not happen on POST
-today. If the extracted pipeline ran it unconditionally, a syntactically invalid document over POST
-would start returning the resource's own `"The GraphQL document could not be parsed."` request-error
-body instead of graphql-java's `InvalidSyntax` result. Both are 400, so the existing conformance
-test would still pass while the response body changed for every consumer.
-
-The first draft of this item expressed that as an `unrestricted()` policy value whose permission set
-was special-cased to skip the parse. That is a decision re-derived at the consumption site from the
-value's inputs, and it buys a behaviour cliff keyed on set equality: a consumer writing a policy that
-happens to permit every operation type would get a different response body for a syntax error than a
-consumer who passed no policy, with identical permission semantics. It also leaves the skip
-predicate silently wrong the day the policy grows any rejection reason other than operation type.
-
-So there is no permissive policy value. **Absence of the argument is the state**, expressed by the
-two-argument `post` overload; the pipeline's private entry point takes the guard as a nullable
-parameter that only the library can construct, and null means "no guard, no parse". A
-consumer selecting per request writes the selection as the call, not as a value:
-
-```java
-return env.isProduction() ? handler.post(body, headers)
-                          : handler.post(body, headers, QUERIES_ONLY);
-```
-
-**The invariant needs its own enforcer.** The whole reason the skip exists is that no existing test
-can see its violation. The test plan therefore adds the case that can: an unparseable document over
-the built-in `POST /graphql` must still return graphql-java's `InvalidSyntax` error body, not the
-resource's request-error wording.
-
-### 4. Operation resolution and the smuggling question
-
-`resolveOperation` (today's private `operationType`, promoted per §1) keeps its current semantics:
-parse the document, pick the operation named by `operationName` when one is given, otherwise the
-first operation, and return `null` when nothing resolves. `null` falls through to the engine,
-unchanged. That is safe against smuggling, and the behaviour of graphql-java 25.0 was verified
-directly rather than assumed:
-
-- `query A { a } mutation B { b }` with `operationName: "B"`: the mutation **executes**. The policy
-  must and does catch this, because resolution honours `operationName`.
-- The same document with no `operationName`: graphql-java returns
-  `UnknownOperationException: Must provide operation name if query contains multiple operations.`
-  as a request error with no data, so the endpoint answers 422 and the mutation never runs. Picking
-  the first operation for the policy check cannot let anything through here.
-- `operationName` matching no operation: `UnknownOperationException: Unknown operation named 'X'.`,
-  again 422 with no data.
-- Duplicate operation names across a query and a mutation: the `DuplicateOperationName` validation
-  rule fires before execution, 422.
-- A document with only fragments: no operation resolves, validation rejects it, 422.
-
-So "resolved operation" is the right unit for the policy, and the unresolvable case genuinely
-belongs to the engine. Conservative rejection (refuse if any operation *definition* anywhere in the
-document is non-permitted) was considered and rejected: it breaks the legitimate case where a client
-ships one document holding both a query and a mutation and selects the query by `operationName`,
-which the queries-only endpoint must serve.
-
-**Two consequences for how this is written down.** First, the resolution is a hand-written
-reimplementation of "which operation will graphql-java run", and this item promotes it from a 405
-nicety on GET to the property a consumer's trust model rests on. Single-sourcing it against
-graphql-java was investigated: the engine resolves through `graphql.language.NodeUtil.getOperation`,
-which is annotated `@graphql.Internal` in 25.0, so calling it would pin us to a surface its authors
-reserve the right to break. We keep our own resolution, and every one of the five behaviours above
-gets a test rather than staying prose. Second, the delegate's javadoc keeps the *intent* ("the
-resolved operation is the unit, because the engine honours `operationName`") and names the tests
-that pin it; it does not transcribe graphql-java 25.0's exception messages, which are true when
-written and silently falsified by an upgrade.
-
-### 5. `GraphqlResource` becomes a thin shell
-
-Same class, same `@Path("/graphql")`, same five methods with the same annotations and the same return
-types, each now the §6 gate call plus one line delegating to `GraphqlHttpHandler` (post, get, schema)
-or `GraphiqlBundle` (page, asset). The public
-`GRAPHQL_RESPONSE_JSON` constant is defined on the handler and re-exported from `GraphqlResource` as
-`public static final String GRAPHQL_RESPONSE_JSON = GraphqlHttpHandler.GRAPHQL_RESPONSE_JSON;`. That
-initialiser is still a constant expression, so the field remains a constant variable and existing
-`@Produces({GraphqlResource.GRAPHQL_RESPONSE_JSON, ...})` annotations in consumer code keep
-compiling; an implementer must not "simplify" it into a method call. The class javadoc keeps
-describing the endpoint's spec behaviour and gains a pointer to the delegates for consumers who need
-a different mount point.
-
-One place where the extraction is not pure motion: today's private `execute(request, isGet, legacy)`
-receives a precomputed `legacy` flag, and the handler's `post` / `get` still need that flag before
-they reach the pipeline, for their own 422 paths. Derive it once at the top of each public entry
-point and pass it down to the private pipeline method; do not let `isLegacy` become two calls per
-request that can disagree.
-
-### 6. Turning the built-in endpoint off
-
-This is the security-relevant half of "my own path". A consumer that mounts
-`/graphql/{callingEnvironment}` must not also be serving the library's own `/graphql`, where no
-environment is bound and where their authentication code never runs. Bean discovery registers
-`GraphqlResource` automatically today, so the consumer cannot simply not use it.
-
-Add a defaulted SPI toggle alongside `graphiqlEnabled()`:
-
-```java
-default boolean builtInEndpointEnabled() { return true; }
-```
-
-`builtInEndpointEnabled`, not `defaultEndpointEnabled`: "default" invites the reading "the endpoint
-you get unless configured otherwise", which is what the toggle *changes* rather than what it names,
-where "built-in" says plainly that the library ships this route itself. The word is this item's, not
-yet the tree's: `modules.adoc`, the example README and `graphitron-jakarta-rest` say "self-hosted",
-"out of the box" and "the `/graphql` resource", and none of them says "built-in" today. The prose this
-item adds to the first two is what introduces it, so the name and the docs land together rather than
-the name claiming support that does not exist yet. The placement rides the SPI for the reason `graphiqlEnabled()`'s javadoc
-already carries: the framework decision is vendor-neutral Jakarta with no dependency outside the
-parent pom's pinned set, so the library cannot reach for a config framework itself.
-
-`GraphqlResource` consults it first in all five methods, through one private gate that throws rather
-than returning a status:
-
-```java
-private void requireBuiltInEndpoint() {
-    if (!application.builtInEndpointEnabled()) {
-        throw new NotFoundException();
-    }
-}
-```
-
-Throwing, not `return Response.status(404).build()`, because `schema()` returns `String`: a
-status-returning gate is expressible in four of the five methods and not the fifth, and the fix is
-not to widen `schema()`'s published return type for the sake of the gate. One throwing helper gates
-all five uniformly, and `jakarta.ws.rs.NotFoundException` yields the same 404 *status* as the
-`graphiqlEnabled()` gate. Not necessarily the same body: a thrown `NotFoundException` is rendered by
-the container's exception mapper, while `Response.status(NOT_FOUND).build()` returns an empty entity,
-so the two 404s can differ below the status line. Nothing in the contract depends on the body of a
-disabled route, so test 22 asserts the status only, and the two gates are deliberately not claimed to
-agree further than that. The gate runs in `GraphqlResource` before it delegates, so this
-`WebApplicationException` never meets the pipeline's passthrough arm; it goes straight to the
-container, which is the same mechanism §8 preserves for the consumer's own 401.
-
-**Its javadoc must say what it is: a 404 gate, not a de-registration.** The resource class is still
-discovered, still on the routing table, and still occupies the `/graphql` namespace when the toggle
-is false. A consumer who needs the route genuinely gone declares a `jakarta.ws.rs.core.Application`
-subclass with an explicit `getClasses()`, which needs no library support; the cost that keeps the
-toggle worth having is that in Quarkus such a declaration becomes definitive for the whole
-application, which is a large hammer for excluding one resource. Both routes are documented, with
-that trade-off stated, so the choice is a decision rather than an unexplained preference.
-
-### 7. Mounting under a templated path: the asset base, and the routing overlap
-
-`page(UriInfo)` rewrites `{{ASSET_BASE}}` from `uriInfo.getAbsolutePath()`, which returns the
-concrete request URI with template parameters already resolved, so a page served from
-`/graphql/test` gets `/graphql/test/assets/`. Nothing in the rewrite changes. What it needs is a
-test pinning it under a templated mount, and a javadoc sentence stating the two requirements it puts
-on the consumer: serve the asset stream at `assets/{name}` relative to the same path or the bundle
-404s, and note that `GraphiqlBundle.asset` is itself gated behind `graphiqlEnabled()`, so a consumer
-delegating to it inherits that gate.
-
-**The routing overlap is real and the first draft of this item got it backwards.** Jakarta REST
-sorts candidate root resource classes by literal-character count descending. A consumer mounting
-`@Path("/graphql/{callingEnvironment}")` has nine literal characters (`/graphql/`) against the
-built-in `@Path("/graphql")`'s eight, so the *templated* class sorts first for any request with two
-or more path segments. The consequences, none of which the toggle removes:
-
-- `/graphql/schema` reaches the consumer's resource with `callingEnvironment = "schema"`, not the
-  library's SDL endpoint.
-- `/graphql/assets/graphiql.js` likewise reaches the consumer's class (with the remaining segment as
-  a sub-path), so the built-in GraphiQL bundle stops resolving.
-- Bare `/graphql` still reaches the built-in resource, because the templated pattern needs a second
-  segment. That is exactly the ungated endpoint §6's toggle is for.
-
-So the honest statement for the javadoc and the consumer example is: a consumer mounting directly
-under `/graphql/{...}` shadows the built-in sub-paths whatever the toggle says, and must serve
-`assets/{name}` and `schema` from its own resource if it wants them.
-
-This is a claim about the container's matching algorithm across two root resource classes, so the
-test plan pins it in a running container rather than asserting it. It pins the *algorithm*, with a
-neutral pair of fixture paths, and does not stage the real `/graphql` overlap. That is not
-squeamishness, it is the only shape available: a `@Path` class in test sources is registered from the
-build-time index for every `@QuarkusTest` deployment in the module, and a `@TestProfile` selects
-config, alternatives and a build profile without changing the deployment's class set, so a fixture
-mounted at `/graphql/{...}` would shadow the built-in sub-paths for every other test in the module,
-not just its own. The `Application`-subclass route above is application-wide for the same reason and
-scopes nothing per test class. An implementer who "restores" the realistic paths will break
-`GraphqlResourceSmokeTest`'s page and asset cases; the neutral pair is load-bearing, not a
-placeholder.
-
-### 8. What does not change
-
-- `GraphitronApplication.newExecutionInput()` stays no-arg. Ordering is the consumer's resource
-  method's business, and it already runs first.
-- The `WebApplicationException` passthrough keeps its ordered-first catch arm, moved verbatim into
-  the delegate. Its javadoc is promoted from an inline comment into the delegate's and the SPI
-  method's javadoc, because it is the documented way for a consumer's authentication code (or seam)
-  to return 401/403.
-- The redaction guard, the correlation id, `statusFor`, `isLegacy`, and every status code the
-  conformance suite pins.
-
-## Implementation
-
-New files in `graphitron-jakarta-rest/src/main/java/no/sikt/graphitron/jakarta/rest/`:
-
-- `GraphqlHttpHandler.java`: the execution pipeline, holding the `JSONB` binder, the private
-  `execute`, `resolveOperation`, `statusFor`, `requestError`, `serialise`, `errorBody`,
-  `responseType`, `isLegacy`, `isBlank`, `parseMapParam`, `schema`, the `LOGGER`, and both the
-  `GRAPHQL_RESPONSE_JSON` constant and the `GRAPHQL_RESPONSE_TYPE` media type `isLegacy` compares
-  against. Package-level javadoc quality, with the consumer example below.
-- `GraphiqlBundle.java`: the page and asset surface, holding `GRAPHIQL_HTML`, the `{{ASSET_BASE}}`
-  rewrite, the name allowlist, `assetMediaType`, and `loadResource`, behind the existing
-  `graphiqlEnabled()` gate.
-- `OperationPolicy.java`: the final class, its factories, the package-private `Rejection` and the
-  package-private `SPEC_GET` constant carrying today's GET rule.
-
-Java 17 syntax only in all three, per the module's pinned `default-compile`. This is the constraint
-that also settles the sealed-hierarchy question in §2: sealed types compile at 17, but pattern
-labels in `switch` do not (21 and up), so a sealed policy hierarchy in this module would dispatch
-through virtual calls or `instanceof` chains and give up most of what makes sealed attractive
-elsewhere in the reactor.
-
-Edited:
-
-- `GraphqlResource.java`: reduced to the five annotated methods delegating to the two beans, the
-  `requireBuiltInEndpoint()` gate, and the re-exported constant. Its class javadoc currently names
-  the mechanics that leave (`{@link #execute}`, the `Jsonb` binder it no longer holds); it keeps the
-  spec narrative and points at the delegates. The `{@link #execute}` reference is a dangling link the
-  moment the method moves, so the javadoc reference gate catches this one for you.
-- `GraphitronApplication.java`: add `builtInEndpointEnabled()`, with javadoc saying it is a 404 gate
-  rather than a de-registration and naming the `Application`-subclass alternative; extend
-  `newExecutionInput()`'s javadoc with the `WebApplicationException` contract.
-- `GraphqlRequest.java`: javadoc pointer moves from `GraphqlResource` to the handler.
-- `META-INF/beans.xml`: comment names both delegates.
-- `docs/architecture/reference/modules.adoc`: the module row gains the delegates and the policy in
-  its one-line surface description.
-- `graphitron-sakila-example/README.md`: the app section says "everything HTTP-shaped comes from the
-  library"; add one sentence that a consumer needing its own path or a stricter operation policy
-  mounts the delegates instead of the built-in resource.
-- `graphitron-sakila-example/.../FaultInjectingGraphitronApplication.java`: its javadoc links
-  `GraphqlResource#execute`, which moves. Repoint at the handler.
-
-Two prose sites name `GraphqlResource` as the thing that streams the GraphiQL bundle, and both are
-false once that behaviour lands on `GraphiqlBundle`. Neither is Java, so no build gate can see them:
-
-- `graphitron-jakarta-rest/src/main/resources/no/sikt/graphitron/jakarta/rest/graphiql.html`: the
-  comment in the page head, "GraphqlResource streams them from the assets endpoint".
-- `graphitron-jakarta-rest/tools/graphiql-build/README.md`: two occurrences, "`GraphqlResource`
-  streams it from its `assets/{name}` endpoint" and "the absolute `{{ASSET_BASE}}` prefix that
-  `GraphqlResource` injects into `graphiql.html` at serve time".
-
-The `## Retired vocabulary` section below exists so the Done gate greps for this class of rot rather
-than trusting this list to be complete.
-
-`AbstractGraphitronApplication` and `GraphqlEngine` are untouched.
-
-## Consumer example (handler javadoc)
-
-The handler's javadoc carries this sketch, which is the consumer case reduced to its shape:
-
-```java
-@Path("/graphql/{callingEnvironment}")
-public class EnvironmentGraphqlResource {
-
-    private static final OperationPolicy QUERIES_ONLY =
-        OperationPolicy.queriesOnly(Response.Status.BAD_REQUEST);
-
-    @Inject GraphqlHttpHandler handler;
-    @Inject GraphiqlBundle graphiql;
-    @Inject CallerClaims claims;          // @RequestScoped, read by this app's SPI adapter
-
-    @POST
-    @Consumes(MediaType.APPLICATION_JSON)
-    @Produces({GraphqlHttpHandler.GRAPHQL_RESPONSE_JSON, MediaType.APPLICATION_JSON})
-    public Response post(@PathParam("callingEnvironment") String environment,
-                         String body,
-                         @Context HttpHeaders headers) {
-        Environment env = Environment.parse(environment);              // 404 on an unknown value
-        claims.populate(authenticate(headers, env));                   // 401 via NotAuthorizedException
-        return env.isProduction()
-            ? handler.post(body, headers)                              // no policy: every operation
-            : handler.post(body, headers, QUERIES_ONLY);               // 400 before execution
-    }
-
-    @GET
-    @Produces({GraphqlHttpHandler.GRAPHQL_RESPONSE_JSON, MediaType.APPLICATION_JSON})
-    public Response get(@PathParam("callingEnvironment") String environment,
-                        @QueryParam("query") String query,
-                        @QueryParam("operationName") String operationName,
-                        @QueryParam("variables") String variables,
-                        @QueryParam("extensions") String extensions,
-                        @Context HttpHeaders headers) {
-        claims.populate(authenticate(headers, Environment.parse(environment)));
-        // Parameter order matches the four @QueryParam names directly above. GET carries the
-        // spec's queries-only rule (405 + Allow: POST) with no policy argument to pass.
-        return handler.get(query, operationName, variables, extensions, headers);
-    }
-
-    @GET
-    @Produces(MediaType.TEXT_HTML)
-    public Response graphiql(@Context UriInfo uriInfo) {
-        // Same shape as the built-in resource: one @GET per produced type, so a browser sending
-        // Accept: text/html lands here and curl/POST traffic does not. Omit this arm and a browser
-        // gets 406 from the JSON-only arm above.
-        return graphiql.page(uriInfo);    // {{ASSET_BASE}} resolves to this request's path + assets/
-    }
-
-    @GET
-    @Path("assets/{name}")
-    public Response asset(@PathParam("name") String name) {
-        return graphiql.asset(name);      // gated behind GraphitronApplication.graphiqlEnabled()
-    }
-}
-```
-
-Four properties the javadoc states explicitly around it. The resource method runs to completion
-before the handler touches the seam, so a `@RequestScoped` holder populated here is visible to
-`newExecutionInput()`. A `WebApplicationException` thrown either here or from the seam reaches the
-container unredacted, which is how 401 and 403 are produced. Mounting under `/graphql/{...}`
-shadows the built-in resource's sub-paths (§7), so this consumer serves the assets itself and would
-have to serve `schema` itself too. And the two verbs carry their rules differently: POST takes the
-policy the consumer selects per request, GET carries the spec's 405 rule unconditionally, which is
-why there is one `get` and two `post`s and no way to route a verb through the pipeline without a
-rule attached.
-
-## Test plan
-
-Coverage splits by what each case actually asserts, per the rubric in
-`docs/architecture/how-to/testing.adoc` ("tier is determined by what's asserted, not by what module
-the file lives in"). The guard is a pure decision over `(query, operationName, policy)`; observing it
-only through a Quarkus boot, live Postgres, JAX-RS routing, JSON-B, content negotiation and the
-engine would be nine layers of plumbing around three arguments. The first draft did exactly that, and
-its own cleverest case (choosing a mutation field that does not exist so that 400-not-422 proves the
-guard ran first) was the tell: it was compensating for observing a pure decision through its most
-distant effect.
-
-All three new test classes live in `graphitron-sakila-example`'s test sources. The runtime module stays free of
-`@Test` classes: adding them would mean test-scope JUnit plus a dependency on `graphitron`'s
-tier-annotation test-jar, which inverts the layering of a runtime artifact that today depends on
-graphql-java and four provided APIs and nothing else. `ScatterSingleByIdxTest` is the standing
-precedent for a `@UnitTier` class living in that module purely for dependency reasons.
-
-**Unit tier** (`OperationGuardTest`, `@UnitTier`, no container, no database): a table over the guard
-decision, calling `GraphqlHttpHandler.resolveOperation` and `OperationPolicy.permits` directly. Named
-for the guard rather than for either collaborator, because the decision under test is the pair: the
-resolution and the permission check are separately uninteresting.
-
-1. Mutation document, queries-only policy: rejected.
-2. Subscription document, queries-only policy: rejected. Pins that the guard is
-   `operation != QUERY`, not a mutation special case.
-3. Multi-operation document, `operationName` selects the mutation: resolves to the mutation, so the
-   policy rejects. The smuggling case, at its own altitude.
-4. Same document, `operationName` selects the query: permitted.
-5. Multi-operation document, no `operationName`: resolves to the first operation.
-6. `operationName` matching nothing: resolves to `null`, so no rejection is possible and the request
-   falls through to the engine.
-7. Fragment-only document: resolves to `null`, same fall-through.
-8. Unparseable document: `resolveOperation` propagates graphql-java's parse exception, which is what
-   the pipeline turns into 400.
-9. `allowing({QUERY, MUTATION}, ...)`: query and mutation permitted, subscription rejected.
-10. The rejection carried by `queriesOnly(status)` interpolates the rejected operation kind, so a
-    subscription is not reported as a mutation.
-11. Factory validation: an empty `allowed` set is rejected, and so is a status outside the
-    `CLIENT_ERROR` / `SERVER_ERROR` families (`queriesOnly(Response.Status.OK)` throws;
-    `queriesOnly(Response.Status.NOT_IMPLEMENTED)` is accepted). This is the enforcer for the §2
-    claim that `StatusType` narrows the type but not the value.
-
-**Execution tier** (`MountedEndpointTest`, `@QuarkusTest` + `@ExecutionTier`), the cases only a
-running container can produce. Fixture: a `PolicyMountedGraphqlResource` in test sources at
-`/env/{callingEnvironment}/graphql`, shaped like the consumer example above: POST delegating with
-`queriesOnly` for the non-production path value and no policy for the production one, a GET arm
-forwarding to `handler.get`, plus `assets/{name}`, the page, and `schema`. Test sources for the same
-reason `FaultInjectingGraphitronApplication` is there: the shipped reference app stays a pristine
-copy-paste template.
-
-12. Mutation over POST on the queries-only mount: 400, body is the policy message, no `data` member.
-    One end-to-end case pinning that the unit-tier decision reaches the wire with the right status,
-    media type and shape.
-13. A mutation over POST on the no-policy mount: 200. The policy is a per-call argument, not a mode.
-14. A GET resolving to a mutation on the mount's GET arm: 405 with `Allow: POST`, not the policy's
-    400. Pins §1's "the policy governs the verbs the consumer routes through it": a consumer-routed
-    GET carries `SPEC_GET` whether or not the consumer passes a policy anywhere, which is the
-    invariant that lets the published surface omit a no-policy `execute` entirely.
-15. Unresolvable operation on the queries-only mount falls through to the engine: 422 from
-    graphql-java, not the policy message.
-16. Unparseable document on the queries-only mount: 400 with the "could not be parsed" request-error
-    body.
-17. Legacy `Accept: application/json` on a policy rejection: still 400, error body in
-    `application/json`. Pins the deliberate non-downgrade.
-18. GraphiQL page from the templated mount: `{{ASSET_BASE}}` resolves to `/env/test/graphql/assets/`
-    and `GET /env/test/graphql/assets/graphiql.js` streams 200 `text/javascript`.
-19. `schema` under the templated mount returns SDL.
-20. Ordering: the mounted resource populates a `@RequestScoped` holder from the path parameter before
-    delegating; the test-scoped adapter records what it saw in `newExecutionInput()` and the resource
-    echoes it back as a response header. Asserts the seam observed what the resource set, which is
-    the property the consumer's trust model rests on.
-21. A `WebApplicationException` thrown by the mounted resource method before delegating (missing
-    `Authorization` header) surfaces as 401, unredacted.
-22. `builtInEndpointEnabled() == false`: all five built-in `/graphql` routes answer 404 (including
-    `/graphql/schema`, the one whose gate throws rather than returns) while the mounted endpoint keeps
-    working. Realised by the test adapter reading a request header, following the `FAULT_HEADER`
-    precedent, so no second Quarkus boot is needed. Note for the implementer: this works *because*
-    the toggle is evaluated per request, so it must not be read as evidence for the design fork in
-    §6; under the registration-level alternative the test could not exist at all.
-
-**Routing overlap** (`OverlappingMountTest`, `@QuarkusTest` + `@ExecutionTier`, no profile and no
-second boot). §7's claim is about Jakarta REST's matching algorithm across two root resource classes,
-so it gets pinned rather than asserted, at paths that overlap each other and nothing else. Two
-fixtures in test sources: `@Path("/probe")` with a `schema` sub-path and an `assets/{name}`
-sub-resource, and `@Path("/probe/{p}")` catching a sub-path, each answering with its own identity so
-which class served the request is visible in the body. Isomorphic to the real case by construction:
-`/probe/` is seven literal characters against `/probe`'s six, the same one-character margin `/graphql/`
-holds over `/graphql`.
-
-- `/probe/schema` reaches the templated class with `p = "schema"`, not the literal class's sub-path.
-- `/probe/assets/probe.js` reaches the templated class too, with the remainder as its sub-path.
-- Bare `/probe` reaches the literal class, because the templated pattern needs a second segment.
-
-Those three are §7's three consequences with the names changed, and the arithmetic that carries them
-across (nine against eight rather than seven against six) is in the assertion messages so the
-correspondence is not left to a reader. What this deliberately does not pin is the `/graphql` overlap
-itself, for the reason §7 gives: staging it would shadow the built-in sub-paths for every test in the
-module rather than for this one class. The toggle half of the old formulation is not lost, it was
-always better placed in test 22, which asserts all five built-in routes answer 404 with the toggle
-off.
-
-**Regression, unchanged expectations.** Every case in `GraphQLOverHttpConformanceTest` and
-`GraphqlResourceSmokeTest` passes with no edit to its expectations, plus one case the suite is
-missing today and this design requires:
-
-23. An unparseable document over the built-in `POST /graphql` returns graphql-java's `InvalidSyntax`
-    error body (assert on the error shape graphql-java produces, for instance the presence of
-    `locations`), not the resource's "could not be parsed" wording. This is the enforcer for §3: it
-    is the only case that can catch a future implementer making the pre-parse unconditional, since
-    both bodies come back as 400 and every existing assertion is on the status alone.
-
-That is the observable contract for "`GraphqlResource` is now a shell": GET-to-mutation stays 405
-with `Allow: POST`, the 400/422 watershed holds, legacy stays 200, the redaction and passthrough
-cases hold, and the GraphiQL page and assets still resolve under `/graphql`.
+## What landed
+
+All of it, in one pass. Every file below is on the branch; the reactor builds green with
+`mvn install -Plocal-db`.
+
+**New in `graphitron-jakarta-rest/src/main/java/no/sikt/graphitron/jakarta/rest/`:**
+
+- `GraphqlHttpHandler`: the whole decode/decide/execute/encode pipeline as an `@ApplicationScoped`
+  bean taking every Jakarta REST input as a parameter. Published surface is `post(String,
+  HttpHeaders)`, `post(String, HttpHeaders, OperationPolicy)`, `get(String, String, String, String,
+  HttpHeaders)`, `schema()`, and the static `resolveOperation(String, String)`, plus the
+  `GRAPHQL_RESPONSE_JSON` constant. Its class javadoc carries the consumer example.
+- `GraphiqlBundle`: `page(UriInfo)` and `asset(String)`, behind the existing `graphiqlEnabled()`
+  gate.
+- `OperationPolicy`: final class, three static factories, one published `permits` method, the
+  package-private `Rejection` record and the package-private `SPEC_GET` instance carrying the
+  specification's GET rule.
+
+**Edited:** `GraphqlResource` is now five annotated methods, each the `requireBuiltInEndpoint()`
+gate plus one delegating call, and the re-exported constant expression. `GraphitronApplication`
+gained `builtInEndpointEnabled()` and the `WebApplicationException` contract on
+`newExecutionInput()`'s javadoc. `GraphqlRequest`'s javadoc pointer, `META-INF/beans.xml`'s comment,
+`modules.adoc`'s module row, the example README's app and testing sections, the `graphiql.html` head
+comment, and both `tools/graphiql-build/README.md` occurrences all moved off `GraphqlResource`.
+
+**What a reviewer should check, in rough order of how badly it would hurt to get wrong.**
+
+1. **No entry point runs a request with no operation rule attached.** GET is routed with
+   `SPEC_GET`, POST with the consumer's policy or `null`, and the nullable-guard entry point is
+   private. That is the invariant that lets the published surface omit `execute` entirely.
+2. **The pre-parse is conditional.** An unrestricted POST is never parsed by the pipeline, so a
+   syntactically invalid document still comes back as graphql-java's `InvalidSyntax` result rather
+   than this library's parse-failure wording. Both are 400;
+   `GraphQLOverHttpConformanceTest.unparseableDocumentIsTheEnginesInvalidSyntaxResult` is the only
+   assertion in the tree that can see the difference.
+3. **The rejection is not legacy-downgraded**, because it is an HTTP-level rule rather than a
+   GraphQL request error. Only the error body's media type follows negotiation.
+4. **The gate throws.** `requireBuiltInEndpoint()` raises `NotFoundException` so `schema()`, which
+   returns `String`, is gated the same way as the four `Response` methods, with no published return
+   type widened for the gate's sake.
+5. **The re-exported constant is still a constant expression**, so consumer `@Produces` annotations
+   naming `GraphqlResource.GRAPHQL_RESPONSE_JSON` keep compiling.
+6. **`isLegacy` is derived once per request** at the top of each public entry point and threaded
+   down, not recomputed where it is needed.
+
+## Coverage that landed
+
+**Unit tier**, `OperationGuardTest` (12 cases, no container, no database): the guard as a decision
+table over `resolveOperation` and `permits`. Resolution honouring `operationName` in a mixed
+document (both directions), first-operation fallback, both unresolvable cases returning `null`, the
+parse failure propagating, `allowing` as the read-write endpoint, the defensive copy of the
+permitted set, and all four factory validations.
+
+**Execution tier**, `MountedEndpointTest` (12 cases, `@QuarkusTest`), over a
+`PolicyMountedGraphqlResource` fixture at `/env/{callingEnvironment}/graphql` shaped like the
+javadoc example: the policy refusal on the wire with its status, media type and message; the same
+mutation executing on the mount that passes no policy; a GET resolving to a mutation answering 405
+with `Allow: POST` on *both* mounts; the fall-through to the engine; the parse failure; the legacy
+non-downgrade; the asset base resolving under a templated mount; SDL under the same; the seam
+observing what the resource method set; a `NotAuthorizedException` thrown before delegation
+surfacing as 401; and all five built-in routes answering 404 with the toggle off while the mounted
+endpoint keeps working.
+
+**Execution tier**, `OverlappingMountTest` (3 cases, same deployment, no profile and no second
+boot): Jakarta REST's root-resource sort pinned on `/probe` against `/probe/{p}`, whose
+one-character literal margin is the margin `/graphql/` holds over `/graphql`. The three consequences
+are the three the spec named (a declared sub-path taken by the templated class, a deeper sub-path
+taken with the remainder as its own sub-path, and the bare path still reaching the literal class),
+with the arithmetic carried in the assertion messages.
+
+**Regression:** `GraphQLOverHttpConformanceTest` and `GraphqlResourceSmokeTest` pass with no edit to
+any existing expectation, and the conformance suite gained the unparseable-POST case above.
+
+## Deviations from the plan
+
+Seven, none of which change the design.
+
+1. **Test-plan case 10 moved from unit tier to execution tier.** The interpolated rejection wording
+   is only reachable through `Rejection`, which is package-private, and the test classes live in
+   `graphitron-sakila-example`. Asserting it on the wire is where it was observable:
+   `MountedEndpointTest.refusalNamesTheRejectedOperationType` sends a subscription and requires the
+   message to name one. The plan's point survives; only its tier moved.
+2. **`allowing`'s `message` accepts `null`**, meaning the library's interpolated wording. That makes
+   `queriesOnly(status)` literally `allowing(Set.of(QUERY), status, null)` rather than a parallel
+   construction, so there is one message path instead of two. No signature changed.
+3. **The consumer example is a bare `<pre>` with `&#64;` escapes, not `<pre>{@code}`.** Javadoc reads
+   an `@` in a line's first column as a block tag even inside `{@code}` and silently truncates the
+   class description there; the first draft of the javadoc lost the whole example that way, which
+   the reference gate does not catch because it is not a broken link. A comment above the javadoc
+   block records why the escapes are there.
+4. **`FaultInjectingGraphitronApplication` gained two more test seams** (the toggle read off a
+   request header, and the `CallingEnvironment` observation). Only one `@Alternative` adapter can be
+   selected, so a second class was not available; its javadoc now says so.
+5. **Three more test-source fixtures than the plan enumerated:** `CallingEnvironment` (the
+   `@RequestScoped` holder that makes ordering observable), `ProbeLiteralResource` and
+   `ProbeTemplatedResource` (the overlap pair).
+6. **The example README's testing section needed one more sentence than the plan listed**, because
+   it claimed everything under `app/` is a `@QuarkusTest` class and `OperationGuardTest` is not.
+7. **The mutation used in the execution-tier cases is `searchManyMutation`**, a read-only `@service`
+   mutation, so the unrestricted mount can execute one without writing to the example database.
 
 ## Retired vocabulary
 
@@ -674,6 +191,12 @@ ones that list missed, because none of these surfaces is reachable by the javado
   operation-type gate; it says nothing about what SQL a permitted operation can issue.
 
 ## Decisions taken during Spec
+
+The design sections these decisions cite were removed when the work shipped, since the code is now
+the statement of what was decided. The section numbers survive in the text below and read: §1 the
+two delegates and their published surface, §2 `OperationPolicy`'s shape, §3 no permissive policy
+value, §4 operation resolution and smuggling, §5 `GraphqlResource` as a shell, §6 the built-in
+endpoint toggle, §7 the templated mount and the routing overlap, §8 what does not change.
 
 The first draft left five decisions open. A principles consult closed all five; the reasoning is
 recorded here so the sign-off reviewer sees what was weighed rather than only what was chosen.

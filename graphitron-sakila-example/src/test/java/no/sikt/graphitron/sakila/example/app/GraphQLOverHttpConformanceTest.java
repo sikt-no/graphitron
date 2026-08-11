@@ -98,6 +98,29 @@ class GraphQLOverHttpConformanceTest {
     }
 
     @Test
+    @DisplayName("Status [application/graphql-response+json]: an unparseable POST body is answered by the engine, not by a pre-parse in the pipeline. -- " + SPEC_REVISION)
+    void unparseableDocumentIsTheEnginesInvalidSyntaxResult() {
+        // The enforcer for "a POST carrying no operation policy is never pre-parsed". The pipeline
+        // parses the document up front only when it has a policy to apply; making that
+        // unconditional would replace graphql-java's InvalidSyntax result with the pipeline's own
+        // "could not be parsed" request error for every existing consumer. Both are 400, and every
+        // other assertion in this suite is on the status alone, so this case is the only one that
+        // can see the change.
+        given()
+            .contentType(APPLICATION_JSON)
+            .accept(GRAPHQL_RESPONSE_JSON)
+            .body("{\"query\":\"{ customers \"}")
+        .when()
+            .post("/graphql")
+        .then()
+            .statusCode(400)
+            // graphql-java's syntax error carries source locations; the pipeline's request-error
+            // body is a bare message.
+            .body("errors[0].locations", notNullValue())
+            .body(not(containsString("could not be parsed")));
+    }
+
+    @Test
     @DisplayName("Status [application/graphql-response+json]: \"A request that does not constitute a well-formed GraphQL-over-HTTP request SHOULD result in status code 422.\" -- " + SPEC_REVISION)
     void missingQueryIs422() {
         given()
