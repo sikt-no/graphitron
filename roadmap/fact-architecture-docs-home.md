@@ -52,9 +52,12 @@ transient space:
   already universal in the DDL; this item promotes it to the documentation source. Comment text
   may use AsciiDoc inline syntax (monospace, emphasis, lists); the doc generator interpolates it
   into the rendered pages, and asciidoctor, already in the docs build, is the only renderer
-  involved. AsciiDoc over markdown because the site is AsciiDoc: markdown prose would need a
-  converter dependency or a lossy subset, plus escaping at the embedding boundary. This keeps
-  the reference documentation in the same file as the model, reviewed in the same diff.
+  involved. AsciiDoc over markdown because the site is AsciiDoc: staying in one markup removes
+  the conversion boundary and its escaping (the repo does render markdown elsewhere, so this is
+  a boundary-count argument, not a capability one). Adoption rewrites nothing: measured against
+  the live corpus, zero of the 1,019 comments contain a backtick, the single unpaired
+  constrained-emphasis opener renders literally, and no comment mis-renders. This keeps the
+  reference documentation in the same file as the model, reviewed in the same diff.
 - **The explanation/reference split follows Diátaxis, and the division of labour is R333's.**
   The generated reference owns the *what* (relations, columns, keys, constraints, their
   comments). A new authored explanation page owns the *why* (the modeling discipline, the
@@ -81,16 +84,22 @@ transient space:
   rule (a family is named for whose vocabulary its rows are written in): these rows are the
   schema describing itself, not the store's runtime record of what it read, so `store_` would be
   the wrong home. The `meta_` family describes itself like any other: `meta_family` carries its
-  own family row.
+  own family row. One relation is deliberately prefix-less today: the `diagnostic` read surface,
+  whose own comment carries the no-family argument in prose precisely because no gate could say
+  it mechanically. The meta stratum gives that case a home a prefix key cannot: a sibling
+  exemption relation (working name `meta_prefixless_relation`: relation name as the key, the
+  page that renders it, a reason), in the exemption polarity the schema gates already use, so a
+  new prefix-less relation fails the gate until it carries an authored row.
 - **One catalog reader, many views.** Everything that needs "what relations exist" (the doc
   generator, the drift guard) reads it from one place: the booted store's metadata plus the
   meta-relations, exposed by `graphitron-model`. The page set and the guard's prefix set derive
   from that reader, never enumerated a second time in code or prose. The meta-relations are
   closed against the observed schema by bidirectional gates in the `FactSchemaGateTest` family:
   every observed relation prefix has a family row, every family row has at least one observed
-  relation, ordinals are unique. (The DDL header's "Ten families" prose count is already off by
-  one against the `intent_` stratum it describes below; rows plus a gate make that class of
-  drift impossible.)
+  relation, every prefix-less relation has an exemption row, ordinals are unique. (The DDL
+  header's prose taxonomy has already drifted twice over: its "Ten families" count misses the
+  `intent_` stratum it describes below, and the prefix-less `diagnostic` view fits no prefix at
+  all; rows plus gates make both classes of drift impossible.)
 - **One item, ordered slices.** The slices below are independently landable and ordered by
   priority; each is a full vertical (content plus any guard it needs).
 
@@ -126,9 +135,15 @@ Author `docs/architecture/explanation/fact-model.adoc`, migrating the stable *wh
 R333's body. Content, at altitude (the page explains and argues; it does not enumerate
 relations):
 
-- The coordinate as the natural key: the spec's `SchemaCoordinate`, stored decomposed, sealed
-  five-kind union not nullable columns; canonical string as a derived render, never a stored
-  surrogate.
+- The key discipline as shipped: base relations key schema elements by the spec grammar's own
+  `Name` columns, per relation, all non-null (`graphql_field` on
+  `(graph_name, type_name, field_name)` and kin), never by surrogate ids; the canonical
+  coordinate string appears in the store only as a rendering of those columns (the two stored
+  `coordinate` columns, on the duplicate-declaration overflow and the `diagnostic` read surface,
+  say so in their comments). The five-kind sealed coordinate carrier and a mechanical
+  never-a-stored-surrogate rule are target-state: the store has no coordinate relation and the
+  rendering claim has no enforcer, so per the shipped-and-enforced rule that content stays in
+  R333 until a carrier and a gate exist.
 - Facts as independent functional dependencies, each found by its own walk; a capability is
   added by adding a fact, not a leaf type; the leaf zoo as the denormalized view that
   multiplication built.
@@ -184,11 +199,14 @@ Update `.claude/agents/principles-architect.md` and the shared "what to look for
 ### Slice 4: generate the schema reference from the DDL comments
 
 A doc-generation step that boots the store from `graphitron-model.sql` (the same bootstrap jOOQ
-codegen already uses), reads the store's metadata (tables, columns, comments, primary keys,
-foreign keys, CHECK constraints) *and* the meta-relations through the shared catalog reader from
-Decisions, and renders the reference: one page per family plus an index, the page set, titles,
-ordering, and index preamble all read from the family rows, the per-object prose from the
-comments. Nothing about the page structure is parsed from prose or hardcoded in the generator.
+codegen already uses), reads the store's metadata *and* the meta-relations through the shared
+catalog reader from Decisions, and renders the reference: one page per family plus an index, the
+page set, titles, ordering, and index preamble all read from the family rows, the per-object
+prose from the comments, prefix-less relations placed by their exemption rows. "Relation" is
+pinned throughout this item as tables *and* views (112 tables and 14 views at writing, 12 of the
+views the `intent_` claim stratum): both carry comments and columns and both render; only tables
+additionally render primary keys, foreign keys, and CHECK constraints, since views carry none.
+Nothing about the page structure is parsed from prose or hardcoded in the generator.
 This slice introduces the meta-relations and their bidirectional gates (the Decisions bullet),
 and migrates the family-definition prose from the header comment into the rows. Comment text
 interpolates as AsciiDoc into the rendered `.adoc` pages. The output is generated at build and
@@ -199,17 +217,24 @@ Generated-not-committed removes the failure signal the committed precedent
 carries its own enforcers:
 
 - **Non-vacuity floors**, in the falsifiability pattern of the roadmap-tool check tests: every
-  relation in the catalog appears on exactly one page, and every rendered relation carries
-  non-empty comment text. A generator that renders a plausible empty reference fails loudly.
+  relation in the catalog (tables and views alike, per the pinned word above) appears on exactly
+  one page, via its family or its exemption row, and every rendered relation carries non-empty
+  comment text. A generator that renders a plausible empty reference fails loudly.
 - **A comment renderability gate** beside the existing comment-coverage gate in the
-  `FactSchemaGateTest` family: every comment conforms to the accepted AsciiDoc subset, and the
-  gate specifically rejects markdown-isms (`**bold**`, pipe-separator tables, `[text](url)`
-  links), the same slip `check-adoc-tables` guards in authored pages. This lands the failure
-  where the comment is authored (`graphitron-model`) instead of surfacing as an Asciidoctor
-  `WARN` in the docs render two modules away (whose `failIf` severity would otherwise break the
-  site build with a diagnostic pointing at generated output).
+  `FactSchemaGateTest` family, guarding both directions: it rejects markdown-isms (`**bold**`,
+  pipe-separator tables, `[text](url)` links), the same slip `check-adoc-tables` guards in
+  authored pages, and it rejects accidental AsciiDoc activation in innocent prose, a pair of
+  `_Word` tokens silently italicizing everything between them. The second direction has a solved
+  precedent in-tree: the roadmap-tool's `InertSpans` with `GeneratedAdocSpanGateTest`, whose
+  javadoc makes this item's own argument (the docs-profile `WARN` gate cannot hold the line
+  because it does not run under a `-P!docs` build). This lands the failure where the comment is
+  authored (`graphitron-model`) instead of surfacing as an Asciidoctor `WARN` in the docs render
+  two modules away.
 - The generation and its floors bind into the base build, not the docs render profile, following
   the docs pom's own argument for `check-adoc-xrefs` ("only render-site lives in that profile").
+  The render step itself sits in the `docs` module, which the reactor order admits without
+  reordering (`graphitron-model` builds early, `docs` late), with the reader exposed by
+  `graphitron-model`.
 
 ### Slice 5: drift guard for the authored pages
 
@@ -219,8 +244,11 @@ resolves to a relation (or column, or observed family prefix) in the store, in t
 roadmap-tool's `check-module-enumeration`. The guard reads the same catalog reader as slice 4
 (the Decisions rule): if the guard regexed the `.sql` while the generator read the booted
 store's metadata, two mechanisms of different fidelity would answer "what relations exist". The
-guard makes slice 2's page unable to rot the way the pipeline overview did. Can land with slice
-2 if convenient; kept separate so slice 2 is not blocked on tooling.
+guard makes slice 2's page unable to rot the way the pipeline overview did. The guard needs only
+the store-metadata half of the reader, not the meta-relations, so this slice is
+standalone-implementable: whichever of slices 4 and 5 lands first stands up the reader, and
+landing this one first is fine. Can land with slice 2 if convenient; kept separate so slice 2 is
+not blocked on tooling.
 
 ## Open questions (to settle at Ready)
 
@@ -228,12 +256,9 @@ guard makes slice 2's page unable to rot the way the pipeline overview did. Can 
   dependency is needed (asciidoctor in the docs build is the renderer). What remains is the
   subset the renderability gate accepts: inline markup certainly, and where the line is drawn on
   block content (lists yes; tables and block macros probably not, a comment wanting a table is a
-  smell that the content belongs in a `meta_` row or the page template). Decide when slice 4 is
+  smell that the content belongs in a `meta_` row or the page template). The roadmap-tool's
+  `InertSpans` is the in-tree starting point for the span mechanics. Decide when slice 4 is
   picked up; the gate can start strict and widen.
-- **Where slice 4's render step runs.** The catalog reader lives in `graphitron-model` (decided
-  above); the render step that consumes it can sit in the `docs` module (which already stages
-  `architecture/**`) or beside the reader. Leaning docs-module for site-build cohesion, with the
-  non-vacuity floors staying in the base build either way.
 
 ## Acceptance
 
@@ -262,7 +287,8 @@ guard makes slice 2's page unable to rot the way the pipeline overview did. Can 
   Done-and-delete condition comes closer with each slice-2 section landed.
 - **R595** (the fact store, shipped): the DDL and its `COMMENT ON` convention are the substrate
   slice 4 renders. The one schema change this item requests is the documentation meta-relation
-  stratum (the family relation and its gates); no captured-fact relation changes.
+  stratum (the `meta_` family: the family relation, the prefix-less exemption relation, and
+  their gates); no captured-fact relation changes.
 - **R545** (the model owns no emit vocabulary): slice 3 encodes its boundary as a named finding
   so drafts get caught before they add to that debt.
 - **R115** (capability catalog): adjacent knowledge-surface work; no dependency either way.
