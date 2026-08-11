@@ -31,46 +31,241 @@ public class ExceptionToErrorMappingProviderGenerator extends AbstractSchemaClas
     private static final TypeName DATA_ACCESS_ERROR_MAPPINGS_TYPE = ParameterizedTypeName.get(MAP.className, STRING.className, wrapList(DATA_ACCESS_EXCEPTION_CONTENT_TO_ERROR_MAPPING.className));
     private static final TypeName GENERIC_ERROR_MAPPINGS_TYPE = ParameterizedTypeName.get(MAP.className, STRING.className, wrapList(GENERIC_EXCEPTION_CONTENT_TO_ERROR_MAPPING.className));
     private static final String MAPPING_VARIABLE_PREFIX = "m";
+    private static final String SHARED_LIST_NAME_PREFIX = "shared";
+    private static final String INIT_METHOD_PREFIX = "initMappings";
+    private static final String MSG_VARIABLE_NAME = "msg";
+
+    /*
+     * Conservative upper-bound estimates (in bytes) of the bytecode each generated construct compiles to.
+     * The JVM rejects methods above 65535 bytes of bytecode ("code too large"), so whenever the estimated
+     * total exceeds the limit below, the initialization is split across several private methods instead of
+     * being inlined in the constructor. The limit leaves a wide margin for estimation error.
+     */
+    private static final int MAPPING_DECLARATION_SIZE_ESTIMATE = 40;
+    private static final int LIST_DECLARATION_SIZE_ESTIMATE = 16;
+    private static final int LIST_REFERENCE_SIZE_ESTIMATE = 12;
+    private static final int MAP_PUT_SIZE_ESTIMATE = 24;
+    public static final int DEFAULT_MAX_METHOD_SIZE_ESTIMATE = 30_000;
+
+    private final int maxMethodSizeEstimate;
 
     public ExceptionToErrorMappingProviderGenerator(ProcessedSchema processedSchema) {
+        this(processedSchema, DEFAULT_MAX_METHOD_SIZE_ESTIMATE);
+    }
+
+    public ExceptionToErrorMappingProviderGenerator(ProcessedSchema processedSchema, int maxMethodSizeEstimate) {
         super(processedSchema);
+        this.maxMethodSizeEstimate = maxMethodSizeEstimate;
     }
 
     @Override
     public TypeSpec generate(SchemaDefinition schemaDefinition) {
-        return getSpec("GeneratedExceptionToErrorMappingProvider", List.of())
-                .addMethod(createConstructor(schemaDefinition))
-                .build();
+        var content = collectContent(schemaDefinition);
+        var spec = getSpec("GeneratedExceptionToErrorMappingProvider", List.of());
+        if (estimatedTotalSize(content) <= maxMethodSizeEstimate) {
+            spec.addMethod(createInlineConstructor(content));
+        } else {
+            addChunkedContent(spec, content);
+        }
+        return spec.build();
     }
 
-    private MethodSpec createConstructor(SchemaDefinition schemaDefinition) {
-        return MethodSpec.constructorBuilder()
-                .addModifiers(Modifier.PUBLIC)
-                .addCode(CodeBlock.builder()
-                        .addStatement("$N = new $T<>()", DATA_ACCESS_MAPPINGS_FOR_FIELD_NAME, HASH_MAP.className)
-                        .addStatement("$N = new $T<>()", GENERIC_MAPPINGS_FOR_FIELD_NAME, HASH_MAP.className)
-                        .add(createConstructorContentForFields(schemaDefinition))
-                        .build())
-                .build();
+    /**
+     * A deduplicated exception mapping, declared once and referenced by name in the operation lists.
+     */
+    private record MappingDeclaration(String name, ErrorHandlerType handler, CodeBlock initializer) {
     }
 
-    private CodeBlock createConstructorContentForFields(SchemaDefinition schemaDefinition) {
-        Map<ExceptionToErrorMapping, Integer> exceptionMappingsToErrorMappingVariables = new HashMap<>();
-        Map<Integer, CodeBlock> mappingVariablesToBlocks = new HashMap<>();
+    /**
+     * One mapping list and the operations it applies to. Operations with identical mapping lists share
+     * a single group, so the list is only generated once.
+     */
+    private record MappingListGroup(String name, ErrorHandlerType handler, List<String> mappingNames, List<String> operationNames) {
+    }
+
+    private record ProviderContent(List<MappingDeclaration> mappings, List<MappingListGroup> listGroups) {
+    }
+
+    private record MappingListKey(ErrorHandlerType handler, List<String> mappingNames) {
+    }
+
+    private ProviderContent collectContent(SchemaDefinition schemaDefinition) {
+        var mappingVariableNames = new HashMap<ExceptionToErrorMapping, String>();
+        var mappingDeclarations = new ArrayList<MappingDeclaration>();
+        var operationNamesForList = new LinkedHashMap<MappingListKey, List<String>>();
 
         var queryType = schemaDefinition.getQuery() != null ? processedSchema.getObject(schemaDefinition.getQuery()) : null;
         var mutationType = schemaDefinition.getMutation() != null ? processedSchema.getObject(schemaDefinition.getMutation()) : null;
-        var errorListsCodeblock = Stream
+        var operations = Stream
                 .concat(queryType != null ? queryType.getFields().stream() : Stream.of(), mutationType != null ? mutationType.getFields().stream() : Stream.of())
                 .sorted(Comparator.comparing(ObjectField::getName))
-                .map(it -> new OperationProcessor(it).process(exceptionMappingsToErrorMappingVariables, mappingVariablesToBlocks))
-                .collect(CodeBlock.joining());
+                .toList();
 
-        var codeBuilder = CodeBlock.builder();
-        mappingVariablesToBlocks.forEach((key, value) -> codeBuilder.declare(MAPPING_VARIABLE_PREFIX + key, value));
+        for (var operation : operations) {
+            var databaseMappingNames = new LinkedHashSet<String>();
+            var genericMappingNames = new LinkedHashSet<String>();
+            for (var errorField : new InputParser(operation, processedSchema).getAllErrors()) {
+                var exceptionDefinitions = processedSchema.getExceptionDefinitions(errorField.getTypeName());
+                databaseMappingNames.addAll(mappingNamesFor(exceptionDefinitions, DATABASE, mappingVariableNames, mappingDeclarations));
+                genericMappingNames.addAll(mappingNamesFor(exceptionDefinitions, GENERIC, mappingVariableNames, mappingDeclarations));
+            }
 
-        codeBuilder.add(errorListsCodeblock);
+            if (!databaseMappingNames.isEmpty()) {
+                operationNamesForList
+                        .computeIfAbsent(new MappingListKey(DATABASE, List.copyOf(databaseMappingNames)), key -> new ArrayList<>())
+                        .add(operation.getName());
+            }
+            if (!genericMappingNames.isEmpty()) {
+                operationNamesForList
+                        .computeIfAbsent(new MappingListKey(GENERIC, List.copyOf(genericMappingNames)), key -> new ArrayList<>())
+                        .add(operation.getName());
+            }
+        }
+
+        var listGroups = new ArrayList<MappingListGroup>();
+        var sharedListCounters = new EnumMap<ErrorHandlerType, Integer>(ErrorHandlerType.class);
+        operationNamesForList.forEach((key, operationNames) -> {
+            var name = operationNames.size() == 1
+                    ? asListedName(operationNames.get(0) + key.handler().toCamelCaseString())
+                    : asListedName(SHARED_LIST_NAME_PREFIX + key.handler().toCamelCaseString()) + sharedListCounters.merge(key.handler(), 1, Integer::sum);
+            listGroups.add(new MappingListGroup(name, key.handler(), key.mappingNames(), operationNames));
+        });
+        return new ProviderContent(mappingDeclarations, listGroups);
+    }
+
+    private List<String> mappingNamesFor(
+            List<ExceptionDefinition> exceptionDefinitions,
+            ErrorHandlerType handlerType,
+            Map<ExceptionToErrorMapping, String> mappingVariableNames,
+            List<MappingDeclaration> mappingDeclarations
+    ) {
+        return exceptionDefinitions.stream()
+                .map(ExceptionDefinition::getExceptionToErrorMappings)
+                .flatMap(Collection::stream)
+                .filter(it -> it.getHandler() == handlerType)
+                .map(it -> {
+                    var existingName = mappingVariableNames.get(it);
+                    if (existingName != null) {
+                        return existingName;
+                    }
+                    var name = MAPPING_VARIABLE_PREFIX + (mappingVariableNames.size() + 1);
+                    mappingVariableNames.put(it, name);
+                    mappingDeclarations.add(new MappingDeclaration(name, handlerType, createExceptionToErrorMappingCodeBlock(it)));
+                    return name;
+                })
+                .toList();
+    }
+
+    private MethodSpec createInlineConstructor(ProviderContent content) {
+        var codeBuilder = createFieldInitializationCode();
+        content.mappings().forEach(mapping -> codeBuilder.declare(mapping.name(), mapping.initializer()));
+        content.listGroups().forEach(group -> codeBuilder.add(createListGroupBlock(group)));
+        return MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PUBLIC)
+                .addCode(codeBuilder.build())
+                .build();
+    }
+
+    private void addChunkedContent(TypeSpec.Builder spec, ProviderContent content) {
+        content.mappings().forEach(mapping -> spec.addField(
+                FieldSpec.builder(mappingType(mapping.handler()), mapping.name(), Modifier.PRIVATE).build()));
+
+        var initMethods = new ArrayList<MethodSpec>();
+        var chunkBuilder = CodeBlock.builder();
+        var chunkSizeEstimate = 0;
+        for (var unit : createCodeUnits(content)) {
+            if (chunkSizeEstimate > 0 && chunkSizeEstimate + unit.sizeEstimate() > maxMethodSizeEstimate) {
+                initMethods.add(createInitMethod(initMethods.size() + 1, chunkBuilder.build()));
+                chunkBuilder = CodeBlock.builder();
+                chunkSizeEstimate = 0;
+            }
+            chunkBuilder.add(unit.code());
+            chunkSizeEstimate += unit.sizeEstimate();
+        }
+        if (chunkSizeEstimate > 0) {
+            initMethods.add(createInitMethod(initMethods.size() + 1, chunkBuilder.build()));
+        }
+
+        var constructorBuilder = createFieldInitializationCode();
+        initMethods.forEach(method -> constructorBuilder.addStatement("$N()", method.name()));
+        spec.addMethod(MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PUBLIC)
+                .addCode(constructorBuilder.build())
+                .build());
+        initMethods.forEach(spec::addMethod);
+    }
+
+    private record CodeUnit(int sizeEstimate, CodeBlock code) {
+    }
+
+    private List<CodeUnit> createCodeUnits(ProviderContent content) {
+        var units = new ArrayList<CodeUnit>();
+        content.mappings().forEach(mapping -> units.add(new CodeUnit(
+                MAPPING_DECLARATION_SIZE_ESTIMATE,
+                CodeBlock.builder().addStatement("$N = $L", mapping.name(), mapping.initializer()).build())));
+        content.listGroups().forEach(group -> units.add(new CodeUnit(estimatedSize(group), createListGroupBlock(group))));
+        return units;
+    }
+
+    private static MethodSpec createInitMethod(int methodNumber, CodeBlock code) {
+        return MethodSpec.methodBuilder(INIT_METHOD_PREFIX + methodNumber)
+                .addModifiers(Modifier.PRIVATE)
+                .addCode(code)
+                .build();
+    }
+
+    private static CodeBlock.Builder createFieldInitializationCode() {
+        return CodeBlock.builder()
+                .addStatement("$N = new $T<>()", DATA_ACCESS_MAPPINGS_FOR_FIELD_NAME, HASH_MAP.className)
+                .addStatement("$N = new $T<>()", GENERIC_MAPPINGS_FOR_FIELD_NAME, HASH_MAP.className);
+    }
+
+    private static CodeBlock createListGroupBlock(MappingListGroup group) {
+        var codeBuilder = CodeBlock.builder()
+                .add("\n")
+                .declare(group.name(), listOf(group.mappingNames().stream().map(name -> CodeBlock.of("$N", name)).collect(CodeBlock.joining(", "))));
+        var mapFieldName = group.handler() == DATABASE ? DATA_ACCESS_MAPPINGS_FOR_FIELD_NAME : GENERIC_MAPPINGS_FOR_FIELD_NAME;
+        group.operationNames().forEach(operationName -> codeBuilder.addStatement("$N.put($S, $N)", mapFieldName, operationName, group.name()));
         return codeBuilder.build();
+    }
+
+    private static TypeName mappingType(ErrorHandlerType handler) {
+        return handler == DATABASE ? DATA_ACCESS_EXCEPTION_CONTENT_TO_ERROR_MAPPING.className : GENERIC_EXCEPTION_CONTENT_TO_ERROR_MAPPING.className;
+    }
+
+    private static int estimatedSize(MappingListGroup group) {
+        return LIST_DECLARATION_SIZE_ESTIMATE
+                + group.mappingNames().size() * LIST_REFERENCE_SIZE_ESTIMATE
+                + group.operationNames().size() * MAP_PUT_SIZE_ESTIMATE;
+    }
+
+    private int estimatedTotalSize(ProviderContent content) {
+        return content.mappings().size() * MAPPING_DECLARATION_SIZE_ESTIMATE
+                + content.listGroups().stream().mapToInt(ExceptionToErrorMappingProviderGenerator::estimatedSize).sum();
+    }
+
+    private CodeBlock createExceptionToErrorMappingCodeBlock(ExceptionToErrorMapping exceptionToErrorMapping) {
+        var isDatabase = switch (exceptionToErrorMapping.getHandler()) {
+            case DATABASE -> true;
+            case GENERIC -> false;
+        };
+        var contentToErrorMappingClassName = mappingType(exceptionToErrorMapping.getHandler());
+        var contentClassName = isDatabase ? DATA_ACCESS_EXCEPTION_MAPPING_CONTENT.className : GENERIC_EXCEPTION_MAPPING_CONTENT.className;
+        return CodeBlock.builder()
+                .add("new $T(\n", contentToErrorMappingClassName)
+                .indent()
+                .add("new $T($L, $S),\n",
+                        contentClassName,
+                        isDatabase
+                                ? CodeBlock.of("$S, $S", exceptionToErrorMapping.getDatabaseErrorCode(), exceptionToErrorMapping.getSqlState())
+                                : CodeBlock.of("$S", exceptionToErrorMapping.getExceptionClassName()),
+                        exceptionToErrorMapping.getExceptionMessageContains())
+                .add("(path, $L) -> new $T(path, $L))",
+                        MSG_VARIABLE_NAME,
+                        processedSchema.getObject(exceptionToErrorMapping.getErrorTypeName()).getGraphClassName(),
+                        exceptionToErrorMapping.getErrorDescription().map(it -> CodeBlock.of("$S", it)).orElse(CodeBlock.of(MSG_VARIABLE_NAME)))
+                .unindent()
+                .build();
     }
 
     @Override
@@ -126,113 +321,5 @@ public class ExceptionToErrorMappingProviderGenerator extends AbstractSchemaClas
                 .addAnnotation(OVERRIDE.className)
                 .addCode(returnWrap(GENERIC_MAPPINGS_FOR_FIELD_NAME))
                 .build();
-    }
-
-    private class OperationProcessor {
-        private static final String MSG_VARIABLE_NAME = "msg";
-        private final List<ObjectField> errors;
-        private final String operationName;
-        private boolean databaseMappingIsCreatedForField = false;
-        private boolean genericMappingIsCreatedForField = false;
-
-        OperationProcessor(ObjectField field) {
-            this.errors = new InputParser(field, processedSchema).getAllErrors();
-            this.operationName = field.getName();
-        }
-
-        public CodeBlock process(Map<ExceptionToErrorMapping, Integer> exceptionMappingsToErrorMappingVariables, Map<Integer, CodeBlock> mappingVariablesToBlocks) {
-            var codeBuilder = CodeBlock.builder();
-            var databaseListName = asListedName(operationName + DATABASE.toCamelCaseString());
-            var genericListName = asListedName(operationName + GENERIC.toCamelCaseString());
-
-            for (var errorField : errors) {
-                List<ExceptionDefinition> exceptionDefinitions = processedSchema.getExceptionDefinitions(errorField.getTypeName());
-
-                var databaseMappingVariablesBlock = createMappingVariablesBlock(exceptionDefinitions, DATABASE, exceptionMappingsToErrorMappingVariables, mappingVariablesToBlocks);
-                var genericMappingVariablesBlock = createMappingVariablesBlock(exceptionDefinitions, GENERIC, exceptionMappingsToErrorMappingVariables, mappingVariablesToBlocks);
-
-                if (!databaseMappingVariablesBlock.isEmpty()) {
-                    codeBuilder.add("\n");
-                    codeBuilder.declare(databaseListName, listOf(databaseMappingVariablesBlock));
-                    databaseMappingIsCreatedForField = true;
-                }
-
-                if (!genericMappingVariablesBlock.isEmpty()) {
-                    codeBuilder.add("\n");
-                    codeBuilder.declare(genericListName, listOf(genericMappingVariablesBlock));
-                    genericMappingIsCreatedForField = true;
-                }
-            }
-
-            if (databaseMappingIsCreatedForField) {
-                codeBuilder.addStatement("$N.put($S, $N)", DATA_ACCESS_MAPPINGS_FOR_FIELD_NAME, operationName, databaseListName);
-            }
-
-            if (genericMappingIsCreatedForField) {
-                codeBuilder.addStatement("$N.put($S, $N)", GENERIC_MAPPINGS_FOR_FIELD_NAME, operationName, genericListName);
-            }
-
-            return codeBuilder.build();
-        }
-
-        private CodeBlock createMappingVariablesBlock(List<ExceptionDefinition> exceptionDefinitions, ErrorHandlerType handlerType, Map<ExceptionToErrorMapping, Integer> exceptionMappingsToErrorMappingVariables, Map<Integer, CodeBlock> mappingVariablesToBlocks) {
-            return exceptionDefinitions.stream()
-                    .map(ExceptionDefinition::getExceptionToErrorMappings)
-                    .flatMap(Collection::stream)
-                    .filter(it -> it.getHandler() == handlerType)
-                    .map(it -> processErrorMapping(it, exceptionMappingsToErrorMappingVariables, mappingVariablesToBlocks))
-                    .collect(CodeBlock.joining(", "));
-        }
-
-        private CodeBlock processErrorMapping(ExceptionToErrorMapping errorMapping, Map<ExceptionToErrorMapping, Integer> exceptionMappingsToErrorMappingVariables, Map<Integer, CodeBlock> mappingVariablesToBlocks) {
-            var codeBuilder = CodeBlock.builder();
-            var variableNumber = exceptionMappingsToErrorMappingVariables.get(errorMapping);
-
-            if (variableNumber == null) {
-                int numberOfMappingVariablesFound = exceptionMappingsToErrorMappingVariables.size() + 1;
-                exceptionMappingsToErrorMappingVariables.put(errorMapping, numberOfMappingVariablesFound);
-
-                switch (errorMapping.getHandler()) {
-                    case DATABASE:
-                        mappingVariablesToBlocks.put(numberOfMappingVariablesFound,
-                                createExceptionToErrorMappingCodeBlock(
-                                        DATA_ACCESS_EXCEPTION_CONTENT_TO_ERROR_MAPPING.className,
-                                        DATA_ACCESS_EXCEPTION_MAPPING_CONTENT.className,
-                                        errorMapping));
-                        break;
-                    case GENERIC:
-                        mappingVariablesToBlocks.put(numberOfMappingVariablesFound,
-                                createExceptionToErrorMappingCodeBlock(
-                                        GENERIC_EXCEPTION_CONTENT_TO_ERROR_MAPPING.className,
-                                        GENERIC_EXCEPTION_MAPPING_CONTENT.className,
-                                        errorMapping));
-                        break;
-                    default:
-                        throw new IllegalArgumentException("Unknown handler: " + errorMapping.getHandler());
-                }
-                variableNumber = numberOfMappingVariablesFound;
-            }
-
-            codeBuilder.add("$L$L", MAPPING_VARIABLE_PREFIX, variableNumber);
-            return codeBuilder.build();
-        }
-
-        private CodeBlock createExceptionToErrorMappingCodeBlock(ClassName contentToErrorMappingClassName, ClassName contentClassName, ExceptionToErrorMapping exceptionToErrorMapping) {
-            return CodeBlock.builder()
-                    .add("new $T(\n", contentToErrorMappingClassName)
-                    .indent()
-                    .add("new $T($L, $S),\n",
-                            contentClassName,
-                            contentToErrorMappingClassName.equals(DATA_ACCESS_EXCEPTION_CONTENT_TO_ERROR_MAPPING.className)
-                                    ? CodeBlock.of("$S, $S", exceptionToErrorMapping.getDatabaseErrorCode(), exceptionToErrorMapping.getSqlState())
-                                    : CodeBlock.of("$S", exceptionToErrorMapping.getExceptionClassName()),
-                            exceptionToErrorMapping.getExceptionMessageContains())
-                    .add("(path, $L) -> new $T(path, $L))",
-                            MSG_VARIABLE_NAME,
-                            processedSchema.getObject(exceptionToErrorMapping.getErrorTypeName()).getGraphClassName(),
-                            exceptionToErrorMapping.getErrorDescription().map(it -> CodeBlock.of("$S", it)).orElse(CodeBlock.of(MSG_VARIABLE_NAME)))
-                    .unindent()
-                    .build();
-        }
     }
 }

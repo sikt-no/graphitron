@@ -136,15 +136,15 @@ public class ProviderTest extends GeneratorTest {
         );
     }
 
-    @Test // Note, this produces illegal code.
+    @Test
     @DisplayName("Two handlers for two errors in the same response")
     void multipleInOneResponse() {
         assertGeneratedContentContains(
                 "multipleInOneResponse", Set.of(MUTATION_RESPONSE),
                 "-> new SomeError0",
                 "-> new SomeError1",
-                "mutationGenericList = List.of(m1)",
-                "mutationGenericList = List.of(m2)"
+                "mutationGenericList = List.of(m1, m2)",
+                "genericMappingsForOperation.put(\"mutation\", mutationGenericList"
         );
     }
 
@@ -221,7 +221,7 @@ public class ProviderTest extends GeneratorTest {
         );
     }
 
-    @Test // Note, this produces illegal code.
+    @Test
     @DisplayName("Two error types with both a database handler and generic handler within the same response")
     void bothGenericAndDatabaseInMultipleErrorsForOneResponse() {
         assertGeneratedContentContains(
@@ -234,11 +234,21 @@ public class ProviderTest extends GeneratorTest {
                         "new DataAccessMatcher(null, null, null),(path, msg) -> new SomeError1",
                 "m4 = new GenericExceptionContentToErrorMapping(" +
                         "new GenericExceptionMatcher(\"java.lang.IllegalArgumentException\", null),(path, msg) -> new SomeError1",
-                "mutationDatabaseList = List.of(m1)",
-                "mutationGenericList = List.of(m2)",
-                "mutationDatabaseList = List.of(m3)",
-                "mutationGenericList = List.of(m4)"
+                "mutationDatabaseList = List.of(m1, m3)",
+                "mutationGenericList = List.of(m2, m4)"
         );
+    }
+
+    @Test
+    @DisplayName("Operations with identical mapping lists share one generated list")
+    void sharedLists() {
+        assertGeneratedContentContains(
+                "sharedLists",
+                "var sharedGenericList1 = List.of(m1);" +
+                        "genericMappingsForOperation.put(\"mutation0\", sharedGenericList1);" +
+                        "genericMappingsForOperation.put(\"mutation1\", sharedGenericList1)"
+        );
+        resultDoesNotContain("sharedLists", "mutation0GenericList");
     }
 
     @Test
