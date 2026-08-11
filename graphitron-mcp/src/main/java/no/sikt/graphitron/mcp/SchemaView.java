@@ -414,10 +414,63 @@ final class SchemaView {
                 m.put("bulk", f.bulk());
                 McpWire.putIfNotNull(m, "errorChannelMappingName", f.errorChannelMappingName());
             }
-            case FieldClassification.Unclassified f -> {
-                m.put("kind", "Unclassified");
+            case FieldClassification.Unresolvable f -> {
+                m.put("kind", "Unresolvable");
                 McpWire.putIfNotNull(m, "reason", f.reason());
             }
+            case FieldClassification.Conflicted f -> {
+                m.put("kind", "Conflicted");
+                var claims = new ArrayList<Map<String, Object>>(f.claims().size());
+                for (var claim : f.claims()) {
+                    claims.add(mapClaim(claim));
+                }
+                m.put("claims", claims);
+                McpWire.putIfNotNull(m, "violation", f.violation());
+            }
+        }
+        return m;
+    }
+
+    /**
+     * One authored claim on a conflicted field, on the wire. The {@code classifier} is the claim
+     * arm's simple name (the store's classifier vocabulary, deliberately not a projection permit
+     * name); slot facts are per-arm and absent rather than null. Exhaustive over the sealed
+     * {@link FieldClassification.Claim} permits with no default, mirroring
+     * {@link #mapFieldClassification}'s drift guard.
+     */
+    private static Map<String, Object> mapClaim(FieldClassification.Claim claim) {
+        var m = new LinkedHashMap<String, Object>();
+        switch (claim) {
+            case FieldClassification.Claim.Service c -> {
+                m.put("classifier", "Service");
+                McpWire.putIfNotNull(m, "methodClassName", c.methodClassName());
+                McpWire.putIfNotNull(m, "methodName", c.methodName());
+            }
+            case FieldClassification.Claim.ExternalField c -> {
+                m.put("classifier", "ExternalField");
+                McpWire.putIfNotNull(m, "methodClassName", c.methodClassName());
+                McpWire.putIfNotNull(m, "methodName", c.methodName());
+            }
+            case FieldClassification.Claim.NodeId c -> {
+                m.put("classifier", "NodeId");
+                McpWire.putIfNotNull(m, "nodeTypeRef", c.nodeTypeRef());
+            }
+            case FieldClassification.Claim.LookupKey ignored ->
+                m.put("classifier", "LookupKey");
+            case FieldClassification.Claim.Routine c -> {
+                m.put("classifier", "Routine");
+                McpWire.putIfNotNull(m, "routineRef", c.routineRef());
+            }
+            case FieldClassification.Claim.Mutation c -> {
+                m.put("classifier", "Mutation");
+                McpWire.putIfNotNull(m, "dmlKind", c.dmlKind());
+                McpWire.putIfNotNull(m, "tableName", c.tableName());
+            }
+        }
+        m.put("trigger", "@" + claim.trigger());
+        m.put("decoded", claim.decoded());
+        if (claim.location() != null) {
+            m.put("location", McpWire.location(claim.location()));
         }
         return m;
     }

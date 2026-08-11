@@ -7,7 +7,7 @@ priority: 4
 theme: classification-model
 depends-on: []
 created: 2026-08-04
-last-updated: 2026-08-10
+last-updated: 2026-08-11
 ---
 
 # Classification is a relation; validation adds facts
@@ -548,7 +548,10 @@ After slice 6 (shape illustrative; field names settle at implementation):
 The LSP hover header gains the same split: `Conflicted: DmlMutation (@mutation), MutationService
 (@service)` where today it renders `Unclassified`. This draft is the first client of the claim
 payload: everything in it must be renderable from decoded slot facts alone, and if it cannot be,
-the payload shape is wrong. This is the workflow's first-client rule applied to a changed wire
+the payload shape is wrong. (Settled at slice 6 implementation: the draft's own
+projection-permit names failed exactly this constraint, so the shipped wire field is
+`classifier` rendering the claim vocabulary; the deviation paragraph in the slice 6
+implementation record carries the reasoning.) This is the workflow's first-client rule applied to a changed wire
 shape rather than a new one; the MCP JSON and the hover header are agent- and author-facing
 surfaces, so the item does not qualify for the internal-refactor exemption.
 
@@ -1278,6 +1281,95 @@ instruments in the same commit (the projection test retargets to the new carrier
 truth table gains a `CONDITION_OWNED_FIELD` case, and the admitted-cascade acceptance test
 becomes `UnboundField`'s instrument).
 
+## Slice 6 implementation record (settled at implementation start, 2026-08-11)
+
+Fixed before the first code change, same discipline as the earlier slices: wiring facts checked
+against the live code, principles-architect consult folded in; deviations get recorded here.
+
+**Wiring facts that shaped it.** `GraphQLRewriteGenerator.buildOutput()` is the only production
+snapshot producer (the generate path throws on validation errors before emission, so only the
+LSP/MCP path ever renders a broken schema), and it currently builds the snapshot *before* the
+capture-and-detect step; the reorder is part of this slice. `CatalogBuilder.buildSnapshot`
+projects purely from the walked model. The claim views carry coordinate, classifier, trigger,
+decoded and position but no slot facts; those live on the per-directive semantic relations
+(`graphitron_mutation.operation` and `.table_ref`, `graphitron_service.class_name` and
+`.method`, `graphitron_external_field`, `graphitron_routine.routine_ref`,
+`graphitron_field_node_id.node_type_ref`). Since slice 2 a conflicted coordinate classifies as
+its arm-order winner, so the projection map always has an entry for the overlay to replace. The
+DML write-target precedence has exactly one producer
+(`MutationInputResolver.resolveDmlWriteTableRef`: the return-derived rung for INSERT/UPDATE,
+then `@mutation(table:)`), and the walk deliberately refuses an input-argument table bridge.
+
+**The projection split.** `FieldClassification.Unclassified` splits into `Unresolvable(reason)`
+(the genuine nothing-resolved arm, renamed so the narrowed field-grain meaning is visible on
+the surface the LSP teaches with; `TypeClassification.Unclassified` keeps the wide meaning and
+the name divergence dates the type-grain follow-up) and `Conflicted(claims, violation)`.
+`Claim` is a sealed hierarchy in the catalog package, one arm per claiming classifier
+(`Service`, `ExternalField`, `NodeId`, `LookupKey`, `Routine`, `Mutation`), each carrying
+exactly its own slot facts plus the shared provenance (trigger, decoded, the claim's own
+position decoded to the catalog module's `CompletionData.SourceLocation`; no graphql-java type
+crosses the projection boundary). A `TableClaiming` capability interface reifies the table
+axis, so the edge producer reads a capability instead of branching on a nullable component.
+The wire field is `classifier`, the store column's own name; `classification` would re-import
+the classifier-versus-trigger ambiguity the DDL comment resolves. Deviation from the
+first-client draft, recorded: the draft's `"classification": "DmlMutation"` is not renderable
+from decoded slot facts alone (`DmlMutation` versus `DmlRecord` needs return-shape walk
+knowledge, and `Service`'s projection name is position-dependent), so by the item's own
+first-client constraint the payload renders the claim vocabulary through the arm's simple
+name, never a projection permit name.
+
+**Slot facts.** The `Mutation` claim carries the operation as written (a string, so a broken
+verb literal renders faithfully) and its table slot is `graphitron_mutation.table_ref` alone:
+a claim's slots are the directive's own decoded columns, and inventing a resolution rung (the
+input argument's `@table`, or the return-derived rung) would fork the single-producer
+write-target precedence and let the projection assert a table the classifier refuses.
+`Service` and `ExternalField` carry the class and method pair, `Routine` the minimum-ordinal
+`routine_ref`, `NodeId` its `node_type_ref`, `LookupKey` provenance only. Enrichment joins
+each claim's semantic relation Java-side in the derive reader, scoped to conflicted
+coordinates; per-classifier slot views were considered and declined because each would
+re-project a single base relation 1:1 with no derivation content. The arm-list agreement has a
+named enforcer: arm selection is an exhaustive switch over `AuthoredClaim`, whose two-way
+vocabulary binding to the view arms is already test-enforced, so a claiming relation added to
+the view without an arm fails the vocabulary round trip and the switch fails to compile
+without a new case.
+
+**The seam.** `AuthoredClaimConflicts` returns a typed reduction outcome per field coordinate
+(a sealed verdict: `Conflict` carrying the claims and its rejection, `Deferred` likewise for
+the recognized routine-plus-lookup pair), and the error stream derives its `ValidationError`s
+from the verdicts at one site, so "which coordinates project `Conflicted`" is a type and never
+a re-test of the reduction predicate. `FactCapture.runWithDetections` returns the widened
+product; `buildOutput` reorders capture-and-detect ahead of `buildSnapshot` and passes the
+`Conflict` verdicts; the overlay's stated contract is that it writes only over coordinates the
+walked projection map already carries (the domain gate makes that true, the contract makes it
+deliberate). `validate()` and the generate pipeline read only the violations.
+
+**The surfaces.** `SchemaView` renders kind `Conflicted` with the claims array and the
+violation. `EdgeProducer`'s `Conflicted` arm emits one TARGETS edge per `TableClaiming` claim
+whose table slot is present (per the closed design question: table edges only; the `Service`
+arm visibly carries a method pair the edge producer ignores, noted at the arm so a later
+reader does not "fix" it), joins `EDGE_BEARING_FIELDS`, and `EdgeCoverageTest` pins the
+partition. The LSP label arm renders the simple name; the hover body lists each claim as
+classifier and trigger with its slot facts, then the violation. `lspColumnDispatch` maps
+`Conflicted` to `Silent`. The MCP instructions prose gains the `Unresolvable` and `Conflicted`
+vocabulary where it names `Unclassified` for fields today.
+
+**Containment made structural.** `GraphitronField.UnclassifiedField.definition()` is deleted
+in this slice (186 mint sites across `FieldBuilder` and `FieldRegistry` drop the component; no
+main-source reader exists), so "the projection sources from claims, never from the graphql-java
+node" stops being reviewer prose and becomes unrepresentable. The one test that read it
+re-anchors its directive-application assertion on the assembled schema.
+
+**Tests.** Acceptance drives `GraphQLRewriteGenerator.buildOutput()` on a pipeline-tier fixture
+whose mutation carries both `@mutation(typeName: DELETE, table: ...)` and `@service`, asserting
+the snapshot's `Conflicted` arm reports the `Mutation` claim's DELETE verb and table and the
+`Service` claim's method pair while the report still carries the conflict violation; the
+deferred routine-plus-lookup pair is asserted *not* to overlay. The motivating query is
+asserted rather than narrated: a reverse-edge test in graphitron-mcp pins that the broken
+DELETE appears under its target table, so `Conflicted` joining `EDGE_BEARING_FIELDS` has a
+live instrument instead of repeating the pinned-but-unreachable mistake this item criticizes.
+The rename sweeps the projection, hover and MCP tests that assert `Unclassified` at field
+grain.
+
 ## Retired vocabulary (expected; finalise at the Done gate)
 
 - `FieldBuilder.PairVerdict` / `pairVerdict` / `reduceDirectiveConflict`: the pairwise reduction,
@@ -1287,6 +1379,6 @@ becomes `UnboundField`'s instrument).
   two grain detections (slice 2).
 - The three-cases-in-one-record reading of `InputField.UnboundField` and its `attemptedColumnName`
   null-as-discriminator semantics (the component itself may survive as an honest fact).
-- `UnclassifiedField.definition()` (candidate): the claim relations subsume the rich-error-context
-  role its javadoc claims; deleting it closes the parse-boundary containment exception the
-  projection slice protects.
+- `UnclassifiedField.definition()` (retired in slice 6): the claim relations subsume the
+  rich-error-context role its javadoc claimed; deleting it closed the parse-boundary containment
+  exception the projection slice protects.

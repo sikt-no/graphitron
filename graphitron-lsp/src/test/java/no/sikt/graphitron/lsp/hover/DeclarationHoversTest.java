@@ -172,6 +172,33 @@ class DeclarationHoversTest {
             .contains("Error channel: `ACTOR_PAYLOAD`");
     }
 
+    @Test
+    void conflictedFieldRendersEveryClaimAndTheViolation() {
+        // The conflict signal on the hover surface: a broken DELETE mutation still reads as a
+        // DELETE with its intended table, one line per rival claim, plus the violation to fix.
+        var file = file("""
+            type Mutation {
+                deleteFilm(filmId: Int): ID @mutation(typeName: DELETE, table: "film") @service(service: {className: "com.example.FilmService", method: "delete"})
+            }
+            """);
+        var pos = pointAt(file, 1, "    delet".length());
+
+        var snapshot = snapshotWith(
+            Map.of("Mutation.deleteFilm", new FieldClassification.Conflicted(
+                java.util.List.of(
+                    new FieldClassification.Claim.Service("com.example.FilmService", "delete", "service", true, null),
+                    new FieldClassification.Claim.Mutation("DELETE", "film", "mutation", true, null)),
+                "@service, @mutation are mutually exclusive")),
+            Map.of());
+        var hover = DeclarationHovers.compute(file, snapshot, pos).orElseThrow();
+        var md = hover.getContents().getRight().getValue();
+        assertThat(md)
+            .contains("**FieldClassification.Conflicted**")
+            .contains("Service (@service): `com.example.FilmService#delete`")
+            .contains("Mutation (@mutation): DELETE → `film`")
+            .contains("Violation: @service, @mutation are mutually exclusive");
+    }
+
     // ===== extend type X { ... } parity =====
 
     @Test

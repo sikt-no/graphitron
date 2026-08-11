@@ -278,8 +278,65 @@ public final class DeclarationHovers {
                   .append("\n\nTable: `").append(nullSafe(r.tableName())).append("`")
                   .append("\n\nInput type: `").append(nullSafe(r.inputTypeName())).append("`")
                   .append(errorChannelSuffix(r.errorChannelMappingName()));
-            case FieldClassification.Unclassified u ->
+            case FieldClassification.Unresolvable u ->
                 sb.append("\n\nReason: ").append(u.reason());
+            case FieldClassification.Conflicted c -> {
+                sb.append("\n\nClaims:");
+                for (var claim : c.claims()) {
+                    sb.append("\n- ").append(claimLine(claim));
+                }
+                sb.append("\n\nViolation: ").append(c.violation());
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * One conflicted-field claim as a hover line: the claim arm's simple name (the store's
+     * classifier vocabulary), its trigger, and its slot facts. Exhaustive over the sealed
+     * {@link FieldClassification.Claim} permits with no default.
+     */
+    private static String claimLine(FieldClassification.Claim claim) {
+        var sb = new StringBuilder();
+        switch (claim) {
+            case FieldClassification.Claim.Service s -> {
+                sb.append("Service (@").append(s.trigger()).append(")");
+                if (s.methodClassName() != null) {
+                    sb.append(": `").append(s.methodClassName()).append("#").append(nullSafe(s.methodName())).append("`");
+                }
+            }
+            case FieldClassification.Claim.ExternalField e -> {
+                sb.append("ExternalField (@").append(e.trigger()).append(")");
+                if (e.methodClassName() != null) {
+                    sb.append(": `").append(e.methodClassName()).append("#").append(nullSafe(e.methodName())).append("`");
+                }
+            }
+            case FieldClassification.Claim.NodeId n -> {
+                sb.append("NodeId (@").append(n.trigger()).append(")");
+                if (n.nodeTypeRef() != null) {
+                    sb.append(": `").append(n.nodeTypeRef()).append("`");
+                }
+            }
+            case FieldClassification.Claim.LookupKey l ->
+                sb.append("LookupKey (@").append(l.trigger()).append(")");
+            case FieldClassification.Claim.Routine r -> {
+                sb.append("Routine (@").append(r.trigger()).append(")");
+                if (r.routineRef() != null) {
+                    sb.append(": `").append(r.routineRef()).append("`");
+                }
+            }
+            case FieldClassification.Claim.Mutation m -> {
+                sb.append("Mutation (@").append(m.trigger()).append(")");
+                if (m.dmlKind() != null) {
+                    sb.append(": ").append(m.dmlKind());
+                }
+                if (m.tableName() != null) {
+                    sb.append(" → `").append(m.tableName()).append("`");
+                }
+            }
+        }
+        if (!claim.decoded()) {
+            sb.append(" (arguments did not decode)");
         }
         return sb.toString();
     }

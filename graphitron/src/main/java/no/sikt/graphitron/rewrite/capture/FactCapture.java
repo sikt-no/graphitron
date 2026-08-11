@@ -4,7 +4,6 @@ import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.NodeDeclaration;
-import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.derive.AuthoredClaimConflicts;
 import no.sikt.graphitron.rewrite.derive.ClaimDomain;
@@ -37,8 +36,9 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SCHEMA_INPUT;
  *
  * <p>The store has its first reader: {@link #runWithDetections} runs the authored-claim
  * conflict rule ({@link AuthoredClaimConflicts}) over the freshly captured rows and returns its
- * violations for the caller's error stream, so what that detection reports is decided by the
- * store's content. Every other relation is still populated beside the live pipeline and read by
+ * typed {@link AuthoredClaimConflicts.Detection} product (the violations for the caller's error
+ * stream, and the field-conflict claims the snapshot's {@code Conflicted} projection overlay
+ * consumes), so what that detection reports is decided by the store's content. Every other relation is still populated beside the live pipeline and read by
  * nothing; consumers migrate onto it one at a time.
  *
  * <p>A run captures exactly one graph; the store may hold many. The persisted store is shared by
@@ -106,13 +106,16 @@ public final class FactCapture {
 
     /**
      * {@link #run}, then the store-backed detections over the store the capture just filled,
-     * before it closes. Returns the detections' violations (today the authored-claim conflict
-     * rule, {@link AuthoredClaimConflicts}, gated on {@code domain}) for the caller's error
-     * stream; the store handle never escapes. The detection runs against whichever store the
-     * capture landed in, shared file and in-memory fallback alike, so a cache demotion changes
-     * cost and never verdicts.
+     * before it closes. Returns the detections' typed {@link AuthoredClaimConflicts.Detection}
+     * product (gated on {@code domain}): every caller reads its
+     * {@link AuthoredClaimConflicts.Detection#violations() violations} for the error stream, and
+     * the LSP/MCP snapshot path additionally reads its
+     * {@link AuthoredClaimConflicts.Detection#fieldConflicts() field conflicts} for the
+     * {@code Conflicted} projection overlay; the store handle never escapes. The detection runs
+     * against whichever store the capture landed in, shared file and in-memory fallback alike,
+     * so a cache demotion changes cost and never verdicts.
      */
-    public static List<ValidationError> runWithDetections(Path storeDirectory, GraphIdentity graph,
+    public static AuthoredClaimConflicts.Detection runWithDetections(Path storeDirectory, GraphIdentity graph,
                                                           TypeDefinitionRegistry registry, JooqCatalog jooq,
                                                           List<CompletionData.ExternalReference> extensions,
                                                           NodeDeclaration nodes, ClaimDomain domain) {
@@ -120,7 +123,7 @@ public final class FactCapture {
         return runInternal(storeDirectory, graph, registry, jooq, extensions, nodes, domain);
     }
 
-    private static List<ValidationError> runInternal(Path storeDirectory, GraphIdentity graph,
+    private static AuthoredClaimConflicts.Detection runInternal(Path storeDirectory, GraphIdentity graph,
                                                      TypeDefinitionRegistry registry, JooqCatalog jooq,
                                                      List<CompletionData.ExternalReference> extensions,
                                                      NodeDeclaration nodes, ClaimDomain domain) {
@@ -145,9 +148,9 @@ public final class FactCapture {
     }
 
     /** The detection pass over a freshly captured store; a {@code null} domain is {@link #run}'s no-detection arm. */
-    private static List<ValidationError> detect(DSLContext dsl, GraphIdentity graph, ClaimDomain domain) {
+    private static AuthoredClaimConflicts.Detection detect(DSLContext dsl, GraphIdentity graph, ClaimDomain domain) {
         if (domain == null) {
-            return List.of();
+            return AuthoredClaimConflicts.Detection.empty();
         }
         return AuthoredClaimConflicts.detect(dsl, graph.name(), domain);
     }

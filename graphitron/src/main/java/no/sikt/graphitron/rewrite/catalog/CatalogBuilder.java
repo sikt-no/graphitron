@@ -21,6 +21,8 @@ import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.NodeDeclaration;
 import no.sikt.graphitron.rewrite.RewriteContext;
+import no.sikt.graphitron.rewrite.derive.AuthoredClaimConflicts;
+import no.sikt.graphitron.rewrite.derive.FieldClaim;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
@@ -99,6 +101,22 @@ public final class CatalogBuilder {
     public static LspSchemaSnapshot.Built.Current buildSnapshot(
         TypeDefinitionRegistry registry, GraphitronSchema schema, CompletionData catalog
     ) {
+        return buildSnapshot(registry, schema, catalog, List.of());
+    }
+
+    /**
+     * {@link #buildSnapshot(TypeDefinitionRegistry, GraphitronSchema, CompletionData)} plus the
+     * detection's field conflicts: each conflict overlays its coordinate's projection with the
+     * {@link FieldClassification.Conflicted} arm, so the LSP and MCP surfaces render the rival
+     * claims from the claim relations instead of the walk's arm-order winner. The overlay writes
+     * only over coordinates the walked projection map already carries (the detection's domain
+     * gate makes that true; this states it as the overlay's contract), so the map's documented
+     * domain never widens.
+     */
+    public static LspSchemaSnapshot.Built.Current buildSnapshot(
+        TypeDefinitionRegistry registry, GraphitronSchema schema, CompletionData catalog,
+        List<AuthoredClaimConflicts.FieldVerdict.Conflict> fieldConflicts
+    ) {
         var directives = new ArrayList<DirectiveShape>();
         for (var def : registry.getDirectiveDefinitions().values()) {
             directives.add(new DirectiveShape(
@@ -116,7 +134,7 @@ public final class CatalogBuilder {
             : projectPayloadDataFields(schema);
         var fieldClassifications = (schema == null)
             ? Map.<String, FieldClassification>of()
-            : projectFieldClassifications(schema);
+            : projectFieldClassifications(schema, fieldConflicts);
         var typeClassifications = (schema == null)
             ? Map.<String, TypeClassification>of()
             : projectTypeClassifications(schema, registry, fieldClassifications);
@@ -196,13 +214,64 @@ public final class CatalogBuilder {
      * list of their own (input fields are resolved per consuming field), so input-field
      * declarations contribute no entries here.
      */
-    private static Map<String, FieldClassification> projectFieldClassifications(GraphitronSchema schema) {
+    private static Map<String, FieldClassification> projectFieldClassifications(
+        GraphitronSchema schema, List<AuthoredClaimConflicts.FieldVerdict.Conflict> fieldConflicts
+    ) {
         var out = new LinkedHashMap<String, FieldClassification>();
         for (var entry : schema.fields().entrySet()) {
             var coord = entry.getKey().getTypeName() + "." + entry.getKey().getFieldName();
             out.put(coord, projectFieldClassification(entry.getValue(), schema));
         }
+        // The Conflicted overlay: replace the walk's arm-order winner at each conflicted
+        // coordinate with the claims themselves. Existing keys only, per the method contract.
+        for (var conflict : fieldConflicts) {
+            out.computeIfPresent(conflict.coordinate(), (coord, winner) -> conflictedOf(conflict));
+        }
         return Map.copyOf(out);
+    }
+
+    /**
+     * The one mapping site where the derive-side claim payload lifts into the projection's
+     * {@link FieldClassification.Conflicted} view records. The switch is exhaustive over the
+     * {@link FieldClaim} permits with no default, so a new claiming classifier fails here to
+     * compile until its projection arm exists; positions decode to the catalog module's own
+     * {@link CompletionData.SourceLocation} so no graphql-java type crosses the boundary.
+     */
+    private static FieldClassification.Conflicted conflictedOf(
+        AuthoredClaimConflicts.FieldVerdict.Conflict conflict
+    ) {
+        var claims = new ArrayList<FieldClassification.Claim>(conflict.claims().size());
+        for (var claim : conflict.claims()) {
+            claims.add(switch (claim) {
+                case FieldClaim.Service c -> new FieldClassification.Claim.Service(
+                    c.className(), c.method(), c.trigger(), c.decoded(), claimLocation(c.location()));
+                case FieldClaim.ExternalField c -> new FieldClassification.Claim.ExternalField(
+                    c.className(), c.method(), c.trigger(), c.decoded(), claimLocation(c.location()));
+                case FieldClaim.NodeId c -> new FieldClassification.Claim.NodeId(
+                    c.nodeTypeRef(), c.trigger(), c.decoded(), claimLocation(c.location()));
+                case FieldClaim.LookupKey c -> new FieldClassification.Claim.LookupKey(
+                    c.trigger(), c.decoded(), claimLocation(c.location()));
+                case FieldClaim.Routine c -> new FieldClassification.Claim.Routine(
+                    c.routineRef(), c.trigger(), c.decoded(), claimLocation(c.location()));
+                case FieldClaim.Mutation c -> new FieldClassification.Claim.Mutation(
+                    c.operation(), c.tableRef(), c.trigger(), c.decoded(), claimLocation(c.location()));
+            });
+        }
+        return new FieldClassification.Conflicted(claims, conflict.rejection().message());
+    }
+
+    /**
+     * A claim's own position as the catalog projection carries it, mirroring
+     * {@link #putTypeLocation}'s decode ({@code file://} URI, 0-based line and column);
+     * {@code null} when the claim row is unpositioned.
+     */
+    private static CompletionData.SourceLocation claimLocation(SourceLocation loc) {
+        if (loc == null || loc.getSourceName() == null) {
+            return null;
+        }
+        int line = Math.max(loc.getLine() - 1, 0);
+        int column = Math.max(loc.getColumn() - 1, 0);
+        return new CompletionData.SourceLocation("file://" + loc.getSourceName(), line, column);
     }
 
     /**
@@ -476,9 +545,9 @@ public final class CatalogBuilder {
                     f.condition().filter().methodName(),
                     true);
 
-            // --- Unclassified ---
+            // --- Unclassified (nothing resolved; conflicted coordinates are overlaid later) ---
             case GraphitronField.UnclassifiedField f ->
-                new FieldClassification.Unclassified(f.reason());
+                new FieldClassification.Unresolvable(f.reason());
         };
     }
 

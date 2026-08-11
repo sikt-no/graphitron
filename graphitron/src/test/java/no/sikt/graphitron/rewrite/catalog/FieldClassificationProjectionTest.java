@@ -99,13 +99,13 @@ class FieldClassificationProjectionTest {
     }
 
     @Test
-    void unclassifiedFieldProjectsRejectionReason() {
+    void unresolvableFieldProjectsRejectionReason() {
         var snapshot = snapshotOf("""
             type Film @table(name: "film") { doesNotExist: String }
             type Query { film: Film }
             """);
-        var unclassified = (FieldClassification.Unclassified) snapshot.fieldClassificationsByCoord().get("Film.doesNotExist");
-        assertThat(unclassified.reason()).isNotBlank();
+        var unresolvable = (FieldClassification.Unresolvable) snapshot.fieldClassificationsByCoord().get("Film.doesNotExist");
+        assertThat(unresolvable.reason()).isNotBlank();
     }
 
     private static LspSchemaSnapshot.Built snapshotOf(String schemaText) {

@@ -14,6 +14,7 @@ import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
+import no.sikt.graphitron.rewrite.derive.AuthoredClaimConflicts;
 import no.sikt.graphitron.rewrite.derive.ClaimDomain;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.lint.LintConfig;
@@ -214,11 +215,14 @@ public class GraphQLRewriteGenerator {
         var bundle = GraphitronSchemaBuilder.buildBundle(attributed, ctx);
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         var catalog = CatalogBuilder.build(jooq, bundle.assembled(), ctx);
-        var snapshot = CatalogBuilder.buildSnapshot(attributed.registry(), bundle.model(), catalog);
+        // Capture-and-detect runs ahead of the snapshot: the detection's field conflicts feed
+        // the snapshot's Conflicted projection overlay, sourced from the claim relations.
+        var detection = captureFactsAndDetect(attributed, bundle.model(), jooq, catalog.externalReferences());
+        var snapshot = CatalogBuilder.buildSnapshot(attributed.registry(), bundle.model(), catalog,
+            detection.fieldConflicts());
         var catalogFacts = CatalogBuilder.buildCatalogFacts(jooq);
-        var detections = captureFactsAndDetect(attributed, bundle.model(), jooq, catalog.externalReferences());
         var errors = new ArrayList<>(new GraphitronSchemaValidator().validate(bundle.model()));
-        errors.addAll(detections);
+        errors.addAll(detection.violations());
         var warnings = withLintFindings(bundle.model(), attributed);
         var report = ValidationReport.from(errors, warnings);
         return new BuildOutput(new BuildArtifacts(catalog, snapshot, catalogFacts), report);
@@ -261,7 +265,7 @@ public class GraphQLRewriteGenerator {
         var bundle = GraphitronSchemaBuilder.buildBundle(attributed, ctx);
         var schema = bundle.model();
         logWarnings(withLintFindings(schema, attributed));
-        var errors = validateAndLogErrors(schema, captureFactsAndDetect(attributed, schema));
+        var errors = validateAndLogErrors(schema, captureFactsAndDetect(attributed, schema).violations());
         if (!errors.isEmpty()) {
             throw new ValidationFailedException(errors);
         }
@@ -302,7 +306,9 @@ public class GraphQLRewriteGenerator {
 
     /**
      * Runs the capture loads into a fact store for this pass, runs the store-backed detections
-     * over it, and returns their violations for the caller's error stream. The detections are
+     * over it, and returns their typed {@link AuthoredClaimConflicts.Detection} product: the
+     * violations for the caller's error stream, and the field-conflict claims the LSP/MCP
+     * snapshot's {@code Conflicted} projection overlay consumes. The detections are
      * the store's first read: the authored-claim conflict rule reports from the claim views,
      * gated on the walked model's {@link no.sikt.graphitron.rewrite.derive.ClaimDomain}. Every
      * other relation still shadows the live pipeline unread, kept honest by the agreement tests
@@ -312,7 +318,7 @@ public class GraphQLRewriteGenerator {
      * the synthesis rewrites, which is what {@link AttributedRegistry#preSynthesisRegistry()}
      * hands back), the jOOQ catalog projection, and the classpath scan.
      */
-    private List<ValidationError> captureFactsAndDetect(AttributedRegistry attributed, GraphitronSchema schema) {
+    private AuthoredClaimConflicts.Detection captureFactsAndDetect(AttributedRegistry attributed, GraphitronSchema schema) {
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         return captureFactsAndDetect(attributed, schema, jooq, CatalogBuilder.buildExternalReferences(ctx));
     }
@@ -322,7 +328,7 @@ public class GraphQLRewriteGenerator {
      * its already-built catalog and external references so the classpath is scanned once per
      * pass, the build paths use the convenience overload above.
      */
-    private List<ValidationError> captureFactsAndDetect(AttributedRegistry attributed, GraphitronSchema schema,
+    private AuthoredClaimConflicts.Detection captureFactsAndDetect(AttributedRegistry attributed, GraphitronSchema schema,
                                                         JooqCatalog jooq,
                                                         List<CompletionData.ExternalReference> extensions) {
         return FactCapture.runWithDetections(ctx.storeDirectory(),
@@ -349,7 +355,7 @@ public class GraphQLRewriteGenerator {
 
         // Capture runs ahead of validation: the store-backed detections feed the error stream,
         // so the store has to be filled before the verdict is pronounced.
-        var errors = validateAndLogErrors(schema, captureFactsAndDetect(attributed, schema));
+        var errors = validateAndLogErrors(schema, captureFactsAndDetect(attributed, schema).violations());
         if (!errors.isEmpty()) {
             throw new ValidationFailedException(errors);
         }

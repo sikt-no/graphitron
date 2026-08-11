@@ -67,7 +67,8 @@ public sealed interface FieldClassification
             FieldClassification.DmlMutation,
             FieldClassification.MutationService,
             FieldClassification.DmlRecord,
-            FieldClassification.Unclassified {
+            FieldClassification.Unresolvable,
+            FieldClassification.Conflicted {
 
     /**
      * One step in a join path, identifying the FK and the target table. Rendered as
@@ -90,7 +91,8 @@ public sealed interface FieldClassification
      * column on that element table rather than the enclosing type's {@code @table}.
      * {@link Silent} signals "the LSP should not surface a candidate or diagnostic"
      * (a duplicate diagnostic with the wrong table would be noise for
-     * {@code InputUnbound}; an unclassified field has nothing useful to render).
+     * {@code InputUnbound}; an unresolvable or conflicted field already reports through
+     * the diagnostics channel).
      * {@link FallThrough} means the consumer falls back to its existing backing-driven
      * dispatch ({@code typesByName().get(...)}).
      *
@@ -105,7 +107,7 @@ public sealed interface FieldClassification
         /** Resolve {@code @field(name:)} candidates / hover / validation against {@code tableName}. */
         record Resolve(String tableName) implements LspColumnDispatch {}
 
-        /** No LSP signal for this classification (e.g. {@code InputUnbound}, {@code Unclassified}). */
+        /** No LSP signal for this classification (e.g. {@code InputUnbound}, {@code Unresolvable}). */
         record Silent() implements LspColumnDispatch {}
 
         /** Fall through to the consumer's existing backing-driven dispatch. */
@@ -131,7 +133,8 @@ public sealed interface FieldClassification
             case TableTarget c                  -> new LspColumnDispatch.Resolve(c.tableName());
             case RecordTableTarget c            -> new LspColumnDispatch.Resolve(c.tableName());
             case InputUnbound _                 -> new LspColumnDispatch.Silent();
-            case Unclassified _                 -> new LspColumnDispatch.Silent();
+            case Unresolvable _                 -> new LspColumnDispatch.Silent();
+            case Conflicted _                   -> new LspColumnDispatch.Silent();
             case TableInterface _,
                  Polymorphic _,
                  Nesting _,
@@ -430,11 +433,91 @@ public sealed interface FieldClassification
         String errorChannelMappingName
     ) implements FieldClassification {}
 
-    // ===== Unclassified =====
+    // ===== Failure arms: nothing resolved, or rival claims =====
 
     /**
-     * A field the classifier could not assign a variant to. The {@code reason} is the
-     * human-readable rejection message; rendering decides whether to surface it.
+     * A field the classifier could not assign a variant to and no rival claims explain: the
+     * genuine nothing-resolved arm. The {@code reason} is the human-readable rejection message;
+     * rendering decides whether to surface it. Narrower than
+     * {@link TypeClassification.Unclassified}, which still covers the type grain's whole failure
+     * population including its conflicts; the deliberate name divergence dates the type-grain
+     * follow-up.
      */
-    record Unclassified(String reason) implements FieldClassification {}
+    record Unresolvable(String reason) implements FieldClassification {}
+
+    /**
+     * A field whose classification is claimed by more than one authored directive. The claims
+     * survive: each {@link Claim} arm is a view record over the claim relations' decoded slot
+     * facts, so a broken DELETE mutation still reports its verb and intended table here, and
+     * {@code violation} carries the conflict rule's message. Sourced from the fact store's
+     * claim views, never from the walked model's arm-order winner or a graphql-java node.
+     */
+    record Conflicted(List<Claim> claims, String violation) implements FieldClassification {
+
+        public Conflicted {
+            claims = List.copyOf(claims);
+        }
+    }
+
+    /**
+     * One authored claim on a conflicted field: the wire- and hover-renderable view record over
+     * the derive-side claim payload. One arm per claiming classifier, so each arm carries
+     * exactly its directive's decoded slot facts (no component is nullable by claim kind), plus
+     * the shared provenance: the claiming directive's name ({@link #trigger()}), whether its
+     * decode succeeded ({@link #decoded()}, {@code false} means the application exists but its
+     * arguments did not decode, so the arm's slots are absent), and the application's own
+     * position ({@link #location()}, {@code null} when unpositioned). The rendered kind is the
+     * arm's simple name, which is the store's classifier vocabulary; a projection permit name
+     * (say {@code DmlMutation}) is deliberately not used because it is not derivable from
+     * decoded slot facts alone.
+     */
+    sealed interface Claim {
+
+        String trigger();
+
+        boolean decoded();
+
+        CompletionData.SourceLocation location();
+
+        /**
+         * Capability: a claim whose own slot facts can name a target table, the axis the edge
+         * producer reads (one TARGETS edge per table-claiming claim with a table present, per
+         * the item's closed edge-placement decision; method-pair slots deliberately produce no
+         * edge). {@link #tableName()} is the bare reference as written; catalog resolution
+         * stays with the edge producer like every other arm's.
+         */
+        sealed interface TableClaiming {
+            String tableName();
+        }
+
+        /** {@code @service}: the external service reference's class and method, as written. */
+        record Service(String methodClassName, String methodName, String trigger, boolean decoded,
+                       CompletionData.SourceLocation location) implements Claim {}
+
+        /** {@code @externalField}: the static jOOQ-Field method's class and method, as written. */
+        record ExternalField(String methodClassName, String methodName, String trigger, boolean decoded,
+                             CompletionData.SourceLocation location) implements Claim {}
+
+        /** {@code @nodeId}: the author-spelled node type reference; {@code null} when omitted. */
+        record NodeId(String nodeTypeRef, String trigger, boolean decoded,
+                      CompletionData.SourceLocation location) implements Claim {}
+
+        /** {@code @lookupKey}: an argument-surface marker with no slot facts of its own. */
+        record LookupKey(String trigger, boolean decoded,
+                         CompletionData.SourceLocation location) implements Claim {}
+
+        /** {@code @routine}: the minimum-ordinal application's routine reference, as written. */
+        record Routine(String routineRef, String trigger, boolean decoded,
+                       CompletionData.SourceLocation location) implements Claim {}
+
+        /**
+         * {@code @mutation}: the DML verb as written (a string, so a broken literal renders
+         * faithfully) and the {@code table:} argument as written; either is {@code null} when
+         * omitted. The table slot is the directive's own decoded argument and nothing more:
+         * the write-target precedence keeps its single producer in the classification walk,
+         * so this claim never asserts a table the classifier would refuse.
+         */
+        record Mutation(String dmlKind, String tableName, String trigger, boolean decoded,
+                        CompletionData.SourceLocation location) implements Claim, TableClaiming {}
+    }
 }

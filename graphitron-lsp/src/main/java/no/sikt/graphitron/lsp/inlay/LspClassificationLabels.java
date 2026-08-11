@@ -59,7 +59,8 @@ public final class LspClassificationLabels {
             case FieldClassification.DmlMutation x -> FieldClassification.DmlMutation.class.getSimpleName();
             case FieldClassification.MutationService x -> FieldClassification.MutationService.class.getSimpleName();
             case FieldClassification.DmlRecord x -> FieldClassification.DmlRecord.class.getSimpleName();
-            case FieldClassification.Unclassified x -> FieldClassification.Unclassified.class.getSimpleName();
+            case FieldClassification.Unresolvable x -> FieldClassification.Unresolvable.class.getSimpleName();
+            case FieldClassification.Conflicted x -> FieldClassification.Conflicted.class.getSimpleName();
         };
     }
 

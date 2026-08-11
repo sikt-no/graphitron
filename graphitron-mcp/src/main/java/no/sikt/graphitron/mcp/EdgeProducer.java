@@ -94,6 +94,18 @@ final class EdgeProducer {
                 if (f.tableBound()) targetsTable(edges, f.tableName(), ctx);
             }
             case FieldClassification.DmlMutation f -> targetsTable(edges, f.tableName(), ctx);
+            case FieldClassification.Conflicted f -> {
+                // One TARGETS edge per table-claiming claim (the item's closed edge-placement
+                // decision: table edges only), so the reverse index answers "which delete
+                // mutations target table X" with the broken population included. Method-pair
+                // slots (the Service/ExternalField/Routine claims) deliberately produce no
+                // edge; that is the closure's call, not an omission.
+                for (var claim : f.claims()) {
+                    if (claim instanceof FieldClassification.Claim.TableClaiming t) {
+                        targetsTable(edges, t.tableName(), ctx);
+                    }
+                }
+            }
             case FieldClassification.MutationService f -> {
                 resolvesMethod(edges, f.methodClassName(), f.methodName(), ctx);
                 if (f.tableBound()) targetsTable(edges, f.tableName(), ctx);
@@ -110,7 +122,7 @@ final class EdgeProducer {
             case FieldClassification.Errors ignored -> { }
             case FieldClassification.SingleRecordIdFromReturning ignored -> { }
             case FieldClassification.QueryNode ignored -> { }
-            case FieldClassification.Unclassified ignored -> { }
+            case FieldClassification.Unresolvable ignored -> { }
         }
         return edges;
     }
@@ -287,7 +299,8 @@ final class EdgeProducer {
         FieldClassification.DmlMutation.class,
         FieldClassification.MutationService.class,
         FieldClassification.DmlRecord.class,
-        FieldClassification.Pivot.class);
+        FieldClassification.Pivot.class,
+        FieldClassification.Conflicted.class);
 
     /** {@link FieldClassification} permits deliberately mapped to no edge. */
     static final Set<Class<? extends FieldClassification>> NO_EDGE_FIELDS = Set.of(
@@ -296,7 +309,7 @@ final class EdgeProducer {
         FieldClassification.Errors.class,
         FieldClassification.SingleRecordIdFromReturning.class,
         FieldClassification.QueryNode.class,
-        FieldClassification.Unclassified.class);
+        FieldClassification.Unresolvable.class);
 
     /** {@link TypeClassification} permits whose arm can produce at least one edge. */
     static final Set<Class<? extends TypeClassification>> EDGE_BEARING_TYPES = Set.of(

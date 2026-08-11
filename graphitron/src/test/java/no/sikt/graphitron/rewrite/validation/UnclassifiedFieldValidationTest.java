@@ -19,7 +19,7 @@ class UnclassifiedFieldValidationTest {
     enum Case implements ValidatorCase {
 
         UNCLASSIFIED("field with no matching classification rule",
-            new UnclassifiedField("Query", "unknownField", null, null, Rejection.structural("no matching classification rule")),
+            new UnclassifiedField("Query", "unknownField", null, Rejection.structural("no matching classification rule")),
             List.of("Field 'Query.unknownField': no matching classification rule"));
 
         private final String description;

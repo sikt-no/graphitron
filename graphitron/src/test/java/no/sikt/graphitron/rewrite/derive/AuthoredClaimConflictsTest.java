@@ -217,9 +217,9 @@ class AuthoredClaimConflictsTest {
             """.formatted(SERVICE_STUB);
         withCapturedStore(sdl, dsl -> {
             var walked = ClaimDomain.of(TestSchemaHelper.buildSchema(sdl));
-            assertThat(AuthoredClaimConflicts.detect(dsl, GRAPH, walked)).hasSize(1);
+            assertThat(AuthoredClaimConflicts.detect(dsl, GRAPH, walked).violations()).hasSize(1);
             var empty = new ClaimDomain(Set.of(), Set.of());
-            assertThat(AuthoredClaimConflicts.detect(dsl, GRAPH, empty))
+            assertThat(AuthoredClaimConflicts.detect(dsl, GRAPH, empty).violations())
                 .as("a coordinate outside the walked model's registries must not mint, however conflicted its claims")
                 .isEmpty();
         });
@@ -245,11 +245,11 @@ class AuthoredClaimConflictsTest {
             FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity("own", ownDir),
                 RewriteSchemaLoader.load(List.of(write(ownDir, clean).toString())));
             assertThat(AuthoredClaimConflicts.detect(store.dsl(), "own",
-                    ClaimDomain.of(TestSchemaHelper.buildSchema(conflicted))))
+                    ClaimDomain.of(TestSchemaHelper.buildSchema(conflicted))).violations())
                 .as("the sibling graph's conflict must not surface in this graph's run, even with an over-wide domain")
                 .isEmpty();
             assertThat(AuthoredClaimConflicts.detect(store.dsl(), "sibling",
-                    ClaimDomain.of(TestSchemaHelper.buildSchema(conflicted))))
+                    ClaimDomain.of(TestSchemaHelper.buildSchema(conflicted))).violations())
                 .hasSize(1);
         }
     }
@@ -283,11 +283,118 @@ class AuthoredClaimConflictsTest {
             var domain = new ClaimDomain(Set.of(), Set.of(
                 FieldCoordinates.coordinates("Query", "broken"),
                 FieldCoordinates.coordinates("Mutation", "createFilm")));
-            assertThat(AuthoredClaimConflicts.detect(dsl, GRAPH, domain))
+            assertThat(AuthoredClaimConflicts.detect(dsl, GRAPH, domain).violations())
                 .extracting(ValidationError::message)
                 .containsExactly(
                     "Field 'Mutation.createFilm': @service, @mutation are mutually exclusive",
                     "Field 'Query.broken': @service, @routine are mutually exclusive");
+        });
+    }
+
+    // ===== The claim payload =====
+
+    @Test
+    void conflictClaimsCarryTheirDecodedSlotFacts() {
+        // The conflicted-projection contract at the verdict grain: the claims survive the
+        // conflict with their own decoded slot facts, so a broken DELETE mutation still reports
+        // its verb and intended table. Claims arrive in AuthoredClaim declaration order.
+        var sdl = """
+            type Film @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation {
+                deleteFilm(filmId: Int): ID
+                    @service(service: {className: "%s", method: "run"})
+                    @mutation(typeName: DELETE, table: "film")
+            }
+            """.formatted(SERVICE_STUB);
+        var detection = detectionAgainstWalk(sdl);
+        assertThat(detection.fieldConflicts()).hasSize(1);
+        var conflict = detection.fieldConflicts().getFirst();
+        assertThat(conflict.coordinate()).isEqualTo("Mutation.deleteFilm");
+        assertThat(conflict.rejection().message()).isEqualTo("@service, @mutation are mutually exclusive");
+        assertThat(conflict.claims()).hasSize(2);
+
+        var service = (FieldClaim.Service) conflict.claims().get(0);
+        assertThat(service.className()).isEqualTo(SERVICE_STUB);
+        assertThat(service.method()).isEqualTo("run");
+        assertThat(service.trigger()).isEqualTo("service");
+        assertThat(service.decoded()).isTrue();
+        assertThat(service.location()).isNotNull();
+
+        var mutation = (FieldClaim.Mutation) conflict.claims().get(1);
+        assertThat(mutation.operation()).isEqualTo("DELETE");
+        assertThat(mutation.tableRef()).isEqualTo("film");
+        assertThat(mutation.trigger()).isEqualTo("mutation");
+        assertThat(mutation.decoded()).isTrue();
+        assertThat(mutation.location()).isNotNull();
+    }
+
+    @Test
+    void mutationTableSlotIsTheDirectivesOwnArgumentOnly() {
+        // The table slot is graphitron_mutation.table_ref and nothing more: the write-target
+        // precedence keeps its single producer in the classification walk
+        // (MutationInputResolver.resolveDmlWriteTableRef), so the claim never asserts a table
+        // resolved through the input argument's @table binding or the return type.
+        var sdl = """
+            type Film @table(name: "film") { title: String }
+            input FilmKey @table(name: "film") { filmId: Int }
+            type Query { x: String }
+            type Mutation {
+                deleteFilm(input: FilmKey!): ID
+                    @service(service: {className: "%s", method: "run"})
+                    @mutation(typeName: DELETE)
+            }
+            """.formatted(SERVICE_STUB);
+        var detection = detectionAgainstWalk(sdl);
+        assertThat(detection.fieldConflicts()).hasSize(1);
+        var mutation = (FieldClaim.Mutation) detection.fieldConflicts().getFirst().claims().get(1);
+        assertThat(mutation.operation()).isEqualTo("DELETE");
+        assertThat(mutation.tableRef())
+            .as("no invented resolution rung: the input's @table binding must not surface as the claim's table")
+            .isNull();
+    }
+
+    @Test
+    void deferredPairIsAVerdictButNeverAFieldConflict() {
+        // The recognised routine-plus-lookup pair reduces to the typed deferral; the verdict arm
+        // is chosen by the reduction's own output type, and only Conflict arms reach the
+        // projection overlay through fieldConflicts().
+        var sdl = """
+            type Film @table(name: "film") { title: String }
+            type Query {
+                film(id: ID @lookupKey): Film @routine(name: "film_fn")
+            }
+            """;
+        var detection = detectionAgainstWalk(sdl);
+        assertThat(detection.fieldVerdicts()).hasSize(1);
+        assertThat(detection.fieldVerdicts().getFirst())
+            .isInstanceOf(AuthoredClaimConflicts.FieldVerdict.Deferred.class);
+        assertThat(detection.fieldConflicts())
+            .as("a deferral is not a conflict; the projection overlay must not see it")
+            .isEmpty();
+    }
+
+    @Test
+    void presenceArmClaimsCarryNoSlotFacts() {
+        // A declined decode still claims (the presence arm), but its slot facts are absent and
+        // the claim says so through decoded=false; consumers render the honest gap instead of
+        // an invented payload.
+        var sdl = """
+            type Film @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation {
+                createFilm: Film @service(service: {className: "%s", method: "run"}) @mutation
+            }
+            """.formatted(SERVICE_STUB);
+        withCapturedStore(sdl, dsl -> {
+            var domain = new ClaimDomain(Set.of(), Set.of(
+                FieldCoordinates.coordinates("Mutation", "createFilm")));
+            var conflicts = AuthoredClaimConflicts.detect(dsl, GRAPH, domain).fieldConflicts();
+            assertThat(conflicts).hasSize(1);
+            var mutation = (FieldClaim.Mutation) conflicts.getFirst().claims().get(1);
+            assertThat(mutation.decoded()).isFalse();
+            assertThat(mutation.operation()).isNull();
+            assertThat(mutation.tableRef()).isNull();
         });
     }
 
@@ -398,6 +505,11 @@ class AuthoredClaimConflictsTest {
 
     /** Captures {@code sdl}, builds its walked model, and runs the detection gated on it. */
     private List<ValidationError> detectAgainstWalk(String sdl) {
+        return detectionAgainstWalk(sdl).violations();
+    }
+
+    /** {@link #detectAgainstWalk}, keeping the whole typed {@code Detection} product. */
+    private AuthoredClaimConflicts.Detection detectionAgainstWalk(String sdl) {
         var domain = ClaimDomain.of(TestSchemaHelper.buildSchema(sdl));
         try (var store = GraphitronModelStore.open()) {
             capture(store.dsl(), sdl);

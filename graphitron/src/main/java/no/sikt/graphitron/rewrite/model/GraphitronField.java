@@ -28,10 +28,10 @@ public sealed interface GraphitronField
      * A field that could not be classified. A schema containing unclassified fields is invalid —
      * Graphitron terminates with an error identifying which fields need to be fixed.
      *
-     * <p>{@code definition} is the original {@link GraphQLFieldDefinition} from the assembled
-     * schema, providing full directive and argument context for rich error messages. May be
-     * {@code null} when the field is constructed outside the schema-building pipeline (e.g. in
-     * tests).
+     * <p>Deliberately carries no graphql-java node: the assembled-schema field definition used
+     * to ride here as a component, and deleting it made the parse-boundary containment
+     * structural, so a downstream consumer wanting directive or argument context reads the fact
+     * store's claim relations instead of re-walking the AST.
      *
      * <p>{@code rejection} is the sealed-variant explanation of why classification failed:
      * an {@link Rejection.AuthorError}, an {@link Rejection.InvalidSchema}, or a
@@ -43,7 +43,6 @@ public sealed interface GraphitronField
         String parentTypeName,
         String name,
         SourceLocation location,
-        GraphQLFieldDefinition definition,
         Rejection rejection
     ) implements GraphitronField {
 

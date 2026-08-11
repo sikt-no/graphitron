@@ -49,7 +49,7 @@ public final class FieldRegistry {
         var existing = fields.get(coords);
         if (existing != null) {
             var conflict = new GraphitronField.UnclassifiedField(
-                coords.getTypeName(), coords.getFieldName(), field.location(), null,
+                coords.getTypeName(), coords.getFieldName(), field.location(),
                 no.sikt.graphitron.rewrite.model.Rejection.structural(
                     "field classified more than once (generator conflict): already "
                         + existing.getClass().getSimpleName() + ", attempted "

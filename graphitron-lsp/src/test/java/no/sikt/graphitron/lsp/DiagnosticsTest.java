@@ -386,7 +386,7 @@ class DiagnosticsTest {
             java.util.Map.of("FilmType", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.TableBacking("film")),
             java.util.Map.of(),
             java.util.Map.of("FilmType.languageName",
-                new no.sikt.graphitron.rewrite.catalog.FieldClassification.Unclassified("synthetic test reason")),
+                new no.sikt.graphitron.rewrite.catalog.FieldClassification.Unresolvable("synthetic test reason")),
             java.util.Map.of()
         );
         var diags = compute(file, filmAndLanguageCatalogWithLanguageName(), snapshot);

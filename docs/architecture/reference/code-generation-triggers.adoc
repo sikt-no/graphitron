@@ -186,7 +186,8 @@ example's projection query, rendered as SDL descriptions by `QueryViewRenderer`.
 | Generated `*Connection` type (from `@asConnection` transform) | `ConnectionType` | Pagination wrapper; pairs with `EdgeType` and `PageInfoType` below
 | Generated `*Edge` type | `EdgeType` | Edge wrapper carrying `node` + `cursor` for the connection
 | Generated `PageInfo` type | `PageInfoType` | Connection page-info wrapper
-| Conflicting or unresolvable directives | `UnclassifiedType` | Validation error ; build fails
+| Unresolvable directives | `UnclassifiedType` | Validation error ; build fails
+| Conflicting type directives (`@table` with `@error`) | Arm-order winner (the walk no longer tombstones conflicts) | Validation error from the store-backed conflict detection (`AuthoredClaimConflicts`) ; build fails
 |===
 
 *Intermediate sealed interfaces* (not shown in the table ; grouping nodes in the hierarchy):
@@ -499,7 +500,7 @@ the read-back being the derived re-fetch. Asserted by the `dml` corpus example.
 | `@service`, return `@table` type | `MutationServiceTableField` | Async DataLoader fetcher + `rows*()` method
 | `@service`, return non-table type | `MutationServiceRecordField` | Fetcher method
 | Neither `@service` nor `@mutation` | `UnclassifiedField`** | Validation error ; build fails
-| Both `@service` and `@mutation` | `UnclassifiedField`** | Validation error ; build fails
+| Both `@service` and `@mutation` | Arm-order winner (the walk no longer tombstones conflicts) | Validation error from the store-backed conflict detection (`AuthoredClaimConflicts`) ; build fails. The LSP/MCP projection reports `FieldClassification.Conflicted` carrying both claims' decoded slot facts (verb, table, method)
 |===
 
 The direct-return `DmlTableField` permit is guaranteed never to carry a class-backed (record-shaped) return: every DML mutation whose return type reflects to a record carrier routes through the DML-carrier permits (`MutationDmlRecordField` / `MutationBulkDmlRecordField`) via `BuildContext.scanStructuralDmlPayload`. The narrowness is enforced structurally by the routing in `FieldBuilder.classifyMutationField`, not by an Invariant the validator restates.
@@ -534,7 +535,7 @@ The direct-return `DmlTableField` permit is guaranteed never to carry a class-ba
 | Return multi-table interface | `InterfaceField` | Fetcher method(s) ; per-participant polymorphic projection
 | Return union | `UnionField` | Fetcher method(s) ; per-participant polymorphic projection
 | Return plain object (no `@table`) | `NestingField` | Inline projection ; nested fields fold into the parent SELECT, the object itself wired as an `env.getSource()` passthrough (inherits parent table context)
-| Conflicting directives | `UnclassifiedField`** | Validation error; build fails
+| Conflicting directives | Arm-order winner (the walk no longer tombstones conflicts) | Validation error from the store-backed conflict detection (`AuthoredClaimConflicts`); build fails. The LSP/MCP projection reports `FieldClassification.Conflicted` carrying the claims
 | `@notGenerated` | `UnclassifiedField`** | Validation error; the directive is no longer supported (`INVALID_SCHEMA` rejection). Remove it; fields must be fully described by the schema.
 | `@multitableReference` | `UnclassifiedField`** | Validation error; the directive is no longer supported (`INVALID_SCHEMA` rejection). Remove it; the rewrite generates multi-table interface dispatch from `@discriminate` / `@discriminator`.
 |===

@@ -10638,7 +10638,7 @@ class GraphitronSchemaBuilderTest {
             type Film @table(name: "film") { doesNotExist: String }
             type Query { film: Film }
             """);
-        var fld = (FieldClassification.Unclassified) s1.fieldClassificationsByCoord().get("Film.doesNotExist");
+        var fld = (FieldClassification.Unresolvable) s1.fieldClassificationsByCoord().get("Film.doesNotExist");
         assertThat(fld.reason()).isNotBlank();
 
         // UnclassifiedType — same shape on the type side.

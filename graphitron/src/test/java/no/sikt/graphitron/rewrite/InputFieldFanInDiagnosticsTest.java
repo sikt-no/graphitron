@@ -347,7 +347,9 @@ class InputFieldFanInDiagnosticsTest {
         // DirectiveConflict.directives is applied at the rejection's own declaration, so a consumer
         // counting rejections per directive counts causes and never a remedy the author did not
         // write. The @asConnection-on-inline-TableField site used to list the absent @splitQuery.
-        var schema = TestSchemaHelper.buildSchema("""
+        // The applied-at-declaration check reads the assembled schema: the carrier deliberately
+        // holds no graphql-java node.
+        var bundle = TestSchemaHelper.buildBundle("""
             type Customer @table(name: "customer") { firstName: String }
             type Store @table(name: "store") {
               customers: [Customer!]! @asConnection @defaultOrder(primaryKey: true)
@@ -355,12 +357,13 @@ class InputFieldFanInDiagnosticsTest {
             type Query { store: Store }
             """);
 
-        var field = (UnclassifiedField) schema.field("Store", "customers");
+        var field = (UnclassifiedField) bundle.model().field("Store", "customers");
         var conflict = (Rejection.InvalidSchema.DirectiveConflict) field.rejection();
         assertThat(conflict.directives()).containsExactly("asConnection");
         assertThat(conflict.reason()).contains("add @splitQuery");
+        var declaration = bundle.assembled().getObjectType("Store").getFieldDefinition("customers");
         conflict.directives().forEach(d ->
-            assertThat(field.definition().hasAppliedDirective(d))
+            assertThat(declaration.hasAppliedDirective(d))
                 .as("directive '%s' is applied at the rejection's declaration", d)
                 .isTrue());
     }

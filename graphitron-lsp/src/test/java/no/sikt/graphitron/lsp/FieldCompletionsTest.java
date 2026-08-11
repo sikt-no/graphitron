@@ -357,7 +357,7 @@ class FieldCompletionsTest {
             Map.of("FilmType", new TypeBackingShape.TableBacking("FILM")),
             Map.of(),
             Map.of("FilmType.languageName",
-                new no.sikt.graphitron.rewrite.catalog.FieldClassification.Unclassified("synthetic test reason")),
+                new no.sikt.graphitron.rewrite.catalog.FieldClassification.Unresolvable("synthetic test reason")),
             Map.of()
         );
         var items = run(filmAndLanguageCatalog(), snapshot, source, cursor);

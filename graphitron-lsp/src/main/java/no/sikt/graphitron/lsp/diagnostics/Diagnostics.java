@@ -628,7 +628,7 @@ public final class Diagnostics {
         // enclosing type's @table. FieldClassification.lspColumnDispatch() collapses the
         // sealed permits onto three audience-specific arms: Resolve(tableName) carries the
         // projected terminal table for the four column-bearing permits; Silent suppresses the
-        // diagnostic for InputUnbound / Unclassified (the validator already emits a precise
+        // diagnostic for InputUnbound / Unresolvable / Conflicted (the validator already emits a precise
         // message via ValidationReport, and a duplicate LSP diagnostic with the wrong table
         // would be noise); FallThrough routes back to the existing backing-driven dispatch.
         // Snapshot-uncertainty (empty optional) also falls through.

@@ -20,7 +20,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R333` | The Graphitron data model | Ready | 2026-08-10 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R612` | The schema scan and its freshness replay share one typed recipe | Ready | 2026-08-10 <sub>created 2026-08-08</sub> | [plan](maven-config-fact-family.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
-| `R589` | Classification is a relation; validation adds facts | In Progress | 2026-08-10 <sub>created 2026-08-04</sub> | [plan](validation-adds-facts.md) |
+| `R589` | Classification is a relation; validation adds facts | In Progress | 2026-08-11 <sub>created 2026-08-04</sub> | [plan](validation-adds-facts.md) |
 | `R569` | Aggregated diagnostics commands for the MCP server | Spec | 2026-08-10 <sub>created 2026-08-03</sub> | [plan](mcp-aggregated-diagnostics.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
