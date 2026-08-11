@@ -15,7 +15,7 @@ last-updated: 2026-07-02
 ## In one paragraph
 
 Both redaction sites, the generated `ErrorRouter.redactBody()` (per-fetcher, inside graphql-java
-execution) and the hand-written `GraphqlResource.execute()` guard (R421, pre-execution seam faults),
+execution) and the hand-written pipeline guard in `GraphqlHttpHandler` (R421, pre-execution seam faults),
 mint a fresh `java.util.UUID.randomUUID()` as the client-facing reference and log it alongside the real
 cause. That UUID correlates exactly one thing: the client's `Reference: <uuid>` string and the single
 server `ERROR` log line carrying the same uuid. It is **not** the OpenTelemetry `trace_id`/`span_id` and
