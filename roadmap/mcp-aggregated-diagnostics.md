@@ -1128,3 +1128,75 @@ three extra steps are now in the Tests section and the decisions heading dropped
 with the positional citation named; the pilot carve stays with this item for now, per the
 ownership decision that violations-as-facts and its first reader land together, and the
 Phasing note keeps the carve open for the implementer.
+
+## Second reviewer pass (Spec → Ready gate, 2026-08-11)
+
+Same reviewer session as the first pass, eligible again because the author's rework is the
+file's most recent commit. **All three prior findings are properly closed, and the closures
+verify.** `lint_finding` / `lint_` is named for the vocabulary its rows carry
+(`LintRule.id()`, whose javadoc already calls the kebab-case id "the only string form that
+crosses a wire"), not for the producing component, so it clears the objection that sank
+`validator_`. `walk_claim_domain` / `walk_` leaves the `rejection_` warrant intact and keeps
+its own retirement clock. The cadence decision is the right one and the site is real:
+`FactCapture.runInternal` does hold the `ClaimDomain`, so a batch store carries the pilot
+family and the accept line cannot move. The finding-3 answer reaches for an existing shared
+mechanism (`McpWire.writeSnapshotAxes` over the `LspSchemaSnapshot` permits) rather than
+inventing a posture, which was the right instinct. The two boots are quoted exactly as they
+are spelled in the tree. Nothing here should be re-litigated.
+
+Two problems, both consequences of the new material rather than re-openings of the old.
+
+1. **`walk_claim_domain` registering `ORACLE` contradicts that arm's stated scope, and the
+   item advertises "No new arm" as a property.** Half the argument holds: nothing re-derives
+   the walk's reach from store rows, and `DemandShadowTest` is exactly the measurement of
+   that, so the epistemics are `ORACLE`'s. The cadence is not. The arm reads "for relations a
+   **post-capture** oracle writer owns", and its two anchors are shaped for a separate writer
+   on a separate cadence (the two-graph lifecycle anchor exists to tell "cleared" from "never
+   written"); `walk_claim_domain`'s writer is capture itself. The DDL header reinforces the
+   split, tying post-capture families to their own writer and to capture clearing their
+   partition before regenerating. Meanwhile the shipped precedent for a capture-cadence
+   materialized relation is `intent_type_domain` under `DERIVED`, whose registration javadoc
+   says in as many words that such a relation's "cadence and clearing follow the derivation,
+   not an oracle". So neither arm fits cleanly: `DERIVED` wants derivability from store rows,
+   which this relation lacks by design, and `ORACLE` wants a post-capture writer, which it
+   does not have. Both anchors are mechanically satisfiable under `ORACLE`, so nothing fails
+   the build; the mismatch is definitional, which is precisely why it has to be settled in
+   prose here rather than discovered by an implementer reading the arm's javadoc. R603 is the
+   precedent for the honest options: argue the widened reading into the arm's own javadoc as
+   part of this item, or add an arm and say why. Deciding between them is not the
+   implementer's call, and "No new arm" currently reads as a settled property that this
+   registration may not actually have.
+
+2. **The handle-less answer reuses the snapshot axis, which reports a different fact, and the
+   two diverge in exactly the fixture shape this spec prescribes.** `writeSnapshotAxes` is
+   exhaustive over `LspSchemaSnapshot`, so it states whether the *SDL projection* is available
+   and fresh. It says nothing about a store handle. On the two boots the finding names, the
+   two facts coincide (bare `Workspace`, so `Unavailable` either way), which is what makes the
+   answer look right. They come apart on a workspace that has published a build output and has
+   no handle, which is precisely what
+   `LintSuppressionDiagnosticsParityTest.workspaceWithSuppression` builds today and precisely
+   the template the aggregate / drill-down parity test is told to copy. There the aggregate
+   would report `snapshotAvailability: Built` with `snapshotFreshness: Current` beside zero
+   groups, and zero groups from a missing store reads identically to zero groups from a clean
+   schema. That is this item's own "a truncated aggregate never reads as complete" rule broken
+   at the one place the rule was added to protect, and it is reachable by any later
+   `graphitron-mcp` test that publishes a build and does not wire a store, which is the cheap
+   default. The handle needs its own axis (a store-availability statement beside the snapshot
+   pair), or the handle-less call refuses rather than answering a count. One sentence either
+   way, but the current sentence answers with a number it cannot stand behind.
+
+One opportunity, non-blocking:
+
+- **Put the `walk_claim_domain` write inside `FactCapture.detect`, not "between `capture(...)`
+  and `detect(...)`".** `runInternal` has three capture-then-detect pairings (the
+  fell-back-to-memory arm, the warm-and-owned arm, and the trailing in-memory arm), so the
+  site as described is three sites, and "one writer" would be true only by repetition.
+  `detect(DSLContext, GraphIdentity, ClaimDomain)` is one site holding exactly the three
+  values the write needs, and its existing `domain == null` guard is the no-detection `run`
+  arm, so writing after that guard makes "no domain, no rows" structural instead of a rule to
+  remember. Cheaper and it makes the single-site claim literally true.
+
+Housekeeping, the author's call: the review log in this file is now two passes plus a
+response, ahead of the body an implementer actually reads. At the next body revision it is
+worth collapsing the whole log into a few lines of lineage, the way the body already does for
+its own reversals, rather than carrying it forward.
