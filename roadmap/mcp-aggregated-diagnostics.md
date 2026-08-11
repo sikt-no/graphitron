@@ -424,10 +424,17 @@ is the one part of this design that reaches a module the rest of the item does n
   `GraphitronMcpServerTest`'s tool-list boot (`new GraphitronMcpServer(loopback(0), new
   Workspace())`) and `ServerInstructionsTest`'s helper (the full constructor with nulls and a
   bare `Workspace`), both of which must advertise `diagnostics.aggregate` after this item. So
-  the short constructor passes no handle, and a call without one answers the same
-  availability posture `diagnostics` gives before the first snapshot: the shared snapshot
-  axes stating nothing is available, zero groups, no counts claimed. That is the existing
-  availability axis reaching one more case, not a new posture invented for cache trouble.
+  the short constructor passes no handle, and a call without one **refuses**: a tool error
+  naming the missing store handle, never a count. An earlier resolution reused the snapshot
+  axes for this answer, and the reviewer's counterexample kills it: `writeSnapshotAxes` is
+  exhaustive over `LspSchemaSnapshot` and says nothing about a store handle, so on a
+  workspace that published a build with no handle wired (exactly what the parity-test
+  template builds before its adaptation) the aggregate would report a built, current
+  snapshot beside zero groups, and zero groups from a missing store reads identically to
+  zero groups from a clean schema, breaking "a truncated aggregate never reads as complete"
+  at the one place it exists to protect. Refusal makes the wiring fact loud instead. It
+  covers the store-backed paths of both tools, and no production path meets it, since
+  `DevMojo` always passes the handle.
 
 **The residue is transitional, and this passage has now reversed twice, so the lineage is
 recorded.** The first draft called the load a bridge: registered under a new `BRIDGED`
@@ -508,16 +515,28 @@ rejected kind). Three constraints shape it:
   its rows carry the `Rejection` hierarchy's spellings and no other vocabulary; membership
   rows carry none of those words. The `walk_` name keeps the same retirement clock: when the
   walk is gone, the family has no referent. **Its writer is the capture-and-detect pass, at
-  capture cadence**: `FactCapture.runInternal` already holds the `ClaimDomain` at the site
-  between `capture(...)` and `detect(...)`, so the rows write there, graph-scoped with the
-  capture's ownership scope, and a batch run's store carries them, which is what keeps the
-  pilot view answering in a batch store and the claim-conflict family minting in batch builds
-  after the cutover (dev-session cadence would have moved the accept line exactly as Out of
-  scope forbids). It registers `ORACLE` beside the residue: a transcription of the walk's
-  verdict that no store derivation reproduces, which is precisely what `DemandShadowTest`
-  measures. The view joins it, the pilot's population is unchanged by construction, and the
-  later gate-flip re-points one join at `intent_resolved_*_demand` and drains the relation
-  with the gate.
+  capture cadence**, and the precise site is
+  `FactCapture.detect(DSLContext, GraphIdentity, ClaimDomain)`: `runInternal` has three
+  capture-then-detect pairings, while the `detect` overload is one site holding exactly what
+  the write needs, and its existing `domain == null` guard makes "no domain, no rows"
+  structural. The rows write graph-scoped with the capture's ownership scope, and a batch
+  run's store carries them, which is what keeps the pilot view answering in a batch store
+  and the claim-conflict family minting in batch builds after the cutover (dev-session
+  cadence would have moved the accept line exactly as Out of scope forbids). **Its
+  registration widens the `ORACLE` javadoc, and the widening is this item's to write.** Half
+  the arm fits exactly: no independent second walk can re-derive the walk's reach from store
+  rows, which is what `DemandShadowTest` measures, and `DERIVED` cannot take a relation that
+  is non-derivable by design (its own capture-cadence resident, `intent_type_domain`, is
+  pinned as a relation whose "cadence and clearing follow the derivation"). The other half
+  does not: the arm's lead sentence reads "a post-capture oracle writer", shaped for
+  `javac_`, while this writer is capture itself. The arm's anchors are already
+  cadence-relative ("the same round reduced two ways, at the oracle's cadence"), so the
+  honest fix is the R603 shape, arguing the registration on the record: this item widens the
+  lead to an oracle writer at the oracle's own cadence (javac after capture, the walk inside
+  it), rather than minting a one-resident arm and surrendering the "no new arm" property.
+  The view joins it, the pilot's population is unchanged by construction, and the later
+  gate-flip re-points one join at `intent_resolved_*_demand` and drains the relation with
+  the gate.
 - **Shadowed first, then the cutover.** The claim-view arms' `DERIVED` registrations are
   non-vacuous today only because the Java reduction is an independent second evaluation.
   Flip the report to project the view in the same motion and the anchor collapses to the
@@ -794,10 +813,13 @@ hole the dropped capability lift would have closed in the type system.
 - The agreement driver in `graphitron`'s capture test root: the `rejection_` residue,
   `lint_finding`, and `walk_claim_domain` under the existing `ORACLE` arm (transcriptions of
   verdicts no derivation reproduces, inheriting the arm's two shipped anchors), the pilot
-  view under `DERIVED` with its anchor re-aimed at the cutover. No new arm.
-- `FactCapture.runInternal`: writes `walk_claim_domain` at the site that already holds the
-  `ClaimDomain` between `capture(...)` and `detect(...)`, inside the capture's graph-scoped
-  ownership.
+  view under `DERIVED` with its anchor re-aimed at the cutover. No new arm; the cost of
+  keeping that property is the `ORACLE` javadoc widening the pilot section argues (the lead
+  sentence's "post-capture" becomes the oracle's own cadence).
+- `FactCapture.detect(DSLContext, GraphIdentity, ClaimDomain)`: writes `walk_claim_domain`;
+  the one site holding exactly what the write needs (`runInternal` has three
+  capture-then-detect pairings), its `domain == null` guard making "no domain, no rows"
+  structural, inside the capture's graph-scoped ownership.
 - `AuthoredClaimConflicts` / `Detection`: the cutover site. The family's `ValidationError`
   values derive from the view's rows; the `Conflicted` projection overlay keeps its seam.
 - `ClaimDomain`: reified as rows the pilot view joins; the record's javadoc already carries
@@ -1015,188 +1037,20 @@ is supposed to produce.
 - Aggregation over anything but the two channels `diagnostics` already unions (validator
   output and `graphitron:dev` compile diagnostics).
 
-## Reviewer pass (Spec → Ready gate, 2026-08-11)
+## Review lineage
 
-An independent reviewer session, status stays `Spec`. The verification half came back
-almost entirely clean, which is worth stating plainly because it should not be re-done on
-the next pass: every code, test, relation and symbol this body names exists as named, and
-the precise counts are right on today's tree. Spot-checked and confirmed: forty-two
-`lspCode()` sites declared by exactly the nine sub-seals listed, `PivotError` carrying
-twelve; nine `AttemptKind` values including the five the motivation leans on; `StubKey`'s
-single `VariantClass` permit with its nullable `fieldClass`; `RejectionSeverityCoverageTest`
-walking every leaf permit reflectively and asserting severity only; the agreement driver's
-closed `Arm { CONTAINMENT, EQUALITY, DERIVED, ORACLE }` with `javac_diagnostic` already
-`ORACLE`, so "no new arm" holds; `graphitron-mcp` genuinely free of `no.sikt.graphitron.model`
-and `DSLContext` in main sources, with `graphitron-model` reaching it transitively through
-`graphitron`; `DevMojo` opening `sessionStore` before both its first `Workspace.setBuildOutput`
-and its single `GraphitronMcpServer` construction, so the plumbing lands where the body says;
-`buildOutput` holding `GraphitronSchemaValidator`'s list separate exactly one line before
-`errors.addAll(detection.violations())`; the DDL header's naming doctrine with `jooq_` and
-`extension_` as its stated counterexamples; `FactSchemaGateTest`'s exemption polarity, so the
-new relations pass its two graph gates with nothing to argue; `ValidationReport.canonicalUri`
-declared the single canonical site; `DemandShadowTest` asserting equality only outside named
-residues. R584's changelog entry independently corroborates the one-commit sequencing claim,
-naming `diagnostics.aggregate` as the mutation its reverse direction catches.
+Two Spec → Ready gate passes so far (both 2026-08-11), both holding the item in Spec; every
+finding is folded into the body above, which is the authoritative text, and this note exists
+so the next pass knows what not to redo. Pass one verified every named symbol, relation, and
+count against the tree and found them right (including the forty-two `lspCode()` sites across
+exactly the nine sub-seals listed, the agreement driver's closed four-arm set, and
+`buildOutput` holding the walk's list separate one line before the fuse), so that sweep needs
+no repeat; its four findings were the two unnamed relations plus the mis-familied walk reach,
+that relation's unstated writer and cadence, a no-degradation claim false for the two
+store-less test boots, and stale ambient measurements, corrected in place with a re-measure
+instruction. Pass two held two of the resulting resolutions to the fire: the
+`walk_claim_domain` registration now widens the `ORACLE` javadoc's lead instead of
+contradicting it, and the handle-less call refuses instead of answering a count that reads as
+a clean schema; it also moved the write to the `FactCapture.detect` overload and prompted
+collapsing the in-file review log into this note.
 
-Four things block sign-off. Three need an author decision; the fourth was a factual
-correction and is already applied above.
-
-1. **Two of the four new relations have no name, and the one that does is handed a family
-   whose stated justification excludes it.** The lint arm is "its own relation and writer"
-   in four places and never named. `rejection_` earns fifteen lines arguing its name against
-   `validator_`, and the DDL header makes the prefix a deliberate per-relation decision
-   ("Picking a prefix for a new relation. Six families ..."), so leaving the lint family to
-   the implementer re-opens exactly the question the residue passage settles. Worse, Phasing
-   row 1 puts the reified `ClaimDomain` rows "in the residue's retiring-vocabulary family",
-   while that family's whole warrant is that "the rows are written in the sealed `Rejection`
-   hierarchy's spellings and no other vocabulary: `kind`, `variant`, `lsp_code`,
-   `attempt_kind`, `stub_key`". Walk-reach type and field membership carries none of those
-   words. Either the placement or the warrant has to give. Adding families also edits the
-   header's own enumeration, which Implementation sites does not list.
-
-2. **The reified `ClaimDomain` relation has no stated writer or cadence, and the wrong choice
-   silently moves the accept line.** Both readings are supported by the body as written:
-   "beside the residue" (whose loaders take a live handle at the dev session's cadence) and
-   "the pilot view needs no cadence at all ... even a batch run's store carries the
-   claim-conflict family". Only one of them is true. Capture cadence works and is cheap:
-   `FactCapture.runInternal` already holds the `ClaimDomain` at the site between
-   `capture(...)` and `detect(...)`, so the rows can be written there and the batch claim
-   holds. Dev cadence leaves the pilot view empty in a batch build, and after step 2's
-   cutover the claim-conflict family stops minting there, which is an accept-line change the
-   Out of scope section forbids by name. One sentence naming the writer closes this, and it
-   is load-bearing enough that the implementer should not be the one picking.
-
-3. **"No degradation posture is needed, and inventing one would be the error" is true for
-   production and false for the two test-tier pins this item makes mandatory.**
-   `GraphitronMcpServerTest`'s `containsExactlyInAnyOrder` boot is
-   `new GraphitronMcpServer(loopback(0), new Workspace())`, and `ServerInstructionsTest`'s
-   `server(...)` helper is the full constructor with `null, null, null, executeConfig` and a
-   bare `Workspace`. Neither carries a store. Both must advertise `diagnostics.aggregate`
-   after this item: the body requires the first, and the second derives its advertised
-   surface from a booted server, so registration reaches it whether or not anyone edits it.
-   A handle-less server therefore exists and advertises the tool, and the implementer is
-   forced to decide what a call does there by a sentence telling them that deciding is the
-   error. Resolve it either way (short constructor passes a null handle and the tool answers
-   a stated shape, or those boots get a real store), but resolve it here.
-
-4. **Applied, not left for the author: the ambient character measurements were stale.**
-   The bullet whose stated purpose is the measurement carried 2564 base / 2816 composed / 269
-   draft / ~780 headroom. Measured on today's tree: base 2722 stripped, tail 252, composed
-   2976, headroom 624, and the drafted routing line is 171 characters, landing at ~3148. The
-   old pair was R584's landing measurement, falsified by `d20e9cc` (R589 slice 6) eleven
-   commits before this body's last revision, so the figures were already stale when written.
-   The conclusion survives intact, which is why this is a correction rather than a design
-   finding, but it is the shape `development-principles.adoc` § "Documentation names only
-   live tests/code" calls out as true when written and silently falsified as the code moves.
-   Corrected in place, with a re-measure instruction, since the passage exists to spare the
-   implementer this exact derivation.
-
-Three non-blocking notes for the same rewrite:
-
-- **The prescribed MCP-tier fixture needs three steps more than "take it as the template".**
-  `LintSuppressionDiagnosticsParityTest` is the right precedent and does drive the real
-  `buildOutput` onto a `Workspace` from `graphitron-mcp`, as claimed. But its `RewriteContext`
-  leaves `storeDirectory` null, and `FactCapture.runInternal` then opens a private in-memory
-  store, captures, detects and closes it inside `buildOutput()`, so nothing survives for a
-  reader. `RewriteContext.withStoreDirectory` was deleted at R610 as a retirement-sweep
-  survivor, so the only way in is the sixteen-arg canonical constructor. The fixture also has
-  to invoke the residue loader itself, since `DevMojo` is not in play, and open its own handle
-  for the server. All feasible, and worth a sentence so the implementer does not discover it.
-- **"The draft's five open questions" heads six bullets**, and one of them is cited
-  positionally as "reviewer decision 4" in the residue passage. Numbering the bullets, or
-  naming that decision, fixes both.
-- **The carve of steps 1 and 2 reads stronger than "a reviewer who wanted it would have a
-  fair case".** The pilot is a store-native derivation replacing a Java reduction behind a
-  shadow-then-cutover anchor move; the aggregate is a wire-facing pivot tool. Different
-  failure modes, different reviewer attention, and step 5 needs step 1 only for the view's
-  existence as a union arm. Still the author's call.
-
-### Author response (2026-08-11, same day)
-
-All three decisions are taken and folded into the body above, so the next pass reads the
-body, not this note. Finding 1: the lint arm is `lint_finding` in a `lint_` family (the
-linter's vocabulary, parallel to `javac_`), the reified walk reach is `walk_claim_domain` in
-its own `walk_` family (the `rejection_` warrant stands untouched, and membership rows carry
-none of its words), and the DDL header's family enumeration edit is listed in Implementation
-sites. Finding 2: `walk_claim_domain`'s writer is the capture-and-detect pass at capture
-cadence, at the `FactCapture.runInternal` site that already holds the domain, so the batch
-claim holds and the accept line cannot move; the pilot bullet and Phasing row 1 both carry
-it. Finding 3: the store-less test boots are named in the handle-ownership section, the short
-constructor passes no handle, and a handle-less call answers the availability posture
-`diagnostics` already has before the first snapshot. Of the non-blocking notes, the fixture's
-three extra steps are now in the Tests section and the decisions heading dropped its count
-with the positional citation named; the pilot carve stays with this item for now, per the
-ownership decision that violations-as-facts and its first reader land together, and the
-Phasing note keeps the carve open for the implementer.
-
-## Second reviewer pass (Spec → Ready gate, 2026-08-11)
-
-Same reviewer session as the first pass, eligible again because the author's rework is the
-file's most recent commit. **All three prior findings are properly closed, and the closures
-verify.** `lint_finding` / `lint_` is named for the vocabulary its rows carry
-(`LintRule.id()`, whose javadoc already calls the kebab-case id "the only string form that
-crosses a wire"), not for the producing component, so it clears the objection that sank
-`validator_`. `walk_claim_domain` / `walk_` leaves the `rejection_` warrant intact and keeps
-its own retirement clock. The cadence decision is the right one and the site is real:
-`FactCapture.runInternal` does hold the `ClaimDomain`, so a batch store carries the pilot
-family and the accept line cannot move. The finding-3 answer reaches for an existing shared
-mechanism (`McpWire.writeSnapshotAxes` over the `LspSchemaSnapshot` permits) rather than
-inventing a posture, which was the right instinct. The two boots are quoted exactly as they
-are spelled in the tree. Nothing here should be re-litigated.
-
-Two problems, both consequences of the new material rather than re-openings of the old.
-
-1. **`walk_claim_domain` registering `ORACLE` contradicts that arm's stated scope, and the
-   item advertises "No new arm" as a property.** Half the argument holds: nothing re-derives
-   the walk's reach from store rows, and `DemandShadowTest` is exactly the measurement of
-   that, so the epistemics are `ORACLE`'s. The cadence is not. The arm reads "for relations a
-   **post-capture** oracle writer owns", and its two anchors are shaped for a separate writer
-   on a separate cadence (the two-graph lifecycle anchor exists to tell "cleared" from "never
-   written"); `walk_claim_domain`'s writer is capture itself. The DDL header reinforces the
-   split, tying post-capture families to their own writer and to capture clearing their
-   partition before regenerating. Meanwhile the shipped precedent for a capture-cadence
-   materialized relation is `intent_type_domain` under `DERIVED`, whose registration javadoc
-   says in as many words that such a relation's "cadence and clearing follow the derivation,
-   not an oracle". So neither arm fits cleanly: `DERIVED` wants derivability from store rows,
-   which this relation lacks by design, and `ORACLE` wants a post-capture writer, which it
-   does not have. Both anchors are mechanically satisfiable under `ORACLE`, so nothing fails
-   the build; the mismatch is definitional, which is precisely why it has to be settled in
-   prose here rather than discovered by an implementer reading the arm's javadoc. R603 is the
-   precedent for the honest options: argue the widened reading into the arm's own javadoc as
-   part of this item, or add an arm and say why. Deciding between them is not the
-   implementer's call, and "No new arm" currently reads as a settled property that this
-   registration may not actually have.
-
-2. **The handle-less answer reuses the snapshot axis, which reports a different fact, and the
-   two diverge in exactly the fixture shape this spec prescribes.** `writeSnapshotAxes` is
-   exhaustive over `LspSchemaSnapshot`, so it states whether the *SDL projection* is available
-   and fresh. It says nothing about a store handle. On the two boots the finding names, the
-   two facts coincide (bare `Workspace`, so `Unavailable` either way), which is what makes the
-   answer look right. They come apart on a workspace that has published a build output and has
-   no handle, which is precisely what
-   `LintSuppressionDiagnosticsParityTest.workspaceWithSuppression` builds today and precisely
-   the template the aggregate / drill-down parity test is told to copy. There the aggregate
-   would report `snapshotAvailability: Built` with `snapshotFreshness: Current` beside zero
-   groups, and zero groups from a missing store reads identically to zero groups from a clean
-   schema. That is this item's own "a truncated aggregate never reads as complete" rule broken
-   at the one place the rule was added to protect, and it is reachable by any later
-   `graphitron-mcp` test that publishes a build and does not wire a store, which is the cheap
-   default. The handle needs its own axis (a store-availability statement beside the snapshot
-   pair), or the handle-less call refuses rather than answering a count. One sentence either
-   way, but the current sentence answers with a number it cannot stand behind.
-
-One opportunity, non-blocking:
-
-- **Put the `walk_claim_domain` write inside `FactCapture.detect`, not "between `capture(...)`
-  and `detect(...)`".** `runInternal` has three capture-then-detect pairings (the
-  fell-back-to-memory arm, the warm-and-owned arm, and the trailing in-memory arm), so the
-  site as described is three sites, and "one writer" would be true only by repetition.
-  `detect(DSLContext, GraphIdentity, ClaimDomain)` is one site holding exactly the three
-  values the write needs, and its existing `domain == null` guard is the no-detection `run`
-  arm, so writing after that guard makes "no domain, no rows" structural instead of a rule to
-  remember. Cheaper and it makes the single-site claim literally true.
-
-Housekeeping, the author's call: the review log in this file is now two passes plus a
-response, ahead of the body an implementer actually reads. At the next body revision it is
-worth collapsing the whole log into a few lines of lineage, the way the body already does for
-its own reversals, rather than carrying it forward.
