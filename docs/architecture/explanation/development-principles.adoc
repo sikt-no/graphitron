@@ -8,8 +8,8 @@ reflection, jOOQ) are confined to a thin boundary that decodes inbound and encod
 the interior is pure derivation over typed facts. *Normalization* is the design discipline in that
 interior, and it governs both ends of the pipe. It shapes the authoring surface ; the SDL author
 states each fact once, at its grain, and Graphitron derives the rest ; guides how the model is
-discovered and extended, find a concept's grain and natural key first ; and keeps the classified
-model a normalized fact base: each fact asserted once at the parse boundary, everything downstream
+discovered and extended, find a concept's grain and natural key first ; and keeps the
+model a normalized fact base: each fact captured once at the boundary, everything downstream
 (generation, validation, the LSP) a derived view. Because the model is rebuilt from source every
 build, each such view is a materialized view, never a copy that can drift from its source ; that
 copy is *the drift smell*, and it recurs at every scale below. Strategic principles live at
@@ -19,12 +19,15 @@ xref:typed-rejection.adoc[Typed rejection]; additive-then-cutover change discipl
 
 '''
 
-== Decide once, at the parse boundary; carry the decision as a type
+== Decide once, at the capture boundary; carry the decision as a fact
 
 *Before implementing a feature, ensure the model carries what the feature needs ; pre-resolved,
-ready to consume.* `GraphitronSchemaBuilder` reads directives once and resolves everything: table
-names, column references, method names, extraction strategies. Every consumer receives the model
-in terms of "what to do", never "what to interpret".
+ready to consume.* Capture decodes every external input once into the fact store's keyed base
+relations, and the derived strata carry each conclusion as views over that base. During the
+strangler window the classification walk (`GraphitronSchemaBuilder`) is the same boundary in its
+transitional form, reading directives once and resolving everything downstream consumes. Every
+consumer receives "what to do", never "what to interpret"; the modeling discipline behind the
+store is xref:fact-model.adoc[The fact model].
 
 Signs a model type needs more pre-resolution:
 
@@ -47,24 +50,21 @@ read the type for the current arm set.
 *Enforced by:* the compiler ; exhaustive switches over a sealed hierarchy break when a variant is
 added.
 
-=== The parse boundary is a containment invariant
+=== The capture boundary is a containment invariant
 
-Classification is not only "decide once"; it is a statement about *where* raw external types may
-live at all.
+"Decide once" is also a statement about *where* raw external types may live at all. At capture
+the containment is structural: a relation stores values, so no live `Table<?>`, `ForeignKey` or
+`Class<?>` crosses into the store. On the transitional
+walk it is a convention: reflection `Type`-tree reads live only at builder-side classifiers,
+discoverable by searching for the reads themselves (`java.lang.reflect.Type`,
+`getGenericReturnType`, `getGenericParameterTypes`); `JooqCatalog` is the canonical holder of raw
+jOOQ types, the deliberate exceptions importing `org.jooq` at their own boundary. Everything
+downstream switches on captured or pre-classified values and never touches the raw types. If a
+consumer needs information not yet decoded, add a column or a component and extract it at the
+boundary ; never reach past it.
 
-Reading the reflection `java.lang.reflect.Type` tree is permitted only at builder-side classifiers
-that convert reflection output into typed carrier values ; a deliberately small set of files,
-discoverable by searching for the `Type`-tree reads themselves (`java.lang.reflect.Type`,
-`getGenericReturnType`, `getGenericParameterTypes`), not by the `java.lang.reflect` import.
-Everything downstream ; validator, generator ; switches on pre-classified values and never touches
-reflection types. The jOOQ twin: `JooqCatalog` is the canonical holder of raw jOOQ types
-(`Table<?>`, `ForeignKey<?,?>`); the few deliberate exceptions import `org.jooq` at their own
-boundary and are discoverable by that import. If
-a generator needs information not yet in a taxonomy record, add a component and extract the value
-in the builder ; never reach past the boundary.
-
-*Enforced by:* review only, via the grep-able discovery recipes above; a meta-test pinning each
-containment set is a candidate roadmap item.
+*Enforced by:* the store's shape at capture (relations hold values, never live handles); review
+only on the walk, via the grep-able recipes above.
 
 === Shape the type as precisely as the fact allows
 
@@ -121,8 +121,8 @@ its axes, and adding a value to any axis multiplies the permits below it. Find t
 and natural key, carry each axis as its own slot or sealed sub-interface, and either compute
 cross-axis views at the read site or materialize them from the base. The drift smell at field
 scale is the spliced identifier: two axes fused into one permit name, so the cross-product falls to
-hand-maintenance rather than derivation. R222 (`dimensional-model-pivot`) is the roadmap-scale
-application; R333 is the current statement of the target model.
+hand-maintenance rather than derivation. The model's durable statement is
+xref:fact-model.adoc[The fact model].
 
 The DataLoader-backed source side is the worked example: key shape, body input contract, row
 count, and loader registration are independent axes, and each dispatch site reads off whichever
@@ -163,13 +163,12 @@ named thing didn't resolve" to a cross-product of missing/inconsistent-slot erro
 
 == One model, many views
 
-*Code generation is the narrowest view of the classified model, not the model itself.* Other
-consumers (the LSP snapshot today) re-source from the same classified facts; no consumer owns a
-private model, and a view's coverage guarantee lives at its projection seam.
-`CatalogBuilder.projectFieldClassification` is the exemplar: an exhaustive switch over the field
-permits, so a new permit fails compilation until the view covers it; the coverage switch moves
-with the seam. The drift smell at model scale is a consumer-side shadow taxonomy: a second model
-hand-maintained to feed a view.
+*Code generation is the narrowest view of the model, not the model itself.* Every consumer reads
+views over the one base; none owns a private model, and a view's coverage guarantee lives at its
+projection seam (`CatalogBuilder.projectFieldClassification` is the transitional exemplar: an
+exhaustive switch a new permit breaks until the view covers it). The drift smell at model scale
+is a consumer-side shadow taxonomy; the re-sourcing invariant is
+xref:fact-model.adoc[The fact model].
 
 *Enforced by:* the compile-checked projection switch at each view's seam.
 

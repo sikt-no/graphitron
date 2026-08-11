@@ -1,0 +1,71 @@
+= The fact model
+:description: The modeling discipline behind the Graphitron fact store: natural keys, provenance, derived views, and the closed command graph.
+:!toc:
+
+The generator's model of record is a relational fact base. The store's DDL (`graphitron-model.sql` in `graphitron-model`) is the model's *what*: which relations exist, their keys, their constraints, and the comment on every one of them. This page is the *why*: the discipline that shapes those relations and the invariants that keep the model debt-free while the transitional classification walk drains. Where this page and the DDL disagree, the DDL wins. What runs when is the xref:pipeline-overview.adoc[Pipeline overview]; this page owns the rules a model change must obey. Every claim below names its enforcer, the live test or gate that fails when the claim breaks; a rule without one is not on this page.
+
+== The discipline has an executable form
+
+The facts are typed, keyed relations in an embedded H2 database booted from the DDL, read and written through jOOQ classes generated from that same DDL. That closes the usual objection to a SQL layer, that it makes the model stringly-typed and moves exhaustiveness to runtime: the generated classes are the containment, `graphitron-model` builds before the generator core, and a DDL edit fails `javac` in every consumer that touched the changed relation. There are no schema migrations and no persisted state of record; a warm store is reconciled per source hash and an incompatible upgrade opens a fresh file, so compile time is the only compatibility surface the schema has, and changing the model is editing the DDL and following the compiler.
+
+Referential integrity splits by what it can enforce. Capture-structural edges, where the walk writes the child while standing on the parent (a field row's declaration site, an application's host directive), are declared `FOREIGN KEY`s. A reference the author spells by name deliberately carries no FK and is a detection query instead, because a dangling author reference is a diagnostic to report, never a capture bug to crash on.
+
+*Enforced by:* the compiler over the generated jOOQ surface; `FactSchemaGateTest` holds the store's own invariants (total comment coverage, dense ordinals, verbatim-transcription twins for every decode, the graph-partition rules), so a failure there is a capture bug or a DDL defect, never an author error.
+
+== The key discipline: natural keys, rendered coordinates
+
+Base relations key schema elements by the spec grammar's own `Name` columns, per relation and all non-null: `graphql_field` keys `(graph_name, type_name, field_name)`, and its kin follow the same shape. There is no surrogate id anywhere in the DDL; where a tie-breaker is needed it is an ordinal inside the natural key, never decoration on a counter. The keys are what the model joins and scans on: every field of a type is a prefix scan on the type name, and every graph-partitioned key leads with `graph_name`.
+
+The canonical coordinate string (`Foo`, `Foo.bar`) appears in the store only as a rendering of those columns. The two stored `coordinate` columns, on the duplicate-declaration overflow (`graphql_duplicate_declaration`) and on the `diagnostic` read surface, each say so in their own comment: a rendered value computed from the stored columns, never the key. A rendered key cannot drift from the columns it names, which is what makes it safe as a stable id to hand outward.
+
+Authored facts are definition-keyed; derived bindings are use-keyed. An input field's authored facts live at its own member coordinate, the only key available where the author's cursor sits, because one input type is consumed by many fields. The use-site resolution, which table an input binds against and through which occurrence path, depends on the consuming field, so it is a derived join over definition and consumer, shipped as the materialized `intent_input_occurrence_path` pair rather than as a dotted-path key.
+
+*Enforced by:* the `PRIMARY KEY`s themselves, at capture; `FactSchemaGateTest.everyRelationLeadsWithItsPartitionDimension`, `everyGraphKeyedRelationReachesTheAnchor` and `aRunWritesOnlyUnderItsOwnGraph` for the partition half; `FactSchemaGateTest.commentCoverageIsTotal` keeps the rendered-not-stored statements written on the columns that carry them.
+
+== Facts, not leaves
+
+Each fact is an independent functional dependency of its coordinate, found by its own walk: where the source object arrives, what the field returns, which operations it triggers, whether the value crosses a table. A capability is added by adding a fact relation, never a new leaf type, because facts add where leaf types multiply: welding independent axes into one classified leaf produces the cross-product of the axes, and the leaf zoo is exactly the denormalized view that multiplication built (repeating groups for multi-column values; duties welded onto a leaf that functionally depend on another coordinate's query). The sealed leaf model the classification walk still produces is the transitional producer surface of the strangler migration, drained rather than extended; a new fact lands in the store.
+
+*Enforced by:* `FactCaptureAgreementTest.everyRelationIsRegistered`, whose driver enumerates every generated relation and fails on one with no registered agreement source, with a reverse leg failing on a registration the DDL no longer declares, so a fact relation can neither arrive unchecked nor linger as a phantom.
+
+== Provenance: pick the shape per fact
+
+Do not assume a fact's origin is a column on the fact. Authored and inferred values often come from independent walks (the directive decode versus the catalog or classpath), and when they do the natural form is separate relations coalesced by a view, not one relation with a provenance tag. When one value fills one slot, a sparse authored column plus a default rule suffices. Either way the resolved value is always a view over the populations, never a stored merge.
+
+The claim stratum is the shipped separate-relations case: `intent_authored_field_claim` and `intent_authored_type_claim` union one arm per claiming `graphitron_` relation, `intent_column_match_claim` carries the structural reading with its join witnesses as payload, `intent_resolved_field_claim` is the reduction, and `intent_authored_claim_conflict` detects coordinates carrying contradictory claims. The conflict reduction lives in the view's SQL; `AuthoredClaimConflicts` only decodes the closed verdict vocabulary into typed rejections. The one-slot case is `CompletionData.NodeMetadata`: it stores what the author wrote and leaves deduced values null, so in-editor feedback sees authored data only, by design, and the resolved value falls back to the default rule.
+
+The consumer split is which population each reads: code generation wants the resolved answer, the editor gives feedback only on what the author wrote, the knowledge surface cites the authored source and reports the resolved value. Description, by contrast, is co-sourced with the entity it describes (the walk that produces the row reads the docstring, the catalog `COMMENT`, the Javadoc in the same pass), so it is a column on the entity's own relation, not a separate relation. The same question, "where did this come from", gets opposite shapes depending on whether the origins are independent walks; the instinct must be "pick", not "always a column".
+
+*Enforced by:* `FactCaptureAgreementTest` registers the whole `intent_` stratum under its derived arm, with per-view anchors (`AuthoredClaimConflictsTest`, `ColumnMatchClaimTest`, `DemandShadowTest`, `InputOccurrenceShadowTest` in `rewrite/derive`) pinning each derivation against hand-written expectations the view cannot produce by construction.
+
+== Derived reads are views, not stored facts
+
+Most of what a consumer reads is derived, and each recurring derivation is easy to mistake for a stored thing and model wrong. The candidate space (completion, enumeration) is a base relation read without its key constraint, the same relation a resolve reads with one; storing a candidates list would duplicate the relation it selects from. Reverse indexes (find-usages, what-is-at-this-cursor) are inverted functional dependencies maintained for read speed; that a reverse lookup can find an entity does not make the lookup's input the entity's key. Stable ids are rendered keys, per the key discipline above.
+
+Violations are located facts, not log lines. A violation is a row, not an act: the diagnostics stratum records rejection, lint, advisory and compile rows (the `rejection_`, `lint_`, `build_warning_` and `javac_` families), and the deliberately prefix-less `diagnostic` view unions them into one read surface with the rendered coordinate computed from the stored columns. Keeping the violation a relation makes every surface a projection of it (the LSP diagnostic, the MCP triage tools, a build report); baking it into one consumer's output would force every other consumer to recompute the rule.
+
+Freshness is a property of the snapshot, not of a consumer. The referenced namespaces (the jOOQ catalog, the classpath census) are generated from source and lag their source identically, so freshness is carried once, on the snapshot handle a consumer holds (`LspSchemaSnapshot`'s two axes: availability, then current versus previous), and the consumer split is purely which precondition each read imposes: code generation demands current and integrity-clean or fails the build; the editor tolerates the previous snapshot and tags it, rather than punishing the author for a half-typed edit.
+
+Location is a fact about an entity, joined rather than stored, and the rule is cadence. Java and Javadoc positions ride the source-edit cadence, faster than the build cadence, so a position stored in the built model would freeze stale while the source moved; goto-definition joins the entity's stable key against the LSP-owned `SourceWalker.Index` at request time, and the relation is partial by design (built-ins have no position; a read allowed to be empty must not be a key). SDL positions are the argued exception: the SDL is what capture parses, so its positions arrive in the same pass as the facts they locate and are stored as capture columns (`source_name`, `source_line`, `source_column`), in the declaration-site key even, because two extensions of one type can share a line. "Joined, not stored" is the law for positions that move on a cadence the fact does not; it was never a ban on positions that share the fact's own cadence.
+
+*Enforced by:* `DiagnosticFactsTest` pins the diagnostics stratum's derived columns against their Java spellings; `DiagnosticsAggregateTest` pins the union view's shape through the shipped MCP tool; `FactCaptureAgreementTest`'s oracle-lifecycle gates pin that each post-capture writer clears exactly its own graph partition and nothing else.
+
+== One base, many views
+
+Every consumer (code generation, the language server, the MCP knowledge surface, the test corpus) reads views over the one base; no consumer owns a private model. Code generation is the narrowest view, not the model: it reads the resolved values and demands a total, integrity-clean snapshot, and it simply does not project the columns the other consumers live on (the authored form behind each resolved value, the description text, the source position). Those columns are in the base regardless.
+
+The invariant that keeps it one model through the migration: every consumer re-sources onto the store, and each view's coverage guarantee moves with its projection seam. A migration that leaves one consumer reading the old surface revives the leaves as a shim purely to feed that consumer, and the model forks; facts, revived leaves, and projections is three models. The strangler frame prevents it: consumers migrate one at a time, new facts land only in the store while both models are live, and the two-model window shrinks monotonically instead of fossilizing.
+
+*Enforced by:* `FactCaptureAgreementTest` keeps the two live pictures honest for every relation while the window is open; each projection seam keeps a compile-checked exhaustive switch (`CatalogBuilder.projectFieldClassification` on the transitional surface), so a variant change breaks every view that has not covered it.
+
+== The back half: complete commands, a closed graph
+
+The emit side consumes the facts as commands, and the law is that commands must be complete: the render shell makes no decision the planner could have made. A command row carries everything its renderer needs, and the `command` / `plan` / `render` package triangle keeps producers and consumers apart, with the emit library visible only to `render`.
+
+The emit target is a referentially-closed graph of Java methods: a node relation (the methods the plan committed) and an edge relation (calls by name). Closure is bidirectional. Every method the generator emits is the render of exactly one committed command, and every callee name in every emitted body resolves to a method the run also emitted; a renderer minting a callee name the plan never committed is exactly the leak the invariant exists to catch.
+
+Two rules govern the graph's shape. The seam-placement rule: a named method call (a seam) belongs where a unit is chosen by a runtime dispatch, reused across more than one caller, or something the tests must assert independently; inline only a linear, single-use, non-varying construction. The single-mint naming regime: a callee name is minted once, in the plan's naming vocabulary (`GeneratedUnits`), and read blind on both ends of the edge, never reconstructed by formula at a call site.
+
+*Enforced by:* `PackageImportDirectionTest` for the triangle, and its `unitRefsAreMintedOnlyByThePlansNamingVocabulary` for the mint (unit references are constructed only inside `GeneratedUnits`, checked over the whole main tree); `MethodClosureOracleTest` for callee resolution over a seam-spanning schema; `LauncherRelationClosureTest` for the bidirectional half over the launcher relation (every covered coordinate has exactly one row, every row resolves to an emitted method, no two rows claim the same method).
+
+xref:index.adoc[← Explanation index]

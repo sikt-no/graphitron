@@ -7,7 +7,7 @@ priority: 3
 theme: classification-model
 depends-on: []
 created: 2026-06-18
-last-updated: 2026-08-10
+last-updated: 2026-08-11
 ---
 
 # The Graphitron data model
@@ -44,11 +44,12 @@ model slice by slice after **R314** (Done) shipped its reentry beachhead; the fr
 leaves) was delivered by the **R563** (`operation-relation`) programme (Done), as the
 `OperationMember` per-coordinate member multiset. The model now also has a second, executable home:
 the fact schema DDL in the `graphitron-model` module (R595) is this document's normalised data
-model reified as a SQL schema, and the classification-stage derivations over it are R589's subject
-(*What the model enables* carries the division of labour). Suggested
-reading order is this orientation, then *The model* (the ER diagram and the fact catalog) and *What the
-model enables*, then the detail: the front half (*The normalized schema: the coordinate and its facts*)
-and the back half (*Operations are realized by seams*). The lettered **Discovery** threads (A-K) at the
+model reified as a SQL schema, and the classification-stage derivations over it are R589's subject.
+The stabilized why is migrating out section by section to
+`docs/architecture/explanation/fact-model.adoc` (a migrated section keeps its heading with a pointer
+body); suggested reading order is that page and this orientation, then *The model* (the ER diagram and
+the fact catalog), then the detail: the front half (*The normalized schema: the coordinate and its
+facts*) and the back half (*Operations are realized by seams*). The lettered **Discovery** threads (A-K) at the
 end record how the model was derived by walking the current emitters; they are the evidence, referenced
 throughout, not prerequisites to read first.
 
@@ -209,10 +210,11 @@ The stage vocabulary over that home is three verbs, each stage only ever adding 
 gathers** (capture loads the base relations and the claim views read them), **validation derives** (a
 violated constraint becomes a located violation fact; the claims stay), and **planning joins** facts
 directly into command records, which are the parse targets.
-This document keeps the *why*: the justifications, the alternatives rejected, the key discipline, the
-back half. The *what* migrates into the DDL relation by relation, and where the two disagree the DDL
-wins; which relations exist at any given moment is the DDL header's record, not this document's, so a
-reader should not expect a relation per deep-dive yet.
+This document keeps the *why* not yet migrated: the stabilized why moves section by section into
+`docs/architecture/explanation/fact-model.adoc` (a migrated section below keeps its heading with a
+one-line pointer as its body). The *what* migrates into the DDL relation by relation, and where prose
+and DDL disagree the DDL wins; which relations exist at any given moment is the DDL header's record,
+not this document's, so a reader should not expect a relation per deep-dive yet.
 
 ## The natural keys
 
@@ -220,7 +222,11 @@ The model's spine is its natural keys, and the entity key is not ad-hoc: it is t
 **`SchemaCoordinate`**, the same coordinate this document is named for. The spec already standardizes the
 grammar for addressing every element of a schema, so the model adopts it rather than inventing a key.
 (Later sections still sketch the coordinate as `(parentType, fieldName)` for readability; that is shorthand
-for the `MemberCoordinate` output-field case. The ER diagram in *The model* draws the full key.)
+for the `MemberCoordinate` output-field case. The ER diagram in *The model* draws the full key.) The
+shipped half of this key system (Name-column natural keys per relation, the rendered coordinate, the
+definition-keyed / use-keyed split) migrated to `docs/architecture/explanation/fact-model.adoc`, section
+"The key discipline"; the five-kind sealed coordinate carrier and the mechanical never-a-stored-surrogate
+rule below are target-state and stay here until a carrier and a gate exist.
 
 **The coordinate is a `SchemaCoordinate`, stored decomposed into its grammar columns.** The spec's five
 productions are five coordinate kinds, each carrying exactly the `Name` positions of its production, and the
@@ -270,13 +276,9 @@ spec is definition-keyed and has no dotted-path coordinate, so a nested input fi
 `MemberCoordinate` of its input type (`FilmWhereInput.actor`, then `ActorWhereInput.lastName`), and the
 use-site "path" earlier drafts wrote as `(typeName, fieldName, inputPath)` is not a coordinate at all: it is
 a **derived traversal** through the coordinate graph, an `ArgumentCoordinate` followed by a chain of
-input-type member coordinates. This is where the authored / derived split lands precisely. The authored
-facts (`@field`, `@reference`, `@nodeId` on an input field) live at the definition member coordinate, which
-is where the editor edits them: the cursor sits inside the input type's definition, consumed by many fields,
-so the definition coordinate is the only key available. The use-site resolution (which table the input binds
-against, the inferred FK, the generated condition's column) depends on the consuming field, so it is a
-**derived join** over `(input member coordinate, consuming coordinate)`. Definition-keyed authored fact,
-use-keyed derived binding: the provenance axis, stated in the spec's own grammar.
+input-type member coordinates. The definition-keyed / use-keyed discipline this paragraph carried
+(authored facts at the definition member coordinate, use-site resolution a derived join over definition
+and consumer) migrated: see "The key discipline" in `docs/architecture/explanation/fact-model.adoc`.
 
 **Everything beyond the spec's coordinate set is a relation over coordinates, never a new coordinate kind or
 an extra column.** A directive *application* (a `@reference` written at `Film.language`) is an **edge**
@@ -331,128 +333,30 @@ projection descriptor-erased.
 
 ## What the model enables: three consumers
 
-One base, three consumers, and the consumers do not all read it at the same depth. The facts are the base
-relations; everything a consumer reads is a **view** computed over them. The model already ships this
-layering, so R333's job here is to name it and to keep it from fracturing into separate models as the leaf
-zoo dissolves.
-
-**The layering, as it ships today.** Between the facts and the consumers sit two layers of view:
-
-- **The classifier (the denormalized leaves).** `GraphitronField` and its permits (`ChildField`,
-  `QueryField`, `MutationField`, `InputField`) and `GraphitronType`. This is the leaf zoo, and it is a
-  denormalized view over the facts (the argument of *Normalization: the leaf zoo is a denormalized view*).
-  **Code generation reads it directly**: the `DataFetcher` joins `source` and `target` and dispatches the
-  operation set, each operation rendering through a named seam, and thread I's referential-integrity closure
-  is the build's correctness test. Under the strangler frame this layer has a name and a fate: it is the
-  **transitional producer surface**, and it dissolves as consumers migrate onto the store rather than being
-  extended.
-- **The projections.** `FieldClassification`, `TypeClassification`, `TypeBackingShape`, `CompletionData`,
-  `CatalogFacts`: a second view, built from the classifier by an exhaustive, compile-checked switch
-  (`CatalogBuilder.projectFieldClassification` and its siblings) and sized to the questions the editor and
-  the agent ask (hover payloads, completion candidates, catalog descriptions). **The language server and the
-  model-context server read these**, the former to validate / complete / describe / locate as the author
-  types, the latter to describe / locate / invert for an agent navigating the schema (the six reads of *The
-  two referenced namespaces*).
-
-So "one model, three readers" is not aspirational, it is implemented, with a compile-enforced seam tying the
-projections to the classifier. What it is *not* is three co-equal readers of one flat fact set: there is a
-base, there are views, the views stack two deep, and the consumers enter at different depths.
-
-**Code generation is the narrowest view, not the model.** It reads the *resolved* values (the `resolvedTable`
-coalesce, the inferred FK, the rolled-up enum backing) and demands a total, integrity-clean snapshot before
-it runs. It does not select the columns the other two live on: the authored form behind each resolved value,
-the description text, the source position. Those columns are in the base regardless; code generation simply
-does not project them. Calling code generation "the model" was the original error; it is the projection that
-selects the fewest columns and imposes the strictest precondition, no more privileged than the others.
-Re-platforming the emit onto the facts was the R549 programme (Done 2026-08-01); R314 (Done) was its reentry beachhead.
-
-**The invariant that keeps it one model: the projection seam re-sources from the facts.** Today
-`CatalogBuilder.projectFieldClassification` switches over the classifier's leaf permits to build
-`FieldClassification`. When the leaf zoo dissolves into facts, that switch must re-source, from the leaf
-permits to the facts, and its compile-time coverage guarantee must move with it. This is the single
-load-bearing requirement of widening the model to three consumers. Miss it and the dissolution proceeds on
-the code-generation side while the projections still need the old leaf permits, so the leaves are kept alive
-as a shim purely to feed the editor and the agent, and the leaf zoo we set out to dissolve returns as a
-second model whose only job is the projection layer. Facts, revived leaves, and projections is three models.
-The fix is to point the projection seam at the facts and let its coverage switch fail to compile until every
-projection re-sources, the same falsifiable-closure discipline thread I applies to the emit. The *mechanism*
-for the re-sourcing is now the strangler frame (R589): the facts live in the store, consumers migrate off
-`GraphitronSchema` one by one in whatever order pays best, each migration gated on generated-output
-identity, and new facts land only in the store while both models are live, so the two-model window shrinks
-monotonically instead of fossilizing into the three-model failure above.
-
-**A fourth reader, test-side: the spec-by-example corpus.** The three consumers above are the shipped
-readers; the `@classified` corpus is a fourth reader of the same base, and it inherits the re-sourcing
-requirement verbatim. `ClassifiedHarness` builds its verdict from the leaf zoo (`GraphitronSchema.operationMembersOf`,
-`OutputField.target()`, `GraphitronSchema.sourceOf`) and records `field.getClass()` as the coordinate's
-leaf; `ClassifiedCorpus.coveredLeaves()` and `VariantCoverageTest`'s corpus obligation are both stated over
-sealed leaf *classes*. So the failure mode this section warns about has a second entrance: if the harness is
-not re-sourced onto the facts alongside the projections, the test tier pins the leaf permits in place from
-below, and the leaves survive as a shim for the corpus instead of for the editor. The obligation is the same
-(re-source, keep the coverage guarantee falsifiable), and the extra piece the corpus needs is a restatement
-of its coverage net, which cannot stay "every sealed leaf is demonstrated" once leaves are not the unit.
-Widening the corpus directive to the fact set is filed separately; this note only records that the harness is
-in scope for the re-sourcing, not something to migrate afterwards.
-
-Two more readers joined the family with the store: the **agreement tests** (the shadow window's honesty
-check, reading both models to hold capture faithful) and the **read-only SQL surface** the store opens for
-agents, which is the six reads served without a hand-written tool per question. The shared discipline is
-*We are data modeling*: the facts are typed, keyed relations, materialized in the `graphitron-model` store
-and read through its generated jOOQ classes, with capture-structural integrity as declared foreign keys and
-author-spelled references as detection queries. The consumers read views over one base; the base carries
-every column some view needs, and no consumer owns a private model.
+Migrated: the one-base-many-views layering, code generation as the narrowest view, and the re-sourcing
+invariant live in `docs/architecture/explanation/fact-model.adoc`, section "One base, many views". What stays here is
+the test-side obligation not yet discharged: the `@classified` corpus (`ClassifiedHarness`,
+`ClassifiedCorpus.coveredLeaves()`, `VariantCoverageTest`) still builds its verdict from the leaf zoo, so
+the harness is in scope for the re-sourcing and its coverage net needs restating once leaves are not the
+unit; widening the corpus directive to the fact set is filed separately.
 
 ## Provenance, description, and capability
 
-The section above promised the base carries columns code generation does not select. Three are due here, and
-they are a test of a relational instinct: **do not assume a fact's origin is a column on the fact.** Authored
-data and inferred data often come from different walks, the directive walk versus the catalog or producer
-walk, and when they do the natural form is **separate relations** coalesced by a view, not one relation with
-a provenance tag. Pick per fact: a column when there is one value in one slot, separate relations when the
-origins are independent walks or the values are multi-valued. The three facts below pick three different
-shapes, which is the point.
+Three facts test the relational instinct that a fact's origin is not automatically a column on the fact.
+The instinct and its shipped exemplars migrated (the *Provenance* and *Description* stubs below);
+*Capability* stays, because its directives are reserved, not shipped.
 
 ### Provenance
 
-A fact's provenance is `Authored` (a directive at a source location), `Inferred` (derived from the catalog or
-the producer types), or `Defaulted` (a rule). The model already carries this, and the lesson is that the
-shape varies with the source:
-
-- **Separate relations, coalesced** when authored and inferred come from different walks. `resolvedTable` is
-  a view, the coalesce `referencedTable ?? source.table ?? target.table` over three independently-walked
-  facts. `reference` is "authored `@reference` *or* inferred unique FK", two populations of one 0..1 slot.
-  `condition` is the cleanest case: `authored_condition` and `generated_condition` are genuinely separate
-  relations, both multi-valued, both live, conjoined by union-then-suppress, and no provenance column could
-  hold them because a coordinate carries both at once. This pattern generalises into the claim relations
-  (R589): `authoredClaim` and `inferredClaim` are the same separate-relations move applied to the
-  classification axis itself, with resolution the union of authored with inferred at coordinates the
-  authored relation does not cover, so masking is the join's job and the masked structural reading survives
-  as data.
-- **A column** when there is one value in one slot. `@node(typeId:)` is a single value the author either
-  wrote or let default to the type name; a provenance attribute on the one relation (equivalently, a sparse
-  authored relation plus a default rule) suffices. The shipped `NodeMetadata` is exactly this: it stores the
-  authored `typeId` / `keyColumns` and leaves the deduced cases null, so the authored population is one sparse
-  relation and the resolved value is the view that falls back to the default.
-
-The resolved value is always a **view** over the authored and inferred populations; what varies is whether
-those populations are separate relations or one tagged column. This is the column the three consumers split
-on: **code generation reads the resolved view** (it wants the answer), **the language server reads the
-authored relation** (it can only give feedback on what the author wrote, which is why `NodeMetadata` stores
-authored-only and deduced values are invisible in the editor by design), and **the model-context server
-reads both** (it cites the authored source and reports the resolved value). Provenance is not a decoration on
-one fact; it is why the authored and inferred populations are first-class, and the consumer split is which
-population each reads.
+Migrated: the provenance discipline (separate relations coalesced by views when the origins are
+independent walks, a column when one value fills one slot, the resolved value always a view, and the
+consumer split over the populations) lives in `docs/architecture/explanation/fact-model.adoc`, section
+"Provenance: pick the shape per fact".
 
 ### Description
 
-Description is the simplest of the three because it is **co-sourced with the entity it describes**. The
-catalog walk that produces a column reads its `COMMENT` in the same pass; the classpath scan that produces a
-method reads its Javadoc; the SDL parse that produces a coordinate reads its docstring. One walk, one value,
-so description is a **column** on the entity's own relation (the catalog column, the Java method, the
-coordinate), not a separate relation. Only the `describe` read selects it, hover and the knowledge surface;
-code generation never does. The contrast with provenance is the lesson: the same question ("where did this
-come from") gets the opposite answer ("a column here", because the source is the same walk), which is why the
-instinct must be "pick", not "always a column".
+Migrated: the co-sourcing argument (description is a column on the entity's own relation, not a separate
+relation) lives in `docs/architecture/explanation/fact-model.adoc`, section "Provenance: pick the shape per fact".
 
 ### Capability
 
@@ -469,123 +373,33 @@ shipped, so this reserves the slot rather than describing a built fact.
 
 ## Derived reads, freshness, and location
 
-The base carries facts; most of what a consumer reads is *derived* from them. Three derivations recur often
-enough to name, because each is easy to mistake for a stored thing and model wrong. The first is the catalog
-of views the six reads compute; the second is freshness, a property of the whole materialization; the third
-is location, the fact that flushed out the SourceLocation question. The thread tying them together: name the
-derivation, do not store its result where the base belongs.
+The three recurring derivations this section named migrated; the stubs below point at their new home.
 
 ### Derived data is a catalog of views
 
-Of the six reads in *The two referenced namespaces* (`resolve`, `validate`, `complete`, `describe`,
-`locate`, `invert`), only `describe` is a stored column (the argument of *Description*). The rest are views,
-and naming each keeps it from silting up as a redundant fact. The vehicle is settled (R589): derivations
-are SQL views and `INSERT..SELECT` strata over the store, with recursive CTEs where closure is needed;
-table-valued functions were spiked and rejected. Two derived relations this catalog did not originally
-name join it: **reachability** (root seeds plus transitive closure over captured edges; capture itself is
-total, with no pruning) and **demand** (reachable coordinates intersected with requiring rules, each row
-carrying why a claim is required, with today's implicit skips as explicit exemption rows).
-
-- **The candidate space is an unconstrained relation read.** `complete` (the editor's completion, the
-  agent's enumeration) is a base relation projected with *no* key constraint: every column of the resolved
-  table, every public method of the bound service, every coordinate under a type. It is not a new fact, it
-  is the same relation that `resolve` reads with a key, read without one. Storing a "candidates" list would
-  duplicate the relation it is a `SELECT *` of.
-- **Diagnostics are data: one located-violation relation, two views.** `validate` does not *do* something,
-  it *produces* a relation: a violation is a `(rule, coordinate, location, message)` tuple. The shipped
-  `Diagnostic` (its stable wire `code`, its `primaryLocation`, its `relatedInformation`) is the editor's
-  view of that relation; a build-time / CLI error report is another view of the same tuples. Keep the
-  violation a relation and both surfaces are projections of it; bake it into one consumer's emit and the
-  other has to recompute the rule. The wire `code` being a stable string written next to the producer, not
-  derived from a Java identifier, is the same render-the-key discipline as the stable id below: the
-  identity survives a rename. R589 extends this with the evaluation order: violations mint wherever a
-  constraint's inputs are complete, which stratifies into SDL-only, resolution, and assembly constraints
-  without anyone scheduling it, and each stratum only ever adds rows.
-- **Stable ids are rendered keys.** The canonical SchemaCoordinate string is the render of the decomposed
-  key columns (*The natural keys*), and it doubles as the model-context server's stable id and the language
-  server's per-coordinate key. The point for this catalog: the id is a *view* (a deterministic render of key
-  columns), never a stored surrogate, so it cannot drift from the key it names. The shipped
-  `fieldClassificationsByCoord` keying on `"ParentType.fieldName"` is exactly this render used as a map key.
-- **Reverse indexes are inverted functional dependencies.** `invert` (find-usages, what-references-this,
-  what-is-at-this-cursor) reads the base relations backwards: invert the FK `coordinate -> referencedTable`
-  to answer "which coordinates resolve to this table"; invert the locator relation below to answer "what
-  entity is at this position". These are derived indexes maintained for read speed, not new facts, and the
-  spatial what-is-at-cursor index is precisely the reverse of the locator relation, which is why
-  reverse-queryability is not evidence of keyhood (see *Location*).
+Migrated: the candidate space as an unconstrained relation read, diagnostics as located violation rows
+with many projections, stable ids as rendered keys, and reverse indexes as inverted functional
+dependencies live in `docs/architecture/explanation/fact-model.adoc`, section "Derived reads are views, not stored facts".
 
 ### Freshness: the snapshot lifecycle
 
-The base is materialized from source we write (the SDL, the jOOQ catalog, the Java surface), so it is only
-ever as fresh as the last successful build, and the consumers disagree about whether stale is acceptable.
-The shipped `LspSchemaSnapshot` models this on two orthogonal axes: **availability** (`Unavailable` vs.
-`Built`) and **freshness** (`Built.Current` vs. `Built.Previous`). The split is a consumer precondition, not
-a per-consumer model:
-
-- **Code generation demands `Built` and integrity-clean.** It will not emit from an unavailable or stale
-  snapshot; a partial or regressed base is a build failure, not a degraded answer. This is the strictest
-  precondition, matching the narrowest view (*What the model enables*).
-- **The language server tolerates `Previous` and tags it.** It would rather answer hover / completion from
-  the last good parse than punish the author for a half-typed edit, and it surfaces the staleness rather
-  than pretending currency. `Unavailable` means "no info to act on", so it stays quiet rather than emitting
-  spurious diagnostics, the same do-not-punish-the-author instinct that makes the editor read the *authored*
-  population (*Provenance*).
-
-Freshness is a property of the base because both referenced namespaces lag the same way: the jOOQ catalog
-and the Java surface are each generated from source and complete only *within* a snapshot. So freshness is a
-column on the snapshot, the lifecycle is shared, and the consumer split is purely which precondition each
-read imposes on it. The store gives the lifecycle its concrete form: the database is created at startup,
-populated during a run, and dies with the process, so there are no migrations and no persisted state of
-record anywhere, and the two snapshot axes describe the store handle a consumer holds. A stamp-invalidated
-warm-start cache under `target/`, specified in R595, changes neither property.
+Migrated: freshness as a property of the snapshot, its two axes, and the per-consumer preconditions live
+in `docs/architecture/explanation/fact-model.adoc`, section "Derived reads are views, not stored facts".
 
 ### Location: a fact about an entity, joined not stored
 
-A source position is **not** a natural key. It is a fact *about* an entity that some other attribute already
-identifies; the locator relation is `naturalKey -> SourceLocation`, and a position is the *value* the
-`locate` read returns, not the key it reads by. The shipped catalog holds this literally: `CompletionData`'s
-`Table`, `Column`, `Reference`, and `Method` carry *no* source position. goto-definition joins their stable
-key (the table's `classFqn`, the method's `(className, name, paramCount)` signature) against the LSP-owned
-`SourceWalker.Index` at request time. The reason is **cadence**: positions ride the `.java` / `.graphqls`
-source-edit cadence, which moves faster than the generator build cadence, so a position stored in the built
-catalog would freeze stale while the source kept moving. **Join, don't store.** Two consequences fall out:
-
-- **The relation is partial, so `locate` may return nothing.** Built-in scalars, bundled-directive types,
-  and methods on classes compiled without `-parameters` have no position; the absent entries of
-  `typeDefinitionLocations` are by design, not a gap. A read that is allowed to be empty must not be a key.
-- **Reverse-queryability is a secondary index, not keyhood.** That what-is-at-this-cursor can find an entity
-  by position (the `invert` read) does not make position the entity's key; it is a spatial index over the
-  locator relation, the reverse of `naturalKey -> SourceLocation`. A thing a reverse lookup can find is not
-  thereby keyed by what the lookup hands back.
-
-The rule splits by namespace in the DDL, and the split is the cadence argument applied per source. Java
-and Javadoc positions stay out of the store for exactly the reason above: they ride the source-edit
-cadence. SDL positions are different: the SDL *is* what capture parses, so its positions arrive in the
-same pass as the facts they locate (the co-sourcing argument from *Description*), and the capture schema
-stores `source_name` / `source_line` / `source_column` as columns, in the declaration-site key even,
-because two extensions of one type on one line are two sites. "Joined, not stored" remains the law for
-positions that move on a cadence the fact does not; it was never a ban on positions that share the fact's
-own cadence.
+Migrated: the cadence rule (joined, not stored), the deliberately partial locator relation, the
+reverse-queryability-is-not-keyhood point, and the SDL-cadence exception live in
+`docs/architecture/explanation/fact-model.adoc`, section "Derived reads are views, not stored facts".
 
 ## The unit is the emitted method
 
-The shipped field model (R290/R299/R305/R316) carries a hidden 1:1 assumption: **one schema coordinate
-== one graphitron field** (one `OutputField` leaf). That assumption is the root cause of the leaf
-cross-product (`Split` x `Lookup` x `Record` x `Composite` x ...): whenever a single SDL field has to
-contribute more than one thing to the emit, the multiplicity gets welded into a monolithic leaf as a
-repeating group or an extra duty. The pivot drops the 1:1, but the unit it drops *to* is the heart of
-this spec, and it is neither the field nor either library type. It is the **emitted Java method**:
-
-> **A schema coordinate is the input key to a lowering whose output is a referentially-closed graph of
-> emitted Java methods.** Each node is a method we generate; each edge is one method calling another by
-> name. The leaf zoo, the per-field "graphitron field", and the two library types (`DataFetcher`,
-> `QueryPart`) are all denormalized or partial views of that one graph.
-
-This spec is the **model**; consuming it (re-platforming the generator onto the lowering) was the R549
-programme's job (Done 2026-08-01), of which R314 (Done) shipped the reentry slice. The graph framing was reached by walking the actual emitters; the **Discovery** section
-below records that chain, each step pinned to a current emitter with line numbers. It superseded an
-earlier, narrower headline ("a coordinate lowers to one `DataFetcher` plus one or more `org.jooq.QueryPart`s")
-that named the SQL-side unit a level too fine. That earlier framing is kept in Discovery as the path in,
-not as the model.
+Migrated: the model statement (a schema coordinate is the input key to a lowering whose output is a
+referentially-closed graph of emitted Java methods; the leaf zoo, the per-field "graphitron field", and
+the two library types are denormalized or partial views of that one graph) lives in
+`docs/architecture/explanation/fact-model.adoc`, section "The back half: complete commands, a closed graph".
+The derivation chain, and the narrower superseded headline this section replaced, are recorded in
+*Discovery* below.
 
 ## The method call graph is the granularity
 
@@ -1474,46 +1288,20 @@ per participant, not part of type recovery.
 
 ## We are data modeling: the relational discipline, not a database engine
 
-Everything above is data modeling, and it has quietly adopted the whole vocabulary of a relational
-database: keyed relations, a foreign key (the coordinate), normalization (1NF on both repeating groups, the
-composite columns and the `operation` slot; 3NF on the split key-projection), and **referential integrity** (thread I's closure-under-reference is exactly that
-constraint on the edge relation). Taken to its end this looks like rebuilding a database, which raises the
-question honestly: should the generator just *use* one? This section originally answered no ("adopt the
-relational model as design discipline; do not adopt a relational runtime"), and that answer is
-**reversed**: the store is adopted (R595/R589), an embedded H2 database whose schema is this
-model's DDL, queried through jOOQ codegen over that DDL in the `graphitron-model` module. The reversal is
-recorded argument by argument, because each of the original three objections was answered by evidence
-rather than overruled:
+Migrated: the discipline's executable form (typed jOOQ access generated from the store's own DDL, the
+declared-FK versus detection-query split of referential integrity, the no-migrations lifecycle with
+compile time as the only compatibility surface) lives in `docs/architecture/explanation/fact-model.adoc`,
+section "The discipline has an executable form". The argument-by-argument reversal record of this
+section's original "no engine" answer is preserved in the git history; the spike measurement stays
+citable at `roadmap/audits/2026-08-05-fact-base-h2-spike.md`.
 
-- **The vocabulary is still the win.** Keys, joins, normalization, and referential integrity are what make
-  the leaf zoo dissolve; nothing in the reversal touches the modeling discipline. What changed is that the
-  discipline gained an executable form.
-- **"A SQL layer makes the model stringly-typed and moves exhaustiveness to runtime"** was answered by
-  codegen and module ordering: the generated jOOQ classes are the containment (typed access, no strings,
-  no JDBC), the module builds before core, and a DDL edit fails `javac` in every consumer that touched the
-  changed relation. Exhaustiveness stays with the compiler; the compiler just reads the DDL now.
-- **"A database buys throughput we don't need"** was conceded and made irrelevant: the store was chosen for
-  constraint mechanics (a base-relation key is a literal `PRIMARY KEY`, author-error rules are detection
-  queries), for dogfooding the stack the generator emits for consumers, and for the read-only SQL surface
-  it opens to agents. Latency was measured by the spike
-  (`roadmap/audits/2026-08-05-fact-base-h2-spike.md`) and is comfortable for build and on-save loops.
-- **"An engine freezes a still-discovered model"** inverted into the main benefit: since the database is
-  created at startup and dies with the process, there are no migrations and no persisted state of record,
-  so compile-time is the only compatibility surface the schema has. Changing the model is editing the DDL
-  and following the compiler, which is *more* fluid than editing a hand-rolled record web, not less.
-- **Referential integrity splits by what it can enforce.** Capture-structural edges (a field row's
-  declaration site, an application's host) are declared `FOREIGN KEY`s, order-free by the declared/spelled
-  split; author-spelled references deliberately carry no FK and are detection queries, because a dangling
-  author reference is a diagnostic, not a capture bug. Thread I's closure invariant is unchanged on the
-  emit side: it remains the falsifiable test over the method graph.
-
-The back half remains outside the store's ambitions: the emit side is imperative JavaPoet rendering that
-no engine makes easier, so the store carries the classification (front) half and the command relations,
-and determinism is owned at the emission boundary (whatever crosses into emission or diagnostics output is
-sorted at the crossing). The salsa-style incremental-memoization architecture this section once reserved
-is the road not taken: capture reads the type-definition registry (the linear half of graphql-java, never
-the superlinear assembly), and the warm-start cache (R595) is the surviving concession to LSP startup
-latency, a stamp-invalidated cache under `target/` that changes neither lifecycle property.
+What stays: the back half remains outside the store's ambitions. The emit side is imperative JavaPoet
+rendering that no engine makes easier, so the store carries the classification (front) half and the
+command relations, and determinism is owned at the emission boundary (whatever crosses into emission or
+diagnostics output is sorted at the crossing). The salsa-style incremental-memoization architecture this
+section once reserved is the road not taken: capture reads the type-definition registry (the linear half
+of graphql-java, never the superlinear assembly), and the warm-start cache is the surviving concession to
+LSP startup latency.
 
 ## Seam worklist (living table)
 

@@ -2,7 +2,7 @@
 :description: How a .graphqls schema flows through the Graphitron generator from parse to consumer compile.
 :!toc:
 
-The generator turns `.graphqls` files plus a jOOQ-generated database catalog into Java sources. The architecture is fact-oriented: a run transcribes everything it reads into a relational fact store, derives claims and violations as views over those base facts, joins facts into complete command rows, and folds a render shell over the committed commands. During the current strangler window a classification walk still produces the model most consumers read; that walk is a transitional surface, named as such below, and must not be mistaken for the destination.
+The generator turns `.graphqls` files plus a jOOQ-generated database catalog into Java sources. The architecture is fact-oriented: a run transcribes everything it reads into a relational fact store, derives claims and violations as views over those base facts, joins facts into complete command rows, and folds a render shell over the committed commands. During the current strangler window a classification walk still produces the model most consumers read; that walk is a transitional surface, named as such below, and must not be mistaken for the destination. This page owns the stages and their order; the modeling discipline behind the store is xref:fact-model.adoc[The fact model].
 
 [source,mermaid]
 ----
@@ -35,7 +35,7 @@ The stages below appear in the order `GraphQLRewriteGenerator.runPipeline` runs 
 
 == The derived strata: claims and violations as facts
 
-Above the base relations the DDL defines the `intent_` stratum as views: the authored claim views (`intent_authored_field_claim`, `intent_authored_type_claim`) union one arm per claiming relation, the resolved views reduce them, and `intent_authored_claim_conflict` detects coordinates carrying contradictory claims. `AuthoredClaimConflicts` reads that view and projects each conflict row into the same located `ValidationError` the retired walk-side detector sites used to produce. Violations are located facts, not log lines: the diagnostics stratum (`rejection_`, `lint_`, `build_warning_`, `javac_` relations) records rejection, lint, advisory and compile rows, unioned by the deliberately prefix-less `diagnostic` read surface that the MCP diagnostics tools serve. The diagnostics writers run in the dev session, which holds a live store handle across builds.
+Above the base relations the DDL defines the `intent_` stratum as views: the authored claim views (`intent_authored_field_claim`, `intent_authored_type_claim`) union one arm per claiming relation, the resolved views reduce them, and `intent_authored_claim_conflict` detects coordinates carrying contradictory claims. `AuthoredClaimConflicts` reads that view and projects each conflict row into the same located `ValidationError` the retired walk-side detector sites used to produce. The diagnostics stratum (`rejection_`, `lint_`, `build_warning_`, `javac_` relations) records rejection, lint, advisory and compile rows, unioned by the deliberately prefix-less `diagnostic` read surface that the MCP diagnostics tools serve; why a violation is a row rather than a log line is xref:fact-model.adoc[The fact model]. The diagnostics writers run in the dev session, which holds a live store handle across builds.
 
 == Validation derives
 
@@ -43,11 +43,11 @@ Above the base relations the DDL defines the `intent_` stratum as views: the aut
 
 == Planning joins
 
-`EmitPlan.produce` joins the model's facts into the command relations the run will render: the launcher relation (one row per covered coordinate), the condition relation (one row per filtered coordinate and resolved table), the projection relation (one row per projection unit), the fetcher-edge relation, the type-unit relation, and the global commands. A command is complete: everything the renderer needs is on the row, and the shell downstream decides nothing. The `command` / `plan` / `render` package triangle keeps producers and consumers apart, enforced by `PackageImportDirectionTest`.
+`EmitPlan.produce` joins the model's facts into the command relations the run will render: the launcher relation (one row per covered coordinate), the condition relation (one row per filtered coordinate and resolved table), the projection relation (one row per projection unit), the fetcher-edge relation, the type-unit relation, and the global commands. Commands are complete rows; the completeness law, the package triangle that enforces the producer/consumer split, and the naming regime are xref:fact-model.adoc[The fact model].
 
 == Render: the shell folds
 
-`GraphQLRewriteGenerator.runPipeline` folds over each committed relation and hands every row to its renderer (`RootLauncherRenderer`, `ConditionGlueRenderer`, `ProjectionUnitRenderer`, and the schema, record and global emitters). The fold enforces closure in both directions: a renderer emitting a unit the plan never committed fails the run, and a committed unit no renderer emitted fails it too. The emitted method call graph is closed, pinned by `MethodClosureOracleTest` (every callee name in every emitted body resolves to a method the generator also emitted) and `LauncherRelationClosureTest` (every covered coordinate has exactly one launcher row, every row resolves to an emitted method, and no two rows claim the same method).
+`GraphQLRewriteGenerator.runPipeline` folds over each committed relation and hands every row to its renderer (`RootLauncherRenderer`, `ConditionGlueRenderer`, `ProjectionUnitRenderer`, and the schema, record and global emitters). The fold enforces closure in both directions: a renderer emitting a unit the plan never committed fails the run, and a committed unit no renderer emitted fails it too. The closure invariant over the emitted method call graph, and the oracles that pin it, are xref:fact-model.adoc[The fact model].
 
 == Write: the idempotency contract (unchanged)
 
@@ -62,7 +62,7 @@ On every run, `JavaFile.writeToPath` writes only files whose rendered content di
 The store shipped beside the live walk, not instead of it, and the migration drains one consumer at a time. What that means concretely today:
 
 * Capture is total, but most relations are populated ahead of their readers. The store's production readers today are the authored-claim conflict detection (whose verdicts also feed the LSP/MCP conflict overlay) and the `diagnostic` view; planning still joins facts gathered by the classification walk. `FactCaptureAgreementTest` keeps the two pictures honest with a mechanical driver over every generated relation and no skip list, so a new relation cannot arrive unchecked.
-* `GraphitronSchema` and the leaf classifier stay live until each consumer re-sources onto the store. Extending them is migration debt; the rule during the window is that new facts land only in the store.
+* `GraphitronSchema` and the leaf classifier stay live until each consumer re-sources onto the store. Extending them is migration debt; the rule during the window is that new facts land only in the store, per the re-sourcing invariant in xref:fact-model.adoc[The fact model].
 * The schema gates (`FactSchemaGateTest`) hold the store's own invariants: total comment coverage, dense ordinals, verbatim-transcription twins for every decode, and the graph-partition rules. A failure there is a capture bug or a DDL defect, never an author error.
 
 xref:index.adoc[← Explanation index]
