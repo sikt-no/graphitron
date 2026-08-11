@@ -1,7 +1,7 @@
 ---
 id: R569
 title: "Violation facts in the store; the MCP aggregate is their first reader"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 5
 theme: diagnostics
@@ -1119,6 +1119,60 @@ is supposed to produce.
   `nodeid-migration-quickfix`'s to decide.
 - Aggregation over anything but the two channels `diagnostics` already unions (validator
   output and `graphitron:dev` compile diagnostics).
+
+## In Review note
+
+All five phases landed, in order, as `5b0614f` (phase 1, shadowed), `10f0711` (phase 2, the
+cutover), `c41f244` (phases 3 and 4, DDL plus loaders in one commit so the ORACLE registrations
+never sat on trunk without writers and anchors), and `5abd97b` (phase 5, the tool, the widened
+filters, the routing line and the manual row in one commit per the coverage pin). Full reactor
+green with tests at each landing.
+
+**The `messageTemplate` measurement, per the reviewer decision (default: omit).** Measured on
+2026-08-11 over the reactor's own fixture corpus (`ClassifiedCorpus.examples()`, 53 schemas run
+through `ClassifiedHarness` and the walk's validator): 23 walk errors total, of which 17
+`AuthorError.Structural` and 1 `InvalidSchema.Structural`. The 18 Structural rows span 8
+distinct sentence shapes, and one template ("return type 'X' is not a @table, interface, or
+union Graphitron type") accounts for 8 of them. Production sources carry 308
+`Rejection.structural(` and 31 `Rejection.invalidSchema(` mint sites. The advisory population
+is the two shipped producers, permanent, with no typed dimension. Decision: **omitted.** The
+corpus over-represents Structural by construction (its fixtures exercise failure arms against
+dummy services), the observed real-migration population clustered on typed keys, a Structural
+bucket's exact count and drill-down are already served by `variant` plus `where`, and the
+substrate a template would group on is the rendering the fact-base direction is deleting. The
+dimension gloss states that advisory rows group by location only, and the partition pin
+(`DiagnosticDimensionCoverageTest`) declares two buckets, so the prose bucket's absence is
+pinned rather than implied.
+
+**Implementation deviations from the spec text, for the reviewer's eyes rather than discovery:**
+
+- `walk_claim_domain` landed as two per-grain relations (`walk_claim_domain_type`,
+  `walk_claim_domain_field`): a single relation needs a NULL `field_name` inside a primary key
+  on type-grain rows, which H2 refuses and which is the NULL-encodes-the-arm smell this spec
+  itself rejects for the lint split; the claim views' per-grain shape is the precedent.
+- Class-valued columns (`variant`, `stub_key`) store the package-stripped canonical spelling,
+  not the simple name: bare simple names fuse `AuthorError.Structural` with
+  `InvalidSchema.Structural` and the two `NoUniqueKeyCoverage` leaves, in the very dimension
+  that exists to split them. The drainage pin's duplicate check caught this before landing.
+- The residue relation is named `rejection_validation_error` (the spec pinned only the family
+  prefix).
+- The pilot view carries both the sorted canonical `directives` dimension and a fully rendered
+  `message` column; the declaration-order render lives only inside the message, where
+  `AuthoredClaim`'s enum order owns it, so no SQL copy of the enum order sits on the dimension
+  path.
+- One-spelling `file` across arms is kept by an inline-source H2 alias `canonical_uri` in the
+  DDL restating `ValidationReport.canonicalUri` for the pilot arm's raw source names, pinned
+  byte-identical by a parity test (percent-encoding included).
+- `diagnostic.lsp_code` also carries javac's `Diagnostic.getCode()` on compile rows; the view
+  is the only read surface, so javac's one typed dimension would otherwise be unreachable, and
+  the two code namespaces cannot collide. The column comment states both oracles.
+- A fifth shipped test needed the substrate migration beyond the four the spec named:
+  `DiagnosticsToolCompileSourceTest` drove the tool function directly and now writes through
+  `CompileFacts` into an in-memory store; `ServerInstructionsTest`'s paged-tool pin likewise
+  gained a loader-written store for the diagnostics fixture.
+
+Ambient re-measure at landing: base 2893, composed 3146 against the 3600 budget; the routing
+line cost 165 characters.
 
 ## Review lineage
 
