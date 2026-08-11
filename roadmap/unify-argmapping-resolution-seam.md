@@ -1,7 +1,7 @@
 ---
 id: R624
 title: "Unify argMapping resolution on one seam across every directive"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 2
 theme: classification-model

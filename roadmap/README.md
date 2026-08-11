@@ -15,7 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R617` | Lookup misses drop rows instead of holding their position | Ready | 2026-08-10 <sub>created 2026-08-09</sub> | [plan](lookup-positional-contract-unimplemented.md) |
-| `R624` | Unify argMapping resolution on one seam across every directive | Ready | 2026-08-11 | [plan](unify-argmapping-resolution-seam.md) |
+| `R624` | Unify argMapping resolution on one seam across every directive | In Progress | 2026-08-11 | [plan](unify-argmapping-resolution-seam.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R629` | Mountable GraphQL-over-HTTP delegate with an explicit operation policy | Spec | 2026-08-11 | [plan](mountable-graphql-http-delegate.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-10 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
@@ -232,7 +232,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R234` [**Support jOOQ embedded and UDT records as non-table input backings**](jooq-embedded-and-udt-input-backings.md) — Backlog, architecture
 - `R523` [**Carry field SourceLocations through the tenant-binding fold rejections**](tenant-fold-rejection-source-locations.md) — Backlog, tech-debt
-- `R624` [**Unify argMapping resolution on one seam across every directive**](unify-argmapping-resolution-seam.md) — Ready, architecture
+- `R624` [**Unify argMapping resolution on one seam across every directive**](unify-argmapping-resolution-seam.md) — In Progress, architecture
 - `R628` [**Producer-binding probe grounds a dot-path leaf parameter against the outer input type**](producer-probe-dotpath-misgrounding.md) — Backlog, bug
 - `R333` [**The Graphitron data model**](coordinate-lowers-to-datafetcher-queryparts.md) — Ready, structural
 - `R612` [**The schema scan and its freshness replay share one typed recipe**](maven-config-fact-family.md) — Ready, architecture
