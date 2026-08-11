@@ -240,6 +240,19 @@ public class ProviderTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Handlers of different types that are equal on all other fields get separate mappings")
+    void equalMappingsAcrossHandlerTypes() {
+        assertGeneratedContentContains(
+                "equalMappingsAcrossHandlerTypes", Set.of(MUTATION_RESPONSE),
+                "m1 = new DataAccessExceptionContentToErrorMapping(",
+                "m2 = new GenericExceptionContentToErrorMapping(" +
+                        "new GenericExceptionMatcher(\"org.jooq.exception.DataAccessException\", null)",
+                "mutationDatabaseList = List.of(m1)",
+                "mutationGenericList = List.of(m2)"
+        );
+    }
+
+    @Test
     @DisplayName("Operations with identical mapping lists share one generated list")
     void sharedLists() {
         assertGeneratedContentContains(

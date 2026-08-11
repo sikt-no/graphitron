@@ -89,8 +89,16 @@ public class ExceptionToErrorMappingProviderGenerator extends AbstractSchemaClas
     private record MappingListKey(ErrorHandlerType handler, List<String> mappingNames) {
     }
 
+    /**
+     * Memoization key for mapping variables. Includes the handler type explicitly, as
+     * {@link ExceptionToErrorMapping#equals} does not, and mappings for different handler types must
+     * never share a variable since they are declared with different types.
+     */
+    private record MappingKey(ErrorHandlerType handler, ExceptionToErrorMapping mapping) {
+    }
+
     private ProviderContent collectContent(SchemaDefinition schemaDefinition) {
-        var mappingVariableNames = new HashMap<ExceptionToErrorMapping, String>();
+        var mappingVariableNames = new HashMap<MappingKey, String>();
         var mappingDeclarations = new ArrayList<MappingDeclaration>();
         var operationNamesForList = new LinkedHashMap<MappingListKey, List<String>>();
 
@@ -136,7 +144,7 @@ public class ExceptionToErrorMappingProviderGenerator extends AbstractSchemaClas
     private List<String> mappingNamesFor(
             List<ExceptionDefinition> exceptionDefinitions,
             ErrorHandlerType handlerType,
-            Map<ExceptionToErrorMapping, String> mappingVariableNames,
+            Map<MappingKey, String> mappingVariableNames,
             List<MappingDeclaration> mappingDeclarations
     ) {
         return exceptionDefinitions.stream()
@@ -144,12 +152,13 @@ public class ExceptionToErrorMappingProviderGenerator extends AbstractSchemaClas
                 .flatMap(Collection::stream)
                 .filter(it -> it.getHandler() == handlerType)
                 .map(it -> {
-                    var existingName = mappingVariableNames.get(it);
+                    var key = new MappingKey(handlerType, it);
+                    var existingName = mappingVariableNames.get(key);
                     if (existingName != null) {
                         return existingName;
                     }
                     var name = MAPPING_VARIABLE_PREFIX + (mappingVariableNames.size() + 1);
-                    mappingVariableNames.put(it, name);
+                    mappingVariableNames.put(key, name);
                     mappingDeclarations.add(new MappingDeclaration(name, handlerType, createExceptionToErrorMappingCodeBlock(it)));
                     return name;
                 })

@@ -1,0 +1,10 @@
+type Response {
+  errors: [SomeError]
+}
+
+# The DATABASE handler defaults to the same class name as the GENERIC handler specifies, making the
+# two mappings equal on every field except the handler type.
+type SomeError implements Error @error(handlers: [{handler: DATABASE}, {handler: GENERIC, className: "org.jooq.exception.DataAccessException"}]) {
+  path: [String!]!
+  message: String!
+}
