@@ -228,14 +228,16 @@ javadoc to scope the invariant accordingly.
   reflection-conditional checking.
 - **`@service` with `@externalField` on one field keeps rejecting.** Both
   stay classification-claiming directives for the whole migration window, so
-  co-occurrence stays a conflict, and nothing here retires it. The pair has
-  no entry in `pairVerdict` (it takes the default `Conflict` verdict); what
-  names the two directives is the `present` list in
-  `detectChildFieldConflict`. Dropping either would let `@service` win
-  silently, since `classifyChildFieldOnTableType` tests `@service` ahead of
-  `@externalField` and would discard the second reference with no
-  diagnostic. The `@externalField` slot leaves that list at the cutover,
-  when the directive itself goes.
+  co-occurrence stays a conflict, and nothing here retires it. Since the
+  claim views landed, what names the two directives is their arms in
+  `intent_authored_field_claim`: each contributes a claim, and the
+  co-occurrence surfaces as two claims on one coordinate through the
+  `AuthoredClaimConflicts` grouping detection. Dropping the `@externalField`
+  arm early would let `@service` win silently, since
+  `classifyChildFieldOnTableType` tests `@service` ahead of `@externalField`
+  and the walk's arm-order winner would stand with no diagnostic. The
+  `@externalField` arm leaves the claim view at the cutover, when the
+  directive itself goes.
 - **An omitted `method:` defaults for the pick, then the arm decides whether
   the default was legal.** The computed shape's field-name convention has to
   reach the `@service` entry (a migrated site that omitted `method:` must keep

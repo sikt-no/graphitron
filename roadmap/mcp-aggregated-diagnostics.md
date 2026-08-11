@@ -476,9 +476,11 @@ Boundaries and placement, so they are reviewed rather than discovered. `unified-
 (R601) collapses the schema-side report channels, which under this design simplifies the
 validator loader (one load instead of two slots plus a never-added third), not the
 aggregate; it stays non-blocking. The aggregate's jOOQ queries live in `graphitron-mcp` beside
-the tool (the generated classes are the containment, per the rejected-facade reasoning in
-`validation-adds-facts`; `graphitron-model` hosts model code only), and the validator
-loader lives in `graphitron` beside the report's producer.
+the tool (the generated classes are the containment: R589 rejected a typed store facade because
+mediating all access would reconstruct the fixed method vocabulary the store was chosen to
+escape and duplicate every relation into a second hand-written surface, while jOOQ's generated
+classes already give typed access with no strings and no JDBC; `graphitron-model` hosts model
+code only), and the validator loader lives in `graphitron` beside the report's producer.
 
 That placement is the correction of an earlier draft's, and the correction matters enough to
 state rather than quietly apply. The draft put the loader at the workspace layer and claimed it

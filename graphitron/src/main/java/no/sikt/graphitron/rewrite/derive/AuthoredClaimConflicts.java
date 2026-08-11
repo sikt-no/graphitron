@@ -33,9 +33,9 @@ import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_TYPE_CLAIM;
  * {@link Rejection.InvalidSchema.DirectiveConflict} naming every claim in declaration order
  * (which reproduces the walk's per-position list orders), with one carve-out: exactly the
  * routine and lookup pair is the recognised-but-unsupported combination and mints the pinned
- * typed {@link Rejection.Deferred} instead. The old pairwise table's Composes row (routine with
- * splitQuery) needs no counterpart because {@code @splitQuery} never claims: it has no view arm,
- * so the combination never reaches the reduction.
+ * typed {@link Rejection.Deferred} instead. {@code @splitQuery} is a delivery-axis directive that
+ * never claims: it has no view arm, so a routine-with-splitQuery co-occurrence never reaches the
+ * reduction.
  *
  * <p>The field grain returns its reduction as a typed {@link FieldVerdict} rather than a bare
  * error: the verdict carries the coordinate's {@link FieldClaim}s enriched with their decoded

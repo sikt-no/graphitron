@@ -5,7 +5,7 @@ status: Backlog
 bucket: feature
 priority: 10
 theme: routine
-depends-on: [validation-adds-facts]
+depends-on: []
 created: 2026-08-10
 last-updated: 2026-08-10
 ---
@@ -30,8 +30,9 @@ rows from capture (one row per element, phase-independent), so the hop-0 pairs b
 derivation view joining step position 0 (or the defaulted element table, which is the implicit
 form as the same view) against the catalog's PK columns, its failure modes become detection
 queries minting located violation facts, and "where does the path parse" stops being a design
-question. Per the strangler frame in `roadmap/validation-adds-facts.md` (migration keyed by
-consumer, derivations built when the first consumer needing them migrates), this item is a
+question. Per the strangler frame (migration off `GraphitronSchema` onto the store keyed by
+consumer, derivations built when the first consumer needing them migrates; R589's changelog
+entry is the record), this item is a
 candidate first consumer that pulls the carrier-classification neighbourhood onto the store,
 and it should be specced as views over the reference-step relation, not as a new parse seat on
 the legacy pipeline.
