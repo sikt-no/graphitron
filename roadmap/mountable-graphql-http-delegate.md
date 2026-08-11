@@ -1,7 +1,7 @@
 ---
 id: R629
 title: "Mountable GraphQL-over-HTTP delegate with an explicit operation policy"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 3
 theme: runtime-connection
