@@ -798,8 +798,12 @@ hole the dropped capability lift would have closed in the type system.
   takes its shape: a question, the tool, and at most one follow-on sentence. The ceiling is real
   but not tight, and the measurement is here so the line does not get over-compressed to fit a
   budget it comfortably clears: `ServerInstructionsTest`'s `AMBIENT_CHARACTER_BUDGET` is 3600, the
-  composed string measures 2816 (2564 base plus the 252-character execute tail), and the draft
-  below is 269. Roughly 780 characters of headroom.
+  composed string measures 2976 (2722 base, plus the two-newline join and the 252-character
+  execute tail), and the draft below is 171, which lands the composed string at about 3148.
+  Roughly 620 characters of headroom before the line, 450 after it. Re-measure at implementation
+  rather than trusting these figures: the pair this bullet carried until the Spec review (2564
+  base, 2817 composed) was R584's own landing measurement, correct when written and falsified by
+  R589's sixth slice growing the base file.
 - `docs/manual/how-to/mcp-agent-context.adoc`: the per-tool table gains a `diagnostics.aggregate`
   row beside the existing `diagnostics` one. This is the user-facing surface the shipped
   `docs.search` / `catalog.search` tools landed prose on, and the draft omitted it.
@@ -978,3 +982,99 @@ is supposed to produce.
   `nodeid-migration-quickfix`'s to decide.
 - Aggregation over anything but the two channels `diagnostics` already unions (validator
   output and `graphitron:dev` compile diagnostics).
+
+## Reviewer pass (Spec → Ready gate, 2026-08-11)
+
+An independent reviewer session, status stays `Spec`. The verification half came back
+almost entirely clean, which is worth stating plainly because it should not be re-done on
+the next pass: every code, test, relation and symbol this body names exists as named, and
+the precise counts are right on today's tree. Spot-checked and confirmed: forty-two
+`lspCode()` sites declared by exactly the nine sub-seals listed, `PivotError` carrying
+twelve; nine `AttemptKind` values including the five the motivation leans on; `StubKey`'s
+single `VariantClass` permit with its nullable `fieldClass`; `RejectionSeverityCoverageTest`
+walking every leaf permit reflectively and asserting severity only; the agreement driver's
+closed `Arm { CONTAINMENT, EQUALITY, DERIVED, ORACLE }` with `javac_diagnostic` already
+`ORACLE`, so "no new arm" holds; `graphitron-mcp` genuinely free of `no.sikt.graphitron.model`
+and `DSLContext` in main sources, with `graphitron-model` reaching it transitively through
+`graphitron`; `DevMojo` opening `sessionStore` before both its first `Workspace.setBuildOutput`
+and its single `GraphitronMcpServer` construction, so the plumbing lands where the body says;
+`buildOutput` holding `GraphitronSchemaValidator`'s list separate exactly one line before
+`errors.addAll(detection.violations())`; the DDL header's naming doctrine with `jooq_` and
+`extension_` as its stated counterexamples; `FactSchemaGateTest`'s exemption polarity, so the
+new relations pass its two graph gates with nothing to argue; `ValidationReport.canonicalUri`
+declared the single canonical site; `DemandShadowTest` asserting equality only outside named
+residues. R584's changelog entry independently corroborates the one-commit sequencing claim,
+naming `diagnostics.aggregate` as the mutation its reverse direction catches.
+
+Four things block sign-off. Three need an author decision; the fourth was a factual
+correction and is already applied above.
+
+1. **Two of the four new relations have no name, and the one that does is handed a family
+   whose stated justification excludes it.** The lint arm is "its own relation and writer"
+   in four places and never named. `rejection_` earns fifteen lines arguing its name against
+   `validator_`, and the DDL header makes the prefix a deliberate per-relation decision
+   ("Picking a prefix for a new relation. Six families ..."), so leaving the lint family to
+   the implementer re-opens exactly the question the residue passage settles. Worse, Phasing
+   row 1 puts the reified `ClaimDomain` rows "in the residue's retiring-vocabulary family",
+   while that family's whole warrant is that "the rows are written in the sealed `Rejection`
+   hierarchy's spellings and no other vocabulary: `kind`, `variant`, `lsp_code`,
+   `attempt_kind`, `stub_key`". Walk-reach type and field membership carries none of those
+   words. Either the placement or the warrant has to give. Adding families also edits the
+   header's own enumeration, which Implementation sites does not list.
+
+2. **The reified `ClaimDomain` relation has no stated writer or cadence, and the wrong choice
+   silently moves the accept line.** Both readings are supported by the body as written:
+   "beside the residue" (whose loaders take a live handle at the dev session's cadence) and
+   "the pilot view needs no cadence at all ... even a batch run's store carries the
+   claim-conflict family". Only one of them is true. Capture cadence works and is cheap:
+   `FactCapture.runInternal` already holds the `ClaimDomain` at the site between
+   `capture(...)` and `detect(...)`, so the rows can be written there and the batch claim
+   holds. Dev cadence leaves the pilot view empty in a batch build, and after step 2's
+   cutover the claim-conflict family stops minting there, which is an accept-line change the
+   Out of scope section forbids by name. One sentence naming the writer closes this, and it
+   is load-bearing enough that the implementer should not be the one picking.
+
+3. **"No degradation posture is needed, and inventing one would be the error" is true for
+   production and false for the two test-tier pins this item makes mandatory.**
+   `GraphitronMcpServerTest`'s `containsExactlyInAnyOrder` boot is
+   `new GraphitronMcpServer(loopback(0), new Workspace())`, and `ServerInstructionsTest`'s
+   `server(...)` helper is the full constructor with `null, null, null, executeConfig` and a
+   bare `Workspace`. Neither carries a store. Both must advertise `diagnostics.aggregate`
+   after this item: the body requires the first, and the second derives its advertised
+   surface from a booted server, so registration reaches it whether or not anyone edits it.
+   A handle-less server therefore exists and advertises the tool, and the implementer is
+   forced to decide what a call does there by a sentence telling them that deciding is the
+   error. Resolve it either way (short constructor passes a null handle and the tool answers
+   a stated shape, or those boots get a real store), but resolve it here.
+
+4. **Applied, not left for the author: the ambient character measurements were stale.**
+   The bullet whose stated purpose is the measurement carried 2564 base / 2816 composed / 269
+   draft / ~780 headroom. Measured on today's tree: base 2722 stripped, tail 252, composed
+   2976, headroom 624, and the drafted routing line is 171 characters, landing at ~3148. The
+   old pair was R584's landing measurement, falsified by `d20e9cc` (R589 slice 6) eleven
+   commits before this body's last revision, so the figures were already stale when written.
+   The conclusion survives intact, which is why this is a correction rather than a design
+   finding, but it is the shape `development-principles.adoc` § "Documentation names only
+   live tests/code" calls out as true when written and silently falsified as the code moves.
+   Corrected in place, with a re-measure instruction, since the passage exists to spare the
+   implementer this exact derivation.
+
+Three non-blocking notes for the same rewrite:
+
+- **The prescribed MCP-tier fixture needs three steps more than "take it as the template".**
+  `LintSuppressionDiagnosticsParityTest` is the right precedent and does drive the real
+  `buildOutput` onto a `Workspace` from `graphitron-mcp`, as claimed. But its `RewriteContext`
+  leaves `storeDirectory` null, and `FactCapture.runInternal` then opens a private in-memory
+  store, captures, detects and closes it inside `buildOutput()`, so nothing survives for a
+  reader. `RewriteContext.withStoreDirectory` was deleted at R610 as a retirement-sweep
+  survivor, so the only way in is the sixteen-arg canonical constructor. The fixture also has
+  to invoke the residue loader itself, since `DevMojo` is not in play, and open its own handle
+  for the server. All feasible, and worth a sentence so the implementer does not discover it.
+- **"The draft's five open questions" heads six bullets**, and one of them is cited
+  positionally as "reviewer decision 4" in the residue passage. Numbering the bullets, or
+  naming that decision, fixes both.
+- **The carve of steps 1 and 2 reads stronger than "a reviewer who wanted it would have a
+  fair case".** The pilot is a store-native derivation replacing a Java reduction behind a
+  shadow-then-cutover anchor move; the aggregate is a wire-facing pivot tool. Different
+  failure modes, different reviewer attention, and step 5 needs step 1 only for the view's
+  existence as a union arm. Still the author's call.
