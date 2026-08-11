@@ -16,7 +16,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R617` | Lookup misses drop rows instead of holding their position | Ready | 2026-08-10 <sub>created 2026-08-09</sub> | [plan](lookup-positional-contract-unimplemented.md) |
 | `R624` | Unify argMapping resolution on one seam across every directive | Ready | 2026-08-11 | [plan](unify-argmapping-resolution-seam.md) |
-| `R621` | Legacy v9: split GeneratedExceptionToErrorMappingProvider under the 64KiB method limit | Spec | 2026-08-10 | [plan](legacy-exception-provider-method-size.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-10 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R612` | The schema scan and its freshness replay share one typed recipe | Ready | 2026-08-10 <sub>created 2026-08-08</sub> | [plan](maven-config-fact-family.md) |
@@ -412,7 +411,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### legacy-migration
 
-- `R621` [**Legacy v9: split GeneratedExceptionToErrorMappingProvider under the 64KiB method limit**](legacy-exception-provider-method-size.md) — Spec, bug
 - `R360` [**Retire the @enum directive; infer enum Java backing from producers**](retire-enum-directive.md) — Backlog, cleanup
 - `R540` [**mutation.adoc documents UPSERT the generator refuses at dispatch**](upsert-docs-match-dispatch-refusal.md) — Backlog, docs
 
