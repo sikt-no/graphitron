@@ -2,6 +2,8 @@ package no.sikt.graphitron.rewrite.derive;
 
 import graphql.language.SourceLocation;
 
+import java.util.List;
+
 /**
  * One authored claim at a field coordinate, as the {@code intent_authored_field_claim} view
  * states it, enriched with the claiming directive's own decoded slot facts. One arm per
@@ -62,9 +64,16 @@ public sealed interface FieldClaim {
         @Override public AuthoredClaim classifier() { return AuthoredClaim.LOOKUP_KEY; }
     }
 
-    /** {@code @routine}: the minimum-ordinal application's routine reference, as written. */
-    record Routine(String routineRef, String trigger, boolean decoded, SourceLocation location)
+    /**
+     * {@code @routine}: the chain's routine references in application-ordinal order. The
+     * repeatable directive's whole chain is one claim (two applications must never read as
+     * routine-conflicting-with-routine), and its steps are the claim's slot facts.
+     */
+    record Routine(List<String> routineRefs, String trigger, boolean decoded, SourceLocation location)
         implements FieldClaim {
+        public Routine {
+            routineRefs = routineRefs == null ? null : List.copyOf(routineRefs);
+        }
         @Override public AuthoredClaim classifier() { return AuthoredClaim.ROUTINE; }
     }
 

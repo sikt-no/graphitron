@@ -512,6 +512,21 @@ class GraphitronMcpServerTest {
                 assertThat(location).containsEntry("uri", "file:///schema.graphqls")
                     .containsEntry("line", 11);
             });
+
+            // A chained @routine crosses the wire as ONE claim whose routineRefs carry the
+            // steps in application-ordinal order; the chain never renders as rival claims.
+            var query = structured(client.callTool(McpSchema.CallToolRequest.builder("schema")
+                .arguments(Map.of("type", "Query")).build()));
+            var queryTypes = (List<Map<String, Object>>) query.get("types");
+            assertThat(queryTypes).singleElement().satisfies(t -> {
+                var fields = (List<Map<String, Object>>) t.get("fields");
+                var films = (Map<String, Object>) fields.getFirst().get("classification");
+                var claims = (List<Map<String, Object>>) films.get("claims");
+                assertThat(claims).hasSize(2);
+                assertThat(claims.get(1))
+                    .containsEntry("classifier", "Routine")
+                    .containsEntry("routineRefs", List.of("first_fn", "second_fn"));
+            });
         }
     }
 
@@ -1238,12 +1253,18 @@ class GraphitronMcpServerTest {
             new FieldClassification.Claim.Mutation("DELETE", "film", "mutation", true,
                 new CompletionData.SourceLocation("file:///schema.graphqls", 11, 2))),
             "@service, @mutation are mutually exclusive");
+        var chained = new FieldClassification.Conflicted(List.of(
+            new FieldClassification.Claim.Service("com.example.FilmService", "run", "service", true, null),
+            new FieldClassification.Claim.Routine(List.of("first_fn", "second_fn"), "routine", true, null)),
+            "@service, @routine are mutually exclusive");
         Map<String, FieldClassification> fields = Map.of(
             "Mutation.deleteFilm", conflicted,
-            "Mutation.broken", new FieldClassification.Unresolvable("no matching classification rule"));
+            "Mutation.broken", new FieldClassification.Unresolvable("no matching classification rule"),
+            "Query.films", chained);
         var snapshot = new LspSchemaSnapshot.Built.Current(
             List.of(), Map.of(), Map.of(), fields,
-            Map.of("Mutation", new TypeClassification.Root("mutation")), Map.of());
+            Map.of("Mutation", new TypeClassification.Root("mutation"),
+                "Query", new TypeClassification.Root("query")), Map.of());
         return builtWorkspace(CompletionData.empty(), snapshot, ValidationReport.empty());
     }
 

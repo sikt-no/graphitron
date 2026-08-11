@@ -459,7 +459,7 @@ final class SchemaView {
                 m.put("classifier", "LookupKey");
             case FieldClassification.Claim.Routine c -> {
                 m.put("classifier", "Routine");
-                McpWire.putIfNotNull(m, "routineRef", c.routineRef());
+                McpWire.putIfNotNull(m, "routineRefs", c.routineRefs());
             }
             case FieldClassification.Claim.Mutation c -> {
                 m.put("classifier", "Mutation");

@@ -199,6 +199,30 @@ class DeclarationHoversTest {
             .contains("Violation: @service, @mutation are mutually exclusive");
     }
 
+    @Test
+    void routineChainRendersAsOneClaimLine() {
+        // A chained @routine is one claim whose steps are its slot facts: one line, the steps
+        // joined in application-ordinal order, never two rival-looking Routine lines.
+        var file = file("""
+            type Query {
+                films: [Film] @service(service: {className: "com.example.FilmService", method: "run"}) @routine(name: "first_fn") @routine(name: "second_fn")
+            }
+            """);
+        var pos = pointAt(file, 1, "    fil".length());
+
+        var snapshot = snapshotWith(
+            Map.of("Query.films", new FieldClassification.Conflicted(
+                java.util.List.of(
+                    new FieldClassification.Claim.Service("com.example.FilmService", "run", "service", true, null),
+                    new FieldClassification.Claim.Routine(
+                        java.util.List.of("first_fn", "second_fn"), "routine", true, null)),
+                "@service, @routine are mutually exclusive")),
+            Map.of());
+        var hover = DeclarationHovers.compute(file, snapshot, pos).orElseThrow();
+        var md = hover.getContents().getRight().getValue();
+        assertThat(md).contains("Routine (@routine): `first_fn` → `second_fn`");
+    }
+
     // ===== extend type X { ... } parity =====
 
     @Test

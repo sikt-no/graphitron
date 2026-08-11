@@ -252,7 +252,7 @@ public final class CatalogBuilder {
                 case FieldClaim.LookupKey c -> new FieldClassification.Claim.LookupKey(
                     c.trigger(), c.decoded(), claimLocation(c.location()));
                 case FieldClaim.Routine c -> new FieldClassification.Claim.Routine(
-                    c.routineRef(), c.trigger(), c.decoded(), claimLocation(c.location()));
+                    c.routineRefs(), c.trigger(), c.decoded(), claimLocation(c.location()));
                 case FieldClaim.Mutation c -> new FieldClassification.Claim.Mutation(
                     c.operation(), c.tableRef(), c.trigger(), c.decoded(), claimLocation(c.location()));
             });

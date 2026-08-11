@@ -1323,8 +1323,12 @@ verb literal renders faithfully) and its table slot is `graphitron_mutation.tabl
 a claim's slots are the directive's own decoded columns, and inventing a resolution rung (the
 input argument's `@table`, or the return-derived rung) would fork the single-producer
 write-target precedence and let the projection assert a table the classifier refuses.
-`Service` and `ExternalField` carry the class and method pair, `Routine` the minimum-ordinal
-`routine_ref`, `NodeId` its `node_type_ref`, `LookupKey` provenance only. Enrichment joins
+`Service` and `ExternalField` carry the class and method pair, `Routine` the chain's
+`routine_ref`s in application-ordinal order (the claim view collapses the repeatable ordinal
+grain to one claim row per coordinate, so a chain never reads as
+routine-conflicting-with-routine, and per slice 2's own words the chain is one claim whose
+steps are the claim's slot facts; the first landing carried only the minimum-ordinal ref,
+caught in review), `NodeId` its `node_type_ref`, `LookupKey` provenance only. Enrichment joins
 each claim's semantic relation Java-side in the derive reader, scoped to conflicted
 coordinates; per-classifier slot views were considered and declined because each would
 re-project a single base relation 1:1 with no derivation content. The arm-list agreement has a

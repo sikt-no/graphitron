@@ -506,9 +506,18 @@ public sealed interface FieldClassification
         record LookupKey(String trigger, boolean decoded,
                          CompletionData.SourceLocation location) implements Claim {}
 
-        /** {@code @routine}: the minimum-ordinal application's routine reference, as written. */
-        record Routine(String routineRef, String trigger, boolean decoded,
-                       CompletionData.SourceLocation location) implements Claim {}
+        /**
+         * {@code @routine}: the chain's routine references in application-ordinal order. The
+         * repeatable directive's whole chain is one claim, so the claims list's cardinality
+         * stays the conflict signal; more than one reference here means the author chained,
+         * not that routines rival each other.
+         */
+        record Routine(List<String> routineRefs, String trigger, boolean decoded,
+                       CompletionData.SourceLocation location) implements Claim {
+            public Routine {
+                routineRefs = routineRefs == null ? null : List.copyOf(routineRefs);
+            }
+        }
 
         /**
          * {@code @mutation}: the DML verb as written (a string, so a broken literal renders

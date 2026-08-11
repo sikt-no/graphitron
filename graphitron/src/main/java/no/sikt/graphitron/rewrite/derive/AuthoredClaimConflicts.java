@@ -239,16 +239,15 @@ public final class AuthoredClaimConflicts {
             }
             case LOOKUP_KEY -> new FieldClaim.LookupKey(row.trigger(), row.decoded(), row.location());
             case ROUTINE -> {
+                // The whole chain is this one claim's slots, in application-ordinal order.
                 var rt = GRAPHITRON_ROUTINE;
-                var r = row.decoded()
+                var refs = row.decoded()
                     ? dsl.select(rt.ROUTINE_REF).from(rt)
                         .where(rt.GRAPH_NAME.eq(graphName), rt.TYPE_NAME.eq(c.typeName()), rt.FIELD_NAME.eq(c.fieldName()))
                         .orderBy(rt.ORDINAL)
-                        .limit(1)
-                        .fetchOne()
+                        .fetch(r -> r.value1())
                     : null;
-                yield new FieldClaim.Routine(
-                    r == null ? null : r.value1(), row.trigger(), row.decoded(), row.location());
+                yield new FieldClaim.Routine(refs, row.trigger(), row.decoded(), row.location());
             }
             case MUTATION -> {
                 var m = GRAPHITRON_MUTATION;

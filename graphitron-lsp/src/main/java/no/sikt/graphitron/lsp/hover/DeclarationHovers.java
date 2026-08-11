@@ -19,6 +19,7 @@ import org.eclipse.lsp4j.MarkupKind;
 import org.eclipse.lsp4j.Range;
 
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * Classification-hover dispatch on SDL declaration coordinates. Parallel to
@@ -321,8 +322,10 @@ public final class DeclarationHovers {
                 sb.append("LookupKey (@").append(l.trigger()).append(")");
             case FieldClassification.Claim.Routine r -> {
                 sb.append("Routine (@").append(r.trigger()).append(")");
-                if (r.routineRef() != null) {
-                    sb.append(": `").append(r.routineRef()).append("`");
+                if (r.routineRefs() != null && !r.routineRefs().isEmpty()) {
+                    sb.append(": ").append(r.routineRefs().stream()
+                        .map(ref -> "`" + ref + "`")
+                        .collect(Collectors.joining(" → ")));
                 }
             }
             case FieldClassification.Claim.Mutation m -> {

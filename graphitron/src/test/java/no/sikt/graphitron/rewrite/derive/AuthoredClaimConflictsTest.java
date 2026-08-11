@@ -375,6 +375,32 @@ class AuthoredClaimConflictsTest {
     }
 
     @Test
+    void routineChainIsOneClaimCarryingEveryStep() {
+        // The repeatable directive's whole chain is one claim: the claims list's cardinality is
+        // the conflict signal, so two applications must never read as
+        // routine-conflicting-with-routine. The steps survive as the claim's slot facts, in
+        // application-ordinal order.
+        var sdl = """
+            type Film @table(name: "film") { title: String }
+            type Query {
+                films: [Film]
+                    @service(service: {className: "%s", method: "run"})
+                    @routine(name: "first_fn")
+                    @routine(name: "second_fn")
+            }
+            """.formatted(SERVICE_STUB);
+        var detection = detectionAgainstWalk(sdl);
+        assertThat(detection.fieldConflicts()).hasSize(1);
+        var conflict = detection.fieldConflicts().getFirst();
+        assertThat(conflict.coordinate()).isEqualTo("Query.films");
+        assertThat(conflict.rejection().message()).isEqualTo("@service, @routine are mutually exclusive");
+        assertThat(conflict.claims()).hasSize(2);
+        var routine = (FieldClaim.Routine) conflict.claims().get(1);
+        assertThat(routine.routineRefs()).containsExactly("first_fn", "second_fn");
+        assertThat(routine.decoded()).isTrue();
+    }
+
+    @Test
     void presenceArmClaimsCarryNoSlotFacts() {
         // A declined decode still claims (the presence arm), but its slot facts are absent and
         // the claim says so through decoded=false; consumers render the honest gap instead of
