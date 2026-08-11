@@ -312,7 +312,7 @@ final class RecordBindingResolver {
 
         // Ground input-axis bindings from method parameters → SDL arg types.
         // Argument mapping: parameter name = SDL arg name unless argMapping overrides.
-        Map<String, String> argMappingOverrides = parseArgMapping(
+        Map<String, String> argMappingOverrides = headSlotOverrides(
             Optional.ofNullable(ref.get(BuildContext.ARG_ARG_MAPPING)).map(Object::toString).orElse(""));
         for (var p : method.getParameters()) {
             if (!p.isNamePresent()) continue;
@@ -1132,27 +1132,25 @@ final class RecordBindingResolver {
     }
 
     /**
-     * Parses an {@code argMapping} string ({@code "javaParam: graphqlArg, ..."}) into a map of
-     * Java-parameter name → GraphQL-argument name overrides. Empty string and unparseable entries
-     * fall through silently; the typed override path runs through {@link ArgBindingMap#of}, this
-     * helper only needs the override map for the walker's input-binding probe and tolerates the
-     * same forms.
+     * The head slot each {@code argMapping} entry binds to, keyed by Java parameter name: the
+     * producer-binding probe walks types, not values, so it wants the outer argument and nothing
+     * below it. Reads the head segment off the shared parse rather than a private one, so there is
+     * exactly one path from an authored {@code argMapping} string to a resolved binding.
+     *
+     * <p>A syntax error yields no overrides <em>for the whole reference</em>, not just for the
+     * offending entry. The probe has no diagnostic channel — it runs before any classified verdict
+     * exists — and the same string is parsed again by the {@code ExternalCodeReference} consumer,
+     * which rejects properly, so swallowing here keeps one typo to one message. Losing the
+     * well-formed siblings' observations along with it is accepted: a malformed {@code argMapping}
+     * fails the build at that consumer, so the reference's observations are moot either way, and
+     * salvaging them would mean keeping a second, error-tolerant parser.
      */
-    private static Map<String, String> parseArgMapping(String raw) {
-        if (raw == null || raw.isBlank()) return Map.of();
-        Map<String, String> overrides = new LinkedHashMap<>();
-        for (String entry : raw.split(",")) {
-            int colon = entry.indexOf(':');
-            if (colon < 0) continue;
-            String javaName = entry.substring(0, colon).strip();
-            String tail = entry.substring(colon + 1).strip();
-            // Drop any dot-path suffix; the walker only cares about the top-level arg name.
-            int dot = tail.indexOf('.');
-            String argName = dot < 0 ? tail : tail.substring(0, dot);
-            if (!javaName.isEmpty() && !argName.isEmpty()) {
-                overrides.put(javaName, argName);
-            }
+    private static Map<String, String> headSlotOverrides(String raw) {
+        if (!(ArgBindingMap.parseArgMapping(raw) instanceof ArgBindingMap.ParsedArgMapping.Ok parsed)) {
+            return Map.of();
         }
+        Map<String, String> overrides = new LinkedHashMap<>();
+        parsed.overrides().forEach((javaName, segments) -> overrides.put(javaName, segments.get(0)));
         return overrides;
     }
 }

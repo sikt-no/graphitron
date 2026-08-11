@@ -2425,6 +2425,9 @@ class BuildContext {
         }
         var segmentChains = ((ArgBindingMap.ParsedArgMapping.Ok) parsed).overrides();
         var bindingResult = ArgBindingMap.of(java.util.Map.<String, graphql.schema.GraphQLInputType>of(), segmentChains);
+        // The two arms are kept apart here rather than read through Result.Failure: the slot map
+        // is empty, so the shared message renders the available-argument list as [], and the
+        // clause below is the only prose that says why.
         if (bindingResult instanceof ArgBindingMap.Result.UnknownArgRef u) {
             return new ConditionResolution.Failed(
                 "path-step @condition: no GraphQL arguments are in scope at a path-step @condition; "
@@ -2514,12 +2517,10 @@ class BuildContext {
             return Optional.empty();
         }
         var bindingResult = ArgBindingMap.of(java.util.Map.of(field.getName(), field.getType()), cond.argMapping());
-        if (bindingResult instanceof ArgBindingMap.Result.UnknownArgRef u) {
-            failures.add(conditionFailure(field, parentTypeName, inputFieldName, untypedUpstream(u.message())));
-            return Optional.empty();
-        }
-        if (bindingResult instanceof ArgBindingMap.Result.PathRejected p) {
-            failures.add(conditionFailure(field, parentTypeName, inputFieldName, untypedUpstream(p.message())));
+        if (bindingResult instanceof ArgBindingMap.Result.Failure f) {
+            // Unprefixed, like the reflect arm below: the "@condition on input field X" context is
+            // rendered by InputFieldConditionFailure#message, not at this site.
+            failures.add(conditionFailure(field, parentTypeName, inputFieldName, untypedUpstream(f.message())));
             return Optional.empty();
         }
         var argBindings = ((ArgBindingMap.Result.Ok) bindingResult).map();

@@ -57,7 +57,8 @@ public final class BatchedRowsFragments {
      * the scatter lambda's parameter.
      */
     static CodeBlock body(LauncherCommand row, LaunchSource.Correlated chain,
-            CodeBlock dslDeclaration, no.sikt.graphitron.command.CarrierDsl carrierDsl) {
+            CodeBlock dslDeclaration, no.sikt.graphitron.command.CarrierDsl carrierDsl,
+            ArgPathHelperRegistry argHelpers) {
         var batched = (no.sikt.graphitron.command.Invocation.Batched) row.invocation();
         String fieldName = row.coordinate().getFieldName();
         var body = CodeBlock.builder();
@@ -71,7 +72,7 @@ public final class BatchedRowsFragments {
             body.add(dslDeclaration);
         }
 
-        var prelude = prelude(body, fieldName, batched.sourceKey(), chain);
+        var prelude = prelude(body, fieldName, batched.sourceKey(), chain, argHelpers);
 
         if (row.result() instanceof no.sikt.graphitron.command.ResultShape.Connection conn) {
             connectionTail(body, row, chain, prelude, conn, carrierDsl);
@@ -155,7 +156,7 @@ public final class BatchedRowsFragments {
      * caller-supplied {@code dsl} declaration is added unconditionally.
      */
     static CodeBlock pivotBody(LauncherCommand row, LaunchSource.PivotAggregate pivot,
-            CodeBlock dslDeclaration) {
+            CodeBlock dslDeclaration, ArgPathHelperRegistry argHelpers) {
         var batched = (no.sikt.graphitron.command.Invocation.Batched) row.invocation();
         String fieldName = row.coordinate().getFieldName();
         var body = CodeBlock.builder();
@@ -355,7 +356,7 @@ public final class BatchedRowsFragments {
      * declaration precede this in {@link #body}.
      */
     private static PreludeBindings prelude(CodeBlock.Builder body, String fieldName,
-            SourceKey sourceKey, LaunchSource.Correlated chain) {
+            SourceKey sourceKey, LaunchSource.Correlated chain, ArgPathHelperRegistry argHelpers) {
         List<JoinStep> joinPath = chain.joinPath();
         ParentCorrelation correlation = chain.correlation();
 
@@ -421,7 +422,7 @@ public final class BatchedRowsFragments {
             body.addStatement("$T $L = $L.as($S)",
                 jooqTableClass, aliases.get(i),
                 PathFragments.emitTableExpression(joinPath.get(i), previousNode,
-                    new ArgumentValueSource.Env()),
+                    new ArgumentValueSource.Env(), argHelpers),
                 fieldName + "_" + aliases.get(i));
         }
 

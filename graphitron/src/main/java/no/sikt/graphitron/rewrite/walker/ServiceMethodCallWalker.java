@@ -167,7 +167,7 @@ public final class ServiceMethodCallWalker {
             // A non-leaf inside a NestedInputField at @service is not produced by the
             // existing classifier; record as parameter-unbindable and fall through with a Direct.
             errors.add(new ServiceMethodCallError.ParameterUnbindable(
-                arg.graphqlArgName(),
+                arg.path().headName(),
                 List.of(),
                 "nested input-field with non-leaf transform"));
             return new ValueShape.Scalar(javaType, path, new CallSiteExtraction.Direct());
@@ -200,7 +200,7 @@ public final class ServiceMethodCallWalker {
 
         // ContextArg at @service Arg slot is not produced by the current resolver; defensive.
         errors.add(new ServiceMethodCallError.ParameterUnbindable(
-            arg.graphqlArgName(),
+            arg.path().headName(),
             List.of(),
             "unexpected extraction shape " + extraction.getClass().getSimpleName()));
         return new ValueShape.Scalar(javaType, path, new CallSiteExtraction.Direct());

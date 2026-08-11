@@ -17,9 +17,20 @@ import java.util.Objects;
  * segments for path expressions) lives on {@link Arg#path}.
  */
 public sealed interface ParamSource
-    permits ParamSource.Arg, ParamSource.Context, ParamSource.Sources,
-            ParamSource.DslContext, ParamSource.Table, ParamSource.SourceTable,
-            ParamSource.SourceColumn {
+    permits ParamSource.RoutineParamSource, ParamSource.Context, ParamSource.Sources,
+            ParamSource.DslContext, ParamSource.Table, ParamSource.SourceTable {
+
+    /**
+     * The two arms a {@link RoutineRef.ArgBinding} may carry, named as a type so the routine
+     * emitter's switch is exhaustive over exactly them. A routine IN parameter reads either a
+     * GraphQL field argument ({@link Arg}) or a column of the chain's previous node
+     * ({@link SourceColumn}); the remaining {@link ParamSource} arms are reflected-method
+     * concepts a routine call has no seat for.
+     *
+     * <p>Switches over the whole {@link ParamSource} taxonomy keep enumerating the leaves and
+     * stay exhaustive: covering every permitted subtype of a sealed member covers the member.
+     */
+    sealed interface RoutineParamSource extends ParamSource permits Arg, SourceColumn {}
 
     /**
      * A GraphQL field argument bound via the directive's argMapping rule.
@@ -36,13 +47,7 @@ public sealed interface ParamSource
      * {@link no.sikt.graphitron.rewrite.FieldBuilder} (text-map detection). Defaults to
      * {@link CallSiteExtraction.Direct} for plain scalar arguments.
      */
-    record Arg(CallSiteExtraction extraction, PathExpr path) implements ParamSource {
-
-        /** Convenience: the GraphQL slot name (head segment of the path). */
-        public String graphqlArgName() {
-            return path.headName();
-        }
-    }
+    record Arg(CallSiteExtraction extraction, PathExpr path) implements RoutineParamSource {}
 
     /**
      * A context argument bound via {@code GraphitronContext.getContextArgument(dfe, name)}.
@@ -92,7 +97,7 @@ public sealed interface ParamSource
      *
      * <p>Produced only for {@link RoutineRef.ArgBinding}; never a {@link MethodRef} param source.
      */
-    record SourceColumn(ColumnRef column) implements ParamSource {
+    record SourceColumn(ColumnRef column) implements RoutineParamSource {
         public SourceColumn {
             Objects.requireNonNull(column, "column");
         }

@@ -64,14 +64,17 @@ public final class ProjectionUnitRenderer {
     private static TypeSpec renderUnit(ProjectionCommand row, String outputPackage) {
         var builder = TypeSpec.classBuilder(row.unit().simpleName())
             .addModifiers(Modifier.PUBLIC);
-        switch (row) {
-            case ProjectionCommand.AnchorUnit a ->
-                builder.addMethod(buildTableContextMethod(a.table(), a.contributions(), outputPackage));
-            case ProjectionCommand.NestedUnit n ->
-                builder.addMethod(buildTableContextMethod(n.table(), n.contributions(), outputPackage));
-            case ProjectionCommand.PivotUnit p ->
-                builder.addMethod(buildPivotMethod(p));
-        }
+        // One nested-argument descent registry per projection unit: a routine hop inside this
+        // unit's subselects reads its dot-path bindings through a helper on this class.
+        ArgPathHelperRegistry.collectInto(builder, argHelpers -> {
+            switch (row) {
+                case ProjectionCommand.AnchorUnit a -> builder.addMethod(
+                    buildTableContextMethod(argHelpers, a.table(), a.contributions(), outputPackage));
+                case ProjectionCommand.NestedUnit n -> builder.addMethod(
+                    buildTableContextMethod(argHelpers, n.table(), n.contributions(), outputPackage));
+                case ProjectionCommand.PivotUnit p -> builder.addMethod(buildPivotMethod(p, argHelpers));
+            }
+        });
         // Per-field VALUES-rows helpers for this unit's own lookup contributions; the switch arm
         // calls the helper unqualified, so it lives on the same class ("helper locality").
         for (var contribution : row.contributions()) {
@@ -90,7 +93,7 @@ public final class ProjectionUnitRenderer {
     // The table-context $project method (anchor and nested units)
     // ------------------------------------------------------------------------------------------
 
-    private static MethodSpec buildTableContextMethod(TableRef tableRef,
+    private static MethodSpec buildTableContextMethod(ArgPathHelperRegistry argHelpers, TableRef tableRef,
             List<Contribution> contributions,
             String outputPackage) {
         var fieldWildcard = fieldWildcard();
@@ -108,7 +111,7 @@ public final class ProjectionUnitRenderer {
             SELECTED_FIELD, selectionOccurrences);
         builder.addCode("    switch (sf.getName()) {\n");
         for (var contribution : contributions) {
-            emitArm(builder, contribution, outputPackage);
+            emitArm(argHelpers, builder, contribution, outputPackage);
         }
         builder.addCode("        default -> { } // unhandled fields\n");
         builder.addCode("    }\n");
@@ -127,9 +130,9 @@ public final class ProjectionUnitRenderer {
     }
 
     /** One switch arm per contribution, total over the {@link Contribution} and wrap/term arms. */
-    private static void emitArm(MethodSpec.Builder builder, Contribution contribution, String outputPackage) {
+    private static void emitArm(ArgPathHelperRegistry argHelpers, MethodSpec.Builder builder, Contribution contribution, String outputPackage) {
         switch (contribution) {
-            case Contribution.Project p -> emitProjectArm(builder, p);
+            case Contribution.Project p -> emitProjectArm(argHelpers, builder, p);
             case Contribution.Call c -> {
                 switch (c.wrap()) {
                     case CallWrap.Splice ignored ->
@@ -138,12 +141,12 @@ public final class ProjectionUnitRenderer {
                                 CodeBlock.of("entry.getValue()"), CodeBlock.of("table"), outputPackage));
                     case CallWrap.Multiset m -> {
                         builder.addCode("        case $S -> {\n", c.field());
-                        builder.addCode("$L", multisetArmBody(c, m, outputPackage));
+                        builder.addCode("$L", multisetArmBody(argHelpers, c, m, outputPackage));
                         builder.addCode("        }\n");
                     }
                     case CallWrap.LookupMultiset lm -> {
                         builder.addCode("        case $S -> {\n", c.field());
-                        builder.addCode("$L", lookupMultisetArmBody(c, lm, outputPackage));
+                        builder.addCode("$L", lookupMultisetArmBody(argHelpers, c, lm, outputPackage));
                         builder.addCode("        }\n");
                     }
                     case CallWrap.PivotMultiset pm -> {
@@ -156,10 +159,10 @@ public final class ProjectionUnitRenderer {
         }
     }
 
-    private static void emitProjectArm(MethodSpec.Builder builder, Contribution.Project p) {
+    private static void emitProjectArm(ArgPathHelperRegistry argHelpers, MethodSpec.Builder builder, Contribution.Project p) {
         if (p.terms().size() == 1) {
             var pre = CodeBlock.builder();
-            var expr = termExpression(p.terms().get(0), pre);
+            var expr = termExpression(argHelpers, p.terms().get(0), pre);
             var preamble = pre.build();
             if (preamble.isEmpty()) {
                 builder.addCode("        case $S -> fields.add($L);\n", p.field(), expr);
@@ -177,7 +180,7 @@ public final class ProjectionUnitRenderer {
         builder.addCode("        case $S -> {\n", p.field());
         for (var term : p.terms()) {
             var pre = CodeBlock.builder();
-            var expr = termExpression(term, pre);
+            var expr = termExpression(argHelpers, term, pre);
             builder.addCode("$L", pre.build());
             builder.addCode("            fields.add($L);\n", expr);
         }
@@ -188,7 +191,7 @@ public final class ProjectionUnitRenderer {
      * The term's projected-field expression. {@code preamble} receives any statements the
      * expression needs in scope first (a subselect's hop-alias declarations).
      */
-    private static CodeBlock termExpression(SelectTerm term, CodeBlock.Builder preamble) {
+    private static CodeBlock termExpression(ArgPathHelperRegistry argHelpers, SelectTerm term, CodeBlock.Builder preamble) {
         return switch (term) {
             case SelectTerm.Column c -> switch (c.alias()) {
                 case BY_COLUMN_IDENTITY -> CodeBlock.of("table.$L", c.column().javaName());
@@ -202,7 +205,7 @@ public final class ProjectionUnitRenderer {
                     RESERVED_RK_ALIAS_PREFIX);
             case SelectTerm.ScalarSubselect s -> {
                 var aliases = PathFragments.generateAliases(s.path());
-                declareHopAliases(preamble, s.path(), aliases, "            ");
+                declareHopAliases(argHelpers, preamble, s.path(), aliases, "            ");
                 yield CodeBlock.of("$T.field($L).as($S + entry.getKey())",
                     DSL, scalarInnerSelect(s, aliases), RESERVED_RK_ALIAS_PREFIX);
             }
@@ -241,7 +244,7 @@ public final class ProjectionUnitRenderer {
     // Multiset arms
     // ------------------------------------------------------------------------------------------
 
-    private static CodeBlock multisetArmBody(Contribution.Call c, CallWrap.Multiset m, String outputPackage) {
+    private static CodeBlock multisetArmBody(ArgPathHelperRegistry argHelpers, Contribution.Call c, CallWrap.Multiset m, String outputPackage) {
         var code = CodeBlock.builder();
         // Occurrence argument guard: the arm reads runtime state off the canonical
         // SelectedField, so all occurrences in the result-key bucket must agree on
@@ -265,7 +268,7 @@ public final class ProjectionUnitRenderer {
         } else {
             var aliases = PathFragments.generateAliases(m.path());
             terminalAlias = aliases.get(aliases.size() - 1);
-            declareHopAliases(code, m.path(), aliases, "");
+            declareHopAliases(argHelpers, code, m.path(), aliases, "");
         }
 
         code.addStatement("fields.add($T.multiset($L).as($S + entry.getKey()))",
@@ -337,7 +340,7 @@ public final class ProjectionUnitRenderer {
         return sel.build();
     }
 
-    private static CodeBlock lookupMultisetArmBody(Contribution.Call c, CallWrap.LookupMultiset lm,
+    private static CodeBlock lookupMultisetArmBody(ArgPathHelperRegistry argHelpers, Contribution.Call c, CallWrap.LookupMultiset lm,
             String outputPackage) {
         var code = CodeBlock.builder();
         // Unconditional occurrence guard: the @lookupKey argument read is structural to this arm.
@@ -357,7 +360,7 @@ public final class ProjectionUnitRenderer {
         } else {
             aliases = PathFragments.generateAliases(path);
             terminalAlias = aliases.get(aliases.size() - 1);
-            declareHopAliases(code, path, aliases, "");
+            declareHopAliases(argHelpers, code, path, aliases, "");
         }
 
         String diagnostic = c.callee().simpleName() + "." + c.field();
@@ -477,7 +480,7 @@ public final class ProjectionUnitRenderer {
      * selection carrying no slot (introspection-only) appends the one-record sentinel so the
      * enclosing subselect stays well-formed and the one-record-per-parent invariant holds.
      */
-    private static MethodSpec buildPivotMethod(ProjectionCommand.PivotUnit p) {
+    private static MethodSpec buildPivotMethod(ProjectionCommand.PivotUnit p, ArgPathHelperRegistry argHelpers) {
         var builder = MethodSpec.methodBuilder(ProjectionCall.METHOD_NAME)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(listOfFieldWildcard())
@@ -497,7 +500,7 @@ public final class ProjectionUnitRenderer {
             var project = (Contribution.Project) contribution;
             for (var term : project.terms()) {
                 builder.addCode("    case $S -> fields.add($L);\n", project.field(),
-                    termExpression(term, CodeBlock.builder()));
+                    termExpression(argHelpers, term, CodeBlock.builder()));
             }
         }
         builder.addCode("    default -> { } // non-slot selections (__typename) project nothing\n");
@@ -524,8 +527,8 @@ public final class ProjectionUnitRenderer {
      * a routine hop declares {@code Routines.m(<bound args>)} reading the previous node's alias
      * (the parent at hop 0) and runtime arguments off the canonical {@code SelectedField}.
      */
-    private static void declareHopAliases(CodeBlock.Builder code, List<JoinStep> path,
-            List<String> aliases, String indent) {
+    private static void declareHopAliases(ArgPathHelperRegistry argHelpers, CodeBlock.Builder code,
+            List<JoinStep> path, List<String> aliases, String indent) {
         for (int i = 0; i < path.size(); i++) {
             JoinStep.HasTargetTable ht = (JoinStep.HasTargetTable) path.get(i);
             String previousAlias = i == 0 ? "table" : aliases.get(i - 1);
@@ -534,7 +537,7 @@ public final class ProjectionUnitRenderer {
                 ht.targetTable().tableClass(), aliases.get(i),
                 PathFragments.emitTableExpression(path.get(i),
                     new PreviousNodeRef.TypedAlias(previousAlias),
-                    new ArgumentValueSource.FromSelectedField("sf")),
+                    new ArgumentValueSource.FromSelectedField("sf"), argHelpers),
                 "table", "_" + aliases.get(i));
         }
     }

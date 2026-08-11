@@ -551,10 +551,10 @@ class ServiceCatalogTest {
         assertThat(params).hasSize(2);
         assertThat(params.get(0).name()).isEqualTo("inputs");
         assertThat(params.get(0).source()).isInstanceOf(ParamSource.Arg.class);
-        assertThat(((ParamSource.Arg) params.get(0).source()).graphqlArgName()).isEqualTo("input");
+        assertThat(((ParamSource.Arg) params.get(0).source()).path().headName()).isEqualTo("input");
         assertThat(params.get(1).name()).isEqualTo("dryRun");
         assertThat(params.get(1).source()).isInstanceOf(ParamSource.Arg.class);
-        assertThat(((ParamSource.Arg) params.get(1).source()).graphqlArgName()).isEqualTo("dryRun");
+        assertThat(((ParamSource.Arg) params.get(1).source()).path().headName()).isEqualTo("dryRun");
     }
 
     @Test
@@ -567,7 +567,7 @@ class ServiceCatalogTest {
 
         assertThat(result.failed()).isFalse();
         var params = result.ref().params();
-        assertThat(params).extracting(p -> ((ParamSource.Arg) p.source()).graphqlArgName())
+        assertThat(params).extracting(p -> ((ParamSource.Arg) p.source()).path().headName())
             .containsExactly("inputs", "dryRun");
     }
 
@@ -628,7 +628,7 @@ class ServiceCatalogTest {
         assertThat(params).hasSize(1);
         assertThat(params.get(0).name()).isEqualTo("payload");
         assertThat(params.get(0).source()).isInstanceOf(ParamSource.Arg.class);
-        assertThat(((ParamSource.Arg) params.get(0).source()).graphqlArgName()).isEqualTo("input");
+        assertThat(((ParamSource.Arg) params.get(0).source()).path().headName()).isEqualTo("input");
     }
 
     @Test
@@ -774,7 +774,7 @@ class ServiceCatalogTest {
         assertThat(params.get(0).source()).isInstanceOf(ParamSource.Table.class);
         assertThat(params.get(1).name()).isEqualTo("whatever");
         assertThat(params.get(1).source()).isInstanceOf(ParamSource.Arg.class);
-        assertThat(((ParamSource.Arg) params.get(1).source()).graphqlArgName()).isEqualTo("opptaksNavn");
+        assertThat(((ParamSource.Arg) params.get(1).source()).path().headName()).isEqualTo("opptaksNavn");
     }
 
     @Test

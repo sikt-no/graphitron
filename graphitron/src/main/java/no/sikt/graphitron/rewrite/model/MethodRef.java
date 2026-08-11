@@ -91,13 +91,15 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
      * The runtime lookup key for {@link CallParam}: the GraphQL argument key for
      * {@link ParamSource.Arg} (which may diverge from the Java identifier under
      * {@code @field(name:)}), and the context key (= parameter name) for
-     * {@link ParamSource.Context}. Other {@link ParamSource} variants are filtered out by
+     * {@link ParamSource.Context}. The head segment is the whole key even for a path binding:
+     * the lookup names the outer slot, and the descent into it rides the param's
+     * {@link CallSiteExtraction}. Other {@link ParamSource} variants are filtered out by
      * {@link #callParams} before reaching this helper; an unexpected variant is a programming
      * error rather than a recoverable runtime case.
      */
     private static String callParamName(Param p) {
         return switch (p.source()) {
-            case ParamSource.Arg arg         -> arg.graphqlArgName();
+            case ParamSource.Arg arg         -> arg.path().headName();
             case ParamSource.Context ignored -> p.name();
             case ParamSource.Sources ignored      -> throw nonExtractedSource(p);
             case ParamSource.DslContext ignored   -> throw nonExtractedSource(p);

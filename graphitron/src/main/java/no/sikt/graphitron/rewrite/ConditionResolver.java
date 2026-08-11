@@ -69,11 +69,8 @@ final class ConditionResolver {
             return new ArgConditionResult.Rejected(Rejection.structural("argument '" + argName + "' @condition: " + cond.argMappingError()));
         }
         var bindingResult = ArgBindingMap.of(java.util.Map.of(argName, arg.getType()), cond.argMapping());
-        if (bindingResult instanceof ArgBindingMap.Result.UnknownArgRef u) {
-            return new ArgConditionResult.Rejected(Rejection.structural("argument '" + argName + "' @condition: " + u.message()));
-        }
-        if (bindingResult instanceof ArgBindingMap.Result.PathRejected p) {
-            return new ArgConditionResult.Rejected(Rejection.structural("argument '" + argName + "' @condition: " + p.message()));
+        if (bindingResult instanceof ArgBindingMap.Result.Failure f) {
+            return new ArgConditionResult.Rejected(Rejection.structural("argument '" + argName + "' @condition: " + f.message()));
         }
         var argBindings = ((ArgBindingMap.Result.Ok) bindingResult).map();
         var slotTypes = java.util.Map.of(argName, arg.getType());
@@ -100,11 +97,8 @@ final class ConditionResolver {
             return new FieldConditionResult.Rejected(Rejection.structural("field '" + fieldDef.getName() + "' @condition: " + cond.argMappingError()));
         }
         var bindingResult = ArgBindingMap.of(FieldBuilder.argSlotTypes(fieldDef), cond.argMapping());
-        if (bindingResult instanceof ArgBindingMap.Result.UnknownArgRef u) {
-            return new FieldConditionResult.Rejected(Rejection.structural("field '" + fieldDef.getName() + "' @condition: " + u.message()));
-        }
-        if (bindingResult instanceof ArgBindingMap.Result.PathRejected p) {
-            return new FieldConditionResult.Rejected(Rejection.structural("field '" + fieldDef.getName() + "' @condition: " + p.message()));
+        if (bindingResult instanceof ArgBindingMap.Result.Failure f) {
+            return new FieldConditionResult.Rejected(Rejection.structural("field '" + fieldDef.getName() + "' @condition: " + f.message()));
         }
         var argBindings = ((ArgBindingMap.Result.Ok) bindingResult).map();
         var result = svc.reflectTableMethod(cond.className(), cond.methodName(),

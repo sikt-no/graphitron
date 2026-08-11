@@ -487,7 +487,7 @@ public class TypeFetcherGenerator {
                             + " the producer's membership and this dispatch have drifted"));
                     builder.addMethod(buildQueryTableFetcher(ctx, qtf, launcherRow, outputPackage));
                     builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
-                        .render(launcherRow, launchers.carrierDsl()));
+                        .render(launcherRow, launchers.carrierDsl(), ctx.argPathHelpers()));
                     // The keyed-lookup row additionally owns a VALUES-building input-rows
                     // helper; the row's source arm is the fork, the same shape the batched
                     // rows renderer reads, so no leaf identity and no schema participate.
@@ -529,7 +529,7 @@ public class TypeFetcherGenerator {
                     builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
                         .render(liftRow, launchers.carrierDsl(),
                             TenantDslEmitter.resolve(ctx, stf, outputPackage).declaration(),
-                            stfServiceCall));
+                            stfServiceCall, ctx.argPathHelpers()));
                 }
                 case ChildField.ServiceRecordField srf -> {
                     var srfService = (MethodRef.Service) srf.method();
@@ -546,7 +546,7 @@ public class TypeFetcherGenerator {
                     builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
                         .render(delegateRow, launchers.carrierDsl(),
                             TenantDslEmitter.resolve(ctx, srf, outputPackage).declaration(),
-                            srfServiceCall));
+                            srfServiceCall, ctx.argPathHelpers()));
                 }
                 case ChildField.BatchedTableField btf -> {
                     // One fetcher builder for both source shapes: the stored
@@ -563,7 +563,7 @@ public class TypeFetcherGenerator {
                         ? TenantDslEmitter.resolve(ctx, btf, outputPackage).declaration()
                         : no.sikt.graphitron.javapoet.CodeBlock.of("");
                     builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
-                        .render(batchedRow, launchers.carrierDsl(), dslDeclaration));
+                        .render(batchedRow, launchers.carrierDsl(), dslDeclaration, ctx.argPathHelpers()));
                     // The correlated-lookup row additionally owns the VALUES-building
                     // input-rows helper, named by the row's minted ref (one derivation with
                     // the body's call). The env-based variant reads args from
@@ -605,7 +605,7 @@ public class TypeFetcherGenerator {
                             + " the producer's membership and this dispatch have drifted"));
                     builder.addMethod(buildQueryTableFetcher(ctx, f, interfaceRow, outputPackage));
                     builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
-                        .render(interfaceRow, launchers.carrierDsl()));
+                        .render(interfaceRow, launchers.carrierDsl(), ctx.argPathHelpers()));
                 }
                 case QueryField.QueryInterfaceField f -> {
                     var participantFilters = participantFiltersByTypename(f.participantFilters());
@@ -759,7 +759,8 @@ public class TypeFetcherGenerator {
                     builder.addMethod(buildPivotBatchedDataFetcher(ctx, f, parentTable, outputPackage, pivotRow.unit().methodName()));
                     builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
                         .render(pivotRow, launchers.carrierDsl(),
-                            TenantDslEmitter.resolve(ctx, f, outputPackage).declaration()));
+                            TenantDslEmitter.resolve(ctx, f, outputPackage).declaration(),
+                            ctx.argPathHelpers()));
                 }
                 case ChildField.RecordReadField ignored         -> { /* locator read reified by FetcherEmitter.bind, collected below */ }
                 // The @service record-composite carrier's data field: the Outcome/source
@@ -796,6 +797,10 @@ public class TypeFetcherGenerator {
         // Companion methods declared by field-body emitters (the DML reentry rows methods)
         // drain onto the class before the helper drain below.
         ctx.drainCompanionMethods().forEach(builder::addMethod);
+
+        // Nested-argument descents any @routine dot-path binding on this class registered. Drained
+        // after the companion methods, which may themselves register one.
+        ctx.argPathHelpers().emit().forEach(builder::addMethod);
 
         if (ctx.isRequested(TypeFetcherEmissionContext.HelperKind.GRAPHITRON_CONTEXT)) {
             builder.addMethod(buildGraphitronContextHelper(outputPackage));
@@ -1274,12 +1279,12 @@ public class TypeFetcherGenerator {
 
         builder.beginControlFlow("try");
         CodeBlock startExpr = RoutineCallEmitter.emitCall(mrwf.chain().start(),
-            new PreviousNodeRef.None(), new ArgumentValueSource.Env());
+            new PreviousNodeRef.None(), new ArgumentValueSource.Env(), ctx.argPathHelpers());
         builder.addStatement("$T source = $L", mrwf.chain().start().resultTable().tableClass(), startExpr);
         for (JoinStep step : hops) {
             var hop = (JoinStep.Hop) step;
             CodeBlock hopTableExpr = JoinPathEmitter.emitTableExpression(
-                step, new PreviousNodeRef.None(), new ArgumentValueSource.Env());
+                step, new PreviousNodeRef.None(), new ArgumentValueSource.Env(), ctx.argPathHelpers());
             builder.addStatement("$T $L = $L.as($S)",
                 hop.targetTable().tableClass(), hop.alias(), hopTableExpr, hop.alias());
         }
@@ -1407,7 +1412,7 @@ public class TypeFetcherGenerator {
         builder.beginControlFlow("try");
         CodeBlock startExpr = RoutineCallEmitter.emitCall(
             new no.sikt.graphitron.rewrite.model.TableExpr.RoutineCall(f.routine(), f.routineResultTable()),
-            new PreviousNodeRef.None(), new ArgumentValueSource.Env());
+            new PreviousNodeRef.None(), new ArgumentValueSource.Env(), ctx.argPathHelpers());
         builder.addStatement("$T source = $L", f.routineResultTable().tableClass(), startExpr);
         var tenantDsl = TenantDslEmitter.resolve(ctx, f, outputPackage);
         builder.addCode(tenantDsl.declaration());
@@ -4474,7 +4479,8 @@ public class TypeFetcherGenerator {
         boolean isList = row.result() instanceof no.sikt.graphitron.command.ResultShape.RecordList;
         String rowsName = row.unit().methodName();
         ctx.addCompanionMethod(no.sikt.graphitron.render.RootLauncherRenderer.render(
-            row, carrierDsl, TenantDslEmitter.resolve(ctx, field, outputPackage).declaration()));
+            row, carrierDsl, TenantDslEmitter.resolve(ctx, field, outputPackage).declaration(),
+            ctx.argPathHelpers()));
 
         var body = CodeBlock.builder()
             .add(emitKeysTransaction(reentry.correlation(), dmlChain, isList));

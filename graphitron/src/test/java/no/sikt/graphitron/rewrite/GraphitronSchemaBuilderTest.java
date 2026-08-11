@@ -3828,7 +3828,7 @@ class GraphitronSchemaBuilderTest {
                     .map(p -> (no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed) p)
                     .findFirst().orElseThrow();
                 assertThat(renamedParam.name()).isEqualTo("city");
-                assertThat(((no.sikt.graphitron.rewrite.model.ParamSource.Arg) renamedParam.source()).graphqlArgName())
+                assertThat(((no.sikt.graphitron.rewrite.model.ParamSource.Arg) renamedParam.source()).path().headName())
                     .isEqualTo("cityNames");
             }),
 
@@ -3852,10 +3852,10 @@ class GraphitronSchemaBuilderTest {
                     .toList();
                 assertThat(argParams).hasSize(2);
                 assertThat(argParams.get(0).name()).isEqualTo("city");
-                assertThat(((no.sikt.graphitron.rewrite.model.ParamSource.Arg) argParams.get(0).source()).graphqlArgName())
+                assertThat(((no.sikt.graphitron.rewrite.model.ParamSource.Arg) argParams.get(0).source()).path().headName())
                     .isEqualTo("cityNames");
                 assertThat(argParams.get(1).name()).isEqualTo("country");
-                assertThat(((no.sikt.graphitron.rewrite.model.ParamSource.Arg) argParams.get(1).source()).graphqlArgName())
+                assertThat(((no.sikt.graphitron.rewrite.model.ParamSource.Arg) argParams.get(1).source()).path().headName())
                     .isEqualTo("countryId");
             }),
 
@@ -3965,7 +3965,7 @@ class GraphitronSchemaBuilderTest {
                     .map(p -> (no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed) p)
                     .findFirst().orElseThrow();
                 assertThat(renamedParam.name()).isEqualTo("id");
-                assertThat(((no.sikt.graphitron.rewrite.model.ParamSource.Arg) renamedParam.source()).graphqlArgName())
+                assertThat(((no.sikt.graphitron.rewrite.model.ParamSource.Arg) renamedParam.source()).path().headName())
                     .isEqualTo("filmId");
             }),
 

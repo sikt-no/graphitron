@@ -216,6 +216,14 @@ final class RoutineDirectiveResolver {
         };
     }
 
+    /**
+     * Binds every routine IN parameter to its value source, routing the {@code argMapping} half
+     * through the shared {@link ArgBindingMap#of} seam so a {@code @routine} path expression
+     * resolves against the field's argument types by exactly the rules {@code @service} and
+     * {@code @condition} use. Both left-hand-side checks live here, mirroring what
+     * {@code columnMapping} and {@code ServiceCatalog.checkOverrideTargets} already do: an entry
+     * naming a non-parameter, and a parameter left with no binding.
+     */
     private NodeResolved bindArgs(GraphQLFieldDefinition fieldDef,
             JooqCatalog.RoutineResolution.Resolved fn, Map<String, List<String>> overrides,
             Map<String, List<String>> columnOverrides, String previousNodeTableSqlName) {
@@ -231,16 +239,41 @@ final class RoutineDirectiveResolver {
                     + "a routine parameter has exactly one source"));
             }
         }
+        // The left-hand side is per-directive and does not unify: a routine names catalog IN
+        // parameters, a @service method names reflected Java parameters. Without this check a
+        // misspelled target is silently dropped and the parameter it meant to claim falls through
+        // to the unbound rejection below, describing an entry the author did not write.
+        for (var claimed : overrides.keySet()) {
+            if (fn.params().stream().noneMatch(p -> p.name().equals(claimed))) {
+                return new NodeResolved.Rejected(Rejection.structural(
+                    "@routine argMapping names parameter '" + claimed
+                    + "', which is not an IN parameter of routine '" + fn.methodName() + "'"
+                    + BuildContext.candidateHint(claimed,
+                        fn.params().stream().map(JooqCatalog.RoutineParam::name).toList())));
+            }
+        }
 
-        Set<String> fieldArgs = FieldBuilder.fieldArgumentNames(fieldDef);
+        var slotTypes = FieldBuilder.argSlotTypes(fieldDef);
+        var bindingResult = ArgBindingMap.of(slotTypes, overrides);
+        if (bindingResult instanceof ArgBindingMap.Result.Failure f) {
+            return new NodeResolved.Rejected(Rejection.structural("@routine " + f.message()));
+        }
+        // of() keys its identity entries by unclaimed *slot*, which is the opposite direction from
+        // a routine's parameter list: the resolver knows its parameters up front and asks which
+        // slot each one reads. So only the explicitly-mapped parameters are read out of the map;
+        // the identity case resolves per parameter against the slot map below.
+        var resolvedOverrides = ((ArgBindingMap.Result.Ok) bindingResult).map().byJavaName();
         var bindings = new ArrayList<RoutineRef.ArgBinding>();
         for (var param : fn.params()) {
             var columnOverride = columnOverrides.get(param.name());
             if (columnOverride != null) {
                 if (columnOverride.size() != 1) {
+                    // Permanent, not a capability gap: the right-hand side of a columnMapping entry
+                    // names a column of the previous node, and a column has no sub-path to walk.
                     return new NodeResolved.Rejected(Rejection.structural(
                         "@routine columnMapping for parameter '" + param.name()
-                        + "' must bind a single column of the previous node; dot-path bindings are not supported"));
+                        + "' must bind a single column of the previous node; a column has no nested "
+                        + "fields, so dot-path bindings are meaningless here"));
                 }
                 String columnName = columnOverride.get(0);
                 var column = ctx.catalog.resolveColumn(previousNodeTableSqlName, columnName);
@@ -265,27 +298,88 @@ final class RoutineDirectiveResolver {
                     new ParamSource.SourceColumn(column.get())));
                 continue;
             }
-            var override = overrides.get(param.name());
-            String graphqlArg;
-            if (override != null) {
-                if (override.size() != 1) {
-                    return new NodeResolved.Rejected(Rejection.structural(
-                        "@routine argMapping for parameter '" + param.name()
-                        + "' must bind a single GraphQL argument; dot-path bindings are not supported"));
-                }
-                graphqlArg = override.get(0);
+            PathExpr path;
+            if (overrides.containsKey(param.name())) {
+                path = resolvedOverrides.get(param.name());
+            } else if (slotTypes.containsKey(param.name())) {
+                path = PathExpr.head(param.name()); // identity-bind
             } else {
-                graphqlArg = param.name(); // identity-bind
-            }
-            if (!fieldArgs.contains(graphqlArg)) {
                 return new NodeResolved.Rejected(Rejection.structural(
-                    "@routine parameter '" + param.name() + "' binds to GraphQL argument '" + graphqlArg
-                    + "', which is not an argument of this field"));
+                    "@routine parameter '" + param.name() + "' has no binding — it is not a GraphQL "
+                    + "argument of this field and no argMapping entry names it; available arguments are "
+                    + ArgBindingMap.formatNameSet(slotTypes.keySet())
+                    + BuildContext.candidateHint(param.name(), List.copyOf(slotTypes.keySet()))));
+            }
+            var leafGate = leafTypeGate(param, path, slotTypes);
+            if (leafGate != null) {
+                return new NodeResolved.Rejected(leafGate);
             }
             bindings.add(new RoutineRef.ArgBinding(param.name(), param.type(),
-                new ParamSource.Arg(new CallSiteExtraction.Direct(), new PathExpr.Head(graphqlArg))));
+                new ParamSource.Arg(new CallSiteExtraction.Direct(), path)));
         }
         return new NodeResolved.Node(
             new RoutineRef(fn.routinesClass(), fn.methodName(), bindings), fn.resultTable());
+    }
+
+    /**
+     * The type gate on one argument-sourced routine parameter, or {@code null} when the binding
+     * is sound. Two checks, in the order an author meets them:
+     *
+     * <ol>
+     *   <li>A leaf that is neither scalar nor enum. Routine-specific: a jOOQ IN parameter has no
+     *       bean concept to instantiate the way {@code InputBeanResolver} does for
+     *       {@code @service}, so an input-object leaf can only ever emit a cast that fails at
+     *       request time. This is the rejection that closes {@code "pParam: input"}, which the
+     *       shared gate below passes through (the wire-coercion check has no opinion on a
+     *       non-scalar leaf).</li>
+     *   <li>The shared coercion-aware gate, {@link ServiceCatalog#argExtraction}. Three outcomes,
+     *       not two: a rejection is an authoring error, a {@link CallSiteExtraction.Direct}
+     *       extraction proceeds, and any other extraction is a deferral — the routine call
+     *       emitter renders a direct read only, so an enum or converted leaf would need the
+     *       coercing arms that do not emit yet.</li>
+     * </ol>
+     */
+    private Rejection leafTypeGate(JooqCatalog.RoutineParam param, PathExpr path,
+            Map<String, graphql.schema.GraphQLInputType> slotTypes) {
+        var segments = path.segments();
+        for (int i = 0; i < segments.size() - 1; i++) {
+            if (segments.get(i).liftsList()) {
+                return Rejection.deferred(
+                    "@routine parameter '" + param.name() + "' binds to '" + path.asString()
+                    + "', which walks through the list-shaped field '" + segments.get(i).name()
+                    + "' — element-wise traversal does not emit for routine bindings yet");
+            }
+        }
+        var leafType = ServiceCatalog.resolvePathLeafType(path, slotTypes);
+        if (leafType == null) {
+            return null; // unresolvable leaf: pass through rather than over-reject
+        }
+        var named = graphql.schema.GraphQLTypeUtil.unwrapAll(leafType);
+        if (!(named instanceof graphql.schema.GraphQLScalarType)
+                && !(named instanceof graphql.schema.GraphQLEnumType)) {
+            return Rejection.structural(
+                "@routine parameter '" + param.name() + "' binds to '" + path.asString()
+                + "', whose GraphQL type '" + graphql.schema.GraphQLTypeUtil.simplePrint(leafType)
+                + "' is not a scalar or enum — a routine IN parameter takes a single value, so bind "
+                + "a scalar field inside it (for example '" + param.name() + ": "
+                + path.asString() + ".<field>')");
+        }
+        if (ctx.svc == null) {
+            return null; // schema-free contexts carry no catalog to reflect against
+        }
+        var extraction = ctx.svc.argExtraction(param.type().toString(), leafType,
+            "@routine parameter '" + param.name() + "'");
+        if (extraction instanceof ServiceCatalog.ArgExtraction.Rejected rejected) {
+            return rejected.rejection();
+        }
+        var resolved = ((ServiceCatalog.ArgExtraction.Resolved) extraction).extraction();
+        if (!(resolved instanceof CallSiteExtraction.Direct)) {
+            return Rejection.deferred(
+                "@routine parameter '" + param.name() + "' binds to '" + path.asString()
+                + "', which needs a " + resolved.getClass().getSimpleName()
+                + " extraction — the routine call emitter reads argument values directly, and the "
+                + "coercing read arms do not emit yet");
+        }
+        return null;
     }
 }

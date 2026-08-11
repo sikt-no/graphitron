@@ -58,8 +58,9 @@ public final class RootLauncherRenderer {
             no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class)));
 
     /** Renders one launcher method from its row and the run's carrier-routing fact. */
-    public static MethodSpec render(LauncherCommand row, CarrierDsl carrierDsl) {
-        return render(row, carrierDsl, CodeBlock.of(""));
+    public static MethodSpec render(LauncherCommand row, CarrierDsl carrierDsl,
+            ArgPathHelperRegistry argHelpers) {
+        return render(row, carrierDsl, CodeBlock.of(""), argHelpers);
     }
 
     /**
@@ -69,8 +70,8 @@ public final class RootLauncherRenderer {
      * not hold). Ignored by every non-batched row.
      */
     public static MethodSpec render(LauncherCommand row, CarrierDsl carrierDsl,
-            CodeBlock batchedDslDeclaration) {
-        return render(row, carrierDsl, batchedDslDeclaration, CodeBlock.of(""));
+            CodeBlock batchedDslDeclaration, ArgPathHelperRegistry argHelpers) {
+        return render(row, carrierDsl, batchedDslDeclaration, CodeBlock.of(""), argHelpers);
     }
 
     /**
@@ -81,7 +82,8 @@ public final class RootLauncherRenderer {
      * every non-service row.
      */
     public static MethodSpec render(LauncherCommand row, CarrierDsl carrierDsl,
-            CodeBlock batchedDslDeclaration, CodeBlock serviceCall) {
+            CodeBlock batchedDslDeclaration, CodeBlock serviceCall,
+            ArgPathHelperRegistry argHelpers) {
         var builder = MethodSpec.methodBuilder(row.unit().methodName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(valueTypeOf(row));
@@ -133,11 +135,11 @@ public final class RootLauncherRenderer {
                         builder.addCode(fannedBody(anchor, row, fanned, tableLocal));
                 }
             }
-            case LaunchSource.RoutineChain chain -> builder.addCode(routineBody(row, chain));
+            case LaunchSource.RoutineChain chain -> builder.addCode(routineBody(row, chain, argHelpers));
             case LaunchSource.Correlated chain ->
-                builder.addCode(BatchedRowsFragments.body(row, chain, batchedDslDeclaration, carrierDsl));
+                builder.addCode(BatchedRowsFragments.body(row, chain, batchedDslDeclaration, carrierDsl, argHelpers));
             case LaunchSource.PivotAggregate pivot ->
-                builder.addCode(BatchedRowsFragments.pivotBody(row, pivot, batchedDslDeclaration));
+                builder.addCode(BatchedRowsFragments.pivotBody(row, pivot, batchedDslDeclaration, argHelpers));
             case LaunchSource.ServiceCall sc ->
                 builder.addCode(ServiceRowsFragments.delegateBody(sc, batchedDslDeclaration, serviceCall));
             case LaunchSource.ServiceTableLift lift ->
@@ -437,12 +439,14 @@ public final class RootLauncherRenderer {
      * no filter surface (the coordinate can have no condition row), and the chain's WHERE is the
      * hop filters alone, exactly as the inline builder composed it.
      */
-    private static CodeBlock routineBody(LauncherCommand row, LaunchSource.RoutineChain chain) {
+    private static CodeBlock routineBody(LauncherCommand row, LaunchSource.RoutineChain chain,
+            ArgPathHelperRegistry argHelpers) {
         var code = CodeBlock.builder();
         var startTable = chain.start().resultTable();
         String startLocal = chain.hops().isEmpty() ? TableLocal.name(startTable) : "source";
         code.addStatement("$T $L = $L", startTable.tableClass(), startLocal,
-            RoutineCallEmitter.emitCall(chain.start(), new PreviousNodeRef.None(), new ArgumentValueSource.Env()));
+            RoutineCallEmitter.emitCall(chain.start(), new PreviousNodeRef.None(),
+                new ArgumentValueSource.Env(), argHelpers));
         for (var hop : chain.hops()) {
             // The chain constructor pins every hop target to the catalog, so the alias wraps the
             // bare Tables.<X> singleton, matching every other alias-declaration site.

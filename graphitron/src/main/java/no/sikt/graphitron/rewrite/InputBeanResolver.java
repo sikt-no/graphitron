@@ -115,7 +115,7 @@ final class InputBeanResolver {
                 newParams.add(p);
                 continue;
             }
-            GraphQLInputType sdlType = argTypes.get(arg.graphqlArgName());
+            GraphQLInputType sdlType = argTypes.get(arg.path().headName());
             SdlElement sdl = peelSdlListNonNull(sdlType);
             if (!(sdl.elementType() instanceof GraphQLInputObjectType iot)) {
                 newParams.add(p);
@@ -128,14 +128,14 @@ final class InputBeanResolver {
                     "parameter '" + p.name() + "' on method '" + method.methodName()
                     + "' in class '" + method.className() + "' has Java element type '"
                     + elt.elementTypeName() + "' which is not loadable, but the GraphQL argument '"
-                    + arg.graphqlArgName() + "' is an input-object — declare a consumer-authored"
+                    + arg.path().headName() + "' is an input-object — declare a consumer-authored"
                     + " bean class (record or class with a public no-arg constructor) for the parameter"));
             }
             if (Map.class.isAssignableFrom(elementClass)) {
                 return new Result.Failed(Rejection.structural(
                     "parameter '" + p.name() + "' on method '" + method.methodName()
                     + "' in class '" + method.className() + "' has Java type 'java.util.Map' for"
-                    + " the GraphQL input-object argument '" + arg.graphqlArgName() + "' (type '"
+                    + " the GraphQL input-object argument '" + arg.path().headName() + "' (type '"
                     + GraphQLTypeUtil.simplePrint(sdlType) + "') — Map<K, V> at the service"
                     + " boundary is a permanent anti-pattern in graphitron; replace the parameter"
                     + " with a typed bean (record or class with a public no-arg constructor"
@@ -147,7 +147,7 @@ final class InputBeanResolver {
                     "parameter '" + p.name() + "' on method '" + method.methodName()
                     + "' in class '" + method.className() + "' has Java element type '"
                     + elementClass.getName() + "' (JDK / jOOQ / enum / array) but the GraphQL"
-                    + " argument '" + arg.graphqlArgName() + "' has input-object type '"
+                    + " argument '" + arg.path().headName() + "' has input-object type '"
                     + GraphQLTypeUtil.simplePrint(sdlType) + "' — replace the parameter type with a"
                     + " consumer-authored bean class mirroring the input-object"));
             }
@@ -156,7 +156,7 @@ final class InputBeanResolver {
                     "parameter '" + p.name() + "' on method '" + method.methodName()
                     + "' in class '" + method.className() + "' is "
                     + (elt.list() ? "list-shaped on Java side" : "scalar on Java side")
-                    + " but the GraphQL argument '" + arg.graphqlArgName() + "' is "
+                    + " but the GraphQL argument '" + arg.path().headName() + "' is "
                     + (sdl.list() ? "list-shaped" : "scalar")
                     + " — match the cardinalities"));
             }
@@ -170,7 +170,7 @@ final class InputBeanResolver {
             // on that parity to read list-ness off the Java type alone.
             if (ctx.lookAheadVerdict(iot.getName()) instanceof GraphitronType.JooqTableRecordInputType jtr) {
                 JooqBuilt jbuilt = buildJooqRecord(jtr, iot, p.name(), method.methodName(),
-                    method.className(), arg.graphqlArgName());
+                    method.className(), arg.path().headName());
                 if (jbuilt instanceof JooqBuilt.Fail jf) {
                     return new Result.Failed(jf.rejection());
                 }

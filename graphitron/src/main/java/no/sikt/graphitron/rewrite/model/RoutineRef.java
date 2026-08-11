@@ -39,10 +39,12 @@ public record RoutineRef(ClassName routinesClass, String methodName, List<ArgBin
      * is the boxed Java type of the routine parameter (e.g. {@code java.lang.String}), used to
      * emit a typed read at the call site.
      *
-     * <p>{@code source} is the shared call-source taxonomy ({@link ParamSource}), so a routine
-     * parameter has exactly one source shape: {@link ParamSource.Arg} when a GraphQL field
-     * argument supplies the value ({@code argMapping}). The other {@link ParamSource} arms are
-     * never minted for routine bindings; the resolver produces only the arms named here.
+     * <p>{@code source} is the routine-shaped branch of the shared call-source taxonomy,
+     * {@link ParamSource.RoutineParamSource}: {@link ParamSource.Arg} when a GraphQL field
+     * argument supplies the value ({@code argMapping}), {@link ParamSource.SourceColumn} when a
+     * column of the chain's previous node does ({@code columnMapping}). The narrowing is carried
+     * by the type rather than by prose, so the emitter's switch has no unreachable arms.
      */
-    public record ArgBinding(String routineParamName, TypeName paramType, ParamSource source) {}
+    public record ArgBinding(String routineParamName, TypeName paramType,
+            ParamSource.RoutineParamSource source) {}
 }

@@ -37,17 +37,37 @@ import java.util.Set;
 record ArgBindingMap(Map<String, PathExpr> byJavaName) {
 
     /**
-     * Result of the {@link #of} factory.
+     * Result of the {@link #of} factory: the one seam every directive's {@code argMapping}
+     * resolution passes through.
      *
      * <p>{@link UnknownArgRef} fires when the head segment of an override doesn't name a slot at
      * the directive's scope. {@link PathRejected} fires when a tail segment fails structural
-     * validation against the GraphQL schema. Distinct arms so the caller's switch renders the
-     * appropriate "head segment" vs. "path tail" site context.
+     * validation against the GraphQL schema. They stay distinct records rather than collapsing
+     * into one string because a site may qualify one arm and not the other:
+     * {@code BuildContext.resolveConditionRef} resolves against an empty slot map, so its
+     * "available arguments are []" rendering only makes sense with the extra
+     * "no GraphQL arguments are in scope at a path-step {@code @condition}" clause it adds to
+     * the {@link UnknownArgRef} arm alone.
+     *
+     * <p>{@link Failure} is the shared read for the majority of sites, which lift both arms into
+     * the same failure channel with the same site prefix. Matching it instead of the two arms
+     * keeps the wording in one place per site; a site that needs the distinction still matches
+     * the records.
      */
     sealed interface Result {
         record Ok(ArgBindingMap map) implements Result {}
-        record UnknownArgRef(String message) implements Result {}
-        record PathRejected(String message) implements Result {}
+
+        /**
+         * The two failure arms of {@link #of}, sharing the message accessor so a site that treats
+         * them identically writes one arm. Site context (which directive the override sits on) is
+         * added by the caller.
+         */
+        sealed interface Failure extends Result {
+            String message();
+        }
+
+        record UnknownArgRef(String message) implements Failure {}
+        record PathRejected(String message) implements Failure {}
     }
 
     /**
@@ -224,7 +244,11 @@ record ArgBindingMap(Map<String, PathExpr> byJavaName) {
         return new ParsedArgMapping.Ok(Collections.unmodifiableMap(overrides));
     }
 
-    private static String formatNameSet(Set<String> names) {
+    /**
+     * Renders a name set the way every {@code argMapping} diagnostic renders one, so the routine
+     * resolver's own "available arguments are …" clause reads identically to {@link #of}'s.
+     */
+    static String formatNameSet(Set<String> names) {
         if (names.isEmpty()) return "[]";
         return names.stream().sorted().collect(java.util.stream.Collectors.joining("', '", "['", "']"));
     }

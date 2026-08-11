@@ -1,6 +1,8 @@
 package no.sikt.graphitron.render;
 
 import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.rewrite.PathExpr;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.RoutineRef;
 import no.sikt.graphitron.rewrite.model.TableExpr;
@@ -43,28 +45,28 @@ public final class RoutineCallEmitter {
      *                     {@code parentInput} field lookup (the {@link PreviousNodeRef} fork)
      * @param argSource    where {@link ParamSource.Arg} bindings read their runtime
      *                     values (the env-vs-SelectedField fork)
+     * @param argHelpers   collects the descent helper a dot-path binding needs; untouched when
+     *                     every binding names a bare slot
      */
     public static CodeBlock emitCall(TableExpr.RoutineCall rc, PreviousNodeRef previousNode,
-            ArgumentValueSource argSource) {
+            ArgumentValueSource argSource, ArgPathHelperRegistry argHelpers) {
         var routine = rc.routine();
         boolean correlated = routine.argBindings().stream()
             .anyMatch(b -> b.source() instanceof ParamSource.SourceColumn);
         CodeBlock args = CodeBlock.join(routine.argBindings().stream()
-            .map(b -> argExpression(b, correlated, previousNode, argSource))
+            .map(b -> argExpression(b, correlated, previousNode, argSource, argHelpers))
             .toList(), ", ");
         return CodeBlock.of("$T.$L($L)", routine.routinesClass(), routine.methodName(), args);
     }
 
     private static CodeBlock argExpression(RoutineRef.ArgBinding b, boolean correlated,
-            PreviousNodeRef previousNode, ArgumentValueSource argSource) {
+            PreviousNodeRef previousNode, ArgumentValueSource argSource,
+            ArgPathHelperRegistry argHelpers) {
         return switch (b.source()) {
             case ParamSource.Arg arg -> {
-                CodeBlock raw = switch (argSource) {
-                    case ArgumentValueSource.Env ignored ->
-                        CodeBlock.of("env.<$T>getArgument($S)", b.paramType(), arg.graphqlArgName());
-                    case ArgumentValueSource.FromSelectedField sf ->
-                        CodeBlock.of("($T) $L.getArguments().get($S)", b.paramType(), sf.sfLocal(), arg.graphqlArgName());
-                };
+                CodeBlock raw = arg.path().isHead()
+                    ? typedSlotRead(b.paramType(), arg.path().headName(), argSource)
+                    : nestedSlotRead(b.paramType(), arg.path(), argSource, argHelpers);
                 yield correlated ? CodeBlock.of("$T.val($L)", DSL, raw) : raw;
             }
             case ParamSource.SourceColumn sc -> switch (previousNode) {
@@ -86,23 +88,35 @@ public final class RoutineCallEmitter {
                     + "previous node, and RoutineChain pins every start binding to "
                     + "ParamSource.Arg");
             };
-            case ParamSource.Context ignored -> throw nonRoutineParamSource(b);
-            case ParamSource.Sources ignored -> throw nonRoutineParamSource(b);
-            case ParamSource.DslContext ignored -> throw nonRoutineParamSource(b);
-            case ParamSource.Table ignored -> throw nonRoutineParamSource(b);
-            case ParamSource.SourceTable ignored -> throw nonRoutineParamSource(b);
+        };
+    }
+
+    /** The bare-slot read: the argument value typed at the read itself. */
+    private static CodeBlock typedSlotRead(TypeName paramType, String slot, ArgumentValueSource argSource) {
+        return switch (argSource) {
+            case ArgumentValueSource.Env ignored ->
+                CodeBlock.of("env.<$T>getArgument($S)", paramType, slot);
+            case ArgumentValueSource.FromSelectedField sf ->
+                CodeBlock.of("($T) $L.getArguments().get($S)", paramType, sf.sfLocal(), slot);
         };
     }
 
     /**
-     * A routine {@link RoutineRef.ArgBinding} carrying a {@link ParamSource} arm
-     * {@code RoutineDirectiveResolver} never mints for routine bindings reached emission —
-     * a classifier bug, not an authoring error.
+     * The dot-path read: the outer slot's raw value handed to a registered descent helper, which
+     * walks the tail and applies the leaf cast. Untyped at the read because the helper's parameter
+     * is {@code Object} and the walk has to guard each level anyway.
      */
-    private static IllegalStateException nonRoutineParamSource(RoutineRef.ArgBinding binding) {
-        return new IllegalStateException(
-            "routine binding for parameter '" + binding.routineParamName() + "' carries "
-            + binding.source().getClass().getSimpleName()
-            + " — RoutineDirectiveResolver mints only ParamSource.Arg and ParamSource.SourceColumn");
+    private static CodeBlock nestedSlotRead(TypeName paramType, PathExpr path,
+            ArgumentValueSource argSource, ArgPathHelperRegistry argHelpers) {
+        var segments = path.segments();
+        var tail = segments.subList(1, segments.size()).stream().map(PathExpr.Segment::name).toList();
+        String helper = argHelpers.register(path.headName(), tail, paramType);
+        CodeBlock root = switch (argSource) {
+            case ArgumentValueSource.Env ignored ->
+                CodeBlock.of("env.getArgument($S)", path.headName());
+            case ArgumentValueSource.FromSelectedField sf ->
+                CodeBlock.of("$L.getArguments().get($S)", sf.sfLocal(), path.headName());
+        };
+        return CodeBlock.of("$L($L)", helper, root);
     }
 }

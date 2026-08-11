@@ -69,15 +69,16 @@ public final class PathFragments {
      * @param previousNode where correlated routine-call bindings read the chain's previous
      *                     node's columns
      * @param argSource    where argument-sourced routine bindings read runtime values
+     * @param argHelpers   collects the descent helper a dot-path routine binding needs
      */
     public static CodeBlock emitTableExpression(JoinStep step, PreviousNodeRef previousNode,
-            ArgumentValueSource argSource) {
+            ArgumentValueSource argSource, ArgPathHelperRegistry argHelpers) {
         return switch (step) {
             case JoinStep.Hop hop -> switch (hop.target()) {
                 case TableExpr.Catalog c -> CodeBlock.of("$T.$L",
                     c.table().constantsClass(), c.table().javaFieldName());
                 case TableExpr.RoutineCall rc ->
-                    RoutineCallEmitter.emitCall(rc, previousNode, argSource);
+                    RoutineCallEmitter.emitCall(rc, previousNode, argSource, argHelpers);
             };
         };
     }

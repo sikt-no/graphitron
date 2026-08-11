@@ -830,8 +830,12 @@ class ServiceCatalog {
      * {@code slotTypes} through each subsequent dot-path segment's input-object field. Returns
      * {@code null} when the head slot is absent or the path descends through a non-input-object
      * intermediate (the caller then passes through the wire-coercion check conservatively).
+     *
+     * <p>Package-visible because {@code RoutineDirectiveResolver} feeds the same leaf type into
+     * the same {@link #argExtraction} gate: one type check for every {@code argMapping} binding,
+     * whichever directive authored it.
      */
-    private static GraphQLInputType resolvePathLeafType(PathExpr path, Map<String, GraphQLInputType> slotTypes) {
+    static GraphQLInputType resolvePathLeafType(PathExpr path, Map<String, GraphQLInputType> slotTypes) {
         if (path == null || slotTypes == null) return null;
         GraphQLInputType current = slotTypes.get(path.headName());
         var segments = path.segments();

@@ -97,7 +97,11 @@ class PackageImportDirectionTest {
         // (Map/List by per-key list-ness) has one formula, and the launcher renderer's
         // service arms read the same one the classifier's return-type equality check reads,
         // so the two hosts cannot drift.
-        "no.sikt.graphitron.rewrite.model.RowsMethodShape"
+        "no.sikt.graphitron.rewrite.model.RowsMethodShape",
+        // Already admitted implicitly through ParamSource.Arg (see BORROWED_COMPONENT_CLOSURE);
+        // named here because the routine call emitter forks on the path shape directly — a bare
+        // slot reads the argument, a dot-path reads it through a registered descent helper.
+        "no.sikt.graphitron.rewrite.PathExpr"
     );
 
     /**

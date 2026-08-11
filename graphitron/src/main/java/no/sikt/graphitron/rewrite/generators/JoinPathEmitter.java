@@ -50,8 +50,9 @@ public final class JoinPathEmitter {
 
     /** See {@link PathFragments#emitTableExpression}. */
     public static CodeBlock emitTableExpression(JoinStep step, PreviousNodeRef previousNode,
-            ArgumentValueSource argSource) {
-        return PathFragments.emitTableExpression(step, previousNode, argSource);
+            ArgumentValueSource argSource,
+            no.sikt.graphitron.render.ArgPathHelperRegistry argHelpers) {
+        return PathFragments.emitTableExpression(step, previousNode, argSource, argHelpers);
     }
 
     /** See {@link no.sikt.graphitron.render.JoinFragments#emitBridgingJoin}. */

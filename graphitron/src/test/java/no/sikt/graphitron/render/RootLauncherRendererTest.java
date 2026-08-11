@@ -320,7 +320,8 @@ class RootLauncherRendererTest {
     }
 
     private static MethodSpec render(LauncherCommand row) {
-        return RootLauncherRenderer.render(row, CarrierDsl.ENV_ACQUIRED);
+        return RootLauncherRenderer.render(row, CarrierDsl.ENV_ACQUIRED,
+            new no.sikt.graphitron.render.ArgPathHelperRegistry());
     }
 
     private static String body(LauncherCommand row) {

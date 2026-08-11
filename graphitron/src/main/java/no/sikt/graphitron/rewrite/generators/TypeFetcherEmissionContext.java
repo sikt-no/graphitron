@@ -42,6 +42,9 @@ final class TypeFetcherEmissionContext {
     // TypeFetcherGenerator installs a populated one up front.
     private FetchersHelperNames fetchersHelperNames = FetchersHelperNames.bare();
 
+    private final no.sikt.graphitron.render.ArgPathHelperRegistry argPathHelpers =
+        new no.sikt.graphitron.render.ArgPathHelperRegistry();
+
     TypeFetcherEmissionContext(GraphQLSchema assembledSchema, String parentTypeName) {
         this(assembledSchema, parentTypeName, null);
     }
@@ -89,6 +92,17 @@ final class TypeFetcherEmissionContext {
     /** The SDL parent type name (the type whose fields are being emitted as fetchers). */
     String parentTypeName() {
         return parentTypeName;
+    }
+
+    /**
+     * This class's nested-argument descent registry: a {@code @routine} binding authored as a
+     * dot-path registers its walk here and the helper drains onto the {@code <Type>Fetchers}
+     * class at assembly. Carried on the emission context rather than threaded as a parameter
+     * because the routine call sites are spread across the fetcher, launcher and companion
+     * emitters, all of which already hold the context.
+     */
+    no.sikt.graphitron.render.ArgPathHelperRegistry argPathHelpers() {
+        return argPathHelpers;
     }
 
     /**

@@ -155,8 +155,10 @@ public final class ArgCallEmitter {
             }
             return buildListAwarePathExtraction(arg.path(), param.typeName());
         }
+        // The head is the right read: it names the slot the extraction roots on, and any tail
+        // segments ride the NestedInputField extraction extractionForArg mints.
         return buildArgExtraction(ctx,
-            new CallParam(arg.graphqlArgName(), extractionForArg(arg), false, param.typeName()));
+            new CallParam(arg.path().headName(), extractionForArg(arg), false, param.typeName()));
     }
 
     /**
