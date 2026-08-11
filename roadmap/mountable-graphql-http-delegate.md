@@ -312,10 +312,13 @@ Add a defaulted SPI toggle alongside `graphiqlEnabled()`:
 default boolean builtInEndpointEnabled() { return true; }
 ```
 
-`builtInEndpointEnabled`, not `defaultEndpointEnabled`: "built-in" is the word this item, the module
-docs, and the example README already use for the library's own `/graphql`, and "default" invites the
-reading "the endpoint you get unless configured otherwise", which is what the toggle *changes*
-rather than what it names. The placement rides the SPI for the reason `graphiqlEnabled()`'s javadoc
+`builtInEndpointEnabled`, not `defaultEndpointEnabled`: "default" invites the reading "the endpoint
+you get unless configured otherwise", which is what the toggle *changes* rather than what it names,
+where "built-in" says plainly that the library ships this route itself. The word is this item's, not
+yet the tree's: `modules.adoc`, the example README and `graphitron-jakarta-rest` say "self-hosted",
+"out of the box" and "the `/graphql` resource", and none of them says "built-in" today. The prose this
+item adds to the first two is what introduces it, so the name and the docs land together rather than
+the name claiming support that does not exist yet. The placement rides the SPI for the reason `graphiqlEnabled()`'s javadoc
 already carries: the framework decision is vendor-neutral Jakarta with no dependency outside the
 parent pom's pinned set, so the library cannot reach for a config framework itself.
 
@@ -333,8 +336,12 @@ private void requireBuiltInEndpoint() {
 Throwing, not `return Response.status(404).build()`, because `schema()` returns `String`: a
 status-returning gate is expressible in four of the five methods and not the fifth, and the fix is
 not to widen `schema()`'s published return type for the sake of the gate. One throwing helper gates
-all five uniformly, and `jakarta.ws.rs.NotFoundException` is the same 404 the `graphiqlEnabled()`
-gate produces. The gate runs in `GraphqlResource` before it delegates, so this
+all five uniformly, and `jakarta.ws.rs.NotFoundException` yields the same 404 *status* as the
+`graphiqlEnabled()` gate. Not necessarily the same body: a thrown `NotFoundException` is rendered by
+the container's exception mapper, while `Response.status(NOT_FOUND).build()` returns an empty entity,
+so the two 404s can differ below the status line. Nothing in the contract depends on the body of a
+disabled route, so test 22 asserts the status only, and the two gates are deliberately not claimed to
+agree further than that. The gate runs in `GraphqlResource` before it delegates, so this
 `WebApplicationException` never meets the pipeline's passthrough arm; it goes straight to the
 container, which is the same mechanism §8 preserves for the consumer's own 401.
 
@@ -371,9 +378,19 @@ or more path segments. The consequences, none of which the toggle removes:
 
 So the honest statement for the javadoc and the consumer example is: a consumer mounting directly
 under `/graphql/{...}` shadows the built-in sub-paths whatever the toggle says, and must serve
-`assets/{name}` and `schema` from its own resource if it wants them. This is a claim about the
-container's matching algorithm across two resource classes, so the test plan pins it rather than
-asserting it, in the one place a claim like that can be pinned: a running container.
+`assets/{name}` and `schema` from its own resource if it wants them.
+
+This is a claim about the container's matching algorithm across two root resource classes, so the
+test plan pins it in a running container rather than asserting it. It pins the *algorithm*, with a
+neutral pair of fixture paths, and does not stage the real `/graphql` overlap. That is not
+squeamishness, it is the only shape available: a `@Path` class in test sources is registered from the
+build-time index for every `@QuarkusTest` deployment in the module, and a `@TestProfile` selects
+config, alternatives and a build profile without changing the deployment's class set, so a fixture
+mounted at `/graphql/{...}` would shadow the built-in sub-paths for every other test in the module,
+not just its own. The `Application`-subclass route above is application-wide for the same reason and
+scopes nothing per test class. An implementer who "restores" the realistic paths will break
+`GraphqlResourceSmokeTest`'s page and asset cases; the neutral pair is load-bearing, not a
+placeholder.
 
 ### 8. What does not change
 
@@ -484,6 +501,15 @@ public class EnvironmentGraphqlResource {
     }
 
     @GET
+    @Produces(MediaType.TEXT_HTML)
+    public Response graphiql(@Context UriInfo uriInfo) {
+        // Same shape as the built-in resource: one @GET per produced type, so a browser sending
+        // Accept: text/html lands here and curl/POST traffic does not. Omit this arm and a browser
+        // gets 406 from the JSON-only arm above.
+        return graphiql.page(uriInfo);    // {{ASSET_BASE}} resolves to this request's path + assets/
+    }
+
+    @GET
     @Path("assets/{name}")
     public Response asset(@PathParam("name") String name) {
         return graphiql.asset(name);      // gated behind GraphitronApplication.graphiqlEnabled()
@@ -581,14 +607,26 @@ copy-paste template.
     the toggle is evaluated per request, so it must not be read as evidence for the design fork in
     §6; under the registration-level alternative the test could not exist at all.
 
-**Routing overlap** (`OverlappingMountTest`, `@QuarkusTest` + `@ExecutionTier`, behind a
-`@TestProfile`). §7's claim is about Jakarta REST's matching algorithm across two resource classes,
-so it gets pinned rather than asserted. The profile boots a second app instance carrying a fixture
-mounted at `@Path("/graphql/{callingEnvironment}")`, overlapping the built-in resource, with
-`builtInEndpointEnabled()` false. It pins that `/graphql/schema` and `/graphql/assets/graphiql.js`
-reach the *consumer's* class rather than the library's, and that bare `/graphql` is 404 under the
-toggle. It needs its own profile precisely because an overlapping mount in the shared test app would
-shadow the built-in sub-paths for every other test in the module, which is itself the finding.
+**Routing overlap** (`OverlappingMountTest`, `@QuarkusTest` + `@ExecutionTier`, no profile and no
+second boot). §7's claim is about Jakarta REST's matching algorithm across two root resource classes,
+so it gets pinned rather than asserted, at paths that overlap each other and nothing else. Two
+fixtures in test sources: `@Path("/probe")` with a `schema` sub-path and an `assets/{name}`
+sub-resource, and `@Path("/probe/{p}")` catching a sub-path, each answering with its own identity so
+which class served the request is visible in the body. Isomorphic to the real case by construction:
+`/probe/` is seven literal characters against `/probe`'s six, the same one-character margin `/graphql/`
+holds over `/graphql`.
+
+- `/probe/schema` reaches the templated class with `p = "schema"`, not the literal class's sub-path.
+- `/probe/assets/probe.js` reaches the templated class too, with the remainder as its sub-path.
+- Bare `/probe` reaches the literal class, because the templated pattern needs a second segment.
+
+Those three are §7's three consequences with the names changed, and the arithmetic that carries them
+across (nine against eight rather than seven against six) is in the assertion messages so the
+correspondence is not left to a reader. What this deliberately does not pin is the `/graphql` overlap
+itself, for the reason §7 gives: staging it would shadow the built-in sub-paths for every test in the
+module rather than for this one class. The toggle half of the old formulation is not lost, it was
+always better placed in test 22, which asserts all five built-in routes answer 404 with the toggle
+off.
 
 **Regression, unchanged expectations.** Every case in `GraphQLOverHttpConformanceTest` and
 `GraphqlResourceSmokeTest` passes with no edit to its expectations, plus one case the suite is
@@ -664,8 +702,8 @@ recorded here so the sign-off reviewer sees what was weighed rather than only wh
    gate on a route that stays registered, exactly like the `graphiqlEnabled()` sibling it sits next
    to. What changed is the claim around it: the first draft said disabling the built-in endpoint
    "removes the question entirely" for the routing overlap, which is false, and had the JAX-RS
-   matching backwards on top of that. §7 now states the real consequence and test class
-   `OverlappingMountTest` pins it.
+   matching backwards on top of that. §7 now states the real consequence, and `OverlappingMountTest`
+   pins the matching algorithm that produces it (at neutral paths, per decision 12).
 5. **Coverage splits by tier, not by habit** (test plan). Ten of the first draft's fourteen
    execution-tier cases were assertions about a pure decision, reachable without a container; they
    are now a unit-tier table, with the container keeping only what only a container can show
@@ -674,9 +712,9 @@ recorded here so the sign-off reviewer sees what was weighed rather than only wh
    would trade a pristine copy-paste template for a worked example that the manual how-to (R530) is
    the right home for anyway.
 
-## Decisions taken at the sign-off review
+## Decisions taken at the sign-off reviews
 
-The review pass checked the claims above against the tree rather than reading them: graphql-java
+**First pass.** The review checked the claims above against the tree rather than reading them: graphql-java
 25.0's `NodeUtil.getOperation(Document, String)` does exist and its class does carry
 `@graphql.Internal` (runtime-retained), so §4's rejection is grounded; §7's literal-character sort
 works out as described (`/graphql/` is nine characters against `/graphql`'s eight, and the templated
@@ -693,10 +731,10 @@ things changed:
    nothing has asked for. A consumer that must pre-parse its own body (multipart, its own
    `MessageBodyReader`) gets a fresh Backlog item and an additive overload when it asks. Test 14 pins
    the invariant that replaced the warning.
-7. **The toggle is `builtInEndpointEnabled()`, not `defaultEndpointEnabled()`** (§6). The item, the
-   module docs and the example README all say "built-in" for the library's own `/graphql`; "default"
-   named the thing the toggle changes rather than the thing it gates. Cheapest to settle before it is
-   published SPI on a Maven-Central artifact.
+7. **The toggle is `builtInEndpointEnabled()`, not `defaultEndpointEnabled()`** (§6). "Default" named
+   the thing the toggle changes rather than the thing it gates. Cheapest to settle before it is
+   published SPI on a Maven-Central artifact. (The rationale first given here for the winning name
+   was wrong on a checkable point; decision 13 corrects it.)
 8. **One throwing gate, because `schema()` returns `String`** (§6). The draft said all five methods
    "return 404", which four of them can and the fifth cannot. `requireBuiltInEndpoint()` throwing
    `NotFoundException` gates all five uniformly and needs no change to a published return type.
@@ -720,3 +758,32 @@ things changed:
     `GraphqlResource` as the asset streamer, and neither is Java, so no gate can see them. More to the
     point, without a `Retired vocabulary` section the Done gate's retirement sweep is explicitly
     skipped, so this whole class of rot had no enforcer anywhere in the pipeline. Now it has one.
+
+**Second pass.** The next reviewer found the first pass had left a mechanism claim unverified and a
+naming claim ungrounded. Four more changes:
+
+12. **The routing-overlap test drops the real `/graphql` overlap for a neutral `/probe` pair**
+    (§7, test plan). The plan had the overlapping fixture "behind a `@TestProfile`", which does not
+    scope it: a `@Path` class in test sources is registered from the build-time index for every
+    `@QuarkusTest` deployment in the module, and a test profile selects config, alternatives and a
+    build profile without changing the deployment's class set. Implemented as written, the fixture
+    would have shadowed `/graphql/schema` and `/graphql/assets/*` for the whole module and broken
+    `GraphqlResourceSmokeTest`'s page and asset cases. The neutral pair carries the same
+    one-character literal margin, pins the same three consequences, needs no profile and no second
+    boot, and cannot break a neighbour. §7 now records why the realistic paths are unavailable, so
+    the next implementer does not restore them.
+13. **The `builtInEndpointEnabled()` naming argument is corrected** (§6). The draft said "built-in" is
+    the word the module docs and the example README already use. A grep says otherwise: those surfaces
+    say "self-hosted", "out of the box" and "the `/graphql` resource", and none says "built-in". The
+    name is still the better of the two on the merits, and the prose this item adds is what introduces
+    the word, so the argument now says that instead of claiming support it does not have. That is the
+    second naming rationale in this item falsified by a grep, which is a standing warning about
+    asserting what the tree says without looking.
+14. **The 404 claim is narrowed to the status** (§6). A thrown `NotFoundException` renders through the
+    container's exception mapper; `Response.status(NOT_FOUND).build()` returns an empty entity. Same
+    code, possibly different body, so the two gates are claimed to agree on the status only and test 22
+    asserts nothing more.
+15. **The consumer example gains the GraphiQL page arm.** It injected `GraphiqlBundle` and called only
+    `asset`, so a consumer copying it served assets for a page it never served, and a browser sending
+    `Accept: text/html` would get 406 from the JSON-only `@GET`. The example now matches both the
+    built-in resource's shape and the execution-tier fixture's.
