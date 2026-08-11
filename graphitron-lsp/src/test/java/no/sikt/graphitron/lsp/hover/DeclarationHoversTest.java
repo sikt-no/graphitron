@@ -202,7 +202,9 @@ class DeclarationHoversTest {
     @Test
     void routineChainRendersAsOneClaimLine() {
         // A chained @routine is one claim whose steps are its slot facts: one line, the steps
-        // joined in application-ordinal order, never two rival-looking Routine lines.
+        // listed in application-ordinal order, never two rival-looking Routine lines. Comma,
+        // not a path arrow: @reference hops may interleave with the routine applications, so
+        // the claim knows the steps' order but not their adjacency.
         var file = file("""
             type Query {
                 films: [Film] @service(service: {className: "com.example.FilmService", method: "run"}) @routine(name: "first_fn") @routine(name: "second_fn")
@@ -220,7 +222,7 @@ class DeclarationHoversTest {
             Map.of());
         var hover = DeclarationHovers.compute(file, snapshot, pos).orElseThrow();
         var md = hover.getContents().getRight().getValue();
-        assertThat(md).contains("Routine (@routine): `first_fn` → `second_fn`");
+        assertThat(md).contains("Routine (@routine): `first_fn`, `second_fn`");
     }
 
     // ===== extend type X { ... } parity =====

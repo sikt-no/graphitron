@@ -1328,7 +1328,13 @@ write-target precedence and let the projection assert a table the classifier ref
 grain to one claim row per coordinate, so a chain never reads as
 routine-conflicting-with-routine, and per slice 2's own words the chain is one claim whose
 steps are the claim's slot facts; the first landing carried only the minimum-ordinal ref,
-caught in review), `NodeId` its `node_type_ref`, `LookupKey` provenance only. Enrichment joins
+caught in review), `NodeId` its `node_type_ref`, `LookupKey` provenance only. The interleaved
+shape `@routine @reference @routine` settled a boundary the review also probed: `@reference`
+contributes hops to the field's travel chain but has no claim-view arm, so it neither
+conflicts nor splits the chain, and its hops stay out of the Routine claim's slots
+(per-directive slot ownership again). The claim knows the steps' order but not their
+adjacency, because the store's per-name ordinal deliberately does not model cross-directive
+order, so the hover lists the steps instead of drawing a travel path. Enrichment joins
 each claim's semantic relation Java-side in the derive reader, scoped to conflicted
 coordinates; per-classifier slot views were considered and declined because each would
 re-project a single base relation 1:1 with no derivation content. The arm-list agreement has a

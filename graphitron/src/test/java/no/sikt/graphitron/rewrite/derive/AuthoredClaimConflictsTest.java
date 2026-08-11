@@ -401,6 +401,30 @@ class AuthoredClaimConflictsTest {
     }
 
     @Test
+    void interleavedReferenceNeverClaimsAndNeverSplitsTheChain() {
+        // @reference contributes hops to the field's travel chain but has no claim-view arm, so
+        // @routine @reference @routine is still one ROUTINE claim carrying both steps: the hop
+        // can neither appear as a conflict party nor split the chain into rival-looking claims.
+        var sdl = """
+            type Film @table(name: "film") { title: String }
+            type Query {
+                films: [Film]
+                    @service(service: {className: "%s", method: "run"})
+                    @routine(name: "first_fn")
+                    @reference(path: [{key: "film_language_id_fkey"}])
+                    @routine(name: "second_fn")
+            }
+            """.formatted(SERVICE_STUB);
+        var detection = detectionAgainstWalk(sdl);
+        assertThat(detection.fieldConflicts()).hasSize(1);
+        var conflict = detection.fieldConflicts().getFirst();
+        assertThat(conflict.rejection().message()).isEqualTo("@service, @routine are mutually exclusive");
+        assertThat(conflict.claims()).hasSize(2);
+        var routine = (FieldClaim.Routine) conflict.claims().get(1);
+        assertThat(routine.routineRefs()).containsExactly("first_fn", "second_fn");
+    }
+
+    @Test
     void presenceArmClaimsCarryNoSlotFacts() {
         // A declined decode still claims (the presence arm), but its slot facts are absent and
         // the claim says so through decoded=false; consumers render the honest gap instead of

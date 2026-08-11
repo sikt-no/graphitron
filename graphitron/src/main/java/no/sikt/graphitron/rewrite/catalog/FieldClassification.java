@@ -510,7 +510,10 @@ public sealed interface FieldClassification
          * {@code @routine}: the chain's routine references in application-ordinal order. The
          * repeatable directive's whole chain is one claim, so the claims list's cardinality
          * stays the conflict signal; more than one reference here means the author chained,
-         * not that routines rival each other.
+         * not that routines rival each other. The list states the steps and their order, not
+         * their adjacency: {@code @reference} hops may interleave with the applications, and
+         * hops are another directive's facts, outside this claim's slots. Rendering should
+         * list, not draw a travel path.
          */
         record Routine(List<String> routineRefs, String trigger, boolean decoded,
                        CompletionData.SourceLocation location) implements Claim {

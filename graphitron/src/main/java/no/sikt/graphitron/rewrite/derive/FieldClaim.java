@@ -67,7 +67,11 @@ public sealed interface FieldClaim {
     /**
      * {@code @routine}: the chain's routine references in application-ordinal order. The
      * repeatable directive's whole chain is one claim (two applications must never read as
-     * routine-conflicting-with-routine), and its steps are the claim's slot facts.
+     * routine-conflicting-with-routine), and its steps are the claim's slot facts. Interleaved
+     * {@code @reference} hops are another directive's facts and never claim, so they neither
+     * split the chain into rival claims nor enter these slots; the steps' order is known here,
+     * their adjacency is not (the store's per-name ordinal does not model cross-directive
+     * order).
      */
     record Routine(List<String> routineRefs, String trigger, boolean decoded, SourceLocation location)
         implements FieldClaim {

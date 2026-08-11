@@ -323,9 +323,12 @@ public final class DeclarationHovers {
             case FieldClassification.Claim.Routine r -> {
                 sb.append("Routine (@").append(r.trigger()).append(")");
                 if (r.routineRefs() != null && !r.routineRefs().isEmpty()) {
+                    // Comma, not a path arrow: the steps' order is a slot fact, their adjacency
+                    // is not (@reference hops may interleave, and the store's per-name ordinal
+                    // does not model cross-directive order).
                     sb.append(": ").append(r.routineRefs().stream()
                         .map(ref -> "`" + ref + "`")
-                        .collect(Collectors.joining(" → ")));
+                        .collect(Collectors.joining(", ")));
                 }
             }
             case FieldClassification.Claim.Mutation m -> {
