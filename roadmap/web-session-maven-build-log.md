@@ -1,13 +1,13 @@
 ---
 id: R623
 title: "Redirect Maven output to a log file in web sessions via .mvn/maven.config"
-status: Backlog
+status: Spec
 bucket: dx
 priority: 4
 theme: tooling
 depends-on: []
 created: 2026-08-10
-last-updated: 2026-08-10
+last-updated: 2026-08-11
 ---
 
 # Redirect Maven output to a log file in web sessions via .mvn/maven.config
