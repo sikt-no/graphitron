@@ -15,7 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R617` | Lookup misses drop rows instead of holding their position | Ready | 2026-08-10 <sub>created 2026-08-09</sub> | [plan](lookup-positional-contract-unimplemented.md) |
-| `R630` | The fact architecture's durable documentation home | Spec | 2026-08-11 | [plan](fact-architecture-docs-home.md) |
+| `R630` | The fact architecture's durable documentation home | Ready | 2026-08-11 | [plan](fact-architecture-docs-home.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-10 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R612` | The schema scan and its freshness replay share one typed recipe | Ready | 2026-08-10 <sub>created 2026-08-08</sub> | [plan](maven-config-fact-family.md) |
@@ -415,7 +415,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### docs
 
-- `R630` [**The fact architecture's durable documentation home**](fact-architecture-docs-home.md) — Spec, docs
+- `R630` [**The fact architecture's durable documentation home**](fact-architecture-docs-home.md) — Ready, docs
 - `R596` [**Cross-file xref paths naming deleted plan pages publish as 404 links**](dangling-plan-page-xref-paths.md) — Backlog, cleanup
 - `R592` [**Document the lint rules as a manual reference page**](lint-rule-reference-page.md) — Backlog, dx
 - `R604` [**LeafCoverageReport carries a private escapeAdocCell duplicating Main's**](roadmap-tool-adoc-cell-escape-dedup.md) — Backlog, cleanup
