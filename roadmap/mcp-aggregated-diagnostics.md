@@ -105,8 +105,8 @@ in `Structural` via both `FieldBuilder` and `MutationInputResolver.rejectInputFi
 moved both sites, and `@notGenerated` with them, onto `Rejection.directiveConflict`. On today's tree
 no retired-directive rejection reaches the `Structural` arm: what is left there is the
 mutation-argument-shape and payload-classification rows. Nothing in the design depended on either
-example, but the residue reviewer decision 4 measures is smaller again, which is one more argument
-for that decision's default of omitting `messageTemplate`.
+example, but the residue the `messageTemplate` reviewer decision measures is smaller again, which is one
+more argument for that decision's default of omitting the dimension.
 
 ## The sealed hierarchy is not the investment surface
 
@@ -345,7 +345,9 @@ aggregate and the widened `diagnostics` filters read. Behind it:
 - **The transcription residue: the `rejection_` family**, the legacy walk's rejections loaded
   per snapshot at the dev session's cadence, one loader, transitional by construction (the
   residue section below).
-- **The lint arm, in the lint vocabulary, with its own relation and writer.** An earlier
+- **The lint arm: `lint_finding`, in the linter's vocabulary, with its own relation and
+  writer.** The family is `lint_`, named in the doctrine's mould for the oracle whose words
+  the rows are written in (`lint_rule` is `LintRule.id()`), parallel to `javac_`. An earlier
   revision put build warnings in the residue relation, and that was a nullable bag with two
   vocabularies: `kind`, `variant`, `lsp_code`, `attempt_kind`, `stub_key` NULL on every
   warning row and `lint_rule` NULL on every rejection row, the null pattern encoding which
@@ -415,10 +417,17 @@ is the one part of this design that reaches a module the rest of the item does n
   neither `no.sikt.graphitron.model` nor `DSLContext` in main sources today, so this is that
   module's first store dependency and its generated-classes containment argument applies here
   first.
-- No degradation posture is needed, and inventing one would be the error. `DevMojo` opens the
-  store unconditionally and `openAt` falls back to an in-memory store rather than failing, so a
-  live dev session always has a handle. The `null` window the `compileFacts` field documents is
-  the unit tier's bare mojos, which run no MCP server, so the aggregate never meets it.
+- The live path never degrades, but the two unit-tier boots are store-less by design and set
+  the tool's one degraded answer. `DevMojo` opens the store unconditionally and `openAt` falls
+  back to an in-memory store rather than failing, so a dev session always has a handle. The
+  handle-less servers are the test boots this item's own pins make mandatory:
+  `GraphitronMcpServerTest`'s tool-list boot (`new GraphitronMcpServer(loopback(0), new
+  Workspace())`) and `ServerInstructionsTest`'s helper (the full constructor with nulls and a
+  bare `Workspace`), both of which must advertise `diagnostics.aggregate` after this item. So
+  the short constructor passes no handle, and a call without one answers the same
+  availability posture `diagnostics` gives before the first snapshot: the shared snapshot
+  axes stating nothing is available, zero groups, no counts claimed. That is the existing
+  availability axis reaching one more case, not a new posture invented for cache trouble.
 
 **The residue is transitional, and this passage has now reversed twice, so the lineage is
 recorded.** The first draft called the load a bridge: registered under a new `BRIDGED`
@@ -494,10 +503,21 @@ rejected kind). Three constraints shape it:
   to exclude; joining the `intent_` demand views instead would perform the gate-flip
   `ClaimDomain`'s javadoc reserves for follow-up work, over a population `DemandShadowTest`
   measures as *not equal*, which moves the accept line and is out of scope here. So the
-  walk's reach lands as rows, a transcription named for the retiring vocabulary beside the
-  residue (it drains with the gate-flip), the view joins it, and the pilot's population is
-  unchanged by construction; the later gate-flip re-points one join at
-  `intent_resolved_*_demand`.
+  walk's reach lands as rows: **`walk_claim_domain`, its own family**, named for the legacy
+  walk whose reach the rows transcribe. It cannot share `rejection_`, whose warrant is that
+  its rows carry the `Rejection` hierarchy's spellings and no other vocabulary; membership
+  rows carry none of those words. The `walk_` name keeps the same retirement clock: when the
+  walk is gone, the family has no referent. **Its writer is the capture-and-detect pass, at
+  capture cadence**: `FactCapture.runInternal` already holds the `ClaimDomain` at the site
+  between `capture(...)` and `detect(...)`, so the rows write there, graph-scoped with the
+  capture's ownership scope, and a batch run's store carries them, which is what keeps the
+  pilot view answering in a batch store and the claim-conflict family minting in batch builds
+  after the cutover (dev-session cadence would have moved the accept line exactly as Out of
+  scope forbids). It registers `ORACLE` beside the residue: a transcription of the walk's
+  verdict that no store derivation reproduces, which is precisely what `DemandShadowTest`
+  measures. The view joins it, the pilot's population is unchanged by construction, and the
+  later gate-flip re-points one join at `intent_resolved_*_demand` and drains the relation
+  with the gate.
 - **Shadowed first, then the cutover.** The claim-view arms' `DERIVED` registrations are
   non-vacuous today only because the Java reduction is an independent second evaluation.
   Flip the report to project the view in the same motion and the anchor collapses to the
@@ -594,8 +614,9 @@ through `DevMojo`'s `sessionStore`, exactly beside `CompileFacts`, and a batch r
 partitions stay empty. That costs nothing real: the only reader is the MCP server, which exists
 only in a dev session, and it is the same honest-emptiness posture the compile arm shipped with
 rather than a new one. The pilot view needs no cadence at all, which is the quiet payoff of
-violations as derivations: a view answers in any store whose facts are captured, so even a
-batch run's store carries the claim-conflict family. A read-only SQL surface
+violations as derivations: a view answers in any store whose facts are captured, and its
+`walk_claim_domain` join writes at capture cadence, so even a batch run's store carries the
+claim-conflict family. A read-only SQL surface
 over the whole fact store, which the H2 spike floats as an agent capability, stays a separate
 future item: the derived stratum is only now gaining residents, and its design question is
 different in kind; see the query-language section above. The whole-board context is
@@ -608,9 +629,9 @@ report can project from the store; the residue and the tool follow.
 
 | # | What | Where | Size |
 |---|---|---|---|
-| 1 | `ClaimDomain` reified as rows (the walk-reach transcription, in the residue's retiring-vocabulary family); the `intent_authored_claim_conflict` derivation view, landing shadowed against the surviving Java reduction with corpus agreement | `graphitron-model`, `graphitron` | small-medium |
+| 1 | `ClaimDomain` reified as `walk_claim_domain` (its own retiring-vocabulary family, written by the capture-and-detect pass at capture cadence); the `intent_authored_claim_conflict` derivation view, landing shadowed against the surviving Java reduction with corpus agreement | `graphitron-model`, `graphitron` | small-medium |
 | 2 | The cutover: `Detection` derives the claim-conflict family's `ValidationError` values from the view's rows, the `DERIVED` anchor re-aims at an expectation the view does not produce, the `Conflicted` projection overlay keeps reading the detection | `graphitron` | small |
-| 3 | DDL: the graph-keyed `rejection_` residue and its `directives` child, the lint arm's relation, and the prefix-less `diagnostic` union view over all four arms; registrations (loaded arms `ORACLE`, derivation arm `DERIVED`) and the residue's declared-set drainage pin | `graphitron-model`, `graphitron` | small-medium |
+| 3 | DDL: the graph-keyed `rejection_` residue and its `directives` child, the `lint_finding` relation, and the prefix-less `diagnostic` union view over all four arms; registrations (transcription arms `ORACLE`, derivation arm `DERIVED`) and the residue's declared-set drainage pin | `graphitron-model`, `graphitron` | small-medium |
 | 4 | The residue and lint loaders beside the report's producer: one exhaustive-switch site over the walk's error stream (never the fused report; `BuildOutput` exposes the split), every statement graph-scoped, live `DSLContext` only; `DevMojo` constructs them beside `CompileFacts` and calls them where it sets the build output | `graphitron`, `graphitron-maven-plugin` | small-medium |
 | 5 | The aggregate and the widened `diagnostics` filters as jOOQ over the view; the dimension enum as the wire-name-to-view-column mapping; tail rule via `HAVING` plus the elided-remainder aggregate; the new counts-only tool; the handle reaching it through `GraphitronMcpServer`'s constructor from `DevMojo`'s one construction site | `graphitron-mcp`, `graphitron-maven-plugin` | medium |
 
@@ -711,7 +732,12 @@ invisible to this suite:
   shape, and it is more than that: it already drives the real `GraphQLRewriteGenerator.buildOutput`
   and publishes the result onto a `Workspace` the way the dev loop does, from this module. That is
   the fixture shape the tier move above calls for, working today in the target module, so take it
-  as the template rather than designing one.
+  as the template, with three steps the template does not carry: its `RewriteContext` leaves
+  `storeDirectory` null, so `FactCapture.runInternal` opens a private in-memory store and closes
+  it inside `buildOutput()` with nothing surviving for a reader; `RewriteContext.withStoreDirectory`
+  was deleted at R610, so the fixture sets the directory through the canonical constructor; and
+  with `DevMojo` not in play, the fixture opens its own session handle, invokes the loaders
+  itself, and hands the handle to the server.
 - **Truncation honesty.** `minCount` / `limit` elision reports the elided group count and their
   combined count; a truncated aggregate never reads as complete.
 - **Cardinality guard.** A high-cardinality composite `groupBy` over a large fixture does not
@@ -757,16 +783,21 @@ hole the dropped capability lift would have closed in the type system.
 
 ## Implementation sites
 
-- `graphitron-model.sql`: the `intent_authored_claim_conflict` view and the reified walk-reach
-  rows it joins; the graph-keyed `rejection_` residue and its `directives` child; the lint
-  arm's relation; and the prefix-less `diagnostic` union view over all four arms, its comment
-  stating why it carries no family prefix (a read-side union across vocabularies has no
-  family, and no naming gate says so mechanically). All commented per the model conventions
-  (the comment-coverage gate reads them).
-- The agreement driver in `graphitron`'s capture test root: the `rejection_` residue and the
-  lint relation under the existing `ORACLE` arm (loaded transcriptions of post-capture
-  verdicts, inheriting the arm's two shipped anchors), the pilot view under `DERIVED` with its
-  anchor re-aimed at the cutover. No new arm.
+- `graphitron-model.sql`: the `intent_authored_claim_conflict` view and `walk_claim_domain`,
+  the reified walk-reach rows it joins; the graph-keyed `rejection_` residue and its
+  `directives` child; the `lint_finding` relation; and the prefix-less `diagnostic` union
+  view over all four arms, its comment stating why it carries no family prefix (a read-side
+  union across vocabularies has no family, and no naming gate says so mechanically). The DDL
+  header's family enumeration gains the three new families (`rejection_`, `lint_`, `walk_`);
+  the header names every family and its count is part of its prose, so the edit is not
+  optional. All commented per the model conventions (the comment-coverage gate reads them).
+- The agreement driver in `graphitron`'s capture test root: the `rejection_` residue,
+  `lint_finding`, and `walk_claim_domain` under the existing `ORACLE` arm (transcriptions of
+  verdicts no derivation reproduces, inheriting the arm's two shipped anchors), the pilot
+  view under `DERIVED` with its anchor re-aimed at the cutover. No new arm.
+- `FactCapture.runInternal`: writes `walk_claim_domain` at the site that already holds the
+  `ClaimDomain` between `capture(...)` and `detect(...)`, inside the capture's graph-scoped
+  ownership.
 - `AuthoredClaimConflicts` / `Detection`: the cutover site. The family's `ValidationError`
   values derive from the view's rows; the `Conflicted` projection overlay keeps its seam.
 - `ClaimDomain`: reified as rows the pilot view joins; the record's javadoc already carries
@@ -783,7 +814,8 @@ hole the dropped capability lift would have closed in the type system.
   owns; the store handle and its lifetime are already there.
 - `GraphitronMcpServer`'s full constructor: accept the store handle. This is `graphitron-mcp`'s
   first store dependency, so the generated-classes containment argument lands here rather than
-  being inherited.
+  being inherited. The short constructor passes no handle, which is the store-less test-boot
+  path; the handle-less answer is stated in the handle-ownership section.
 - `DiagnosticsTool.java`: the three inline `LinkedHashMap` builders plus `addLocation` /
   `addCompileLocation` become a projection of the `diagnostic` view's rows.
 - A new class in `graphitron-mcp` for the dimension enum (wire name to view column), the jOOQ
@@ -823,7 +855,7 @@ hole the dropped capability lift would have closed in the type system.
 
 ## Reviewer decisions
 
-The draft's five open questions, settled at Spec review so the implementer inherits decisions rather
+The decisions below, settled at Spec review so the implementer inherits decisions rather
 than leanings. Each takes the draft's leaning except where noted. Two re-decisions postdate this
 review: the substrate re-decision re-homes the mechanics behind three of these (the
 `directives` canonical render is a view column over a child relation, the shared `where` is a
@@ -1078,3 +1110,21 @@ Three non-blocking notes for the same rewrite:
   shadow-then-cutover anchor move; the aggregate is a wire-facing pivot tool. Different
   failure modes, different reviewer attention, and step 5 needs step 1 only for the view's
   existence as a union arm. Still the author's call.
+
+### Author response (2026-08-11, same day)
+
+All three decisions are taken and folded into the body above, so the next pass reads the
+body, not this note. Finding 1: the lint arm is `lint_finding` in a `lint_` family (the
+linter's vocabulary, parallel to `javac_`), the reified walk reach is `walk_claim_domain` in
+its own `walk_` family (the `rejection_` warrant stands untouched, and membership rows carry
+none of its words), and the DDL header's family enumeration edit is listed in Implementation
+sites. Finding 2: `walk_claim_domain`'s writer is the capture-and-detect pass at capture
+cadence, at the `FactCapture.runInternal` site that already holds the domain, so the batch
+claim holds and the accept line cannot move; the pilot bullet and Phasing row 1 both carry
+it. Finding 3: the store-less test boots are named in the handle-ownership section, the short
+constructor passes no handle, and a handle-less call answers the availability posture
+`diagnostics` already has before the first snapshot. Of the non-blocking notes, the fixture's
+three extra steps are now in the Tests section and the decisions heading dropped its count
+with the positional citation named; the pilot carve stays with this item for now, per the
+ownership decision that violations-as-facts and its first reader land together, and the
+Phasing note keeps the carve open for the implementer.
