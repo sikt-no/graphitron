@@ -135,16 +135,47 @@ public final class GraphitronMcpServer implements AutoCloseable {
     }
 
     /**
-     * The full production form: the five-arg server plus the {@code execute} tool
-     * configuration. When {@code executeConfig} is {@code null} (no dev database configured), the
-     * {@code execute} tool is not registered at all, the stronger form of the degrade-gracefully
-     * posture: the RAG tools stay advertised and degrade, the execute tool is simply absent, and
-     * every other tool keeps working with no database.
+     * The six-arg form without a fact store handle: the two diagnostics tools are advertised but
+     * refuse when called, naming the missing handle. The entry point of the store-less test
+     * boots; production uses the full constructor below.
      */
     public GraphitronMcpServer(
         InetSocketAddress address, Workspace workspace,
         AsyncWarm<Embedder> embedderWarm, AsyncWarm<DocsIndex> docsWarm, RagConfig ragConfig,
         ExecuteTool.Config executeConfig
+    ) throws IOException {
+        this(address, workspace, embedderWarm, docsWarm, ragConfig, executeConfig, null);
+    }
+
+    /**
+     * The dev session's fact store handle plus the graph whose partition this server reads: the
+     * two diagnostics tools project the store's {@code diagnostic} view through it, scoped to
+     * this graph. The handle is the session's one live {@code DSLContext}, owned by the caller
+     * ({@code DevMojo} opens the store once and closes it at cleanup); this server never opens
+     * the persisted file itself, which could silently be a different store than the one the
+     * session writes.
+     */
+    public record StoreHandle(org.jooq.DSLContext dsl, String graphName) {
+        public StoreHandle {
+            java.util.Objects.requireNonNull(dsl, "dsl");
+            java.util.Objects.requireNonNull(graphName, "graphName");
+        }
+    }
+
+    /**
+     * The full production form: the five-arg server plus the {@code execute} tool
+     * configuration and the fact store handle. When {@code executeConfig} is {@code null} (no
+     * dev database configured), the {@code execute} tool is not registered at all, the stronger
+     * form of the degrade-gracefully posture: the RAG tools stay advertised and degrade, the
+     * execute tool is simply absent, and every other tool keeps working with no database. A
+     * {@code null} {@code storeHandle} takes the other posture: the diagnostics tools stay
+     * advertised and refuse per call, because an empty answer from a missing store would read
+     * as a clean schema.
+     */
+    public GraphitronMcpServer(
+        InetSocketAddress address, Workspace workspace,
+        AsyncWarm<Embedder> embedderWarm, AsyncWarm<DocsIndex> docsWarm, RagConfig ragConfig,
+        ExecuteTool.Config executeConfig, StoreHandle storeHandle
     ) throws IOException {
         this.docsSearchTool = new DocsSearchTool(embedderWarm, docsWarm);
         this.catalogSearchIndex = (embedderWarm != null && ragConfig != null)
@@ -183,7 +214,8 @@ public final class GraphitronMcpServer implements AutoCloseable {
             statusTool(workspace),
             catalogTablesTool(workspace), catalogDescribeTool(workspace),
             servicesTool(workspace), conditionsTool(workspace), recordsTool(workspace),
-            schemaTool(workspace), diagnosticsTool(workspace), edgesTool(workspace),
+            schemaTool(workspace), diagnosticsTool(workspace, storeHandle),
+            diagnosticsAggregateTool(workspace, storeHandle), edgesTool(workspace),
             docsSearchTool.specification(), catalogSearchTool()));
         if (executeConfig != null) {
             tools.add(new ExecuteTool(executeConfig).specification());
@@ -649,12 +681,16 @@ public final class GraphitronMcpServer implements AutoCloseable {
     // ---- diagnostics tool ----
 
     /**
-     * {@code diagnostics}: the current validation errors and warnings off
-     * {@link Workspace#validationReport()}, with the live snapshot's availability / freshness
-     * reported alongside so an agent can tell whether the diagnostics are current relative to the
-     * schema it just read.
+     * {@code diagnostics}: the current diagnostics as a projection of the fact store's
+     * {@code diagnostic} view, read through the session's {@link StoreHandle} and scoped to its
+     * graph, with the live snapshot's availability / freshness reported alongside so an agent
+     * can tell whether the diagnostics are current relative to the schema it just read. The
+     * {@code where} filter shares {@code diagnostics.aggregate}'s dimension vocabulary and
+     * null-safe translation, so an aggregate group's key is this tool's exact drill-down.
      */
-    private static McpServerFeatures.SyncToolSpecification diagnosticsTool(Workspace workspace) {
+    private static McpServerFeatures.SyncToolSpecification diagnosticsTool(
+        Workspace workspace, StoreHandle storeHandle
+    ) {
         var tool = McpSchema.Tool.builder("diagnostics", Map.of(
                 "type", "object",
                 "properties", Map.of(
@@ -662,6 +698,11 @@ public final class GraphitronMcpServer implements AutoCloseable {
                         "description", "Filter to one severity: \"error\" or \"warning\"."),
                     "coordinate", Map.of("type", "string",
                         "description", "Filter to one schema coordinate (a type name or Type.field)."),
+                    "where", Map.of("type", "object",
+                        "description", "Filter on the diagnostics.aggregate dimensions, e.g. "
+                            + "{\"attemptKind\": \"COLUMN\", \"attempt\": \"id\"}. Null-safe: a null "
+                            + "value selects the rows where that dimension is absent. Paste an "
+                            + "aggregate group's key here to read exactly that group's entries."),
                     "limit", Map.of("type", "integer",
                         "description", "Maximum entries per page (default " + DiagnosticsTool.DEFAULT_LIMIT + ")."),
                     "cursor", Map.of("type", "string",
@@ -669,17 +710,75 @@ public final class GraphitronMcpServer implements AutoCloseable {
             .title("List schema diagnostics")
             .description("Lists the current diagnostics (severity, source, coordinate, message, "
                 + "rejection kind, location), paged via an opaque cursor, with optional severity and "
-                + "coordinate filters. Each entry carries a source: \"schema\" for validation "
+                + "coordinate filters plus a where filter over the same dimensions "
+                + "diagnostics.aggregate groups on, so a group's key reads back exactly that "
+                + "group's entries. Each entry carries a source: \"schema\" for validation "
                 + "rejections, \"compile\" for graphitron:dev generated-code compile errors. Reports "
                 + "the snapshot's availability and freshness alongside so you can tell whether the "
                 + "diagnostics are current relative to the schema. Closes the authoring loop: edit, "
-                + "then read your own diagnostics back.")
+                + "then read your own diagnostics back. When the count runs past a page, start with "
+                + "diagnostics.aggregate instead.")
             .build();
         return McpServerFeatures.SyncToolSpecification.builder()
             .tool(tool)
             .callHandler((exchange, request) -> DiagnosticsTool.diagnosticsResult(
-                workspace.validationReport(), workspace.compileDiagnostics(),
-                workspace.snapshot(), request.arguments()))
+                storeHandle, workspace.snapshot(), request.arguments()))
+            .build();
+    }
+
+    /**
+     * {@code diagnostics.aggregate}: counts over the same {@code diagnostic} view, grouped by
+     * the closed dimension vocabulary, returning no entries at all. The zero-argument call is
+     * the triage preset (the actionable / deferred headline with kind sub-counts); everything
+     * else is composed from {@code groupBy} / {@code where}. The dimension gloss in the
+     * description renders from the declared typed-key / location-derived partition, so the
+     * documentation cannot drift from the enum.
+     */
+    private static McpServerFeatures.SyncToolSpecification diagnosticsAggregateTool(
+        Workspace workspace, StoreHandle storeHandle
+    ) {
+        var tool = McpSchema.Tool.builder("diagnostics.aggregate", Map.of(
+                "type", "object",
+                "properties", Map.of(
+                    "groupBy", Map.of("type", "array",
+                        "items", Map.of("type", "string",
+                            "enum", DiagnosticFacets.Dimension.wireNames()),
+                        "description", "Ordered dimensions forming the composite group key. "
+                            + "Omit for the triage preset (actionable, kind)."),
+                    "where", Map.of("type", "object",
+                        "description", "Filter on the same dimensions, e.g. {\"source\": \"schema\", "
+                            + "\"directory\": \"file:///…/features\"}. Null-safe: a null value "
+                            + "selects the rows where that dimension is absent."),
+                    "minCount", Map.of("type", "integer",
+                        "description", "Tail threshold: groups below it are elided and reported "
+                            + "in the elision accounting, never silently dropped (default 1)."),
+                    "examples", Map.of("type", "integer",
+                        "description", "Example coordinates and files per group (default "
+                            + DiagnosticFacets.DEFAULT_EXAMPLES + ", max "
+                            + DiagnosticFacets.MAX_EXAMPLES + ")."),
+                    "orderBy", Map.of("type", "string",
+                        "description", "\"count\" (default, largest first) or \"key\"."),
+                    "limit", Map.of("type", "integer",
+                        "description", "Maximum groups returned (default "
+                            + DiagnosticFacets.DEFAULT_GROUP_LIMIT + ", capped at "
+                            + DiagnosticFacets.MAX_GROUP_LIMIT + "); elided groups are counted, "
+                            + "never silently dropped."))))
+            .title("Aggregate schema diagnostics")
+            .description("Counts diagnostics grouped by the dimensions you name, and returns no "
+                + "entries, so the result stays small however broken the schema is. Call it with "
+                + "no arguments for the triage view: how much of the schema you can fix yourself, "
+                + "and how much is shapes graphitron does not generate yet. Then set groupBy to "
+                + "pivot on your own question. Every group carries an exact count, a few example "
+                + "coordinates, and the files it spans. When minCount or limit elides groups, the "
+                + "response says how many were elided and their combined count, so a truncated "
+                + "aggregate never reads as complete. Filter with where on the same dimensions you "
+                + "group on, then hand a group's key to the diagnostics tool to read that group's "
+                + "entries without paging the rest. " + DiagnosticFacets.dimensionGloss())
+            .build();
+        return McpServerFeatures.SyncToolSpecification.builder()
+            .tool(tool)
+            .callHandler((exchange, request) -> DiagnosticFacets.aggregateResult(
+                storeHandle, workspace.snapshot(), request.arguments()))
             .build();
     }
 

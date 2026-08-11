@@ -65,6 +65,9 @@ A set of **tools** the agent calls to answer questions:
 | `diagnostics`
 | The current schema validation diagnostics, the same `(file, location, message)` triples the LSP delivers to your editor.
 
+| `diagnostics.aggregate`
+| Counts those same diagnostics grouped by dimensions you choose (what kind of error, which attempted name, which file or directory) instead of listing them. On a schema mid-migration this answers "what is broken, in what proportion" in one small result, and each group's key feeds back into `diagnostics` to read just that group.
+
 | `status`
 | Dev-loop status (ports, warm state).
 

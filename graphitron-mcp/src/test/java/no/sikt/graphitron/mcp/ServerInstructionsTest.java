@@ -5,18 +5,22 @@ import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
 import io.modelcontextprotocol.spec.McpSchema;
 import no.sikt.graphitron.lsp.state.Workspace;
+import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.rewrite.BuildWarning;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.ValidationReport;
+import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 import no.sikt.graphitron.rewrite.catalog.TypeClassification;
+import no.sikt.graphitron.rewrite.diagnostics.RejectionFacts;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.net.InetAddress;
@@ -259,8 +263,10 @@ class ServerInstructionsTest {
         new PagedTool("records", "records"));
 
     @Test
-    void everyPagedToolLeadsWithTheUnpagedTotal() throws Exception {
-        try (var server = server(pagedWorkspace(), null);
+    void everyPagedToolLeadsWithTheUnpagedTotal(@TempDir Path tmp) throws Exception {
+        try (var store = pagedDiagnosticsStore(tmp);
+             var server = server(pagedWorkspace(), null,
+                 new GraphitronMcpServer.StoreHandle(store.dsl(), "paged"));
              var client = connect(server.port())) {
             client.initialize();
             var advertised = advertisedSurface(client);
@@ -290,6 +296,23 @@ class ServerInstructionsTest {
                     .hasValue(total);
             }
         }
+    }
+
+    /**
+     * The diagnostics half of the paged fixture: the tool reads the fact store, so its two
+     * entries are written through the production residue loader into an in-memory store; the
+     * report on the workspace covers only the snapshot axes.
+     */
+    private static GraphitronModelStore pagedDiagnosticsStore(Path tmp) {
+        var store = GraphitronModelStore.open();
+        new RejectionFacts(store.dsl(), new FactCapture.GraphIdentity("paged", tmp)).write(List.of(
+            new ValidationError("Query.film",
+                new Rejection.AuthorError.Structural("unknown table reference"),
+                new graphql.language.SourceLocation(5, 3, "/schema.graphqls")),
+            new ValidationError("Query.actor",
+                new Rejection.AuthorError.Structural("unknown table reference"),
+                new graphql.language.SourceLocation(6, 3, "/schema.graphqls"))));
+        return store;
     }
 
     // ---- the ambient size ceiling ----
@@ -491,9 +514,14 @@ class ServerInstructionsTest {
 
     private static GraphitronMcpServer server(Workspace workspace, ExecuteTool.Config executeConfig)
         throws IOException {
+        return server(workspace, executeConfig, null);
+    }
+
+    private static GraphitronMcpServer server(Workspace workspace, ExecuteTool.Config executeConfig,
+        GraphitronMcpServer.StoreHandle storeHandle) throws IOException {
         return new GraphitronMcpServer(
             new InetSocketAddress(InetAddress.getLoopbackAddress(), 0),
-            workspace, null, null, null, executeConfig);
+            workspace, null, null, null, executeConfig, storeHandle);
     }
 
     private static McpSyncClient connect(int port) {

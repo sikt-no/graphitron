@@ -245,7 +245,8 @@ public class DevMojo extends AbstractRewriteMojo {
         Consumer<String> saveListener = buildSaveListener(
             initialCtx.schemaFileExtensions(), schemaDebounce, () -> regenerate(workspace));
         bindServer(workspace, saveListener, new RagConfig(resolveRagCacheDirectory(initialCtx.basedir())),
-            buildExecuteToolConfig(initialCtx));
+            buildExecuteToolConfig(initialCtx),
+            new GraphitronMcpServer.StoreHandle(sessionStore.dsl(), initialCtx.graphName()));
         // Seed the source-position index so goto-definition / hover work before
         // the first .java edit; the source watcher refreshes it on the source
         // cadence thereafter. The walk (and its cache) is owned by the workspace.
@@ -312,7 +313,7 @@ public class DevMojo extends AbstractRewriteMojo {
     }
 
     private void bindServer(Workspace workspace, Consumer<String> saveListener, RagConfig ragConfig,
-        ExecuteTool.Config executeConfig)
+        ExecuteTool.Config executeConfig, GraphitronMcpServer.StoreHandle storeHandle)
         throws MojoExecutionException {
         try {
             this.server = new DevServer(new InetSocketAddress(LOOPBACK_HOST, port), workspace, saveListener);
@@ -350,7 +351,7 @@ public class DevMojo extends AbstractRewriteMojo {
         try {
             this.mcpServer = new GraphitronMcpServer(
                 new InetSocketAddress(LOOPBACK_HOST, mcpPort), workspace, embedderWarm, docsWarm, ragConfig,
-                executeConfig);
+                executeConfig, storeHandle);
         } catch (IOException e) {
             // The partial-startup unwind must reach the warms too, not just the LSP socket: warm
             // cleanup otherwise lives only in cleanup() (the normal Ctrl+C stop), which this exception

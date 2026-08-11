@@ -4,23 +4,17 @@ import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
 import io.modelcontextprotocol.spec.McpSchema;
-import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
-import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.lint.LintConfig;
-import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -28,15 +22,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Single-evaluator parity (MCP tier): a lint finding suppressed at the build does not surface
  * through the {@code diagnostics} tool. This drives the real
- * {@link GraphQLRewriteGenerator#buildOutput()} with a rule disabled, publishes the resulting
- * {@link no.sikt.graphitron.rewrite.ValidationReport} onto a {@link Workspace} exactly as the dev loop
- * does, and asserts the live MCP server omits the disabled rule from the {@code diagnostics}
- * projection while still reporting a co-present, non-disabled rule. Because suppression rides that one
- * report and not a Maven-log-only filter, the agent-facing tool is suppressed for free.
+ * {@link GraphQLRewriteGenerator#buildOutput()} with a rule disabled through the store-backed
+ * fixture ({@link StoreBackedBuild}): the warning loader takes the suppression-filtered list the
+ * report was assembled from, so the {@code lint_finding} rows the tool projects are
+ * post-suppression survivors, and the live MCP server omits the disabled rule while still
+ * reporting a co-present, non-disabled rule. Because suppression is applied before the one list
+ * both the report and the loader read, the agent-facing tool is suppressed for free, with no
+ * second filter to drift.
  */
 class LintSuppressionDiagnosticsParityTest {
-
-    private static final String JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
 
     private static final String SDL = """
         type Film @table(name: "film") {
@@ -48,10 +42,10 @@ class LintSuppressionDiagnosticsParityTest {
     @Test
     @SuppressWarnings("unchecked")
     void buildSuppressedFindingDoesNotSurfaceThroughDiagnostics(@TempDir Path tmp) throws Exception {
-        var workspace = workspaceWithSuppression(tmp,
-            LintConfig.validated(Set.of("field-names-camel-case"), List.of()));
-
-        try (var server = new GraphitronMcpServer(loopback(0), workspace);
+        try (var build = StoreBackedBuild.run(tmp, "LintSuppressionDiagnosticsParityTest", SDL,
+                LintConfig.validated(Set.of("field-names-camel-case"), List.of()));
+             var server = new GraphitronMcpServer(loopback(0), build.workspace,
+                 null, null, null, null, build.handle());
              var client = connect(server.port())) {
             client.initialize();
             var result = client.callTool(McpSchema.CallToolRequest.builder("diagnostics").build());
@@ -65,20 +59,6 @@ class LintSuppressionDiagnosticsParityTest {
                 .as("a non-disabled rule still surfaces, proving selective build-side suppression")
                 .anyMatch(d -> "types-and-fields-have-descriptions".equals(d.get("lintRule")));
         }
-    }
-
-    private static Workspace workspaceWithSuppression(Path tmp, LintConfig lintConfig) throws IOException {
-        Path schema = tmp.resolve("schema.graphqls");
-        Files.writeString(schema, SDL);
-        var ctx = new RewriteContext(
-            List.of(new SchemaInput(schema.toString(), Optional.empty(), Optional.empty())),
-            tmp, "LintSuppressionDiagnosticsParityTest", tmp, "fake.output", JOOQ_PACKAGE
-        ).withLintConfig(lintConfig);
-
-        var output = new GraphQLRewriteGenerator(ctx).buildOutput();
-        var workspace = new Workspace();
-        workspace.setBuildOutput(output.artifacts(), output.report());
-        return workspace;
     }
 
     private static InetSocketAddress loopback(int port) {

@@ -1,32 +1,38 @@
 package no.sikt.graphitron.mcp;
 
-import graphql.language.SourceLocation;
 import io.modelcontextprotocol.spec.McpSchema;
-import no.sikt.graphitron.rewrite.ValidationReport;
+import no.sikt.graphitron.model.tables.records.DiagnosticRecord;
+import no.sikt.graphitron.rewrite.RejectionKind;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import no.sikt.graphitron.rewrite.compile.CompileDiagnostic;
+import org.jooq.Condition;
+import org.jooq.DSLContext;
 
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
+import static no.sikt.graphitron.model.Tables.DIAGNOSTIC;
+
 /**
- * The {@code diagnostics} read tool: the current validation errors and warnings off
- * {@code Workspace.validationReport()}, closing the authoring loop (an agent edits, then reads its
- * own diagnostics back). Pure read projection of already-classified data (the validation report's
- * typed rejections); no new validate-time arm.
+ * The {@code diagnostics} read tool: the current diagnostics as a projection of the fact
+ * store's {@code diagnostic} union view, closing the authoring loop (an agent edits, then reads
+ * its own diagnostics back). The view already unions the five arms (the rejection residue, the
+ * store-native claim-conflict pilot, the lint and advisory arms, the compile oracle), so this
+ * tool maps rows to the wire and never re-derives a classification; the {@code source}
+ * discriminator ({@code "schema"} / {@code "compile"}) is the view's own column.
  *
- * <p>The {@code graphitron:dev} incremental-compile round's diagnostics are folded in off
- * {@code Workspace.compileDiagnostics()}. Every entry now carries a {@code source} discriminator:
- * {@code "schema"} for the validator rejections, {@code "compile"} for generated-code javac errors.
- * These are separate channels by design (a generated-file javac error has no schema coordinate to
- * fabricate), unioned here so an agent editing through MCP reads both back in the one tool it polls.
+ * <p>Filtering shares one null-safe {@code where} translation with {@code diagnostics.aggregate}
+ * ({@link DiagnosticFacets#conditions}), which is what makes an aggregate group's key the exact
+ * drill-down filter for this tool: the same columns, the same {@code IS NOT DISTINCT FROM}
+ * comparisons, so the two tools cannot disagree about a group's membership. The {@code severity}
+ * and {@code coordinate} arguments stay as sugar over the same mechanism.
  *
- * <p>Reports the live snapshot's availability / freshness axes alongside, so an agent can
- * tell whether the diagnostics are current relative to the schema it just read, without a
- * consistency lock.
+ * <p>Reads go through the session's store handle and are scoped to the session's graph; a
+ * server booted without the handle refuses rather than answering an empty list that would read
+ * as a clean schema. Reports the live snapshot's availability / freshness axes alongside, so an
+ * agent can tell whether the diagnostics are current relative to the schema it just read.
  */
 final class DiagnosticsTool {
 
@@ -36,67 +42,37 @@ final class DiagnosticsTool {
     static final int DEFAULT_LIMIT = 100;
 
     static McpSchema.CallToolResult diagnosticsResult(
-        ValidationReport report, List<CompileDiagnostic> compileDiagnostics,
-        LspSchemaSnapshot snapshot, Map<String, Object> args
+        GraphitronMcpServer.StoreHandle store, LspSchemaSnapshot snapshot, Map<String, Object> args
+    ) {
+        if (store == null) {
+            return DiagnosticFacets.refusal("diagnostics");
+        }
+        try {
+            return list(store.dsl(), store.graphName(), snapshot, args);
+        } catch (DiagnosticFacets.BadRequest e) {
+            return DiagnosticFacets.error("diagnostics: " + e.getMessage());
+        }
+    }
+
+    private static McpSchema.CallToolResult list(
+        DSLContext dsl, String graphName, LspSchemaSnapshot snapshot, Map<String, Object> args
     ) {
         Optional<String> severity = McpWire.stringArg(args, "severity");
         Optional<String> coordinate = McpWire.stringArg(args, "coordinate");
-        boolean wantError = severity.map(s -> s.equalsIgnoreCase("error")).orElse(true);
-        boolean wantWarning = severity.map(s -> s.equalsIgnoreCase("warning")).orElse(true);
+        List<Condition> conditions = DiagnosticFacets.conditions(graphName, args);
+        severity.ifPresent(s -> conditions.add(
+            DiagnosticFacets.Dimension.SEVERITY.matches(s.toLowerCase(Locale.ROOT))));
+        coordinate.ifPresent(c -> conditions.add(DiagnosticFacets.Dimension.COORDINATE.matches(c)));
 
-        var entries = new ArrayList<Map<String, Object>>();
-        if (wantError) {
-            for (var e : report.errors()) {
-                if (coordinate.isPresent()
-                    && (e.coordinate() == null || !e.coordinate().equals(coordinate.get()))) {
-                    continue;
-                }
-                var m = new LinkedHashMap<String, Object>();
-                m.put("source", "schema");
-                m.put("severity", "error");
-                McpWire.putIfNotNull(m, "coordinate", e.coordinate());
-                m.put("message", e.message());
-                m.put("rejectionKind", e.kind().displayName());
-                addLocation(m, e.location());
-                entries.add(m);
-            }
-        }
-        if (wantWarning) {
-            for (var w : report.warnings()) {
-                // Warnings carry no coordinate; a coordinate filter excludes them by construction.
-                if (coordinate.isPresent()) continue;
-                var m = new LinkedHashMap<String, Object>();
-                m.put("source", "schema");
-                m.put("severity", "warning");
-                m.put("message", w.message());
-                // A lint finding (the sealed BuildWarning's tagged arm) carries a typed LintRule;
-                // project its stable id so an agent sees which rule fired, not just the message.
-                // The no-rule arm carries no id, so there is no nullable field to guard.
-                if (w instanceof no.sikt.graphitron.rewrite.BuildWarning.LintFinding lf) {
-                    m.put("lintRule", lf.rule().id());
-                }
-                addLocation(m, w.location());
-                entries.add(m);
-            }
-        }
-        // Generated-code compile diagnostics. They carry no schema coordinate, so a coordinate
-        // filter excludes them by construction, matching how warnings are handled. The
-        // kind-to-severity projection is the record's own (CompileDiagnostic.severity), so this
-        // arm renders it rather than re-deriving it.
-        if (coordinate.isEmpty()) {
-            for (var d : compileDiagnostics) {
-                String compileSeverity = d.severity();
-                if ("error".equals(compileSeverity) ? !wantError : !wantWarning) {
-                    continue;
-                }
-                var m = new LinkedHashMap<String, Object>();
-                m.put("source", "compile");
-                m.put("severity", compileSeverity);
-                m.put("message", d.message());
-                addCompileLocation(m, d);
-                entries.add(m);
-            }
-        }
+        var entries = dsl.selectFrom(DIAGNOSTIC)
+            .where(conditions)
+            .orderBy(DIAGNOSTIC.SOURCE.asc(),
+                DIAGNOSTIC.FILE.asc().nullsLast(),
+                DIAGNOSTIC.SOURCE_LINE.asc().nullsLast(),
+                DIAGNOSTIC.SOURCE_COLUMN.asc().nullsLast(),
+                DIAGNOSTIC.COORDINATE.asc().nullsLast(),
+                DIAGNOSTIC.MESSAGE.asc())
+            .fetch(DiagnosticsTool::entry);
 
         var paged = McpWire.page(entries, args, DEFAULT_LIMIT);
         var fields = new LinkedHashMap<String, Object>();
@@ -116,34 +92,30 @@ final class DiagnosticsTool {
     }
 
     /**
-     * Maps a graphql-java {@link SourceLocation} (1-based line/column) onto the {@code {uri, line,
-     * column}} wire shape every goto-definition consumer reads (0-based, mirroring the {@code -1}
-     * adjustment elsewhere). Omits the location when there is no usable source name.
+     * Maps one view row onto the wire entry. The shape is the tool's shipped vocabulary
+     * unchanged: {@code rejectionKind} renders the stored {@link RejectionKind} name in its
+     * kebab-case display form and appears only on rejection-bearing rows, {@code lintRule} only
+     * on lint rows, and the location (the view's canonical file URI plus its 1-based position
+     * mapped to the 0-based wire shape every goto-definition consumer reads) only when the row
+     * has one.
      */
-    private static void addLocation(Map<String, Object> entry, SourceLocation loc) {
-        if (loc == null || loc.getSourceName() == null || loc.getSourceName().isEmpty()) return;
-        var m = new LinkedHashMap<String, Object>();
-        m.put("uri", ValidationReport.canonicalUri(loc.getSourceName()));
-        m.put("line", Math.max(loc.getLine() - 1, 0));
-        m.put("column", Math.max(loc.getColumn() - 1, 0));
-        entry.put("location", m);
-    }
-
-    /**
-     * Maps a {@link CompileDiagnostic}'s generated-{@code .java} anchor onto the same {@code {uri, line,
-     * column}} wire shape, 0-based like {@link #addLocation}. javac reports 1-based line/column and
-     * {@link javax.tools.Diagnostic#NOPOS} as {@code -1}; both clamp to {@code 0}. The file is already
-     * a canonical file URI (normalised once at the javac boundary), surfaced as the {@code uri} field
-     * unchanged.
-     */
-    private static void addCompileLocation(Map<String, Object> entry, CompileDiagnostic diagnostic) {
-        if (diagnostic.file() == null || diagnostic.file().isEmpty()) return;
-        var m = new LinkedHashMap<String, Object>();
-        m.put("uri", diagnostic.file());
-        // Cast to int so the wire shape matches the schema-location branch (which reads int line/column);
-        // javac positions are line/column offsets, well within int range.
-        m.put("line", (int) Math.max(diagnostic.line() - 1, 0));
-        m.put("column", (int) Math.max(diagnostic.column() - 1, 0));
-        entry.put("location", m);
+    private static Map<String, Object> entry(DiagnosticRecord row) {
+        var entry = new LinkedHashMap<String, Object>();
+        entry.put("source", row.getSource());
+        entry.put("severity", row.getSeverity());
+        McpWire.putIfNotNull(entry, "coordinate", row.getCoordinate());
+        entry.put("message", row.getMessage());
+        if (row.getKind() != null) {
+            entry.put("rejectionKind", RejectionKind.valueOf(row.getKind()).displayName());
+        }
+        McpWire.putIfNotNull(entry, "lintRule", row.getLintRule());
+        if (row.getFile() != null) {
+            var location = new LinkedHashMap<String, Object>();
+            location.put("uri", row.getFile());
+            location.put("line", row.getSourceLine() == null ? 0 : Math.max(row.getSourceLine() - 1, 0));
+            location.put("column", row.getSourceColumn() == null ? 0 : Math.max(row.getSourceColumn() - 1, 0));
+            entry.put("location", location);
+        }
+        return entry;
     }
 }

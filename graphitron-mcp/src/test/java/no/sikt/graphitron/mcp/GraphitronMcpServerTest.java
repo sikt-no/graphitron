@@ -13,9 +13,7 @@ import no.sikt.graphitron.mcp.rag.docs.DocChunk;
 import no.sikt.graphitron.mcp.rag.docs.DocsBundle;
 import no.sikt.graphitron.mcp.rag.docs.DocsIndex;
 import no.sikt.graphitron.mcp.rag.docs.DocsRag;
-import no.sikt.graphitron.rewrite.BuildWarning;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
-import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
@@ -24,8 +22,8 @@ import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.catalog.SourceWalker;
 import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 import no.sikt.graphitron.rewrite.catalog.TypeClassification;
-import no.sikt.graphitron.rewrite.model.Rejection;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -34,6 +32,7 @@ import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -116,8 +115,8 @@ class GraphitronMcpServerTest {
             var tools = client.listTools().tools();
             assertThat(tools).extracting(McpSchema.Tool::name)
                 .containsExactlyInAnyOrder("status", "catalog.tables", "catalog.describe",
-                    "services", "conditions", "records", "schema", "diagnostics", "edges",
-                    "docs.search", "catalog.search");
+                    "services", "conditions", "records", "schema", "diagnostics",
+                    "diagnostics.aggregate", "edges", "docs.search", "catalog.search");
 
             var result = client.callTool(McpSchema.CallToolRequest.builder("status").build());
             assertThat(result.isError()).isNotEqualTo(Boolean.TRUE);
@@ -541,65 +540,138 @@ class GraphitronMcpServerTest {
         }
     }
 
-    // ---- diagnostics ----
+    // ---- diagnostics / diagnostics.aggregate (store-backed) ----
+
+    /**
+     * The store-backed diagnostics fixture: an unresolved column (the error), snake_case names
+     * (lint findings), and {@code @table} on an input type (the rule-less advisory through a
+     * real producer). The loaders read the walk's own pre-fuse streams, so the rows these tests
+     * assert on come from a real pipeline run rather than a hand-built report.
+     */
+    private static final String DIAGNOSTICS_SDL = """
+        type Film @table(name: "film") {
+          original_language_id: Int
+          badColumn: Int
+        }
+        input FilmInput @table(name: "film") {
+          film_id: Int
+        }
+        type Query {
+          film(where: FilmInput): Film
+        }
+        """;
 
     @Test
     @SuppressWarnings("unchecked")
-    void diagnosticsReturnsMappedErrorsAndReportsSnapshotFreshness() throws Exception {
-        try (var server = new GraphitronMcpServer(loopback(0), diagnosticsWorkspace());
+    void diagnosticsReturnsMappedErrorsAndReportsSnapshotFreshness(@TempDir Path tmp) throws Exception {
+        try (var build = StoreBackedBuild.run(tmp, "mcp-diagnostics", DIAGNOSTICS_SDL);
+             var server = server(build);
              var client = connect(server.port())) {
             client.initialize();
 
             var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("diagnostics").build()));
             var diagnostics = (List<Map<String, Object>>) structured.get("diagnostics");
-            assertThat(diagnostics).hasSize(2);
-            assertThat(diagnostics.get(0))
-                .containsEntry("severity", "error")
-                .containsEntry("coordinate", "Query.film")
-                .containsEntry("message", "unknown table reference")
+
+            var error = diagnostics.stream()
+                .filter(d -> "error".equals(d.get("severity"))).findFirst().orElseThrow();
+            assertThat(error)
+                .containsEntry("source", "schema")
+                .containsEntry("coordinate", "Film.badColumn")
                 .containsEntry("rejectionKind", "author-error");
-            var location = (Map<String, Object>) diagnostics.get(0).get("location");
-            assertThat(location).containsEntry("line", 4).containsEntry("column", 2);
-            assertThat(diagnostics.get(1)).containsEntry("severity", "warning")
-                .containsEntry("message", "shadowed directive");
+            assertThat((String) error.get("message")).contains("badColumn");
+            var location = (Map<String, Object>) error.get("location");
+            // The canonical file URI, and the 1-based stored position on the 0-based wire.
+            assertThat((String) location.get("uri")).startsWith("file:").endsWith("schema.graphqls");
+            assertThat(location).containsEntry("line", 2);
+
+            // The rule-less advisory (a real producer: @table on an input type) keeps surfacing
+            // as a warning with no lintRule key.
+            assertThat(diagnostics).anySatisfy(d -> {
+                assertThat(d).containsEntry("severity", "warning").doesNotContainKey("lintRule");
+                assertThat((String) d.get("message")).contains("@table");
+            });
             // Snapshot axes reported alongside so an agent can tell whether diagnostics are current.
             assertThat(structured).containsEntry("snapshotAvailability", "Built")
                 .containsEntry("snapshotFreshness", "Current");
-            // The no-rule warning arm carries no rule id, so the wire entry omits the field.
-            assertThat(diagnostics.get(1)).doesNotContainKey("lintRule");
         }
     }
 
     @Test
     @SuppressWarnings("unchecked")
-    void diagnosticsProjectsLintRuleIdForLintFindings() throws Exception {
-        // A lint finding rides the ValidationReport warning channel and the diagnostics tool
-        // projects its typed LintRule id onto the wire, so an MCP-aware agent sees which rule fired
-        // for free over the shared Workspace, with no new tool or seam.
-        try (var server = new GraphitronMcpServer(loopback(0), lintFindingWorkspace());
+    void diagnosticsProjectsLintRuleIdForLintFindings(@TempDir Path tmp) throws Exception {
+        // A lint finding rides the suppression-filtered warning list into the lint_finding arm,
+        // and the diagnostics tool projects its typed LintRule id onto the wire, so an MCP-aware
+        // agent sees which rule fired.
+        try (var build = StoreBackedBuild.run(tmp, "mcp-lint", DIAGNOSTICS_SDL);
+             var server = server(build);
              var client = connect(server.port())) {
             client.initialize();
 
             var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("diagnostics").build()));
             var diagnostics = (List<Map<String, Object>>) structured.get("diagnostics");
-            assertThat(diagnostics).singleElement().satisfies(d -> assertThat(d)
+            assertThat(diagnostics).anySatisfy(d -> assertThat(d)
                 .containsEntry("severity", "warning")
-                .containsEntry("lintRule", "no-typename-prefix"));
+                .containsEntry("lintRule", "field-names-camel-case"));
         }
     }
 
     @Test
     @SuppressWarnings("unchecked")
-    void diagnosticsFiltersBySeverity() throws Exception {
-        try (var server = new GraphitronMcpServer(loopback(0), diagnosticsWorkspace());
+    void diagnosticsFiltersBySeverity(@TempDir Path tmp) throws Exception {
+        try (var build = StoreBackedBuild.run(tmp, "mcp-severity", DIAGNOSTICS_SDL);
+             var server = server(build);
              var client = connect(server.port())) {
             client.initialize();
 
             var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("diagnostics")
                 .arguments(Map.of("severity", "error")).build()));
             var diagnostics = (List<Map<String, Object>>) structured.get("diagnostics");
-            assertThat(diagnostics).singleElement().satisfies(d -> assertThat(d).containsEntry("severity", "error"));
+            assertThat(diagnostics).isNotEmpty();
+            assertThat(diagnostics).allSatisfy(d -> assertThat(d).containsEntry("severity", "error"));
         }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void diagnosticsAggregateAnswersTheTriagePresetEndToEnd(@TempDir Path tmp) throws Exception {
+        try (var build = StoreBackedBuild.run(tmp, "mcp-aggregate", DIAGNOSTICS_SDL);
+             var server = server(build);
+             var client = connect(server.port())) {
+            client.initialize();
+
+            var structured = structured(client.callTool(
+                McpSchema.CallToolRequest.builder("diagnostics.aggregate").build()));
+            assertThat(structured.get("groupBy")).isEqualTo(List.of("actionable", "kind"));
+            var groups = (List<Map<String, Object>>) structured.get("groups");
+            assertThat(groups).isNotEmpty();
+            long shown = groups.stream().mapToLong(g -> ((Number) g.get("count")).longValue()).sum();
+            assertThat(shown + ((Number) structured.get("elidedCount")).longValue())
+                .isEqualTo(((Number) structured.get("totalDiagnostics")).longValue());
+            assertThat(structured).containsEntry("snapshotAvailability", "Built")
+                .containsEntry("snapshotFreshness", "Current");
+        }
+    }
+
+    @Test
+    void diagnosticsToolsRefuseWithoutAStoreHandle() throws Exception {
+        // The store-less boot advertises both tools but a call refuses, naming the missing
+        // handle: zero rows from a missing store would read identically to a clean schema.
+        try (var server = new GraphitronMcpServer(loopback(0), new Workspace());
+             var client = connect(server.port())) {
+            client.initialize();
+
+            for (String tool : List.of("diagnostics", "diagnostics.aggregate")) {
+                var result = client.callTool(McpSchema.CallToolRequest.builder(tool).build());
+                assertThat(result.isError()).as("%s refuses handle-less", tool).isTrue();
+                assertThat(((McpSchema.TextContent) result.content().getFirst()).text())
+                    .contains("store handle");
+            }
+        }
+    }
+
+    /** A server holding the fixture's live workspace and its session store handle, as the dev loop wires it. */
+    private static GraphitronMcpServer server(StoreBackedBuild build) throws IOException {
+        return new GraphitronMcpServer(loopback(0), build.workspace, null, null, null, null, build.handle());
     }
 
     // ---- directives resource ----
@@ -1266,29 +1338,6 @@ class GraphitronMcpServerTest {
             Map.of("Mutation", new TypeClassification.Root("mutation"),
                 "Query", new TypeClassification.Root("query")), Map.of());
         return builtWorkspace(CompletionData.empty(), snapshot, ValidationReport.empty());
-    }
-
-    private static Workspace diagnosticsWorkspace() {
-        var error = new ValidationError("Query.film",
-            new Rejection.AuthorError.Structural("unknown table reference"),
-            new graphql.language.SourceLocation(5, 3, "/schema.graphqls"));
-        BuildWarning warning = new BuildWarning.NoRule("shadowed directive",
-            new graphql.language.SourceLocation(1, 1, "/schema.graphqls"));
-        var report = ValidationReport.from(List.of(error), List.of(warning));
-        return builtWorkspace(CompletionData.empty(),
-            new LspSchemaSnapshot.Built.Current(List.of(), Map.of(), Map.of()), report);
-    }
-
-    private static Workspace lintFindingWorkspace() {
-        // A lint finding rides the same ValidationReport warning channel; the MCP diagnostics tool
-        // projects its typed LintRule id onto the wire so an agent sees which rule fired.
-        no.sikt.graphitron.rewrite.BuildWarning finding = no.sikt.graphitron.rewrite.BuildWarning.LintFinding.of(
-            "field 'User.userName' is prefixed with its type name",
-            new graphql.language.SourceLocation(3, 5, "/schema.graphqls"),
-            no.sikt.graphitron.rewrite.lint.LintRule.NO_TYPENAME_PREFIX);
-        var report = ValidationReport.from(List.of(), List.of(finding));
-        return builtWorkspace(CompletionData.empty(),
-            new LspSchemaSnapshot.Built.Current(List.of(), Map.of(), Map.of()), report);
     }
 
     private static Workspace directivesWorkspace() {
