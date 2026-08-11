@@ -19,15 +19,15 @@ xref:typed-rejection.adoc[Typed rejection]; additive-then-cutover change discipl
 
 '''
 
-== Decide once, at the capture boundary; carry the decision as a fact
+== Decide once, at capture; carry the decision and its provenance as facts
 
 *Before implementing a feature, ensure the model carries what the feature needs ; pre-resolved,
-ready to consume.* Capture decodes every external input once into the fact store's keyed base
-relations, and the derived strata carry each conclusion as views over that base. During the
-strangler window the classification walk (`GraphitronSchemaBuilder`) is the same boundary in its
-transitional form, reading directives once and resolving everything downstream consumes. Every
-consumer receives "what to do", never "what to interpret"; the modeling discipline behind the
-store is xref:fact-model.adoc[The fact model].
+ready to consume.* Capture transcribes every external input once into the fact store's keyed base
+relations ; provenance kept, not overwritten ; and the derived strata carry each decision as views
+over that base, so the resolved answer never replaces the authored fact beneath it. During the
+strangler window the classification walk (`GraphitronSchemaBuilder`) is the same boundary in
+transitional form. Every consumer receives "what to do", never "what to interpret"; the modeling
+discipline behind the store is xref:fact-model.adoc[The fact model].
 
 Signs a model type needs more pre-resolution:
 
@@ -36,7 +36,7 @@ Signs a model type needs more pre-resolution:
 - Generation and calling are conflated in the same model type.
 - A generator branches on a predicate over pre-resolved data ; the decision was not resolved,
   only its inputs were. Rule of thumb: if two consumers evaluate the same predicate over a model
-  field, the branch belongs in the model, and the duplicate sites are an opportunity to drift.
+  field, the branch belongs in the model.
 
 [#sealed-hierarchies-over-enums-for-typed-information]
 === Sealed hierarchies over enums for typed information
