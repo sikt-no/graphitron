@@ -46,6 +46,8 @@ Files changed:
 
 - docs/architecture/explanation/development-principles.adoc  (technical principles)
 - docs/graphitron-principles.adoc                         (strategic principles)
+- docs/architecture/explanation/fact-model.adoc    (the fact-store modeling discipline)
+- docs/architecture/explanation/pipeline-overview.adoc  (the shipped pipeline; what is transitional)
 - docs/architecture/index.adoc                     (architectural orientation)
 - docs/architecture/reference/code-generation-triggers.adoc              (sealed-type hierarchy map)
 
@@ -67,9 +69,29 @@ Architectural improvement opportunities, especially:
 - **Enum where a sealed hierarchy belongs.** Variants that carry different data
   forced into one shared field set.
 - **Classification leaks.** Reflection types, raw `Table<?>`, raw `ForeignKey<?,?>`,
-  or raw graphql-java schema types reaching past the parse boundary
-  (`ServiceCatalog`, `JooqCatalog`, `TypeBuilder`, `FieldBuilder` are the only
-  classes permitted to hold them).
+  or raw graphql-java schema types reaching past the decode boundary (the capture
+  collaborators `SdlFactCapture` / `GraphitronFactCapture` / `CatalogFactCapture`
+  and the walk-side `ServiceCatalog` / `JooqCatalog` / `TypeBuilder` /
+  `FieldBuilder` are the only classes permitted to hold them).
+- **A leaf type where a fact belongs.** A new sealed leaf, walk-side registry, or
+  column on the transitional classified model carrying new information; during the
+  strangler window new facts land only in the store, and a capability is added by
+  adding a fact relation, never a new leaf type.
+- **A derivation stored where a view belongs.** A resolved or derived value
+  persisted as a base relation or column when it is a function of other facts;
+  the resolved value is always a view, and a materialization must own its
+  cannot-be-a-view argument in the DDL comment.
+- **Provenance flattened.** Authored and inferred populations from independent
+  walks merged into one relation with a provenance tag column, instead of
+  separate relations coalesced by a view.
+- **A private model.** A consumer (LSP, MCP, the test corpus, a new tool) growing
+  a hand-maintained taxonomy instead of re-sourcing views over the one base.
+- **Emit vocabulary entering the model.** JavaPoet types, name formulas, or
+  suffix literals in the model or plan; the emit library is visible only to
+  `render`, and unit names are minted once by `GeneratedUnits`.
+- **Keying-axis confusion.** A use-site resolution keyed on a definition
+  coordinate, or an authored fact keyed on a use site; authored facts are
+  definition-keyed, derived bindings are use-keyed joins.
 - **Capability vs. sealed-switch confusion.** `instanceof` chain where a capability
   interface would express "uniformly true across variants"; a capability used where
   the generator actually forks on identity.
@@ -111,9 +133,10 @@ Prioritized list, highest-leverage first. For each opportunity:
 
 - **Summary.** One line.
 - **Pointer.** `path/to/file.java:LINE` or function name.
-- **Principle.** Cite the heading from `development-principles.adoc` or
-  `graphitron-principles.md` (e.g. "Decide once, at the parse boundary",
-  "Sealed hierarchies over enums").
+- **Principle.** Cite the heading from `development-principles.adoc`,
+  `graphitron-principles.md`, or `fact-model.adoc` (e.g. "Decide once, at
+  capture; carry the decision and its provenance as facts", "Sealed hierarchies
+  over enums", "Provenance: pick the shape per fact").
 - **Why the current shape is weaker.** One or two sentences. Concrete, not
   abstract.
 - **Sketch of stronger shape.** One or two sentences, optional if obvious.

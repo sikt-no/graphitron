@@ -13,7 +13,7 @@ You are not a reviewer. The Spec → Ready and In Review → Done gates are hand
 
 - DO surface architectural opportunities the author may have missed: places the design pushes against a principle, places the type system could carry more certainty, places a producer narrows a shape that downstream consumers consume without the narrowed type, places the validator should mirror the classifier.
 - DO sketch the stronger shape in one or two sentences when the alternative is concrete.
-- DO cite the principle by heading from the docs you read (e.g. "Generation-thinking", "Sealed hierarchies over enums", "Classification belongs at the parse boundary").
+- DO cite the principle by heading from the docs you read (e.g. "Generation-thinking", "Sealed hierarchies over enums", "Decide once, at capture; carry the decision and its provenance as facts").
 - DO be willing to say "the design is clean against the principles"; do not invent findings to fill space.
 - DO NOT bug-hunt, style-police, or rubber-stamp.
 - DO NOT propose features or scope expansions ("you could also support X").
@@ -25,9 +25,11 @@ You are not a reviewer. The Spec → Ready and In Review → Done gates are hand
 These are the principle sources. Read them before evaluating the design; the order matters because the strategic frame reframes the technical one:
 
 1. `docs/graphitron-principles.adoc` ; strategic principles (DB-as-ally, stability through simplicity, separate business logic from API code)
-2. `docs/architecture/explanation/development-principles.adoc` ; technical principles (six axioms with corollaries and named enforcement: decide once at the parse boundary, orthogonal axes, one model many views, boundaries decode and encode, every invariant has an enforcer, generated code is a consumer artifact)
-3. `docs/architecture/index.adoc` ; pipeline orientation
-4. Any doc the design touches directly (`code-generation-triggers.adoc`, `argument-resolution.adoc`, `runtime-extension-points.adoc`, `testing.adoc`, `workflow.adoc`) ; only the ones relevant to the design under review
+2. `docs/architecture/explanation/development-principles.adoc` ; technical principles (six axioms with corollaries and named enforcement: decide once at capture and carry decision plus provenance as facts, orthogonal axes, one model many views, boundaries decode and encode, every invariant has an enforcer, generated code is a consumer artifact)
+3. `docs/architecture/explanation/fact-model.adoc` ; the fact-store modeling discipline (natural keys, provenance shapes, derived reads as views, the re-sourcing invariant, the closed command graph), each rule with its enforcer named
+4. `docs/architecture/explanation/pipeline-overview.adoc` ; the shipped pipeline, stage by stage, with the transitional classification walk named as transitional
+5. `docs/architecture/index.adoc` ; orientation
+6. Any doc the design touches directly (`code-generation-triggers.adoc`, `argument-resolution.adoc`, `runtime-extension-points.adoc`, `testing.adoc`, `workflow.adoc`) ; only the ones relevant to the design under review
 
 Then read the code or spec the caller pointed you at. Read fully (no `limit`/`offset`); the principles are most useful when you can see the actual shapes the design touches.
 
@@ -37,7 +39,13 @@ Use the same taxonomy as `.claude/skills/reviewer-prompt/SKILL.md`'s "What to lo
 
 - **Generation-thinking gaps.** Does the model the design proposes carry what the generator needs (pre-resolved, generation-ready), or does it leave the generator parsing strings, recomputing names, or branching on predicates over pre-resolved data? If two consumers would evaluate the same predicate over a model field, the branch belongs in the model.
 - **Enum where a sealed hierarchy belongs.** Variants that carry different data forced into one shared field set. Look for "this enum value implies these fields are non-null."
-- **Classification leaks.** Does the design route raw `Table<?>`, `ForeignKey<?,?>`, `java.lang.reflect.Type`, or graphql-java schema types past `ServiceCatalog` / `JooqCatalog` / `TypeBuilder` / `FieldBuilder`? Those four are the only classes permitted to hold them.
+- **Classification leaks.** Does the design route raw `Table<?>`, `ForeignKey<?,?>`, `java.lang.reflect.Type`, or graphql-java schema types past the decode boundary? The capture collaborators (`SdlFactCapture`, `GraphitronFactCapture`, `CatalogFactCapture`) and the walk-side `ServiceCatalog` / `JooqCatalog` / `TypeBuilder` / `FieldBuilder` are the only classes permitted to hold them; the store enforces its half structurally (relations hold values, never live handles).
+- **A leaf type where a fact belongs.** The design adds a sealed leaf, a walk-side registry, or a column on the transitional classified model to carry new information. During the strangler window new facts land only in the store; a capability is added by adding a fact relation, never a new leaf type.
+- **A derivation stored where a view belongs.** A resolved or derived value persisted as a base relation or column when it is a function of other facts. The resolved value is always a view; materialize only when the engine cannot state the derivation as a view, and the DDL comment must own why.
+- **Provenance flattened.** Authored and inferred populations that come from independent walks merged into one relation with a provenance tag column, instead of separate relations coalesced by a view. A single value in a single slot may be a sparse authored column plus a default rule; multi-valued or independently-walked populations may not.
+- **A private model.** A consumer (the LSP, the MCP surface, the test corpus, a new tool) growing its own hand-maintained taxonomy instead of re-sourcing views over the one base; the shim it needs today is the model fork of tomorrow.
+- **Emit vocabulary entering the model.** JavaPoet types, class/method-name formulas, or suffix literals appearing in the model or plan. The emit library is visible only to `render`, and unit names are minted once by `GeneratedUnits`.
+- **Keying-axis confusion.** A use-site resolution keyed on a definition coordinate, or an authored fact keyed on a use site. Authored facts are definition-keyed (where the author's cursor sits); derived bindings are use-keyed joins.
 - **Capability vs. sealed-switch confusion.** Is the design proposing an `instanceof` chain where a capability interface (`SqlGeneratingField`, `MethodBackedField`, `BatchKeyField`, ...) would express "uniformly true across variants"? Or a capability where the generator actually forks on identity?
 - **Component types too broad.** A field component declared at the sealed root when the classifier guarantees a narrower variant. The type system should carry the certainty.
 - **Sub-taxonomy candidates.** Resolution outcomes stored as raw strings, nullable bag records, or tri-state returns that should be a sealed `Resolved`.
