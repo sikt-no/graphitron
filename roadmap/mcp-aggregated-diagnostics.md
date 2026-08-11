@@ -29,8 +29,8 @@ becomes one: verdicts are minted as values of the sealed `Rejection` hierarchy, 
 vocabulary the strangler dissolves arm by arm, so an aggregate designed against the report
 would be a new reader of a retiring surface. This item therefore owns violations as a fact
 family: it lands the store's diagnostics stratum (a derivation view for the first store-native
-family, a transcription residue for the rest, one union view over both plus the shipped
-compile arm) and builds the aggregate as that stratum's first reader.
+family, per-vocabulary transcription relations for the rest, one union view over all of them
+plus the shipped compile arm) and builds the aggregate as that stratum's first reader.
 
 ## Why it matters
 
@@ -330,12 +330,16 @@ improvement in its risk: the query vocabulary here (`GROUP BY`, `HAVING`, a unio
 already exercised in production by a reader whose wrong answer would cost wrong generated
 code, where a wrong answer here costs a bad triage.
 
-What this item adds is the diagnostics stratum: violations as facts. Four arms sit behind one
+What this item adds is the diagnostics stratum: violations as facts. Five arms sit behind one
 `diagnostic` union view, and nothing reads a base relation directly.
 
-**One relation per writer arm, and no writer at all for derivation arms.** The union view,
-with `source` as a per-arm literal in the shipped `graphql_directive_site` mould, is what the
-aggregate and the widened `diagnostics` filters read. Behind it:
+**One relation per vocabulary arm, no writer at all for derivation arms, and the sealed switch
+as the family boundary's enforcer.** The union view, with `source` carried per arm in the
+shipped `graphql_directive_site` mould, is what the aggregate and the widened `diagnostics`
+filters read. The arm-to-`source` mapping is many-to-one and stated so it is reviewed: the
+pilot view, the residue, the lint arm and the advisory arm all carry `source = 'schema'`,
+only `javac_diagnostic` carries `compile`, so a new arm grows neither the closed `source`
+taxonomy nor the wire vocabulary. Behind the view:
 
 - **The store-native pilot: `intent_authored_claim_conflict`**, a derivation view over R589's
   claim views carrying the claim-conflict family's violations as rows (the pilot section
@@ -357,6 +361,33 @@ aggregate and the widened `diagnostics` filters read. Behind it:
   rules are predicates over classified facts, a natural early candidate for a store-native
   derivation, which they cannot become independently while sharing a relation with the
   rejection residue. The union view is what makes the split free.
+- **The advisory arm: `build_warning_no_rule`, in the sealed warning hierarchy's own
+  vocabulary.** `BuildWarning.NoRule` is the deliberate arm for an advisory not attributable
+  to a lint rule, with two live producers (`GraphitronSchemaBuilder`'s `@table`-on-input
+  deprecation announcements and `EntityResolutionBuilder`'s federation compound-key
+  advisory), and the shipped tool surfaces it, pinned (severity `warning`, no `lintRule`
+  key), so a stratum without an arm for it is a shipped tool quietly dropping rows. It gets
+  its own relation on the same per-arm asymmetries that split lint from the residue, and
+  there are two of them, not one: severity (warning by construction, a third rule beside
+  kind and rule) and suppressibility (`withLintFindings`'s filter is keyed on the rule id,
+  so `lint_finding` rows are post-suppression survivors while advisory rows never met the
+  filter, and one relation holding both would give "absent from this relation" two
+  meanings). Folding it into `lint_finding` would move the NULL-encodes-the-arm smell
+  inside the arm rather than removing it, and converting the two producers to `LintFinding`
+  is not a refactor: it would make an unsuppressible deprecation announcement silenceable
+  through `disabledRules`, a change in the announce posture, and it breaks
+  `FixtureWarningsGateTest`'s `isInstanceOf(NoRule)` assertion in the example module. The
+  family is `build_warning_`, named in the `rejection_` mould for the sealed hierarchy whose
+  words the row is: message and location are `NoRule`'s entire component list, and the arm
+  selector sits in the relation name per the `jvm_scalar_type_field` precedent, since the
+  sibling arm lives in `lint_`. It is deliberately not in `walk_`, although the two shipped
+  producers both live in the legacy walk: a family may not be named for its producer (the
+  `validator_` rejection again), the loader forks on the sealed arm rather than on who
+  minted the value, so a producer-named family would silently lie the day a non-walk site
+  mints a `NoRule`, and unlike its three loaded neighbours this arm is permanent, since both
+  producers outlive the walk (a deprecation announcement retires with its directive, the
+  federation advisory with nothing). Its DDL comment therefore states that it has no
+  removal criterion, instead of borrowing a retirement clock it would falsify.
 - **The compile arm: the shipped `javac_diagnostic`** (R603, Done; see
   `roadmap/changelog.md`), read from day one; that item's dovetail picked the fork where this
   item's compile bridge is never built, so the fork is settled and its fallback moot. Behind
@@ -364,17 +395,18 @@ aggregate and the widened `diagnostics` filters read. Behind it:
   console block, the current MCP tool, and `CompileFacts` all read; this item's view becomes
   the fourth reader of the same spelling.
 
-The per-writer split keeps the `source` boundary honest: for rejection rows severity is a
-function of the rejection's kind, for lint rows of the rule, for compile rows javac's
-independent verdict, and one relation holding any two would give one column two meanings. The
+The per-vocabulary split keeps the `source` boundary honest: for rejection rows severity is a
+function of the rejection's kind, for lint rows of the rule, for advisory rows warning by
+construction, for compile rows javac's independent verdict, and one relation holding any two
+would give one column two meanings. The
 split also holds without anyone scheduled to replace an arm: a later detection that derives
 its family store-native gets its own view arm rather than contending for an existing one.
 
 **The store is shared and persistent now, and the loaded arms inherit both facts.**
 R610 (shipped) moved the persisted store to a per-user cache shared by every module of a
 workspace, keyed the SDL families by a leading `graph_name`, and made refresh
-ownership-scoped. The `rejection_` and lint relations inherit the dimension on the same
-reasoning `javac_diagnostic` shipped with: `graph_name` leads their keys with the structural
+ownership-scoped. The `rejection_`, lint and advisory relations inherit the dimension on the
+same reasoning `javac_diagnostic` shipped with: `graph_name` leads their keys with the structural
 FK to `store_graph`, every loader statement is scoped to the session's graph (an unscoped
 delete in a shared store is one module erasing another's diagnostics), and the relations pass
 R610's schema gate without an exemption. The view's arms carry `graph_name` through, and the
@@ -562,7 +594,8 @@ rejected kind). Three constraints shape it:
 carries what the channel's own typed data states: the rejection's kind and variant,
 `lsp_code`, `(attempt_kind, attempt)`, the stub key, the location, and a nullable
 `(type_name, field_name)` pair at the DDL's universal grain rather than a rendered coordinate
-string; the lint arm carries the rule id and location in its own vocabulary. The loader reads
+string; the lint arm carries the rule id and location in its own vocabulary; the advisory arm
+carries the message and location, `NoRule`'s entire component list. The loader reads
 that grain off `ValidationError`'s constructors instead of dot-splitting a rendering back
 apart, which also gives the carved-out sealed-`Coordinate` item a cheap landing later (a
 loader simplification, no column change). The view computes what is a function of stored
@@ -582,6 +615,14 @@ parity assertion between the record's spelling and the view's keeps the two from
 And compile-row absence is javac's own sentinels rather than `NULL` (`"(no source)"` for the
 file, `-1` for a `NOPOS` position, the key admitting no `NULL`), so the view's location and
 `file`/`directory` projections compare against the sentinels, never `IS NULL`.
+The schema-side arms have no oracle sentinels to borrow, so their absence stays SQL `NULL`
+outside the key, and the key question for location-less rows is settled here rather than at
+implementation time, where a surrogate counter is what an implementer reaches for. Two
+shipped lint producers carry a `null` location deliberately (`SessionStateWarnings` and
+`DependencyVersionWarnings` mint whole-build facts with no SDL coordinate), so `file` and
+`directory` need the stated absent bucket as much as `coordinate` does, and those rows take
+the nearest shipped key shape: an emit-order ordinal under the graph-scoped partition,
+`javac_diagnostic`'s tie-breaker.
 Closed `CHECK`s cover only the small projections the model owns (`severity`, `source`,
 `kind`); `variant` stays an open column, since a `CHECK` enumerating sealed-hierarchy leaves
 would be a hand-maintained second copy of a taxonomy the compiler already enforces.
@@ -657,7 +698,7 @@ report can project from the store; the residue and the tool follow.
 |---|---|---|---|
 | 1 | `ClaimDomain` reified as `walk_claim_domain` (its own retiring-vocabulary family, written by the capture-and-detect pass at capture cadence); the `intent_authored_claim_conflict` derivation view, landing shadowed against the surviving Java reduction with corpus agreement | `graphitron-model`, `graphitron` | small-medium |
 | 2 | The cutover: `Detection` derives the claim-conflict family's `ValidationError` values from the view's rows, the `DERIVED` anchor re-aims at an expectation the view does not produce, the `Conflicted` projection overlay keeps reading the detection | `graphitron` | small |
-| 3 | DDL: the graph-keyed `rejection_` residue and its `directives` child, the `lint_finding` relation, and the prefix-less `diagnostic` union view over all four arms; registrations (transcription arms `ORACLE`, derivation arm `DERIVED`) and the residue's declared-set drainage pin | `graphitron-model`, `graphitron` | small-medium |
+| 3 | DDL: the graph-keyed `rejection_` residue and its `directives` child, the `lint_finding` and `build_warning_no_rule` relations, and the prefix-less `diagnostic` union view over all five arms; registrations (transcription arms `ORACLE`, derivation arm `DERIVED`) and the residue's declared-set drainage pin | `graphitron-model`, `graphitron` | small-medium |
 | 4 | The residue and warning loaders beside the report's producer: exhaustive-switch sites over the two pre-fuse lists (the walk's error stream for the residue, the suppression-filtered warning list for the warning arms; never the fused report; `BuildOutput` exposes both), every statement graph-scoped, live `DSLContext` only; `DevMojo` constructs them beside `CompileFacts` and calls them where it sets the build output | `graphitron`, `graphitron-maven-plugin` | small-medium |
 | 5 | The aggregate and the widened `diagnostics` filters as jOOQ over the view; the dimension enum as the wire-name-to-view-column mapping; tail rule via `HAVING` plus the elided-remainder aggregate; the new counts-only tool; the handle reaching it through `GraphitronMcpServer`'s constructor from `DevMojo`'s one construction site | `graphitron-mcp`, `graphitron-maven-plugin` | medium |
 
@@ -807,10 +848,14 @@ invisible to this suite:
   becomes the view compared against a projection of itself.
 - **Residue drainage declared set.** The rejection families still routing through the
   `rejection_` residue are enumerated in one declaration; migrating a family store-native must
-  edit it, and a new rejection cause cannot silently enlarge the residue.
+  edit it, and a new rejection cause cannot silently enlarge the residue. The set is scoped
+  to the `rejection_` residue alone: the advisory arm is permanent and sits outside it, so
+  the declaration's count means "still awaiting migration" and nothing else.
 - **Rows with no coordinate are not silently lost.** Warnings and compile diagnostics carry no
   coordinate, so coordinate-reading dimensions yield a stated absent bucket rather than dropping
-  rows out of the totals.
+  rows out of the totals. The bucket is wider than coordinate alone: the two whole-build lint
+  producers carry no location either, so `file` and `directory` state the same absent bucket
+  (the DDL section carries the key convention for those rows).
 - Live-server tier: the `GraphitronMcpServerTest` tool-list assertion gains
   `diagnostics.aggregate` (it pins the list with `containsExactlyInAnyOrder`, so it fails until
   updated), plus one end-to-end call asserting the structured shape and the snapshot axes; the
@@ -831,14 +876,16 @@ hole the dropped capability lift would have closed in the type system.
 
 - `graphitron-model.sql`: the `intent_authored_claim_conflict` view and `walk_claim_domain`,
   the reified walk-reach rows it joins; the graph-keyed `rejection_` residue and its
-  `directives` child; the `lint_finding` relation; and the prefix-less `diagnostic` union
-  view over all four arms, its comment stating why it carries no family prefix (a read-side
-  union across vocabularies has no family, and no naming gate says so mechanically). The DDL
-  header's family enumeration gains the three new families (`rejection_`, `lint_`, `walk_`);
-  the header names every family and its count is part of its prose, so the edit is not
-  optional. All commented per the model conventions (the comment-coverage gate reads them).
+  `directives` child; the `lint_finding` and `build_warning_no_rule` relations; and the
+  prefix-less `diagnostic` union view over all five arms, its comment stating why it carries
+  no family prefix (a read-side union across vocabularies has no family, and no naming gate
+  says so mechanically). The DDL header's family enumeration gains the four new families
+  (`rejection_`, `lint_`, `build_warning_`, `walk_`); the header names every family and its
+  count is part of its prose, so the edit is not optional. All commented per the model
+  conventions (the comment-coverage gate reads them).
 - The agreement driver in `graphitron`'s capture test root: the `rejection_` residue,
-  `lint_finding`, and `walk_claim_domain` under the existing `ORACLE` arm (transcriptions of
+  `lint_finding`, `build_warning_no_rule`, and `walk_claim_domain` under the existing
+  `ORACLE` arm (transcriptions of
   verdicts no derivation reproduces, inheriting the arm's two shipped anchors), the pilot
   view under `DERIVED` with its anchor re-aimed at the cutover. No new arm; the cost of
   keeping that property is the `ORACLE` javadoc widening the pilot section argues (the lead
@@ -941,7 +988,14 @@ intact: the tool boundary, the preset, pure counts, the set-valued `directives` 
   `InvalidSchema.Structural` residue over the reactor's own fixture corpus. Ship `messageTemplate` only if that residue does not read usefully off `variant`
   alone; otherwise omit the dimension and let those rows cluster on `variant`. Either way the
   implementer records the measurement in the In Review note, so the Done reviewer can check the call
-  rather than re-derive it. Omitting is the default, not the exception. The fact-base direction adds
+  rather than re-derive it. Omitting is the default, not the exception. The advisory arm widens
+  the measurement's basis, and it points the other way, so the implementer inherits the fact
+  rather than re-deriving it: advisory rows carry no typed dimension at all (no `variant`, no
+  `lspCode`, no `lintRule`, no `attemptKind`), so on any typed `groupBy` they collapse into one
+  NULL bucket, and unlike the `Structural` residue this population is permanent. Measure both
+  populations; if the dimension is still omitted, the dimension gloss says outright that
+  advisory rows group by location only, and the typed / location-derived partition declares it
+  rather than implying it. The fact-base direction adds
   a second, stronger argument for that default: rejections are facts rendered into views, never prose
   composed at the detection site, and a message-template dimension groups on the rendering rather
   than the fact, so its substrate is scheduled to shrink as the architecture deletes composed prose.
@@ -1068,7 +1122,7 @@ is supposed to produce.
 
 ## Review lineage
 
-Two Spec → Ready gate passes so far (both 2026-08-11), both holding the item in Spec; every
+Three Spec → Ready gate passes so far (all 2026-08-11), each holding the item in Spec; every
 finding is folded into the body above, which is the authoritative text, and this note exists
 so the next pass knows what not to redo. Pass one verified every named symbol, relation, and
 count against the tree and found them right (including the forty-two `lspCode()` sites across
@@ -1081,77 +1135,14 @@ instruction. Pass two held two of the resulting resolutions to the fire: the
 `walk_claim_domain` registration now widens the `ORACLE` javadoc's lead instead of
 contradicting it, and the handle-less call refuses instead of answering a count that reads as
 a clean schema; it also moved the write to the `FactCapture.detect` overload and prompted
-collapsing the in-file review log into this note.
-
-## Third reviewer pass (Spec → Ready gate, 2026-08-11)
-
-**Both pass-two resolutions are right, and they verify.** The `ORACLE` widening is grounded:
-the arm's lead does read "for relations a post-capture oracle writer owns", its write-read
-anchor is already cadence-relative in exactly the words quoted ("the same round reduced two
-ways, at the oracle's cadence"), and `intent_type_domain` is pinned under `DERIVED` as a
-relation a writer "re-derives inside every capture", which is the derivability
-`walk_claim_domain` lacks by design. Widening the lead therefore makes epistemics the arm
-boundary and drops cadence from it, which leaves `ORACLE` and `DERIVED` cleanly disjoint
-rather than blurring them, and the site is named in Implementation sites. The refusal is the
-honest answer and it has a shipped shape to copy: `ExecuteTool.error(String)` already returns
-`isError(true)` with a `status` / `message` structured pair, so no posture is being invented.
-`FactCapture.detect(DSLContext, GraphIdentity, ClaimDomain)` exists with that exact signature
-and that exact `domain == null` guard. Every symbol the rework adds checks out. None of this
-should be reopened.
-
-Two problems, both about what the union view holds and who reads it. Neither is a reopening.
-
-1. **`BuildWarning.NoRule` has no arm in the four-arm stratum, and it is a live channel this
-   item's own narrative feeds.** `BuildWarning` is sealed into two arms; `NoRule` is the
-   deliberate arm for an advisory not attributable to a lint rule, with two producers in main
-   sources, and `GraphitronSchemaBuilder.emitTableOnInputDeprecationWarnings` argues the arm
-   choice at length ("this is a deprecation announcement, not a lint-engine finding"). That
-   site is the `@table`-on-input signal this spec cites at the top as having deleted a
-   rejection arm, so the body already knows a diagnostic moved from `Rejection` into
-   `NoRule`. But the stratum has four arms (pilot view, `rejection_`, `lint_finding`,
-   `javac_diagnostic`) and `DiagnosticsTool` becomes "a projection of the `diagnostic` view's
-   rows", so a rule-less advisory reaches the wire today and reaches nothing after this item.
-   That is pinned behaviour, not incidental: `diagnosticsWorkspace()` seeds a
-   `BuildWarning.NoRule` and `diagnosticsReturnsMappedErrorsAndReportsSnapshotFreshness`
-   asserts it surfaces with `severity: warning` and no `lintRule` key. Both obvious homes are
-   closed by arguments this body already makes. `rejection_` is the nullable bag with two
-   vocabularies the lint-arm bullet rejects by name. `lint_finding` is named for the words its
-   rows carry (`lint_rule` is `LintRule.id()`), so a rule-less row there is the
-   NULL-encodes-the-arm smell moved inside the arm rather than removed. A fifth arm is
-   available and the per-writer severity argument supports it (a `NoRule` advisory's severity
-   is warning by construction, a third rule beside kind and rule), but the family name is a
-   doctrine decision this item has already been through twice and is not the implementer's to
-   make. Alternatively say the arm folds into `lint_finding` and argue the absent rule, or that
-   this item converts the two `NoRule` producers to `LintFinding` and retires the arm. Any of
-   the three closes it; silence does not, because the null result is a shipped tool quietly
-   dropping rows.
-
-2. **Moving `DiagnosticsTool` onto the view breaks four shipped tests, three of them on
-   fixtures that a store handle cannot repair, and only the tool-list assertion is named as
-   failing.** The Tests section is scrupulous about the one it names
-   (`GraphitronMcpServerTest`'s `containsExactlyInAnyOrder`, "so it fails until updated"),
-   which is what makes the omission read as an oversight rather than a judgement.
-   `GraphitronMcpServerTest` has three diagnostics cases
-   (`diagnosticsReturnsMappedErrorsAndReportsSnapshotFreshness`,
-   `diagnosticsProjectsLintRuleIdForLintFindings`, `diagnosticsFiltersBySeverity`) that boot the
-   short constructor over a hand-built `ValidationReport` and assert on returned rows, and
-   `LintSuppressionDiagnosticsParityTest` calls `diagnostics` on `new
-   GraphitronMcpServer(loopback(0), workspace)` with a published build and no handle. After the
-   substrate move all four go through the store, so under the refusal all four get a tool error.
-   Wiring a handle does not fix the three unit-tier ones: the loaders take the walk's stream,
-   and a hand-built report has no walk behind it, so those fixtures have to be rebuilt as
-   pipeline runs on the template the Tests section already describes. That is real work, it
-   moves this item's stated test footprint, and the cheap escape an implementer will reach for
-   under time pressure (keep the report projection when the handle is absent) is precisely the
-   two-projection drift the aggregate / drill-down parity pin exists to catch. State the
-   migration and the choice here.
-
-   One precision point rides with this, because the same sentence covers it. "Taking the walk's
-   error stream rather than the fused report" is stated for the residue and is exactly right
-   there, since `buildOutput` fuses `detection.violations()` into the errors list and the
-   residue must not transcribe the pilot family. It is actively wrong for the lint loader:
-   suppression is applied in `withLintFindings` over the combined warning list, before the
-   report is assembled, which is the whole reason build-side suppression rides to the tool for
-   free. A lint loader reading a pre-suppression lint stream would resurrect disabled findings
-   on the wire. Name the lint loader's input as the suppression-filtered warning list.
+collapsing the in-file review log into this note. Pass three verified pass two's resolutions
+against the tree (the widening's grounding, the refusal's shipped `ExecuteTool.error` shape,
+the `detect` overload and its `domain == null` guard) and found two holes, both closed above:
+`BuildWarning.NoRule` had no arm in the stratum, closed with the `build_warning_no_rule`
+fifth arm in the sealed hierarchy's own family, permanent and outside the drainage set (a
+principles consult killed the author's first leaning, `walk_advisory`, as a producer-named
+family with a false retirement clock, and surfaced suppressibility as the second per-arm
+asymmetry); and the substrate move's four-test breakage was unstated, now named in Tests
+with the keep-the-report-projection escape rejected by name, alongside the correction that
+the warning loader's input is the suppression-filtered list, not a pre-suppression stream.
 
