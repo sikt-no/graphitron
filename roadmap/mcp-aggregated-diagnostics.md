@@ -1,7 +1,7 @@
 ---
 id: R569
 title: "Violation facts in the store; the MCP aggregate is their first reader"
-status: Ready
+status: In Progress
 bucket: feature
 priority: 5
 theme: diagnostics
