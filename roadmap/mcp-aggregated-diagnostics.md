@@ -394,7 +394,7 @@ in mixed mode, falls back to a module-local in-memory store on any cache trouble
 the store's compatibility into the file path, so a reader that opened the persisted file
 itself could be reading a different store than the one the session writes. The shipped
 `CompileFacts` already holds this contract on the write side (it takes the dev session's
-store handle); the residue and lint loaders hold it beside `CompileFacts`, and the aggregate
+store handle); the residue and warning loaders hold it beside `CompileFacts`, and the aggregate
 and the widened filters hold the same contract on the read side.
 
 **Who owns that handle, since this item is the first reader outside `graphitron`.** The owner
@@ -408,10 +408,17 @@ is the one part of this design that reaches a module the rest of the item does n
 - The write side needs one seam and no new owner. The loaders home in `graphitron` (see the
   placement note below) and take a `DSLContext` the way `FactCapture.capture` does, so
   `DevMojo` constructs them beside `CompileFacts` at the existing site and calls them where it
-  already calls `Workspace.setBuildOutput`. Their input is the walk's error stream, never the
-  assembled report; `buildOutput` holds the two streams separate one line before it fuses
-  them, so `BuildOutput` exposes the walk's list alongside the fused report and the residue's
-  partition is structural at that single site (the residue section below).
+  already calls `Workspace.setBuildOutput`. Their inputs are the two pre-fuse lists, each for
+  a different reason. The residue loader takes the walk's error stream, never the assembled
+  report, so the pilot family's detection-minted errors are structurally absent from its
+  input. The warning loader takes the suppression-filtered warning list `withLintFindings`
+  returns, never a pre-suppression stream: suppression is applied there over the combined
+  list, before the report is assembled, which is the whole reason build-side suppression
+  rides to the tool for free, and a loader reading an earlier stream would resurrect disabled
+  findings on the wire. `buildOutput` holds both lists separate one line before it fuses them
+  into `ValidationReport.from(errors, warnings)`, so `BuildOutput` exposes both alongside the
+  fused report and each loader's partition is structural at that single site (the residue
+  section below).
 - The read side needs one edit: `GraphitronMcpServer`'s full constructor gains the handle, and
   `DevMojo`'s single construction site passes `sessionStore.dsl()`. `graphitron-mcp` imports
   neither `no.sikt.graphitron.model` nor `DSLContext` in main sources today, so this is that
@@ -607,7 +614,7 @@ the tool (the generated classes are the containment: R589 rejected a typed store
 mediating all access would reconstruct the fixed method vocabulary the store was chosen to
 escape and duplicate every relation into a second hand-written surface, while jOOQ's generated
 classes already give typed access with no strings and no JDBC; `graphitron-model` hosts model
-code only), and the residue and lint loaders live in `graphitron` beside the report's producer.
+code only), and the residue and warning loaders live in `graphitron` beside the report's producer.
 
 That placement is the correction of an earlier draft's, and the correction matters enough to
 state rather than quietly apply. The draft put the loader at the workspace layer and claimed it
@@ -651,7 +658,7 @@ report can project from the store; the residue and the tool follow.
 | 1 | `ClaimDomain` reified as `walk_claim_domain` (its own retiring-vocabulary family, written by the capture-and-detect pass at capture cadence); the `intent_authored_claim_conflict` derivation view, landing shadowed against the surviving Java reduction with corpus agreement | `graphitron-model`, `graphitron` | small-medium |
 | 2 | The cutover: `Detection` derives the claim-conflict family's `ValidationError` values from the view's rows, the `DERIVED` anchor re-aims at an expectation the view does not produce, the `Conflicted` projection overlay keeps reading the detection | `graphitron` | small |
 | 3 | DDL: the graph-keyed `rejection_` residue and its `directives` child, the `lint_finding` relation, and the prefix-less `diagnostic` union view over all four arms; registrations (transcription arms `ORACLE`, derivation arm `DERIVED`) and the residue's declared-set drainage pin | `graphitron-model`, `graphitron` | small-medium |
-| 4 | The residue and lint loaders beside the report's producer: one exhaustive-switch site over the walk's error stream (never the fused report; `BuildOutput` exposes the split), every statement graph-scoped, live `DSLContext` only; `DevMojo` constructs them beside `CompileFacts` and calls them where it sets the build output | `graphitron`, `graphitron-maven-plugin` | small-medium |
+| 4 | The residue and warning loaders beside the report's producer: exhaustive-switch sites over the two pre-fuse lists (the walk's error stream for the residue, the suppression-filtered warning list for the warning arms; never the fused report; `BuildOutput` exposes both), every statement graph-scoped, live `DSLContext` only; `DevMojo` constructs them beside `CompileFacts` and calls them where it sets the build output | `graphitron`, `graphitron-maven-plugin` | small-medium |
 | 5 | The aggregate and the widened `diagnostics` filters as jOOQ over the view; the dimension enum as the wire-name-to-view-column mapping; tail rule via `HAVING` plus the elided-remainder aggregate; the new counts-only tool; the handle reaching it through `GraphitronMcpServer`'s constructor from `DevMojo`'s one construction site | `graphitron-mcp`, `graphitron-maven-plugin` | medium |
 
 Steps 1 and 2 are the violations-as-facts pilot and could carve into their own item if
@@ -757,6 +764,25 @@ invisible to this suite:
   was deleted at R610, so the fixture sets the directory through the canonical constructor; and
   with `DevMojo` not in play, the fixture opens its own session handle, invokes the loaders
   itself, and hands the handle to the server.
+- **The substrate move breaks four shipped tests, not one, and the migration is stated so the
+  cheap escape is closed.** Beyond the tool-list assertion named below, the three
+  `GraphitronMcpServerTest` diagnostics cases
+  (`diagnosticsReturnsMappedErrorsAndReportsSnapshotFreshness`,
+  `diagnosticsProjectsLintRuleIdForLintFindings`, `diagnosticsFiltersBySeverity`) boot the
+  short constructor over a hand-built `ValidationReport` and assert on returned rows, and
+  `LintSuppressionDiagnosticsParityTest` calls `diagnostics` handle-less over a published
+  build. After the move all four go through the store, so under the refusal all four get a
+  tool error, and wiring a handle does not repair the three unit-tier ones: the loaders read
+  the pre-fuse lists, and a hand-built report has no walk behind it. All four migrate onto
+  the pipeline-run template above: the parity test gains the store directory, the session
+  handle, and the loader invocations; the three unit cases rebuild their seeded reports as
+  SDL fixtures whose real pipeline run produces the rows they assert, including the seeded
+  rule-less advisory, which the rebuilt fixture produces through a real producer (`@table`
+  on an input type is the cheap one) and which must keep surfacing with `severity: warning`
+  and no `lintRule` key. The escape an implementer under time pressure will reach for,
+  keeping the report projection for handle-less callers, is rejected here by name: a second
+  projection beside the view is exactly the two-implementation drift the aggregate /
+  drill-down parity pin exists to catch, so the refusal has no fallback.
 - **Truncation honesty.** `minCount` / `limit` elision reports the elided group count and their
   combined count; a truncated aggregate never reads as complete.
 - **Cardinality guard.** A high-cardinality composite `groupBy` over a large fixture does not
@@ -787,7 +813,8 @@ invisible to this suite:
   rows out of the totals.
 - Live-server tier: the `GraphitronMcpServerTest` tool-list assertion gains
   `diagnostics.aggregate` (it pins the list with `containsExactlyInAnyOrder`, so it fails until
-  updated), plus one end-to-end call asserting the structured shape and the snapshot axes.
+  updated), plus one end-to-end call asserting the structured shape and the snapshot axes; the
+  three diagnostics cases' rebuild is the substrate-move bullet above.
 - `ServerInstructionsTest` needs no new case, but it gates this item's discovery surface and is the
   reason the routing line and the manual row are not optional: see Implementation sites. Its existing
   assertions cover the new tool by construction, since it derives the advertised surface from a booted
@@ -824,12 +851,14 @@ hole the dropped capability lift would have closed in the type system.
   values derive from the view's rows; the `Conflicted` projection overlay keeps its seam.
 - `ClaimDomain`: reified as rows the pilot view joins; the record's javadoc already carries
   the gate's rationale and removal criterion, which move to the relation comment.
-- The residue and lint loader classes in `graphitron` beside the report's producer: the single
-  exhaustive-switch site, writing per snapshot (schema channels only; the compile channel's
+- The residue and warning loader classes in `graphitron` beside the report's producer: the
+  exhaustive-switch sites, writing per snapshot (schema channels only; the compile channel's
   writer, `CompileFacts`, already ships), every statement graph-scoped, taking a live
-  `DSLContext` and the walk's error stream rather than the fused report.
-- `GraphQLRewriteGenerator.BuildOutput`: exposes the walk's error stream alongside the fused
-  report, so the loaders' input partition is structural.
+  `DSLContext` and the pre-fuse lists: the walk's error stream for the residue, the
+  suppression-filtered warning list for the warning arms, never the fused report.
+- `GraphQLRewriteGenerator.BuildOutput`: exposes the walk's error stream and the
+  suppression-filtered warning list alongside the fused report, so each loader's input
+  partition is structural.
 - `DevMojo`: construct the loaders beside the existing `CompileFacts` construction, call them
   where the mojo already publishes the build output to the workspace, and pass
   `sessionStore.dsl()` into the MCP server's constructor. Edits at sites the mojo already
