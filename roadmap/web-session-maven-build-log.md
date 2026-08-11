@@ -82,6 +82,63 @@ it inverts the usual read, so the docs have to be explicit:
   guard already serializes foreground Maven against the warm build, and agents issue
   builds one at a time, so this is a note and not a mechanism.
 
+## Reviewer findings (Spec → Ready gate, 2026-08-11)
+
+Independent reviewer session, status stays `Spec`. Everything below was checked in a
+web sandbox against Maven 3.9.11 (`/opt/maven`) and mvnd 1.0.6 (embedded Maven 3.9.16).
+The mechanism does not hold up as specced, on three counts.
+
+1. **A repo-root `.mvn/maven.config` carrying `-l` breaks the invoker integration tests,
+   so `mvn install` fails in every web session.** Maven searches *upward* from the
+   working directory for `.mvn`, and maven-invoker-plugin clones its projects to
+   `graphitron-maven-plugin/target/it/<name>`, inside the repo, then forks a real `mvn`
+   there. Each forked IT therefore inherits `-l` and writes its Maven output to the shared
+   log instead of the stdout the invoker captures into `build.log`.
+   `dependency-version-lag/verify.groovy` and `missing-schema-inputs/verify.groovy`
+   assert on `build.log` content, so both fail: with the config installed,
+   `mvn -pl :graphitron-maven-plugin verify -Plocal-db` exits 1 with `Passed: 1, Failed: 2`
+   and `Expression: buildLog.contains(jooq-version-lag)`; with the config removed, the same
+   command reports `Passed: 3, Failed: 0`. `basic-generate` is the quieter half of the same
+   problem: its assertions are negative (`assert !buildLog.contains(...)`), so an empty
+   `build.log` satisfies them vacuously and that IT's coverage is silently voided rather
+   than failing.
+
+2. **mvnd honours `-l` only from the command line, not from `maven.config`.** With `-l` in
+   `maven.config`, `mvnd` creates the log file, leaves it at 0 bytes, and prints the whole
+   build to the console; all three argument spellings behave identically, and there is no
+   `mvnd.properties` knob for a build log. `-l` on the mvnd command line does redirect. So
+   "stock on both `mvn` and `mvnd`" is true of the flag but not of the always-on mechanism,
+   and mvnd is both the tool `CLAUDE.md` tells agents to prefer and the one the warm build
+   uses when present. As written, the item would deliver nothing on the recommended path
+   while the docs promise the last build is in the log; the warm build would never share
+   that log, and the copy-aside-on-failure step would copy an empty file. This is the
+   premise the wrapper design was dropped on, so that fork is worth reopening: a `PATH`
+   shadow puts `-l` (or a `tee`) on the actual command line, which is the form mvnd
+   respects, and is not inherited by the invoker's forked `${maven.home}/bin/mvn`, so it
+   sidesteps finding 1 as well.
+
+3. **`.mvn/maven.config` is line-based, and the natural spelling silently does nothing.**
+   `-l /tmp/graphitron-maven.log` on a single line produces no log file, no warning, full
+   console output, and exit 0. `-l` and the path on separate lines, `-l/tmp/...`, and
+   `--log-file=/tmp/...` all work. Whichever mechanism survives, pin the exact file bytes
+   in the plan rather than describing them.
+
+Two smaller points for the author, neither blocking:
+
+- The gate wants naming. "Web sessions only, like every other step in that hook" reads as
+  precedent, but steps 1 to 5 are gated on sandbox markers rather than on web-ness; only the
+  warm build tests `$ASYNC` / `CLAUDE_CODE_REMOTE`. This step has no natural marker, and its
+  local-dev failure mode is a contributor's console silently going dark in their own
+  checkout, so the plan should name the `$ASYNC` gate outright.
+- Getting-started recommends consumers add `.mvn/jvm.config`, so whatever writes the file
+  should `mkdir -p` and write that one file, never replace the `.mvn` directory.
+
+The rest of the plan checks out against the tree: `LOG_FILE=/tmp/graphitron-web-env.log`
+and the "Warm build FAILED ... Log: $LOG_FILE" message are where the plan says they are,
+`.mvn/` is gitignored, `web-environment.md` does carry both the `tail -f` instruction and
+the `mvnd -q` quirk the plan proposes to rewrite, and a command-line `-l /dev/stdout` does
+override `maven.config` under `mvn`.
+
 ## Explicitly out of scope
 
 Copying or archiving logs into `target/`, per-run log history, and any `tee`-style
