@@ -113,7 +113,7 @@ The default is whichever site is closest to where the value is. An argument carr
 
 == Rebind argument names with `argMapping`
 
-When the GraphQL argument name and the Java parameter name diverge, use `argMapping:` to rebind. The syntax is `"javaParam: graphqlArg"`, comma-separated; the Java side comes first because that is what the reflected method signature reads:
+When the GraphQL argument name and the Java parameter name diverge, use `argMapping:` to rebind. The syntax is `"javaParam: path"`, comma-separated; the Java side comes first because that is what the reflected method signature reads. The right-hand side may also walk into nested input fields, described once in xref:../reference/directives/service.adoc#arg-mapping[Binding a parameter to a nested input field]:
 
 [source,graphql]
 ----

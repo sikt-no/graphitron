@@ -402,9 +402,14 @@ input ExternalCodeReference {
     """Navnet på metoden man ønsker å referere til."""
     method: String
     """
-    Maps Java method parameters to GraphQL argument names. Each entry is
-    `javaParam: graphqlArg`; multiple entries are comma-separated. Unmentioned
+    Maps Java method parameters to GraphQL arguments. Each entry is
+    `javaParam: path`; multiple entries are comma-separated. Unmentioned
     parameters bind to a GraphQL argument of the same name (identity).
+
+    The right-hand side may also walk into nested input fields with dot-separated
+    segments (`argMapping: "customerId: input.customerId"`), the same form at
+    every directive that accepts an argMapping. Documented in full under
+    "Binding a parameter to a nested input field" on the @service reference page.
 
     Use on `@service` and every `@condition` site (field-level,
     argument-level, input-field-level, path-step). On `@condition` filter sites
@@ -418,6 +423,8 @@ input ExternalCodeReference {
     Examples:
     - `argMapping: "inputs: input"` — Java parameter `inputs` receives GraphQL arg `input`.
     - `argMapping: "city: cityNames, country: countryId"` — two overrides.
+    - `argMapping: "customerId: input.customerId"`: Java parameter `customerId`
+      receives the `customerId` field inside the GraphQL arg `input`.
     """
     argMapping: String
 }
@@ -495,10 +502,16 @@ directive @routine(
   """The database routine name, optionally schema-qualified (`schema.routine`). Must resolve to a table-valued function in the jOOQ catalog."""
   name: String!
   """
-  Maps routine IN parameters to GraphQL argument names. Each entry is
-  `routineParam: graphqlArg`; multiple entries are comma-separated. The routine parameter name is
+  Maps routine IN parameters to GraphQL arguments. Each entry is
+  `routineParam: path`; multiple entries are comma-separated. The routine parameter name is
   the jOOQ-generated (camelCased) name, e.g. `pEnv` for a `p_env` parameter. Unmentioned parameters
   bind to a GraphQL argument of the same name (identity).
+
+  The right-hand side may also walk into nested input fields with dot-separated
+  segments (`argMapping: "pCustomerId: input.customerId"`), the same form at
+  every directive that accepts an argMapping. Documented in full under
+  "Binding a parameter to a nested input field" on the @service reference page.
+  The path must land on a scalar or enum leaf: a routine IN parameter takes one value.
   """
   argMapping: String
   """

@@ -486,7 +486,7 @@ class ServiceCatalog {
 
     /**
      * Post-reflection typo guard for {@code argMapping} overrides: verifies each explicit
-     * override target ({@code javaTarget != graphqlArgName}) is among the resolved method's
+     * override target ({@code javaTarget} differs from the path head) is among the resolved method's
      * parameter names. Returns a failure message naming the directive site, the target, and the
      * actual parameter list, or {@code null} when every target resolves.
      *

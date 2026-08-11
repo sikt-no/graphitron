@@ -72,11 +72,57 @@ public class SampleQueryService {
 
 The framework constructs the service with whatever it can resolve from the request context (a `DSLContext` for the request's database session is the most common parameter); the rest of the method signature is the field's GraphQL arguments, mapped by name (or by `argMapping` overrides).
 
+[[arg-mapping]]
+== Binding a parameter to a nested input field
+
+An `argMapping` entry is `javaParam: path`. The left-hand side names a Java method parameter; the
+right-hand side names a GraphQL slot in scope, optionally followed by dot-separated segments that
+walk into nested input-object fields. The right-hand side works identically on every directive that
+accepts an `argMapping`: xref:service.adoc[`@service`], xref:condition.adoc[`@condition`],
+xref:routine.adoc[`@routine`] and `@tableMethod`. Only the left-hand side differs, because each
+directive binds a different kind of target.
+
+The common case is a wrapper input, the shape a Relay-style mutation has: the field declares one
+input argument and the values the Java method wants live inside it.
+
+[source,graphql]
+----
+input RentFilmInput {
+    inventoryId: Int!
+    customerId:  Int!
+}
+
+type Mutation {
+    rentFilm(input: RentFilmInput!): Rental
+        @service(service: {
+            className:  "com.example.RentalService",
+            method:     "rent",
+            argMapping: "inventoryId: input.inventoryId, customerId: input.customerId"
+        })
+}
+----
+
+`rent(Integer inventoryId, Integer customerId)` receives the two values read out of the input
+object; the wrapper itself is never handed to the method.
+
+The rules:
+
+* The *head* segment (before the first dot) must name a slot in scope at the directive's site: a
+  GraphQL argument of the field, or the input field itself for an input-field-level
+  `@condition`. A head naming nothing in scope is a build error that lists the slots that are.
+* Each *subsequent* segment must name a field on the input-object type at that depth. A segment
+  that does not exist is a build error naming the input type and suggesting the near miss.
+* A path may be any depth. `input.customer.id` walks two levels.
+* Reading is null-safe: if any level along the path is absent, the parameter receives `null`
+  rather than an error.
+* A bare name with no dots is the single-slot form, and is what an entry without `argMapping`
+  binds to implicitly. `"filmIds: ids"` and `"filmIds: ids.value"` differ only in depth.
+
 == Constraints
 
 * `service.className` is required. graphql-java rejects a no-arg `@service` at parse time.
 * `service.method` defaults to the GraphQL field name. Set it only when the Java method's name diverges.
-* `argMapping` is parsed as `"javaParam: graphqlArg"` entries, comma-separated. Whitespace around `:` and `,` is tolerated; multi-line text-block input is accepted. Empty string is identity.
+* `argMapping` is parsed as `"javaParam: path"` entries, comma-separated. Whitespace around `:` and `,` is tolerated; multi-line text-block input is accepted. Empty string is identity. The right-hand side may walk into nested input fields; see <<arg-mapping>>.
 * `@service` and xref:mutation.adoc[`@mutation`] are mutually exclusive on the same field. Use `@mutation` for fully-generated DB writes, `@service` for custom logic.
 * On non-root fields, `@service` requires `@splitQuery`: the parent's selection set is collected first, the service method receives a `Set` of parent records (only their primary-key columns populated), and returns a `Map` from those keys to results. Single-statement nested resolution is not supported on the service path.
 * Conditions and other DB-customisation directives on the same field are ignored: the service is opaque and the generator does not splice generated SQL into a custom method's body.

@@ -144,6 +144,32 @@ When `[author-error]` carries an `UnknownName` variant (a closed-set name lookup
 
 Structural `[author-error]` messages are written at the classifier site and are mostly not enumerable, as the kind entry above says. The one below is listed anyway because it is the error a schema meets by writing the *obvious* thing rather than a wrong thing, and because both of its remedies are fixed directives rather than a rename you have to work out.
 
+[#arg-mapping-path]
+=== An `argMapping` path that does not resolve
+
+*Sample line.* `[author-error] @routine argMapping entry 'pCustomerId: input.custmerId': segment 'custmerId' does not exist on input type 'RentFilmInput'; did you mean: customerId`.
+
+*Cause.* The right-hand side of an `argMapping` entry names a GraphQL slot and then walks into
+nested input fields. One message serves every directive that accepts an `argMapping`
+(xref:directives/service.adoc[`@service`], xref:directives/condition.adoc[`@condition`],
+xref:directives/routine.adoc[`@routine`], `@tableMethod`) because the path namespace is the same at
+all of them; only the site prefix differs. Two shapes reach it: a *head* segment that names no slot
+in scope, which lists the slots that are, and a later segment that names no field on the input type
+at that depth, which suggests the near miss.
+
+*Next step.* Correct the segment. xref:directives/service.adoc#arg-mapping[Binding a parameter to a nested input field] is the canonical description of the form.
+
+`@routine` adds three rejections on top, because a routine IN parameter is resolved from the
+database catalog rather than by reflection:
+
+* `@routine argMapping names parameter 'pEnvv', which is not an IN parameter of routine 'rentFilm'`
+  (the *left*-hand side named no routine parameter). Check the jOOQ-generated camelCased name.
+* `@routine parameter 'pEnv' has no binding`: a routine parameter was neither named by an
+  `argMapping` / `columnMapping` entry nor matched by an identically-named GraphQL argument.
+* `@routine parameter 'pEnv' binds to 'input', whose GraphQL type 'RentFilmInput' is not a scalar
+  or enum`: the path stopped on an input object. A routine IN parameter takes one value; bind a
+  scalar field inside it.
+
 [#shadowed-node-id]
 === A node's `id` field shadowing a column named `id`
 

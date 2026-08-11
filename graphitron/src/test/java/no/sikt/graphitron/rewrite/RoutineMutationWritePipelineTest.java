@@ -129,8 +129,70 @@ class RoutineMutationWritePipelineTest {
             .contains("newRecord(");
     }
 
+    /** The nested form: the routine's IN parameters live inside a wrapper input argument. */
+    private static final String NESTED_SDL = """
+        type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+        type Query { rental: Rental }
+        input RentFilmInput { inventoryId: Int!, customerId: Int! }
+        type Mutation {
+          rentFilm(input: RentFilmInput!): [Rental!]!
+            @routine(name: "rent_film",
+                     argMapping: "pInventoryId: input.inventoryId, pCustomerId: input.customerId")
+            @reference(path: [{table: "rental"}])
+        }
+        """;
+
+    @Test
+    void dotPathArgMapping_readsThroughAStatementFormHelperOnTheClass() {
+        // The descent is a private static helper on the fetcher class taking the root map as a
+        // parameter, not an instanceof-Map ternary chain nested inside the Routines call: the
+        // development-principles rule bans the chain because a developer cannot breakpoint a
+        // ternary arm, and the root is a parameter because the env and SelectedField forks pass
+        // different roots. The helper must also actually land on the class: a registered helper
+        // that never drained would leave a dangling call and fail only at the consumer's compile.
+        var mutationFetchers = fetchersClass(NESTED_SDL);
+        String body = methodBody(mutationFetchers, "rentFilm");
+
+        assertThat(body)
+            .as("each dot-path binding reads through its helper, rooted on the outer argument")
+            .contains("argInputInventoryId(env.getArgument(\"input\"))")
+            .contains("argInputCustomerId(env.getArgument(\"input\"))");
+        assertThat(body)
+            .as("no ternary chain inline at the call site")
+            .doesNotContain("instanceof");
+
+        var helper = mutationFetchers.methodSpecs().stream()
+            .filter(m -> m.name().equals("argInputInventoryId"))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("the registered descent helper never drained"
+                + " onto the class; emitted methods: " + mutationFetchers.methodSpecs().stream()
+                    .map(no.sikt.graphitron.javapoet.MethodSpec::name).toList()));
+        assertThat(helper.code().toString())
+            .as("statement form: a guarded rebind, an early return, the leaf cast last")
+            .contains("if (!(root instanceof")
+            .contains("return null")
+            .contains("return (java.lang.Integer)");
+    }
+
     private static String fetcherBody() {
         return fetcherBody(SDL);
+    }
+
+    private static no.sikt.graphitron.javapoet.TypeSpec fetchersClass(String sdl) {
+        var schema = TestSchemaHelper.buildSchema(sdl);
+        return TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+            .filter(t -> t.name().equals("MutationFetchers"))
+            .findFirst()
+            .orElseThrow();
+    }
+
+    private static String methodBody(no.sikt.graphitron.javapoet.TypeSpec type, String methodName) {
+        return type.methodSpecs().stream()
+            .filter(m -> m.name().equals(methodName))
+            .findFirst()
+            .orElseThrow()
+            .code()
+            .toString();
     }
 
     private static String carrierFetcherBody() {
@@ -138,17 +200,7 @@ class RoutineMutationWritePipelineTest {
     }
 
     private static String fetcherBody(String sdl) {
-        var schema = TestSchemaHelper.buildSchema(sdl);
-        var mutationFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
-            .filter(t -> t.name().equals("MutationFetchers"))
-            .findFirst()
-            .orElseThrow();
-        return mutationFetchers.methodSpecs().stream()
-            .filter(m -> m.name().equals("rentFilm"))
-            .findFirst()
-            .orElseThrow()
-            .code()
-            .toString();
+        return methodBody(fetchersClass(sdl), "rentFilm");
     }
 
     private static long countMatches(String haystack, Pattern needle) {

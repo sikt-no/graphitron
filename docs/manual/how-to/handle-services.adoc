@@ -65,7 +65,23 @@ where `FilmCreateInput` is a Java class whose components correspond to the input
 
 When the input type's producer (the service method parameter) is a typed Java class, the backing class is the canonical home for the input shape. When the input flows into no typed parameter, the framework's input projection produces an `ImmutableMap<String, Object>` that the Java method must read by key; the typed-class shape is strongly preferred, so declare the service method's parameter as the typed input class.
 
-`argMapping:` works for input arguments the same way it works for scalars: `argMapping: "input: in"` rebinds the Java parameter name. Field-level rebinding inside the input type is not part of `@service`'s surface; that's the input type's own concern (see xref:../reference/directives/field.adoc[`@field`] on input fields).
+`argMapping:` works for input arguments the same way it works for scalars: `argMapping: "input: in"` rebinds the Java parameter name.
+
+It can also reach *inside* the input: the right-hand side of an entry may walk into nested input fields with dot-separated segments, so a method that wants two scalars out of a wrapper input can have them without the wrapper.
+
+[source,graphql]
+----
+type Mutation {
+    createFilm(in: FilmCreateInput!): Film
+        @service(service: {
+            className:  "com.example.services.FilmService",
+            method:     "createFilm",
+            argMapping: "title: in.title, languageId: in.languageId"
+        })
+}
+----
+
+xref:../reference/directives/service.adoc#arg-mapping[Binding a parameter to a nested input field] is the canonical description of the path form. What stays outside `@service`'s surface is renaming the *fields* of the input type as seen by its backing class; that is the input type's own concern (see xref:../reference/directives/field.adoc[`@field`] on input fields).
 
 === `contextArguments`: pulling from request state
 

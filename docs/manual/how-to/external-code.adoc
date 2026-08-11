@@ -70,7 +70,7 @@ Reflection failures (class not on the plugin classpath, method not present, sign
 
 == Map GraphQL arguments to Java parameter names
 
-When the GraphQL argument name and the Java parameter name diverge, use `argMapping:` to rebind. The syntax is `"javaParam: graphqlArg"`, comma-separated for multiple entries:
+When the GraphQL argument name and the Java parameter name diverge, use `argMapping:` to rebind. The syntax is `"javaParam: path"`, comma-separated for multiple entries:
 
 [source,graphql]
 ----
@@ -92,6 +92,8 @@ public final class SampleQueryService {
 ----
 
 The Java parameter `filmIds` receives the GraphQL argument `ids`. Unmentioned Java parameters bind to a GraphQL argument of the same name; an empty `argMapping:` is identity for every parameter. Whitespace around `:` and `,` is tolerated, and multi-line text-block input is accepted for long mappings.
+
+The right-hand side is a path rather than a plain name: it may walk into nested input fields (`argMapping: "customerId: input.customerId"`), the same form at every directive that accepts an `argMapping`. See xref:../reference/directives/service.adoc#arg-mapping[Binding a parameter to a nested input field].
 
 `argMapping:` is meaningful on `@service` and `@condition` (the directives whose Java targets receive GraphQL arguments). It is structurally inert on `@externalField` and `@enum`, where the Java target consumes no GraphQL-argument-bound parameters; applying it on those two is rejected at parse time.
 

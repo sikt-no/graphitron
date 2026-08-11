@@ -3932,7 +3932,7 @@ class GraphQLQueryTest {
         // GraphQL arg `ids` is bound to the Java parameter `filmIds` via argMapping
         // ("filmIds: ids" on the @service directive). Generated fetcher must read
         // env.getArgument("ids") (the GraphQL key) and pass it to the service method's `filmIds`
-        // parameter — proves the graphqlArgName / Java-identifier split wires through end-to-end.
+        // parameter; proves the GraphQL-slot / Java-identifier split wires through end-to-end.
         Map<String, Object> data = execute(
             "{ filmsByServiceRenamed(ids: [1, 2]) { filmId title } }");
         List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsByServiceRenamed");
@@ -5221,6 +5221,46 @@ class GraphQLQueryTest {
             // Committed, not merely visible inside a still-open transaction.
             assertThat(dsl.fetchCount(org.jooq.impl.DSL.table("rental")))
                 .as("rentFilmPayload committed exactly one rental row")
+                .isEqualTo(countBefore + 1);
+        } finally {
+            if (rentalId != null) {
+                dsl.deleteFrom(org.jooq.impl.DSL.table("rental"))
+                    .where(org.jooq.impl.DSL.field("rental_id").eq(rentalId))
+                    .execute();
+            }
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void rentFilmPayloadNested_dotPathArgMappingReachesTheRoutine() {
+        // The same write with its arguments inside a wrapper input and argMapping walking into
+        // it. Proves the dot-path descent end to end: the emitted helper reads each value out of
+        // the input map, the routine commits, and the post-commit re-read observes the row the
+        // nested bindings produced. A descent that walked wrongly would bind null and the write
+        // would fail on the NOT NULL columns rather than return a rental.
+        int countBefore = dsl.fetchCount(org.jooq.impl.DSL.table("rental"));
+        Integer rentalId = null;
+        try {
+            var rawResult = executeRaw("""
+                mutation {
+                    rentFilmPayloadNested(input: { inventoryId: 2, customerId: 3 }) {
+                        rental { rentalId inventoryId customerId }
+                        errors { __typename }
+                    }
+                }
+                """);
+            assertThat(rawResult.getErrors()).as("top-level errors: %s", rawResult.getErrors()).isEmpty();
+            Map<String, Object> data = rawResult.getData();
+            var payload = assertThat(data).extractingByKey("rentFilmPayloadNested", as(MAP));
+            payload.containsEntry("errors", null);
+            var rental = (Map<String, Object>) ((Map<String, Object>) data.get("rentFilmPayloadNested")).get("rental");
+            assertThat(rental).containsEntry("inventoryId", 2).containsEntry("customerId", 3);
+            rentalId = (Integer) rental.get("rentalId");
+            assertThat(rentalId).isNotNull();
+
+            assertThat(dsl.fetchCount(org.jooq.impl.DSL.table("rental")))
+                .as("rentFilmPayloadNested committed exactly one rental row")
                 .isEqualTo(countBefore + 1);
         } finally {
             if (rentalId != null) {

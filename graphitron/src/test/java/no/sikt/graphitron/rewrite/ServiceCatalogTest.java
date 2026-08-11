@@ -559,7 +559,7 @@ class ServiceCatalogTest {
 
     @Test
     void reflectServiceMethod_argByJavaName_identity_setsGraphqlArgNameToParamName() {
-        // No override on either argument. The identity entries put graphqlArgName equal to
+        // No override on either argument. The identity entries put the path head equal to
         // the Java parameter name on every Arg source — regression guard for the default path.
         var argByJavaName = bindings(Map.of("inputs", "inputs", "dryRun", "dryRun"));
         var result = newCatalog().reflectServiceMethod(

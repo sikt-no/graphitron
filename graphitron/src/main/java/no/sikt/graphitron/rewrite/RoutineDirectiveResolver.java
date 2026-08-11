@@ -305,7 +305,7 @@ final class RoutineDirectiveResolver {
                 path = PathExpr.head(param.name()); // identity-bind
             } else {
                 return new NodeResolved.Rejected(Rejection.structural(
-                    "@routine parameter '" + param.name() + "' has no binding — it is not a GraphQL "
+                    "@routine parameter '" + param.name() + "' has no binding: it is not a GraphQL "
                     + "argument of this field and no argMapping entry names it; available arguments are "
                     + ArgBindingMap.formatNameSet(slotTypes.keySet())
                     + BuildContext.candidateHint(param.name(), List.copyOf(slotTypes.keySet()))));
@@ -334,7 +334,7 @@ final class RoutineDirectiveResolver {
      *       non-scalar leaf).</li>
      *   <li>The shared coercion-aware gate, {@link ServiceCatalog#argExtraction}. Three outcomes,
      *       not two: a rejection is an authoring error, a {@link CallSiteExtraction.Direct}
-     *       extraction proceeds, and any other extraction is a deferral — the routine call
+     *       extraction proceeds, and any other extraction is a deferral: the routine call
      *       emitter renders a direct read only, so an enum or converted leaf would need the
      *       coercing arms that do not emit yet.</li>
      * </ol>
@@ -347,7 +347,7 @@ final class RoutineDirectiveResolver {
                 return Rejection.deferred(
                     "@routine parameter '" + param.name() + "' binds to '" + path.asString()
                     + "', which walks through the list-shaped field '" + segments.get(i).name()
-                    + "' — element-wise traversal does not emit for routine bindings yet");
+                    + "'; element-wise traversal does not emit for routine bindings yet");
             }
         }
         var leafType = ServiceCatalog.resolvePathLeafType(path, slotTypes);
@@ -360,7 +360,7 @@ final class RoutineDirectiveResolver {
             return Rejection.structural(
                 "@routine parameter '" + param.name() + "' binds to '" + path.asString()
                 + "', whose GraphQL type '" + graphql.schema.GraphQLTypeUtil.simplePrint(leafType)
-                + "' is not a scalar or enum — a routine IN parameter takes a single value, so bind "
+                + "' is not a scalar or enum; a routine IN parameter takes a single value, so bind "
                 + "a scalar field inside it (for example '" + param.name() + ": "
                 + path.asString() + ".<field>')");
         }
@@ -377,7 +377,7 @@ final class RoutineDirectiveResolver {
             return Rejection.deferred(
                 "@routine parameter '" + param.name() + "' binds to '" + path.asString()
                 + "', which needs a " + resolved.getClass().getSimpleName()
-                + " extraction — the routine call emitter reads argument values directly, and the "
+                + " extraction; the routine call emitter reads argument values directly, and the "
                 + "coercing read arms do not emit yet");
         }
         return null;

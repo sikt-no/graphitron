@@ -25,7 +25,7 @@ directive @routine(
 |===
 | Name | Type | Default | Description
 | `name` | `String!` | (required) | The database routine name, optionally schema-qualified (`schema.routine`). Must resolve to a table-valued function in the jOOQ catalog.
-| `argMapping` | `String` | (empty) | Maps routine IN parameters to GraphQL argument names (`routineParam: graphqlArg`, comma-separated). The routine parameter name is the jOOQ-generated (camelCased) name, e.g. `pEnv` for a `p_env` parameter. Unmentioned parameters bind to a GraphQL argument of the same name (identity).
+| `argMapping` | `String` | (empty) | Maps routine IN parameters to GraphQL arguments (`routineParam: path`, comma-separated). The routine parameter name is the jOOQ-generated (camelCased) name, e.g. `pEnv` for a `p_env` parameter. The right-hand side is the shared path form: a bare argument name, or a dot-path walking into nested input fields (`pInventoryId: input.inventoryId`), described once in xref:service.adoc#arg-mapping[Binding a parameter to a nested input field]. Unmentioned parameters bind to a GraphQL argument of the same name (identity).
 | `columnMapping` | `String` | (empty) | Maps routine IN parameters to columns of the *previous table in the chain* (`routineParam: column_name`, comma-separated). At the head of a child chain the previous table is the enclosing type's table; after `@reference` hops it is the last hop's table. A column-bound parameter makes the call correlated: the routine joins as `CROSS JOIN LATERAL` and re-evaluates per row. Each parameter has exactly one source, so a name may appear in `argMapping` or `columnMapping`, never both.
 |===
 
@@ -156,6 +156,24 @@ type Mutation {
 }
 ----
 
+When the field takes a wrapper input instead of flat arguments, `argMapping` walks into it. This is the shape a Relay-style mutation has, and it needs no SDL restructuring:
+
+[source,graphql]
+----
+input RentFilmInput {
+    inventoryId: Int!
+    customerId:  Int!
+}
+
+type Mutation {
+    rentFilmPayloadNested(input: RentFilmInput!): RentFilmPayload
+        @routine(
+            name:       "rent_film"
+            argMapping: "pInventoryId: input.inventoryId, pCustomerId: input.customerId"
+        )
+}
+----
+
 The two statements become: the routine call and the key capture commit as statement 1; the data field's SELECT is the post-commit re-read, owned by the payload field rather than the mutation fetcher. The data field's path is implicit — the single name-matched hop to its own element's table: the element table's primary-key columns must be exposed, by SQL name, among the routine's result columns (`rent_film` exposes `rental_id`, rental's PK). When a key column is not exposed, the build error names it with a candidate hint; the fix is exposing the column from the routine — a `condition:` join is no escape hatch here, because a condition has no key tuple to capture.
 
 The errors-shaped field, when present, is the typed error channel: an exception the `@error` handlers match renders as `{ rental: null, errors: [<typed error>] }` with no field error (see xref:../../how-to/error-channel.adoc[the errors-channel how-to]).
@@ -179,7 +197,8 @@ Because the batch is keyed by the routine's column-bound inputs, `@splitQuery` o
 * With `@reference` on the field, the return type must be `@table`-bound, and the chain's last node must be that table. A non-`@table`, non-carrier return is rejected with `@routine requires a @table-annotated return type`; a routine-terminus mismatch is rejected with `@routine could not be resolved — the field's @table type ... does not match the routine's result table ...`. Without `@reference` on a Mutation field, the return may instead be a payload carrier (exactly one nullable `@table`-element data field plus an optional errors-shaped field); the carrier + `@reference` combination is rejected as a directive conflict, and `@reference` on the carrier's data field is deferred (see <<write,Writes on Mutation>>).
 * `name:` must resolve to a *table-valued function* in the jOOQ catalog. A name that resolves to nothing is rejected with `@routine could not be resolved — no table-valued function named ...`; a name that resolves to a plain table or view is rejected with `... resolves to a table or view, not a table-valued function`. A name that exists as a database routine but is not table-valued (a procedure, or a scalar or void function) is reported as deferred with a pointer to the follow-up item carrying that call surface; only a genuinely absent name gets the unknown-name rejection.
 * On a root field composing a chain (`Query` and `Mutation` alike), `@routine` must be the first directive application: a root chain has no implicit head, so the routine supplies it. `columnMapping` is likewise illegal at the head of a root chain (there is no previous table to bind from); bind root routine parameters from GraphQL arguments.
-* `argMapping:` / `columnMapping:` parameter names are the jOOQ-generated (camelCased) names. Binding a parameter to an argument the field does not declare, or to a column the previous table does not carry, is a build error (the column case lists the previous table's columns as candidates). A column-bound parameter's Java type must match the routine parameter's. Resolving the parameter names off the generated `Routines` method requires the consumer to compile their jOOQ sources with `-parameters`.
+* `argMapping:` / `columnMapping:` parameter names are the jOOQ-generated (camelCased) names. Naming a parameter the routine does not declare is a build error, as is leaving a parameter with nothing bound to it. On the right-hand side, a path whose head is not an argument of the field, or whose later segment is not a field of the input type at that depth, is a build error listing the candidates; a `columnMapping` naming a column the previous table does not carry likewise lists that table's columns. A `columnMapping` right-hand side has no path form, since a column has no nested fields.
+* An `argMapping` path must land on a scalar or enum leaf. Binding a routine parameter to a whole input object is a build error naming the input type: a routine IN parameter takes one value, so bind a scalar field inside it. Enum-valued and converted leaves are reported as deferred; the routine call emitter reads argument values directly today. A column-bound parameter's Java type must match the routine parameter's. Resolving the parameter names off the generated `Routines` method requires the consumer to compile their jOOQ sources with `-parameters`.
 * One routine node per chain: chains with more than one `@routine` application do not generate yet and are reported as deferred.
 * Connection pagination does not compose with routine-terminus chains (`@asConnection` there is a build error: keyset pagination needs an ordering contract the routine result does not carry; use `[T]` or `T`). Over a catalog-terminus chain that merely contains a routine node it is reported as deferred, as are `@orderBy` and `@condition` on routine-backed fields and `@lookupKey` composition.
 

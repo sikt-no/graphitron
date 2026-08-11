@@ -122,4 +122,52 @@ class R96RecordBindingPipelineTest {
         assertThat(mp.sdlTypeName()).isEqualTo("ClashInput");
         assertThat(mp.bindings()).hasSizeGreaterThanOrEqualTo(2);
     }
+
+    @Test
+    void malformedArgMappingLeavesTheProbeObservingNoOverrides() {
+        // The producer-binding probe reads its overrides off the shared argMapping parse, which
+        // fails the whole string rather than skipping the offending entry. So a syntax error
+        // anywhere in the string costs the reference every observation, including the ones its
+        // well-formed siblings would have grounded. That widening is deliberate: the same string
+        // is a build error at the ExternalCodeReference consumer (asserted below), so the
+        // reference's observations are moot either way, and salvaging them would mean keeping a
+        // second, error-tolerant parser, which is what made argMapping behave differently per
+        // directive in the first place.
+        //
+        // runWithInputBeanRenamed takes `TestInputBean payload`, so only the argMapping override
+        // connects the SDL argument `input` to it: with the override observed the input type
+        // binds to the bean, without it there is nothing to bind from.
+        var bound = TestSchemaHelper.buildSchema("""
+            input BeanInput { title: String }
+            type Query { x: String }
+            type Mutation {
+                viaBean(input: BeanInput): String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub",
+                                       method: "runWithInputBeanRenamed",
+                                       argMapping: "payload: input"})
+            }
+            """);
+        assertThat(bound.type("BeanInput"))
+            .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.type(
+                GraphitronType.JavaRecordInputType.class))
+            .extracting(GraphitronType.JavaRecordInputType::fqClassName)
+            .isEqualTo("no.sikt.graphitron.rewrite.TestInputBean");
+
+        var malformed = TestSchemaHelper.buildSchema("""
+            input BeanInput { title: String }
+            type Query { x: String }
+            type Mutation {
+                viaBean(input: BeanInput): String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub",
+                                       method: "runWithInputBeanRenamed",
+                                       argMapping: "payload: input, oops"})
+            }
+            """);
+        assertThat(malformed.type("BeanInput"))
+            .as("a syntax error anywhere in the string leaves the probe with no overrides at all")
+            .isNotInstanceOf(GraphitronType.JavaRecordInputType.class);
+        assertThat(((no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) malformed.field("Mutation", "viaBean")).reason())
+            .as("the diagnostic is the ExternalCodeReference consumer's, exactly once")
+            .contains("argMapping syntax error");
+    }
 }

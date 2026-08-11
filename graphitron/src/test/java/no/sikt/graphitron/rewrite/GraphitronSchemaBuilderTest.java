@@ -7756,6 +7756,139 @@ class GraphitronSchemaBuilderTest {
         assertThat(hop.on()).isInstanceOf(On.Lateral.class);
     }
 
+    // ===== @routine argMapping resolves on the shared seam =====
+    //
+    // The right-hand side of an argMapping entry names a GraphQL slot and walks into it, and that
+    // namespace is the same at every directive, so @routine resolves through ArgBindingMap.of
+    // exactly as @service and @condition do. These pin the capability the routing lands
+    // (dot-paths), the shared wording it inherits, and the three rejections that only exist
+    // because routing removed the side effect that used to surface a left-side typo.
+
+    private static final String TILGANG_INPUT = """
+        input TilgangInput {
+          env: String!
+          serviceId: String!
+        }
+        """;
+
+    @Test
+    void routineDotPathArgMappingLandsPathExprChain() {
+        // The capability: a routine IN parameter binds to a field inside a wrapper input, which
+        // the flat-slot membership check used to reject outright.
+        var schema = build(TILGANG_TYPE + TILGANG_INPUT + """
+            type Query {
+              tilganger(input: TilgangInput!, feideId: String!): [Tilgang!]
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
+                         argMapping: "pEnv: input.env, pServiceId: input.serviceId, pFeideId: feideId")
+            }
+            """);
+        var chain = routineChainOf((QueryField.QueryTableField) schema.field("Query", "tilganger"));
+        var pEnv = chain.start().routine().argBindings().stream()
+            .filter(b -> b.routineParamName().equals("pEnv")).findFirst().orElseThrow();
+        var path = ((ParamSource.Arg) pEnv.source()).path();
+        assertThat(path).isInstanceOf(PathExpr.Step.class);
+        assertThat(path.asString()).isEqualTo("input.env");
+        assertThat(path.headName()).isEqualTo("input");
+        // The flat sibling in the same entry list still lands a bare Head.
+        var pFeideId = chain.start().routine().argBindings().stream()
+            .filter(b -> b.routineParamName().equals("pFeideId")).findFirst().orElseThrow();
+        assertThat(((ParamSource.Arg) pFeideId.source()).path()).isInstanceOf(PathExpr.Head.class);
+    }
+
+    @Test
+    void routineArgMappingUnknownHeadSegmentRejectsWithTheSharedWording() {
+        // Validator-mirrors-classifier: the head slot is unknown, and the message is the shared
+        // one every directive renders, listing the arguments actually in scope. The retired
+        // routine-only rejection named no candidates at all.
+        var schema = build(TILGANG_TYPE + TILGANG_INPUT + """
+            type Query {
+              tilganger(input: TilgangInput!, feideId: String!): [Tilgang!]
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
+                         argMapping: "pEnv: inputs.env, pServiceId: input.serviceId, pFeideId: feideId")
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Query", "tilganger");
+        assertThat(f.reason())
+            .contains("references GraphQL argument 'inputs'")
+            .contains("available arguments are")
+            .contains("'input'");
+    }
+
+    @Test
+    void routineArgMappingUnknownTailSegmentRejectsWithCandidateHint() {
+        // The schema walk's own rejection, reached from the routine side for the first time:
+        // the head resolves, a tail segment does not, and the message names the input type plus
+        // the near-miss candidate.
+        var schema = build(TILGANG_TYPE + TILGANG_INPUT + """
+            type Query {
+              tilganger(input: TilgangInput!, feideId: String!): [Tilgang!]
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
+                         argMapping: "pEnv: input.envv, pServiceId: input.serviceId, pFeideId: feideId")
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Query", "tilganger");
+        assertThat(f.reason())
+            .contains("segment 'envv' does not exist on input type 'TilgangInput'")
+            .contains("env");
+    }
+
+    @Test
+    void routineArgMappingNamingNonParameterRejects() {
+        // The left-hand-side check the routine side never had. Before routing, a misspelled
+        // target was silently dropped and the author was told something about the right-hand
+        // side of an entry they did not write.
+        var schema = build(TILGANG_TYPE + """
+            type Query {
+              tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
+                         argMapping: "pEnvv: env, pServiceId: serviceId, pFeideId: feideId")
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Query", "tilganger");
+        assertThat(f.reason())
+            .contains("argMapping names parameter 'pEnvv'")
+            .contains("is not an IN parameter")
+            .contains("pEnv"); // candidate hint points at the parameter that was meant
+    }
+
+    @Test
+    void routineParameterLeftUnboundRejectsListingTheAvailableArguments() {
+        // The other half of the left-hand-side pair: nothing binds pEnv, so the rejection names
+        // the parameter and the arguments that were available to bind it.
+        var schema = build(TILGANG_TYPE + """
+            type Query {
+              tilganger(serviceId: String!, feideId: String!): [Tilgang!]
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
+                         argMapping: "pServiceId: serviceId, pFeideId: feideId")
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Query", "tilganger");
+        assertThat(f.reason())
+            .contains("parameter 'pEnv' has no binding")
+            .contains("available arguments are")
+            .contains("'serviceId'");
+    }
+
+    @Test
+    void routineParameterBoundToInputObjectLeafRejectsNamingTheType() {
+        // The reported footgun: binding a whole input object to a scalar IN parameter passed
+        // validation and emitted a cast that threw at request time on the argument LinkedHashMap.
+        // The wire-coercion gate has no opinion on a non-scalar leaf, so the routine side owns
+        // this rejection; a jOOQ IN parameter has no bean concept to instantiate.
+        var schema = build(TILGANG_TYPE + TILGANG_INPUT + """
+            type Query {
+              tilganger(input: TilgangInput!, feideId: String!): [Tilgang!]
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
+                         argMapping: "pEnv: input, pServiceId: input.serviceId, pFeideId: feideId")
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Query", "tilganger");
+        assertThat(f.reason())
+            .contains("parameter 'pEnv' binds to 'input'")
+            .contains("TilgangInput")
+            .contains("not a scalar or enum");
+    }
+
     @Test
     void splitQueryOnCorrelatedRoutineChildClassifiesAsBatchedTableField() {
         // Batched form: @splitQuery forces the keyed re-query anchor, and a routine-headed

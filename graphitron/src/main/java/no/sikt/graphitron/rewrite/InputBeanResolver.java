@@ -228,9 +228,9 @@ final class InputBeanResolver {
      */
     private JooqBuilt buildJooqRecord(GraphitronType.JooqTableRecordInputType jtr,
             graphql.schema.GraphQLInputObjectType iot, String paramName, String methodName,
-            String className, String graphqlArgName) {
+            String className, String slotName) {
         String where = "parameter '" + paramName + "' on method '" + methodName + "' in class '"
-            + className + "' (GraphQL argument '" + graphqlArgName + "')";
+            + className + "' (GraphQL argument '" + slotName + "')";
         TableRef table = jtr.table();
         if (table == null) {
             return new JooqBuilt.Fail(Rejection.structural(where

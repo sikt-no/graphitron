@@ -1138,8 +1138,8 @@ final class RecordBindingResolver {
      * exactly one path from an authored {@code argMapping} string to a resolved binding.
      *
      * <p>A syntax error yields no overrides <em>for the whole reference</em>, not just for the
-     * offending entry. The probe has no diagnostic channel — it runs before any classified verdict
-     * exists — and the same string is parsed again by the {@code ExternalCodeReference} consumer,
+     * offending entry. The probe has no diagnostic channel: it runs before any classified verdict
+     * exists, and the same string is parsed again by the {@code ExternalCodeReference} consumer,
      * which rejects properly, so swallowing here keeps one typo to one message. Losing the
      * well-formed siblings' observations along with it is accepted: a malformed {@code argMapping}
      * fails the build at that consumer, so the reference's observations are moot either way, and

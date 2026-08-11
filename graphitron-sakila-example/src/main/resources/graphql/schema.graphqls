@@ -61,6 +61,20 @@ type RentFilmPayload {
     errors: [RentFilmError]
 }
 
+# The wrapper-input shape a Relay-style mutation actually has: the routine's IN parameters live
+# inside one input argument, and argMapping walks into it with a dot-path. Structurally identical
+# to rentFilmPayload apart from where the arguments sit.
+input RentFilmInput {
+    inventoryId: Int!
+    customerId:  Int!
+}
+
+# The child-position sibling: a filter input the correlated routine's argument-sourced parameter
+# reaches through a dot-path, so the descent is exercised off a SelectedField rather than env.
+input ActorFilmFilter {
+    minLength: Int!
+}
+
 # Routine-carrier RLS fixture (see init.sql's secure_note block): the write commits through a
 # SECURITY DEFINER routine while the caller's read policy hides the fresh row, so the payload's
 # data field legitimately resolves null with an empty errors channel.
@@ -1823,6 +1837,16 @@ type Actor implements Searchable @table(name: "actor") {
             columnMapping: "pActorId: actor_id"
         )
         @defaultOrder(fields: [{name: "film_id"}])
+    # The dot-path form at a correlated child position: pMinLength reads through the wrapper
+    # input, so the descent runs off the field's own SelectedField rather than the ancestor
+    # fetcher's env. The column-bound parameter is unaffected; columnMapping has no path form.
+    filmsNested(filter: ActorFilmFilter!): [ActorFilm!]
+        @routine(
+            name: "films_for_actor"
+            argMapping: "pMinLength: filter.minLength"
+            columnMapping: "pActorId: actor_id"
+        )
+        @defaultOrder(fields: [{name: "film_id"}])
     # R435 execution fixture: the child routine-then-hops chain — the lateral routine node
     # heads the chain (correlated on this actor row), the @reference hop lands the terminus on
     # the film catalog table via the name-matched target PK. The child mirror of
@@ -3059,6 +3083,15 @@ type Mutation {
         @routine(
             name: "rent_film"
             argMapping: "pInventoryId: inventoryId, pCustomerId: customerId"
+        )
+
+    # The same write with its arguments moved inside a wrapper input: argMapping binds each
+    # routine IN parameter through a dot-path into the input object. Proves the descent end to
+    # end: parse, schema walk, emit, and the post-commit re-read all agree.
+    rentFilmPayloadNested(input: RentFilmInput!): RentFilmPayload
+        @routine(
+            name: "rent_film"
+            argMapping: "pInventoryId: input.inventoryId, pCustomerId: input.customerId"
         )
 
     # The routine carrier's RLS outcome: create_secure_note is SECURITY DEFINER, so the write

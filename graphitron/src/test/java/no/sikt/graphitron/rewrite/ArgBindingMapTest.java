@@ -155,7 +155,7 @@ class ArgBindingMapTest {
 
     @Test
     void of_overrideClaimsSlot_dropsIdentityForThatSlot() {
-        // graphqlArgNames = {input, dryRun}; argMapping "inputs: input"
+        // slots = {input, dryRun}; argMapping "inputs: input"
         // Identity for input would conflict with the override's intent (Java param is "inputs",
         // not "input"), so the identity for `input` is dropped. dryRun stays as identity.
         var result = ArgBindingMap.of(
@@ -288,5 +288,47 @@ class ArgBindingMapTest {
         assertThat(((ArgBindingMap.Result.PathRejected) result).message())
             .contains("segment 'fooid' does not exist on input type 'InputT'")
             .contains("fooId");
+    }
+
+    // ===== Result.Failure: the shared read the directive sites lift their wording through =====
+
+    @Test
+    void of_bothFailureArms_readThroughFailureWithoutLosingTheirIdentity() {
+        // The site that prefixes both arms identically matches Result.Failure and writes the
+        // wording once. The arms stay distinct records underneath, which is what lets
+        // BuildContext.resolveConditionRef qualify the unknown-slot arm alone: it resolves
+        // against an empty slot map, so the shared message renders the available-argument list
+        // as [] and its extra clause is the only prose that says why. A Failure that carried a
+        // fused string instead of two records would drop that.
+        var inputType = graphql.schema.GraphQLInputObjectType.newInputObject()
+            .name("InputT").field(graphql.schema.GraphQLInputObjectField.newInputObjectField()
+                .name("fooId").type(graphql.Scalars.GraphQLString).build()).build();
+        var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
+        slot.put("input", inputType);
+
+        var unknownHead = ArgBindingMap.of(slot, Map.of("kv", java.util.List.of("nope")));
+        var badTail = ArgBindingMap.of(slot, Map.of("kv", java.util.List.of("input", "fooid")));
+
+        assertThat(unknownHead).isInstanceOf(ArgBindingMap.Result.Failure.class);
+        assertThat(badTail).isInstanceOf(ArgBindingMap.Result.Failure.class);
+        // One accessor for the site that treats them alike...
+        assertThat(((ArgBindingMap.Result.Failure) unknownHead).message())
+            .isEqualTo(((ArgBindingMap.Result.UnknownArgRef) unknownHead).message());
+        assertThat(((ArgBindingMap.Result.Failure) badTail).message())
+            .isEqualTo(((ArgBindingMap.Result.PathRejected) badTail).message());
+        // ...and two arms for the site that does not.
+        assertThat(unknownHead).isInstanceOf(ArgBindingMap.Result.UnknownArgRef.class);
+        assertThat(badTail).isInstanceOf(ArgBindingMap.Result.PathRejected.class);
+        assertThat(unknownHead).isNotInstanceOf(ArgBindingMap.Result.PathRejected.class);
+        assertThat(badTail).isNotInstanceOf(ArgBindingMap.Result.UnknownArgRef.class);
+    }
+
+    @Test
+    void of_emptySlotMap_rendersTheAvailableArgumentListAsEmptyBrackets() {
+        // The rendering that makes the path-step @condition clause load-bearing: with no slots
+        // in scope there is nothing to list, so the shared message alone reads as a puzzle.
+        var result = ArgBindingMap.of(Map.of(), Map.of("kv", java.util.List.of("anything")));
+        assertThat(((ArgBindingMap.Result.Failure) result).message())
+            .contains("available arguments are []");
     }
 }

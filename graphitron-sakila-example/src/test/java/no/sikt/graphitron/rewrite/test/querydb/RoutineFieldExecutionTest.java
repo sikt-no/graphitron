@@ -137,6 +137,26 @@ class RoutineFieldExecutionTest {
     }
 
     @Test
+    void correlatedChildRoutineBindsArgumentThroughDotPath() {
+        // The same mixed call with pMinLength authored as a dot-path into a wrapper input. At a
+        // correlated child position the descent roots on the field's own SelectedField, not the
+        // ancestor fetcher's env, so this is the fork Actor.films' coverage cannot reach. Same
+        // expected rows as correlatedChildRoutineBindsArgumentAlongsideColumn: reading the outer
+        // input map instead of the nested value would bind null and drop the length filter.
+        var data = execute("""
+            { allActors {
+                firstName
+                filmsNested(filter: { minLength: 50 }) { filmId }
+            } }
+            """);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> actors = (List<Map<String, Object>>) data.get("allActors");
+        assertThat(filmIdsOfField(actors, "PENELOPE", "filmsNested")).containsExactly(1, 3);
+        assertThat(filmIdsOfField(actors, "NICK", "filmsNested")).containsExactly(1, 4);
+        assertThat(filmIdsOfField(actors, "ED", "filmsNested")).containsExactly(5);
+    }
+
+    @Test
     void rootRoutineThenHopsChainJoinsOutOfRoutineResult() {
         // The root routine-then-hops chain. The routine narrows to PENELOPE(1)'s films of
         // length >= 50 (films 1 and 3); the name-matched hop out of the routine result lands on
@@ -276,11 +296,16 @@ class RoutineFieldExecutionTest {
             .toList();
     }
 
-    @SuppressWarnings("unchecked")
     private static List<Integer> filmIdsOf(List<Map<String, Object>> actors, String firstName) {
+        return filmIdsOfField(actors, firstName, "films");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Integer> filmIdsOfField(List<Map<String, Object>> actors, String firstName,
+            String fieldName) {
         return actors.stream()
             .filter(a -> firstName.equals(a.get("firstName")))
-            .flatMap(a -> ((List<Map<String, Object>>) a.get("films")).stream())
+            .flatMap(a -> ((List<Map<String, Object>>) a.get(fieldName)).stream())
             .map(f -> (Integer) f.get("filmId"))
             .toList();
     }
