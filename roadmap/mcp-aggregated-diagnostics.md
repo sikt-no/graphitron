@@ -1,7 +1,7 @@
 ---
 id: R569
 title: "Violation facts in the store; the MCP aggregate is their first reader"
-status: Spec
+status: Ready
 bucket: feature
 priority: 5
 theme: diagnostics
@@ -1145,4 +1145,23 @@ family with a false retirement clock, and surfaced suppressibility as the second
 asymmetry); and the substrate move's four-test breakage was unstated, now named in Tests
 with the keep-the-report-projection escape rejected by name, alongside the correction that
 the warning loader's input is the suppression-filtered list, not a pre-suppression stream.
+
+**Signed off to Ready on the fourth pass**, both pass-three holes verified closed. The
+advisory arm's every precedent checks out as cited: `jvm_scalar_type_field`'s comment states
+the selector-in-name rule in those words, `FixtureWarningsGateTest` asserts
+`isInstanceOf(BuildWarning.NoRule.class)` in the example module, `SessionStateWarnings` and
+`DependencyVersionWarnings` both mint `LintFinding`s with a `null` location and say so in
+their own javadoc, `javac_diagnostic`'s key ends in the `ordinal` tie-breaker the key
+convention borrows, and the shipped `DiagnosticsTool` already spells a warning row as
+`source: schema` / `severity: warning` with `lintRule` only on the tagged arm, so the advisory
+arm changes no wire vocabulary. The decisive check for the hole was completeness rather than
+placement: `DiagnosticsTool` has exactly three loops (`report.errors()`,
+`report.warnings()`, `compileDiagnostics()`), and the five arms partition all three with no
+channel left over, so the stratum is total against the tool it replaces rather than patched
+where a reviewer happened to look. Two non-blocking notes were left with the author, neither
+worth another pass: the location-less key sentence reads as a per-row key shape where the
+relation has one key throughout (`(graph_name, ordinal)`, already forced by the preceding
+NULL-outside-the-key clause), and the `build_warning_` family could add half a sentence on
+why not `graphitron_`, whose header definition is narrow enough (decoded directives and macro
+provenance) that the exclusion is already mechanical.
 
