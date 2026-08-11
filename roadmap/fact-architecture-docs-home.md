@@ -1,7 +1,7 @@
 ---
 id: R630
 title: "The fact architecture's durable documentation home"
-status: Ready
+status: In Progress
 bucket: docs
 priority: 2
 theme: docs
