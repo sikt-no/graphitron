@@ -1,7 +1,7 @@
 ---
 id: R624
 title: "Unify argMapping resolution on one seam across every directive"
-status: In Review
+status: Ready
 bucket: architecture
 priority: 2
 theme: classification-model
@@ -127,6 +127,26 @@ The dot-path form was documented in zero places; it is now documented in one, wi
 * `handle-services.adoc`, `external-code.adoc` and `add-custom-conditions.adoc` `xref` the canonical section; `handle-services.adoc`'s "not part of `@service`'s surface" sentence was corrected.
 
 The check the workflow asks for holds: `routine.adoc` explains where a routine's parameters come from, never what a dot-path is.
+
+## In Review feedback (rework, second pass)
+
+Independent-session `In Review → Done` review at `2322a09`. Full reactor green under `mvn install -Plocal-db` (`BUILD SUCCESS`, exit 0). The seam itself is accepted: routing, both left-hand-side checks, the leaf gate, the `RoutineParamSource` narrowing, the `RecordBindingResolver` deletion, the retirement sweep and the documentation slice all hold, and the pipeline / compilation / execution coverage pins behaviour where the tiers say it belongs. Two items to close before re-approval; neither touches the design.
+
+**1. One delivered test asserts on generated method-body code strings.** `RoutineMutationWritePipelineTest.dotPathArgMapping_readsThroughAStatementFormHelperOnTheClass` asserts `.contains("argInputInventoryId(env.getArgument(\"input\"))")` and `.doesNotContain("instanceof")` against the fetcher method body, then `.contains("if (!(root instanceof")` / `.contains("return (java.lang.Integer)")` against `helper.code().toString()`. `docs/architecture/explanation/development-principles.adoc` § "Behaviour is pinned at the pipeline tier and above" bans exactly this at every tier and says the ban is review-enforced at test-review time, which is this gate.
+
+The fix is cheap because the coverage it duplicates already shipped in this same item:
+
+* The *behaviour* (the descent reads the right value out of the input map, on both `ArgumentValueSource` forks) is already pinned by `rentFilmPayloadNested_dotPathArgMappingReachesTheRoutine` and `correlatedChildRoutineBindsArgumentThroughDotPath`.
+* The *drain* claim is already pinned by the `graphitron-sakila-example` compile: `ArgPathHelperRegistry`'s own javadoc says a dropped drain surfaces as a dangling `arg<Param>(...)` reference and a consumer compile error, and both new sakila fixtures exercise a dot-path binding.
+* The *model* shape is already pinned by `routineDotPathArgMappingLandsPathExprChain`.
+
+What is left without a home is the statement-form-not-ternary shape, which is an implementation claim rather than a behavioural one. If a localised pin is still wanted, assert it structurally rather than by body text: the helper's `MethodSpec` name, `returnType()`, modifiers and single `Object` parameter are all readable off the `TypeSpec` without matching rendered code. Otherwise drop the method and let the three tiers above carry it.
+
+Note for context, not as a defence to be relied on: the ban is unevenly held in the tree. The same file already carried a `.contains("newRecord(")` assertion before this item, and `CompositeDecodeHelperRegistryTest`, the test for the registry `ArgPathHelperRegistry` is modelled on, asserts on rendered bodies throughout. That precedent is why this reads as a small fix rather than a design misjudgement. It is not a licence: if the project wants the ban relaxed for registry-helper shape pins, that is an edit to `development-principles.adoc` argued on its own, not a silent exception taken in one test.
+
+**2. `FieldBuilder.fieldArgumentNames` is now dead code** (`graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java:8012`). Its last caller was the flat-slot membership check this item deleted; the only remaining repo hits are an unrelated same-named method on `graphitron-lsp`'s `TypeContext`. It is package-private and static, so javac says nothing. Delete it, and add it to `## Retired vocabulary` so the next sweep sees it. (The acceptance criterion is met either way, it names `RoutineDirectiveResolver` no longer *calling* it.)
+
+**Not blocking, recorded for the implementer's judgement.** `ArgBindingMap.of` skips an entry whose segment list is empty (`ArgBindingMap.java:113`, defensive per its own comment), which leaves `resolvedOverrides.get(param.name())` returning `null` in `RoutineDirectiveResolver.bindArgs` and `leafTypeGate` dereferencing it. Unreachable while the parser holds its guarantee, and the pre-existing `@service` path has the same shape, so this is a note rather than a request.
 
 ## Out of scope
 
