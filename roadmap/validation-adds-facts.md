@@ -1150,6 +1150,121 @@ the assembled schema, never in the registry capture transcribes), and the corpus
 the Relay `Node` interface to the captured document when absent so both sides parse the same
 text (the walk harness injects it).
 
+## Slice 5 implementation record (settled at implementation start, 2026-08-11)
+
+Fixed before the first code change, same discipline as the prior slices: wiring facts checked
+against the live code, the expansion probed on H2 2.4.240, principles-architect consult folded
+in; deviations get recorded here.
+
+**Wiring facts that shaped it.** `BuildContext.classifyInputField` is the single classification
+funnel for every input-field surface: `TypeBuilder` classifies `@table` input types against the
+input's own table, `InputFieldResolver.resolve` classifies plain inputs at consumer time once
+per consuming field per resolving table, and the funnel's own nesting recursion covers embedded
+groupings. The malformed-shape predicate is evaluated at two sites today
+(`GraphitronSchemaValidator.validateInputUnboundField`, which reaches only registry-walked
+fields, and `FieldBuilder.rejectAtConsumer`, which evaluates it only outside a cascade, the two
+halves of the R221 hole), plus a third habitat the consult surfaced: the validator method is
+also the DML write-target paths' mirror (`collectInputFieldRejections` feeding
+`mintMirroredInputFieldRejections`). The `@condition(override: true)` eager collapse demotes a
+resolved column into `UnboundField` on the plain-column path only; the same authored shape on
+the `@reference` and same-table `@nodeId` paths keeps its column carrier, so the write-path
+sites that discriminate `UnboundField` with an override condition see only some condition-owned
+fields, a live asymmetry. The polymorphic path walks input conditions once per participant
+table, which fixes the reading of "mints once per use-site join": the verdict's identity is the
+use site joined with the resolving table, and the diagnostics channel's value dedup delivers
+exactly that. `BuildContext.diagnostics` already states the doctrine ("accumulated instead of
+demoting a classified verdict"), so the mint surface exists; this slice adds producers.
+
+**The carrier split, the consult's strongest push, adopted.** The collapse was right that an
+override-owned field's column is dead storage and wrong about the arm it reached for. A new
+permit `InputField.ConditionOwnedField` carries the fields the explicit condition method owns
+entirely (compact constructor pins the condition present with `override: true`); both
+override-owned mints (column resolved and column missing) produce it, so the carrier means one
+thing. `UnboundField` becomes the genuine-miss carrier: `attemptedColumnName` is always the
+looked-up name (non-null, enforced), the null-as-discriminator semantics retire per this item's
+retired-vocabulary entry, and its condition axis narrows to empty (cascade-dependent) or
+`override: false` (the malformed shape, whose fact is minted at the funnel). The four
+discrimination sites (`MutationInputResolver`, both DML walkers, `rejectAtConsumer`) switch on
+carrier identity instead of re-evaluating `condition().isPresent() && override()` longhand;
+exhaustive switches (validator, projection, generators) gain the arm mechanically. Deleting the
+collapse instead was considered and rejected: a `ColumnBackedField` carrying an override
+condition would be admitted as a writable column by the DML walkers, silently dropping the
+author's filter, which is exactly what `OverrideConditionNotSupported` exists to prevent.
+
+**The two mints, at their honest grains.** The malformed-shape verdict mints at the funnel's
+column-miss fall-through, keyed by definition joined with the resolving table: the consult's
+correction, adopted, because a plain input consumed by two fields on two tables can be
+malformed at one and fine at the other, and the channel's own doctrine (facts naming different
+tables are different facts, `sameInputTypeAgainstTwoTables_keepsBothFacts`) already refuses
+engineered collapses. The item body's "definition-keyed" holds exactly where the resolving
+table is the definition's own (`@table` inputs); the honest grain names the table. The mint
+reads the authored directive (`readConditionDirective`), not the built `ArgConditionRef`,
+because a failed condition build empties the carrier's condition by design and the fact
+asserted is about the authored shape. It fires unconditionally on cascade context, closing
+R221. The cascade verdict keeps its single evaluation site in the walk (capture runs after
+classification, so production cannot read the store mid-walk; the ordering flips under the
+umbrella) but its mint moves: a use-keyed `ValidationError` into diagnostics at the leaf
+field's own location, keeping the typed `UnknownName` arm with the Levenshtein candidates,
+message carrying the resolving table and the serialized occurrence path. The consuming field
+keeps one consequence rejection, a deliberate intermediate recorded in slice 2's shape: full
+de-tombstoning needs the downstream-assumption audit the `OperationMemberRelation` deviation
+proved necessary, and it arrives with the store-side detection. The path riding in prose is a
+recorded deferral, not the design's answer: the occurrence identity becomes a typed component
+when the diagnostics surface grows one, and until then a named fixture asserts the Java
+serialization equals the store key so the two homes cannot drift silently.
+
+**The validator arm retires, and the mirror corner is named.** `validateInputUnboundField`
+deletes; its registry-walk arms become no-op comments in the established pattern. On the DML
+write-target paths the mirror stops short-circuiting the malformed shape, so the cause identity
+moves: the located, typed fact now mints at the funnel (the directive's own line, a better
+location), and the walkers' own rejections carry the consumer consequence.
+`MutationTableArgClassificationTest`'s mirror pin migrates with it; message and location churn
+at that corner, deliberate rather than discovered.
+
+**The relations.** `intent_input_occurrence_path` (key: `graph_name`, `path`, the serialized
+occurrence; columns: the use-site coordinate triple, the root input type, the leaf's named
+type, depth) and `intent_input_occurrence_path_step` (key: path plus 1-based ordinal; columns:
+the step's container input type, field name, named type), homogeneous over input-field steps
+only, the consult's correction to a step-kind design whose columns went nullable by kind: the
+use-site field and argument are fixed by construction and already live on the parent row, so
+step rows carry only the recursion. Every prefix of a path is itself a row. The writer
+(`derive.InputOccurrencePaths`, invoked in `FactCapture.capture` beside `ReachabilityRows`)
+seeds depth-0 rows from `graphql_argument` rows whose named type has kind `INPUT_OBJECT` and
+expands semi-naively; the cycle guard is relational (a path stops expanding when its leaf type
+equals the root input type or any earlier step's named type, the walk's own
+`ClassifyContext.expandingTypes` first-visit rule restated), so the row population equals the
+recursion tree the build already walks and simple-path enumeration introduces no new
+asymptotic class, which is why the explosion argument that rejected the path-guarded CTE for
+the type domain does not apply here; the loop bound is the graph's input-object type count,
+exceeded throws. `intent_input_occurrence_override` is the cascade fact as a predicate over
+path prefixes with its witness kept: one row per path with an enclosing `override: true`,
+carrying the nearest enclosing overriding site's coordinate (nullable `argument_name`
+distinguishes the two condition relations the witness joins, their own key shapes); absence is
+the no-override reading. Production reads none of them this slice; `rejectAtConsumer`'s
+threaded boolean retires when capture precedes classification.
+
+**Agreement.** A derive-package pipeline-tier shadow test sweeps `ClassifiedCorpus`, one store,
+one graph per example: the derived path population equals a structural reference enumeration
+recomputed from the assembled schema (deliberately classification-independent, so tombstoned
+consumers cost no exclusion list); the override rows equal the condition-directive expectation;
+and every cascade verdict minted into diagnostics names a derived path with no override row.
+That last binding is one-directional and the test's javadoc says so: the store predicate being
+too narrow is invisible until the store-side unbound predicate lands with its own slice; the
+fixture populations are asserted non-empty so the binding cannot go vacuous, and the
+serialization equality is pinned on a named fixture. Targeted fixtures pin the admitted
+cascade, the rejected cascade at two use sites (two facts), the malformed shape inside an
+override cascade (R221's exact hole, now failing), and cyclic input nesting (derivation
+terminates, the walk's circularity rejection unchanged). All three relations register
+`Arm.DERIVED` in `FactCaptureAgreementTest` with the shadow test named as anchor.
+
+**Counts move deliberately.** `InputFieldFanInDiagnosticsTest` gains the two new producers in
+its honest-record partition (the cascade verdict is a typed `UnknownName` row, the malformed
+shape a structural row) and the count assertions state the intended count per shape. The
+named `GraphitronSchemaBuilderTest` cases move with the design: the override-collapse
+projection test follows the carrier split, the malformed-shape boundary test asserts the funnel
+diagnostic where it asserted a consumer tombstone, and the bare-miss consumer test asserts the
+cause in diagnostics and the consequence on the consumer.
+
 ## Retired vocabulary (expected; finalise at the Done gate)
 
 - `FieldBuilder.PairVerdict` / `pairVerdict` / `reduceDirectiveConflict`: the pairwise reduction,
