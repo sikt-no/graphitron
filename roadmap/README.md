@@ -15,6 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R617` | Lookup misses drop rows instead of holding their position | Ready | 2026-08-10 <sub>created 2026-08-09</sub> | [plan](lookup-positional-contract-unimplemented.md) |
+| `R624` | Unify argMapping resolution on one seam across every directive | Spec | 2026-08-11 | [plan](unify-argmapping-resolution-seam.md) |
 | `R621` | Legacy v9: split GeneratedExceptionToErrorMappingProvider under the 64KiB method limit | Spec | 2026-08-10 | [plan](legacy-exception-provider-method-size.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-10 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
@@ -140,6 +141,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 ### Validation
 
+- `R625` [**Gate argMapping leaf types against their bound parameter**](argmapping-leaf-type-gate.md): An `argMapping` entry's resolved leaf carries a GraphQL type, and the target it binds to carries a Java type, and nothing anywhere compares them. `@routine(argMapping: "pBrukernavn: input")` binds a whole input object to a `String` IN parameter, passes every validation, and emits `env.<String>getArgument("input")`, which throws `ClassCastException` on a `LinkedHashMap` at request time. The mirror surface already gates: `RoutineDirectiveResolver.bindArgs` compares a `columnMapping` column's `columnClass()` against the parameter type and rejects a mismatch, on the stated grounds that the mismatch "would be a javac error in the generated source". The argument-sourced side has no counterpart, so the same class of authoring error lands as a runtime failure instead of a build error, which inverts the project's normal bias. <sub>updated 2026-08-11</sub>
 - `R136` [**Execution-tier coverage for FK-target/NodeType-keyColumns permutation**](nodeid-fk-permutation-execution-tier.md): R131's permutation relaxation is pinned at the pipeline tier (`InputFieldFkTargetNodeIdCase.FK_TARGET_REORDERED_KEY_PERMUTATION_DIRECT_FK{,_SINGULAR}` in `NodeIdPipelineTest`), which asserts `liftedSourceColumns` is permuted into `@node.keyColumns` order on the resolver's `DirectFk` carrier. The end-to-end SQL correctness — that the emitted `BodyParam.RowEq` against `liftedSourceColumns` actually matches the right rows when joined against decoded NodeId values — is not exercised by an execution-tier test in this repo.
 - `R135` [**Multi-hop @nodeId pipeline test for FK-target/NodeType-keyColumns permutation**](multi-hop-nodeid-fk-permutation-test.md): R131's permutation relaxation in `NodeIdLeafResolver.resolve` accepts set-equality between the terminal hop's target columns and the NodeType's `@node(keyColumns:)`, then permutes `liftedSourceColumns` into NodeType-keyColumns order before constructing `Resolved.FkTarget.DirectFk`. The pipeline-tier test pinning this lands on the single-hop `reordered_pk_parent` fixture (`InputFieldFkTargetNodeIdCase.FK_TARGET_REORDERED_KEY_PERMUTATION_DIRECT_FK{,_SINGULAR}`).
 - `R557` [**Completeness sweep for @splitQuery applications: every marker consumed, inert-by-construction, or rejected**](split-query-marker-sweep.md): `@splitQuery` has no completeness enforcer: nothing guarantees that every application of the marker either forces a batched delivery, is inert for a stated structural reason, or rejects. `@tenantFanOut` has exactly this in `TenantBindingIndex.sweepUnreachedFanOutMarkers`, whose javadoc names the failure mode ("a marked coordinate the classification never modelled ... would otherwise be silently ignored; the sweep turns it into a validate-time rejection"). The absence for `@splitQuery` is why the marker sat silently ignored on nesting fields until a slice of the projection-command programme stumbled on it empirically instead of a test naming it; that instance is now a classify-time deferred diagnostic at the nesting arm of `FieldBuilder`, but the class stays open: the next inert position is admitted silently again. <sub>updated 2026-07-29</sub>
@@ -229,6 +231,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R234` [**Support jOOQ embedded and UDT records as non-table input backings**](jooq-embedded-and-udt-input-backings.md) — Backlog, architecture
 - `R523` [**Carry field SourceLocations through the tenant-binding fold rejections**](tenant-fold-rejection-source-locations.md) — Backlog, tech-debt
+- `R624` [**Unify argMapping resolution on one seam across every directive**](unify-argmapping-resolution-seam.md) — Spec, architecture
 - `R333` [**The Graphitron data model**](coordinate-lowers-to-datafetcher-queryparts.md) — Ready, structural
 - `R612` [**The schema scan and its freshness replay share one typed recipe**](maven-config-fact-family.md) — Ready, architecture
 - `R609` [**Capture-load residuals from the fact-store delivery**](capture-load-residuals.md) — Backlog, architecture
@@ -264,6 +267,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### diagnostics
 
 - `R411` [**Wire-coercion cast guard for @condition and @externalField (R261 Slice 2)**](reject-wire-coercion-nonservice-sites.md) — Backlog, architecture
+- `R625` [**Gate argMapping leaf types against their bound parameter**](argmapping-leaf-type-gate.md) — Backlog, validation
 - `R601` [**The diagnostic stream unifies**](unified-diagnostic-stream.md) — Backlog, structural
 - `R602` [**Decide the INPUT_OBJECT locations of @record and @table: narrow or retired-location convention**](input-object-directive-locations.md) — Backlog, cleanup
 - `R569` [**Aggregated diagnostics commands for the MCP server**](mcp-aggregated-diagnostics.md) — Spec, feature
