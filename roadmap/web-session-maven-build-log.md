@@ -42,6 +42,20 @@ history. Deliberate, and the reason the file lives under `/tmp` rather than `tar
 unlink a log opened there, leaving Maven writing to an inode nothing can reach.
 (Verified empirically, not assumed.)
 
+The warm build shares the same log. Install the config with the other config steps,
+*before* the warm build, so the session's longest and most informative build lands in
+the same place every later build does and there is only ever one path meaning "the
+last Maven build". Nothing has to be sequenced around it: the PreToolUse guard already
+holds foreground `mvn` / `mvnd` until the warm build finishes, so the two can never
+write the file concurrently.
+
+The one case that needs handling is a *failed* warm build, whose output the first
+foreground command would truncate away, and that first command is often a narrow
+`-pl` that will not reproduce the failure. On the failure path only, copy the log
+aside (`/tmp/graphitron-warm-build-failure.log`) before the hook exits, and repoint
+the existing "Warm build FAILED ... Log: $LOG_FILE" message at the copy, since
+`$LOG_FILE` will no longer hold the Maven detail.
+
 Then document the behaviour in `.claude/web-environment.md` and `CLAUDE.md`.
 
 ## Consequences to document
@@ -60,12 +74,13 @@ it inverts the usual read, so the docs have to be explicit:
 - This subsumes the existing "don't combine `mvnd` with `-q` when you need stdout"
   quirk in `web-environment.md` under a more general rule; that note should be
   rewritten rather than left to contradict this.
+- `web-environment.md` currently says to `tail -f /tmp/graphitron-web-env.log` to
+  watch warm-up progress. That file keeps the prerequisite step messages and the
+  warm-build start/finish lines but no longer the Maven detail, so the
+  progress-watching instruction has to move to the maven log.
 - Two concurrent Maven invocations would overwrite each other's log. The PreToolUse
   guard already serializes foreground Maven against the warm build, and agents issue
   builds one at a time, so this is a note and not a mechanism.
-- Ordering inside the hook: the config must be installed **after** the warm build,
-  or the warm build's own output is redirected out of `/tmp/graphitron-web-env.log`
-  and the hook log goes quiet.
 
 ## Explicitly out of scope
 
