@@ -66,12 +66,25 @@ transient space:
   fails when it breaks). Target-state claims stay in R333, which carries a `status:` telling the
   reader it is a plan; a durable page asserting the destination as the state would be misleading
   in exactly the way the current pipeline overview is.
+- **Prose in `COMMENT ON`; structure in meta-relations.** The reference's *prose* is the
+  comment markdown, bound to its object by the engine. The reference's *skeleton*, what the
+  renderer needs beyond prose (the family definitions, their titles and page order, any grouping
+  of relations within a page), is authored as rows in meta-relations in the same DDL file,
+  starting with a family relation (working name `store_family`: prefix as the key, a rendered
+  title, an ordinal, a markdown definition). Parsing structure out of comment prose is rejected;
+  so is hardcoding it in the generator. The family-definition prose migrates from the DDL's
+  header comment into those rows (one home); the header keeps the conventions and rationale that
+  are about the schema as a whole. Whether the meta-relations sit in the `store_` family or earn
+  a prefix of their own is decided at Ready against the header's own prefix-picking guidance.
 - **One catalog reader, many views.** Everything that needs "what relations exist" (the doc
-  generator, the drift guard) reads it from one place: the booted store's metadata, exposed by
-  `graphitron-model`. The family list, the page set, and the guard's prefix set are all derived
-  from observed relation names, never enumerated a second time in code or prose. (The DDL
-  header's "Ten families" prose count is already off by one against the `intent_` stratum it
-  describes below; the rendered reference derives the list, and the header keeps the rationale.)
+  generator, the drift guard) reads it from one place: the booted store's metadata plus the
+  meta-relations, exposed by `graphitron-model`. The page set and the guard's prefix set derive
+  from that reader, never enumerated a second time in code or prose. The meta-relations are
+  closed against the observed schema by bidirectional gates in the `FactSchemaGateTest` family:
+  every observed relation prefix has a family row, every family row has at least one observed
+  relation, ordinals are unique. (The DDL header's "Ten families" prose count is already off by
+  one against the `intent_` stratum it describes below; rows plus a gate make that class of
+  drift impossible.)
 - **One item, ordered slices.** The slices below are independently landable and ordered by
   priority; each is a full vertical (content plus any guard it needs).
 
@@ -166,12 +179,14 @@ Update `.claude/agents/principles-architect.md` and the shared "what to look for
 
 A doc-generation step that boots the store from `graphitron-model.sql` (the same bootstrap jOOQ
 codegen already uses), reads the store's metadata (tables, columns, comments, primary keys,
-foreign keys, CHECK constraints) through the shared catalog reader from Decisions, and renders
-the reference: one page per family plus an index, the family set derived from observed relation
-prefixes. The DDL's leading header comment (the rationale prose) renders as the index preamble;
-the family *list* itself is derived, never transcribed from the header. Comment text renders as
-markdown. The output is generated at build and never committed; the DDL is the only authored
-artifact, so the reference cannot drift.
+foreign keys, CHECK constraints) *and* the meta-relations through the shared catalog reader from
+Decisions, and renders the reference: one page per family plus an index, the page set, titles,
+ordering, and index preamble all read from the family rows, the per-object prose from the
+comments. Nothing about the page structure is parsed from prose or hardcoded in the generator.
+This slice introduces the meta-relations and their bidirectional gates (the Decisions bullet),
+and migrates the family-definition prose from the header comment into the rows. Comment text
+renders as markdown. The output is generated at build and never committed; the DDL is the only
+authored artifact, so the reference cannot drift.
 
 Generated-not-committed removes the failure signal the committed precedent
 (`docs/manual/_generated/supported-directives.adoc`, verify-gated) gets for free, so the slice
@@ -227,9 +242,10 @@ guard makes slice 2's page unable to rot the way the pipeline overview did. Can 
   fact terms within its size budget.
 - The principles-architect's reading list and the reviewer taxonomy name the new pages and the
   fact-discipline findings.
-- The docs site renders the generated schema reference from the DDL comments; regenerating after
-  a comment edit changes the page with no other action; the non-vacuity floors and the comment
-  renderability gate fail the base build when violated.
+- The docs site renders the generated schema reference from the DDL comments, with page
+  structure read from the meta-relations; regenerating after a comment or meta-row edit changes
+  the output with no other action; the non-vacuity floors, the comment renderability gate, and
+  the meta-relation totality gates fail the base build when violated.
 - The drift guard fails the build on a renamed relation still named by an authored page, and
   reads the same catalog reader as the generator.
 
@@ -240,7 +256,8 @@ guard makes slice 2's page unable to rot the way the pipeline overview did. Can 
   `graphitron-model` DDL"). R333 stays Ready and governing for content not yet migrated; its
   Done-and-delete condition comes closer with each slice-2 section landed.
 - **R595** (the fact store, shipped): the DDL and its `COMMENT ON` convention are the substrate
-  slice 4 renders; no schema change is requested by this item.
+  slice 4 renders. The one schema change this item requests is the documentation meta-relation
+  stratum (the family relation and its gates); no captured-fact relation changes.
 - **R545** (the model owns no emit vocabulary): slice 3 encodes its boundary as a named finding
   so drafts get caught before they add to that debt.
 - **R115** (capability catalog): adjacent knowledge-surface work; no dependency either way.
