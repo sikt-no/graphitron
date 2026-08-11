@@ -267,10 +267,11 @@ public final class AuthoredClaimConflicts {
 
     /**
      * Decodes the view's closed verdict vocabulary into the {@link Rejection} arm the report
-     * carries. The {@code directives} render arrives in {@link AuthoredClaim} declaration order
-     * (the view's {@code LISTAGG} restates it), so the conflict names its directives in the
-     * fixed order the class javadoc pins; the deferral's message is composed from the enum
-     * constants the carve-out recognises, never from the render.
+     * carries. The {@code directives} render arrives sorted (the canonical grouping spelling
+     * every diagnostics dimension shares), so the message's fixed naming order is re-derived
+     * from {@link AuthoredClaim}'s declaration order here, where the enum owning that order
+     * lives; the deferral's message is composed from the enum constants the carve-out
+     * recognises, never from the render.
      */
     private static Rejection rejectionOf(String verdict, String directives) {
         if ("DEFERRED".equals(verdict)) {
@@ -278,9 +279,23 @@ public final class AuthoredClaimConflicts {
                 + AuthoredClaim.LOOKUP_KEY.directive()
                 + " on a root field classifies but does not emit yet");
         }
-        var names = List.of(directives.split(","));
+        var names = List.of(directives.split(",")).stream()
+            .sorted(Comparator.comparing(AuthoredClaimConflicts::claimOf))
+            .toList();
         String at = names.stream().map(n -> "@" + n).collect(Collectors.joining(", "));
         return Rejection.directiveConflict(names, at + " are mutually exclusive");
+    }
+
+    /** The claim whose directive is {@code name}; unknown names are vocabulary drift, a build bug. */
+    private static AuthoredClaim claimOf(String name) {
+        for (var claim : AuthoredClaim.values()) {
+            if (claim.directive().equals(name)) {
+                return claim;
+            }
+        }
+        throw new IllegalStateException("the conflict view rendered directive '" + name
+            + "', which no " + AuthoredClaim.class.getSimpleName()
+            + " value claims; the view arms and the enum must move together");
     }
 
     /** The store's position columns as a graphql-java location; {@code null} when unpositioned. */

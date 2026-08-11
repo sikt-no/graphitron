@@ -59,6 +59,10 @@ import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
+import static no.sikt.graphitron.model.Tables.BUILD_WARNING_NO_RULE;
+import static no.sikt.graphitron.model.Tables.LINT_FINDING;
+import static no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR;
+import static no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static no.sikt.graphitron.model.Tables.STORE_STAMP;
@@ -188,9 +192,17 @@ class FactCaptureAgreementTest {
         registrations.put("intent_input_occurrence_path_step", Arm.DERIVED);
         registrations.put("intent_input_occurrence_override", Arm.DERIVED);
         registrations.put("intent_authored_claim_conflict", Arm.DERIVED);
+        // The diagnostics union view is a pure re-projection of its five arms, so its agreement
+        // is vacuous by construction on the graphql_directive_site precedent; the arm-specific
+        // derived columns are pinned by DiagnosticFactsTest against their Java spellings.
+        registrations.put("diagnostic", Arm.DERIVED);
         registrations.put("javac_diagnostic", Arm.ORACLE);
         registrations.put("walk_claim_domain_type", Arm.ORACLE);
         registrations.put("walk_claim_domain_field", Arm.ORACLE);
+        registrations.put("rejection_validation_error", Arm.ORACLE);
+        registrations.put("rejection_validation_error_directive", Arm.ORACLE);
+        registrations.put("lint_finding", Arm.ORACLE);
+        registrations.put("build_warning_no_rule", Arm.ORACLE);
         return Map.copyOf(registrations);
     }
 
@@ -1246,6 +1258,76 @@ class FactCaptureAgreementTest {
             assertThat(store.dsl().fetchCount(WALK_CLAIM_DOMAIN_TYPE)).isEqualTo(1);
             assertThat(store.dsl().fetchCount(WALK_CLAIM_DOMAIN_FIELD)).isEqualTo(1);
         }
+    }
+
+    /**
+     * The loaded diagnostics arms' lifecycle anchor, on the same terms as the javac one: seeded
+     * rows under two graphs, and a warm capture empties exactly its own partition. One anchor
+     * covers all three relations (and the residue's directive child), because they share one
+     * writer cadence and the graph-scoped clear that empties them is the same derived set.
+     */
+    @Test
+    @DisplayName("a capture empties its own graph's loaded diagnostics partitions and no other's")
+    void oracleLifecycleClearsTheOwnedDiagnosticsPartitionsOnly(@TempDir Path tmp) throws java.io.IOException {
+        Path ownDir = java.nio.file.Files.createDirectories(tmp.resolve("own"));
+        Path siblingDir = java.nio.file.Files.createDirectories(tmp.resolve("sibling"));
+        try (var store = GraphitronModelStore.open()) {
+            var own = new FactCapture.GraphIdentity("own", ownDir);
+            var sibling = new FactCapture.GraphIdentity("sibling", siblingDir);
+            FactCapture.capture(store.dsl(), own,
+                CapturedStore.registryOf(ownDir, "type Query { ping: String }"));
+            FactCapture.capture(store.dsl(), sibling,
+                CapturedStore.registryOf(siblingDir, "type Query { ping: String }"));
+            assertThat(diagnosticsPartition(store, "own")).isEmpty();
+
+            var loc = new graphql.language.SourceLocation(3, 1, ownDir.resolve("s.graphqls").toString());
+            var errors = List.of(
+                no.sikt.graphitron.rewrite.ValidationError.forField("Film.title",
+                    no.sikt.graphitron.rewrite.model.Rejection.directiveConflict(
+                        List.of("service", "routine"), "@service, @routine are mutually exclusive"), loc));
+            var warnings = List.<no.sikt.graphitron.rewrite.BuildWarning>of(
+                new no.sikt.graphitron.rewrite.BuildWarning.NoRule("advisory", loc));
+            new no.sikt.graphitron.rewrite.diagnostics.RejectionFacts(store.dsl(), own).write(errors);
+            new no.sikt.graphitron.rewrite.diagnostics.BuildWarningFacts(store.dsl(), own).write(warnings);
+            new no.sikt.graphitron.rewrite.diagnostics.RejectionFacts(store.dsl(), sibling).write(errors);
+            new no.sikt.graphitron.rewrite.diagnostics.BuildWarningFacts(store.dsl(), sibling).write(warnings);
+            assertThat(diagnosticsPartition(store, "own")).isNotEmpty();
+            var siblingBefore = diagnosticsPartition(store, "sibling");
+            assertThat(siblingBefore).isNotEmpty();
+
+            FactCapture.capture(store.dsl(), true, own,
+                CapturedStore.registryOf(ownDir, "type Query { ping: String }"),
+                null, List.of(), new NodeDeclaration(null));
+            assertThat(diagnosticsPartition(store, "own"))
+                .as("the captured graph's loaded diagnostics partitions, after its own warm capture")
+                .isEmpty();
+            assertThat(diagnosticsPartition(store, "sibling"))
+                .as("the sibling graph's loaded diagnostics partitions, after another graph's capture")
+                .isEqualTo(siblingBefore);
+        }
+    }
+
+    /** The graph's loaded diagnostics rows across all four relations, rendered stably. */
+    private static List<String> diagnosticsPartition(GraphitronModelStore store, String graphName) {
+        var rows = new ArrayList<String>();
+        store.dsl().selectFrom(REJECTION_VALIDATION_ERROR)
+            .where(REJECTION_VALIDATION_ERROR.GRAPH_NAME.eq(graphName))
+            .orderBy(REJECTION_VALIDATION_ERROR.ORDINAL)
+            .forEach(row -> rows.add("rejection|" + row.getOrdinal() + "|" + row.getMessage()));
+        store.dsl().selectFrom(REJECTION_VALIDATION_ERROR_DIRECTIVE)
+            .where(REJECTION_VALIDATION_ERROR_DIRECTIVE.GRAPH_NAME.eq(graphName))
+            .orderBy(REJECTION_VALIDATION_ERROR_DIRECTIVE.ERROR_ORDINAL,
+                REJECTION_VALIDATION_ERROR_DIRECTIVE.POSITION)
+            .forEach(row -> rows.add("directive|" + row.getErrorOrdinal() + "|" + row.getDirective()));
+        store.dsl().selectFrom(LINT_FINDING)
+            .where(LINT_FINDING.GRAPH_NAME.eq(graphName))
+            .orderBy(LINT_FINDING.ORDINAL)
+            .forEach(row -> rows.add("lint|" + row.getOrdinal() + "|" + row.getMessage()));
+        store.dsl().selectFrom(BUILD_WARNING_NO_RULE)
+            .where(BUILD_WARNING_NO_RULE.GRAPH_NAME.eq(graphName))
+            .orderBy(BUILD_WARNING_NO_RULE.ORDINAL)
+            .forEach(row -> rows.add("advisory|" + row.getOrdinal() + "|" + row.getMessage()));
+        return rows;
     }
 
     /** The graph's walk-reach rows across both grains, rendered stably for before/after comparison. */

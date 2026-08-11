@@ -221,19 +221,29 @@ public class GraphQLRewriteGenerator {
         var snapshot = CatalogBuilder.buildSnapshot(attributed.registry(), bundle.model(), catalog,
             detection.fieldConflicts());
         var catalogFacts = CatalogBuilder.buildCatalogFacts(jooq);
-        var errors = new ArrayList<>(new GraphitronSchemaValidator().validate(bundle.model()));
+        var walkErrors = List.copyOf(new GraphitronSchemaValidator().validate(bundle.model()));
+        var errors = new ArrayList<>(walkErrors);
         errors.addAll(detection.violations());
         var warnings = withLintFindings(bundle.model(), attributed);
         var report = ValidationReport.from(errors, warnings);
-        return new BuildOutput(new BuildArtifacts(catalog, snapshot, catalogFacts), report);
+        return new BuildOutput(new BuildArtifacts(catalog, snapshot, catalogFacts), report,
+            walkErrors, warnings);
     }
 
     /**
      * Splits the build output along the two lifecycle steps {@link #buildOutput()} spans:
      * classification produces {@link BuildArtifacts} (catalog + snapshot); the validator
      * pass over the same classified model produces {@link ValidationReport}.
+     *
+     * <p>The two pre-fuse lists ride alongside the fused report for the diagnostics-stratum
+     * loaders, each carrying a partition the report cannot express once fused:
+     * {@code walkErrors} is the walk's own error stream before the detection violations are
+     * appended (so a detection-minted family is structurally absent from the residue loader's
+     * input), and {@code warnings} is the suppression-filtered list the report was assembled
+     * from (so stored lint rows are post-suppression survivors, never resurrected findings).
      */
-    public record BuildOutput(BuildArtifacts artifacts, ValidationReport report) {}
+    public record BuildOutput(BuildArtifacts artifacts, ValidationReport report,
+                              List<ValidationError> walkErrors, List<BuildWarning> warnings) {}
 
     /**
      * Classification-stage products: the LSP {@link CompletionData} catalog, the

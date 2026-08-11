@@ -14,7 +14,7 @@
 -- Javadoc are self-describing; closed taxonomies are CHECK constraints; VARCHAR is unbounded;
 -- source order is an explicit ordinal column.
 --
--- Picking a prefix for a new relation. Seven families, each named for whose vocabulary the row
+-- Picking a prefix for a new relation. Ten families, each named for whose vocabulary the row
 -- is written in, never for its reader or its role. graphql_ is reserved for generic GraphQL: a
 -- row any SDL reader could produce from the document without knowing graphitron exists, which
 -- is every declaration, every directive definition, and every directive application including
@@ -32,7 +32,22 @@
 -- javax.tools.Diagnostic's terms. walk_ is what the legacy classification walk registered,
 -- transcribed as membership rows in the walk's own vocabulary (its registries' reach); naming
 -- the family for the retiring walk gives the name its own retirement clock, because when the
--- walk is gone the family has no referent.
+-- walk is gone the family has no referent. rejection_ is the legacy walk's verdicts,
+-- transcribed in the sealed Rejection hierarchy's own spellings (kind, variant, lsp_code,
+-- attempt_kind, stub_key are all that hierarchy's words) and carrying the same retirement
+-- clock as walk_: transitional by construction, drained family by family as detections
+-- migrate store-native, and deliberately not named validator_, both because that names a role
+-- and because the validation phase outlives the hierarchy and may one day want its own name.
+-- lint_ is the linter's vocabulary (lint_rule is LintRule.id()), its own family because a lint
+-- finding's severity is a function of its rule, never a rejection kind, and because lint rules
+-- are predicates over classified facts that should be free to migrate store-native without
+-- contending for another family's relation. build_warning_ is the sealed BuildWarning
+-- hierarchy's advisory arm in that hierarchy's own words (message and location are NoRule's
+-- entire component list), with the arm selector in the relation name per the
+-- jvm_scalar_type_field precedent since the sibling arm lives in lint_; not graphitron_,
+-- whose definition above (decoded directives and macro provenance) an advisory is neither of,
+-- and not walk_, because a family may not be named for its producer and both of the arm's
+-- producers outlive the walk.
 --
 -- Cadence is its own axis, orthogonal to the vocabulary a prefix names. A family whose writer
 -- runs after capture (javac_ is the first) has its own writer on that writer's cadence, and
@@ -2687,18 +2702,24 @@ COMMENT ON COLUMN intent_resolved_field_claim.classifier IS 'the classification 
 COMMENT ON COLUMN intent_resolved_field_claim.tier IS 'AUTHORED from the authored view, INFERRED from a classifier view surviving the anti-join; names which relation carries this claim''s provenance';
 
 CREATE VIEW intent_authored_claim_conflict
-  (graph_name, type_name, field_name, verdict, directives,
+  (graph_name, type_name, field_name, verdict, directives, message,
    source_name, source_line, source_column) AS
 SELECT g.graph_name, g.type_name, CAST(NULL AS VARCHAR),
        CASE WHEN g.claim_count = 2 AND g.outside_pair = 0 THEN 'DEFERRED' ELSE 'CONFLICT' END,
-       g.directives, td.source_name, td.source_line, td.source_column
+       g.directives,
+       'Type ''' || g.type_name || ''': '
+         || CASE WHEN g.claim_count = 2 AND g.outside_pair = 0
+                 THEN '@routine with @lookupKey on a root field classifies but does not emit yet'
+                 ELSE '@' || REPLACE(g.declared, ',', ', @') || ' are mutually exclusive' END,
+       td.source_name, td.source_line, td.source_column
   FROM (SELECT c.graph_name, c.type_name,
                COUNT(*) AS claim_count,
                SUM(CASE WHEN c.classifier IN ('LOOKUP_KEY', 'ROUTINE') THEN 0 ELSE 1 END) AS outside_pair,
+               LISTAGG(c.trigger, ',') WITHIN GROUP (ORDER BY c.trigger) AS directives,
                LISTAGG(c.trigger, ',') WITHIN GROUP (ORDER BY CASE c.classifier
                  WHEN 'SERVICE' THEN 0 WHEN 'EXTERNAL_FIELD' THEN 1 WHEN 'NODE_ID' THEN 2
                  WHEN 'LOOKUP_KEY' THEN 3 WHEN 'ROUTINE' THEN 4 WHEN 'MUTATION' THEN 5
-                 WHEN 'TABLE' THEN 6 WHEN 'ERROR' THEN 7 END) AS directives
+                 WHEN 'TABLE' THEN 6 WHEN 'ERROR' THEN 7 END) AS declared
           FROM (SELECT DISTINCT a.graph_name, a.type_name, a.classifier, a.trigger
                   FROM intent_authored_type_claim a
                   JOIN walk_claim_domain_type d
@@ -2710,14 +2731,20 @@ SELECT g.graph_name, g.type_name, CAST(NULL AS VARCHAR),
 UNION ALL
 SELECT g.graph_name, g.type_name, g.field_name,
        CASE WHEN g.claim_count = 2 AND g.outside_pair = 0 THEN 'DEFERRED' ELSE 'CONFLICT' END,
-       g.directives, gf.source_name, gf.source_line, gf.source_column
+       g.directives,
+       'Field ''' || g.type_name || '.' || g.field_name || ''': '
+         || CASE WHEN g.claim_count = 2 AND g.outside_pair = 0
+                 THEN '@routine with @lookupKey on a root field classifies but does not emit yet'
+                 ELSE '@' || REPLACE(g.declared, ',', ', @') || ' are mutually exclusive' END,
+       gf.source_name, gf.source_line, gf.source_column
   FROM (SELECT c.graph_name, c.type_name, c.field_name,
                COUNT(*) AS claim_count,
                SUM(CASE WHEN c.classifier IN ('LOOKUP_KEY', 'ROUTINE') THEN 0 ELSE 1 END) AS outside_pair,
+               LISTAGG(c.trigger, ',') WITHIN GROUP (ORDER BY c.trigger) AS directives,
                LISTAGG(c.trigger, ',') WITHIN GROUP (ORDER BY CASE c.classifier
                  WHEN 'SERVICE' THEN 0 WHEN 'EXTERNAL_FIELD' THEN 1 WHEN 'NODE_ID' THEN 2
                  WHEN 'LOOKUP_KEY' THEN 3 WHEN 'ROUTINE' THEN 4 WHEN 'MUTATION' THEN 5
-                 WHEN 'TABLE' THEN 6 WHEN 'ERROR' THEN 7 END) AS directives
+                 WHEN 'TABLE' THEN 6 WHEN 'ERROR' THEN 7 END) AS declared
           FROM (SELECT DISTINCT a.graph_name, a.type_name, a.field_name, a.classifier, a.trigger
                   FROM intent_authored_field_claim a
                   JOIN walk_claim_domain_field d
@@ -2728,12 +2755,13 @@ SELECT g.graph_name, g.type_name, g.field_name,
   JOIN graphql_field gf
     ON gf.graph_name = g.graph_name AND gf.type_name = g.type_name
    AND gf.field_name = g.field_name;
-COMMENT ON VIEW intent_authored_claim_conflict IS 'The authored-claim conflict rule as a resident of the intent_ stratum: one row per violated coordinate, both grains, the store-native pilot of the diagnostics stratum''s derivation arms. A coordinate violates when two or more distinct classifiers claim it and the walk''s reach relation for the grain holds the coordinate (the domain gate as a join against walk_claim_domain_type / walk_claim_domain_field, never against the demand views: the population is the legacy detection''s, and the demand gate-flip is its own follow-up). Two pieces of Java logic live in this SQL and are pinned by the registered agreement anchor (no.sikt.graphitron.rewrite.derive.AuthoredClaimConflictsTest, whose per-fixture expectations are hand-written messages this view does not produce): the routine-plus-lookup carve-out (exactly that claim pair is the recognised-but-unsupported combination and yields DEFERRED instead of CONFLICT), and the ordered claim render (the LISTAGG''s CASE restates AuthoredClaim''s declaration order, which is the conflict messages'' fixed naming order). Locations join as the legacy mint did: a field violation carries the field''s own declared position, a type violation the type''s base declaration site at merge ordinal 0.';
+COMMENT ON VIEW intent_authored_claim_conflict IS 'The authored-claim conflict rule as a resident of the intent_ stratum: one row per violated coordinate, both grains, the store-native pilot of the diagnostics stratum''s derivation arms. A coordinate violates when two or more distinct classifiers claim it and the walk''s reach relation for the grain holds the coordinate (the domain gate as a join against walk_claim_domain_type / walk_claim_domain_field, never against the demand views: the population is the legacy detection''s, and the demand gate-flip is its own follow-up). Two pieces of Java logic live in this SQL and are pinned by the registered agreement anchor (no.sikt.graphitron.rewrite.derive.AuthoredClaimConflictsTest, whose per-fixture expectations are hand-written messages this view does not produce): the routine-plus-lookup carve-out (exactly that claim pair is the recognised-but-unsupported combination and yields DEFERRED instead of CONFLICT), and the message render''s claim order (its LISTAGG''s CASE restates AuthoredClaim''s declaration order, which is the conflict messages'' fixed naming order; the directives column is the sorted canonical render instead, one grouping spelling for every diagnostics arm). Locations join as the legacy mint did: a field violation carries the field''s own declared position, a type violation the type''s base declaration site at merge ordinal 0.';
 COMMENT ON COLUMN intent_authored_claim_conflict.graph_name IS 'the owning graph''s partition, carried from the claim views';
 COMMENT ON COLUMN intent_authored_claim_conflict.type_name IS 'the violated coordinate''s owning type (the coordinate itself at the type grain)';
 COMMENT ON COLUMN intent_authored_claim_conflict.field_name IS 'the violated coordinate''s field name; NULL exactly on type-grain rows, the two-grain union''s key shape (graphql_directive_site''s member_name precedent)';
 COMMENT ON COLUMN intent_authored_claim_conflict.verdict IS 'CONFLICT for mutually exclusive claims, DEFERRED for the recognised routine-plus-lookup pair; a closed two-value vocabulary the reduction''s own output type discriminates';
-COMMENT ON COLUMN intent_authored_claim_conflict.directives IS 'the canonical ordered claim render: the claiming directives'' names without the leading @, comma-joined in AuthoredClaim declaration order, which is what a conflict message names and the order it names them in';
+COMMENT ON COLUMN intent_authored_claim_conflict.directives IS 'the canonical claim render for grouping: the claiming directives'' names without the leading @, comma-joined sorted, the one spelling of a directive set every diagnostics dimension shares so claim order can never split a group; consumers wanting the message''s declaration order re-derive it from AuthoredClaim, the order''s one owner';
+COMMENT ON COLUMN intent_authored_claim_conflict.message IS 'the violation''s full report message, coordinate prefix included, byte-identical to what the report carries for this family (the agreement anchor pins the spelling); display only, never a dimension';
 COMMENT ON COLUMN intent_authored_claim_conflict.source_name IS 'the violated coordinate''s own declaration file (the field''s position at the field grain, the base declaration''s at the type grain); NULL where the declaration carries no position';
 COMMENT ON COLUMN intent_authored_claim_conflict.source_line IS 'source line of the violated coordinate''s declaration, 1-based';
 COMMENT ON COLUMN intent_authored_claim_conflict.source_column IS 'source column of the violated coordinate''s declaration, 1-based';
@@ -3064,3 +3092,207 @@ COMMENT ON COLUMN intent_input_occurrence_override.path IS 'the overridden occur
 COMMENT ON COLUMN intent_input_occurrence_override.override_type_name IS 'witness: the overriding @condition site''s owning type (an input object type for a step witness)';
 COMMENT ON COLUMN intent_input_occurrence_override.override_field_name IS 'witness: the overriding site''s field name';
 COMMENT ON COLUMN intent_input_occurrence_override.override_argument_name IS 'witness: the overriding site''s argument name; NULL when the witness is a field-site condition (graphitron_field_condition''s key shape), non-NULL when it is the argument-site relation''s row';
+
+-- ==== Diagnostics stratum =========================================================
+-- Violations as facts: five arms behind one prefix-less union view (diagnostic, at the
+-- section's tail), and nothing reads a base relation of this stratum directly. The arms, and
+-- the many-to-one arm-to-source mapping stated so it is reviewed: the store-native pilot
+-- (intent_authored_claim_conflict, a derivation with no writer), the rejection_ residue, the
+-- lint_ arm and the build_warning_ advisory arm all carry source = 'schema'; only
+-- javac_diagnostic carries 'compile'. A new arm grows neither the closed source taxonomy nor
+-- the wire vocabulary. The per-vocabulary split keeps severity honest: for rejection rows it
+-- is a function of the rejection's kind, for lint rows of the rule, for advisory rows warning
+-- by construction, for compile rows javac's independent verdict, and one relation holding any
+-- two would give one column two meanings. The three loaded relations here write at the dev
+-- session's cadence through the session's live store handle (their loaders sit beside the
+-- report's producer), every statement graph-scoped, and a batch run's loaded partitions stay
+-- empty: honest emptiness in the compile arm's shipped posture, since the only reader is the
+-- dev session's MCP server. Absence discipline: schema-side absence is SQL NULL outside the
+-- key; the compile arm keeps javac's own sentinels in its base relation and the union view
+-- normalises them to the same NULL bucket by comparing against the sentinels, never IS NULL.
+-- Location-less rows (whole-build lint findings, coordinate-less rejections) take the
+-- javac_diagnostic key convention: an emit-order ordinal under the graph partition, which is
+-- also each loaded relation's one key throughout.
+
+CREATE TABLE rejection_validation_error (
+  graph_name    VARCHAR NOT NULL,
+  ordinal       INT     NOT NULL,
+  kind          VARCHAR NOT NULL CHECK (kind IN ('AUTHOR_ERROR', 'INVALID_SCHEMA', 'DEFERRED')),
+  variant       VARCHAR NOT NULL,
+  lsp_code      VARCHAR,
+  attempt_kind  VARCHAR,
+  attempt       VARCHAR,
+  stub_key      VARCHAR,
+  type_name     VARCHAR,
+  field_name    VARCHAR,
+  message       VARCHAR NOT NULL,
+  file          VARCHAR,
+  source_line   INT,
+  source_column INT,
+  PRIMARY KEY (graph_name, ordinal),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+COMMENT ON TABLE rejection_validation_error IS 'The rejection residue: one legacy-walk validation error per row, transcribed in the sealed Rejection hierarchy''s own spellings by the residue loader (the exhaustive-switch site beside the report''s producer), from the walk''s error stream and never the assembled report, so a detection-minted family is structurally absent from this relation''s input. Transitional with a drainage mechanism: a rejection family that acquires its own derivation view arm (intent_authored_claim_conflict is the first) leaves this relation, the drainage declaration in the residue loader''s test enumerates what still routes through, and the relation retires with the sealed hierarchy whose vocabulary it transcribes. Rows replace wholesale per snapshot at the dev session''s cadence; a batch run''s partition stays empty.';
+COMMENT ON COLUMN rejection_validation_error.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN rejection_validation_error.ordinal IS 'emit order in the walk''s error stream, 0-based; the key''s tie-breaker, covering coordinate-less and location-less rows on the javac_diagnostic key convention';
+COMMENT ON COLUMN rejection_validation_error.kind IS 'RejectionKind.name(): the author-error / invalid-schema / deferred fork; a closed CHECK because the model owns this small projection';
+COMMENT ON COLUMN rejection_validation_error.variant IS 'the rejection leaf''s class name with its package stripped, enclosing classes kept (Rejection.AuthorError.UnknownName, UpdateRowsError.NoUniqueKeyCoverage): plain simple names collide across sub-hierarchies and would fuse two families in the dimension that exists to split them. An open column, since a CHECK enumerating sealed-hierarchy leaves would be a hand-maintained second copy of a taxonomy the compiler already enforces';
+COMMENT ON COLUMN rejection_validation_error.lsp_code IS 'the stable machine-readable code the leaf declares through its sub-seal''s lspCode(), NULL for the deliberately codeless leaves; the loader''s explicit match over the code-bearing sub-seals fills it, and the membership-binding test pins both readers of the hierarchy to one declaration set';
+COMMENT ON COLUMN rejection_validation_error.attempt_kind IS 'AttemptKind.name() on UnknownName rows (which lookup space the name resolution failed in), NULL on every other variant; open for the same reason as variant';
+COMMENT ON COLUMN rejection_validation_error.attempt IS 'the name the author wrote, on UnknownName rows; NULL elsewhere';
+COMMENT ON COLUMN rejection_validation_error.stub_key IS 'the Deferred row''s stub anchor: the stubbed GraphitronField leaf''s class name with its package stripped (enclosing class kept); NULL on non-deferred rows and on the inline-defer sites whose StubKey names no leaf class, whose rows cluster on message instead';
+COMMENT ON COLUMN rejection_validation_error.type_name IS 'the coordinate''s owning type at the DDL''s universal grain; NULL on schema-wide rows. The loader is the one site decoding ValidationError''s coordinate convention (forType / forField) into this pair; when the sealed Coordinate component lands, the loader reads a switch instead and no column changes';
+COMMENT ON COLUMN rejection_validation_error.field_name IS 'the coordinate''s field name; NULL on type-level and schema-wide rows, the universal grain''s absent case';
+COMMENT ON COLUMN rejection_validation_error.message IS 'the report''s rendered message, coordinate prefix included; a transcribed fact because the walk authored it, but display material: never a dimension, never an agreement anchor, and expected to change text as detections take over rejection families';
+COMMENT ON COLUMN rejection_validation_error.file IS 'canonical file URI of the SDL source carrying the location, normalised once at the loader through the report''s canonical-URI site so the file dimension cannot fork on spelling; NULL where the error carries no located source';
+COMMENT ON COLUMN rejection_validation_error.source_line IS 'source line of the error''s location, 1-based; NULL where unlocated';
+COMMENT ON COLUMN rejection_validation_error.source_column IS 'source column of the error''s location, 1-based; NULL where unlocated';
+
+CREATE TABLE rejection_validation_error_directive (
+  graph_name    VARCHAR NOT NULL,
+  error_ordinal INT     NOT NULL,
+  position      INT     NOT NULL,
+  directive     VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, error_ordinal, position),
+  FOREIGN KEY (graph_name, error_ordinal) REFERENCES rejection_validation_error (graph_name, ordinal)
+);
+COMMENT ON TABLE rejection_validation_error_directive IS 'The ordered decode of a DirectiveConflict row''s directives list, one row per named directive in the rejection''s own order (the DDL''s standing pattern for multi-valued decodes). The union view renders the canonical sorted spelling over these rows for the directives dimension; a residue-only mechanism, since the pilot view renders its own aggregate over grouped claim rows.';
+COMMENT ON COLUMN rejection_validation_error_directive.graph_name IS 'the owning graph''s partition, carried through the parent error row';
+COMMENT ON COLUMN rejection_validation_error_directive.error_ordinal IS 'the parent rejection_validation_error row''s ordinal';
+COMMENT ON COLUMN rejection_validation_error_directive.position IS '0-based position in the rejection''s own directives list; order is the minted fact, the sorted render is a projection';
+COMMENT ON COLUMN rejection_validation_error_directive.directive IS 'one directive name, without the leading @, exactly as the rejection lists it; every listed directive is applied at the rejection''s own declaration per DirectiveConflict''s contract';
+
+CREATE TABLE lint_finding (
+  graph_name    VARCHAR NOT NULL,
+  ordinal       INT     NOT NULL,
+  lint_rule     VARCHAR NOT NULL,
+  message       VARCHAR NOT NULL,
+  file          VARCHAR,
+  source_line   INT,
+  source_column INT,
+  PRIMARY KEY (graph_name, ordinal),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+COMMENT ON TABLE lint_finding IS 'One lint finding per row, in the linter''s own vocabulary. The loader''s input is the suppression-filtered warning list the report is assembled from, never a pre-suppression stream, so rows here are post-suppression survivors exactly as the report and the MCP tool carry them; a loader reading an earlier stream would resurrect disabled findings on the wire. Severity is warning by the rule''s nature and stated only in the union view, since one relation holds one vocabulary. Two shipped producers mint whole-build findings with no SDL coordinate (session-state and dependency-currency advisories), which is what puts this relation on the emit-order key convention.';
+COMMENT ON COLUMN lint_finding.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN lint_finding.ordinal IS 'emit order in the suppression-filtered warning list, 0-based; the key''s tie-breaker on the javac_diagnostic convention';
+COMMENT ON COLUMN lint_finding.lint_rule IS 'LintRule.id(), the finding''s stable rule identifier; the vocabulary this family is named for';
+COMMENT ON COLUMN lint_finding.message IS 'the finding''s rendered message; display material, never a dimension';
+COMMENT ON COLUMN lint_finding.file IS 'canonical file URI of the finding''s SDL source, normalised once at the loader; NULL on the whole-build findings that carry no location';
+COMMENT ON COLUMN lint_finding.source_line IS 'source line of the finding''s location, 1-based; NULL where unlocated';
+COMMENT ON COLUMN lint_finding.source_column IS 'source column of the finding''s location, 1-based; NULL where unlocated';
+
+CREATE TABLE build_warning_no_rule (
+  graph_name    VARCHAR NOT NULL,
+  ordinal       INT     NOT NULL,
+  message       VARCHAR NOT NULL,
+  file          VARCHAR,
+  source_line   INT,
+  source_column INT,
+  PRIMARY KEY (graph_name, ordinal),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+COMMENT ON TABLE build_warning_no_rule IS 'The advisory arm: BuildWarning.NoRule rows, in the sealed warning hierarchy''s own vocabulary; message and location are the arm''s entire component list. Its own relation on two per-arm asymmetries against lint_finding: severity (warning by construction, a third rule beside rejection kind and lint rule) and suppressibility (lint rows are post-suppression survivors keyed by rule id, while advisory rows never met the filter, so one relation holding both would give absence two meanings). This relation has no removal criterion: unlike its three loaded neighbours it is permanent, both shipped producers (the @table-on-input deprecation announcements and the federation compound-key advisory) outliving the walk, so its comment states that fact instead of borrowing a retirement clock it would falsify.';
+COMMENT ON COLUMN build_warning_no_rule.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN build_warning_no_rule.ordinal IS 'emit order in the suppression-filtered warning list''s advisory rows, 0-based; the key''s tie-breaker on the javac_diagnostic convention';
+COMMENT ON COLUMN build_warning_no_rule.message IS 'the advisory''s rendered message; display material, never a dimension';
+COMMENT ON COLUMN build_warning_no_rule.file IS 'canonical file URI of the advisory''s SDL source, normalised once at the loader; NULL where the advisory carries no location';
+COMMENT ON COLUMN build_warning_no_rule.source_line IS 'source line of the advisory''s location, 1-based; NULL where unlocated';
+COMMENT ON COLUMN build_warning_no_rule.source_column IS 'source column of the advisory''s location, 1-based; NULL where unlocated';
+
+-- The canonical file URI spelling, as SQL. The Java site (ValidationReport.canonicalUri) is
+-- the declared single home; this alias is its verbatim restatement for the one arm that needs
+-- the spelling computed in a view (the pilot arm below reads capture's raw source names, which
+-- no loader normalises), and the two spellings are pinned to each other by a parity assertion
+-- in the residue loader's test. Inline source, so the DDL stays self-contained.
+CREATE ALIAS canonical_uri AS 'String canonicalUri(String sourceName) { if (sourceName == null) return null; try { return java.nio.file.Path.of(sourceName).toUri().toString(); } catch (java.nio.file.InvalidPathException e) { return sourceName; } }';
+
+CREATE VIEW diagnostic
+  (graph_name, source, severity, actionable, kind, variant, lsp_code, attempt_kind, attempt,
+   stub_key, directives, lint_rule, type_name, field_name, coordinate, file, directory,
+   source_line, source_column, message) AS
+SELECT r.graph_name, 'schema', 'error', r.kind <> 'DEFERRED', r.kind, r.variant, r.lsp_code,
+       r.attempt_kind, r.attempt, r.stub_key,
+       (SELECT LISTAGG(d.directive, ',') WITHIN GROUP (ORDER BY d.directive)
+          FROM rejection_validation_error_directive d
+         WHERE d.graph_name = r.graph_name AND d.error_ordinal = r.ordinal),
+       CAST(NULL AS VARCHAR),
+       r.type_name, r.field_name,
+       CASE WHEN r.type_name IS NULL THEN NULL
+            WHEN r.field_name IS NULL THEN r.type_name
+            ELSE r.type_name || '.' || r.field_name END,
+       r.file,
+       REGEXP_REPLACE(r.file, '/[^/]*$', ''),
+       r.source_line, r.source_column, r.message
+  FROM rejection_validation_error r
+UNION ALL
+SELECT c.graph_name, 'schema', 'error', c.verdict <> 'DEFERRED',
+       CASE WHEN c.verdict = 'DEFERRED' THEN 'DEFERRED' ELSE 'INVALID_SCHEMA' END,
+       CASE WHEN c.verdict = 'DEFERRED' THEN 'Rejection.Deferred'
+            ELSE 'Rejection.InvalidSchema.DirectiveConflict' END,
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CASE WHEN c.verdict = 'DEFERRED' THEN NULL ELSE c.directives END,
+       CAST(NULL AS VARCHAR),
+       c.type_name, c.field_name,
+       CASE WHEN c.field_name IS NULL THEN c.type_name
+            ELSE c.type_name || '.' || c.field_name END,
+       canonical_uri(c.source_name),
+       REGEXP_REPLACE(canonical_uri(c.source_name), '/[^/]*$', ''),
+       c.source_line, c.source_column, c.message
+  FROM intent_authored_claim_conflict c
+UNION ALL
+SELECT l.graph_name, 'schema', 'warning', TRUE,
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR), l.lint_rule,
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       l.file,
+       REGEXP_REPLACE(l.file, '/[^/]*$', ''),
+       l.source_line, l.source_column, l.message
+  FROM lint_finding l
+UNION ALL
+SELECT w.graph_name, 'schema', 'warning', TRUE,
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       w.file,
+       REGEXP_REPLACE(w.file, '/[^/]*$', ''),
+       w.source_line, w.source_column, w.message
+  FROM build_warning_no_rule w
+UNION ALL
+SELECT j.graph_name, 'compile',
+       CASE WHEN j.kind = 'ERROR' THEN 'error' ELSE 'warning' END,
+       TRUE,
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), j.code,
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CASE WHEN j.file = '(no source)' THEN NULL ELSE j.file END,
+       CASE WHEN j.file = '(no source)' THEN NULL
+            ELSE REGEXP_REPLACE(j.file, '/[^/]*$', '') END,
+       CASE WHEN j.line_number = -1 THEN NULL ELSE CAST(j.line_number AS INT) END,
+       CASE WHEN j.column_number = -1 THEN NULL ELSE CAST(j.column_number AS INT) END,
+       j.message
+  FROM javac_diagnostic j;
+COMMENT ON VIEW diagnostic IS 'The diagnostics stratum''s one read surface: the union of all five arms (the rejection residue, the store-native claim-conflict pilot, the lint arm, the advisory arm, the compile oracle), which the MCP diagnostics tools read and no consumer bypasses. Prefix-less on purpose: a read-side union across vocabularies has no family, and no naming gate says so mechanically, so this comment does. Derived columns live here rather than in the base relations: actionable is the deferred-versus-rest CASE over kind (the same predicate the LSP severity projection documents, pinned by a one-row parity assertion); severity for compile rows mirrors CompileDiagnostic.severity() (ERROR to error, every other javac kind to warning, same parity discipline); coordinate and directory are renderings of the stored pair and the canonical file; the compile arm''s sentinels ("(no source)", -1) normalise to the uniform NULL absent bucket by comparing against the sentinel values, never IS NULL. lsp_code carries the producing oracle''s stable machine code in both namespaces (the rejection sub-seals'' lspCode(), javac''s Diagnostic.getCode()), which cannot collide. Every dimension is single-valued at one row per diagnostic, so group counts sum to the row count; directives renders the canonical sorted spelling in every arm that carries it.';
+COMMENT ON COLUMN diagnostic.graph_name IS 'the owning graph''s partition, carried through from every arm; the MCP read site filters to the reading session''s graph';
+COMMENT ON COLUMN diagnostic.source IS 'the closed channel taxonomy the shipped tool already speaks: schema for the four validator-side arms, compile for the javac arm';
+COMMENT ON COLUMN diagnostic.severity IS 'error or warning, the wire''s closed pair: the rejection arms are error by the build''s own finality, lint and advisory rows warning by construction, compile rows javac''s verdict projected as the record''s severity() spells it';
+COMMENT ON COLUMN diagnostic.actionable IS 'the triage headline: FALSE exactly on DEFERRED rows (recognised but not yet generator-supported, a workaround rather than a schema fix), TRUE everywhere else including warnings and compile rows';
+COMMENT ON COLUMN diagnostic.kind IS 'RejectionKind.name() on rejection-bearing rows (residue and pilot); NULL on lint, advisory and compile rows, where the three-way fork does not apply';
+COMMENT ON COLUMN diagnostic.variant IS 'the rejection leaf''s package-stripped class name on rejection-bearing rows (rejection_validation_error.variant''s spelling rule); NULL elsewhere';
+COMMENT ON COLUMN diagnostic.lsp_code IS 'the stable machine code of the row''s producing oracle: the rejection sub-seals'' lspCode() on schema rows that declare one, javac''s Diagnostic.getCode() on compile rows; NULL where neither publishes a code';
+COMMENT ON COLUMN diagnostic.attempt_kind IS 'which lookup space a name resolution failed in (AttemptKind.name()), on UnknownName rows only';
+COMMENT ON COLUMN diagnostic.attempt IS 'the name the author wrote, on UnknownName rows only';
+COMMENT ON COLUMN diagnostic.stub_key IS 'the deferred row''s stubbed-variant anchor; NULL off Deferred rows and on inline-defer sites naming no leaf class';
+COMMENT ON COLUMN diagnostic.directives IS 'the directive names identifying a conflict, as one canonical sorted comma-joined value, so claim order can never split a group; NULL off conflict rows';
+COMMENT ON COLUMN diagnostic.lint_rule IS 'LintRule.id() on lint rows; NULL elsewhere, including the advisory arm, whose rows are precisely the warnings no rule tags';
+COMMENT ON COLUMN diagnostic.type_name IS 'the coordinate''s owning type, the coarse grain of the coordinate axis; NULL on rows carrying no schema coordinate';
+COMMENT ON COLUMN diagnostic.field_name IS 'the coordinate''s field name, NULL at the type grain and on coordinate-less rows';
+COMMENT ON COLUMN diagnostic.coordinate IS 'the rendered coordinate (a type name or Type.field), computed from the stored pair; the fine grain of the coordinate axis';
+COMMENT ON COLUMN diagnostic.file IS 'canonical file URI of the row''s source (SDL file on schema rows, generated .java on compile rows), one spelling across both channels; NULL in the stated absent bucket (whole-build findings, unlocated rejections, javac''s no-source sentinel)';
+COMMENT ON COLUMN diagnostic.directory IS 'the file''s directory, the canonical URI truncated at its last segment; the coarse grain of the file axis, NULL exactly where file is';
+COMMENT ON COLUMN diagnostic.source_line IS 'the location''s line, 1-based in both channels; NULL in the absent bucket (javac''s NOPOS normalised here)';
+COMMENT ON COLUMN diagnostic.source_column IS 'the location''s column, on the same terms as source_line';
+COMMENT ON COLUMN diagnostic.message IS 'the row''s rendered message, whichever oracle authored it; display material, never a dimension, never an agreement anchor';

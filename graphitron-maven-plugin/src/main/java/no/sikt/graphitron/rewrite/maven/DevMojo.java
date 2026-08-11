@@ -14,6 +14,8 @@ import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.compile.CompileFacts;
 import no.sikt.graphitron.rewrite.compile.CompileOutcome;
+import no.sikt.graphitron.rewrite.diagnostics.BuildWarningFacts;
+import no.sikt.graphitron.rewrite.diagnostics.RejectionFacts;
 import no.sikt.graphitron.rewrite.compile.IncrementalCompiler;
 import no.sikt.graphitron.rewrite.maven.dev.DevServer;
 import no.sikt.graphitron.mcp.DevQueryExecutor;
@@ -174,6 +176,12 @@ public class DevMojo extends AbstractRewriteMojo {
     // The javac_ family's writer over sessionStore, or null before the store opens (bare mojos in
     // the unit tier); reportCompile writes through it beside the console and workspace sinks.
     CompileFacts compileFacts;
+    // The diagnostics stratum's schema-side writers over the same handle, constructed beside
+    // compileFacts and fed the pre-fuse lists wherever the build output is published: the
+    // rejection residue off the walk's error stream, the warning arms off the
+    // suppression-filtered list.
+    RejectionFacts rejectionFacts;
+    BuildWarningFacts warningFacts;
     // The last successful generation (result + compile graph), captured by runGeneratorPass. The
     // consumer-.class-change path recompiles the whole cached tree off this; the schema-save path
     // recompiles the delta against its graph. Volatile: written by the schema-watcher thread and read
@@ -217,12 +225,17 @@ public class DevMojo extends AbstractRewriteMojo {
             : GraphitronModelStore.open();
         this.compileFacts = new CompileFacts(sessionStore.dsl(),
             new FactCapture.GraphIdentity(initialCtx.graphName(), initialCtx.basedir()));
+        this.rejectionFacts = new RejectionFacts(sessionStore.dsl(),
+            new FactCapture.GraphIdentity(initialCtx.graphName(), initialCtx.basedir()));
+        this.warningFacts = new BuildWarningFacts(sessionStore.dsl(),
+            new FactCapture.GraphIdentity(initialCtx.graphName(), initialCtx.basedir()));
 
         var workspace = new Workspace(initial.catalog(), LspVocabulary.load());
         if (initial.snapshot() instanceof LspSchemaSnapshot.Built.Current current) {
             workspace.setBuildOutput(
                 new GraphQLRewriteGenerator.BuildArtifacts(initial.catalog(), current, initial.catalogFacts()),
                 initial.report());
+            writeReportFacts(initial.walkErrors(), initial.warnings());
         }
         // Build the debounce and save-listener before bindServer so DevServer
         // can hand the listener to each editor-facing GraphitronLanguageServer.
@@ -559,6 +572,7 @@ public class DevMojo extends AbstractRewriteMojo {
                 try {
                     var output = new GraphQLRewriteGenerator(ctx).buildOutput();
                     workspace.setBuildOutput(output.artifacts(), output.report());
+                    writeReportFacts(output.walkErrors(), output.warnings());
                 } catch (RuntimeException e) {
                     getLog().warn("graphitron:dev: catalog refresh after save failed; "
                         + "keeping previous: " + e.getMessage());
@@ -580,6 +594,7 @@ public class DevMojo extends AbstractRewriteMojo {
                 try {
                     var output = new GraphQLRewriteGenerator(ctx).buildOutput();
                     workspace.setBuildOutput(output.artifacts(), output.report());
+                    writeReportFacts(output.walkErrors(), output.warnings());
                     var catalog = output.artifacts().catalog();
                     getLog().info("graphitron:dev: catalog refreshed (" + catalog.tables().size()
                         + " tables, " + catalog.types().size() + " scalars)");
@@ -618,12 +633,13 @@ public class DevMojo extends AbstractRewriteMojo {
         try {
             var output = new GraphQLRewriteGenerator(ctx).buildOutput();
             return new InitialOutput(output.artifacts().catalog(), output.artifacts().snapshot(),
-                output.artifacts().catalogFacts(), output.report());
+                output.artifacts().catalogFacts(), output.report(),
+                output.walkErrors(), output.warnings());
         } catch (RuntimeException e) {
             getLog().warn("graphitron:dev: initial catalog build failed; "
                 + "starting with empty catalog: " + e.getMessage());
             return new InitialOutput(CompletionData.empty(), LspSchemaSnapshot.unavailable(),
-                CatalogFacts.empty(), ValidationReport.empty());
+                CatalogFacts.empty(), ValidationReport.empty(), List.of(), List.of());
         }
     }
 
@@ -632,10 +648,29 @@ public class DevMojo extends AbstractRewriteMojo {
      * rather than {@link LspSchemaSnapshot.Built.Current} because the failure path returns
      * {@link LspSchemaSnapshot.Unavailable}; the success path narrows back to {@code Built.Current}
      * via an {@code instanceof} check at the call site before constructing
-     * {@link GraphQLRewriteGenerator.BuildArtifacts}.
+     * {@link GraphQLRewriteGenerator.BuildArtifacts}. The pre-fuse lists ride along for the
+     * diagnostics-stratum loaders, published only on the success path: a failed build writes
+     * nothing, so the store keeps the previous snapshot's rows and the snapshot axes carry the
+     * staleness, rather than an empty partition reading as a clean schema.
      */
     private record InitialOutput(CompletionData catalog, LspSchemaSnapshot snapshot,
-                                 CatalogFacts catalogFacts, ValidationReport report) {}
+                                 CatalogFacts catalogFacts, ValidationReport report,
+                                 List<no.sikt.graphitron.rewrite.ValidationError> walkErrors,
+                                 List<no.sikt.graphitron.rewrite.BuildWarning> warnings) {}
+
+    /**
+     * Publishes one build's schema-side diagnostics into the fact store beside the workspace
+     * publication: the walk's error stream to the rejection residue, the suppression-filtered
+     * warning list to the lint and advisory arms. Same handle and cadence as
+     * {@link CompileFacts}; called only where the build produced output, never on a failure
+     * path, so a broken build keeps the previous snapshot's rows instead of writing an empty
+     * partition that would read as a clean schema.
+     */
+    private void writeReportFacts(List<no.sikt.graphitron.rewrite.ValidationError> walkErrors,
+                                  List<no.sikt.graphitron.rewrite.BuildWarning> warnings) {
+        rejectionFacts.write(walkErrors);
+        warningFacts.write(warnings);
+    }
 
     // Package-private so DevMojoTest can drive the catch-arm discrimination directly
     // (a malformed schema vs a missing file) without standing up the full watch loop.

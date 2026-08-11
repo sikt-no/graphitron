@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -66,6 +67,79 @@ class RejectionSeverityCoverageTest {
         assertThat(unmapped)
             .as("every Rejection permit must map to a non-null DiagnosticSeverity")
             .isEmpty();
+    }
+
+    /**
+     * The membership binding for the {@code lspCode()} sub-seals: every leaf that declares a
+     * code surfaces it through both readers of the retiring hierarchy, the LSP diagnostic's
+     * code field ({@code Diagnostics}' explicit sub-seal matches) and the residue loader's
+     * {@code lsp_code} column ({@code RejectionFacts}' exhaustive switch), and every codeless
+     * leaf is codeless through both. Membership is read off the leaf itself (does it expose a
+     * public no-arg {@code lspCode()}?), so a leaf <em>gaining</em> a code that either reader's
+     * match list does not know fails here rather than passing silently, which the exhaustive
+     * switches alone cannot catch.
+     */
+    @Test
+    void everyDeclaredLspCodeSurfacesThroughBothReaders(@org.junit.jupiter.api.io.TempDir java.nio.file.Path tmp) {
+        var permits = collectLeafPermits(Rejection.class);
+        var path = "/tmp/coverage.graphqls";
+        var uri = ValidationReport.canonicalUri(path);
+        var loc = new SourceLocation(1, 1, path);
+        var snapshot = new LspSchemaSnapshot.Built.Current(List.of(), Map.of(), Map.of());
+        var file = WorkspaceFileTestSupport.snapshot("type Foo { x: Int }\n");
+
+        var samples = new ArrayList<Rejection>();
+        for (var permit : permits) {
+            var sample = sampleFor(permit);
+            assertThat(sample).as("no test sample for %s", permit.getName()).isNotNull();
+            samples.add(sample);
+        }
+        assertThat(samples.stream().anyMatch(s -> declaredLspCode(s) != null))
+            .as("the hierarchy declares codes, so this pins something")
+            .isTrue();
+
+        var errors = new ArrayList<ValidationError>();
+        for (var sample : samples) {
+            errors.add(new ValidationError("Coord", sample, loc));
+        }
+        try (var store = no.sikt.graphitron.model.boot.GraphitronModelStore.open()) {
+            new no.sikt.graphitron.rewrite.diagnostics.RejectionFacts(store.dsl(),
+                new no.sikt.graphitron.rewrite.capture.FactCapture.GraphIdentity("coverage", tmp))
+                .write(errors);
+            var storeCodes = store.dsl()
+                .selectFrom(no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR)
+                .orderBy(no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR.ORDINAL)
+                .fetch(r -> Optional.ofNullable(r.getLspCode()));
+            assertThat(storeCodes).hasSameSizeAs(samples);
+
+            for (int i = 0; i < samples.size(); i++) {
+                var sample = samples.get(i);
+                String declared = declaredLspCode(sample);
+                var report = ValidationReport.from(
+                    List.of(new ValidationError("Coord", sample, loc)), List.of());
+                var diags = Diagnostics.compute(uri, file, CompletionData.empty(), snapshot, report);
+                String lspSide = diags.size() == 1 && diags.get(0).getCode() != null
+                    ? diags.get(0).getCode().getLeft()
+                    : null;
+                assertThat(lspSide)
+                    .as("the LSP code for %s", sample.getClass().getName())
+                    .isEqualTo(declared);
+                assertThat(storeCodes.get(i).orElse(null))
+                    .as("the residue lsp_code for %s", sample.getClass().getName())
+                    .isEqualTo(declared);
+            }
+        }
+    }
+
+    /** The leaf's own declaration: its public no-arg {@code lspCode()}, or null where none. */
+    private static String declaredLspCode(Rejection sample) {
+        try {
+            return (String) sample.getClass().getMethod("lspCode").invoke(sample);
+        } catch (NoSuchMethodException e) {
+            return null;
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("lspCode() on " + sample.getClass().getName() + " failed", e);
+        }
     }
 
     private static Set<Class<?>> collectLeafPermits(Class<?> root) {
