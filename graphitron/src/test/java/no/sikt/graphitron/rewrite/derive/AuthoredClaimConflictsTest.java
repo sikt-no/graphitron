@@ -32,13 +32,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * The store-backed home of the directive mutual-exclusivity rule: the conflict fixtures that
  * used to assert builder tombstones (three conflict enums in {@code GraphitronSchemaBuilderTest})
- * now capture into a fact store and assert the violations {@link AuthoredClaimConflicts} mints
- * from the claim views, message-identical to what the deleted detector sites produced. Beside
- * the migrated fixtures sit the agreement anchors that keep the view arms honest against their
- * walk-side twins ({@code LookupFacts.triggersFor} for the lookup arm, the distinct
- * {@code graphitron_routine} coordinates for the routine arm), the sibling-graph scoping guard,
- * the domain gate's membership pin, the undecoded presence-arm fallbacks, and the classifier
- * vocabulary round trip.
+ * now capture into a fact store and assert the violations {@link AuthoredClaimConflicts}
+ * projects from the {@code intent_authored_claim_conflict} view, message-identical to what the
+ * deleted detector sites produced. Since the cutover this class is also the view's registered
+ * {@code DERIVED} agreement anchor: every fixture's expectation is a hand-written message the
+ * view does not produce, so the anchor never collapses into the view compared against a
+ * projection of itself (the shadow that proved the flip retired with the Java reduction it
+ * shadowed). Beside the migrated fixtures sit the agreement anchors that keep the claim-view
+ * arms honest against their walk-side twins ({@code LookupFacts.triggersFor} for the lookup
+ * arm, the distinct {@code graphitron_routine} coordinates for the routine arm), the
+ * sibling-graph scoping guard, the domain gate's join pin, the undecoded presence-arm
+ * fallbacks, and the classifier vocabulary round trip.
  */
 @PipelineTier
 class AuthoredClaimConflictsTest {
@@ -216,11 +220,11 @@ class AuthoredClaimConflictsTest {
             type Query { film: Film }
             """.formatted(SERVICE_STUB);
         withCapturedStore(sdl, dsl -> {
-            var walked = ClaimDomain.of(TestSchemaHelper.buildSchema(sdl));
-            assertThat(AuthoredClaimConflicts.detect(dsl, GRAPH, walked).violations()).hasSize(1);
-            var empty = new ClaimDomain(Set.of(), Set.of());
-            assertThat(AuthoredClaimConflicts.detect(dsl, GRAPH, empty).violations())
-                .as("a coordinate outside the walked model's registries must not mint, however conflicted its claims")
+            ClaimDomainRows.write(dsl, GRAPH, ClaimDomain.of(TestSchemaHelper.buildSchema(sdl)));
+            assertThat(AuthoredClaimConflicts.detect(dsl, GRAPH).violations()).hasSize(1);
+            ClaimDomainRows.write(dsl, GRAPH, new ClaimDomain(Set.of(), Set.of()));
+            assertThat(AuthoredClaimConflicts.detect(dsl, GRAPH).violations())
+                .as("a coordinate outside the walk's reach rows must not mint, however conflicted its claims")
                 .isEmpty();
         });
     }
@@ -244,12 +248,13 @@ class AuthoredClaimConflictsTest {
                 RewriteSchemaLoader.load(List.of(write(siblingDir, conflicted).toString())));
             FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity("own", ownDir),
                 RewriteSchemaLoader.load(List.of(write(ownDir, clean).toString())));
-            assertThat(AuthoredClaimConflicts.detect(store.dsl(), "own",
-                    ClaimDomain.of(TestSchemaHelper.buildSchema(conflicted))).violations())
+            var overWide = ClaimDomain.of(TestSchemaHelper.buildSchema(conflicted));
+            ClaimDomainRows.write(store.dsl(), "own", overWide);
+            ClaimDomainRows.write(store.dsl(), "sibling", overWide);
+            assertThat(AuthoredClaimConflicts.detect(store.dsl(), "own").violations())
                 .as("the sibling graph's conflict must not surface in this graph's run, even with an over-wide domain")
                 .isEmpty();
-            assertThat(AuthoredClaimConflicts.detect(store.dsl(), "sibling",
-                    ClaimDomain.of(TestSchemaHelper.buildSchema(conflicted))).violations())
+            assertThat(AuthoredClaimConflicts.detect(store.dsl(), "sibling").violations())
                 .hasSize(1);
         }
     }
@@ -280,10 +285,10 @@ class AuthoredClaimConflictsTest {
                 .fetch(r -> r.value1() + ":" + r.value2());
             assertThat(fallbackRows).containsExactlyInAnyOrder("Query:ROUTINE", "Mutation:MUTATION");
 
-            var domain = new ClaimDomain(Set.of(), Set.of(
+            ClaimDomainRows.write(dsl, GRAPH, new ClaimDomain(Set.of(), Set.of(
                 FieldCoordinates.coordinates("Query", "broken"),
-                FieldCoordinates.coordinates("Mutation", "createFilm")));
-            assertThat(AuthoredClaimConflicts.detect(dsl, GRAPH, domain).violations())
+                FieldCoordinates.coordinates("Mutation", "createFilm"))));
+            assertThat(AuthoredClaimConflicts.detect(dsl, GRAPH).violations())
                 .extracting(ValidationError::message)
                 .containsExactly(
                     "Field 'Mutation.createFilm': @service, @mutation are mutually exclusive",
@@ -437,9 +442,9 @@ class AuthoredClaimConflictsTest {
             }
             """.formatted(SERVICE_STUB);
         withCapturedStore(sdl, dsl -> {
-            var domain = new ClaimDomain(Set.of(), Set.of(
-                FieldCoordinates.coordinates("Mutation", "createFilm")));
-            var conflicts = AuthoredClaimConflicts.detect(dsl, GRAPH, domain).fieldConflicts();
+            ClaimDomainRows.write(dsl, GRAPH, new ClaimDomain(Set.of(), Set.of(
+                FieldCoordinates.coordinates("Mutation", "createFilm"))));
+            var conflicts = AuthoredClaimConflicts.detect(dsl, GRAPH).fieldConflicts();
             assertThat(conflicts).hasSize(1);
             var mutation = (FieldClaim.Mutation) conflicts.getFirst().claims().get(1);
             assertThat(mutation.decoded()).isFalse();
@@ -563,7 +568,8 @@ class AuthoredClaimConflictsTest {
         var domain = ClaimDomain.of(TestSchemaHelper.buildSchema(sdl));
         try (var store = GraphitronModelStore.open()) {
             capture(store.dsl(), sdl);
-            return AuthoredClaimConflicts.detect(store.dsl(), GRAPH, domain);
+            ClaimDomainRows.write(store.dsl(), GRAPH, domain);
+            return AuthoredClaimConflicts.detect(store.dsl(), GRAPH);
         }
     }
 

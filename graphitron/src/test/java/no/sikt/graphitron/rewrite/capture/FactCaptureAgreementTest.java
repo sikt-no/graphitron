@@ -101,9 +101,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       {@code no.sikt.graphitron.rewrite.derive.InputOccurrenceShadowTest} binds the input
  *       occurrence-path pair and the enclosing-override view to a structural reference
  *       enumeration and to the walk's use-keyed cascade verdicts;
- *       {@code no.sikt.graphitron.rewrite.derive.AuthoredClaimConflictShadowTest} binds the
- *       {@code intent_authored_claim_conflict} view to the surviving Java reduction over the
- *       corpus, byte-identical in message and location). Later derivation
+ *       {@code no.sikt.graphitron.rewrite.derive.AuthoredClaimConflictsTest} binds the
+ *       {@code intent_authored_claim_conflict} view to hand-written per-fixture expectations
+ *       the view does not produce, the re-aimed anchor left standing after the corpus shadow
+ *       proved the cutover and retired with the Java reduction it shadowed). Later derivation
  *       strata land as registrations here, not as exemptions.</li>
  *   <li>{@link Arm#ORACLE} for relations an oracle writer owns, at the oracle's own cadence
  *       (javac writes after capture; the legacy classification walk's reach writes inside the

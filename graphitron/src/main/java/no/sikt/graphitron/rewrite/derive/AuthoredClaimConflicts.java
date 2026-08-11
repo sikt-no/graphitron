@@ -7,8 +7,6 @@ import org.jooq.DSLContext;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.EnumSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -17,42 +15,38 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NODE_ID;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
+import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_CLAIM_CONFLICT;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_FIELD_CLAIM;
-import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_TYPE_CLAIM;
 
 /**
- * The fact store's first reader: the authored-claim conflict rule. One grouping query per grain
- * over the claim views ({@code intent_authored_type_claim}, {@code intent_authored_field_claim}),
- * every statement graph-scoped; a coordinate claimed for more than one classification kind mints
- * the located {@link ValidationError} the classification walk's dissolved detector sites used to
- * tombstone, byte-identical in message and location.
+ * The authored-claim conflict rule, projected from the store: the family's violations are the
+ * rows of the {@code intent_authored_claim_conflict} view, and this class derives the located
+ * {@link ValidationError} values from them, byte-identical in message and location to what the
+ * classification walk's dissolved detector sites used to tombstone. The reduction itself (the
+ * distinct-claims grouping, the routine-plus-lookup carve-out, the ordered claim render, the
+ * domain gate as a join against the {@code walk_claim_domain} reach rows) lives in the view's
+ * SQL; what remains here is the decode of its closed {@code verdict} / {@code directives}
+ * vocabulary into the {@link Rejection} arms the report carries.
  *
- * <p>The reduction is typed over the {@link AuthoredClaim} vocabulary. More than one claim is a
- * {@link Rejection.InvalidSchema.DirectiveConflict} naming every claim in declaration order
- * (which reproduces the walk's per-position list orders), with one carve-out: exactly the
- * routine and lookup pair is the recognised-but-unsupported combination and mints the pinned
- * typed {@link Rejection.Deferred} instead. {@code @splitQuery} is a delivery-axis directive that
- * never claims: it has no view arm, so a routine-with-splitQuery co-occurrence never reaches the
- * reduction.
+ * <p>{@code @splitQuery} is a delivery-axis directive that never claims: it has no claim-view
+ * arm, so a routine-with-splitQuery co-occurrence never reaches the view's reduction.
  *
- * <p>The field grain returns its reduction as a typed {@link FieldVerdict} rather than a bare
- * error: the verdict carries the coordinate's {@link FieldClaim}s enriched with their decoded
+ * <p>The field grain returns its verdicts as typed {@link FieldVerdict} values rather than bare
+ * errors: the verdict carries the coordinate's {@link FieldClaim}s enriched with their decoded
  * slot facts, so the projection's {@code Conflicted} arm consumes the {@link FieldVerdict.Conflict}
  * type instead of re-testing the reduction predicate, and {@link Detection#violations()} derives
- * the error stream from the same verdicts at one site. The reduction evaluates once; the
- * {@link FieldVerdict} arm is chosen by the reduction's own output type
- * ({@link Rejection.Deferred} versus conflict), never by re-testing the claim set.
+ * the error stream from the same verdicts at one site. The {@link FieldVerdict} arm is chosen by
+ * the view's own verdict column, never by re-testing the claim set.
  *
- * <p>Locations join from the store rather than the walked model: a field violation carries the
- * field's own declared position ({@code graphql_field}), a type violation the type's base
- * declaration site ({@code graphql_type_declaration} at merge ordinal 0), which is what the
- * walk's {@code locationOf} read off the AST for the same coordinates. Each claim additionally
- * carries the claiming application's own position from the view row.
+ * <p>Locations are the view's: a field violation carries the field's own declared position, a
+ * type violation the type's base declaration site at merge ordinal 0, which is what the walk's
+ * {@code locationOf} read off the AST for the same coordinates. Each claim additionally carries
+ * the claiming application's own position from the claim-view row.
  *
- * <p>Minting is gated on {@link ClaimDomain} membership; the gate's rationale and removal
- * criterion live on that record.
+ * <p>Minting is gated on the reified {@link ClaimDomain} rows the view joins; the gate's
+ * rationale and removal criterion live on the {@code walk_claim_domain} family's relation
+ * comments, and the caller who wants the gate populated writes it through
+ * {@link ClaimDomainRows} before reading.
  */
 public final class AuthoredClaimConflicts {
 
@@ -140,11 +134,11 @@ public final class AuthoredClaimConflicts {
     }
 
     /**
-     * Runs both grain detections over {@code graphName}'s partition. Empty for every
-     * conflict-free graph.
+     * Projects both grains' violations from the view over {@code graphName}'s partition. Empty
+     * for every conflict-free graph, and for any graph whose reach rows were never written.
      */
-    public static Detection detect(DSLContext dsl, String graphName, ClaimDomain domain) {
-        return new Detection(typeGrain(dsl, graphName, domain), fieldGrain(dsl, graphName, domain));
+    public static Detection detect(DSLContext dsl, String graphName) {
+        return new Detection(typeGrain(dsl, graphName), fieldGrain(dsl, graphName));
     }
 
     private record FieldCoordinate(String typeName, String fieldName) {}
@@ -152,48 +146,42 @@ public final class AuthoredClaimConflicts {
     /** One claim-view row at a field coordinate, before slot-fact enrichment. */
     private record ClaimRow(AuthoredClaim classifier, String trigger, boolean decoded, SourceLocation location) {}
 
-    private static List<FieldVerdict> fieldGrain(DSLContext dsl, String graphName, ClaimDomain domain) {
-        var fc = INTENT_AUTHORED_FIELD_CLAIM;
-        var gf = GRAPHQL_FIELD;
-        var claims = new LinkedHashMap<FieldCoordinate, List<ClaimRow>>();
-        var locations = new LinkedHashMap<FieldCoordinate, SourceLocation>();
-        dsl.selectDistinct(fc.TYPE_NAME, fc.FIELD_NAME, fc.CLASSIFIER, fc.TRIGGER, fc.DECODED,
-                fc.SOURCE_NAME, fc.SOURCE_LINE, fc.SOURCE_COLUMN,
-                gf.SOURCE_NAME, gf.SOURCE_LINE, gf.SOURCE_COLUMN)
-            .from(fc)
-            .join(gf).on(gf.GRAPH_NAME.eq(fc.GRAPH_NAME),
-                gf.TYPE_NAME.eq(fc.TYPE_NAME),
-                gf.FIELD_NAME.eq(fc.FIELD_NAME))
-            .where(fc.GRAPH_NAME.eq(graphName))
-            .orderBy(fc.TYPE_NAME, fc.FIELD_NAME, fc.CLASSIFIER)
-            .forEach(row -> {
-                var coordinate = new FieldCoordinate(row.value1(), row.value2());
-                claims.computeIfAbsent(coordinate, c -> new ArrayList<>())
-                    .add(new ClaimRow(AuthoredClaim.fromClassifier(row.value3()), row.value4(),
-                        Boolean.TRUE.equals(row.value5()), location(row.value6(), row.value7(), row.value8())));
-                locations.putIfAbsent(coordinate, location(row.value9(), row.value10(), row.value11()));
-            });
-
+    private static List<FieldVerdict> fieldGrain(DSLContext dsl, String graphName) {
+        var v = INTENT_AUTHORED_CLAIM_CONFLICT;
         var verdicts = new ArrayList<FieldVerdict>();
-        claims.forEach((coordinate, rows) -> {
-            var present = rows.stream().map(ClaimRow::classifier)
-                .collect(Collectors.toCollection(() -> EnumSet.noneOf(AuthoredClaim.class)));
-            if (present.size() < 2 || !domain.containsField(coordinate.typeName(), coordinate.fieldName())) {
-                return;
-            }
-            var enriched = rows.stream()
-                .sorted(Comparator.comparing(ClaimRow::classifier))
-                .map(row -> enrich(dsl, graphName, coordinate, row))
-                .toList();
-            var rejection = reduce(present);
-            var location = locations.get(coordinate);
-            // The reduction's own output type is the discriminator; the claim-set predicate is
-            // not re-tested here.
-            verdicts.add(rejection instanceof Rejection.Deferred
-                ? new FieldVerdict.Deferred(coordinate.typeName(), coordinate.fieldName(), enriched, rejection, location)
-                : new FieldVerdict.Conflict(coordinate.typeName(), coordinate.fieldName(), enriched, rejection, location));
-        });
+        dsl.selectFrom(v)
+            .where(v.GRAPH_NAME.eq(graphName), v.FIELD_NAME.isNotNull())
+            .orderBy(v.TYPE_NAME, v.FIELD_NAME)
+            .forEach(row -> {
+                var coordinate = new FieldCoordinate(row.getTypeName(), row.getFieldName());
+                var enriched = claimsAt(dsl, graphName, coordinate).stream()
+                    .map(claim -> enrich(dsl, graphName, coordinate, claim))
+                    .toList();
+                var rejection = rejectionOf(row.getVerdict(), row.getDirectives());
+                var location = location(row.getSourceName(), row.getSourceLine(), row.getSourceColumn());
+                // The view's verdict column is the discriminator; the claim-set predicate is
+                // not re-tested here.
+                verdicts.add(rejection instanceof Rejection.Deferred
+                    ? new FieldVerdict.Deferred(coordinate.typeName(), coordinate.fieldName(), enriched, rejection, location)
+                    : new FieldVerdict.Conflict(coordinate.typeName(), coordinate.fieldName(), enriched, rejection, location));
+            });
         return verdicts;
+    }
+
+    /** The violated coordinate's claim rows, in {@link AuthoredClaim} declaration order. */
+    private static List<ClaimRow> claimsAt(DSLContext dsl, String graphName, FieldCoordinate coordinate) {
+        var fc = INTENT_AUTHORED_FIELD_CLAIM;
+        return dsl.selectDistinct(fc.CLASSIFIER, fc.TRIGGER, fc.DECODED,
+                fc.SOURCE_NAME, fc.SOURCE_LINE, fc.SOURCE_COLUMN)
+            .from(fc)
+            .where(fc.GRAPH_NAME.eq(graphName),
+                fc.TYPE_NAME.eq(coordinate.typeName()),
+                fc.FIELD_NAME.eq(coordinate.fieldName()))
+            .fetch(row -> new ClaimRow(AuthoredClaim.fromClassifier(row.value1()), row.value2(),
+                Boolean.TRUE.equals(row.value3()), location(row.value4(), row.value5(), row.value6())))
+            .stream()
+            .sorted(Comparator.comparing(ClaimRow::classifier))
+            .toList();
     }
 
     /**
@@ -267,48 +255,30 @@ public final class AuthoredClaimConflicts {
         };
     }
 
-    private static List<ValidationError> typeGrain(DSLContext dsl, String graphName, ClaimDomain domain) {
-        var tc = INTENT_AUTHORED_TYPE_CLAIM;
-        var td = GRAPHQL_TYPE_DECLARATION;
-        var claims = new LinkedHashMap<String, EnumSet<AuthoredClaim>>();
-        var locations = new LinkedHashMap<String, SourceLocation>();
-        dsl.selectDistinct(tc.TYPE_NAME, tc.CLASSIFIER,
-                td.SOURCE_NAME, td.SOURCE_LINE, td.SOURCE_COLUMN)
-            .from(tc)
-            .leftJoin(td).on(td.GRAPH_NAME.eq(tc.GRAPH_NAME),
-                td.TYPE_NAME.eq(tc.TYPE_NAME),
-                td.MERGE_ORDINAL.eq(0))
-            .where(tc.GRAPH_NAME.eq(graphName))
-            .orderBy(tc.TYPE_NAME, tc.CLASSIFIER)
-            .forEach(row -> {
-                String typeName = row.value1();
-                claims.computeIfAbsent(typeName, t -> EnumSet.noneOf(AuthoredClaim.class))
-                    .add(AuthoredClaim.fromClassifier(row.value2()));
-                locations.putIfAbsent(typeName, location(row.value3(), row.value4(), row.value5()));
-            });
-
-        var violations = new ArrayList<ValidationError>();
-        claims.forEach((typeName, present) -> {
-            if (present.size() < 2 || !domain.containsType(typeName)) {
-                return;
-            }
-            violations.add(ValidationError.forType(typeName, reduce(present), locations.get(typeName)));
-        });
-        return violations;
+    private static List<ValidationError> typeGrain(DSLContext dsl, String graphName) {
+        var v = INTENT_AUTHORED_CLAIM_CONFLICT;
+        return dsl.selectFrom(v)
+            .where(v.GRAPH_NAME.eq(graphName), v.FIELD_NAME.isNull())
+            .orderBy(v.TYPE_NAME)
+            .fetch(row -> ValidationError.forType(row.getTypeName(),
+                rejectionOf(row.getVerdict(), row.getDirectives()),
+                location(row.getSourceName(), row.getSourceLine(), row.getSourceColumn())));
     }
 
     /**
-     * The typed reduction over a coordinate's claims (two or more by the caller's guard).
-     * {@link EnumSet} iterates in declaration order, so the conflict names its directives in the
-     * fixed order the class javadoc pins.
+     * Decodes the view's closed verdict vocabulary into the {@link Rejection} arm the report
+     * carries. The {@code directives} render arrives in {@link AuthoredClaim} declaration order
+     * (the view's {@code LISTAGG} restates it), so the conflict names its directives in the
+     * fixed order the class javadoc pins; the deferral's message is composed from the enum
+     * constants the carve-out recognises, never from the render.
      */
-    private static Rejection reduce(EnumSet<AuthoredClaim> present) {
-        if (present.equals(EnumSet.of(AuthoredClaim.LOOKUP_KEY, AuthoredClaim.ROUTINE))) {
+    private static Rejection rejectionOf(String verdict, String directives) {
+        if ("DEFERRED".equals(verdict)) {
             return Rejection.deferred("@" + AuthoredClaim.ROUTINE.directive() + " with @"
                 + AuthoredClaim.LOOKUP_KEY.directive()
                 + " on a root field classifies but does not emit yet");
         }
-        var names = present.stream().map(AuthoredClaim::directive).toList();
+        var names = List.of(directives.split(","));
         String at = names.stream().map(n -> "@" + n).collect(Collectors.joining(", "));
         return Rejection.directiveConflict(names, at + " are mutually exclusive");
     }

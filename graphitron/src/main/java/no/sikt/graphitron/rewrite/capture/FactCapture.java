@@ -159,7 +159,7 @@ public final class FactCapture {
             return AuthoredClaimConflicts.Detection.empty();
         }
         ClaimDomainRows.write(dsl, graph.name(), domain);
-        return AuthoredClaimConflicts.detect(dsl, graph.name(), domain);
+        return AuthoredClaimConflicts.detect(dsl, graph.name());
     }
 
     /**
