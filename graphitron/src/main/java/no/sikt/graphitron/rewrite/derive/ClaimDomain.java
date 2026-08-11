@@ -9,18 +9,18 @@ import java.util.Set;
  * The coordinates the classification walk visited: the walked model's type and field registries
  * as membership sets. The conflict detection mints only inside this domain, a membership test
  * and nothing more, because the legacy detector sites lived on the walk and the walk's reach is
- * narrower than capture's (capture is total, with no reachability pruning). Interface fields,
- * directiveless nesting targets, connection machinery and the other exemption populations the
- * demand exemption census recorded (2026-08-06, in the roadmap's audit records) never reached a
- * detector, and an ungated detection would move the accept line exactly there.
+ * narrower than capture's. The gate's full rationale and removal criterion live on the reified
+ * form's relation comments ({@code walk_claim_domain_type} / {@code walk_claim_domain_field},
+ * written from this value by {@link ClaimDomainRows} at capture cadence), which the
+ * {@code intent_authored_claim_conflict} view joins so the gate is a join on the store side.
  *
- * <p>A scaffold with a stated removal criterion: this value is the unreified demand relation.
- * The demand and exemption derivations now exist in the store ({@code intent_type_domain}, the
- * rule views and the resolved reductions over them) and are diffed against exactly this value
- * by their shadow agreement (see {@code no.sikt.graphitron.rewrite.derive.DemandShadowTest}),
- * with the populations the store cannot yet express named by {@link DemandResidue}. The gate
- * dissolves when the detection reads the demand relation instead of the walked model, which is
- * the gate-flip follow-up's work, not the shadow's.
+ * <p>This value is the unreified demand relation. The demand and exemption derivations now
+ * exist in the store ({@code intent_type_domain}, the rule views and the resolved reductions
+ * over them) and are diffed against exactly this value by their shadow agreement (see
+ * {@code no.sikt.graphitron.rewrite.derive.DemandShadowTest}), with the populations the store
+ * cannot yet express named by {@link DemandResidue}. The gate dissolves when the detection
+ * reads the demand relation instead of the walked model, which is the gate-flip follow-up's
+ * work, not the shadow's.
  */
 public record ClaimDomain(Set<String> typeNames, Set<FieldCoordinates> fieldCoordinates) {
 

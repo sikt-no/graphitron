@@ -62,6 +62,8 @@ import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static no.sikt.graphitron.model.Tables.STORE_STAMP;
+import static no.sikt.graphitron.model.Tables.WALK_CLAIM_DOMAIN_FIELD;
+import static no.sikt.graphitron.model.Tables.WALK_CLAIM_DOMAIN_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
@@ -98,15 +100,19 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       {@code ClaimDomain}, residues named and disagreement directions pinned;
  *       {@code no.sikt.graphitron.rewrite.derive.InputOccurrenceShadowTest} binds the input
  *       occurrence-path pair and the enclosing-override view to a structural reference
- *       enumeration and to the walk's use-keyed cascade verdicts). Later derivation
+ *       enumeration and to the walk's use-keyed cascade verdicts;
+ *       {@code no.sikt.graphitron.rewrite.derive.AuthoredClaimConflictShadowTest} binds the
+ *       {@code intent_authored_claim_conflict} view to the surviving Java reduction over the
+ *       corpus, byte-identical in message and location). Later derivation
  *       strata land as registrations here, not as exemptions.</li>
- *   <li>{@link Arm#ORACLE} for relations a post-capture oracle writer owns, where no independent
- *       second walk can re-derive the oracle's verdict without re-running the oracle. Two anchors,
- *       both non-vacuous: a two-graph lifecycle anchor (seeded rows, so "cleared" is
- *       distinguishable from "never written", under two graphs, so "cleared what it owns" is
- *       distinguishable from "cleared everything") and a write-read content anchor (the same round
- *       reduced two ways, at the oracle's cadence). The one thing genuinely unpinned is the
- *       oracle's verdict itself.</li>
+ *   <li>{@link Arm#ORACLE} for relations an oracle writer owns, at the oracle's own cadence
+ *       (javac writes after capture; the legacy classification walk's reach writes inside the
+ *       capture-and-detect pass), where no independent second walk can re-derive the oracle's
+ *       verdict without re-running the oracle. Two anchors, both non-vacuous: a two-graph
+ *       lifecycle anchor (seeded rows, so "cleared" is distinguishable from "never written",
+ *       under two graphs, so "cleared what it owns" is distinguishable from "cleared
+ *       everything") and a write-read content anchor (the same round reduced two ways, at the
+ *       oracle's cadence). The one thing genuinely unpinned is the oracle's verdict itself.</li>
  * </ul>
  *
  * <p>These tests retire as consumers migrate off {@code GraphitronSchema} piece by piece; they pin
@@ -180,7 +186,10 @@ class FactCaptureAgreementTest {
         registrations.put("intent_input_occurrence_path", Arm.DERIVED);
         registrations.put("intent_input_occurrence_path_step", Arm.DERIVED);
         registrations.put("intent_input_occurrence_override", Arm.DERIVED);
+        registrations.put("intent_authored_claim_conflict", Arm.DERIVED);
         registrations.put("javac_diagnostic", Arm.ORACLE);
+        registrations.put("walk_claim_domain_type", Arm.ORACLE);
+        registrations.put("walk_claim_domain_field", Arm.ORACLE);
         return Map.copyOf(registrations);
     }
 
@@ -1160,6 +1169,96 @@ class FactCaptureAgreementTest {
                     row.getKind(), String.valueOf(row.getCode()), row.getMessage())));
             assertThat(captured).isEqualTo(expected);
         }
+    }
+
+    /**
+     * The walk-reach family's lifecycle anchor, on the same terms as the javac one: seeded rows
+     * under two graphs, and a warm capture empties exactly its own partition. The writer here is
+     * the capture-and-detect pass rather than a post-capture round, which is the cadence widening
+     * the {@code ORACLE} arm's javadoc states.
+     */
+    @Test
+    @DisplayName("a capture empties its own graph's walk-reach partition and no other's")
+    void oracleLifecycleClearsTheOwnedWalkReachPartitionOnly(@TempDir Path tmp) throws java.io.IOException {
+        Path ownDir = java.nio.file.Files.createDirectories(tmp.resolve("own"));
+        Path siblingDir = java.nio.file.Files.createDirectories(tmp.resolve("sibling"));
+        try (var store = GraphitronModelStore.open()) {
+            var own = new FactCapture.GraphIdentity("own", ownDir);
+            var sibling = new FactCapture.GraphIdentity("sibling", siblingDir);
+            FactCapture.capture(store.dsl(), own,
+                CapturedStore.registryOf(ownDir, "type Query { ping: String }"));
+            FactCapture.capture(store.dsl(), sibling,
+                CapturedStore.registryOf(siblingDir, "type Query { ping: String }"));
+            assertThat(walkReachPartition(store, "own")).isEmpty();
+
+            var domain = new no.sikt.graphitron.rewrite.derive.ClaimDomain(
+                Set.of("Film"), Set.of(graphql.schema.FieldCoordinates.coordinates("Film", "title")));
+            no.sikt.graphitron.rewrite.derive.ClaimDomainRows.write(store.dsl(), "own", domain);
+            no.sikt.graphitron.rewrite.derive.ClaimDomainRows.write(store.dsl(), "sibling", domain);
+            assertThat(walkReachPartition(store, "own")).isNotEmpty();
+            var siblingBefore = walkReachPartition(store, "sibling");
+            assertThat(siblingBefore).isNotEmpty();
+
+            FactCapture.capture(store.dsl(), true, own,
+                CapturedStore.registryOf(ownDir, "type Query { ping: String }"),
+                null, List.of(), new NodeDeclaration(null));
+            assertThat(walkReachPartition(store, "own"))
+                .as("the captured graph's walk-reach partition, after its own warm capture")
+                .isEmpty();
+            assertThat(walkReachPartition(store, "sibling"))
+                .as("the sibling graph's walk-reach partition, after another graph's capture")
+                .isEqualTo(siblingBefore);
+        }
+    }
+
+    /**
+     * The walk-reach family's content anchor: the same domain reduced two ways, once by the
+     * writer's rows and once by re-reading the {@link no.sikt.graphitron.rewrite.derive.ClaimDomain}
+     * value it transcribed, grain by grain. A rewrite replaces the partition rather than
+     * accreting, which is what makes the second write's smaller set an assertion and not a
+     * subset check.
+     */
+    @Test
+    @DisplayName("the walk-reach relations' rows equal the domain's membership sets, per grain")
+    void oracleContentEqualsTheClaimDomainsMembership(@TempDir Path tmp) {
+        try (var store = GraphitronModelStore.open()) {
+            FactCapture.capture(store.dsl(), graph(tmp),
+                CapturedStore.registryOf(tmp, "type Query { ping: String }"));
+            var domain = new no.sikt.graphitron.rewrite.derive.ClaimDomain(
+                Set.of("Film", "Language"),
+                Set.of(graphql.schema.FieldCoordinates.coordinates("Film", "title"),
+                    graphql.schema.FieldCoordinates.coordinates("Film", "id"),
+                    graphql.schema.FieldCoordinates.coordinates("Language", "name")));
+            no.sikt.graphitron.rewrite.derive.ClaimDomainRows.write(store.dsl(), graph(tmp).name(), domain);
+
+            assertThat(store.dsl().select(WALK_CLAIM_DOMAIN_TYPE.TYPE_NAME)
+                .from(WALK_CLAIM_DOMAIN_TYPE).fetchSet(0, String.class))
+                .isEqualTo(domain.typeNames());
+            assertThat(store.dsl().select(WALK_CLAIM_DOMAIN_FIELD.TYPE_NAME, WALK_CLAIM_DOMAIN_FIELD.FIELD_NAME)
+                .from(WALK_CLAIM_DOMAIN_FIELD)
+                .fetchSet(r -> graphql.schema.FieldCoordinates.coordinates(r.value1(), r.value2())))
+                .isEqualTo(domain.fieldCoordinates());
+
+            var smaller = new no.sikt.graphitron.rewrite.derive.ClaimDomain(
+                Set.of("Film"), Set.of(graphql.schema.FieldCoordinates.coordinates("Film", "title")));
+            no.sikt.graphitron.rewrite.derive.ClaimDomainRows.write(store.dsl(), graph(tmp).name(), smaller);
+            assertThat(store.dsl().fetchCount(WALK_CLAIM_DOMAIN_TYPE)).isEqualTo(1);
+            assertThat(store.dsl().fetchCount(WALK_CLAIM_DOMAIN_FIELD)).isEqualTo(1);
+        }
+    }
+
+    /** The graph's walk-reach rows across both grains, rendered stably for before/after comparison. */
+    private static List<String> walkReachPartition(GraphitronModelStore store, String graphName) {
+        var rows = new ArrayList<String>();
+        store.dsl().selectFrom(WALK_CLAIM_DOMAIN_TYPE)
+            .where(WALK_CLAIM_DOMAIN_TYPE.GRAPH_NAME.eq(graphName))
+            .orderBy(WALK_CLAIM_DOMAIN_TYPE.TYPE_NAME)
+            .forEach(row -> rows.add("type|" + row.getTypeName()));
+        store.dsl().selectFrom(WALK_CLAIM_DOMAIN_FIELD)
+            .where(WALK_CLAIM_DOMAIN_FIELD.GRAPH_NAME.eq(graphName))
+            .orderBy(WALK_CLAIM_DOMAIN_FIELD.TYPE_NAME, WALK_CLAIM_DOMAIN_FIELD.FIELD_NAME)
+            .forEach(row -> rows.add("field|" + row.getTypeName() + "." + row.getFieldName()));
+        return rows;
     }
 
     /** The graph's {@code javac_diagnostic} rows, rendered stably for before/after comparison. */

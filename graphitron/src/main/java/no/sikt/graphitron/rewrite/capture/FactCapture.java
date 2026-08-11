@@ -7,6 +7,7 @@ import no.sikt.graphitron.rewrite.NodeDeclaration;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.derive.AuthoredClaimConflicts;
 import no.sikt.graphitron.rewrite.derive.ClaimDomain;
+import no.sikt.graphitron.rewrite.derive.ClaimDomainRows;
 import no.sikt.graphitron.rewrite.derive.InputOccurrencePaths;
 import no.sikt.graphitron.rewrite.derive.ReachabilityRows;
 import no.sikt.graphitron.rewrite.schema.input.SchemaRecipe;
@@ -147,11 +148,17 @@ public final class FactCapture {
         }
     }
 
-    /** The detection pass over a freshly captured store; a {@code null} domain is {@link #run}'s no-detection arm. */
+    /**
+     * The detection pass over a freshly captured store; a {@code null} domain is {@link #run}'s
+     * no-detection arm, which also writes no reach rows. The walk's reach lands as
+     * {@code walk_claim_domain} rows first, so the {@code intent_authored_claim_conflict} view's
+     * domain-gate join answers over exactly the domain this detection is gated on.
+     */
     private static AuthoredClaimConflicts.Detection detect(DSLContext dsl, GraphIdentity graph, ClaimDomain domain) {
         if (domain == null) {
             return AuthoredClaimConflicts.Detection.empty();
         }
+        ClaimDomainRows.write(dsl, graph.name(), domain);
         return AuthoredClaimConflicts.detect(dsl, graph.name(), domain);
     }
 

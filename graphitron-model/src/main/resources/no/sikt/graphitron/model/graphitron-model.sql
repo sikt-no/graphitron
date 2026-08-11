@@ -14,7 +14,7 @@
 -- Javadoc are self-describing; closed taxonomies are CHECK constraints; VARCHAR is unbounded;
 -- source order is an explicit ordinal column.
 --
--- Picking a prefix for a new relation. Six families, each named for whose vocabulary the row
+-- Picking a prefix for a new relation. Seven families, each named for whose vocabulary the row
 -- is written in, never for its reader or its role. graphql_ is reserved for generic GraphQL: a
 -- row any SDL reader could produce from the document without knowing graphitron exists, which
 -- is every declaration, every directive definition, and every directive application including
@@ -29,7 +29,10 @@
 -- other transcription prefixes are named for; the graph recipe rows are configuration the run
 -- held in hand, which is what keeps them in this family rather than making them a family of
 -- their own. javac_ is what the JDK compiler reports about the emitted sources, written in
--- javax.tools.Diagnostic's terms.
+-- javax.tools.Diagnostic's terms. walk_ is what the legacy classification walk registered,
+-- transcribed as membership rows in the walk's own vocabulary (its registries' reach); naming
+-- the family for the retiring walk gives the name its own retirement clock, because when the
+-- walk is gone the family has no referent.
 --
 -- Cadence is its own axis, orthogonal to the vocabulary a prefix names. A family whose writer
 -- runs after capture (javac_ is the first) has its own writer on that writer's cadence, and
@@ -2352,6 +2355,44 @@ COMMENT ON COLUMN javac_diagnostic.kind IS 'javax.tools.Diagnostic.Kind.name(). 
 COMMENT ON COLUMN javac_diagnostic.code IS 'Diagnostic.getCode(), the compiler''s stable diagnostic identifier; NULL exactly where javac returns none, and the typed dimension a display list never had';
 COMMENT ON COLUMN javac_diagnostic.message IS 'javac''s own rendered text (root locale); a transcribed fact because the oracle authored it, but display material: never a dimension, never an agreement anchor';
 
+-- ==== Walk reach facts ============================================================
+-- What the legacy classification walk registered: the walked model's type and field
+-- registries as membership rows, one relation per grain in the claim views' own mould so
+-- neither relation carries a column that is NULL by kind. The writer is the capture-and-detect
+-- pass, at capture cadence, inside the capture's graph-scoped ownership; a run without the
+-- detection pass writes no rows, and the warm refresh clears the graph's partition with the
+-- rest of its ownership scope. No foreign key into the graphql_ family on purpose: the writer
+-- stands on the walked model, not on captured rows, and the walk's registries legitimately
+-- hold coordinates capture spells differently (tombstones included). The rows exist so the
+-- conflict detection's domain gate is a join instead of a Java membership test: the walk's
+-- reach is narrower than capture's (capture is total, with no reachability pruning), and the
+-- exemption populations the demand exemption census recorded never reached a legacy detector,
+-- so an ungated detection would move the accept line exactly there. The gate dissolves when
+-- the detection reads the resolved demand relation instead of the walk's reach (the gate-flip
+-- follow-up's work), which drains these relations; the family retires with the walk whose
+-- reach it transcribes.
+CREATE TABLE walk_claim_domain_type (
+  graph_name VARCHAR NOT NULL,
+  type_name  VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, type_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+COMMENT ON TABLE walk_claim_domain_type IS 'The type grain of the walk''s claim domain: every type name the classification walk registered, tombstones included. The type-grain conflict detection mints only where a row here says the walk visited; see the family header for the writer, the cadence, and the removal criterion.';
+COMMENT ON COLUMN walk_claim_domain_type.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN walk_claim_domain_type.type_name IS 'a type name the walk''s type registry holds; membership is the row''s entire assertion';
+
+CREATE TABLE walk_claim_domain_field (
+  graph_name VARCHAR NOT NULL,
+  type_name  VARCHAR NOT NULL,
+  field_name VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+COMMENT ON TABLE walk_claim_domain_field IS 'The field grain of the walk''s claim domain: every field coordinate the classification walk registered, tombstones included. Deliberately not derived from walk_claim_domain_type: the two registries are independent membership sets (a hand-assembled domain may hold a coordinate whose type the type registry never saw), so the field rows carry their own type_name with no FK into the type grain. See the family header for the writer, the cadence, and the removal criterion.';
+COMMENT ON COLUMN walk_claim_domain_field.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN walk_claim_domain_field.type_name IS 'the registered coordinate''s owning type';
+COMMENT ON COLUMN walk_claim_domain_field.field_name IS 'the registered coordinate''s field name within the owning type';
+
 -- ==== Derived stratum: claims =====================================================
 -- The intent_ family. A claim row says something claims a coordinate for a classification
 -- kind: the author's directives (the authored views, one per grain) or the schema's structure
@@ -2644,6 +2685,58 @@ COMMENT ON COLUMN intent_resolved_field_claim.type_name IS 'the claimed field''s
 COMMENT ON COLUMN intent_resolved_field_claim.field_name IS 'the claimed field''s name within the owning type';
 COMMENT ON COLUMN intent_resolved_field_claim.classifier IS 'the classification kind the claim is for, the union of the claim views'' closed vocabularies';
 COMMENT ON COLUMN intent_resolved_field_claim.tier IS 'AUTHORED from the authored view, INFERRED from a classifier view surviving the anti-join; names which relation carries this claim''s provenance';
+
+CREATE VIEW intent_authored_claim_conflict
+  (graph_name, type_name, field_name, verdict, directives,
+   source_name, source_line, source_column) AS
+SELECT g.graph_name, g.type_name, CAST(NULL AS VARCHAR),
+       CASE WHEN g.claim_count = 2 AND g.outside_pair = 0 THEN 'DEFERRED' ELSE 'CONFLICT' END,
+       g.directives, td.source_name, td.source_line, td.source_column
+  FROM (SELECT c.graph_name, c.type_name,
+               COUNT(*) AS claim_count,
+               SUM(CASE WHEN c.classifier IN ('LOOKUP_KEY', 'ROUTINE') THEN 0 ELSE 1 END) AS outside_pair,
+               LISTAGG(c.trigger, ',') WITHIN GROUP (ORDER BY CASE c.classifier
+                 WHEN 'SERVICE' THEN 0 WHEN 'EXTERNAL_FIELD' THEN 1 WHEN 'NODE_ID' THEN 2
+                 WHEN 'LOOKUP_KEY' THEN 3 WHEN 'ROUTINE' THEN 4 WHEN 'MUTATION' THEN 5
+                 WHEN 'TABLE' THEN 6 WHEN 'ERROR' THEN 7 END) AS directives
+          FROM (SELECT DISTINCT a.graph_name, a.type_name, a.classifier, a.trigger
+                  FROM intent_authored_type_claim a
+                  JOIN walk_claim_domain_type d
+                    ON d.graph_name = a.graph_name AND d.type_name = a.type_name) c
+         GROUP BY c.graph_name, c.type_name
+        HAVING COUNT(*) >= 2) g
+  LEFT JOIN graphql_type_declaration td
+    ON td.graph_name = g.graph_name AND td.type_name = g.type_name AND td.merge_ordinal = 0
+UNION ALL
+SELECT g.graph_name, g.type_name, g.field_name,
+       CASE WHEN g.claim_count = 2 AND g.outside_pair = 0 THEN 'DEFERRED' ELSE 'CONFLICT' END,
+       g.directives, gf.source_name, gf.source_line, gf.source_column
+  FROM (SELECT c.graph_name, c.type_name, c.field_name,
+               COUNT(*) AS claim_count,
+               SUM(CASE WHEN c.classifier IN ('LOOKUP_KEY', 'ROUTINE') THEN 0 ELSE 1 END) AS outside_pair,
+               LISTAGG(c.trigger, ',') WITHIN GROUP (ORDER BY CASE c.classifier
+                 WHEN 'SERVICE' THEN 0 WHEN 'EXTERNAL_FIELD' THEN 1 WHEN 'NODE_ID' THEN 2
+                 WHEN 'LOOKUP_KEY' THEN 3 WHEN 'ROUTINE' THEN 4 WHEN 'MUTATION' THEN 5
+                 WHEN 'TABLE' THEN 6 WHEN 'ERROR' THEN 7 END) AS directives
+          FROM (SELECT DISTINCT a.graph_name, a.type_name, a.field_name, a.classifier, a.trigger
+                  FROM intent_authored_field_claim a
+                  JOIN walk_claim_domain_field d
+                    ON d.graph_name = a.graph_name AND d.type_name = a.type_name
+                   AND d.field_name = a.field_name) c
+         GROUP BY c.graph_name, c.type_name, c.field_name
+        HAVING COUNT(*) >= 2) g
+  JOIN graphql_field gf
+    ON gf.graph_name = g.graph_name AND gf.type_name = g.type_name
+   AND gf.field_name = g.field_name;
+COMMENT ON VIEW intent_authored_claim_conflict IS 'The authored-claim conflict rule as a resident of the intent_ stratum: one row per violated coordinate, both grains, the store-native pilot of the diagnostics stratum''s derivation arms. A coordinate violates when two or more distinct classifiers claim it and the walk''s reach relation for the grain holds the coordinate (the domain gate as a join against walk_claim_domain_type / walk_claim_domain_field, never against the demand views: the population is the legacy detection''s, and the demand gate-flip is its own follow-up). Two pieces of Java logic live in this SQL and are pinned by the corpus shadow agreement (no.sikt.graphitron.rewrite.derive.AuthoredClaimConflictShadowTest): the routine-plus-lookup carve-out (exactly that claim pair is the recognised-but-unsupported combination and yields DEFERRED instead of CONFLICT), and the ordered claim render (the LISTAGG''s CASE restates AuthoredClaim''s declaration order, which is the conflict messages'' fixed naming order). Locations join as the legacy mint did: a field violation carries the field''s own declared position, a type violation the type''s base declaration site at merge ordinal 0.';
+COMMENT ON COLUMN intent_authored_claim_conflict.graph_name IS 'the owning graph''s partition, carried from the claim views';
+COMMENT ON COLUMN intent_authored_claim_conflict.type_name IS 'the violated coordinate''s owning type (the coordinate itself at the type grain)';
+COMMENT ON COLUMN intent_authored_claim_conflict.field_name IS 'the violated coordinate''s field name; NULL exactly on type-grain rows, the two-grain union''s key shape (graphql_directive_site''s member_name precedent)';
+COMMENT ON COLUMN intent_authored_claim_conflict.verdict IS 'CONFLICT for mutually exclusive claims, DEFERRED for the recognised routine-plus-lookup pair; a closed two-value vocabulary the reduction''s own output type discriminates';
+COMMENT ON COLUMN intent_authored_claim_conflict.directives IS 'the canonical ordered claim render: the claiming directives'' names without the leading @, comma-joined in AuthoredClaim declaration order, which is what a conflict message names and the order it names them in';
+COMMENT ON COLUMN intent_authored_claim_conflict.source_name IS 'the violated coordinate''s own declaration file (the field''s position at the field grain, the base declaration''s at the type grain); NULL where the declaration carries no position';
+COMMENT ON COLUMN intent_authored_claim_conflict.source_line IS 'source line of the violated coordinate''s declaration, 1-based';
+COMMENT ON COLUMN intent_authored_claim_conflict.source_column IS 'source column of the violated coordinate''s declaration, 1-based';
 
 CREATE TABLE intent_type_domain (
   graph_name VARCHAR NOT NULL,
