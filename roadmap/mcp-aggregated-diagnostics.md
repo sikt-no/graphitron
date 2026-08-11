@@ -1054,3 +1054,75 @@ contradicting it, and the handle-less call refuses instead of answering a count 
 a clean schema; it also moved the write to the `FactCapture.detect` overload and prompted
 collapsing the in-file review log into this note.
 
+## Third reviewer pass (Spec → Ready gate, 2026-08-11)
+
+**Both pass-two resolutions are right, and they verify.** The `ORACLE` widening is grounded:
+the arm's lead does read "for relations a post-capture oracle writer owns", its write-read
+anchor is already cadence-relative in exactly the words quoted ("the same round reduced two
+ways, at the oracle's cadence"), and `intent_type_domain` is pinned under `DERIVED` as a
+relation a writer "re-derives inside every capture", which is the derivability
+`walk_claim_domain` lacks by design. Widening the lead therefore makes epistemics the arm
+boundary and drops cadence from it, which leaves `ORACLE` and `DERIVED` cleanly disjoint
+rather than blurring them, and the site is named in Implementation sites. The refusal is the
+honest answer and it has a shipped shape to copy: `ExecuteTool.error(String)` already returns
+`isError(true)` with a `status` / `message` structured pair, so no posture is being invented.
+`FactCapture.detect(DSLContext, GraphIdentity, ClaimDomain)` exists with that exact signature
+and that exact `domain == null` guard. Every symbol the rework adds checks out. None of this
+should be reopened.
+
+Two problems, both about what the union view holds and who reads it. Neither is a reopening.
+
+1. **`BuildWarning.NoRule` has no arm in the four-arm stratum, and it is a live channel this
+   item's own narrative feeds.** `BuildWarning` is sealed into two arms; `NoRule` is the
+   deliberate arm for an advisory not attributable to a lint rule, with two producers in main
+   sources, and `GraphitronSchemaBuilder.emitTableOnInputDeprecationWarnings` argues the arm
+   choice at length ("this is a deprecation announcement, not a lint-engine finding"). That
+   site is the `@table`-on-input signal this spec cites at the top as having deleted a
+   rejection arm, so the body already knows a diagnostic moved from `Rejection` into
+   `NoRule`. But the stratum has four arms (pilot view, `rejection_`, `lint_finding`,
+   `javac_diagnostic`) and `DiagnosticsTool` becomes "a projection of the `diagnostic` view's
+   rows", so a rule-less advisory reaches the wire today and reaches nothing after this item.
+   That is pinned behaviour, not incidental: `diagnosticsWorkspace()` seeds a
+   `BuildWarning.NoRule` and `diagnosticsReturnsMappedErrorsAndReportsSnapshotFreshness`
+   asserts it surfaces with `severity: warning` and no `lintRule` key. Both obvious homes are
+   closed by arguments this body already makes. `rejection_` is the nullable bag with two
+   vocabularies the lint-arm bullet rejects by name. `lint_finding` is named for the words its
+   rows carry (`lint_rule` is `LintRule.id()`), so a rule-less row there is the
+   NULL-encodes-the-arm smell moved inside the arm rather than removed. A fifth arm is
+   available and the per-writer severity argument supports it (a `NoRule` advisory's severity
+   is warning by construction, a third rule beside kind and rule), but the family name is a
+   doctrine decision this item has already been through twice and is not the implementer's to
+   make. Alternatively say the arm folds into `lint_finding` and argue the absent rule, or that
+   this item converts the two `NoRule` producers to `LintFinding` and retires the arm. Any of
+   the three closes it; silence does not, because the null result is a shipped tool quietly
+   dropping rows.
+
+2. **Moving `DiagnosticsTool` onto the view breaks four shipped tests, three of them on
+   fixtures that a store handle cannot repair, and only the tool-list assertion is named as
+   failing.** The Tests section is scrupulous about the one it names
+   (`GraphitronMcpServerTest`'s `containsExactlyInAnyOrder`, "so it fails until updated"),
+   which is what makes the omission read as an oversight rather than a judgement.
+   `GraphitronMcpServerTest` has three diagnostics cases
+   (`diagnosticsReturnsMappedErrorsAndReportsSnapshotFreshness`,
+   `diagnosticsProjectsLintRuleIdForLintFindings`, `diagnosticsFiltersBySeverity`) that boot the
+   short constructor over a hand-built `ValidationReport` and assert on returned rows, and
+   `LintSuppressionDiagnosticsParityTest` calls `diagnostics` on `new
+   GraphitronMcpServer(loopback(0), workspace)` with a published build and no handle. After the
+   substrate move all four go through the store, so under the refusal all four get a tool error.
+   Wiring a handle does not fix the three unit-tier ones: the loaders take the walk's stream,
+   and a hand-built report has no walk behind it, so those fixtures have to be rebuilt as
+   pipeline runs on the template the Tests section already describes. That is real work, it
+   moves this item's stated test footprint, and the cheap escape an implementer will reach for
+   under time pressure (keep the report projection when the handle is absent) is precisely the
+   two-projection drift the aggregate / drill-down parity pin exists to catch. State the
+   migration and the choice here.
+
+   One precision point rides with this, because the same sentence covers it. "Taking the walk's
+   error stream rather than the fused report" is stated for the residue and is exactly right
+   there, since `buildOutput` fuses `detection.violations()` into the errors list and the
+   residue must not transcribe the pilot family. It is actively wrong for the lint loader:
+   suppression is applied in `withLintFindings` over the combined warning list, before the
+   report is assembled, which is the whole reason build-side suppression rides to the tool for
+   free. A lint loader reading a pre-suppression lint stream would resurrect disabled findings
+   on the wire. Name the lint loader's input as the suppression-filtered warning list.
+
