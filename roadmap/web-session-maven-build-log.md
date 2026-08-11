@@ -139,9 +139,64 @@ and the "Warm build FAILED ... Log: $LOG_FILE" message are where the plan says t
 the `mvnd -q` quirk the plan proposes to rewrite, and a command-line `-l /dev/stdout` does
 override `maven.config` under `mvn`.
 
+## Second reviewer pass (Spec → Ready gate, 2026-08-11)
+
+A second independent reviewer session, status stays `Spec`. The block above was written
+by the previous gate pass and left the `## Approach` section standing unchanged, so the
+plan currently prescribes a mechanism its own findings section says does not work. That
+is what blocks sign-off: there is nothing here an implementer could build without first
+picking between the forks the previous pass opened, and that choice is the author's.
+
+All three findings reproduced independently, on the same toolchain (Maven 3.9.11 at
+`/opt/maven`, mvnd 1.0.6 embedding Maven 3.9.16), so they are confirmed rather than
+one session's report and should not be re-litigated on the next pass:
+
+- Single-line `-l /tmp/...` in `maven.config`: no log file, full console output, exit 0.
+  The two-line spelling redirects correctly under `mvn` (log written, console reduced to
+  the JVM preamble).
+- `mvnd` with that same working two-line config: creates the log file, leaves it at
+  0 bytes, prints the entire build to the console. `-l` on the mvnd command line does
+  redirect (log written, console empty), which is what keeps the wrapper fork viable.
+- Upward `.mvn` search: a project under `<root>/target/it/nested` picks up the root's
+  `maven.config` and goes fully silent. Combined with the invoker's
+  `<cloneProjectsTo>${project.build.directory}/it</cloneProjectsTo>` in
+  `graphitron-maven-plugin/pom.xml`, that is the whole mechanism behind finding 1, and
+  the invoker forks `${maven.home}/bin/mvn` rather than resolving `mvn` off `PATH`, so a
+  `PATH` shadow genuinely does sidestep it.
+
+Three things to fold in when the Approach is rewritten:
+
+- The warm build's Maven detail already lands in `/tmp/graphitron-web-env.log` today,
+  because the hook does `exec >>"$LOG_FILE" 2>&1` before running it. Under the proposed
+  mechanism with mvnd present (and the warm build prefers mvnd) it would keep landing
+  there, since mvnd prints to a console that is already redirected. So "the warm build
+  shares the same log" is false on the default path, and the two proposed doc edits
+  invert: moving the `tail -f` progress-watching instruction to the maven log would point
+  agents at an empty file, and the copy-aside-on-failure step would copy one.
+- The `## Explicitly out of scope` rationale collapses with the mechanism. "The redirect
+  is free and this item takes the free thing" is the entire stated reason for excluding a
+  wrapper, and the redirect is not free: it costs two invoker ITs, silently voids a
+  third's negative assertions, and delivers nothing under mvnd. That section needs
+  rewriting alongside the Approach, and `tee` is a live option to weigh rather than
+  settled exclusion.
+- Worth separating the two benefits explicitly, because the surviving mechanism changes
+  which one you get. Recovering untruncated output after a surprise failure is the stated
+  motivation; a green build costing near-zero tool output is a second, independent win
+  that only a pure redirect buys. A `tee` wrapper gets the first and not the second.
+
+One correction to the previous pass: getting-started does *not* recommend
+`.mvn/jvm.config`, because no getting-started doc exists. The only live references are
+`roadmap/changelog.md`'s R409 entry, which claims the section, and a Backlog item filed
+to fix exactly that dangling pointer. The underlying advice still holds on other grounds
+(`.mvn/` is gitignored, so a contributor may have their own `jvm.config` there), so keep
+the `mkdir -p` and write-one-file instruction, but do not attribute it to that doc.
+
 ## Explicitly out of scope
 
 Copying or archiving logs into `target/`, per-run log history, and any `tee`-style
 wrapper that keeps console output live while also writing the file. Maven has no
 built-in tee, so that would mean a `PATH`-shadowing wrapper script; the redirect is
 free and this item takes the free thing.
+
+(Both reviewer passes above bear on this section; see the note on the collapsed
+rationale before treating the exclusion as still standing.)
