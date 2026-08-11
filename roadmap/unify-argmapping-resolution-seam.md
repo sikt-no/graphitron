@@ -106,13 +106,14 @@ Two things worth carrying forward:
 * `ParamSource.Arg#graphqlArgName` (the accessor; call sites read `path().headName()`)
 * `RecordBindingResolver#parseArgMapping` (the file-private second parser)
 * `RoutineCallEmitter#nonRoutineParamSource`
+* `FieldBuilder#fieldArgumentNames` (its last caller was the flat-slot membership check this item deleted; package-private and static, so javac stayed silent about it. Do not confuse it with `graphitron-lsp`'s unrelated same-named `TypeContext.fieldArgumentNames`, which is live.)
 * The rejection string `"must bind a single GraphQL argument; dot-path bindings are not supported"`
 * The rejection string `"binds to GraphQL argument '...', which is not an argument of this field"`
 
 ## Tests
 
 * **Unit.** `ArgBindingMapTest` gained the `Result.Failure` pins: both arms read through one accessor while staying distinct records, and the empty-slot-map rendering that makes the path-step `@condition` clause load-bearing.
-* **Pipeline.** `GraphitronSchemaBuilderTest` gained six cases in a new "@routine argMapping resolves on the shared seam" block: the `PathExpr.Step` chain a dot-path lands, unknown head and unknown tail segments rejecting with the shared wording and the candidate hint, and one case per new rejection (non-parameter target, unbound parameter, input-object leaf). `RoutineMutationWritePipelineTest` pins the emitted descent: the helper lands on the class, the call site names it, and no `instanceof` chain appears inline. `R96RecordBindingPipelineTest` pins the string-level swallow against a well-formed control.
+* **Pipeline.** `GraphitronSchemaBuilderTest` gained six cases in a new "@routine argMapping resolves on the shared seam" block: the `PathExpr.Step` chain a dot-path lands, unknown head and unknown tail segments rejecting with the shared wording and the candidate hint, and one case per new rejection (non-parameter target, unbound parameter, input-object leaf). `RoutineMutationWritePipelineTest` pins the descent helper's shape off the `MethodSpec` (one helper per binding, private static, leaf-typed return, root as an `Object` parameter), which is the seam both `ArgumentValueSource` forks depend on. `R96RecordBindingPipelineTest` pins the string-level swallow against a well-formed control.
 * **Compilation.** The sakila example schema gained `Mutation.rentFilmPayloadNested` and `Actor.filmsNested`, so both `ArgumentValueSource` forks compile their emitted descent at `release 17`.
 * **Execution.** `GraphQLQueryTest.rentFilmPayloadNested_dotPathArgMappingReachesTheRoutine` proves the round trip through the post-commit re-read; `RoutineFieldExecutionTest.correlatedChildRoutineBindsArgumentThroughDotPath` covers the `FromSelectedField` fork against the same expected rows as its flat sibling.
 
@@ -128,25 +129,17 @@ The dot-path form was documented in zero places; it is now documented in one, wi
 
 The check the workflow asks for holds: `routine.adoc` explains where a routine's parameters come from, never what a dot-path is.
 
-## In Review feedback (rework, second pass)
+## Second pass (rework from the In Review gate)
 
-Independent-session `In Review → Done` review at `2322a09`. Full reactor green under `mvn install -Plocal-db` (`BUILD SUCCESS`, exit 0). The seam itself is accepted: routing, both left-hand-side checks, the leaf gate, the `RoutineParamSource` narrowing, the `RecordBindingResolver` deletion, the retirement sweep and the documentation slice all hold, and the pipeline / compilation / execution coverage pins behaviour where the tiers say it belongs. Two items to close before re-approval; neither touches the design.
+The `In Review -> Done` review at `2322a09` accepted the seam and asked for two closures; both are done, neither touched the design.
 
-**1. One delivered test asserts on generated method-body code strings.** `RoutineMutationWritePipelineTest.dotPathArgMapping_readsThroughAStatementFormHelperOnTheClass` asserts `.contains("argInputInventoryId(env.getArgument(\"input\"))")` and `.doesNotContain("instanceof")` against the fetcher method body, then `.contains("if (!(root instanceof")` / `.contains("return (java.lang.Integer)")` against `helper.code().toString()`. `docs/architecture/explanation/development-principles.adoc` § "Behaviour is pinned at the pipeline tier and above" bans exactly this at every tier and says the ban is review-enforced at test-review time, which is this gate.
+1. **The delivered pipeline test asserted on generated method-body code strings**, which `development-principles.adoc` bans at every tier and enforces at test-review time. The behaviour it duplicated was already pinned: the descent's runtime result on both `ArgumentValueSource` forks by the two execution tests, the drain by the sakila compile (a dropped drain is a dangling reference, as `ArgPathHelperRegistry`'s javadoc says), the model shape by `routineDotPathArgMappingLandsPathExprChain`. The statement-form-not-ternary claim was implementation rather than behaviour and is dropped; what survives is asserted off the `MethodSpec`: one helper per dot-path binding, private static, leaf-typed return, and the root as an `Object` parameter, which is the seam both forks depend on.
 
-The fix is cheap because the coverage it duplicates already shipped in this same item:
+   The reviewer's context note is recorded rather than acted on: the ban is unevenly held (the same file's pre-existing `newRecord(` assertion, and `CompositeDecodeHelperRegistryTest` throughout). Relaxing it for registry-shape pins would be an edit to `development-principles.adoc` argued on its own, so nothing else in the tree was touched here.
 
-* The *behaviour* (the descent reads the right value out of the input map, on both `ArgumentValueSource` forks) is already pinned by `rentFilmPayloadNested_dotPathArgMappingReachesTheRoutine` and `correlatedChildRoutineBindsArgumentThroughDotPath`.
-* The *drain* claim is already pinned by the `graphitron-sakila-example` compile: `ArgPathHelperRegistry`'s own javadoc says a dropped drain surfaces as a dangling `arg<Param>(...)` reference and a consumer compile error, and both new sakila fixtures exercise a dot-path binding.
-* The *model* shape is already pinned by `routineDotPathArgMappingLandsPathExprChain`.
+2. **`FieldBuilder.fieldArgumentNames` was dead** once the flat-slot membership check went. Deleted and declared under Retired vocabulary above.
 
-What is left without a home is the statement-form-not-ternary shape, which is an implementation claim rather than a behavioural one. If a localised pin is still wanted, assert it structurally rather than by body text: the helper's `MethodSpec` name, `returnType()`, modifiers and single `Object` parameter are all readable off the `TypeSpec` without matching rendered code. Otherwise drop the method and let the three tiers above carry it.
-
-Note for context, not as a defence to be relied on: the ban is unevenly held in the tree. The same file already carried a `.contains("newRecord(")` assertion before this item, and `CompositeDecodeHelperRegistryTest`, the test for the registry `ArgPathHelperRegistry` is modelled on, asserts on rendered bodies throughout. That precedent is why this reads as a small fix rather than a design misjudgement. It is not a licence: if the project wants the ban relaxed for registry-helper shape pins, that is an edit to `development-principles.adoc` argued on its own, not a silent exception taken in one test.
-
-**2. `FieldBuilder.fieldArgumentNames` is now dead code** (`graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java:8012`). Its last caller was the flat-slot membership check this item deleted; the only remaining repo hits are an unrelated same-named method on `graphitron-lsp`'s `TypeContext`. It is package-private and static, so javac says nothing. Delete it, and add it to `## Retired vocabulary` so the next sweep sees it. (The acceptance criterion is met either way, it names `RoutineDirectiveResolver` no longer *calling* it.)
-
-**Not blocking, recorded for the implementer's judgement.** `ArgBindingMap.of` skips an entry whose segment list is empty (`ArgBindingMap.java:113`, defensive per its own comment), which leaves `resolvedOverrides.get(param.name())` returning `null` in `RoutineDirectiveResolver.bindArgs` and `leafTypeGate` dereferencing it. Unreachable while the parser holds its guarantee, and the pre-existing `@service` path has the same shape, so this is a note rather than a request.
+The reviewer's non-blocking note stands unacted: `ArgBindingMap.of` skipping an empty segment list leaves `resolvedOverrides.get(param.name())` null for `leafTypeGate` to dereference. Unreachable while the parser holds its guarantee, and the pre-existing `@service` path has the same shape, so diverging here would buy a guard on one of two identical seams.
 
 ## Out of scope
 

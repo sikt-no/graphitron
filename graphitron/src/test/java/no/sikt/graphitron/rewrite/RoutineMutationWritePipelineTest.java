@@ -1,8 +1,12 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
+import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.ParameterSpec;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
+
+import javax.lang.model.element.Modifier;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -143,35 +147,37 @@ class RoutineMutationWritePipelineTest {
         """;
 
     @Test
-    void dotPathArgMapping_readsThroughAStatementFormHelperOnTheClass() {
-        // The descent is a private static helper on the fetcher class taking the root map as a
-        // parameter, not an instanceof-Map ternary chain nested inside the Routines call: the
-        // development-principles rule bans the chain because a developer cannot breakpoint a
-        // ternary arm, and the root is a parameter because the env and SelectedField forks pass
-        // different roots. The helper must also actually land on the class: a registered helper
-        // that never drained would leave a dangling call and fail only at the consumer's compile.
-        var mutationFetchers = fetchersClass(NESTED_SDL);
-        String body = methodBody(mutationFetchers, "rentFilm");
+    void dotPathArgMapping_liftsOneRootParameterisedDescentHelperPerBinding() {
+        // The seam the two ArgumentValueSource forks depend on: the descent is a helper method
+        // that takes the root map as an Object *parameter*, so the env fork and the
+        // SelectedField fork can each pass their own root. A helper that read its root itself
+        // would only ever serve one of them.
+        //
+        // Asserted off the MethodSpec, never off rendered code strings: whether the body is a
+        // statement sequence or a ternary chain is not observable here and is not this tier's
+        // business. Behaviour on both forks is proven by the execution tests on
+        // Mutation.rentFilmPayloadNested and Actor.filmsNested; that the helpers actually drain
+        // onto the class is proven by the sakila example compiling the emitted source, where a
+        // dropped drain is a dangling reference.
+        var helpers = fetchersClass(NESTED_SDL).methodSpecs().stream()
+            .filter(m -> m.name().startsWith("argInput"))
+            .toList();
 
-        assertThat(body)
-            .as("each dot-path binding reads through its helper, rooted on the outer argument")
-            .contains("argInputInventoryId(env.getArgument(\"input\"))")
-            .contains("argInputCustomerId(env.getArgument(\"input\"))");
-        assertThat(body)
-            .as("no ternary chain inline at the call site")
-            .doesNotContain("instanceof");
-
-        var helper = mutationFetchers.methodSpecs().stream()
-            .filter(m -> m.name().equals("argInputInventoryId"))
-            .findFirst()
-            .orElseThrow(() -> new AssertionError("the registered descent helper never drained"
-                + " onto the class; emitted methods: " + mutationFetchers.methodSpecs().stream()
-                    .map(no.sikt.graphitron.javapoet.MethodSpec::name).toList()));
-        assertThat(helper.code().toString())
-            .as("statement form: a guarded rebind, an early return, the leaf cast last")
-            .contains("if (!(root instanceof")
-            .contains("return null")
-            .contains("return (java.lang.Integer)");
+        assertThat(helpers)
+            .as("one descent helper per dot-path binding, named for the path it walks")
+            .extracting(no.sikt.graphitron.javapoet.MethodSpec::name)
+            .containsExactlyInAnyOrder("argInputInventoryId", "argInputCustomerId");
+        assertThat(helpers).allSatisfy(helper -> {
+            assertThat(helper.modifiers()).contains(Modifier.PRIVATE, Modifier.STATIC);
+            assertThat(helper.returnType())
+                .as("the helper applies the leaf cast, so it returns the routine parameter's type")
+                .isEqualTo(ClassName.get(Integer.class));
+            assertThat(helper.parameters())
+                .as("the root arrives as a parameter, untyped, so either fork can supply it")
+                .singleElement()
+                .extracting(ParameterSpec::type)
+                .isEqualTo(ClassName.get(Object.class));
+        });
     }
 
     private static String fetcherBody() {

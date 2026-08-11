@@ -8009,12 +8009,6 @@ class FieldBuilder {
                        Map<String, java.util.List<String>> argMapping,
                        String argMappingError) {}
 
-    static Set<String> fieldArgumentNames(GraphQLFieldDefinition fieldDef) {
-        return fieldDef.getArguments().stream()
-            .map(GraphQLArgument::getName)
-            .collect(Collectors.toCollection(LinkedHashSet::new));
-    }
-
     /**
      * The names of the field-level chain-directive applications ({@code @routine} /
      * {@code @reference}) in authored order — the order the GraphQL parser preserves and the
