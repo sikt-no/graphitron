@@ -1,6 +1,6 @@
 ---
 id: R569
-title: "Aggregated diagnostics commands for the MCP server"
+title: "Violation facts in the store; the MCP aggregate is their first reader"
 status: Spec
 bucket: feature
 priority: 5
@@ -10,7 +10,7 @@ created: 2026-08-03
 last-updated: 2026-08-11
 ---
 
-# Aggregated diagnostics commands for the MCP server
+# Violation facts in the store; the MCP aggregate is their first reader
 
 The `diagnostics` tool is entry-at-a-time only. It projects every validation error, build
 warning, and generated-code compile diagnostic into a flat list, filters on exactly two axes
@@ -19,6 +19,18 @@ that is the right shape. On a large consumer schema mid-migration, where the err
 to the hundreds, it is the wrong shape: the first question an agent has is "what is broken,
 in what proportion", and the tool can only answer it by handing over every entry and letting
 the agent re-derive the shape in prose.
+
+Two things ship here, and the model half leads, which is why it leads the title. The target
+pipeline is fact gathering, then validation, then planning, then generation, each phase reading
+the store and enriching it with derived facts the later phases consume. A violation is the
+validation phase's derived fact, and today it is the one product of that phase that never
+becomes one: verdicts are minted as values of the sealed `Rejection` hierarchy, carried in a
+`ValidationReport`, and the store never hears of them. That hierarchy is transitional
+vocabulary the strangler dissolves arm by arm, so an aggregate designed against the report
+would be a new reader of a retiring surface. This item therefore owns violations as a fact
+family: it lands the store's diagnostics stratum (a derivation view for the first store-native
+family, a transcription residue for the rest, one union view over both plus the shipped
+compile arm) and builds the aggregate as that stratum's first reader.
 
 ## Why it matters
 
@@ -44,8 +56,9 @@ Two consequences beyond the cost:
 
 ## What is already typed
 
-Most of the aggregation needs no new validate-time arm, only a projection the tool does not
-currently make:
+Most of the aggregation needs no new validate-time arm. The typed components below are the
+column inventory: what the residue loader destructures into the store during the transition,
+and what a store-native detection mints directly once its family migrates:
 
 - `ValidationError` carries the sealed `Rejection` variant, not just its message, so the
   variant class is a stable group key. `RejectionKind` projects it to the author-error /
@@ -95,52 +108,46 @@ mutation-argument-shape and payload-classification rows. Nothing in the design d
 example, but the residue reviewer decision 4 measures is smaller again, which is one more argument
 for that decision's default of omitting `messageTemplate`.
 
-## What the model owns but does not yet expose
+## The sealed hierarchy is not the investment surface
 
-Drafting this Spec against the principles surfaced four places where the model already knows a
-fact and discards it, so a read-side projection would have to re-derive it. Each is small, each
-independently improves the LSP and the watch formatter, and each removes a dimension from the
-heuristic's domain:
+An earlier revision of this section found four places where the model "knows a fact and
+discards it" and prescribed Java lifts on the sealed hierarchy for three of them: an
+author-fixable projection on `RejectionKind`, a two-permit `StubKey` split, and a
+`CodedRejection` capability interface across the nine `lspCode()`-bearing sub-seals. All three
+are dropped, and since that reverses a settled reviewer decision, the reversal is recorded in
+Reviewer decisions rather than edited away.
 
-1. **`lspCode()` is a capability declared nine times over.** The only way to reach it is
-   `Diagnostics.lspCodeOf`, a nine-arm `instanceof` chain returning `null` for everything else.
-   The MCP aggregate would have to copy that chain or forgo 42 stable codes and prose-cluster
-   them instead. Lift it to one capability interface (`CodedRejection extends Rejection` with
-   `String lspCode()`), implemented by the nine sub-seals; `lspCodeOf` collapses to a single
-   `instanceof CodedRejection`, and the aggregate gets a typed cluster key for free. Pin
-   membership with a partition meta-test so every `Rejection` leaf is declared coded or
-   deliberately codeless, rather than defaulting silently into the prose bucket.
-2. **`StubKey` is a one-permit sealed interface with a nullable component, and the producer
-   already discriminates.** `Rejection.deferred(summary, fieldClass)` and
-   `Rejection.deferred(summary)` are two factories, and the second explicitly constructs
-   `new StubKey.VariantClass(null)`. So the producer knows which arm it is and throws the
-   knowledge away, and the read side pays with a prose fallback on the deferred half, which the
-   evidence says clusters *best*. Split `StubKey` into two permits (a non-null `VariantClass`
-   plus an arm for inline-defer sites) and the deferred cluster key becomes an exhaustive
-   two-arm switch with no fallback. The only production reference to `VariantClass` outside
-   `Rejection` is a javadoc pointer in `TypeFetcherGenerator`.
-3. **The actionable / deferred binary would be its third site.** `RejectionKind`'s javadoc
-   declares itself the projection layer, yet `Diagnostics.severityOf` already had to answer
-   "deferred versus the rest" and recorded the answer in a comment ("Deferred is Error rather
-   than Warning: the actionable hint is the rejection's message") rather than in the model.
-   Inventing the binary in the MCP layer makes "can the author fix this in the schema?" a prose
-   comment in one view and code in another. It belongs next to `messageLabel()` as an exhaustive
-   switch, pinned by the existing `RejectionKindProjectionTest`. Pick one word for it and use
-   the same word on the wire and in the model, or the drift reopens at the vocabulary level.
-4. **`coordinate` is a nullable `String` that consumers re-derive by dot-splitting.** (Carved out at
-   review into `validation-error-coordinate-sealed`; the reasoning below stands but this item does not
-   depend on it. See Phasing.)
-   `ValidationError.forType` / `forField` know the grain at construction and collapse it to a
-   string plus `null` for schema-wide; `WatchErrorFormatter` re-derives it with `isTypeLevel` /
-   `typeOf` dot-splits, and this item's `type` dimension would be the second site of the same
-   predicate. `DiagnosticsTool`'s "warnings carry no coordinate, so a coordinate filter excludes
-   them by construction" is a third fact about the same slot living only in a comment. A sealed
-   `Coordinate { SchemaWide | TypeLevel | FieldLevel }` component makes two dimensions read slots
-   instead of parsing, deletes the formatter's predicates, and turns the warnings invariant into
-   a type fact.
+The reason is direction, not effort. The sealed `Rejection` hierarchy is the legacy walk's
+verdict vocabulary, scheduled to dissolve as detections migrate store-native; a capability
+interface or a permit split is an investment in the surface being deleted, and widens exactly
+the churn the fact-base pivot exists to end. Each dropped lift keeps its invariant, paid for
+where the architecture is going instead of where it has been:
 
-Doing these first is what keeps the aggregate a projection rather than a shadow taxonomy. It
-also reorders the work: see Phasing.
+1. **The actionable / deferred binary becomes a view column**, a `CASE` over the stored
+   `kind`. That is a second evaluation of the predicate `Diagnostics.severityOf` records in a
+   comment ("Deferred is Error rather than Warning"), so it gets the same one-row parity
+   assertion this design already gives the compile arm's `severity` against
+   `CompileDiagnostic.severity()`: the SQL spelling and the Java spelling pinned to each
+   other, and no new Java projection on the hierarchy.
+2. **The `StubKey` split is dropped clean.** The residue loader reads the producer's
+   discrimination at its single switch site and stores the absent arm as SQL `NULL`, the
+   store's uniform absence discipline. One loader site is not a duplicate until a second
+   reader exists, which is verbatim the reasoning that carved out the sealed `Coordinate`
+   lift.
+3. **`lspCode()` membership binds in the test tier, not the type system.** The loader's
+   exhaustive leaf switch catches a new leaf; it does not catch an existing leaf *gaining* an
+   `lspCode()` that `Diagnostics.lspCodeOf`'s nine-arm chain does not know, and today nothing
+   fails on that: `RejectionSeverityCoverageTest` walks every leaf permit reflectively but
+   asserts only severity. Extend that walk so every leaf declaring an `lspCode()` surfaces it
+   both as the LSP diagnostic's code and as the loader's `lsp_code` column: one test binds
+   both readers of the retiring hierarchy to one membership fact, with no production
+   interface on a surface being deleted.
+4. **`coordinate` stays carved out** into `validation-error-coordinate-sealed`, unchanged.
+   The residue stores the nullable `(type_name, field_name)` pair at the DDL's universal
+   grain, the loader reads the grain off `ValidationError`'s constructors in one place, and
+   the rendered string is a view column, so no dot-split exists anywhere on this item's path;
+   when that item lands, the loader reads a sealed switch instead of the constructors'
+   string-plus-null and no column changes.
 
 ## Direction
 
@@ -214,7 +221,7 @@ diagnostics.aggregate(
 ```
 
 Every dimension name comes from a closed enum, each value backed by one column of the
-`diagnostic` view (the first-reader section below): `severity`, `source`, `actionable`,
+`diagnostic` view (the diagnostics-stratum section below): `severity`, `source`, `actionable`,
 `kind`, `variant`, `lspCode`, `attemptKind`, `attempt`, `stubKey`, `directives`, `lintRule`,
 `coordinate`, `type`, `file`, `directory`, `messageTemplate`. `where` filters on the same
 columns that `groupBy` groups on, which collapses this item's part 3 (drill-down filters) and
@@ -222,15 +229,16 @@ part 1 (the aggregate) into a single mechanism instead of two parallel filter im
 A preset report is then literally a named `(groupBy, where)` tuple, so a report and an ad-hoc
 pivot cannot drift in behaviour.
 
-**An enum of labels is the right shape here, and the sealed switches live in the validator
+**An enum of labels is the right shape here, and the sealed switches live in the residue
 loader.** This module already settled the question: `EdgeKind`'s javadoc calls itself
 "legitimately an `enum` (a label), not a sealed hierarchy" because the varying-shape part lives
 in `NodeRef`, so the enum "carries no kind-dependent nullability", and names that as the
 resolution of the sealed-over-enum tension. A pivot dimension is the same: every value has the
 identical shape, a mapping from dimension name to one column of the `diagnostic` view, no value
 carries different data, so a sealed hierarchy buys nothing. The constraints that keep it from
-smuggling in a stringly side-channel now hold at two sites, the loader that writes the columns
-and the view that computes the derived ones (see the first-reader section below):
+smuggling in a stringly side-channel now hold at two sites, the residue loader that writes the
+transcription columns and the views that compute the derived ones (see the diagnostics-stratum
+section below):
 
 - Every typed column the loader fills from a rejection is written through an **exhaustive
   sealed switch with no `default` and no `instanceof` chain**, so a new `Rejection` arm forces
@@ -266,20 +274,20 @@ language would add that faceting does not (predicates over derived counts, arith
 over messages) reduce to one or two scalar parameters: `minCount` covers the `having` case,
 and a single optional `messageMatches` regex covers the rest if it proves necessary. A
 read-only SQL surface over the fact store as a whole is a different tool with a different
-job, deferred to its own item; see the first-reader section below.
+job, deferred to its own item; see the diagnostics-stratum section below.
 
 **Enabling refactor.** `DiagnosticsTool` currently builds wire `LinkedHashMap`s inline from
 three sources; the compile source now arrives typed (`CompileDiagnostic`, shipped with the
 `javac_` family), while validator errors and build warnings still project straight off the
 report with no intermediate typed representation. The union the earlier draft gave to a
 package-private `DiagnosticRow` record is
-now the `diagnostic` view (the first-reader section below), and both
+now the `diagnostic` view (the diagnostics-stratum section below), and both
 tools read it: the existing per-entry wire mapping projects off the view's rows, and the widened
-filters and the aggregate share one null-safe `where` translation. The sequencing constraint
-survives the substrate change: the `validator_` DDL must land *after* the model lifts, not before,
-because columns typed off today's wide shapes (`String coordinate`, prose-only stub keys) would
-bake the wide shapes into the store and narrowing them later is a DDL change plus a loader
-change at once.
+filters and the aggregate share one null-safe `where` translation. The old sequencing constraint
+(model lifts before DDL) dissolves with the lifts themselves: the DDL types its columns off the
+rejection records' own components, which the residue loader destructures directly, and the one
+wide shape left (`ValidationError`'s string-plus-null coordinate) is absorbed at the loader per
+the `Coordinate` carve-out, so nothing wide bakes into the store.
 
 **The prose fallback needs an enforcer, not a hedge.** Saying on the wire "these clusters are
 prose-derived" is honest but nothing fails when a message reword silently re-partitions the
@@ -306,71 +314,86 @@ replaces. `limit` plus `minCount` handle it, but the response has to state how m
 elided and their combined count, so the aggregate never reads as complete when it is truncated.
 Worth pinning as a test, because it is the failure mode that would quietly defeat the purpose.
 
-## First reader of the fact store
+## The store's diagnostics stratum
 
-Between this item's Spec review and now the substrate shipped and the strategy flipped:
-`graphitron-model-captures-facts` (R595, Done; see `roadmap/changelog.md`) landed the
-`graphitron-model` module, the fact-schema DDL, the capture loads, and a store that persists
-between runs, and this item is now designated the store's first reader instead of building
-its own evaluation engine. Everything the earlier draft hand-built is native SQL over a
-relation: `groupBy` is `GROUP BY`, `where` is `WHERE`, `minCount` is `HAVING`, the tail
-accounting is a second aggregate over the elided remainder, and the `DiagnosticRow` record
-and the Java grouping engine are never built. The wire contract does not move: the closed
-dimension set, the zero-argument triage preset, exact counts, tail honesty, and the
-single-valued grain are fixed, and every invariant pin asserts on tool answers, so the
-contract cannot tell which substrate answered. The draft called this item the store's first
-reader; R589's `AuthoredClaimConflicts` has since shipped and taken that place, which is a
-straight improvement in this item's risk: the query vocabulary here (`GROUP BY`, `HAVING`, a
-union view) is already exercised in production by a reader whose wrong answer would cost wrong
-generated code, where a wrong answer here costs a bad triage.
+Between this item's first draft and now, the substrate shipped: the store itself (R595), the
+graph partition dimension (R610), the `javac_` oracle family (R603), and R589's claim views
+with `AuthoredClaimConflicts`, the store's first reader (all Done; see `roadmap/changelog.md`).
+Everything the earlier draft hand-built is native SQL over a relation: `groupBy` is
+`GROUP BY`, `where` is `WHERE`, `minCount` is `HAVING`, the tail accounting is a second
+aggregate over the elided remainder, and the `DiagnosticRow` record and the Java grouping
+engine are never built. The wire contract does not move: the closed dimension set, the
+zero-argument triage preset, exact counts, tail honesty, and the single-valued grain are
+fixed, and every invariant pin asserts on tool answers, so the contract cannot tell which
+substrate answered. That this item is no longer the store's first reader is a straight
+improvement in its risk: the query vocabulary here (`GROUP BY`, `HAVING`, a union view) is
+already exercised in production by a reader whose wrong answer would cost wrong generated
+code, where a wrong answer here costs a bad triage.
 
-**One relation per writer, one view for the reader.** A `diagnostic` union view, with
-`source` as a per-arm literal in the shipped `graphql_directive_site` mould, is what the
-aggregate and the widened `diagnostics` filters read; nothing reads the base relations
-directly. Behind it, one base relation per channel and writer cadence. The compile arm is
-the shipped `javac_diagnostic` (R603, Done; see `roadmap/changelog.md`), read from day one:
-that item's dovetail picked the fork where this item's compile bridge is never built, it
-landed first as expected, so the fork is settled and its fallback is moot. Behind the
-relation sits `CompileDiagnostic`, the single flattening at the javac boundary that the
-console block, the current MCP tool, and `CompileFacts` all read; this item's view becomes
-the fourth reader of the same spelling. The schema arm is this item's one new relation, the
-`validator_` family: validator errors and build warnings, written per snapshot, permanent rather
-than scaffolding (see the registration note below). The per-writer split is what keeps ownership
-single, and it holds without anyone scheduled to replace an arm: one relation per channel and
-writer cadence, so a later detector that mints violations into the store gets its own relation and
-its own view arm rather than contending for this one. The split also keeps the
-`source` boundary honest: for schema rows severity is a function of the rejection's kind, for
-compile rows it is javac's independent verdict, and one relation holding both would give one
-column two meanings.
+What this item adds is the diagnostics stratum: violations as facts. Four arms sit behind one
+`diagnostic` union view, and nothing reads a base relation directly.
 
-**The store is shared and persistent now, and the `validator_` relation inherits both facts.**
+**One relation per writer arm, and no writer at all for derivation arms.** The union view,
+with `source` as a per-arm literal in the shipped `graphql_directive_site` mould, is what the
+aggregate and the widened `diagnostics` filters read. Behind it:
+
+- **The store-native pilot: `intent_authored_claim_conflict`**, a derivation view over R589's
+  claim views carrying the claim-conflict family's violations as rows (the pilot section
+  below). A view has no writer, so the one-writer rule is satisfied trivially, and the
+  staleness clause below does not apply to it: a derivation is exactly as fresh as the
+  transcriptions under it.
+- **The transcription residue: the `rejection_` family**, the legacy walk's rejections loaded
+  per snapshot at the dev session's cadence, one loader, transitional by construction (the
+  residue section below).
+- **The lint arm, in the lint vocabulary, with its own relation and writer.** An earlier
+  revision put build warnings in the residue relation, and that was a nullable bag with two
+  vocabularies: `kind`, `variant`, `lsp_code`, `attempt_kind`, `stub_key` NULL on every
+  warning row and `lint_rule` NULL on every rejection row, the null pattern encoding which
+  arm a row is on, which is the sealed-over-shared-fields smell in DDL form. The severity
+  argument this spec already makes against fusing compile and schema applies unchanged (a
+  lint finding's severity is a function of its `LintRule`, never a rejection kind). And lint
+  rules are predicates over classified facts, a natural early candidate for a store-native
+  derivation, which they cannot become independently while sharing a relation with the
+  rejection residue. The union view is what makes the split free.
+- **The compile arm: the shipped `javac_diagnostic`** (R603, Done; see
+  `roadmap/changelog.md`), read from day one; that item's dovetail picked the fork where this
+  item's compile bridge is never built, so the fork is settled and its fallback moot. Behind
+  the relation sits `CompileDiagnostic`, the single flattening at the javac boundary that the
+  console block, the current MCP tool, and `CompileFacts` all read; this item's view becomes
+  the fourth reader of the same spelling.
+
+The per-writer split keeps the `source` boundary honest: for rejection rows severity is a
+function of the rejection's kind, for lint rows of the rule, for compile rows javac's
+independent verdict, and one relation holding any two would give one column two meanings. The
+split also holds without anyone scheduled to replace an arm: a later detection that derives
+its family store-native gets its own view arm rather than contending for an existing one.
+
+**The store is shared and persistent now, and the loaded arms inherit both facts.**
 R610 (shipped) moved the persisted store to a per-user cache shared by every module of a
-workspace, keyed the SDL families by a leading `graph_name`, and made refresh ownership-scoped. The relation inherits the dimension
-on the same reasoning `javac_diagnostic` shipped with: `graph_name` leads its key
-with the structural FK to `store_graph`, every loader statement is scoped to the session's
-graph (an unscoped delete in a shared store is one module erasing another's diagnostics), and
-the relation passes R610's schema gate without an exemption. The view's arms carry
-`graph_name` through, and the MCP read site filters to the reading session's graph; a graph
-dimension on the wire waits for a multi-graph workspace to want it. Persistence adds one
-honesty clause, not a mechanism: `validator_` rows from a previous session survive a restart until
-the first snapshot's graph-scoped delete-and-reload replaces them, so the tool's existing
-snapshot availability and freshness axes are what keeps a stale aggregate from reading as
-current. The compile arm needs no such clause because its lifecycle shipped with the
-relation: rows exist only between a dev session's compile round and the graph's next
-generation (capture clears the partition with the rest of its ownership scope), and a batch
-run's partition stays empty rather than claiming anything it cannot know, so an empty
-compile arm is honest emptiness, never staleness. Naming follows the landed vocabulary doctrine (a family is named for whose
-vocabulary the row is written in, never its reader or role): the leaning is `validator_`,
-the oracle whose verdicts the rows transcribe during the window, parallel to `javac_`; the
-Spec review settles the word.
+workspace, keyed the SDL families by a leading `graph_name`, and made refresh
+ownership-scoped. The `rejection_` and lint relations inherit the dimension on the same
+reasoning `javac_diagnostic` shipped with: `graph_name` leads their keys with the structural
+FK to `store_graph`, every loader statement is scoped to the session's graph (an unscoped
+delete in a shared store is one module erasing another's diagnostics), and the relations pass
+R610's schema gate without an exemption. The view's arms carry `graph_name` through, and the
+MCP read site filters to the reading session's graph; a graph dimension on the wire waits for
+a multi-graph workspace to want it. Persistence adds one honesty clause, not a mechanism:
+loaded rows from a previous session survive a restart until the first snapshot's graph-scoped
+delete-and-reload replaces them, so the tool's existing snapshot availability and freshness
+axes are what keeps a stale aggregate from reading as current. The clause covers loaded arms
+only: the pilot view derives from transcriptions the capture itself refreshes, and the
+compile arm's lifecycle shipped with its relation (rows exist only between a dev session's
+compile round and the graph's next generation, and a batch run's partition stays empty rather
+than claiming anything it cannot know, so an empty compile arm is honest emptiness, never
+staleness).
 
 **The reader goes through the session's handle, never the file.** R610 opens the shared store
 in mixed mode, falls back to a module-local in-memory store on any cache trouble, and stamps
 the store's compatibility into the file path, so a reader that opened the persisted file
 itself could be reading a different store than the one the session writes. The shipped
 `CompileFacts` already holds this contract on the write side (it takes the dev session's
-store handle); the aggregate, the widened filters, and the validator loader hold the same
-contract on the read side.
+store handle); the residue and lint loaders hold it beside `CompileFacts`, and the aggregate
+and the widened filters hold the same contract on the read side.
 
 **Who owns that handle, since this item is the first reader outside `graphitron`.** The owner
 is `DevMojo`, not the workspace: it opens `sessionStore` once at startup, closes it in
@@ -380,10 +403,13 @@ and giving a sink the store handle is what would make "one handle, shared by eve
 reader" false by adding a second owner. So the plumbing is explicit rather than assumed, and it
 is the one part of this design that reaches a module the rest of the item does not touch:
 
-- The write side needs none. The loader homes in `graphitron` (see the placement note below) and
-  takes a `DSLContext` the way `FactCapture.capture` does, so `DevMojo` constructs it beside
-  `CompileFacts` at the existing site and calls it where it already calls
-  `Workspace.setBuildOutput`.
+- The write side needs one seam and no new owner. The loaders home in `graphitron` (see the
+  placement note below) and take a `DSLContext` the way `FactCapture.capture` does, so
+  `DevMojo` constructs them beside `CompileFacts` at the existing site and calls them where it
+  already calls `Workspace.setBuildOutput`. Their input is the walk's error stream, never the
+  assembled report; `buildOutput` holds the two streams separate one line before it fuses
+  them, so `BuildOutput` exposes the walk's list alongside the fused report and the residue's
+  partition is structural at that single site (the residue section below).
 - The read side needs one edit: `GraphitronMcpServer`'s full constructor gains the handle, and
   `DevMojo`'s single construction site passes `sessionStore.dsl()`. `graphitron-mcp` imports
   neither `no.sikt.graphitron.model` nor `DSLContext` in main sources today, so this is that
@@ -394,53 +420,114 @@ is the one part of this design that reaches a module the rest of the item does n
   live dev session always has a handle. The `null` window the `compileFacts` field documents is
   the unit tier's bare mojos, which run no MCP server, so the aggregate never meets it.
 
-**The validator relation is permanent, and it registers `ORACLE`.** An earlier draft called this
-a bridge: a temporary materialized view of `ValidationReport`, registered under a new `BRIDGED`
-agreement arm whose javadoc would carry a retirement condition, with the arm going empty as the
-signal to delete it so the countdown lived in a test rather than a roadmap item. That framing is
-withdrawn, because the item it was waiting for is now largely tree and does not do what the
-framing assumed. R589 reads the claim relations and mints `ValidationError.forField` / `forType`
-values into the report; it materialises no violations, and flipping demand to a gate is explicitly
-out of its scope. So nothing on the board is scheduled to empty this relation, and a `BRIDGED` arm
-would be born permanent while its javadoc claimed transience, with a retirement test that can
-never fire. That is a dishonest registration in the one driver the architecture holds strictest.
+**The residue is transitional, and this passage has now reversed twice, so the lineage is
+recorded.** The first draft called the load a bridge: registered under a new `BRIDGED`
+agreement arm with a retirement countdown living in a test. That failed because nothing on the
+board was scheduled to empty it, so the countdown could never fire: a javadoc claiming
+transience over a test that cannot. The revision swung to "permanent, `ORACLE`", and that
+failed in the other direction: it promoted a transitional surface into the architecture just
+as the fact-base pivot settled the sealed hierarchies as retiring vocabulary. The honest
+framing is between the two: the residue is transitional *with a drainage mechanism this item
+itself builds*. Each rejection family that migrates store-native gets its own derivation view
+arm and leaves the residue, and the pilot below drains the first family on day one.
 
-Nor is the relation partial, which was the other half of the transience case. The whole rejection
-population routes through two lines: `GraphitronSchemaValidator`'s `validateUnclassifiedType` and
-`validateUnclassifiedField`, projecting `UnclassifiedType.rejection()` and
-`UnclassifiedField.rejection()`. The other fifty-odd mints in that file are structural checks on
-classified leaves, and they land in the same report. One load off the finished report therefore has
-complete coverage on day one, and it always did; "exactly one writer, one source, and a
-graph-scoped lifetime" describes a permanent relation, not scaffolding.
+**Named `rejection_`, for the vocabulary its rows are written in.** The earlier leaning,
+`validator_`, names the producing component, which is a role, the form the DDL header's
+doctrine explicitly rejects (its own counterexamples are `jooq_` and `extension_`). The rows
+are written in the sealed `Rejection` hierarchy's spellings and no other vocabulary: `kind`,
+`variant`, `lsp_code`, `attempt_kind`, `stub_key` are all that hierarchy's words. The role
+name also has to stay free: after drainage, violations still arise in the validation phase,
+so "validator" is a name the permanent store-native side may one day want, and the residue
+must not squat on it. Naming the residue for the vocabulary being deleted makes the family
+name carry its own retirement clock: when `Rejection` is gone, the name has no referent,
+which is exactly the honest signal.
 
-`ORACLE` is the arm, and it fits with no exemption and no new arm. R603 defined it for relations a
-post-capture oracle writer owns, where no independent second walk can re-derive the oracle's
-verdict without re-running the oracle. A rejection cannot be re-derived without re-running the
-classifier, and the write is post-capture by construction: `buildOutput` captures before it
-assembles the report. So the relation registers beside `javac_diagnostic` in an arm with two
-shipped non-vacuous anchors, and the naming follows the same doctrine: `validator_`, the oracle
-whose verdicts the rows transcribe, parallel to `javac_`. R610's rekey has landed, so the relation
-is born with the partition dimension rather than widened after the fact.
+**Its input is the walk's error stream, never the assembled report.** An earlier revision had
+the loader read the finished `ValidationReport` and argued complete coverage from it. With a
+detection-owned family in the view, that shape needs an exclusion set (which report entries
+were detection-minted) that must agree with the view's family coverage, and per-family
+drainage means the pair changes on every migration with nothing binding them: a family
+migrated in the view but not yet excluded double-counts, the reverse loses rows, and both are
+silent. `buildOutput` still holds the streams separate one line before it fuses them
+(`GraphitronSchemaValidator`'s list, then `detection.violations()` appended), so the loader
+takes the walk's list and the partition is structural at a single call site: whatever a
+detection minted was never in the loader's input, and no skip-list exists to drift. The
+residue's coverage claim reads accordingly: the walk's own rejections, not "complete coverage
+of the report".
 
-One thing this does not settle, deliberately. Once the relation is permanent, R589's two detection
-violations arguably belong in it rather than minted into the report. That is the right question and
-it is not this item's: it belongs to whoever migrates the next detector, which is the strangler's
-shape, and this item's single-writer rule is what keeps the answer from being "both".
+**It registers `ORACLE`, honestly, while it lives.** R603 defined the arm for relations a
+post-capture oracle writer owns, where no independent second walk can re-derive the verdict
+without re-running the oracle; a rejection cannot be re-derived without re-running the legacy
+classifier, the write is post-capture by construction, and both of the arm's shipped anchors
+are satisfiable by a shrinking relation. What the registration may not claim is permanence,
+and what a comment may not claim is transience without an enforcer, which were this passage's
+two prior failures. So the drainage gets the enforcer: **a declared-set pin enumerating the
+rejection families still routing through the residue**, in the mould of the dimension
+partition below. Migrating a family store-native must edit the declaration, and a new
+rejection cause cannot silently enlarge the residue. The relation's DDL comment states the
+removal criterion structurally and names no roadmap item: a family that acquires a derivation
+arm leaves this relation, and the relation retires with the sealed hierarchy whose vocabulary
+it transcribes.
 
-**Stored columns are facts; derived columns live in the view.** The `validator_` relation carries what
-the channel's own typed data states: the rejection's kind and variant, `lspCode`,
-`(attemptKind, attempt)`, the stub key, the lint rule, the location, and a nullable
+**The pilot: the claim-conflict family goes store-native.** R589 shipped the detection as the
+store's first reader, but its violations exit sideways: `AuthoredClaimConflicts` reads the
+claim views and mints `ValidationError` values into the report, so the one family whose facts
+are already relations still reaches every consumer as Java values. This item turns the
+derivation into a resident: `intent_authored_claim_conflict`, a view in the `intent_`
+stratum, named for the rule in the stratum's own mould (the `intent_` header already
+anticipates rules as residents; a `violation_` prefix would be a role name of exactly the
+rejected kind). Three constraints shape it:
+
+- **A view, not a table.** The `intent_` header states the rule for its residents: views,
+  never tables, so a derivation can never drift stale against the transcriptions it is
+  derived from, with materialization admitted only on a stated impossibility
+  (`intent_type_domain`'s cyclic recursion). A conflict reduction has no such impossibility.
+  Two places the SQL must carry logic that lives in Java today, named so they are checked
+  rather than discovered: the routine-plus-lookup carve-out predicate (the
+  recognised-but-unsupported pair that mints `Deferred` instead of a conflict), and the
+  ordered claim render, which for the view is an aggregate over the grouped claim rows, so
+  the residue's `directives` child relation is a residue-only mechanism, not a shared one.
+- **`ClaimDomain` reifies as rows in the same commit, and the view joins those rows.** The
+  detection's minting is gated on `ClaimDomain` membership, a Java test over the walked model
+  whose own javadoc calls it the unreified demand relation. Leaving the gate in Java makes
+  the view over-report relative to the report, exactly the divergence the parity pin claims
+  to exclude; joining the `intent_` demand views instead would perform the gate-flip
+  `ClaimDomain`'s javadoc reserves for follow-up work, over a population `DemandShadowTest`
+  measures as *not equal*, which moves the accept line and is out of scope here. So the
+  walk's reach lands as rows, a transcription named for the retiring vocabulary beside the
+  residue (it drains with the gate-flip), the view joins it, and the pilot's population is
+  unchanged by construction; the later gate-flip re-points one join at
+  `intent_resolved_*_demand`.
+- **Shadowed first, then the cutover.** The claim-view arms' `DERIVED` registrations are
+  non-vacuous today only because the Java reduction is an independent second evaluation.
+  Flip the report to project the view in the same motion and the anchor collapses to the
+  view compared against a projection of itself, which the arm's own javadoc forbids for a
+  semantic derivation. So the view lands shadowed against the surviving Java reduction, with
+  corpus agreement in the shipped shadow mould, and the report flips only once the anchor is
+  re-aimed at an expectation the view does not produce (the corpus-level agreement
+  `AuthoredClaimConflictsTest` already uses per arm is the nearest shape). At the cutover,
+  `Detection` derives the family's `ValidationError` values from the view's rows and the
+  `Conflicted` projection overlay keeps reading the detection unchanged. After it, the
+  report *is* a projection of the store for this family, the first of the per-family flips
+  the residue's drainage counts, and the walk's stream never contained these errors, so the
+  residue partition is untouched by the flip.
+
+**Stored columns are facts; derived columns live in the view.** The `rejection_` relation
+carries what the channel's own typed data states: the rejection's kind and variant,
+`lsp_code`, `(attempt_kind, attempt)`, the stub key, the location, and a nullable
 `(type_name, field_name)` pair at the DDL's universal grain rather than a rendered coordinate
-string. The loader reads that grain off `ValidationError`'s constructors instead of
-dot-splitting a rendering back apart, which also gives the carved-out sealed-`Coordinate` item
-a cheap landing later (a loader simplification, no column change). The view computes what is a
-function of stored columns: `actionable` off kind (step 1's projection, read in one place),
+string; the lint arm carries the rule id and location in its own vocabulary. The loader reads
+that grain off `ValidationError`'s constructors instead of dot-splitting a rendering back
+apart, which also gives the carved-out sealed-`Coordinate` item a cheap landing later (a
+loader simplification, no column change). The view computes what is a function of stored
+columns: `actionable` off kind (the deferred-versus-rest predicate, pinned by the one-row
+parity assertion against `Diagnostics.severityOf`),
 `type` and `directory` as the declared coarse grains of the coordinate pair and `file`, the
 rendered `coordinate`, and the canonical `directives` render over an ordered child relation
 (the DDL's standing pattern for multi-valued decodes, which also gives the deferred
 per-directive dimension a home with no re-key). `message` is a rendering column: display only,
-never a dimension, never an agreement anchor, and expected to change text when detections take
-over the schema arm, because the legacy report splices coordinates into prose at construction.
+never a dimension, never an agreement anchor, and expected to change text as detections take
+over rejection families, because the legacy report splices coordinates into prose at construction.
 Two compile-arm consequences of the shipped relation belong here. The view derives the
 compile rows' `severity` from `kind` mirroring `CompileDiagnostic.severity()`, the model's
 one home for that projection (`ERROR` to error, every other `Kind` to warning); the shipped
@@ -455,32 +542,33 @@ would be a hand-maintained second copy of a taxonomy the compiler already enforc
 
 **The loader is the single exhaustive-switch site.** Deleting the extractors would otherwise
 delete the property that a new `Rejection` arm forces a decision in the aggregate, so the
-property moves: the validator loader fills the typed columns through exhaustive sealed switches
-with no `default`, at one site, and the rejection-leaf partition pin re-aims at the loader's
-column population. Absence discipline moves with it: the extractors' uniform
+property moves: the residue loader fills the typed columns through exhaustive sealed switches
+with no `default`, at one site, destructuring the records' own components
+(`UnknownName`'s `(attemptKind, attempt, candidates)`, `Deferred`'s stub key, the nine
+`lspCode()`-bearing sub-seals matched explicitly), and the rejection-leaf partition pin
+re-aims at the loader's column population. Absence discipline moves with it: the extractors' uniform
 `Optional<String>` becomes SQL `NULL`, and every comparison in the shared `where` mechanism
 uses null-safe equality (`IS NOT DISTINCT FROM`), or the aggregate / drill-down parity pin
 passes on the aggregate side and fails on the drill-down side.
 
-**What stays out, so this item does not corner R589.** No generic provenance columns
-(classifier, trigger, witness) and no occurrence-path key on the `validator_` relation. What R589
-closed was those facts as columns on one *universal* record, not the facts themselves: it has since
-shipped `classifier`, `trigger` and `witness` as per-relation columns on its claim views, plus
-`intent_input_occurrence_path` and its step child. So the rule here is narrower than "those facts
-do not exist" and still binds: they are R589's to own on its own relations, and restating them on
-this one would be the second copy the universal record was rejected for. The dimension set here is
-the read side's; every fact that survives a rejection under R589 becomes a candidate dimension by
-joining its relation, not by widening this one.
+**Provenance columns stay off the residue; the pilot inherits them by derivation.** R589
+shipped `classifier`, `trigger` and `witness` as per-relation columns on its claim views,
+having rejected them as columns on one universal record. The rule still binds and is now
+asymmetric in this item's favour: the residue, a transcription of walk-minted values, restates
+nothing the claim views own, while the pilot view, being a derivation *over* those views,
+carries claim provenance by joining its own sources, which is the fact-base answer the
+universal record was rejected for. Every fact that survives a rejection is a candidate
+dimension by joining its relation, never by widening the residue.
 
 Boundaries and placement, so they are reviewed rather than discovered. `unified-diagnostic-stream`
 (R601) collapses the schema-side report channels, which under this design simplifies the
-validator loader (one load instead of two slots plus a never-added third), not the
+loaders (one load instead of two slots plus a never-added third), not the
 aggregate; it stays non-blocking. The aggregate's jOOQ queries live in `graphitron-mcp` beside
 the tool (the generated classes are the containment: R589 rejected a typed store facade because
 mediating all access would reconstruct the fixed method vocabulary the store was chosen to
 escape and duplicate every relation into a second hand-written surface, while jOOQ's generated
 classes already give typed access with no strings and no JDBC; `graphitron-model` hosts model
-code only), and the validator loader lives in `graphitron` beside the report's producer.
+code only), and the residue and lint loaders live in `graphitron` beside the report's producer.
 
 That placement is the correction of an earlier draft's, and the correction matters enough to
 state rather than quietly apply. The draft put the loader at the workspace layer and claimed it
@@ -496,40 +584,41 @@ is copied into by a consumer, which is the shape R603 rejected. So the loader si
 One cadence, not two, and the reason is an ordering fact worth stating because it reads the other
 way at first. `FactCapture` offers both shapes, `run(Path, ...)` opening and closing its own store
 for a self-contained run and `capture(DSLContext, ...)` taking a live handle, and an earlier draft
-of this section had the loader take the same pair. It should take only the handle arm.
+of this section had the loader take the same pair. The loaders take only the handle arm.
 `buildOutput` reaches the store *before* the report exists: it calls
 `FactCapture.runWithDetections` (whose violations feed the error stream), that call opens and closes
 the store, and only then are `errors`, `warnings` and `ValidationReport.from` assembled. A
 self-contained arm would therefore have to reopen the store purely to write, after the pass had
-already closed it. So the loader takes a live handle and writes at the dev session's cadence
-through `DevMojo`'s `sessionStore`, exactly beside `CompileFacts`, and a batch run's `validator_`
-partition stays empty. That costs nothing real: the only reader is the MCP server, which exists
+already closed it. So the loaders take a live handle and write at the dev session's cadence
+through `DevMojo`'s `sessionStore`, exactly beside `CompileFacts`, and a batch run's loaded
+partitions stay empty. That costs nothing real: the only reader is the MCP server, which exists
 only in a dev session, and it is the same honest-emptiness posture the compile arm shipped with
-rather than a new one. A read-only SQL surface
+rather than a new one. The pilot view needs no cadence at all, which is the quiet payoff of
+violations as derivations: a view answers in any store whose facts are captured, so even a
+batch run's store carries the claim-conflict family. A read-only SQL surface
 over the whole fact store, which the H2 spike floats as an agent capability, stays a separate
-future item: the derived stratum it would query barely exists yet, and its design question is
+future item: the derived stratum is only now gaining residents, and its design question is
 different in kind; see the query-language section above. The whole-board context is
 `roadmap/audits/2026-08-06-fact-base-impact-sweep.md`.
 
 ## Phasing
 
-Ordered by dependency, not by module. The model lifts come first because columns typed
-off today's wide shapes mean re-doing the DDL and the loader both.
+Ordered by dependency, not by module. The pilot leads because the cutover is what proves the
+report can project from the store; the residue and the tool follow.
 
 | # | What | Where | Size |
 |---|---|---|---|
-| 1 | `RejectionKind` gains the author-fixable projection; `Diagnostics.severityOf`'s comment becomes a read of it | `graphitron`, `graphitron-lsp` | small |
-| 2 | `StubKey` splits into two permits, non-null `VariantClass` plus an inline-defer arm; the two `deferred` factories map to their own arm | `graphitron` | small |
-| 3 | `CodedRejection` capability lift; `Diagnostics.lspCodeOf` collapses to one `instanceof`; membership partition meta-test | `graphitron`, `graphitron-lsp` | small-medium (42 sites, mechanical) |
-| 4 | DDL: the graph-keyed `validator_` relation, its `directives` child relation, and the `diagnostic` union view (schema arm on `validator_`, compile arm on the shipped `javac_diagnostic`), comments per the model conventions; one `ORACLE` registration on the existing agreement arm, no new arm | `graphitron-model`, `graphitron` | small-medium |
-| 5 | The validator loader beside the report's producer: the single exhaustive-switch site filling typed columns per snapshot, every statement scoped to the session's graph, taking a live `DSLContext` only; `DevMojo` constructs it beside `CompileFacts` and calls it where it sets the build output | `graphitron`, `graphitron-maven-plugin` | small-medium |
-| 6 | The aggregate and the widened `diagnostics` filters as jOOQ over the view; the dimension enum as the wire-name-to-view-column mapping; tail rule via `HAVING` plus the elided-remainder aggregate; the new counts-only tool; the handle reaching it through `GraphitronMcpServer`'s constructor from `DevMojo`'s one construction site | `graphitron-mcp`, `graphitron-maven-plugin` | medium |
+| 1 | `ClaimDomain` reified as rows (the walk-reach transcription, in the residue's retiring-vocabulary family); the `intent_authored_claim_conflict` derivation view, landing shadowed against the surviving Java reduction with corpus agreement | `graphitron-model`, `graphitron` | small-medium |
+| 2 | The cutover: `Detection` derives the claim-conflict family's `ValidationError` values from the view's rows, the `DERIVED` anchor re-aims at an expectation the view does not produce, the `Conflicted` projection overlay keeps reading the detection | `graphitron` | small |
+| 3 | DDL: the graph-keyed `rejection_` residue and its `directives` child, the lint arm's relation, and the prefix-less `diagnostic` union view over all four arms; registrations (loaded arms `ORACLE`, derivation arm `DERIVED`) and the residue's declared-set drainage pin | `graphitron-model`, `graphitron` | small-medium |
+| 4 | The residue and lint loaders beside the report's producer: one exhaustive-switch site over the walk's error stream (never the fused report; `BuildOutput` exposes the split), every statement graph-scoped, live `DSLContext` only; `DevMojo` constructs them beside `CompileFacts` and calls them where it sets the build output | `graphitron`, `graphitron-maven-plugin` | small-medium |
+| 5 | The aggregate and the widened `diagnostics` filters as jOOQ over the view; the dimension enum as the wire-name-to-view-column mapping; tail rule via `HAVING` plus the elided-remainder aggregate; the new counts-only tool; the handle reaching it through `GraphitronMcpServer`'s constructor from `DevMojo`'s one construction site | `graphitron-mcp`, `graphitron-maven-plugin` | medium |
 
-Steps 1 to 3 are each independently defensible and each improve the LSP or the watch formatter on
-their own, so they can be carved into separate items if parallelism is wanted. Step 6 stays one
-step: the widened filters and the aggregate share the view and one null-safe `where` translation,
-and splitting them is how the two parallel filter implementations this design exists to prevent
-get built.
+Steps 1 and 2 are the violations-as-facts pilot and could carve into their own item if
+parallelism is wanted; steps 3 to 5 depend on nothing in them except the view's existence for
+its union arm, so the carve is clean. Step 5 stays one step: the widened filters and the
+aggregate share the view and one null-safe `where` translation, and splitting them is how the
+two parallel filter implementations this design exists to prevent get built.
 
 **Carved out at review as a dependency, and since satisfied: the retired-directive identity
 convergence.** This item once blocked on routing `@notGenerated` and `@lookupKey` through
@@ -549,49 +638,38 @@ Backlog) pins the `DirectiveConflict.directives` no-counterfactual-entries contr
 producer site rather than the one site pinned so far. The pivot's counts are right on today's tree
 either way; R608 is what keeps a future producer from quietly corrupting them.
 
-**The dependency chain now: everything in front has shipped, R589 deliberately not.**
-The store (R595), the graph partition dimension (R610), and the `javac_` oracle family (R603)
-are all Done (see `roadmap/changelog.md`), which is why `depends-on` is empty: the `validator_`
-relation is born with R610's dimension, and R603's dovetail resolved in the recommended
-order, so the compile arm reads the shipped `javac_diagnostic` and the fallback (this item
-carrying its own compile bridge) never activates. Every substrate this design leans on is now
-tree, not plan.
-R589 stays a relation, not a prerequisite, and by now it is largely tree: the claim views, the
-column-match classifier, the shadow demand and exemption rows, and the input occurrence paths have
-all landed, with `no.sikt.graphitron.rewrite.derive.AuthoredClaimConflicts` reading them. It makes
-classification a derivation over the store and stops a failed coordinate from discarding what the
-classifier established, which widens this dimension set on its own; every fact that survives a
-rejection becomes a candidate dimension, and the pivot a measured session actually wanted ("the
-diagnostics on my DELETE mutations") becomes expressible.
+**The dependency chain: everything this leans on has shipped.** The store (R595), the graph
+partition dimension (R610), the `javac_` oracle family (R603), and R589's claim relations are
+all Done (see `roadmap/changelog.md`), which is why `depends-on` is empty: the loaded arms are
+born with R610's dimension, the compile arm reads the shipped `javac_diagnostic`, and the
+pilot derives over relations already in the tree. R589 is more than substrate here: the pilot
+is a derivation over its claim views, its detection's typed `Detection` product is the
+cutover's seam, and its landing widens the dimension set on its own, since every fact that
+survives a rejection is a candidate dimension by joining its relation (the pivot a measured
+session actually wanted, "the diagnostics on my DELETE mutations", becomes expressible). Two
+corrections an earlier draft recorded about that relationship each collapse to a sentence:
+this item is not the store's first reader (`AuthoredClaimConflicts` is, which proved the query
+vocabulary in production where a wrong answer costs wrong generated code), and R589 displaced
+nothing here (its violations exit as Java values, which is exactly the sideways exit the pilot
+closes).
 
-Two corrections to how an earlier draft read that relationship, both from checking the shipped
-tree. First, R589 does not displace anything here. Its detection mints `ValidationError` values
-into the report rather than materialising violations, so the `validator_` relation and its loader
-do not retire when R589 completes; the registration note above is where that lands. Second, this
-item is no longer the store's first reader, which `AuthoredClaimConflicts` now is. That costs an
-argument the draft leaned on, that this item would be the cheapest end-to-end validation of the
-store, and replaces it with something better: the query vocabulary this item needs is already
-proven in production by a shipped reader doing one grouping query per grain.
-
-Nothing here reads a classification today, and no dimension already in the enum changes meaning as
-R589 completes; the view, the wire vocabulary, and every pin stay. One caution rather than a
-correction: R589's input-field slice re-keys some mints, definition-keyed for the malformed shape
-and use-keyed for the cascade, and its own spec flags that this moves counts. The `coordinate` and
-`type` dimensions keep their meaning, but their values for input-field rejections shift under it.
-Every count this item reports is true on today's model; it is narrower, not wrong.
+One caution survives from R589's input-field slice: it re-keyed some mints, definition-keyed
+for the malformed shape and use-keyed for the cascade, and that moves counts. The `coordinate`
+and `type` dimensions keep their meaning; their values for input-field rejections shifted
+under it. Every count this item reports is true on today's model.
 
 **Carved out at review: the sealed `Coordinate` component.** A sealed
 `Coordinate { SchemaWide | TypeLevel | FieldLevel }` on `ValidationError`, deleting
 `WatchErrorFormatter`'s `isTypeLevel` / `typeOf`, now lives in its own Backlog item,
-`validation-error-coordinate-sealed`. It is the right lift and the reasoning in "What the model owns"
-stands, but it is not a prerequisite here, and it was the only step reaching outside the diagnostics
+`validation-error-coordinate-sealed`. It is the right lift and its reasoning stands, but it is
+not a prerequisite here, and it was the only lift reaching outside the diagnostics
 path. Two reasons it separates cleanly:
 
-- The aggregate does not need it. The `validator_` relation stores a nullable `(type_name,
+- The aggregate does not need it. The `rejection_` relation stores a nullable `(type_name,
   field_name)` pair at the DDL's universal grain, and the loader reads the grain off
   `ValidationError`'s constructors in *one* place; the rendered `coordinate` and coarse `type`
-  are view columns computed from the pair, so no dot-split exists anywhere. The spec's
-  objection in "What the model owns" is to *duplicating* the predicate, and one loader site is
+  are view columns computed from the pair, so no dot-split exists anywhere. The objection the
+  carve-out answers is to *duplicating* the predicate, and one loader site is
   not a duplicate until the `Coordinate` lift exists; when that item lands, the loader reads a
   sealed switch instead of the constructors' string-plus-null and no column changes. The absent
   case is uniform under the SQL `NULL` discipline, so "rows with no coordinate are not silently
@@ -605,15 +683,15 @@ path. Two reasons it separates cleanly:
   `graphitron-maven-plugin`, "which nothing else here touches", and the store-handle plumbing
   this item needs touches it.
 
-Dropping it leaves this item spanning `graphitron`, `graphitron-model`, `graphitron-lsp`,
-`graphitron-mcp`, and `graphitron-maven-plugin`. Five modules reads wide for one item, so the
-shape is worth stating plainly: three of them carry real work (the model lifts and the loader in
-`graphitron`, the DDL in `graphitron-model`, the tool in `graphitron-mcp`), `graphitron-lsp` is
-touched only by steps 1 and 3 collapsing two projections it already owns, and
-`graphitron-maven-plugin` is one constructor argument at one construction site. It stays
-defensible given steps 1 to 3 all exist to keep the aggregate a projection and step 4 is the
-first-reader DDL this item exists to consume, but a reviewer who wanted steps 1 to 3 carved off
-into their own item would have a fair case, and the Phasing note above already permits it.
+Dropping it leaves this item spanning `graphitron`, `graphitron-model`, `graphitron-mcp`, and
+`graphitron-maven-plugin` in main sources, with `graphitron-lsp` touched only in its test tier
+(the membership-binding extension of the reflective permit walk). Three modules carry real
+work (the pilot, the cutover and the loaders in `graphitron`, the DDL in `graphitron-model`,
+the tool in `graphitron-mcp`); `graphitron-maven-plugin` is construction-site edits at sites
+the mojo already owns. An earlier revision counted five modules because the model lifts
+reached `graphitron-lsp` in main sources; the drops removed that. A reviewer who wanted the
+pilot (steps 1 and 2) carved into its own item would have a fair case, and the Phasing note
+above already permits it.
 
 ## Tests
 
@@ -623,7 +701,8 @@ through the real pipeline into the bootstrapped store, which "behaviour is pinne
 pipeline tier and above" counts as an improvement, not a cost. The tests that carry weight are
 the invariant pins, not per-dimension unit tests. One rule binds them all: every pin asserts on
 tool answers, never on the engine's internals, and that rule is exactly what makes the tier
-move and the later schema-arm swap (R589's detection-minted relation) invisible to this suite:
+move and every later drainage step (a residue family migrating to its own derivation arm)
+invisible to this suite:
 
 - **Aggregate / drill-down parity.** Filtering `diagnostics` to a group's key returns exactly that
   group's count. This is the pin that makes the per-cluster examples a sample rather than a lossy
@@ -647,10 +726,17 @@ move and the later schema-arm swap (R589's detection-minted relation) invisible 
   the reviewer decisions defer. Pin the `directives` canonical render here too, since an unsorted join
   is the one way a single-valued column can still split a group.
 - **Rejection-leaf partition.** Every `Rejection` leaf declared coded or deliberately codeless
-  (step 3), and no typed-key arm reachable from the prose path (which the directive-convergence
-  dependency delivers; this pin is what stops it regressing afterwards). The pin aims at the
-  validator loader's column population, the single switch site, because an unwritten column cannot
-  be observed from stored strings.
+  (via the membership-binding walk, not a capability interface), and no typed-key arm reachable
+  from the prose path (which the directive-convergence dependency delivers; this pin is what
+  stops it regressing afterwards). The pin aims at the residue loader's column population, the
+  single switch site, because an unwritten column cannot be observed from stored strings.
+- **Pilot shadow agreement, then a re-aimed anchor.** The `intent_authored_claim_conflict` view
+  lands corpus-agreed against the surviving Java reduction; at the cutover the agreement
+  re-aims at an expectation the view does not produce, so the `DERIVED` registration never
+  becomes the view compared against a projection of itself.
+- **Residue drainage declared set.** The rejection families still routing through the
+  `rejection_` residue are enumerated in one declaration; migrating a family store-native must
+  edit it, and a new rejection cause cannot silently enlarge the residue.
 - **Rows with no coordinate are not silently lost.** Warnings and compile diagnostics carry no
   coordinate, so coordinate-reading dimensions yield a stated absent bucket rather than dropping
   rows out of the totals.
@@ -662,27 +748,39 @@ move and the later schema-arm swap (R589's detection-minted relation) invisible 
   assertions cover the new tool by construction, since it derives the advertised surface from a booted
   server rather than a hand-written list.
 
-Steps 1 to 3 pin at their own layers: `RejectionKindProjectionTest` for the actionable projection,
-and the existing LSP tests (`RejectionSeverityCoverageTest` reads each arm's stable code today) for
-the collapsed `lspCodeOf`.
+The dropped model lifts leave two pins in their place: the `actionable` one-row parity
+assertion against `Diagnostics.severityOf`'s deferred-versus-rest predicate, and the
+membership-binding extension of `RejectionSeverityCoverageTest`'s reflective permit walk. That
+walk asserts only severity today, so an `lspCode()` missing from `Diagnostics.lspCodeOf`
+passes silently; the extension surfaces every declared code through both readers, closing the
+hole the dropped capability lift would have closed in the type system.
 
 ## Implementation sites
 
-- `graphitron-model.sql`: the graph-keyed `validator_` relation, its `directives` child
-  relation, and the `diagnostic` union view (compile arm selecting from the shipped
-  `javac_diagnostic`), commented per the model conventions (the comment-coverage gate reads
-  them).
-- The agreement driver in `graphitron`'s capture test root: one line registering the `validator_`
-  relation under the existing `ORACLE` arm. No new arm, no honesty caveat, no retirement condition;
-  the arm's two shipped anchors (two-graph lifecycle, write-read content) are what it inherits.
-- A loader class in `graphitron` beside the report's producer: the single exhaustive-switch site,
-  writing per snapshot (schema channel only; the compile channel's writer, `CompileFacts`,
-  already ships), every statement graph-scoped, taking a `DSLContext` in `FactCapture`'s
-  two-entry shape rather than opening its own store.
-- `DevMojo`: construct the loader beside the existing `CompileFacts` construction, call it where
-  the mojo already publishes the build output to the workspace, and pass `sessionStore.dsl()`
-  into the MCP server's constructor. Three edits at sites the mojo already owns; the store handle
-  and its lifetime are already there.
+- `graphitron-model.sql`: the `intent_authored_claim_conflict` view and the reified walk-reach
+  rows it joins; the graph-keyed `rejection_` residue and its `directives` child; the lint
+  arm's relation; and the prefix-less `diagnostic` union view over all four arms, its comment
+  stating why it carries no family prefix (a read-side union across vocabularies has no
+  family, and no naming gate says so mechanically). All commented per the model conventions
+  (the comment-coverage gate reads them).
+- The agreement driver in `graphitron`'s capture test root: the `rejection_` residue and the
+  lint relation under the existing `ORACLE` arm (loaded transcriptions of post-capture
+  verdicts, inheriting the arm's two shipped anchors), the pilot view under `DERIVED` with its
+  anchor re-aimed at the cutover. No new arm.
+- `AuthoredClaimConflicts` / `Detection`: the cutover site. The family's `ValidationError`
+  values derive from the view's rows; the `Conflicted` projection overlay keeps its seam.
+- `ClaimDomain`: reified as rows the pilot view joins; the record's javadoc already carries
+  the gate's rationale and removal criterion, which move to the relation comment.
+- The residue and lint loader classes in `graphitron` beside the report's producer: the single
+  exhaustive-switch site, writing per snapshot (schema channels only; the compile channel's
+  writer, `CompileFacts`, already ships), every statement graph-scoped, taking a live
+  `DSLContext` and the walk's error stream rather than the fused report.
+- `GraphQLRewriteGenerator.BuildOutput`: exposes the walk's error stream alongside the fused
+  report, so the loaders' input partition is structural.
+- `DevMojo`: construct the loaders beside the existing `CompileFacts` construction, call them
+  where the mojo already publishes the build output to the workspace, and pass
+  `sessionStore.dsl()` into the MCP server's constructor. Edits at sites the mojo already
+  owns; the store handle and its lifetime are already there.
 - `GraphitronMcpServer`'s full constructor: accept the store handle. This is `graphitron-mcp`'s
   first store dependency, so the generated-classes containment argument lands here rather than
   being inherited.
@@ -722,12 +820,13 @@ the collapsed `lspCodeOf`.
 ## Reviewer decisions
 
 The draft's five open questions, settled at Spec review so the implementer inherits decisions rather
-than leanings. Each takes the draft's leaning except where noted. The first-reader substrate
-re-decision postdates this review and re-homes the mechanics behind three of these (the
+than leanings. Each takes the draft's leaning except where noted. Two re-decisions postdate this
+review: the substrate re-decision re-homes the mechanics behind three of these (the
 `directives` canonical render is a view column over a child relation, the shared `where` is a
-null-safe jOOQ translation, drill-down filters read the view), but no decision below reverses:
-the tool boundary, the preset, pure counts, the set-valued `directives` group, and the
-`messageTemplate` default all survive with their reasoning intact.
+null-safe jOOQ translation, drill-down filters read the view), and the violations-as-facts
+re-argue reverses one decision, recorded in place below. The rest survive with their reasoning
+intact: the tool boundary, the preset, pure counts, the set-valued `directives` group, and the
+`messageTemplate` default.
 
 - **Separate tool, named `diagnostics.aggregate`.** The discovery argument carries: an agent finds
   the capability through the tool's own description, and the counts-not-entries result schema should
@@ -739,12 +838,15 @@ the tool boundary, the preset, pure counts, the set-valued `directives` group, a
 - **One default preset plus faceting.** The zero-argument call returns the actionable / deferred
   headline, so an agent that has read nothing still gets the triage view; everything else is composed
   from the dimension list. No catalogue of named reports.
-- **Steps 1 to 3 stay in this item; the `Coordinate` lift and the directive convergence are carved
-  out.** Steps 1 to 3 each directly remove a prose fallback or an `instanceof` copy from the
-  aggregate, so they genuinely precede the tool. The `Coordinate` lift is separable at a single
-  extractor and was the only step reaching outside the diagnostics path. The directive convergence
-  turned out to be a lift of the input-field resolution path, so it is a dependency rather than a
-  step; see Phasing for both. Blast radius lands at three modules.
+- **Reversed: the three model lifts are dropped, not kept.** The decision as reviewed kept
+  them in this item, reasoning that each "directly removes a prose fallback or an `instanceof`
+  copy from the aggregate"; that reasoning assumed the sealed hierarchy was the investment
+  surface. The fact-base direction settled it the other way: the hierarchy is retiring
+  vocabulary, the lifts are churn on a surface being deleted, and each invariant they carried
+  is paid for in the test tier or the view instead (see "The sealed hierarchy is not the
+  investment surface"). Recorded as a reversal rather than edited away. The `Coordinate`
+  carve-out and the discharged directive-convergence dependency stand unchanged; blast radius
+  lands at four modules in main sources, `graphitron-lsp` in test tier only.
 - **"Measure then decide" is acceptable for `messageTemplate`, with the rule stated up front.**
   Deferring is legitimate here because the measurement is cheap and the fallback is strictly smaller
   and safe. What a Spec may not defer is *who decides and on what basis*, so: once the
@@ -863,10 +965,15 @@ is supposed to produce.
 - **No new rejection cause, and no change to what the build accepts or rejects.** This replaces
   the Backlog body's "no change to the rejection taxonomy", which was wrong as written: held
   strictly it *forces* the prose heuristic and ships an untyped side-channel with a hedge instead
-  of an enforcer. Typed-key exposure, capability lifts, and sub-taxonomy splits over existing arms
-  are in scope precisely so the aggregate can stay a projection; what stays out is inventing new
-  causes or moving the accept / reject line. Step 4 converges the identity of an existing
-  rejection, it does not add one.
+  of an enforcer. Typed-key exposure over existing arms is in scope precisely so the aggregate
+  can stay a projection; what stays out is inventing new causes or moving the accept / reject
+  line. On the pilot the constraint holds by construction: the conflict view joins the reified
+  walk-reach rows, never the demand views, so its population is the detection's today, and the
+  demand gate-flip stays its own follow-up.
+- **The per-family flips beyond the pilot.** This item lands the mechanism (the drainage
+  declaration, the residue partition, the derivation-arm mould) and the first flip; each
+  further rejection family migrates with its own detection, edits the drainage declaration,
+  and inherits the mould.
 - LSP-side bulk application of fixes. The workspace-scoped bulk-quick-fix tier is
   `nodeid-migration-quickfix`'s to decide.
 - Aggregation over anything but the two channels `diagnostics` already unions (validator

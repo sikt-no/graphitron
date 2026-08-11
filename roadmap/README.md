@@ -21,9 +21,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R333` | The Graphitron data model | Ready | 2026-08-10 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R612` | The schema scan and its freshness replay share one typed recipe | Ready | 2026-08-10 <sub>created 2026-08-08</sub> | [plan](maven-config-fact-family.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
-| `R569` | Aggregated diagnostics commands for the MCP server | Spec | 2026-08-11 <sub>created 2026-08-03</sub> | [plan](mcp-aggregated-diagnostics.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
+| `R569` | Violation facts in the store; the MCP aggregate is their first reader | Spec | 2026-08-11 <sub>created 2026-08-03</sub> | [plan](mcp-aggregated-diagnostics.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-08-06 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
@@ -271,12 +271,12 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R625` [**Honour coercing argMapping leaf extractions on routine bindings**](routine-coercing-arg-extractions.md) — Backlog, validation
 - `R601` [**The diagnostic stream unifies**](unified-diagnostic-stream.md) — Backlog, structural
 - `R602` [**Decide the INPUT_OBJECT locations of @record and @table: narrow or retired-location convention**](input-object-directive-locations.md) — Backlog, cleanup
-- `R569` [**Aggregated diagnostics commands for the MCP server**](mcp-aggregated-diagnostics.md) — Spec, feature
 - `R236` [**BuildContext nested-input candidate-hint draws from path-origin table instead of @reference terminal table**](validator-reference-candidate-hint-terminal-table.md) — Backlog, bug
 - `R557` [**Completeness sweep for @splitQuery applications: every marker consumed, inert-by-construction, or rejected**](split-query-marker-sweep.md) — Backlog, validation
 - `R282` [**Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces**](fk-key-hint-sibling-scope.md) — Spec, bug
 - `R577` [**Sealed Coordinate component on ValidationError**](validation-error-coordinate-sealed.md) — Backlog, architecture
 - `R181` [**Validate @order/@defaultOrder: empty directive and @index coexistence**](validate-order-directive-args.md) — Backlog, validation
+- `R569` [**Violation facts in the store; the MCP aggregate is their first reader**](mcp-aggregated-diagnostics.md) — Spec, feature
 - `R319` [**Warn on pruned unreachable output types instead of dropping them silently**](warn-on-pruned-unreachable-types.md) — Backlog, architecture
 - `R66` [**Widen string-carrier intermediates onto Rejection (R58 follow-up)**](rejection-string-carrier-widening.md) — Backlog, architecture
 - `R209` [**FieldRegistry classify-input trace loses typed Rejection payload**](field-registry-typed-rejection-trace.md) — Backlog, Typed rejection chain
