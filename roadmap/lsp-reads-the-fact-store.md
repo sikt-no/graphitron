@@ -49,6 +49,18 @@ if the comparison does not favour the fact-based arms, or a migrated request is 
 incumbent's linear scan on Sakila, the cutover does not happen, the incumbents stay, and the
 finding is the report.
 
+**The reuse is of facts, not of code.** The seam between the language server and the store is a
+query and its rows, nothing else. The LSP states its data need, fetches exactly that, and reads the
+result as jOOQ's `Result` and `RecordN` tuples off the generated model; a hand-written type appears
+only where it carries something the rows do not, and it is the LSP's own. No `graphitron`
+projection type crosses the seam, and none gets rebuilt store-side under a new name: an arm list
+that exists because a Java projection had those arms is the shape under test, not a requirement on
+the query. The structural test is `graphitron-lsp`'s pom. It names `graphitron` today and imports
+twenty-one types from it, six of them `rewrite/catalog` projections beyond `CompletionData` and
+`LspSchemaSnapshot`; at the cutover it should name `graphitron-model` for the generated store
+tables, with whatever remains of the `graphitron` dependency accounted for one type at a time. A
+surviving projection import is a surviving second model, whatever the line count says.
+
 **This is not a port.** The incumbent is what is being judged, so there is no shadow-parity gate and
 no byte-equality on rendered output; pinning the new implementation to the old behaviour would
 import the shape under test. What replaces the gate is an enforcer, not care: a meta-test in the
@@ -139,24 +151,27 @@ same arm a stale source gets below.
 
 **Sealed resolution outcomes.** The store's keys are honest where the projections' lists were not:
 an unqualified table name may match several rows, and `jvm_method` keys on `descriptor` because
-erased display names collided on overloads. Resolution returns `Resolved` / `Ambiguous` /
-`NotFound` per axis, as `CatalogFacts.resolve` already does, plus the arm that replaces
-`LspSchemaSnapshot`'s freshness seal: `Indeterminate(sourceName)`, meaning the answer would come
-from a source whose stamp no longer matches the buffer. One seam owns the join of
-`store_source.stamp` against the open-buffer set and decides currency once, as a variant rather
-than a field, so no surface re-derives "is that file dirty?" for itself: an SDL miss is a real miss
-or it is `Indeterminate`, and every consumer's switch breaks until it says which. `Ambiguous` at an
-author-written coordinate surfaces as a diagnostic, never a silent first match.
+erased display names collided on overloads. Resolved / ambiguous / not-found needs no type: it is
+how many rows the query returned, and a `Result` says that already. The one outcome the rows cannot
+carry is the arm that replaces `LspSchemaSnapshot`'s freshness seal, `Indeterminate(sourceName)`,
+meaning the answer would come from a source whose stamp no longer matches the buffer. So the type
+is two-armed, the rows and that arm, and the compile-time force lands exactly where the information
+is not in the data. One seam owns the join of `store_source.stamp` against the open-buffer set and
+decides currency once, as a variant rather than a field, so no surface re-derives "is that file
+dirty?" for itself: an SDL miss is a real miss or it is `Indeterminate`, and every consumer's switch
+breaks until it says which. A multi-row result at an author-written coordinate surfaces as a
+diagnostic, never a silent first match.
 
-**Coordinate-keyed lookups.** The parse hands over a coordinate; the store answers it. `DeclTarget`
-is the right seam already, a sealed resolution shared by hover and goto-definition so their parity
-is structural. Its variants carry `CompletionData` records today and carry coordinates instead.
-Re-sourcing is also the moment its method-backedness check stops being a five-case switch behind a
-`default` arm. The class and method it needs are not on `graphitron_field_binding`, which carries
-`@field(name:)`'s bound name and defers backing to classification by its own comment; they are on
-`graphitron_service` (the `ServiceBacked`, `QueryService` and `MutationService` arms),
-`graphitron_external_field` (`Computed`) and `graphitron_routine` (`RoutineBacked`), read through
-the classification stratum that picks the arm.
+**Coordinate-keyed lookups.** The parse hands over a coordinate; the store answers it, and what
+comes back is rows. `DeclTarget`'s six variants are not a shape to preserve: they are the projection
+era's dispatch vocabulary, and re-pointing them at the store would carry that shape across the seam
+under a new payload. What hover and definition actually need at a bound field is the class and the
+method it binds to, plus which relation supplied them, since a routine's class is the generated
+`Routines` class and renders differently. That is one query over `graphitron_service`,
+`graphitron_external_field` and `graphitron_routine`, read straight off the `Record`.
+`graphitron_field_binding` is not it: that relation carries `@field(name:)`'s bound name and defers
+backing to classification by its own comment. Parity between hover and definition then comes from
+both reading the same query, which is a stronger guarantee than both switching over one sealed type.
 
 ## Capture widenings
 
@@ -180,9 +195,17 @@ against what the LSP needs rather than assuming they agree.
 ## What retires
 
 `CompletionData`, `CatalogFacts`, `LspSchemaSnapshot` and its freshness seal, `CatalogBuilder`'s
-projection pass, most of `rewrite/catalog`, and `DevMojo`'s keep-previous-and-demote workaround at
-all three of its `demoteSnapshot()` sites, not only `rebuildCatalog`'s — catalog candidates are not
-retained across a bad parse, they were never invalidated by it.
+projection pass, and `DevMojo`'s keep-previous-and-demote workaround at all three of its
+`demoteSnapshot()` sites, not only `rebuildCatalog`'s — catalog candidates are not retained across
+a bad parse, they were never invalidated by it.
+
+"Most of `rewrite/catalog`" is too vague to sweep, so the projection types the LSP imports are named
+here: `FieldClassification`, `TypeClassification`, `TypeBackingShape`, `DirectiveShape`,
+`InputValueShape` and `InferredDirectiveArgs`. These are the ones the inventory below hides behind
+the word "classification", and they are the ones a port would keep. Each leaves the LSP as a query
+over the classification stratum, not as a store-side rebuild of its arms. Whether the types
+themselves also delete depends on their generator-side readers, which is a separate census; what
+this item owns is that no LSP surface dispatches on them.
 
 With them go the LSP's own tree-derived facts: `WorkspaceFile.refreshTypeIndex` and the
 declared/referenced type sets it re-derives per keystroke, whose one consumer is the cross-file
@@ -242,6 +265,14 @@ reachability rows do; not an ad-hoc cache.
 The work list. Every capability the language server serves today, with what triggers it and where a
 fact-based implementation gets its answer. `†` marks a capability that returns nothing today, so it
 is a gap to close rather than a behaviour to reproduce.
+
+Every fact source below must be a relation or a view. Four rows say "classification", which is not
+one: it names `FieldClassification` and `TypeClassification`, the Java projections retired above,
+and leaving the word there is how a port smuggles them back in. They resolve against the
+classification stratum (`intent_resolved_field_claim` and its siblings; see
+`docs/architecture/explanation/fact-model.adoc`), and pinning down which view answers which row is
+the first thing the substrate work settles, because the answer decides whether those rows are one
+query or four.
 
 Five request capabilities are registered (`GraphitronLanguageServer.initialize`): hover, completion,
 definition, code action, inlay hint. Diagnostics are pushed. Document sync is incremental.
