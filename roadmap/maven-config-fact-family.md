@@ -40,7 +40,10 @@ Maven config fact family and narrowed to the schema recipe under the first-reade
 the build supplies is transcribed as provenance, not only the two the scan and the replay read. The
 schema recipe stays the worked example and lands first, because it is the half with production
 readers and five rounds of review behind it, and the rest of the family follows the pattern it
-establishes rather than inventing a second one.
+establishes rather than inventing a second one. The family also gains one member that does not
+exist yet to transcribe: the supergraph declaration, argued in its own section below, the
+parameter that decides the read doctrine's missing axis and the one whose reader the roadmap
+already circles.
 
 ## One recipe value, both paths
 
@@ -429,9 +432,10 @@ because a literal row is the first recipe row a reader could mistake for a sourc
 reading its own graph's recipe is an ordinary same-graph read; a reader of *another* graph's
 recipe is maintenance machinery, and counts as maintenance exactly while
 it writes no conclusions anywhere but the `store_` family. The recipe rows never join the
-cross-graph consumer read surface, which stays SDL-derived families only. It lands where the
-relation's own comment can carry it, beside the sentence `javac_diagnostic` already sets the
-precedent for.
+cross-graph consumer read surface; the surface's full two-axis form (enumeration over the anchor
+relation, payload over SDL-derived families only) is stated with the supergraph declaration
+below, the first fact to need the enumeration axis spelled out. It lands where the relation's own
+comment can carry it, beside the sentence `javac_diagnostic` already sets the precedent for.
 
 ## The extent cut is wrong
 
@@ -483,7 +487,10 @@ Four boundaries the plan has to settle, none of which the recipe's own design an
   spine and splitting would shatter the one ordering key. That argument is specific to an ordered
   list of bindings and does not obviously carry to a set of unrelated scalar parameters, so the
   question is open rather than settled by precedent. What the plan must not produce is a
-  key-value bag of `VARCHAR`s wearing a relation's clothes.
+  key-value bag of `VARCHAR`s wearing a relation's clothes. The supergraph declaration below
+  works the first instance and states the criterion in the store's own terms: partition facts
+  (single-valued per graph, run-owned, spineless, about how the partition groups and where it
+  lives) are anchor columns; run inputs are family rows.
 * **Structured values.** `<lint>` and `<sessionState>` are not scalars. Whether the transcription
   holds a typed decomposition or a rendered form is decided per parameter and stated, since a
   rendered form is a string a later reader has to re-parse, which is the shape this item exists to
@@ -491,7 +498,8 @@ Four boundaries the plan has to settle, none of which the recipe's own design an
 * **Absent versus empty.** "Configured nothing" and "not asked" are different facts and a nullable
   column conflates them. The recipe met this and answered it with the `kind` discriminator; the
   general case needs its own answer, and a parameter carrying a mojo default needs to say whether
-  the default or the absence is what it records.
+  the default or the absence is what it records. The supergraph declaration below settles the
+  no-default instance only; a parameter that does carry a default still owes its own answer.
 * **Decode location.** Unchanged from the recipe's rule: the plexus-bound beans stay plugin-side,
   core assumes no Maven vocabulary, and a non-Maven entry point is a second decoder into the same
   typed value rather than a second capture path. The wider the family, the more this rule is
@@ -501,6 +509,153 @@ What the family does *not* change: the store-first rejection, the read doctrine,
 statement of what transcription buys. On the Maven path there is no parse to skip, because Maven
 parses the pom and injects the parameters before any mojo runs. The reader served is the one with
 no build to run at all.
+
+## The supergraph declaration scopes the peer set
+
+Everything above transcribes configuration that already exists. One parameter the family needs
+does not exist yet, and this item adds it rather than waiting to transcribe it: which supergraph,
+if any, this graph is a subgraph of. The direction is the workspace store's own. A dev session
+already holds every sibling graph's rows and reads none of them, and the reader the store is owed
+("a maintenance or LSP surface answering questions about a cold graph", above) needs an answer to
+"which graphs are this graph's business" before it can range over anything. Today no layer can
+answer that. Federation-ness is SDL-derived and per-graph, a predicate over the `@link` url as
+`graphitron_link`'s own comment words it, and it answers "did this graph opt into federation",
+never "with whom": two subgraphs of two different supergraphs carry indistinguishable federation
+SDL. The workspace store's colocation is filesystem inference, and its stated justification is
+already federation-flavoured (`AbstractRewriteMojo.workspaceRoot`: two subgraph modules of one
+checkout "have to land in one store to be composable at all"); colocation is false in both
+directions a reader cares about, since one checkout can hold two supergraphs plus standalone
+graphs, and one supergraph can span checkouts. So the fact is declared, not derived: a new
+optional `<supergraph>` mojo parameter, no default, an empty element collapsed to absent by the
+decode exactly as the recipe's tag and note are, riding `RewriteContext` beside `graphName` and
+transcribed to a nullable `store_graph.supergraph_name` column. The pair
+`(supergraph_name, graph_name)` is then the store's rendering of the addressing federation
+already uses, which is why `<graphName>`'s javadoc speaks of "the subgraph's published name"; a
+parent pom shared by one supergraph's modules declares the value once in `pluginManagement` and
+every subgraph module inherits it.
+
+What the declaration asserts is grouping, not federation, and the column comment says so in so
+many words, because "supergraph" would otherwise be read as the federation claim by every future
+reader. Declaring membership does not make a graph federated and is not policed against the
+SDL's opt-in: the store already holds the derivable fact (`graphitron_link`, whose comment calls
+the opt-in a predicate over `url`), and a declared fact beside a derivable one is only the
+disagreement this item abolishes when the two claim the same thing, which these do not. The
+grouping is deliberately usable before federation SDL lands, since a subgraph under development
+may declare its home before its first `@key` is written, and the dev surface below exists for
+exactly that time. A graph declaring a supergraph while carrying no federation `@link` is
+therefore not an error anywhere in this item; if a later diagnostics item wants the one-join
+advisory ("declared a supergraph, never opted into federation"), both facts it joins are in the
+store and the detection is that item's to argue. Standalone needs no declaring: not every graph
+is federated, a graph with no `<supergraph>` element is standalone, and standalone is the default
+rather than a state an author spells.
+
+The column is single-valued, and that is a claim made here rather than an accident of shape: one
+module build declares at most one home supergraph, and the singular `<supergraph>` element is the
+claim's enforcer. Federation practice does admit a subgraph published into more than one
+supergraph; if that day comes, the widening is a relation keyed `(graph_name, ordinal)` like the
+recipe's, and its cost is a store-stamp roll rather than a data migration, since the DDL hash
+names the store's directory segment and an upgraded store opens a different file. The claim is
+cheap to make and cheap to retire; silence would be the one costly option.
+
+Where the column lands answers the family's grain bullet with a criterion stated in the store's
+own terms rather than a reader's. A fact that is a single-valued function of `graph_name`,
+written by the graph's own run, with no ordering spine, and *about the partition* (how it groups,
+where it lives, what it was built from) is a column on the partition anchor; an ordered or
+multi-valued fact is its own relation with an ordinal, which is the recipe's shape. That the peer
+reader keys enumeration on the column (`WHERE supergraph_name = ?` against the anchor) is a
+consequence of the grain, not its justification, this item having just retired reader-first
+reasoning as an instrument. The "about the partition" clause is what the grain rule must not
+erode, so the rest of the family does not follow the column onto `store_graph`: `<tenantColumn>`
+is single-valued and run-owned too, and it is generation payload rather than a partition fact; on
+the anchor it would be the first brick of the key-value bag the family bullet warns about.
+Partition facts land as anchor columns; run inputs land as family rows.
+
+A `store_supergraph` relation is rejected on ownership rather than on the absence of
+supergraph-level facts. Every store relation today is owned by exactly one graph partition or is
+store-global bookkeeping; a supergraph row would be the first that is neither: no single run
+mints it, no run may clear it, and `StoreRefresh.graphScoped` derives the ownership-scoped clear
+set from the presence of a `graph_name` column, which the relation would not have. Every answer
+to "who writes the row" either breaks the `aRunWritesOnlyUnderItsOwnGraph` gate or invents a
+co-ownership rule the store has never needed. The same argument pre-answers the later temptation
+of a `store_supergraph_member` join relation: the supergraph exists in the store as a value
+graphs declare, not as an entity anything owns.
+
+Null means standalone, and the conflation the family bullet warns about is accepted here on the
+record, in all three of its meanings rather than two. A graph whose author declared nothing is
+standalone; a programmatic run that was never asked is standalone; and an anchor row minted by
+the diagnostics preambles before any capture (`OwnedGraphPartition.prepare` and `CompileFacts`,
+both `onDuplicateKeyIgnore`) carries null because capture has not run yet. The three collapse
+because every reader's safe answer is identical: the declaration is opt-in and visibility never
+guesses, so "declared nothing", "not asked" and "not yet captured" all read "not a peer". A
+discriminator column recording which null this is would buy nothing any reader forks on.
+
+Capture is the column's one writer and reasserts the declaration on every run: `writeGraph` sets
+it on both arms of its upsert, so removing the element from the pom propagates on the next
+capture instead of fossilising in the store. The preambles insert null on a cold mint, which is
+the third meaning above, and touch nothing on a warm one, so a compile-facts run can neither
+erase nor invent a declaration; the verification case pins both directions. `StoreRefresh` needs
+no edit: `store_graph` is excluded from the graph-scoped clear, so the column survives warm
+refreshes and only `writeGraph` rewrites it.
+
+The capture signature is where the family would otherwise accumulate, and this item stops that
+here. The narrowing above moves the recipe from `GraphIdentity` to the capture entry points, the
+attribution map travels beside it, and the supergraph declaration would be a third loose
+parameter, with the rest of the family keeping the pattern going, one nullable positional
+argument each; that is the untyped default door the sealed-carrier section refuses, rebuilt at
+the seam the narrowing cleaned. So the entry points take one typed value for capture's *subject*
+configuration, carrying the recipe and the supergraph declaration as components with explicit
+absence and growing a component per family parameter as the rest lands; `GraphIdentity` stays the
+coordinate exactly as argued, and the coordinate-versus-subject split above is the criterion that
+produces this shape. The name is the implementer's, though "membership" is taken in the capture
+package (`GraphSourceMembership` is about graph-to-source rows, not this); what is bound is the
+shape, one value with typed absence per component. The attribution map stays its own parameter,
+being derived from the inputs rather than declared. The call-site enumeration above is unchanged
+in who passes what; only the carrier consolidates.
+
+What the column buys is the axis the read doctrine above was missing, and the doctrine's sentence
+is completed rather than contradicted, since read narrowly it forbade every cross-graph read
+outside SDL-derived families while the peer enumeration reads `store_graph`. The surface has two
+axes and the doctrine binds both. The enumeration axis reads the anchor relation alone: a
+consumer surface may range over `store_graph` cross-graph, and the closed set of
+cross-graph-readable configuration is exactly the anchor's columns, held closed by the grain
+rule above, since a payload column cannot land on the anchor without breaking it. The payload
+axis is unchanged: what a surface reads *about* a peer stays SDL-derived families only,
+`javac_diagnostic` stays graph-private by its own comment, and the recipe and family rows never
+join. The peer set itself is the enumeration axis's one derivation: a graph's peers are the
+`store_graph` rows sharing its non-null `supergraph_name`. Null matches nothing under SQL
+equality, so a standalone graph's peer set is empty and two standalone graphs never group by
+accident; two supergraphs in one workspace store coexist mutually invisible, which is what lets
+one checkout carry both without either becoming the other's noise. The store file stays the
+physical boundary: peers are found in the store the session opened, and a supergraph spanning
+checkouts is invisible across store files. The per-user cache root holds every workspace
+segment, so a cross-store reader is conceivable later machinery; it is not this item's, and the
+doctrine as stated governs one store.
+
+The reader this scope was shaped for is the dev loop's. `DevMojo` already opens the workspace
+store, so a dev session physically holds every sibling graph's rows; the MCP diagnostics tools
+lead every query with the session's own `graph_name`. A peer surface (which subgraphs share my
+supergraph, what does a peer's SDL declare where I extend its entity) is what turns the store's
+colocation into the composability `workspaceRoot`'s javadoc promises, and building it is not this
+item's work; R643 (`supergraph-peer-surface.md`) carries it. Two things are owed to that surface
+here so its first spelling is not a rediscovery. The peer predicate is deferred deliberately: no
+view lands ahead of its reader, because a view owes an anchor and a registration under
+`FactCaptureAgreementTest`'s derived arm while its projection is the reader item's design space;
+what is pinned instead is the null semantics, at the SQL level, by the verification case below,
+and the reader item mints the *first* production spelling of the peer set and should mint exactly
+one. And the peer answer's fitness caveat is stated rather than left to be discovered: a peer row
+is a claim about the peer's last capture, not its current pom, and `store_graph.build_file_stamp`
+already owns that contract ("trusted only while the build file still hashes to this").
+Enumeration is deliberately not stamp-gated, a stale peer being still a peer and a flickering
+peer set being worse than an honestly stale one; the stamp rides on the same anchor row for the
+surface to render beside the answer.
+
+Deriving the declaration from Apollo's composition config is rejected on the record.
+`supergraph.yaml` enumerates subgraphs from the composition's side and lives where composition
+runs; a subgraph module does not generally hold one, so absence is the common case, and parsing
+it would make another tool's dialect a load-bearing input to the store, against the same
+containment rule that keeps plexus beans out of core. If a checkout holds one, a later decoder
+may transcribe agreement between the two declarations, a second decoder into the same fact,
+exactly the shape the decode-location rule anticipates.
 
 ## Deliberately out of scope
 
@@ -515,7 +670,16 @@ no build to run at all.
 - **The freshness loop's driver.** This item makes the replay's expansion and its row decode
   exist; where the loop runs from (the dev goal's watcher, the LSP, or a store maintenance
   command) stays with whichever item picks the orchestration up.
-- **Any consumer-facing read surface over config rows**, per the read doctrine above.
+- **Any consumer-facing read surface over config rows**, per the read doctrine above. The
+  enumeration axis is the one carve-out, and it is exactly `store_graph`'s columns, per the
+  supergraph section.
+- **The peer surface itself.** The dev-loop reader that enumerates same-supergraph peers and
+  answers over them is R643 (`supergraph-peer-surface.md`); this item owes it the fact, the
+  doctrine, and the pinned null semantics, nothing more.
+- **Cross-checkout supergraphs.** The doctrine governs one workspace store; a reader spanning
+  store files under the per-user cache root is later machinery.
+- **Policing the declaration against the SDL's federation opt-in.** Both facts are in the store;
+  whether their disagreement is worth an advisory is a later diagnostics item's argument.
 
 ## Verification
 
@@ -571,9 +735,24 @@ today's author-facing text: `singlePatternEmpty_throwsAggregateEmpty` and
 one. The multi-binding case is the load-bearing one of the three and must not be dropped as a
 duplicate of the single-binding case: its assertions are the only place the per-entry rendering
 (`entry #0` and `entry #1` with their patterns, one line each) is pinned, and that enumeration
-is the whole of what an author reads when several patterns miss at once. No user-visible configuration surface changes
-(`mojo-configuration.adoc` already documents the glob semantics this item preserves), so the
-first-client docs check is exempt.
+is the whole of what an author reads when several patterns miss at once.
+
+The supergraph declaration gets the fourth enforcer, beside the two-graph fusion gate whose
+fixture it extends. A store captures three graphs, two declaring one supergraph and one declaring
+nothing: the column round-trips through capture, the peer question asked at the SQL level returns
+exactly the declared sibling for each of the two and nothing for the third, and the null
+semantics are pinned where SQL equality holds them, null grouping with nothing, another null
+included. The write path's two directions are the same case's second half: a preamble mint after
+capture (`OwnedGraphPartition.prepare` against the captured graph) leaves the declaration
+standing, and a recapture without the declaration clears it, so removal propagates and a
+compile-facts run can neither erase nor invent membership. It lives beside
+`aRunWritesOnlyUnderItsOwnGraph` in `FactSchemaGateTest`.
+
+The recipe half changes no user-visible configuration surface (`mojo-configuration.adoc` already
+documents the glob semantics this item preserves), so the docs exemption covers it; the
+supergraph declaration does change the surface, and `<supergraph>` lands in
+`mojo-configuration.adoc` beside `<graphName>`, whose entry already speaks the subgraph
+vocabulary.
 
 ## Retired vocabulary
 
