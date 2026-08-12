@@ -165,13 +165,21 @@ diagnostic, never a silent first match.
 **Coordinate-keyed lookups.** The parse hands over a coordinate; the store answers it, and what
 comes back is rows. `DeclTarget`'s six variants are not a shape to preserve: they are the projection
 era's dispatch vocabulary, and re-pointing them at the store would carry that shape across the seam
-under a new payload. What hover and definition actually need at a bound field is the class and the
-method it binds to, plus which relation supplied them, since a routine's class is the generated
-`Routines` class and renders differently. That is one query over `graphitron_service`,
-`graphitron_external_field` and `graphitron_routine`, read straight off the `Record`.
-`graphitron_field_binding` is not it: that relation carries `@field(name:)`'s bound name and defers
-backing to classification by its own comment. Parity between hover and definition then comes from
-both reading the same query, which is a stronger guarantee than both switching over one sealed type.
+under a new payload. What a bound field binds to lives on `graphitron_service`,
+`graphitron_external_field` and `graphitron_routine`, which carry the class and the method and, by
+being three relations, say which directive bound it. Not `graphitron_field_binding`: that relation
+carries `@field(name:)`'s bound name and defers backing to classification by its own comment.
+
+Parity between hover and definition is that they read the same facts, not that they run the same
+query. With no projection standing between them and the relations, neither can be right about what
+a field binds to while the other is wrong; that is the whole of what the shared type was buying.
+What each selects off those facts is its own business, and they should diverge, because the shared
+type capped both at the intersection. The incumbent's javadoc states the cap plainly: the variants
+"name the resolved declaration, not its location or Javadoc", and the per-consumer difference is
+"only the final read". Definition wants a position and little else. Hover wants a signature, a
+comment with the catalog description taking precedence, a column's type and nullability, the member
+name and type when the backing is a record or POJO. Each fetching what it renders is the point of
+re-sourcing, not a looseness to be tidied back into one query.
 
 ## Capture widenings
 
@@ -271,8 +279,9 @@ one: it names `FieldClassification` and `TypeClassification`, the Java projectio
 and leaving the word there is how a port smuggles them back in. They resolve against the
 classification stratum (`intent_resolved_field_claim` and its siblings; see
 `docs/architecture/explanation/fact-model.adoc`), and pinning down which view answers which row is
-the first thing the substrate work settles, because the answer decides whether those rows are one
-query or four.
+the first thing the substrate work settles. Which view, not how many queries: four rows projecting
+four different things off one view is a fine outcome, and collapsing them because they share a
+source would be the same error as sharing a type because they share a subject.
 
 Five request capabilities are registered (`GraphitronLanguageServer.initialize`): hover, completion,
 definition, code action, inlay hint. Diagnostics are pushed. Document sync is incremental.
