@@ -102,6 +102,37 @@ the surface generalizes that to columns, methods and foreign keys rather than re
 `findFirst` on the store side to satisfy a parity gate. Re-flattening a distinction the store's
 keys just handed back is the one outcome to avoid.
 
+## Two cadences, and why the store is more available than the projection
+
+The candidates a graphitron directive completes against do not come from the SDL. Table and column
+names come from the jOOQ generated model; class names, method names and scalar constants come from
+the classpath. Whether the schema file currently parses has no bearing on whether `film` is still a
+table. Those facts are source-keyed in the store (`sql_`, `jvm_`), refreshed on the classpath
+cadence, and a query against them carries no dependency on the SDL at all.
+
+Only SDL-sourced facts lag the buffer: what types are declared, what a field classifies as, which
+types carry `@node`. Those ride the save cadence, through graphql-java, which is what capture
+walks.
+
+`CompletionData` conflates the two. It carries `tables` and `externalReferences` (catalog and
+classpath) beside `types` and `nodeMetadata` (SDL), in one record swapped as a unit by
+`setBuildOutput`, and rebuilt only by a codegen pass that also parses the schema. So a schema parse
+failure takes down a catalog rebuild that had nothing to do with the schema, and the LSP carries a
+hand-written workaround for it: `DevMojo.rebuildCatalog` catches the failure and, in its own words,
+keeps "the previous catalog so completions do not silently disappear" while demoting the snapshot
+"so freshness-aware consumers silence themselves."
+
+That pairing is the right behaviour reached by hand. Under source-keyed relations it is structural:
+catalog candidates are not *retained* across a bad parse, they were never invalidated by it, because
+nothing about them was derived from the SDL. The store is therefore *more* available mid-edit than
+the projection it replaces, not less. An earlier draft of this item had that backwards, treating
+"the store reflects the last successful capture" as a limitation to work around; it is a limitation
+of the SDL half only.
+
+The consequence for the plan: the sealed resolution outcomes must not carry one availability answer
+for both halves. A catalog lookup that finds nothing found nothing; an SDL lookup that finds nothing
+may simply not have been saved yet. Those are different facts and the surface says which.
+
 ## What tree-sitter is for
 
 The division of labour, stated because it decides the surface's shape and an earlier draft of this
@@ -144,13 +175,18 @@ round. That is read-consistency, and it is the invariant `Workspace` hand-rolls 
 build. It is worth having and it is only that. An H2 isolation default is not an enforcer: nothing
 in this build fails if it changes, so the Spec claims read-consistency from it and nothing else.
 
-**Freshness is provenance the store does not capture yet.** `LspSchemaSnapshot`'s `Built.Current` /
-`Built.Previous` gets no store equivalent in this item, and the reason is a missing fact rather
-than a boundary worth keeping. Capture records the last *success*; `Built.Previous` is a claim
-about the last *attempt*, and `Workspace.demoteSnapshot` fires from three `DevMojo` paths where a
-parse threw, so capture never ran and wrote nothing. No timestamp comparison at the read site
-recovers that, and inventing one would be branching on a predicate over pre-resolved inputs rather
-than reading a resolved decision.
+**Freshness is provenance the store does not capture yet, and it governs one half only.**
+`LspSchemaSnapshot`'s `Built.Current` / `Built.Previous` gets no store equivalent in this item, and
+the reason is a missing fact rather than a boundary worth keeping. Capture records the last
+*success*; `Built.Previous` is a claim about the last *attempt*, and `Workspace.demoteSnapshot`
+fires from three `DevMojo` paths where a parse threw, so capture never ran and wrote nothing. No
+timestamp comparison at the read site recovers that, and inventing one would be branching on a
+predicate over pre-resolved inputs rather than reading a resolved decision.
+
+Note what the seal is a fact *about*: the SDL half. A parse failure says nothing about the catalog
+or the classpath, so demoting a catalog answer on one would be reporting staleness that does not
+exist. The seal governs SDL-sourced facts and only those, which the source-keying makes structural
+rather than a rule a query site has to remember.
 
 The honest reading is that "which round produced these rows, and did the latest attempt succeed" is
 provenance, and it is hand-maintained workspace state today only because nothing captures it. A
