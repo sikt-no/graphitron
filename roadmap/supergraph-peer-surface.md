@@ -17,11 +17,13 @@ store, so the sibling subgraphs' SDL-derived facts are physically in the same fi
 read the session makes leads with its own `graph_name`; a developer (or a dev agent on the MCP
 handle) working on one subgraph of a federated supergraph cannot ask which peer defines the
 entity they extend, what a peer's `@key` fields are, or which subgraphs even exist. R612 lands
-the two prerequisites: the declared membership fact (`store_graph.supergraph_name`) and the read
-doctrine's two-axis scope rule (enumeration over `store_graph` alone; payload over SDL-derived
-families only, scoped to same-supergraph peers; standalone graphs, whose `supergraph_name` is
-null, have an empty peer set, and two supergraphs in one workspace store stay mutually
-invisible). This item builds the reader: MCP tools first (peer enumeration, peer schema
+the two prerequisites: the declared membership fact (the `store_graph_supergraph` relation, one
+graph-keyed row whose presence is the declaration; standalone graphs have no row) and the read
+doctrine's two-axis scope rule (enumeration over `store_graph` and `store_graph_supergraph`
+alone; payload over SDL-derived families only, scoped to same-supergraph peers; a standalone
+graph has no membership row to join, so its peer set is empty, and two supergraphs in one
+workspace store stay mutually invisible). This item builds the reader: MCP tools first (peer
+enumeration, peer schema
 questions), the LSP's cross-subgraph navigation later or separately. Constraints inherited from
 R612's doctrine, restated so they are not rediscovered: this item mints the *first* production
 spelling of the peer-set predicate and should mint exactly one (a view or one shared derivation,
