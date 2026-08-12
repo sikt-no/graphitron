@@ -91,15 +91,14 @@ tree as authoritative over the projection, `WorkspaceFile` re-derives a declared
 index from the tree on every keystroke to aim the diagnostic fan-out, and the recalculation queue
 re-runs full-tree validation per keystroke across every dependent open file.
 
-The gate between the two is the stamp, not the open-buffer set. A buffer whose content matches
-`store_source.stamp` is answered wholly from the store, open or not; only a buffer the store has
-not caught up with (unsaved, or saved with capture still pending or failed) holds live state the
-store lacks. The first iteration keeps even that shadow minimal, simple and correct over clever:
-the stale buffer's live tree supplies the coordinate under the cursor and re-anchors positions,
-never facts. A type declared only in an uncaptured buffer joins the answer set at its next capture;
-until then the currency seam answers `Indeterminate` rather than guessing. Widening the shadow so
-live declarations feed answers before capture is a later iteration, taken only if the paired
-measurement shows the wait hurts.
+There is no gate between the two, because there is no state in which the store cannot answer. Two-
+stage capture writes on every outcome, so tree-sitter's job is the same whatever the buffer holds:
+positions in, positions out. What the store answers for a file is the facts of the content it last
+captured, and how far that can lag the buffer is the capture-cadence question below, not a currency
+variant a surface switches on. The first iteration keeps the shadow minimal, simple and correct over
+clever: the live tree supplies the coordinate under the cursor and re-anchors positions into text
+that has moved since capture, never facts. Widening it so live declarations feed answers before
+capture is a later iteration, taken only if the paired measurement shows the wait hurts.
 
 A graph is many schema files, so validity is per file, not per workspace. An author typing
 `extend type |` in a new file has one invalid buffer and a workspace of well-formed captured ones;
@@ -108,22 +107,32 @@ answering, it is the question: tree-sitter names the coordinate, the store suppl
 
 ## What the store must provide
 
-**Per-file SDL currency.** The one real substrate gap, and in scope, because the whole LSP cannot
-rest on a workspace-wide validity bit. Two gates, not one: `FactCapture.capture` takes a whole
-`TypeDefinitionRegistry`, and its production call site sits inside
-`GraphQLRewriteGenerator.buildOutput` downstream of `GraphitronSchemaBuilder.buildBundle`, so a
-classification throw means no capture just as a parse failure does. Both move, or
-diagnostics-on-the-capture-cadence inherits the incumbent's blackout for every failure that is not
-a parse error. Capture itself needs no classified model, the
-`FactCapture.capture(DSLContext, GraphIdentity, TypeDefinitionRegistry)` overload being the
-witness; only the detection wrapper's `ClaimDomain` does, so the call site splits ahead of it.
-Per-file is the currency and invalidation unit, not the capture unit: several facts exist only over
-the merged registry (`merge_ordinal`, the reachability and input-occurrence rows), so parsing is per
-file, the parseable files merge into one registry, and capture stays whole-graph in its one
-transaction. A file that fails to parse keeps its previous partition, and the failure lands as a
-located violation row that reaches the diagnostic view like every other violation. The relations
-already carry the granularity: `graphql_type_declaration` indexes "which types does this file touch"
-by its own comment, and `store_source` stamps each file.
+**Two-stage capture, so the store is never blind.** In scope, and the shape is two stages rather
+than one validity gate. Stage one parses each schema file to its own registry and slurps it into the
+store; a file that will not parse writes its syntax error as a located violation row, and its
+siblings land regardless. Stage two combines the parsed files and assembles the GraphQL schema,
+where graphql-java validates a great deal the parser did not. That stage either fails, and its
+errors are facts, or succeeds, and the facts only an assembled schema can carry land with it:
+reachability, the input-occurrence rows, `merge_ordinal`. Both outcomes write. Neither leaves the
+store empty.
+
+That is the property the whole item rests on. Every state the incumbent expressed by withholding a
+snapshot is a row here: a file that would not parse, a schema that would not assemble, a type
+nothing declares. The LSP never asks whether it may trust an answer. It runs its query and reads
+what is there, absence of a row being an answer in its own right, and which kind of absence a join
+away, since `store_source` records what was captured and the stage-two outcome records whether the
+last combine succeeded.
+
+The blocker sits earlier than this item first placed it. `RewriteSchemaLoader.load` concatenates
+every schema file through one `MultiSourceReader` into a single document and parses it once, so a
+syntax error in any file throws `SchemaParseException` and no registry exists at all. Per-file
+parsing is that split; it is not a change to `FactCapture.capture`'s signature. Capture is already
+source-attributed underneath: `SdlFactCapture` derives its source names from each definition's own
+`getSourceLocation()`, `graphql_type_declaration` indexes "which types does this file touch" by its
+own comment, and `store_source` stamps each file.
+`GraphitronSchemaBuilder`'s `makeExecutableSchema` call is where stage two already lives; what
+changes is that its failure writes rows rather than propagating out of
+`GraphQLRewriteGenerator.buildOutput` and taking capture with it.
 
 **A graph-scoped handle.** `sql_` is keyed by `source_name` and a persisted store spans every module
 of a workspace, so catalog reads join through `store_graph_source` and the handle is
@@ -145,22 +154,28 @@ a reader never sees a half-written round; each answer likewise assembles inside 
 transaction so it cannot straddle a commit, which is the whole consistency claim, made structural
 instead of resting on an H2 isolation default. The store is a cache by contract, "never state of
 record", and its fallback to a private in-memory store costs only warmth while every reader shares
-the writer's process; once the LSP's whole answer surface is the store, the degraded mode must be
-named, and it is: capture demoted, or no store directory configured, answers `Indeterminate`, the
-same arm a stale source gets below.
+the writer's process. That last clause is what keeps the fallback from being a degraded answer
+surface: the session's own capture fills the private store as readily as the shared one, so a cold
+start costs the previous run's rows and nothing else. There is no configuration under which the LSP
+holds a store it cannot query.
 
 **Sealed resolution outcomes.** The store's keys are honest where the projections' lists were not:
 an unqualified table name may match several rows, and `jvm_method` keys on `descriptor` because
 erased display names collided on overloads. Resolved / ambiguous / not-found needs no type: it is
-how many rows the query returned, and a `Result` says that already. The one outcome the rows cannot
-carry is the arm that replaces `LspSchemaSnapshot`'s freshness seal, `Indeterminate(sourceName)`,
-meaning the answer would come from a source whose stamp no longer matches the buffer. So the type
-is two-armed, the rows and that arm, and the compile-time force lands exactly where the information
-is not in the data. One seam owns the join of `store_source.stamp` against the open-buffer set and
-decides currency once, as a variant rather than a field, so no surface re-derives "is that file
-dirty?" for itself: an SDL miss is a real miss or it is `Indeterminate`, and every consumer's switch
-breaks until it says which. A multi-row result at an author-written coordinate surfaces as a
-diagnostic, never a silent first match.
+how many rows the query returned, and a `Result` says that already. Nor is there a freshness arm
+beside it. An earlier draft of this item carried one, `Indeterminate`, because the incumbent
+withholds its whole snapshot when a build fails and every consumer had to be forced to notice. Two-
+stage capture removes the state that arm described: a failed parse and a failed assembly are both
+rows, so there is no moment at which the store declines to answer and nothing for a consumer to
+switch on. A multi-row result at an author-written coordinate surfaces as a diagnostic, never a
+silent first match.
+
+One question this item must settle, because it is what makes "never blind" true all the way down:
+does stage-one capture run on buffer change, or only on save? On change, the store tracks the buffer
+and `store_source.stamp` is internal bookkeeping no surface reads. On save, the store lags the
+buffer between keystroke and save, and something has to describe that gap, which is how the retired
+arm would come back. Stage one is one file parsed and its rows written, cheap enough to argue for
+capturing the buffer; the item should say so outright rather than leave the seam to be discovered.
 
 **Coordinate-keyed lookups.** The parse hands over a coordinate; the store answers it, and what
 comes back is rows. `DeclTarget`'s six variants are not a shape to preserve: they are the projection
@@ -241,9 +256,11 @@ them, not just delete: `CatalogBuilder.projectFieldClassification` is the transi
 under "One model, many views" in `docs/architecture/explanation/development-principles.adoc` and
 the named enforcer in `fact-model.adoc`; `CompletionData.NodeMetadata` is the one-slot provenance
 exemplar and `LspSchemaSnapshot`'s two axes carry the freshness paragraph in the same file. The
-replacements are nominated here: the store-side projection seam for the first, the `Indeterminate`
-resolution arm for freshness. `FactCaptureAgreementTest`'s agreement arms change meaning for every
-relation the LSP starts reading and are revisited at the cutover.
+replacements are nominated here: the store-side projection seam for the first, and for freshness the
+two-stage capture itself. That paragraph currently explains how a consumer carries a freshness axis;
+its replacement explains why no consumer carries one, because a failed parse and a failed assembly
+are facts and there is no withheld snapshot to tag. `FactCaptureAgreementTest`'s agreement arms
+change meaning for every relation the LSP starts reading and are revisited at the cutover.
 
 ## Acceptance
 
@@ -329,7 +346,7 @@ around it.
 |---|---|---|
 | `Definitions` | Directive arg: `ClassName`, `MethodName`, `CatalogTable`, `CatalogColumn`, `CatalogFk` | `jvm_`/`sql_` + `SourceWalker` positions |
 | `Definitions` † | `ArgMapping`, `ScalarType`, `NodeType` return empty | — |
-| `IntraSchemaDefinitions` | Type reference to its declaring SDL site | `graphql_type_declaration`; a stamp-mismatched declaring file re-anchors through its live tree |
+| `IntraSchemaDefinitions` | Type reference to its declaring SDL site | `graphql_type_declaration`; a declaring file that has moved since capture re-anchors through its live tree |
 | `DeclarationDefinitions` | SDL declaration name to its bound Java | `jvm_class`, `jvm_record_component` + `SourceWalker` |
 
 **Inlay hints.** Three independent toggles, all default off (`InlayHintConfig`); two collectors.
@@ -366,10 +383,12 @@ the table reads as rows from the store, published per file when capture swaps; t
 recomputation and its cross-file fan-out retire with the type index that aimed them. A stale
 buffer shows the diagnostics of its last captured content, re-anchored through its live tree where
 the text has moved, refreshed at its next capture. That trades keystroke-live feedback in the one
-buffer being typed in for a single shape everywhere, and it still beats the incumbent, which
-silences the whole replay while the snapshot is demoted, so a newly broken schema shows nothing at
-all. Keystroke-live validation of the stale buffer is the same later iteration as the wider
-shadow, taken only on measured demand.
+buffer being typed in for a single shape everywhere, and against the incumbent it is not a close
+comparison: the incumbent silences the whole replay while the snapshot is demoted, so a newly broken
+schema shows nothing at all, where here a file that will not parse and a schema that will not
+assemble each report exactly why, as rows, per file. Keystroke-live validation of a lagging buffer
+is the same later iteration as the wider shadow, and the capture-cadence question above may retire
+it outright.
 
 Compile diagnostics (javac output against generated sources) sit on `Workspace` beside these but
 publish through the MCP diagnostics tool, not the LSP push; they move with the workspace state,
