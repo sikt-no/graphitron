@@ -53,10 +53,15 @@ finding is the report.
 no byte-equality on rendered output; pinning the new implementation to the old behaviour would
 import the shape under test. What replaces the gate is an enforcer, not care: a meta-test in the
 `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` mould asserting the
-(`Behavior` arm × surface) matrix is an exhaustive partition over answered / declared-no-answer /
-unimplemented, each surface's dispatch a compile-checked exhaustive switch. The `†` gaps below stop
-being silently empty arms and become declared facts the test pins, and the inventory becomes a
-rendered view of the matrix rather than prose that rots.
+(trigger × surface) matrix is an exhaustive partition over answered / declared-no-answer /
+unimplemented, each surface's dispatch a compile-checked exhaustive switch. The axis is trigger,
+not `Behavior` arm: roughly half the inventory below keys on something else (all four inlay-hint
+rows, both code-action branches, four of the five diagnostic sources, the four non-coordinate hover
+rows, the two SDL-keyed definition providers), and that is the half this item changes most. A
+matrix over `Behavior` alone would leave it ungated, which is the position declining the
+shadow-parity gate was meant to avoid. The `†` gaps below stop being silently empty arms and become
+declared facts the test pins, and the inventory becomes a rendered view of the matrix rather than
+prose that rots.
 
 ## The division of labour
 
@@ -92,15 +97,21 @@ answering, it is the question: tree-sitter names the coordinate, the store suppl
 ## What the store must provide
 
 **Per-file SDL currency.** The one real substrate gap, and in scope, because the whole LSP cannot
-rest on a workspace-wide validity bit. `FactCapture.capture` takes a whole `TypeDefinitionRegistry`,
-so one bad file means no capture and a wholly demoted snapshot. Per-file is the currency and
-invalidation unit, not the capture unit: several facts exist only over the merged registry
-(`merge_ordinal`, the reachability and input-occurrence rows), so parsing is per file, the
-parseable files merge into one registry, and capture stays whole-graph in its one transaction. A
-file that fails to parse keeps its previous partition, and the failure lands as a located violation
-row that reaches the diagnostic view like every other violation. The relations already carry the
-granularity: `graphql_type_declaration` indexes "which types does this file touch" by its own
-comment, and `store_source` stamps each file.
+rest on a workspace-wide validity bit. Two gates, not one: `FactCapture.capture` takes a whole
+`TypeDefinitionRegistry`, and its production call site sits inside
+`GraphQLRewriteGenerator.buildOutput` downstream of `GraphitronSchemaBuilder.buildBundle`, so a
+classification throw means no capture just as a parse failure does. Both move, or
+diagnostics-on-the-capture-cadence inherits the incumbent's blackout for every failure that is not
+a parse error. Capture itself needs no classified model, the
+`FactCapture.capture(DSLContext, GraphIdentity, TypeDefinitionRegistry)` overload being the
+witness; only the detection wrapper's `ClaimDomain` does, so the call site splits ahead of it.
+Per-file is the currency and invalidation unit, not the capture unit: several facts exist only over
+the merged registry (`merge_ordinal`, the reachability and input-occurrence rows), so parsing is per
+file, the parseable files merge into one registry, and capture stays whole-graph in its one
+transaction. A file that fails to parse keeps its previous partition, and the failure lands as a
+located violation row that reaches the diagnostic view like every other violation. The relations
+already carry the granularity: `graphql_type_declaration` indexes "which types does this file touch"
+by its own comment, and `store_source` stamps each file.
 
 **A graph-scoped handle.** `sql_` is keyed by `source_name` and a persisted store spans every module
 of a workspace, so catalog reads join through `store_graph_source` and the handle is
@@ -140,8 +151,12 @@ author-written coordinate surfaces as a diagnostic, never a silent first match.
 **Coordinate-keyed lookups.** The parse hands over a coordinate; the store answers it. `DeclTarget`
 is the right seam already, a sealed resolution shared by hover and goto-definition so their parity
 is structural. Its variants carry `CompletionData` records today and carry coordinates instead.
-Re-sourcing is also the moment its method-backedness check stops being an `instanceof` list behind
-a `default` arm and becomes a read over `graphitron_field_binding`.
+Re-sourcing is also the moment its method-backedness check stops being a five-case switch behind a
+`default` arm. The class and method it needs are not on `graphitron_field_binding`, which carries
+`@field(name:)`'s bound name and defers backing to classification by its own comment; they are on
+`graphitron_service` (the `ServiceBacked`, `QueryService` and `MutationService` arms),
+`graphitron_external_field` (`Computed`) and `graphitron_routine` (`RoutineBacked`), read through
+the classification stratum that picks the arm.
 
 ## Capture widenings
 
@@ -165,9 +180,9 @@ against what the LSP needs rather than assuming they agree.
 ## What retires
 
 `CompletionData`, `CatalogFacts`, `LspSchemaSnapshot` and its freshness seal, `CatalogBuilder`'s
-projection pass, most of `rewrite/catalog`, and `DevMojo.rebuildCatalog`'s keep-previous-and-demote
-workaround — catalog candidates are not retained across a bad parse, they were never invalidated by
-it.
+projection pass, most of `rewrite/catalog`, and `DevMojo`'s keep-previous-and-demote workaround at
+all three of its `demoteSnapshot()` sites, not only `rebuildCatalog`'s — catalog candidates are not
+retained across a bad parse, they were never invalidated by it.
 
 With them go the LSP's own tree-derived facts: `WorkspaceFile.refreshTypeIndex` and the
 declared/referenced type sets it re-derives per keystroke, whose one consumer is the cross-file
@@ -233,8 +248,11 @@ definition, code action, inlay hint. Diagnostics are pushed. Document sync is in
 
 **Completion.** `Completions.at` resolves the coordinate once, resolves its `Behavior`, and runs the
 providers registered for that arm in order, first non-empty wins. Two providers on one arm is a
-projection-era artifact (two projections answered `MethodNameBinding`); in fact terms an arm is one
-query with its ordering stated in the view, which is where the simplicity claim should show first.
+dispatch-era artifact: both read the same `CompletionData.externalReferences()`, and the split is
+`@externalField`'s contract narrowing (single parameter, `Field` return) placed ahead of the generic
+method list with fall-through when nothing matches. In fact terms that is one query with its
+narrowing and its ordering stated in the view, which is where the simplicity claim should show
+first; the fall-through is behaviour, not accident, so collapsing the two keeps it.
 
 | Behavior arm | Provider | Fact source |
 |---|---|---|
@@ -332,7 +350,11 @@ fact model; the reviewer confirms rather than decides.
 * **Sequencing** is additive-then-cutover with the abandon condition in "The experiment"; the
   workflow's rule for structural pivots on widely-pinned types leaves no taste call here. Whether
   the phases stay one item or split into a substrate item plus feature items is the Ready
-  reviewer's call; scope, gates and measurement are identical either way.
+  reviewer's call; scope, gates and measurement are identical either way. A review pass argued for
+  the split, on the abandon condition rather than on size: the substrate (per-file currency, the
+  graph-scoped handle, the read connection, the three capture widenings) is wanted whether or not
+  the paired comparison favours the fact-based arms, so bundling it into an item whose stated
+  abandon outcome is "the incumbents stay" leaves that outcome ambiguous about what reverts.
 * **`SourceWalker`'s boundary** is shipped doctrine, cited in "What retires"; nothing to
   re-litigate.
 * **`CatalogFacts`' non-LSP readers** move alongside, in the sibling item
@@ -347,5 +369,6 @@ fact model; the reviewer confirms rather than decides.
 
 Provisional until the cutover lands; the Done-gate sweep greps for these. `CompletionData`,
 `CatalogFacts`, `LspSchemaSnapshot`, the `Built.Current` / `Built.Previous` freshness seal,
-`typeDefinitionLocations`, `CatalogBuilder`'s projection pass, `DevMojo.rebuildCatalog`'s
-keep-previous-and-demote path, `refreshTypeIndex`, and `dependsOnDeclarations`.
+`typeDefinitionLocations`, `CatalogBuilder`'s projection pass, `DevMojo`'s keep-previous-and-demote
+path (`demoteSnapshot`, `markAllForRecalculation`), `refreshTypeIndex`, `declaredTypes` and
+`dependsOnDeclarations`.
