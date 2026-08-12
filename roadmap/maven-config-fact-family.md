@@ -74,15 +74,22 @@ expresses "no catalog in hand", rather than by a field every construction site m
 The cost is real and mechanical, and the three-arg sites are enumerated because the production
 one is the whole point of the narrowing rather than a footnote to it.
 `GraphQLRewriteGenerator.graphIdentity` is that site: it reads `ctx.schemaRecipe()` into the third
-component today, and under the narrowing it returns the coordinate while its two callers pass the
-recipe to `FactCapture.run` beside the registry and the jOOQ handle. There are two, not one, and
-both are production: `captureFacts` on the generate path, and `buildOutput` on the LSP and dev-loop
-path, which is the one that runs again on every regeneration. `WarmStartRefreshTest`'s
-three-arg sites move their recipe to the call the same way, and `writeGraph` takes the recipe for
-its build-file hash. The coordinate-only sites (`DevMojo`'s `CompileFacts` construction,
-`DevMojoTest`, `CapturedStore.graph`, `FactSchemaGateTest`, `PersistentStoreTest`,
-`FactCaptureAgreementTest`, `CompileFactsTest`) compile untouched, which is the point: they were
-never the callers with something to say.
+component today, and under the narrowing it returns the coordinate while its one caller passes the
+recipe to `FactCapture.runWithDetections` beside the registry and the jOOQ handle. The site is
+single and the paths reaching it are three, which is the shape worth being precise about: the
+four-arg `captureFactsAndDetect` is where the recipe is passed, and it is reached from `buildOutput`
+on the LSP and dev-loop path (which is the one that runs again on every regeneration) and from the
+two-arg `captureFactsAndDetect`, itself reached from `validate` and from `runPipeline` behind
+`generate` and `generateIncremental`. So the edit lands once and every production path inherits it.
+`WarmStartRefreshTest`'s three-arg sites move their recipe to the call the same way, and
+`writeGraph` takes the recipe for its build-file hash. The coordinate-only sites compile untouched,
+which is the point: they were never the callers with something to say. They are numerous rather
+than few (`DevMojo`'s three `CompileFacts` constructions, `DevMojoTest`, `CapturedStore.graph`,
+`FactSchemaGateTest`, `PersistentStoreTest`, `FactCaptureAgreementTest`, `CompileFactsTest`,
+`DiagnosticFactsTest`, `DemandShadowTest`, `InputOccurrenceShadowTest`, `ColumnMatchClaimTest`,
+`AuthoredClaimConflictsTest`, `RejectionSeverityCoverageTest`, `WarmStartRefreshTest`'s own two-arg
+sites, and three `graphitron-mcp` fixtures), and the count is the argument: a narrowing that left
+the component in place would have billed every one of them.
 
 Its expansion returns a value rather than a file set. `SchemaRecipe.expand(Path baseDir)`
 returns a deduplicated `Set<Path>`, which is exactly right for the currency question it was
@@ -229,8 +236,8 @@ downstream (`CatalogBuilder` filters locations bearing
 
 `SchemaInput.sourceName` is a raw string that is an absolute normalised path on the Maven path
 and an arbitrary label anywhere else, since `SchemaInput.plain` and the canonical constructor
-take whatever a programmatic caller hands them (the applier tests pass a bare `t.graphqls`, a
-`/a`). Exactly one consumer asks the filesystem what that string is: `SdlFactCapture.regularFile`
+take whatever a programmatic caller hands them (the applier tests pass a bare `t.graphqls`, and
+`RewriteContextTest` a bare `/a`). Exactly one consumer asks the filesystem what that string is: `SdlFactCapture.regularFile`
 asks "does this resolve to a regular file" at stamp time, because the walk is handed source
 *names* by graphql-java rather than the `SchemaInput` that produced them. That count is worth
 being precise about, since the capture package holds a second `Files.isRegularFile` that looks
@@ -285,9 +292,11 @@ and the difference is worth a sentence because the cheaper option is not the obv
 ferrying the built map to capture would mean widening that record for a passenger. The capture site
 rebuilds it from `ctx.schemaInputs()` instead: `SchemaInputAttribution.build` is pure over the input
 list, so the rebuilt map is the same map by construction, and the choice costs one call rather than
-a component. The parameter still has to reach the walk, so `SdlFactCapture.capture` takes it and
-`FactCapture.run` plus the three public `FactCapture.capture` overloads pass it through, beside the
-recipe they gain for the same reason. One knock-on that *nothing* will catch is worth naming, since
+a component. The parameter still has to reach the walk, so `SdlFactCapture.capture` takes it and the five public
+entry points pass it through, beside the recipe they gain for the same reason: `FactCapture.run`,
+`FactCapture.runWithDetections` (the production one, and the only one `GraphQLRewriteGenerator`
+calls; `run` is reached from `WarmStartRefreshTest` and `PersistentStoreTest` only), and the three
+`FactCapture.capture` overloads. One knock-on that *nothing* will catch is worth naming, since
 the instinct is to trust the build here: `WarmStartRefreshTest`'s
 `aWarmRefreshOverAMultiPackageCatalogCompletes` carries a `{@link}` naming a `FactCapture.capture`
 overload by its full parameter list. That is a method javadoc in a test source, and the reference
@@ -610,8 +619,14 @@ element therefore leaves no row on the next capture, with no both-arms upsert su
 wrong. The preambles never touch the relation, so a compile-facts run can neither erase nor
 invent a declaration; the verification case pins both directions. The relation's FK to
 `store_graph` and its `graph_name` key also put it under the shipped partition gates by default
-(the FK-closure and leading-key dimension gates run in exemption polarity), so its coverage is
-inherited rather than owed.
+(the FK-closure and leading-key dimension gates run in exemption polarity), so *that* coverage is
+inherited rather than owed. Two gates are owed rather than inherited, being total rather than
+exemption-polarity, and the implementer pays both in the same edit or the build is red before any
+of this runs. `FactCaptureAgreementTest.everyRelationIsRegistered` walks `Public.PUBLIC.getTables()`
+and fails on any relation absent from the hand-kept registration map, so the new relation takes an
+`EQUALITY` entry beside `store_graph_schema_input`, which is the arm its round-trip case already
+argues for. And `FactSchemaGateTest.commentCoverageIsTotal` checks `REMARKS` on columns as well as
+tables, so every column of the new relation carries a comment, not just the relation itself.
 
 The capture signature is where the family would otherwise accumulate, and this item stops that
 here. The narrowing above moves the recipe from `GraphIdentity` to the capture entry points, the
@@ -622,7 +637,9 @@ the seam the narrowing cleaned. So the entry points take one typed value for cap
 configuration, carrying the recipe and the supergraph declaration as components with explicit
 absence and growing a component per family parameter as the rest lands; `GraphIdentity` stays the
 coordinate exactly as argued, and the coordinate-versus-subject split above is the criterion that
-produces this shape. The name is the implementer's, though "membership" is taken in the capture
+produces this shape. The signature is fixed once across all five public entry points named above
+(`run`, `runWithDetections`, and the three `capture` overloads), which is the point of doing it
+here rather than per parameter. The name is the implementer's, though "membership" is taken in the capture
 package (`GraphSourceMembership` is about graph-to-source rows, not this); what is bound is the
 shape, one value with typed absence per component. The attribution map stays its own parameter,
 being derived from the inputs rather than declared. The call-site enumeration above is unchanged
@@ -745,13 +762,20 @@ pre-synthesis handle, so the fixture change is the input's tag and nothing else.
 
 `SchemaInputExpanderTest` retargets to the core expansion with its cases intact, except the
 three that assert `MojoExecutionException`, which become mojo-side rendering pins holding
-today's author-facing text: `singlePatternEmpty_throwsAggregateEmpty` and
-`allPatternsEmpty_throwsAggregateEmpty` for the aggregate-empty variant, and
-`expand_zeroMatchAfterExtensionFilter_throwsMojoExecutionException` for the per-pattern-empty
-one. The multi-binding case is the load-bearing one of the three and must not be dropped as a
-duplicate of the single-binding case: its assertions are the only place the per-entry rendering
-(`entry #0` and `entry #1` with their patterns, one line each) is pinned, and that enumeration
-is the whole of what an author reads when several patterns miss at once.
+today's author-facing text. All three hold the *aggregate*-empty variant, asserting
+`<schemaInputs> matched no files`, and they differ by the path that empties the set rather than
+by the message: `singlePatternEmpty_throwsAggregateEmpty` on a zero-match glob,
+`expand_zeroMatchAfterExtensionFilter_throwsMojoExecutionException` on a glob that matched
+before the extension filter dropped everything, and `allPatternsEmpty_throwsAggregateEmpty` on
+several bindings missing at once. Ported as anything but three aggregate-empty pins, the
+extension-filter path loses its only cover. The per-pattern-empty rendering is not among them:
+it is a warning rather than a throw, and `multiplePatterns_oneEmpty_warnsAndContinues` and
+`multiplePatterns_oneEmpty_afterExtensionFilter_warnsAndContinues` pin it by asserting
+`emptyPatterns()`, so both retarget to the typed result untouched. The multi-binding case is
+the load-bearing one of the three throwing cases and must not be dropped as a duplicate of the
+single-binding case: its assertions are the only place the per-entry rendering (`entry #0` and
+`entry #1` with their patterns, one line each) is pinned, and that enumeration is the whole of
+what an author reads when several patterns miss at once.
 
 The supergraph declaration gets the fourth enforcer, beside the two-graph fusion gate whose
 fixture it extends. A store captures three graphs, two declaring one supergraph and one declaring
