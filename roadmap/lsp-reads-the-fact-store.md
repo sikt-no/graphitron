@@ -73,6 +73,16 @@ or `Connection`. Carrying the graph name in the handle is what makes the scoping
 rather than a discipline every query site has to remember. This failure mode is invisible in a
 single-module fixture, so the test corpus needs a two-module case or the scoping is untested.
 
+This needs no new facts, and specifically not a transcription of the configured jOOQ package.
+`GraphSourceMembership.note` already fires at the three places a run enumerates its sources, one
+of them being the catalog walk's generated packages, and its javadoc names this exact job: the
+relation "is what makes an SDL-to-catalog join determinate in a shared store." The membership row
+records the package the walk *read*, not the one the build was configured with, which is the
+stronger fact of the two and the one this scoping wants. Deriving the scope from configuration
+instead would reproduce the store-first shape the schema-recipe item already rejected on the
+record, where a transcription bug becomes a build that consistently reads the wrong thing past an
+anchor that still passes.
+
 **Sealed resolution outcomes.** Every seam read collapses {no match, one match, several matches}
 into `Optional`-or-first-wins: `getTable` takes `findFirst` on a case-insensitive name;
 `methodHover` takes `findFirst` over same-named methods; `fkHover` scans every table's references.
