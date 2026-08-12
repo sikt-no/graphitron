@@ -88,7 +88,7 @@ than few (`DevMojo`'s three `CompileFacts` constructions, `DevMojoTest`, `Captur
 `FactSchemaGateTest`, `PersistentStoreTest`, `FactCaptureAgreementTest`, `CompileFactsTest`,
 `DiagnosticFactsTest`, `DemandShadowTest`, `InputOccurrenceShadowTest`, `ColumnMatchClaimTest`,
 `AuthoredClaimConflictsTest`, `RejectionSeverityCoverageTest`, `WarmStartRefreshTest`'s own two-arg
-sites, and three `graphitron-mcp` fixtures), and the count is the argument: a narrowing that left
+sites, and four `graphitron-mcp` fixtures), and the count is the argument: a narrowing that left
 the component in place would have billed every one of them.
 
 Its expansion returns a value rather than a file set. `SchemaRecipe.expand(Path baseDir)`
@@ -507,7 +507,7 @@ Every parameter the build supplies is transcribed. `<lint>`, `<sessionState>`, `
 the output package and directory, and whatever the mojo grows next. A run that has exited cannot be
 asked again, so the test is whether the build knew it, not whether a reader has asked for it yet.
 
-Four boundaries the plan has to settle. None is left to the edit: an implementer who reaches these
+Five boundaries the plan has to settle. None is left to the edit: an implementer who reaches these
 mid-implementation has no reviewer in the loop, which is the argument for closing them at the gate
 even though the recipe's own design does not answer them by itself.
 
@@ -536,14 +536,37 @@ even though the recipe's own design does not answer them by itself.
 * **Structured values: typed decomposition, with no per-parameter escape hatch.** A rendered form
   is a string a later reader has to re-parse, which is the shape this item exists to remove for
   source names, and permitting it "per parameter" reintroduces the untyped default door one
-  paragraph after sealing it. So `<lint>` decomposes to its two string lists (`<disabledRules>`
-  and `<excludedTypes>`, one row per entry, discriminated by which list it came from) and
-  `<sessionState>` decomposes to its hook halves (the `connect` and `disconnect` calls with the
-  optional OUT handle) beside one row per `<variable>` carrying its name and claim. Neither block
-  is opaque to a reader, which is the only condition that could have justified a rendered form,
-  and neither is deep enough for the decomposition to be expensive. A future parameter genuinely
-  opaque to every reader may render, but it owes that argument explicitly rather than inheriting a
-  standing permission.
+  paragraph after sealing it. So `<lint>` decomposes to its two halves (`<disabledRules>` and
+  `<excludedTypes>`, one row per entry, discriminated by which half it came from), and it is a
+  genuine conjunction rather than an alternation, `LintConfig` being a plain record of both. The
+  two halves are not the same shape, though, and the grain rule's "ordinal only where the source is
+  genuinely ordered" decides it: `excludedTypePatterns` is a `List` and takes one, while
+  `disabledRuleIds` is a `Set` and takes none, because an ordinal over a `Set` would record the
+  JVM's iteration order and call it a position. Neither
+  block is opaque to a reader, which is the only condition that could have justified a rendered
+  form, and neither is deep enough for the decomposition to be expensive. A future parameter
+  genuinely opaque to every reader may render, but it owes that argument explicitly rather than
+  inheriting a standing permission.
+* **Decomposing an alternation: discriminate the arm, never lay the arms out side by side.**
+  `<sessionState>` is the instance that forces this and the reason it is stated as a rule: it looks
+  like a block of optional sub-elements and is not one. `SessionStateConfig` is a sealed
+  alternation (`None`, `FunctionHooks`, `Variables`) whose `from` throws when both forms are
+  configured, so a relation laying hook columns beside variable rows would admit a state the value
+  type rejects, which is the derived fact that can disagree in its purest form. The transcription
+  carries the arm as a discriminator instead. `Variables` carries its `<variable>` name and claim
+  rows, ordinal-keyed. `FunctionHooks` carries `connectCall` plus its nested `Unmount` arm, which
+  is a second alternation and gets the same treatment rather than a nullable call column:
+  `PairedDisconnect` carries the call, the OUT-handle flag and `survivesTransactions`, and
+  `UnmountFree` carries nothing but its arm. That last distinction is why "absent versus empty"
+  cannot dispose of this one as a missing row: an empty `<disconnect/>` is a declared opt-out,
+  the author saying identity provably never unmounts, and it is a different fact from a
+  `<disconnect>` nobody wrote. `None` is the missing row, and there the general rule does apply.
+  This also gives `<stateSurvivesTransactions>` its home, which the charter owes it as a declared
+  parameter and which laying the block out flat would have lost: it sits on `PairedDisconnect`,
+  the only arm where it is meaningful, which is exactly what `from` enforces by throwing when it
+  is set without hooks. The general rule for the family: when a parameter's core type is sealed,
+  the relation's shape follows the seal, and a reader must not be able to spell a combination the
+  constructor refuses.
 * **Absent versus empty: transcribe the effective value, and do not record authorship.** The fact
   worth having is what the run actually used, because the reader served is the one with no build
   to run. R610 already settled this in the tree rather than leaving it open:
