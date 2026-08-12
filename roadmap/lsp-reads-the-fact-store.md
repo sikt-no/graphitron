@@ -27,184 +27,227 @@ module reads sixteen and the MCP server two.
 
 Scoping this turned up the sharper version of the problem. The jOOQ catalog is projected three
 times, not twice. The `sql_` family holds it as relations. `CompletionData` holds it again,
-Java-name-centric, for the LSP. `CatalogFacts` holds it a third time, SQL-name-centric, for the
-MCP `catalog.tables` / `catalog.describe` tools, and its own javadoc names the situation exactly:
+Java-name-centric, for the LSP. `CatalogFacts` holds it a third time, SQL-name-centric, and it is
+not a small surface: `EdgeProducer`, `EdgesTool`, `ReverseEdgeIndex`, `NodeRef`,
+`CatalogDescriptors` and `CatalogSearchIndex` read it in `graphitron-mcp`, and `TenantScopes` and
+`GraphQLRewriteGenerator` read it inside `graphitron` itself. Its own javadoc names the situation:
 "a sibling projection to `CompletionData`, not a widening of it ... each carries exactly what its
-consumer reads." Both Java projections are built in one pass by `CatalogBuilder` over a jOOQ
-reflection scope that closes at the end of the pass, which is why each is frozen into resolved
-immutable values. The store has no such boundary. So the eventual shape is not "the LSP gets a
-second way to read the catalog", it is one relational catalog with two shells reading it and two
-frozen projections deleted.
+consumer reads." Both Java projections are built in one `CatalogBuilder` pass over a jOOQ
+reflection scope that closes at pass end, which is why each is frozen into resolved immutable
+values. The store has no such boundary.
 
-This item does the first slice of that and nothing more.
+So the endpoint is not "the LSP gets a second way to read the catalog." It is one relational
+catalog read surface with two projections deleted. This item builds that surface and cuts the
+first two readers over to it.
 
-## Scope
+## The item is the read surface, not a feature port
 
-The pilot is the catalog-backed arms of `Hovers`: `tableHover`, the `tableColumnHover` leaf,
-`fkHover`, `classNameHover`, `methodHover`, `nodeTypeHover`, and the formatters and lookup helpers
-they reach through (`findExternal`, `columnGraphqlType`, `formatTable`, `formatColumn`,
-`formatClass`, `formatMethod`, `formatNodeType`). That is roughly 167 of the 513 lines in
-`Hovers.java`.
+The shape that matters is shared, and building it underneath a feature port would mean paying for
+it while three LSP-specific questions (per-keystroke latency, a second connection, the freshness
+seal) are live at the same time. So the item lands the surface first and cuts over in two steps.
 
-Explicitly out of scope, each for its own reason:
+**Step 1, `CatalogFacts`.** SQL-name-centric so it is the closer shape match to `sql_`, frozen
+values only, no live handles, and its consumers are turn-based. It exercises the read path with
+concurrency, freshness and rendering all held out. It ends with a projection deleted.
 
-* `DeclarationHovers` (459 lines) reads `LspSchemaSnapshot.Built`'s classification maps
-  (`fieldClassificationsByCoord`, `typeClassificationsByName`), not the catalog. Classification is
-  derived, and the derivation is only partly in the store today; porting it is a different item
-  with a different risk profile.
-* `Hovers`' snapshot-backed arms, `slotHover` over `TypeBackingShape` member slots and the
-  `lspColumnDispatch` switch in `columnHover`, for the same reason. `columnHover` keeps its
-  classification dispatch and changes only where its leaf resolves a table column.
-* Tree-sitter parsing. The store reflects the last successful capture; the server must answer on
-  an unparseable mid-edit buffer.
-* The `SourceWalker` Javadoc overlay. This is not a concession, it is the store's stated design:
-  the `jvm_class` family comment says Javadoc and source positions "deliberately stay out; those
-  live on the LSP's `SourceWalker` cadence and are joined at request time, so a `.java` edit is
-  seen without a generator rebuild." Hover already joins at request time through `Descriptions`.
-  That stays exactly as it is.
-* Protocol lifecycle and tracing.
-* `CatalogFacts` and the MCP tools reading it. Collapsing that projection is the obvious sibling
-  and is deliberately not bundled here; this item is sized to produce a measurement, not to
-  finish the migration.
+**Step 2, the catalog-backed arms of hover.** Inherits the surface and owns exactly the three
+questions step 1 could not answer.
 
-## Implementation
+The numbering is a real seam: step 1 ships and is observable on its own, and step 2's risk profile
+only becomes assessable once the surface exists.
 
-**A lookup seam hover depends on, with two implementations.** The structural-pivot technique
-applies: introduce the replacement alongside the old surface, migrate behind the compiler, delete
-the old surface last. Add an interface in `rewrite/catalog` naming exactly the six questions the
-in-scope hover arms ask, and nothing else:
+## The read surface
 
-    Optional<TableInfo>      table(String name)
-    Optional<ColumnInfo>     column(String tableName, String columnName)
-    Optional<ForeignKeyInfo> foreignKey(String keyName)
-    Optional<ClassInfo>      externalClass(String fqn)
-    Optional<MethodInfo>     method(String fqn, String methodName)
-    Optional<NodeInfo>       node(String typeName)
+**Graph-scoped, structurally.** The `sql_` family is keyed by `source_name`, not by graph, and a
+persisted store is shared across every module of a workspace. `CompletionData` is implicitly
+graph-scoped because it is built per pipeline pass for one module; a store-backed `getTable` is
+not, and would silently range over a sibling module's tables. `store_graph_source`'s own comment
+states the law: any derivation joining a graph-keyed fact to a source-keyed one "scopes its
+catalog side through this relation, which is what keeps one graph's resolution from seeing a
+sibling module's tables in a shared store."
 
-The value types are the smallest records that carry what the formatters render, not a re-export of
-`CompletionData`'s nested records. Ship two implementations: one delegating to a `CompletionData`
-instance, one issuing SQL. Hover takes the interface. This is what keeps the migration cheap in
-the test tier, and it makes the parity test structural rather than hand-written: the same fixture
-feeds both implementations and every question is asked of both.
+Every catalog read in this item goes through a graph-scoped view joining `sql_table` to
+`store_graph_source` on `source_name`, and the handle a consumer receives is `(DSLContext,
+graphName)` — the shape `GraphitronMcpServer.StoreHandle` already is — never a bare `DSLContext`
+or `Connection`. Carrying the graph name in the handle is what makes the scoping structural
+rather than a discipline every query site has to remember. This failure mode is invisible in a
+single-module fixture, so the test corpus needs a two-module case or the scoping is untested.
 
-Note what the interface shape itself buys. `getTable` is a linear stream scan; `fkHover` is a
-nested scan over every table's references; `columnGraphqlType` is a nested scan over every table's
-every column. Naming the questions is the step that lets either side answer them with an index.
+**Sealed resolution outcomes.** Every seam read collapses {no match, one match, several matches}
+into `Optional`-or-first-wins: `getTable` takes `findFirst` on a case-insensitive name;
+`methodHover` takes `findFirst` over same-named methods; `fkHover` scans every table's references.
+On a `CompletionData` list that flattening is nearly invisible. On the store it is unavoidable,
+because the keys are honest: `sql_table` is keyed `(source_name, table_schema, table_name)`, so an
+unqualified name genuinely may match several rows, and `jvm_method` is keyed by `descriptor`
+precisely because the erased display rendering collided on overloads, which
+`CompletionData.Method.descriptor`'s javadoc already documents.
 
-**A read connection for the LSP.** `GraphitronModelStore` holds one `java.sql.Connection` and one
-`DSLContext` over it. `DevMojo` hands that same `dsl()` to the MCP server, which is safe there
-because MCP is turn-based; the LSP is not, and would put concurrent request threads on a
-connection a build thread is writing through. Add a read-only accessor that opens an additional
-connection on the same URL. Both URL shapes admit one: the in-memory store is a named database
-held open by `DB_CLOSE_DELAY=-1`, and the file store is `AUTO_SERVER=TRUE`.
+Resolution returns a sealed outcome per lookup axis. `CatalogFacts.resolve` is the in-tree
+exemplar and already returns `Resolved` / `Ambiguous` / `NotFound` over exactly this question;
+the surface generalizes that to columns, methods and foreign keys rather than reproducing
+`findFirst` on the store side to satisfy a parity gate. Re-flattening a distinction the store's
+keys just handed back is the one outcome to avoid.
 
-The second connection is not only a thread-safety fix. Capture runs as a single transaction
-(`FactCapture`'s `dsl.transaction`), so a reader on its own connection sees the previous committed
-state until that transaction commits and the new state afterwards, never a half-written round.
-That is precisely the invariant `Workspace` hand-rolls today by swapping `catalog`, `catalogFacts`
-and `snapshot` together so "a single set of volatile reads observes one" build. The store gives it
-by construction.
+**One connection for reading, and what it does and does not buy.** `GraphitronModelStore` holds
+one `Connection` and one `DSLContext` over it. `DevMojo` hands that same `dsl()` to the MCP
+server, safe there because MCP is turn-based; the LSP is not, and would put concurrent request
+threads on a connection a build thread writes through. Add a read-only accessor opening an
+additional connection on the same URL. Both URL shapes admit one: the in-memory store is a named
+database held open by `DB_CLOSE_DELAY=-1`, the file store is `AUTO_SERVER=TRUE`.
 
-**Freshness stays where it is.** `LspSchemaSnapshot`'s `Built.Current` / `Built.Previous`
-distinction gets no store equivalent and should not get one. Rows cannot say whether the round
-that wrote them is the round matching the buffer the user is editing; that is workspace state, and
-`Workspace.demote` is where it is decided. The store answers *what*, the workspace keeps answering
-*how fresh*. Do not let H2 isolation semantics quietly become the freshness contract.
+Capture runs as a single transaction (`FactCapture`'s `dsl.transaction`), so a reader on its own
+connection sees the previous committed state until that transaction commits, never a half-written
+round. That is read-consistency, and it is the invariant `Workspace` hand-rolls today by swapping
+`catalog`, `catalogFacts` and `snapshot` together so "a single set of volatile reads observes one"
+build. It is worth having and it is only that. An H2 isolation default is not an enforcer: nothing
+in this build fails if it changes, so the Spec claims read-consistency from it and nothing else.
 
-**Wiring.** `DevMojo` already resolves `sessionStore` and hands a `StoreHandle` to the MCP server;
-route a read handle into `Workspace` the same way, on the same line of the same method. The LSP
-module already depends on `graphitron`, which depends on `graphitron-model` at compile scope, so
-the generated `Tables` is already on its classpath. No new dependency.
+**Freshness stays a typed workspace fact.** `LspSchemaSnapshot`'s `Built.Current` /
+`Built.Previous` gets no store equivalent, and the reason is structural rather than a matter of
+taste. Capture records the last *success*; `Built.Previous` is a fact about the last *attempt*.
+`Workspace.demoteSnapshot` is called from three `DevMojo` paths where a parse threw and capture
+therefore never ran and never wrote a row. No timestamp comparison at the read site recovers that
+distinction, and inventing one would be branching on a predicate over pre-resolved inputs rather
+than reading a resolved decision. If the seal is ever to move into the store, capture must first
+record the attempt outcome as a fact; that round-outcome row does not exist today and is not in
+this item. Until then the store answers *what* and the workspace keeps answering *how fresh*.
 
-**Parity gaps in the captured facts.** Four differences between what `CompletionData` renders and
-what the store holds. Each is a decision, and the default is to widen capture rather than
-re-derive a string in the LSP, because a derived string in a shell is how the third projection
-happened in the first place.
+## Capture widenings
 
-* `CompletionData.Column.graphqlType` is misnamed: it is `col.getType().getName()`, the Java class
-  name (`java.lang.Integer`), and hover renders it verbatim. `sql_column.sql_type` is the SQL type
-  as jOOQ reports it. Different values. Capture the Java type as its own column; `sql_column`
-  already carries `jooq_name` for exactly this reason, its comment saying the name rides along
-  because "the LSP surface is Java-name-centric."
-* `CompletionData.Reference.keyName` is the generated Java constant on the `Keys` class
-  (`FILM__FILM_LANGUAGE_ID_FKEY`), with the SQL constraint name as fallback, and it is what an
-  author types in `@reference(key:)`. `sql_constraint` carries only the SQL name. Add a
-  `jooq_name`, symmetric with the one `sql_table` and `sql_column` each already have; the foreign
-  key is the odd one out rather than a new precedent.
-* `CompletionData.Table.classFqn` is the generated table class FQN and is load-bearing: it is the
-  join key into `SourceWalker.Index` for the Javadoc overlay and for goto-definition.
-  `sql_table.jooq_name` is the table *field* name. Recomposing the FQN from `source_name` plus a
-  guessed `.tables.` segment is exactly the kind of derived-in-the-shell string this item exists
-  to remove. Capture it.
-* `jvm_class` is filtered to public, non-synthetic, top-level, outside the generated jOOQ package.
-  Confirm `CompletionData.ExternalReference` agrees on all four before assuming the sets match;
-  the shadow test is what settles it, and a disagreement is a finding either way.
+Widen capture where the store is genuinely missing a fact; do not widen it to keep a render
+byte-equal.
 
-One difference was checked and is immaterial: `NodeMetadata.keyColumns` distinguishes an absent
-`@node(keyColumns:)` from an empty list, and `graphitron_node_key_column` cannot, but hover's
-`formatNodeType` treats null and empty identically.
+* **`sql_constraint.jooq_name`, yes.** `JooqCatalog.fkJavaConstantName` resolves the `Keys`
+  constant by reference identity over the generated class's fields. That is a reflective decode of
+  an external artifact, not a formula, so re-deriving it downstream would mean reflection past the
+  decode boundary. It also matches the existing precedent exactly: `sql_table.jooq_name` and
+  `sql_column.jooq_name` each already sit in a SQL-named family with a comment owning why. The
+  foreign key is the odd one out, not a new precedent. Bonus worth stating: `CatalogBuilder`
+  currently mints the `Keys` FQN as the formula `ctx.jooqPackage() + ".Keys"` while `JooqCatalog`
+  derives the schema-correct one from the matching constant's declaring class. Capture retires the
+  formula.
+* **The generated class FQNs, yes, but decide the grain from the concept.** `Table.classFqn` is
+  per table and can be a column on `sql_table`. The `Keys` class FQN is per
+  `(source_name, table_schema)`; today it is copied onto every `CompletionData.Reference`, which
+  is a repeating group. Follow the grain, not `CompletionData`'s shape, or the store inherits the
+  projection's denormalization. `classFqn` is load-bearing either way: it is the join key into
+  `SourceWalker.Index`.
+* **A Java-type column on `sql_column`, no.** See the behaviour change below.
+* **`jvm_class` filters.** The family is filtered to public, non-synthetic, top-level, outside the
+  generated jOOQ package. Confirm `CompletionData.ExternalReference` agrees on all four rather
+  than assuming; a disagreement is a finding either way.
 
-**Deletion.** On cutover, the `CompletionData`-backed implementation of the lookup interface
-survives (the 87 test sites and the out-of-scope features still build the record); what deletes is
-the hover code paths that reached through `CompletionData` directly. `CompletionData` itself does
-not shrink in this item, and the plan should not pretend otherwise. Recording that honestly is
-part of the point: see the measurement discussion below.
+## One deliberate behaviour change
+
+`CompletionData.Column.graphqlType` is misnamed. It is `col.getType().getName()`, the Java class
+name (`java.lang.Integer`), and it is rendered verbatim in three places: twice in hover and once
+in `FieldCompletions`. `sql_column.sql_type` is the SQL type as jOOQ reports it.
+
+This is why the migration unit is the read surface rather than the feature. Cut hover alone to
+`sql_type` and the same column renders `integer` in a hover and `java.lang.Integer` in a
+completion one keystroke later, in one editor session. Capture the Java type purely to keep the
+render equal and the store has gained a fact whose only justification is preserving a mislabeled
+name.
+
+So: move both readers together, to the SQL type, and record it as a named behaviour change rather
+than a parity residue. An author spelling `@field(name:)` against a column wants the SQL type. The
+same reasoning applies to `columnGraphqlType`, which today resolves a `@node(keyColumns:)` entry
+by scanning every table for a matching column name, keyed on nothing; the node type's resolved
+table is a fact the store supplies, so the store-backed version keys on `(node table, column)`.
+That is a keying correction, not a residue.
 
 ## Tests
 
-**Shadow parity, in the LSP test tier.** The protocol `AuthoredClaimConflicts` used applies:
-land the store-backed lookup shadowed, pin it equal to the seam-backed lookup under a parity test,
-cut over only once it agrees, then delete the shadowed path.
+**Shadow the resolution, not the render.** Split each ported feature into *resolve* (coordinate to
+typed fact tuple) and *render* (tuple to output), and shadow the resolve half only. The renderer is
+untouched, so its output stays byte-equal by construction and needs no test of its own. This keeps
+the gate off rendered markdown, which would otherwise conflate which fact was resolved, what it
+says, and how it is spelled, and would pin two things worth un-pinning: `methodHover`'s arbitrary
+overload pick, and `columnGraphqlType`'s order-dependent first-match, whose answer depends on a row
+order the store does not share.
 
-Compare at the lookup interface, not at the rendered markdown. Hover's output is a formatted
-string, and byte-equality on it would pin two things that are not worth pinning: the exact
-markdown, which we may want to improve, and `methodHover`'s `findFirst` over same-named methods,
-which picks an arbitrary overload and is arguably a defect. Pinning at the interface keeps the
-formatters as the single renderer for both sides, so a markdown change cannot break parity, and it
-leaves the overload question visible as its own decision. If the store-backed side resolves the
-overload correctly by descriptor (`jvm_method` keys on it, `CompletionData.Method` carries it but
-hover ignores it), that is a behaviour *change* and needs its own line in the plan, not a silent
-improvement smuggled through a parity gate.
+**Population diffs with named residues.** `DemandShadowTest` is the shipped shape: diff populations
+of rows against the incumbent Java derivation, with each residue pinned as a store-derived
+population rather than a Java-side list. The shadow test asserts the `Resolved` arm equals the
+incumbent and names the `Ambiguous` population as a residue rather than pinning today's pick.
 
-**Fixture.** `RejectionSeverityCoverageTest` already opens a `GraphitronModelStore` in this
-module, so the tier can boot one. The capture-side helper `CapturedStore` is package-private in
-`graphitron`'s test sources and is not reachable from here; either widen it deliberately or write
-the small equivalent locally. Prefer whichever leaves one helper rather than two.
+**Tier.** With the resolve half living next to `CompletionData` in `graphitron`, the shadow tests
+are pipeline-tier alongside `DemandShadowTest` and never need the LSP in the loop. Step 2 adds
+LSP-tier coverage only for what is genuinely LSP-shaped. `RejectionSeverityCoverageTest` already
+opens a `GraphitronModelStore` in that module, so the tier can boot one; the capture-side helper
+`CapturedStore` is package-private in `graphitron`'s test sources, so either widen it deliberately
+or write the local equivalent, leaving one helper rather than two.
 
-**Latency.** Measure per-request hover latency for the in-scope arms, store-backed against
-seam-backed, on the Sakila fixture. State the number in the item before cutover. The expectation
-that a map lookup beats SQL is not obviously true here, because the incumbent is a linear scan and
-two of the arms are nested linear scans; that is a reason to measure, not a reason to assume the
-result goes our way.
+**Latency, step 2 only.** Measure per-request hover latency for the ported arms, store-backed
+against seam-backed, on the Sakila fixture, and state the number before cutover. The expectation
+that a map lookup beats SQL is not obviously true here: the incumbent is a linear scan and two of
+the arms are nested linear scans. That is a reason to measure, not a reason to assume the result.
+
+## Constraint while both models are live
+
+For the duration of the two-model window, new catalog facts land only in the store. A field added
+to `CompletionData` or `CatalogFacts` during this item extends the surface being retired and makes
+the window grow rather than shrink. `CompletionData`'s accreting back-compat constructor chain is
+what that looks like when it is not stated.
+
+## Scope boundaries
+
+Out of scope, each for its own reason:
+
+* `DeclarationHovers` (459 lines) reads `LspSchemaSnapshot.Built`'s classification maps, not the
+  catalog. Classification is derived and only partly in the store; that is a different item.
+* `Hovers`' snapshot-backed arms, `slotHover` over `TypeBackingShape` and the `lspColumnDispatch`
+  switch, for the same reason. `columnHover` keeps its classification dispatch and changes only
+  where its leaf resolves a table column.
+* Tree-sitter parsing. The store reflects the last successful capture; the server must answer on
+  an unparseable mid-edit buffer.
+* The `SourceWalker` Javadoc overlay. Not a concession but the store's stated design: the
+  `jvm_class` comment says Javadoc and source positions "deliberately stay out; those live on the
+  LSP's `SourceWalker` cadence and are joined at request time." Hover already joins at request
+  time through `Descriptions`, and that stays.
+* Protocol lifecycle and tracing.
+* The other five LSP feature packages.
+
+`CompletionData` does not delete in this item. Step 2 removes hover's direct reads of it; the
+record survives for the out-of-scope features and the LSP tests that hand-build it in 87 places.
+Recording that plainly matters, because the measurement below is only worth taking if the counts
+are honest.
 
 ## Gate criteria
 
-Cutover requires: the parity test green across the fixture corpus; the measured latency stated and
-no worse than the seam at p99; and the four capture gaps closed or explicitly deferred with the
-arm they affect left on the seam.
+Step 1: shadow population diff green with residues named; graph scoping covered by a
+multi-module fixture; `CatalogFacts` deleted, not merely bypassed.
+
+Step 2: shadow green; measured latency stated and no worse than the seam at p99; the SQL-type
+behaviour change landed for both readers together; any capture gap left open recorded with the arm
+still on the seam.
 
 ## What this measures
 
 The relational core has exactly one shell besides the generator, so the claim that it lowers the
-cost of an additional consumer has one data point to divide by (`docs/history/road-to-the-relational-core.adoc`
-records the measurement). This item makes it two, under conditions that make the comparison
-honest: the same feature, the same behaviour held fixed by a parity test, both sides measured.
+cost of an additional consumer has one data point to divide by;
+`docs/history/road-to-the-relational-core.adoc` records the measurement. The hover cutover in step
+2 makes it two, under conditions that make the comparison honest: same feature, behaviour held
+fixed by a shadow test except where a change is named, both sides measured.
 
-The prediction under the hypothesis is that the ported arms shrink. The null is that they stay
-flat, because the shared *Java* model already made new facts nearly free for existing shells a
-month before the store existed. Record both the line and branch counts on each side, at the
-cutover commit rather than off the working tree, and record them whichever way they come out.
+Splitting the surface out into step 1 is what makes the number mean anything. A consumer that pays
+for the substrate as well as its own view measures both at once; step 2 measures the marginal cost
+of a view over a surface that already exists, which is what the claim is actually about. Record
+line and branch counts on each side at the cutover commit rather than off the working tree, and
+record them whichever way they come out. The null is that they stay flat, because the shared
+*Java* model already made new facts nearly free for existing shells a month before the store
+existed.
 
 ## User documentation
 
-Exempt. Hover output is unchanged by construction, and the item adds no goal, directive, or wire
-format. If the overload-resolution change above is taken, it is a behaviour change and needs a
-line wherever hover behaviour is described.
+Exempt for step 1. Step 2 carries one user-visible change: column type renders as the SQL type
+rather than the Java class name, in hover and in field completions. That needs a line wherever
+those surfaces are described.
 
 ## Roadmap entries
 
-* Collapsing `CatalogFacts` onto the `sql_` family, retiring the third projection.
-* The remaining feature packages: completions, definition, inlay, diagnostics, code actions.
+* The remaining LSP feature packages: completions, definition, inlay, diagnostics, code actions.
 * `DeclarationHovers` and the classification-backed arms, once more of the classification
   derivation lives in the store.
+* A round-outcome fact, if the freshness seal is ever to move into the store.
 </content>
