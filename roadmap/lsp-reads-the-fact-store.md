@@ -102,6 +102,34 @@ the surface generalizes that to columns, methods and foreign keys rather than re
 `findFirst` on the store side to satisfy a parity gate. Re-flattening a distinction the store's
 keys just handed back is the one outcome to avoid.
 
+## What tree-sitter is for
+
+The division of labour, stated because it decides the surface's shape and an earlier draft of this
+item had it wrong. Tree-sitter answers *where the cursor is*: buffer position to schema coordinate,
+over the live and possibly unparseable buffer. It produces no fact about the schema and writes
+nothing to the store, and it could not, since it is an LSP-only dependency that capture has no
+reference to. Facts arrive on the save cadence, through graphql-java, which is what capture walks.
+The parse exists so the server can run the *right query*; the store answers it.
+
+That is a sharper boundary than "parsing stays because the store cannot answer mid-edit", and it
+corrects a scoping claim. The `parsing` package is not uniformly positional. `Nodes`, `Positions`,
+`Directives`, `SchemaCoordinate`, `DeclarationKind`, `TypeNames`, `NestedArgs`, `ArgMapping`,
+`SdlDeclaration`, `GraphqlNodeKind`, `GraphqlLanguage` and `LspVocabulary`'s coordinate machinery
+are; they stay untouched. `DeclTarget`, `TypeContext`, `ArgMappingSupport` and part of `Behavior`
+join a resolved coordinate against facts, and that join is precisely what moves. They belong in the
+migration surface, not outside it as the earlier scoping said.
+
+The division also fixes the interface's keys. An earlier draft had the surface take strings
+(`table(String name)`, `column(String tableName, String columnName)`), which is the projection's
+shape rather than the parse's. The right shape is already in the tree: `DeclTarget` is a sealed
+resolution from an SDL declaration coordinate to what it binds to, shared by hover and
+goto-definition so their parity is structural rather than asserted. What it gets wrong for this
+purpose is that its variants carry `CompletionData.Table` and `CompletionData.Column`, so the
+projection is baked into the coordinate. Variants carrying the coordinate instead
+(`CatalogTable(tableName)`, `CatalogColumn(tableName, columnName)`) leave every consumer free to
+ask the store, keep the shared-resolution parity that made `DeclTarget` worth having, and give the
+read surface keys the parse actually produces.
+
 **One connection for reading, and what it does and does not buy.** `GraphitronModelStore` holds
 one `Connection` and one `DSLContext` over it. `DevMojo` hands that same `dsl()` to the MCP
 server, safe there because MCP is turn-based; the LSP is not, and would put concurrent request
@@ -234,8 +262,8 @@ Out of scope, each for its own reason:
 * `Hovers`' snapshot-backed arms, `slotHover` over `TypeBackingShape` and the `lspColumnDispatch`
   switch, for the same reason. `columnHover` keeps its classification dispatch and changes only
   where its leaf resolves a table column.
-* Tree-sitter parsing. The store reflects the last successful capture; the server must answer on
-  an unparseable mid-edit buffer.
+* The tree-sitter parse itself, for the reason in "What tree-sitter is for" above: it resolves
+  where the cursor is, and produces no fact anything could store.
 * The `SourceWalker` Javadoc overlay. Not a concession but the store's stated design: the
   `jvm_class` comment says Javadoc and source positions "deliberately stay out; those live on the
   LSP's `SourceWalker` cadence and are joined at request time." Hover already joins at request
