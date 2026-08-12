@@ -1,13 +1,13 @@
 ---
 id: R630
 title: "The fact architecture's durable documentation home"
-status: In Progress
+status: In Review
 bucket: docs
 priority: 2
 theme: docs
 depends-on: []
 created: 2026-08-11
-last-updated: 2026-08-11
+last-updated: 2026-08-12
 ---
 
 # The fact architecture's durable documentation home
@@ -107,148 +107,51 @@ transient space:
 
 ### Slice 1: rewrite the pipeline overview
 
-Rewrite `docs/architecture/explanation/pipeline-overview.adoc` to the shipped pipeline: capture
-(total transcription into the store's base relations: `graphql_` / `graphitron_` / `sql_` /
-`jvm_`, with `store_` bookkeeping), the derived strata (the `intent_` claim views and
-materialized derivations; validation deriving located violation facts), planning joining facts
-into command relations (launcher, condition, projection, fetcher-edge) that the render shell
-folds over, the writer's idempotency contract (unchanged), and the consumer compile. Name the
-stage verbs (classification gathers, validation derives, planning joins) and the strangler
-frame: `GraphitronSchema` and the leaf classifier are the transitional producer surface, live
-until each consumer migrates onto the store, and new facts land only in the store. The page must
-mark the transitional path as transitional so a reader cannot mistake it for the destination.
-
-The slice also audits the sibling pages that state the retired shape as current, so the
-acceptance criterion ranges over pages the slice actually touched:
-`reference/code-generation-triggers.adoc` (its diagram still renders "GraphitronSchemaBuilder
-(the only place directives are read)"), `explanation/typed-rejection.adoc`,
-`explanation/dispatch-axes.adoc`, and the `index.adoc` orientation entries. Audit means: retitle
-the claim as transitional or repoint it, not rewrite those pages wholesale; a page needing a
-real rewrite gets it in slice 2 or a filed follow-up.
-
-Smallest slice, highest urgency: the current page is actively misleading, and every other slice
-assumes a reader can orient on the shipped pipeline.
+Shipped at `d37e9b6`. `docs/architecture/explanation/pipeline-overview.adoc` now describes the
+shipped pipeline (capture, the derived strata, planning, the render shell fold, the unchanged
+writer contract, consumer compile) with the classification walk named transitional throughout;
+the sibling pages the slice audited were retitled or repointed rather than rewritten.
 
 ### Slice 2: the fact-model explanation page
 
-Author `docs/architecture/explanation/fact-model.adoc`, migrating the stable *why* out of
-R333's body. Content, at altitude (the page explains and argues; it does not enumerate
-relations):
-
-- The key discipline as shipped: base relations key schema elements by the spec grammar's own
-  `Name` columns, per relation, all non-null (`graphql_field` on
-  `(graph_name, type_name, field_name)` and kin), never by surrogate ids; the canonical
-  coordinate string appears in the store only as a rendering of those columns (the two stored
-  `coordinate` columns, on the duplicate-declaration overflow and the `diagnostic` read surface,
-  say so in their comments). The five-kind sealed coordinate carrier and a mechanical
-  never-a-stored-surrogate rule are target-state: the store has no coordinate relation and the
-  rendering claim has no enforcer, so per the shipped-and-enforced rule that content stays in
-  R333 until a carrier and a gate exist.
-- Facts as independent functional dependencies, each found by its own walk; a capability is
-  added by adding a fact, not a leaf type; the leaf zoo as the denormalized view that
-  multiplication built.
-- The provenance discipline: authored and inferred are separate relations when the origins are
-  independent walks, a column when one value fills one slot; the resolved value is always a view;
-  which population each consumer reads (codegen the resolved view, the editor the authored
-  relation, the knowledge surface both).
-- Derived reads are views, not stored facts: the candidate space, diagnostics as located
-  violation rows with two projections, rendered keys as stable ids, reverse indexes; freshness
-  as a snapshot property; location joined-not-stored, with the SDL-cadence exception argued.
-- One base, many views, and the re-sourcing invariant: every consumer (codegen, LSP, MCP, the
-  test corpus) reads views over one base; no consumer owns a private model; a migration that
-  leaves a consumer on the old surface revives the leaves as a shim and forks the model.
-- The back half: commands must be complete (the shell decides nothing), the closure invariant
-  (every emitted method is one command's render; every callee name resolves to a committed
-  command), the seam-placement rule and the single-mint naming regime.
-
-Every migrated claim obeys the shipped-and-enforced rule from Decisions and names its enforcer
-on the page (the closure invariant names `MethodClosureOracleTest` / `LauncherRelationClosureTest`;
-the comment convention names its `FactSchemaGateTest` gate), so the page stays anchored on
-checked references rather than aspiration.
-
-The slice also reconciles the *older* home of the why: `development-principles.adoc`'s first
-axiom is still stated in the pre-store shape ("Decide once, at the parse boundary", with the
-directive-reading classifier as its exemplar and the containment corollary naming the
-classifier-boundary classes). Restate the axiom in fact terms, capture as the boundary and the
-derived strata as the carry, and repoint the containment corollary at capture; the page's size
-budget (`DocSizeBudgetTest`) forces displacement, so the slice decides which paragraphs the new
-page absorbs and which stay. Without this, an agent reads capture-and-derive on the new page and
-parse-boundary-classification as the governing axiom on the page it is told to read first.
-
-Amend R333 in the same slice: each migrated section keeps its heading, with a one-line xref to
-the page as the body (never a copy), so sibling items that cite R333 sections by name still
-resolve and the *why* has one home at every moment. Because only shipped-and-enforced text
-moves, the amendment is a relocation, not a redesign of what R333's reviewer signed off, and
-R333's residue keeps shrinking toward its own Done-and-delete condition. The page cites live
-symbols and published docs only, per the javadoc conventions; no roadmap ids in the page body.
+Shipped at `f1b5eea`, provenance-amended at `07ac443`. `docs/architecture/explanation/fact-model.adoc`
+carries the migrated *why* (key discipline, facts-not-leaves, provenance shapes, derived-reads-as-views,
+one-base-many-views, the closed command graph), every claim naming its enforcer.
+`development-principles.adoc`'s first axiom is restated in fact terms ("Decide once, at capture;
+carry the decision and its provenance as facts") within `DocSizeBudgetTest`'s budget. R333's
+migrated sections keep their headings with one-line xref bodies.
 
 ### Slice 3: retool the principles-architect and the reviewer taxonomy
 
-Update `.claude/agents/principles-architect.md` and the shared "what to look for" taxonomy in
-`.claude/skills/reviewer-prompt/SKILL.md`:
-
-- Add the slice 1 and slice 2 pages to the agent's ordered reading list.
-- Add fact-discipline findings to the taxonomy: a new leaf type where a fact belongs; a
-  derivation stored where a view belongs; a new fact landing on the transitional surface instead
-  of the store during the strangler window; provenance flattened to a tag column where the
-  origins are separate walks; a consumer growing a private model instead of re-sourcing;
-  emit-library vocabulary entering the model (the R545 boundary); use-site resolution keyed on a
-  definition coordinate or vice versa.
-- The agent stays read-only and verdict-free; only its sources and taxonomy change.
+Shipped at `e75d9dc`. `.claude/agents/principles-architect.md`'s reading list gained the slice 1
+and slice 2 pages; both it and `.claude/skills/reviewer-prompt/SKILL.md`'s taxonomy gained the
+six fact-discipline findings (leaf-where-a-fact-belongs, derivation-stored-where-a-view-belongs,
+provenance-flattened, private-model, emit-vocabulary-entering-the-model, keying-axis-confusion).
+The agent stayed read-only and verdict-free.
 
 ### Slice 4: generate the schema reference from the DDL comments
 
-A doc-generation step that boots the store from `graphitron-model.sql` (the same bootstrap jOOQ
-codegen already uses), reads the store's metadata *and* the meta-relations through the shared
-catalog reader from Decisions, and renders the reference: one page per family plus an index, the
-page set, titles, ordering, and index preamble all read from the family rows, the per-object
-prose from the comments, prefix-less relations placed by their exemption rows. "Relation" is
-pinned throughout this item as tables *and* views (112 tables and 14 views at writing, 12 of the
-views the `intent_` claim stratum): both carry comments and columns and both render; only tables
-additionally render primary keys, foreign keys, and CHECK constraints, since views carry none.
-Nothing about the page structure is parsed from prose or hardcoded in the generator.
-This slice introduces the meta-relations and their bidirectional gates (the Decisions bullet),
-and migrates the family-definition prose from the header comment into the rows. Comment text
-interpolates as AsciiDoc into the rendered `.adoc` pages. The output is generated at build and
-never committed; the DDL is the only authored artifact, so the reference cannot drift.
-
-Generated-not-committed removes the failure signal the committed precedent
-(`docs/manual/_generated/supported-directives.adoc`, verify-gated) gets for free, so the slice
-carries its own enforcers:
-
-- **Non-vacuity floors**, in the falsifiability pattern of the roadmap-tool check tests: every
-  relation in the catalog (tables and views alike, per the pinned word above) appears on exactly
-  one page, via its family or its exemption row, and every rendered relation carries non-empty
-  comment text. A generator that renders a plausible empty reference fails loudly.
-- **A comment renderability gate** beside the existing comment-coverage gate in the
-  `FactSchemaGateTest` family, guarding both directions: it rejects markdown-isms (`**bold**`,
-  pipe-separator tables, `[text](url)` links), the same slip `check-adoc-tables` guards in
-  authored pages, and it rejects accidental AsciiDoc activation in innocent prose, a pair of
-  `_Word` tokens silently italicizing everything between them. The second direction has a solved
-  precedent in-tree: the roadmap-tool's `InertSpans` with `GeneratedAdocSpanGateTest`, whose
-  javadoc makes this item's own argument (the docs-profile `WARN` gate cannot hold the line
-  because it does not run under a `-P!docs` build). This lands the failure where the comment is
-  authored (`graphitron-model`) instead of surfacing as an Asciidoctor `WARN` in the docs render
-  two modules away.
-- The generation and its floors bind into the base build, not the docs render profile, following
-  the docs pom's own argument for `check-adoc-xrefs` ("only render-site lives in that profile").
-  The render step itself sits in the `docs` module, which the reactor order admits without
-  reordering (`graphitron-model` builds early, `docs` late), with the reader exposed by
-  `graphitron-model`.
+Shipped at `d5d6c32`. The `meta_` stratum landed as three views over row values, not the tables
+the Decisions bullet proposed: `meta_family` (the roster, migrated out of the header),
+`meta_prefixless_relation` (`diagnostic`'s exemption, page `NULL` meaning the index, since a
+five-arm union claims no single family), `meta_relation_family` (the `INFORMATION_SCHEMA` census
+joined against both). Views rather than tables keep the rows constant per DDL hash by
+construction, so `StoreRefresh`, the partition gate and the warm census need no exemption for
+them; `FactSchemaGateTest` gained four bidirectional roster gates instead of the FK the
+Decisions bullet expected. `CommentRenderabilityGateTest` holds the accepted AsciiDoc subset
+(narrower than Decisions; see Open questions) over every comment and meta value, scanned
+totally. `StoreCatalog` (`graphitron-model`) is the one census reader; `SchemaReferencePages`
+(`roadmap-tool`, not `docs`, so rendering code stays off the production classpath) renders one
+page per family plus an index into docs staging at build, with non-vacuity floors. The render
+binds into the docs module's base build before `check-adoc-xrefs`; output is never committed.
 
 ### Slice 5: drift guard for the authored pages
 
-The authored explanation pages name relations and families in prose. Add a build check that
-every backtick-quoted identifier matching a store family prefix in `docs/architecture/**.adoc`
-resolves to a relation (or column, or observed family prefix) in the store, in the spirit of the
-roadmap-tool's `check-module-enumeration`. The guard reads the same catalog reader as slice 4
-(the Decisions rule): if the guard regexed the `.sql` while the generator read the booted
-store's metadata, two mechanisms of different fidelity would answer "what relations exist". The
-guard makes slice 2's page unable to rot the way the pipeline overview did. The guard needs only
-the store-metadata half of the reader, not the meta-relations, so this slice is
-standalone-implementable: whichever of slices 4 and 5 lands first stands up the reader, and
-landing this one first is fine. Can land with slice 2 if convenient; kept separate so slice 2 is
-not blocked on tooling.
+Shipped at `c7a7f1e`. `check-schema-identifiers` (`roadmap-tool`, bound at `verify`) resolves
+every backtick-quoted identifier in `docs/architecture/**.adoc` that starts with an observed
+family prefix against `StoreCatalog`, as a family, a relation, or a `relation.column` pair,
+skipping verbatim blocks via the shared `InertSpans` block context. Landed together with slice 4
+rather than standalone, since both needed the same reader.
 
 ## Open questions (to settle at Ready)
 
