@@ -70,8 +70,12 @@ Every catalog read in this item goes through a graph-scoped view joining `sql_ta
 `store_graph_source` on `source_name`, and the handle a consumer receives is `(DSLContext,
 graphName)` — the shape `GraphitronMcpServer.StoreHandle` already is — never a bare `DSLContext`
 or `Connection`. Carrying the graph name in the handle is what makes the scoping structural
-rather than a discipline every query site has to remember. This failure mode is invisible in a
-single-module fixture, so the test corpus needs a two-module case or the scoping is untested.
+rather than a discipline every query site has to remember. Covering it costs a seeded fixture, not
+a two-module build: `ColumnMatchClaimTest.siblingGraphsResolveThroughTheirOwnMembership` already
+stands up two graphs in one store with the same unqualified table name in each graph's own source,
+by inserting `store_graph` / `store_source` / `store_graph_source` / `sql_table` rows directly, and
+asserts each resolution names its own catalog partition. The crawlers are tested where they are;
+a read-side scoping test seeds the rows it needs.
 
 This needs no new facts, and specifically not a transcription of the configured jOOQ package.
 `GraphSourceMembership.note` already fires at the three places a run enumerates its sources, one
@@ -225,8 +229,8 @@ are honest.
 
 ## Gate criteria
 
-Step 1: shadow population diff green with residues named; graph scoping covered by a
-multi-module fixture; `CatalogFacts` deleted, not merely bypassed.
+Step 1: shadow population diff green with residues named; graph scoping covered by a two-graph
+seeded store; `CatalogFacts` deleted, not merely bypassed.
 
 Step 2: shadow green; measured latency stated and no worse than the seam at p99; the SQL-type
 behaviour change landed for both readers together; any capture gap left open recorded with the arm
