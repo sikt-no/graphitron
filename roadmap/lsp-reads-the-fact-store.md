@@ -56,6 +56,15 @@ questions step 1 could not answer.
 The numbering is a real seam: step 1 ships and is observable on its own, and step 2's risk profile
 only becomes assessable once the surface exists.
 
+**Step 2's subject is open, and the reviewer should settle it.** Hover's catalog arms are the
+cleanest *measurement*, because they A/B against a seam implementation doing the identical job.
+`IntraSchemaDefinitions`' snapshot fallback is the cleanest *demonstration*, for the reason the
+two-scopes section below gives: it is pure SDL provenance with source positions and no
+classification, it is 107 lines, and the projection it replaces is a flat map that structurally
+cannot represent a type assembled from several files. Picking it makes step 2 a capability gain
+rather than a re-plumbing, at the cost of a weaker comparison, since there is no equivalent
+incumbent to measure against for the cases the map could not express.
+
 ## The read surface
 
 **Graph-scoped, structurally.** The `sql_` family is keyed by `source_name`, not by graph, and a
@@ -101,6 +110,31 @@ exemplar and already returns `Resolved` / `Ambiguous` / `NotFound` over exactly 
 the surface generalizes that to columns, methods and foreign keys rather than reproducing
 `findFirst` on the store side to satisfy a parity gate. Re-flattening a distinction the store's
 keys just handed back is the one outcome to avoid.
+
+## Two scopes: the current file, and the universe
+
+Tree-sitter parses buffers. The store holds every schema file of every graph the workspace ever
+captured, the whole catalog and the whole classpath. Any question whose answer lives outside the
+file under the cursor is a store question, and the LSP already knows this: `IntraSchemaDefinitions`
+scans open buffers first, then falls back to the snapshot's `typeDefinitionLocations()`, which in
+its own javadoc "covers every type in every schema file regardless of which buffers are open." The
+buffer stays authoritative where it has an answer, because a type being edited should resolve to its
+live span rather than its last-built position. Everywhere else the universe answers.
+
+That fallback is also the sharpest example of what a projection costs. `typeDefinitionLocations` is
+a `Map<String, SourceLocation>`: one location per type name. `graphql_type_declaration` is keyed
+`(graph_name, type_name, source_name, source_line, source_column)` and carries `merge_ordinal` and
+`is_extension`, because, as its comment says, "a type's effective shape may be assembled from
+several files; this relation records who contributed what and indexes the incremental-refresh unit
+('which types does this file touch')." A type declared once and extended twice is three rows and one
+map entry. The map cannot say a type has several declaration sites, cannot say which file
+contributed what, and cannot answer the reverse query at all, and `graphql_duplicate_declaration`
+exists as a separate relation for the case the map collapses. This is not a fact the store holds
+and the projection lacks; it is a fact the projection's *shape* cannot represent.
+
+It is worth being explicit that this is the flexibility argument that motivated the item, now with a
+mechanism under it. A projection can only carry what one build projected for one graph at the grain
+someone chose in advance. The store carries every graph at the grain the facts have.
 
 ## Two cadences, and why the store is more available than the projection
 
