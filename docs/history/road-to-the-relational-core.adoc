@@ -372,6 +372,68 @@ R563, shipping in the same window, is where the leaf population finally fell, fr
 leaves to 40, with plan leaf references dropping from 156 to 124, after more than a year of
 growth.
 
+== What the record can and cannot show yet
+
+The natural claim to make about an architecture like this is that it costs less per consumer,
+because the derivation is offloaded to the engine. That claim is measurable, and the honest
+result is that it is not yet established, while a weaker and more surprising version of it is.
+
+The cleanest natural experiment predates the relational core. R398 landed the SDL lint engine over
+two days at the end of June, adding a substantial new fact source to a core that already had two
+shells. It cost 1,306 lines of new main source in the generator module. The two existing shells
+paid this:
+
+[cols="1,1,3"]
+|===
+| Shell | Main lines | What those lines bought
+
+| `graphitron-mcp`
+| 6
+| The typed rule id on the wire. Three of the six are comment.
+
+| `graphitron-lsp`
+| 0
+| Nothing. The findings arrived through the channel it already read.
+
+| `graphitron-lsp`
+| 129
+| A separate new capability, finding-keyed quick fixes.
+|===
+
+The nine new lint rules reached both shells for zero marginal lines, because both already consumed
+the `BuildWarning` channel and the new findings were more rows through it. Near-free propagation
+of a new fact source to existing consumers is therefore a property of the shared model, and it was
+delivered by the Java one, a month before the store existed.
+
+Against that baseline, the relational substrate has one completed measurement and one structural
+limitation.
+
+The measurement is R569's cutover of the authored-claim conflict rule on 2026-08-11, which is
+controlled in a way architectural comparisons rarely are. The view landed shadowed, a parity test
+pinned it byte-equal to the live Java, and only then was the Java deleted. Behaviour was held
+fixed by construction. The rule's Java went from 323 lines to 293 and from 26 branch points to 23,
+against 95 lines of view. Counting only the hand-maintained side, the substrate absorbed some
+work. Counting total lines it did not, and since SQL and Java lines are not comparable units,
+neither reading carries much weight on its own. It is one data point.
+
+The limitation is arithmetic. Sixteen files in the generator module read the store, and two in the
+MCP server. The language server reads none of them; it still reaches the model through the
+`rewrite/catalog` projection seam. A claim about cost per consumer needs more than one consumer to
+divide by, and the second one has not landed.
+
+Two derivations are also implemented twice in the tree as this is written, deliberately, each
+pinned by a shadow test that will be deleted at its cutover. Any measurement taken against the
+working tree during a pivot prices that window into the architecture. The cutover commits do not,
+which is why they are the unit of measurement here.
+
+So the position the evidence supports is narrower than the natural claim and points somewhere
+else. What the relational core has demonstrably changed is not the cost of a consumer but the
+status of the derivation: it became a thing that can be shadowed, compared against its
+predecessor, and replaced only once a test says the two agree. The architecture became
+experimentable on itself. Whether it also becomes cheaper per consumer is a prediction, and the
+experiment that settles it is to port one language-server feature off the projection seam and onto
+the store, and measure.
+
 == What the sequence shows
 
 No step in this history retracts its predecessor.
