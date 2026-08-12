@@ -1,7 +1,7 @@
 ---
 id: R612
 title: "The Maven and pom configuration fact family"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 3
 theme: classification-model
