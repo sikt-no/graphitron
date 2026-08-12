@@ -68,13 +68,25 @@ The whole string-named-routine path, and everything the catalog-reflection desig
 * `ConnectionRuntimeClassGenerator.functionHookImpl` and `functionDisconnect`'s callable-string assembly.
 * Never built: routine-name resolution off the catalog, the Oracle package-qualified probe, the `Pk_Ras.Connect` schema-versus-package ambiguity, overload disambiguation grammar, the value-setter versus `Field`-overload pick, the OUT-getter versus inherited-`getReturnValue()` fork, the `<routines>true</routines>` precondition, and the `sql_routine` fact-relation question.
 
-`SessionStateConfig` keeps three arms (`None`, `Variables`, and the method-hook arm replacing `FunctionHooks`) and its pairing shape: mount-without-unmount is still rejected, the empty-`<unmount/>` opt-out still exists, and `<stateSurvivesTransactions>` stays a declaration, since none of those are signature facts. Two things the interface-based sketch had to give up come back: the **unmount-free warning survives** (an omitted `<unmount>` is visible to the generator where an empty method body is not), and `MethodRef` already carries `declaredCheckedExceptions`, which `FieldBuilder.checkDeclaredCheckedExceptions` uses to reject an uncovered checked exception at classify time, so the hook's `throws` story is existing machinery rather than an open question.
+`SessionStateConfig` keeps three arms (`None`, `Variables`, and the method-hook arm replacing `FunctionHooks`), and `<stateSurvivesTransactions>` stays a declaration, since it is not a signature fact. `MethodRef` already carries `declaredCheckedExceptions`, which `FieldBuilder.checkDeclaredCheckedExceptions` uses to reject an uncovered checked exception at classify time, so the hook's `throws` story is existing machinery rather than an open question.
+
+## Unmount is optional
+
+The shipped design rejects `<connect>` without `<disconnect>` on the grounds that "identity that mounts must unmount", and offers an empty `<disconnect/>` as an explicit opt-out whose javadoc calls it an exposure. That is too strong, and it charges every request a round trip for it.
+
+Mount-only is sound whenever mount establishes identity *wholesale* rather than merging into whatever the connection already had, because then the mount at the start of operation N+1 overwrites everything the mount at operation N wrote. Since the same mount method runs every time, the set of state it writes is constant, so the overwrite is total by construction. Nothing can observe stale identity, because nothing reads scoped data on a pooled connection before a mount has run on it. The condition on that argument is the part worth stating rather than assuming: it holds while every reader of scoped data mounts first, which in practice means the pool is graphitron's. A consumer sharing that pool with their own DAO code, a migration tool, or an admin script has a reader that does not mount, and for them unmount is what keeps the previous caller's identity from being read. That is a property of the deployment, not of the schema, so it is the consumer's call and not something graphitron can infer.
+
+So: `<unmount>` is simply optional. Omitting it means mount-only, with no opt-out ceremony and no rejection. This collapses `SessionStateConfig.Unmount` (and both its arms) into an optional method reference on the method-hook arm, and it removes the pairing-validation family from `SessionStateConfig.from` along with the handle rules.
+
+Latency is the payoff, and it is larger than one call. Unmount costs a round trip at every release. It also costs at every mutation-field settle: without `<stateSurvivesTransactions>`, `PinnedConnection.afterSettle` re-fires the *pair*, so a mount-only hook halves the re-fire to a single re-mount. That re-mount is exactly the overwrite the mount-only argument rests on, so the two fit together rather than trading off.
+
+**Correcting the record while deleting it.** `Unmount.UnmountFree`'s javadoc states that "the generation-time warning in `SessionStateWarnings` names this exposure". No such warning exists: `SessionStateWarnings.forConfig`'s `FunctionHooks` arm returns `List.of()`, and the only two warnings are `no-session-state` and `session-state-convention-fence`. The exposure was asserted in prose with nothing enforcing it, which is the shape the project's own principles call out, and it is evidence that the mount-must-unmount rule was never load-bearing in code. The stale sentence goes with the type. Separately, the `session-state-convention-fence` message text points readers at "the function-hook `<connect>`/`<disconnect>` form" and needs updating to the new element names.
 
 **The `<variables>` sugar is untouched.** It is the one place graphitron genuinely should generate SQL, because there is no consumer method to call. Its generated implementation keeps its current shape, and every current sugar consumer, including `graphitron-sakila-example` and `SessionHookExecutionTest`, changes nothing.
 
 ## Implementation
 
-* **Config.** Replace `<connect>`/`<disconnect>` with `<mount>`/`<unmount>` taking `fqcn#method`. Keep the pairing rules and `<stateSurvivesTransactions>` in `SessionStateConfig.from`; drop the handle rules.
+* **Config.** Replace `<connect>`/`<disconnect>` with `<mount>`/`<unmount>` taking `fqcn#method`, `<unmount>` optional. Keep `<stateSurvivesTransactions>`; drop the handle rules and the pairing rules, and collapse `Unmount` into an optional method reference. An `<unmount>` with no `<mount>` stays a rejection: unmounting what nothing mounted is a defect in either direction of reading it.
 * **Resolution.** Reflect both methods through `ServiceCatalog`'s existing Java-reflection path into `MethodRef.StaticOnly` (already the variant for "static-by-construction method references"), producing a resolved carrier holding both `MethodRef`s plus the payload and handle types. Rejections are the existing reflection family (`ReflectionError`, unresolvable class or method, non-static, wrong first parameter, handle-type mismatch between the two signatures).
 * **Emission.** `functionHookImpl` becomes a direct-call emitter: `return com.example.KernelIdentity.mount(cfg, args);`. The generated hook builds its own provider-free `Configuration` from the connection and the runtime's dialect, or passes the raw `Connection` when that is what the method declares.
 * **Interface.** `ConnectionRuntimeClassGenerator.sessionHook` emits a sealed `SessionHook` typed by the reflected payload and handle types, permitting the generated implementation and a generated no-op replacing the current anonymous `NONE`.
@@ -124,7 +136,11 @@ Draft replacement for the function-hook subsection of `docs/manual/reference/moj
 > var input = Graphitron.newOwnedExecutionInput(claims, userId).query(query).build();
 > ```
 >
-> The `Configuration` you are handed is bound to the pinned connection and carries no transaction provider, because both methods run outside any transaction, on a connection normalized to autocommit. Declare a `Connection` parameter instead if you want raw JDBC. A throwing `mount` evicts the connection and fails the request before any SQL runs. Identity that mounts must unmount, so `<mount>` without `<unmount>` fails the build; an empty `<unmount/>` is the explicit opt-out. Add `<stateSurvivesTransactions>true</stateSurvivesTransactions>` only if your mounted state genuinely survives a commit or rollback; otherwise graphitron re-fires the pair after each mutation-field settle.
+> The `Configuration` you are handed is bound to the pinned connection and carries no transaction provider, because both methods run outside any transaction, on a connection normalized to autocommit. Declare a `Connection` parameter instead if you want raw JDBC. A throwing `mount` evicts the connection and fails the request before any SQL runs.
+>
+> **`<unmount>` is optional.** If your `mount` establishes identity wholesale rather than adding to whatever the connection already carried, the next request's mount overwrites the last one's, nothing can read stale identity, and unmount only costs you a round trip per request. Omit it. Keep an unmount when something other than graphitron reads scoped data on the same pool, your own DAO code, a migration tool, an admin script, because those readers never mount and would inherit the previous caller's identity.
+>
+> Add `<stateSurvivesTransactions>true</stateSurvivesTransactions>` only if your mounted state genuinely survives a commit or rollback; otherwise graphitron re-mounts after each mutation-field settle (re-firing the pair, if you have an unmount).
 >
 > For the common Postgres case you need none of this: the `<variables>` sugar generates both halves from a list of session variables.
 
@@ -132,15 +148,16 @@ Also rewrite: the "Producing the claims payload" and integrity-gradient sections
 
 ## Tests
 
-* **Unit.** `SessionStateConfigTest` for the method-hook arm and the surviving pairing rules; the handle rules go with `<handle>`. Reflection rejections: unresolvable class, unresolvable method, non-static, wrong seam parameter, handle-type mismatch between the two signatures. `SessionHookImplGeneratorTest` for the emitted direct call, the sealed interface, the generated no-op, and the provider-free `Configuration`.
+* **Unit.** `SessionStateConfigTest` for the method-hook arm with and without `<unmount>`, and for the surviving unmount-without-mount rejection; the handle and pairing rules go with the elements they validated. Reflection rejections: unresolvable class, unresolvable method, non-static, wrong seam parameter, handle-type mismatch between the two signatures. `SessionHookImplGeneratorTest` for the emitted direct call, the mount-only shape (release does nothing, `afterSettle` re-mounts without an unmount call), the sealed interface, the generated no-op, and the provider-free `Configuration`.
 * **Pipeline.** The owned factory's parameter list against a reflected multi-parameter payload, including the single-`String` case that reproduces today's signature.
 * **Compilation.** A consumer-shaped hook class and the generated sources compile at `<release>17</release>` in `graphitron-sakila-example`.
 * **Execution.** The form's first end-to-end proof, with composite types both directions, per the fixture above.
-* **Warnings.** `SessionStateWarningsTest` keeps the unmount-free warning (now keyed on an omitted `<unmount>`) and `session-state-convention-fence`, which is a sugar-side warning and unaffected.
+* **Warnings.** `SessionStateWarningsTest` keeps `no-session-state` and `session-state-convention-fence` (a sugar-side warning, unaffected except for its message text naming the old elements). No unmount-free warning is added: mount-only is a supported configuration, and its precondition is about the consumer's pool, which graphitron cannot see.
 
 ## Retired vocabulary
 
 * `<sessionState>`'s `<connect>`, `<disconnect>` and `<handle>` elements; "connect callable", "disconnect callable", "the callables", and "function-hook form".
-* `SessionStateConfig.FunctionHooks`, `SessionStateConfig.RawHook`, `SessionStateBinding.HookBinding`, and `handle` as a component of `Unmount.PairedDisconnect`.
+* `SessionStateConfig.FunctionHooks`, `SessionStateConfig.RawHook`, `SessionStateBinding.HookBinding`, and the whole `SessionStateConfig.Unmount` hierarchy (`Unmount`, `Unmount.PairedDisconnect`, `Unmount.UnmountFree`), replaced by an optional method reference.
+* "identity that mounts must unmount", "unmount-free opt-out", and the claim that `SessionStateWarnings` warns about an unmount-free configuration (it never did).
 * `CLAIMS_KEY` and its `no.sikt.graphitron.request.claims` value.
 * "opaque claims payload" / "the opaque claims" as the description of the mount parameter. The word `claims` itself is not retired: the `<variables>` sugar's `<claim>` mapping and the dev-goal `<claims>` config both name a genuine claims document.
