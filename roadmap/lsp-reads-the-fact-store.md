@@ -32,11 +32,27 @@ simpler. Scope is all of `graphitron-lsp`; every feature moves.
 The baseline is recorded now so the measure cannot be chosen afterwards to flatter the result:
 `graphitron-lsp` is **9,119** main lines, the `rewrite/catalog` seam is **4,008**. Report both at
 the end, plus branch points per feature entry point counted the same way on each side, and the SQL
-added. A result showing no simplification is a finding and gets reported as one.
+added. Net out what stays in `rewrite/catalog` (`SourceWalker`, `ClasspathScanner`) so lines that
+exist for MCP and codegen are not credited to the LSP. A result showing no simplification is a
+finding and gets reported as one.
+
+The work lands additive-then-cutover, the workflow's shape for structural pivots on widely-pinned
+types: substrate first with both surfaces live and nothing deleted, then features arm by arm, the
+cutover that deletes the projections last, so the acceptance holds at every intermediate commit.
+The abandon condition is pre-registered where it can still act: if the first two migrated arms do
+not come out simpler than their incumbents, or a migrated request is slower than the incumbent's
+linear scan on Sakila, the cutover does not happen and the finding is the report. Deleting a
+hand-written projection layer shrinks the line count whether or not the design is better, so the
+measurement is taken after the cutover, never at the additive peak.
 
 **This is not a port.** The incumbent is what is being judged, so there is no shadow-parity gate and
 no byte-equality on rendered output; pinning the new implementation to the old behaviour would
-import the shape under test.
+import the shape under test. What replaces the gate is an enforcer, not care: a meta-test in the
+`GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` mould asserting the
+(`Behavior` arm × surface) matrix is an exhaustive partition over answered / declared-no-answer /
+unimplemented, each surface's dispatch a compile-checked exhaustive switch. The `†` gaps below stop
+being silently empty arms and become declared facts the test pins, and the inventory becomes a
+rendered view of the matrix rather than prose that rots.
 
 ## The division of labour
 
@@ -63,34 +79,55 @@ edited, and tree-sitter covers precisely those.
 
 **Per-file SDL currency.** The one real substrate gap, and in scope, because the whole LSP cannot
 rest on a workspace-wide validity bit. `FactCapture.capture` takes a whole `TypeDefinitionRegistry`,
-so one bad file means no capture and a wholly demoted snapshot. The relations already have the
-granularity the capture path lacks: `graphql_type_declaration` is keyed by `source_name` and indexes
-"which types does this file touch" by its own comment, and `store_source` stamps each file. Capture
-becomes per-file.
+so one bad file means no capture and a wholly demoted snapshot. Per-file is the currency and
+invalidation unit, not the capture unit: several facts exist only over the merged registry
+(`merge_ordinal`, the reachability and input-occurrence rows), so parsing is per file, the
+parseable files merge into one registry, and capture stays whole-graph in its one transaction. A
+file that fails to parse keeps its previous partition, and the failure lands as a located violation
+row that reaches the diagnostic view like every other violation. The relations already carry the
+granularity: `graphql_type_declaration` indexes "which types does this file touch" by its own
+comment, and `store_source` stamps each file.
 
 **A graph-scoped handle.** `sql_` is keyed by `source_name` and a persisted store spans every module
 of a workspace, so catalog reads join through `store_graph_source` and the handle is
 `(DSLContext, graphName)` — the shape `StoreHandle` already is — never a bare `DSLContext`. That
 makes the scoping structural rather than a rule each query site remembers. No new facts are needed:
 `GraphSourceMembership.note` already records the packages the catalog walk read, which beats the
-configured package.
+configured package. The handle type moves to `graphitron-model` beside the store; `graphitron-lsp`
+does not depend on `graphitron-mcp`, and a second copy of the handle is how the scoping stops being
+structural. One case decides where the graph is chosen: `store_graph_source` puts no uniqueness on
+`source_name`, so a schema file can belong to two graphs, and the request boundary resolves
+`source_name` to a graph once, through that relation, with a sealed outcome for the multi-graph
+case rather than first-row-wins.
 
 **Its own read connection.** `GraphitronModelStore` holds one `Connection`, shared with the MCP
-server, which is safe only because MCP is turn-based. The LSP opens a second connection on the same
-URL, which both URL shapes admit. Capture is a single transaction, so that reader never sees a
-half-written round. Read-consistency is all that is claimed from it; an H2 isolation default
-enforces nothing else.
+server, which is safe only because MCP is turn-based. Both URL shapes admit a second connection,
+but the class deliberately publishes no URL (the in-memory name carries a private UUID), so the
+store mints a reader rather than the LSP reconstructing a path. Capture is a single transaction, so
+a reader never sees a half-written round; each answer likewise assembles inside one read
+transaction so it cannot straddle a commit, which is the whole consistency claim, made structural
+instead of resting on an H2 isolation default. The store is a cache by contract, "never state of
+record", and its fallback to a private in-memory store costs only warmth while every reader shares
+the writer's process; once the LSP's whole answer surface is the store, the degraded mode must be
+named, and it is: capture demoted, or no store directory configured, answers `Indeterminate`, the
+same arm a stale source gets below.
 
 **Sealed resolution outcomes.** The store's keys are honest where the projections' lists were not:
 an unqualified table name may match several rows, and `jvm_method` keys on `descriptor` because
 erased display names collided on overloads. Resolution returns `Resolved` / `Ambiguous` /
-`NotFound` per axis, as `CatalogFacts.resolve` already does. An outcome also carries which file a
-fact would have come from: an SDL miss is a real miss *unless* the coordinate is in a dirty buffer,
-which the LSP knows and the store cannot.
+`NotFound` per axis, as `CatalogFacts.resolve` already does, plus the arm that replaces
+`LspSchemaSnapshot`'s freshness seal: `Indeterminate(sourceName)`, meaning the answer would come
+from a source whose stamp no longer matches the buffer. One seam owns the join of
+`store_source.stamp` against the open-buffer set and decides currency once, as a variant rather
+than a field, so no surface re-derives "is that file dirty?" for itself: an SDL miss is a real miss
+or it is `Indeterminate`, and every consumer's switch breaks until it says which. `Ambiguous` at an
+author-written coordinate surfaces as a diagnostic, never a silent first match.
 
 **Coordinate-keyed lookups.** The parse hands over a coordinate; the store answers it. `DeclTarget`
 is the right seam already, a sealed resolution shared by hover and goto-definition so their parity
 is structural. Its variants carry `CompletionData` records today and carry coordinates instead.
+Re-sourcing is also the moment its method-backedness check stops being an `instanceof` list behind
+a `default` arm and becomes a read over `graphitron_field_binding`.
 
 ## Capture widenings
 
@@ -118,30 +155,52 @@ projection pass, most of `rewrite/catalog`, and `DevMojo.rebuildCatalog`'s keep-
 workaround — catalog candidates are not retained across a bad parse, they were never invalidated by
 it.
 
-`CatalogFacts` has non-LSP readers that must move with it: `EdgeProducer`, `EdgesTool`,
-`ReverseEdgeIndex`, `NodeRef`, `CatalogDescriptors` and `CatalogSearchIndex` in `graphitron-mcp`,
-plus `TenantScopes` and `GraphQLRewriteGenerator` in `graphitron`. Not LSP work, not optional; the
-projection cannot delete while they read it.
+`CatalogFacts` has non-LSP readers that must move with it: `GraphitronMcpServer` (the
+`catalog.tables` and `catalog.describe` tools), `EdgeProducer`, `EdgesTool`, `ReverseEdgeIndex`,
+`NodeRef`, `CatalogDescriptors` and `CatalogSearchIndex` in `graphitron-mcp`, plus
+`GraphQLRewriteGenerator` in `graphitron`, whose output record carries the projection. Not LSP
+work, not optional; the projection cannot delete while they read it. `TenantScopes` and `McpWire`
+cite it only in javadoc, so they repoint rather than migrate; the `{@link}` gate keeps them from
+being forgotten.
 
-`SourceWalker` stays. It is a live index on the `.java` cadence rather than a projection of stored
-facts, and the `jvm_class` comment designs it out deliberately so a `.java` edit is seen without a
-generator rebuild. Capturing it would turn absent provenance into stale provenance.
+`SourceWalker` stays, and the boundary is shipped doctrine rather than this item's argument: the
+fact model's cadence rule (location is a fact about an entity, joined rather than stored;
+`docs/architecture/explanation/fact-model.adoc`) and the `jvm_class` DDL comment both design source
+positions and Javadoc out of the store so a `.java` edit is seen without a generator rebuild.
+Capturing it would turn absent provenance into stale provenance. The SDL positions the store does
+carry are the same rule's sanctioned side: SDL is what capture reads, so those positions are on the
+capture cadence already.
+
+The retirement also takes named exemplars out of the principle docs, and the sweep must repoint
+them, not just delete: `CatalogBuilder.projectFieldClassification` is the transitional exemplar
+under "One model, many views" in `docs/architecture/explanation/development-principles.adoc` and
+the named enforcer in `fact-model.adoc`; `CompletionData.NodeMetadata` is the one-slot provenance
+exemplar and `LspSchemaSnapshot`'s two axes carry the freshness paragraph in the same file. The
+replacements are nominated here: the store-side projection seam for the first, the `Indeterminate`
+resolution arm for freshness. `FactCaptureAgreementTest`'s agreement arms change meaning for every
+relation the LSP starts reading and are revisited at the cutover.
 
 ## Acceptance
 
-Features are specified against fixtures, not the incumbent: given this buffer, this cursor and these
-store rows, this answer. Fixtures seed rows directly —
-`ColumnMatchClaimTest.siblingGraphsResolveThroughTheirOwnMembership` is the precedent, standing up
-two graphs in one store by insert. The crawlers are tested where they are.
+Features are specified against fixtures, not the incumbent: given this buffer, this cursor and this
+store, this answer. The store is stood up by real capture over SDL fixtures wherever capture can
+produce the state, so a fixture cannot encode rows capture never writes; direct inserts are
+reserved for states one capture call cannot reach, with
+`ColumnMatchClaimTest.siblingGraphsResolveThroughTheirOwnMembership` the precedent for exactly that
+(two graphs in one store). The crawlers are tested where they are.
 
-Three cases the corpus must carry, each being something the current design cannot express:
+Four cases the corpus must carry, each being something the current design cannot express:
 
 * A dirty buffer beside well-formed siblings: `extend type |` completes against the other files.
 * A type assembled from several files, resolving to all its declaration sites.
 * Two graphs in one store, neither seeing the other's tables.
+* One file in two graphs: the request boundary surfaces the multi-graph membership arm, not the
+  first row.
 
-Latency measured per request on the Sakila fixture and stated. The incumbent is a linear scan, so
-this is a measurement, not a prediction.
+Latency measured per request on the Sakila fixture and stated, against the abandon condition above.
+The incumbent is a linear scan, so this is a measurement, not a prediction. A hot path that is slow
+as a view already has a sanctioned answer, materialize with the DDL comment owning why, as the
+reachability rows do; not an ad-hoc cache.
 
 ## Capability inventory
 
@@ -153,7 +212,9 @@ Five request capabilities are registered (`GraphitronLanguageServer.initialize`)
 definition, code action, inlay hint. Diagnostics are pushed. Document sync is incremental.
 
 **Completion.** `Completions.at` resolves the coordinate once, resolves its `Behavior`, and runs the
-providers registered for that arm in order, first non-empty wins.
+providers registered for that arm in order, first non-empty wins. Two providers on one arm is a
+projection-era artifact (two projections answered `MethodNameBinding`); in fact terms an arm is one
+query with its ordering stated in the view, which is where the simplicity claim should show first.
 
 | Behavior arm | Provider | Fact source |
 |---|---|---|
@@ -176,7 +237,7 @@ around it.
 | `ClassNameBinding` | Class FQN + Javadoc | `jvm_class` + `SourceWalker` |
 | `MethodNameBinding` | Signature + Javadoc | `jvm_method`, `jvm_method_parameter` + `SourceWalker` |
 | `CatalogTableBinding` | Comment, column and reference counts | `sql_table`, `sql_column`, `sql_constraint` |
-| `CatalogColumnBinding` | Type, nullability, comment | `sql_column` (needs binding type) |
+| `CatalogColumnBinding` | Column type, nullability, comment; member name and type when the backing is a record or POJO | `sql_column` (needs binding type); `jvm_record_component`, `jvm_method` for the member arms |
 | `CatalogFkBinding` | FK direction and endpoints | `sql_referential_constraint` |
 | `NodeTypeBinding` | `typeId`, key columns and their types | `graphitron_node`, `graphitron_node_key_column` |
 | `ArgMappingBinding`, `ScalarTypeBinding` † | nothing | — |
@@ -184,14 +245,14 @@ around it.
 | User-declared directive arg | Arg docstring | `graphql_directive_argument` |
 | SDL declaration name (`hoverClassification` toggle) | `DeclarationHovers`: classification block + Javadoc | classification + `SourceWalker` |
 
-**Definition.** Three providers chained with `.or()`, keyed on disjoint syntax.
+**Definition.** Three providers chained with `.or()` in this order, keyed on disjoint syntax.
 
 | Provider | Trigger | Fact source |
 |---|---|---|
 | `Definitions` | Directive arg: `ClassName`, `MethodName`, `CatalogTable`, `CatalogColumn`, `CatalogFk` | `jvm_`/`sql_` + `SourceWalker` positions |
 | `Definitions` † | `ArgMapping`, `ScalarType`, `NodeType` return empty | — |
-| `DeclarationDefinitions` | SDL declaration name to its bound Java | `jvm_class`, `jvm_record_component` + `SourceWalker` |
 | `IntraSchemaDefinitions` | Type reference to its declaring SDL site | open buffers first, then `graphql_type_declaration` |
+| `DeclarationDefinitions` | SDL declaration name to its bound Java | `jvm_class`, `jvm_record_component` + `SourceWalker` |
 
 **Inlay hints.** Three independent toggles, all default off (`InlayHintConfig`); two collectors.
 
@@ -199,7 +260,7 @@ around it.
 |---|---|---|
 | `classification` | `collectClassificationHints` | classification |
 | `inferredDirectives` | `collectInferredDirectiveHints`, renderers for `@table`, `@field`, `@reference` | `graphitron_table`, `graphitron_field_binding`, `graphitron_field_reference*` |
-| `inferredDirectives` | `collectAbsentDirectiveHints` | same, absence arm |
+| `inferredDirectives` | `collectAbsentDirectiveHints`, a second pass inside the inferred-directive collector | same, absence arm |
 | `hoverClassification` | gates `DeclarationHovers` (see hover) | classification |
 
 **Code actions.** Two branches, deliberately not sharing a path.
@@ -211,7 +272,8 @@ around it.
 
 Each `SdlActions` fix offers three scopes: per site, whole file, whole workspace.
 
-**Diagnostics.** Pushed on change and save, from five sources.
+**Diagnostics.** Pushed from five sources. The publish funnel fires on open, change and close, and
+again whenever a build swaps the snapshot; save reaches it through the rebuild, not directly.
 
 | Source | What it reports |
 |---|---|
@@ -220,16 +282,38 @@ Each `SdlActions` fix offers three scopes: per site, whole file, whole workspace
 | Required args | Declared-required args absent |
 | Unknown directive | Skipping the GraphQL spec built-ins |
 | `ValidationReport` replay | Build errors and warnings for URIs the report covers |
-| Compile diagnostics | javac output against generated sources |
+
+Compile diagnostics (javac output against generated sources) sit on `Workspace` beside these but
+publish through the MCP diagnostics tool, not the LSP push; they move with the workspace state,
+not with this table.
 
 **Lifecycle and state.** `didOpen` / `didChange` (incremental) / `didClose` / `didSave`;
 `didChangeConfiguration` plus a `workspace/configuration` pull after `initialize` for the three inlay
 toggles; `didChangeWatchedFiles` is a no-op today. Per-file recalculation bookkeeping and the
 open-buffer set live in `Workspace` / `WorkspaceFile`.
 
-## Open questions for the reviewer
+## Resolved questions
 
-* **Sequencing.** One item with phases, or a substrate item (per-file capture, handle, read surface,
-  capture widenings) then the features. Scope and measurement are unchanged either way.
-* **`SourceWalker`'s boundary**, if the cadence argument is judged insufficient.
-* **Whether `CatalogFacts`' non-LSP readers land here or alongside.**
+Three questions an earlier draft left to the reviewer, since answered against the workflow and the
+fact model; the reviewer confirms rather than decides.
+
+* **Sequencing** is additive-then-cutover with the abandon condition in "The experiment"; the
+  workflow's rule for structural pivots on widely-pinned types leaves no taste call here. Whether
+  the phases stay one item or split into a substrate item plus feature items is the Ready
+  reviewer's call; scope, gates and measurement are identical either way.
+* **`SourceWalker`'s boundary** is shipped doctrine, cited in "What retires"; nothing to
+  re-litigate.
+* **`CatalogFacts`' non-LSP readers** move alongside, in the sibling item
+  `catalog-facts-readers-move-to-the-store.md`, for two reasons: the MCP
+  catalog tools have their own acceptance surface (tool output, paging) that has nothing to do with
+  cursors and buffers, and folding them in credits their `rewrite/catalog` lines to the LSP
+  measurement. The constraint binding the two items: `CatalogFacts` deletes in the same commit as
+  its last reader's migration, and both consumers read one shared store-side catalog view, never a
+  narrowing made for one of them.
+
+## Retired vocabulary
+
+Provisional until the cutover lands; the Done-gate sweep greps for these. `CompletionData`,
+`CatalogFacts`, `LspSchemaSnapshot`, the `Built.Current` / `Built.Previous` freshness seal,
+`typeDefinitionLocations`, `CatalogBuilder`'s projection pass, and `DevMojo.rebuildCatalog`'s
+keep-previous-and-demote path.
