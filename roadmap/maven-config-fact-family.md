@@ -217,14 +217,32 @@ string.
 
 Which layer drops a named entry is a decision rather than an implementation detail, because the
 two candidate layers disagree about a verification claim below. The expansion passes a named entry
-through unchanged, and the currency reader is what excludes it, switching on the named arm the
-entry carries. Putting the skip in the decode or the expansion instead would make the round-trip
+through unchanged, and the exclusion is a projection over its result rather than a step inside it.
+Putting the skip in the decode or the expansion instead would make the round-trip
 anchor unsatisfiable for a programmatic fixture: a re-expansion short by the named entries cannot
 reproduce the run's `schemaInputs`, which is precisely what that half of the anchor asserts. The
 existence check on a `file` literal belongs to the expansion for the mirror-image reason: a file
 that stopped resolving is a lost match, and a lost match is the observation the reader is asking
-the expansion for rather than one it can make for itself. Literal
-entries bypass the extension filter, as the literal list does today. The bundled
+the expansion for rather than one it can make for itself.
+
+That projection lands here rather than travelling as prose to whichever item builds the driver.
+A rule with no implementation and no test is a rule the next reader re-decides, which is the
+failure the round-trip anchor exists to prevent one paragraph away, and the driver being out of
+scope is not a reason to defer the rule: what is out of scope is *where the loop runs from*, not
+*what the loop is entitled to count*. So the sealed result's resolved arm grows one accessor
+beside the full ordered match list, returning the currency-relevant subset: pattern matches and
+`file` literals, never `named` ones. The full list stays the round-trip anchor's subject and is
+unchanged by this, which is the whole reason the exclusion is a second view rather than a filter
+inside the expansion. The name is the implementer's; what is bound is that there is exactly one
+such accessor, that it is the only place the arm switch happens, and that the future driver
+consumes it instead of re-deriving it. Its verification case is cheap and lands with it: a recipe
+carrying one pattern binding, one `file` literal and one `named` literal expands so that the full
+list holds all three and the projection holds two, which pins the rule without the driver
+existing. `SchemaInput.named`'s own javadoc carries the consequence in one line, since the author
+of a `named` call site is the party who needs to know that the door they chose opts the source
+out of freshness coverage.
+
+Literal entries bypass the extension filter, as the literal list does today. The bundled
 `directives.graphqls` is not a recipe entry under any of this and needs no carve-out:
 `RewriteSchemaLoader` hands that resource to the parser directly rather than through a
 `SchemaInput`, so it never reaches the expansion, is
@@ -489,27 +507,56 @@ Every parameter the build supplies is transcribed. `<lint>`, `<sessionState>`, `
 the output package and directory, and whatever the mojo grows next. A run that has exited cannot be
 asked again, so the test is whether the build knew it, not whether a reader has asked for it yet.
 
-Four boundaries the plan has to settle, none of which the recipe's own design answers by itself.
+Four boundaries the plan has to settle. None is left to the edit: an implementer who reaches these
+mid-implementation has no reviewer in the loop, which is the argument for closing them at the gate
+even though the recipe's own design does not answer them by itself.
 
-* **Grain.** A relation per parameter family, or one discriminated config relation keyed
-  `(graph_name, ordinal)` the way `store_graph_schema_input` is. The recipe is the precedent and it
-  chose one discriminated relation over several, on the argument that the ordinal is the recipe's
-  spine and splitting would shatter the one ordering key. That argument is specific to an ordered
-  list of bindings and does not obviously carry to a set of unrelated scalar parameters, so the
-  question is open rather than settled by precedent. What the plan must not produce is a
-  key-value bag of `VARCHAR`s wearing a relation's clothes. The supergraph declaration below
-  works the first instance and states the criterion in the store's own terms: always-present
-  partition facts are anchor columns, an optional partition fact is its own graph-keyed relation
-  whose row presence is the fact (never a nullable column), and run inputs are family rows.
-* **Structured values.** `<lint>` and `<sessionState>` are not scalars. Whether the transcription
-  holds a typed decomposition or a rendered form is decided per parameter and stated, since a
-  rendered form is a string a later reader has to re-parse, which is the shape this item exists to
-  remove for source names.
-* **Absent versus empty.** "Configured nothing" and "not asked" are different facts and a nullable
-  column conflates them. The recipe met this and answered it with the `kind` discriminator; the
-  general case needs its own answer, and a parameter carrying a mojo default needs to say whether
-  the default or the absence is what it records. The supergraph declaration below settles the
-  no-default instance only; a parameter that does carry a default still owes its own answer.
+* **Grain, settled by shape rather than by parameter.** Not one discriminated config relation, and
+  not a relation per parameter either. The recipe's own argument for a single discriminated
+  relation is that the ordinal is its spine, and that argument is specific to an ordered list of
+  bindings; a set of unrelated scalars has no spine to shatter, so it does not carry, and forcing
+  the family into `(graph_name, ordinal)` would produce exactly the key-value bag of `VARCHAR`s
+  wearing a relation's clothes that the plan must not produce. The criterion is the supergraph
+  section's below, applied unchanged, and its "about the partition" clause does the work here:
+  none of these parameters is a partition fact, so none of them joins `base_dir` on the anchor.
+  They all land as family rows, and the grain question is only how those rows group. They group by
+  *joint presence and joint meaning*, into relations with named typed columns and never a
+  `(parameter, value)` pair, which is the line between a relation and the bag. So the output
+  coordinates travel together, `<outputPackage>`, `<outputDirectory>` and `<jooqPackage>` being
+  present together on any generating run and jointly answering one question about where generation
+  writes, and a validate-only run writes no such row rather than a row carrying
+  `AbstractRewriteMojo.VALIDATE_ONLY_PACKAGE`, since that sentinel is the mojo's own admission that
+  the run had no output coordinates and transcribing it would mint the derived fact that can
+  disagree; `<tenantColumn>` is standalone and optional, so it is its own graph-keyed relation whose
+  row presence is the fact, exactly as the criterion says and exactly as the supergraph declaration
+  works it; and a structured block groups per repeating element, with an ordinal only where the
+  source is genuinely ordered. The resolved store home is deliberately not in the family at all: it
+  is where the store itself lives, identical for every graph the store holds, so a per-graph row
+  would restate the file it is written in.
+* **Structured values: typed decomposition, with no per-parameter escape hatch.** A rendered form
+  is a string a later reader has to re-parse, which is the shape this item exists to remove for
+  source names, and permitting it "per parameter" reintroduces the untyped default door one
+  paragraph after sealing it. So `<lint>` decomposes to its two string lists (`<disabledRules>`
+  and `<excludedTypes>`, one row per entry, discriminated by which list it came from) and
+  `<sessionState>` decomposes to its hook halves (the `connect` and `disconnect` calls with the
+  optional OUT handle) beside one row per `<variable>` carrying its name and claim. Neither block
+  is opaque to a reader, which is the only condition that could have justified a rendered form,
+  and neither is deep enough for the decomposition to be expensive. A future parameter genuinely
+  opaque to every reader may render, but it owes that argument explicitly rather than inheriting a
+  standing permission.
+* **Absent versus empty: transcribe the effective value, and do not record authorship.** The fact
+  worth having is what the run actually used, because the reader served is the one with no build
+  to run. R610 already settled this in the tree rather than leaving it open:
+  `AbstractRewriteMojo.effectiveSchemaFileExtensions` substitutes
+  `RewriteContext.DEFAULT_SCHEMA_FILE_EXTENSIONS` when the element is omitted, and it is that
+  effective set the recipe carries into `store_graph_schema_extension`, so a defaulted extension
+  list is already transcribed as the value the run used. Every defaulting parameter follows it.
+  Whether the author typed the value is a pom fact rather than a run fact, and it stays recoverable
+  from the pom that `store_graph.build_file_stamp` already stamps, so no `authored` boolean is
+  added to carry it; a reader that genuinely needs the distinction has the stamped file. This
+  leaves "configured nothing" versus "not asked" to be expressed structurally, exactly as the grain
+  rule above already does it: a parameter with no default has no default to record, so its absence
+  is the missing row, and no nullable column conflates the two anywhere in the family.
 * **Decode location.** Unchanged from the recipe's rule: the plexus-bound beans stay plugin-side,
   core assumes no Maven vocabulary, and a non-Maven entry point is a second decoder into the same
   typed value rather than a second capture path. The wider the family, the more this rule is
@@ -700,9 +747,12 @@ exactly the shape the decode-location rule anticipates.
   one day be a query over the recipe, but it has no fact-model payoff today; it stays a
   plugin-side walk that now calls the shared extension predicate instead of carrying its own
   copy.
-- **The freshness loop's driver.** This item makes the replay's expansion and its row decode
-  exist; where the loop runs from (the dev goal's watcher, the LSP, or a store maintenance
-  command) stays with whichever item picks the orchestration up.
+- **The freshness loop's driver.** This item makes the replay's expansion, its row decode and its
+  currency-relevant projection exist; where the loop runs from (the dev goal's watcher, the LSP,
+  or a store maintenance command) stays with whichever item picks the orchestration up. The
+  boundary is deliberately drawn at orchestration rather than at policy: every question about
+  *what counts* is answered here, so the driver item inherits the rules instead of re-deciding
+  them.
 - **Any consumer-facing read surface over config rows**, per the read doctrine above. The
   enumeration axis is the one carve-out, and it is exactly `store_graph` and
   `store_graph_supergraph`, per the supergraph section.
@@ -788,6 +838,14 @@ write path's two directions are the same case's second half: a preamble mint aft
 and a warm recapture without the declaration leaves none, so removal propagates through the
 ownership-scoped clear and a compile-facts run can neither erase nor invent membership. It lives
 beside `aRunWritesOnlyUnderItsOwnGraph` in `FactSchemaGateTest`.
+
+The currency projection gets the fifth enforcer, and it is small on purpose: the rule it holds is
+the one this item decides and another item consumes, so it needs cover that does not wait on the
+driver. A recipe carrying one pattern binding, one `file` literal and one `named` literal expands
+once; the full ordered match list holds all three, in configuration order, and the
+currency-relevant projection holds the first two. That is the whole case. It sits with the
+expansion's own tests rather than in the capture tier, having no store in it, and it is what stops
+the exclusion from being prose that the driver's author re-decides.
 
 The recipe half changes no user-visible configuration surface (`mojo-configuration.adoc` already
 documents the glob semantics this item preserves), so the docs exemption covers it; the
