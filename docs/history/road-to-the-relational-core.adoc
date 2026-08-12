@@ -19,9 +19,10 @@ an item ships, so they are named here as provenance rather than linked.
 
 == The vocabulary came first, March 2026
 
-The rewrite's first ninety-five commits were squashed into a single commit when the module landed.
-They were recovered from unreachable objects and preserved on the `graphitron-rewrite-history`
-branch, tip `26e651f49`, running from 2026-03-27 to 2026-04-04. Almost none of them are code.
+The rewrite's first four weeks reached trunk as two commits. The 595 commits behind them survived
+only as unreachable objects and are now preserved on four branches, described at the end of this
+section. The earliest of them, `graphitron-rewrite-history`, covers 2026-03-27 to 2026-04-04, and
+almost none of it is code.
 
 The first commit adds a document, `docs/field-taxonomy.md`, whose subject line is "Add field
 taxonomy document with agreed vocabulary". The forty-odd commits that follow it over five days
@@ -61,9 +62,61 @@ later says about the schema coordinate as the model's natural key is a recovery 
 not an invention. The project's most consequential idea was correct on day five and had to be
 found again eleven weeks later.
 
-A note on reading history before 2026-07-01: the reactor moved to the repository root on that date
-(R182) and the move rewrote the metadata of every rewrite-line commit, so author dates and commit
-dates diverge across April to June, and path-based queries go blind before it.
+=== How this record survived
+
+The early history was collapsed four times, and each collapse discarded a layer of detail that
+only a rebase abandoned on someone's disk still held.
+
+The rewrite was developed as a long-lived branch alongside a legacy line that kept shipping, so
+the branch was periodically rebased and squashed to stay reviewable. The vocabulary week folded
+into one commit on 2026-04-04. Everything before 2026-04-14 folded again into a single
+`feat(rewrite): add rewrite pipeline` commit when the module was extracted. On 2026-04-24 the
+whole line, by then 566 commits, was squash-merged onto main as two commits, which is the form
+trunk carries. Finally, on 2026-07-01, the move to the repository root (R182) rewrote the metadata
+of every rewrite-line commit, which is why author dates and commit dates diverge across April to
+June and path-based queries go blind before that date.
+
+The last of those collapses documented itself. Its plan survives on the pre-squash branch as
+`graphitron-rewrite/docs/planning/plan-history-squash.md`, and it carries something the commits
+cannot: a table of sixteen files deliberately *not* carried forward, each with a reason. Most of
+them are one mechanism, the dual-pipeline bridge that let the rewrite run beside the legacy
+generator during migration: a `@condition` guard in the legacy source field, a generator ordering
+fix, a class-reference fix needed only for the dual compile, a `getTenantId()` default on the
+shared context, an `@asConnection` addition to the shared directives. The rewrite emits its own
+context interface and injects its own directive copy, so none of it had a consumer once the two
+pipelines stopped running together. The bridge was scaffolding, and the squash is where it was
+removed rather than left to rot.
+
+The four preserved branches are complementary layers, not copies. Each was an independent rebase,
+so none contains another's commits, and the work each uniquely holds is listed here.
+
+[cols="1,1,2", options="header"]
+|===
+| Branch | Covers | What only it holds
+
+| `graphitron-rewrite-history`
+| 2026-03-27 to 04-04
+| The vocabulary week commit by commit. 41 commits touch the taxonomy document; on every later
+  line the whole week is one commit.
+
+| `pre-squash/tip-2`
+| to 2026-04-11
+| The dual-pipeline validate goal, where new-pipeline errors surfaced as warnings during
+  migration, and the introspect plan.
+
+| `pre-squash/tip-3`
+| to 2026-04-11
+| Validation test coverage to parity, edge-case probes, and composite primary keys in `@service`
+  DataLoader generation.
+
+| `pre-squash/tip-4`
+| 2026-04-14 to 04-24
+| The final stretch, 595 commits over the legacy base, 320 of them documentation. Its
+  `graphitron-rewrite/` tree differs from what shipped by one file, the squash plan itself.
+|===
+
+The busiest days of the entire project are in that last branch: 95 commits on 2026-04-23, 75 on
+the 19th, 71 on the 15th. Only 2026-04-12 and 13 remain unrecovered at commit granularity.
 
 == The sealed-leaf model, April to May 2026
 
@@ -247,7 +300,7 @@ not chosen in advance.
   taxonomy.
 * `roadmap/changelog.md` for the per-item record, including discards.
 * `roadmap/audits/` for the dated working papers cited above.
-* The `graphitron-rewrite-history` branch for the pre-squash March commits, which exist nowhere
-  else.
+* `graphitron-rewrite-history` and `pre-squash/tip-2`, `tip-3` and `tip-4` for the pre-squash
+  commits, which exist nowhere else. See "How this record survived" above for what each holds.
 
 xref:index.adoc[← History]
