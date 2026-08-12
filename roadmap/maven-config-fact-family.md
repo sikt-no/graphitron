@@ -1,13 +1,13 @@
 ---
 id: R612
 title: "The schema scan and its freshness replay share one typed recipe"
-status: Ready
+status: Spec
 bucket: architecture
 priority: 3
 theme: classification-model
 depends-on: []
 created: 2026-08-08
-last-updated: 2026-08-10
+last-updated: 2026-08-12
 ---
 
 # The schema scan and its freshness replay share one typed recipe
@@ -425,11 +425,49 @@ cross-graph consumer read surface, which stays SDL-derived families only. It lan
 relation's own comment can carry it, beside the sentence `javac_diagnostic` already sets the
 precedent for.
 
+## The extent cut is wrong
+
+This section reopens a decision five review rounds signed off on, so it states what changed rather
+than re-arguing the design. What changed is a direction: all config provenance belongs in the
+store, and a module's configuration should be knowable without re-reading its build file unless
+that file changed. Under that direction the first-reader principle is the wrong instrument for
+cutting this item's extent, and it is withdrawn as the reason. It stays a fine principle for
+deciding when to build a *derivation*; it is the wrong test for whether to record a *fact*, because
+a fact's readers arrive later than the fact does and a run that has already exited cannot be asked
+again.
+
+The asymmetry this item currently ships makes the point on its own. `store_graph.build_file_stamp`
+is a content hash of the whole build file, and its comment states the contract in full: "the
+remembered recipe is trusted only while the build file still hashes to this, and a mismatch marks
+the recipe possibly stale until the module's own next build repairs it." That is a fitness claim
+about the *entire* configuration. Behind it this item stores two parameters. A reader can therefore
+prove a sibling module's configuration is unchanged and still be unable to see almost any of it,
+which is the invalidation mechanism built and the payload withheld.
+
+Two things this does not overturn. The **store-first shape stays rejected** exactly as argued
+above: the store is not a channel between two components of one run, the honesty check stays
+non-vacuous, and nothing reads config rows before capture writes them. The direction here is
+write-side transcription plus a *cross-run, cross-module* read, which is a different shape from the
+intra-run channel those three arguments retire. And the **savings claim needs stating honestly**:
+on the Maven path there is no parse to skip, because Maven parses the pom and injects the
+parameters before any mojo runs. What the transcription buys is the reader that has no build to
+run at all: a sibling module's configuration, a non-Maven entry point, a maintenance or LSP surface
+answering questions about a cold graph. That is the same reader the schema recipe was already built
+for, extended to the rest of the configuration.
+
+What this item does about it: nothing to its own extent. It stays sized to the scan and the replay,
+because widening it now would restart a five-round review over an argued design. What changes is
+that the wider family stops being foreclosed on the record, and the parameters above are named as
+future work rather than as a decision. The `store_` family's read doctrine already written here
+covers them unchanged.
+
 ## Deliberately out of scope
 
-- **Transcribing configuration with no reader.** `<lint>`, `<sessionState>`,
-  `<tenantColumn>`, output packages and directories stay untranscribed; the first-reader
-  principle cuts the recipe's extent to what the scan and the replay read.
+- **Transcribing configuration with no reader** — *withdrawn; see "The extent cut is wrong" below.*
+  `<lint>`, `<sessionState>`, `<tenantColumn>`, output packages and directories stay untranscribed
+  **in this item**, because they are not what the scan and the replay read and this item is sized
+  to those two readers. They are no longer out of scope as a matter of principle, and the
+  first-reader argument is retired as the reason.
 - **Folding the orphan scan onto the recipe component.** `SchemaProblemDiagnostic`'s walk
   answers the recipe's complement (schema-shaped files the recipe did not pick up) and could
   one day be a query over the recipe, but it has no fact-model payoff today; it stays a
