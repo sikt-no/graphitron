@@ -55,12 +55,26 @@ type used as the key in `GraphQLCodeRegistry` for data fetcher registration, so 
 parallel by construction.
 ____
 
-The model was coordinate-keyed on its fifth day. That key was then progressively buried, as leaf
-identity became the thing consumers dispatched on and the coordinate became an address you looked
-a leaf up by rather than the thing the model was about. Everything the June normalization argument
-later says about the schema coordinate as the model's natural key is a recovery of this decision,
-not an invention. The project's most consequential idea was correct on day five and had to be
-found again eleven weeks later.
+The model was coordinate-keyed on its fifth day, and it still is: `GraphitronSchema` declares
+`Map<FieldCoordinates, GraphitronField> fields` today. What changed was not the key but what the
+key was *for*. Count the references and the shape is plain: `FieldCoordinates` appears zero times
+across the model package's leaf types, and twenty-six times in `plan` and seven in `command`. The
+leaves never carried their own coordinate, so it served as an index you looked a leaf up by while
+consumers dispatched on leaf identity instead. The coordinate addressed the model without being
+what the model was about.
+
+That is the precise thing the June normalization argument changes. It does not introduce the
+coordinate, which had been there from day five; it promotes it from lookup key to the thing facts
+hang off. The distinction sounds small and is the whole pivot.
+
+The week has one more rhyme with what came later. On 2026-03-28 the taxonomy acquired a formal
+two-axis model, every leaf tagged with a *creates* or *reuses* pair crossed with a *carries* or
+*terminates* pair. It lasted about thirty-six hours, deleted the next day by a commit whose
+subject reads "replace academic scope interaction vocabulary with plain language". Dimensional
+decomposition of the leaf was proposed and rejected as too abstract in week one, then arrived
+again in May as three crossed enums and again in June as source, operation and target. The idea
+was not wrong in March. It had no substrate to live in yet, so it read as vocabulary rather than
+as structure.
 
 === How this record survived
 
