@@ -168,6 +168,21 @@
                         </configuration>
                     </execution>
                     <execution>
+                        <!-- Fail the build if an authored architecture page cites a store
+                             relation, column or family the schema no longer declares. The
+                             universe comes from the booted store through StoreCatalog, the same
+                             reader the generated schema reference renders from, never from
+                             regexing the DDL. Scan set: SchemaIdentifierDriftCheck.SCANNED_TREE
+                             (docs/architecture, authored pages only; the generated reference is
+                             correct by construction). -->
+                        <id>check-schema-identifiers</id>
+                        <phase>verify</phase>
+                        <goals><goal>java</goal></goals>
+                        <configuration>
+                            <commandlineArgs>check-schema-identifiers ${project.basedir}/..</commandlineArgs>
+                        </configuration>
+                    </execution>
+                    <execution>
                         <!-- Fail the build if a pom breaks the JaCoCo agent wiring the opt-in
                              coverage profile depends on: an <argLine> without a leading @{argLine}
                              drops the agent and reports a false 0%, and a second test-executing
