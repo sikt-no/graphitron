@@ -19,8 +19,8 @@ an item ships, so they are named here as provenance rather than linked.
 
 == The vocabulary came first, March 2026
 
-The rewrite's first four weeks reached trunk as two commits. The 595 commits behind them survived
-only as unreachable objects and are now preserved on four branches, described at the end of this
+The rewrite's first four weeks reached trunk as two commits. The commits behind them survived
+only as unreachable objects and are now preserved on six branches, described at the end of this
 section. The earliest of them, `graphitron-rewrite-history`, covers 2026-03-27 to 2026-04-04, and
 almost none of it is code.
 
@@ -87,7 +87,14 @@ context interface and injects its own directive copy, so none of it had a consum
 pipelines stopped running together. The bridge was scaffolding, and the squash is where it was
 removed rather than left to rot.
 
-The four preserved branches are complementary layers, not copies. Each was an independent rebase,
+The reason the record is a thicket rather than a line is that the rewrite was built by several
+concurrent sessions on parallel branches that were periodically merged, then rebased together.
+Branch names surviving in the merge commits (`validation-test-coverage-plan-r8PAv`, `-hENgE`,
+`-EcOP7`) show three siblings running at once in mid-April. Two of the preserved tips are from the
+main line and two from the validation-test-coverage line, and they share no commit subjects at all
+across the days they both cover.
+
+The six preserved branches are complementary layers, not copies. Each was an independent rebase,
 so none contains another's commits, and the work each uniquely holds is listed here.
 
 [cols="1,1,2", options="header"]
@@ -109,14 +116,30 @@ so none contains another's commits, and the work each uniquely holds is listed h
 | Validation test coverage to parity, edge-case probes, and composite primary keys in `@service`
   DataLoader generation.
 
+| `pre-squash/tip-5`
+| to 2026-04-13
+| A snapshot of the validation-test-coverage line, including the merge of two sibling session
+  branches into one another.
+
+| `pre-squash/tip-6`
+| to 2026-04-14
+| The same line a day later, and the granular form of everything tip-4's first commit collapsed.
+
 | `pre-squash/tip-4`
 | 2026-04-14 to 04-24
 | The final stretch, 595 commits over the legacy base, 320 of them documentation. Its
   `graphitron-rewrite/` tree differs from what shipped by one file, the squash plan itself.
 |===
 
-The busiest days of the entire project are in that last branch: 95 commits on 2026-04-23, 75 on
-the 19th, 71 on the 15th. Only 2026-04-12 and 13 remain unrecovered at commit granularity.
+The chain is provably continuous rather than merely plausible, because two tree hashes match
+exactly. `pre-squash/tip-6`'s tip and the first commit of `pre-squash/tip-4` have byte-identical
+module trees, so the second is the collapse of the first with nothing added or lost. And tip-4's
+own module tree matches what trunk carries, once the squash plan document's final revision is set
+aside. Every commit from 2026-03-27 to the shipped module is therefore accounted for, either
+granularly or as a collapse whose input and output are both preserved.
+
+The busiest days of the entire project are in the last branch: 95 commits on 2026-04-23, 75 on the
+19th, 71 on the 15th.
 
 == The sealed-leaf model, April to May 2026
 
