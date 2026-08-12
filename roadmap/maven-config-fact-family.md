@@ -1,6 +1,6 @@
 ---
 id: R612
-title: "The schema scan and its freshness replay share one typed recipe"
+title: "The Maven and pom configuration fact family"
 status: Spec
 bucket: architecture
 priority: 3
@@ -10,7 +10,7 @@ created: 2026-08-08
 last-updated: 2026-08-12
 ---
 
-# The schema scan and its freshness replay share one typed recipe
+# The Maven and pom configuration fact family
 
 R610 has shipped, and with it most of the substrate this item was filed to build. The store
 holds a graph's SDL recipe (`store_graph_schema_input`, `store_graph_schema_extension`, the
@@ -33,6 +33,14 @@ becomes a sealed carrier, so a consumer switches on a kind the producer decided 
 the filesystem what the producer already knew.
 The Backlog stub sketched a third shape, routing the build's own scan through the store rows; it
 is rejected below, on the record.
+
+The item's extent has widened back to the one its filename always carried. It was filed as the
+Maven config fact family and narrowed to the schema recipe under the first-reader principle, which
+"The extent cut is wrong" below retires. So this item now carries the whole family: every parameter
+the build supplies is transcribed as provenance, not only the two the scan and the replay read. The
+schema recipe stays the worked example and lands first, because it is the half with production
+readers and five rounds of review behind it, and the rest of the family follows the pattern it
+establishes rather than inventing a second one.
 
 ## One recipe value, both paths
 
@@ -455,19 +463,50 @@ run at all: a sibling module's configuration, a non-Maven entry point, a mainten
 answering questions about a cold graph. That is the same reader the schema recipe was already built
 for, extended to the rest of the configuration.
 
-What this item does about it: nothing to its own extent. It stays sized to the scan and the replay,
-because widening it now would restart a five-round review over an argued design. What changes is
-that the wider family stops being foreclosed on the record, and the parameters above are named as
-future work rather than as a decision. The `store_` family's read doctrine already written here
-covers them unchanged.
+What this item does about it: widens to carry the family, which is what its filename always said it
+was. The schema recipe is unaffected as a design and lands first; nothing argued across the five
+review rounds is reopened by this, because the recipe's shape, its sealed source carrier, its
+production decode and its round-trip anchor are exactly the pattern the rest of the family follows.
+What is added is the rest of the parameters and the questions their grain raises, below.
+
+## The rest of the family
+
+Every parameter the build supplies is transcribed. `<lint>`, `<sessionState>`, `<tenantColumn>`,
+the output package and directory, and whatever the mojo grows next. A run that has exited cannot be
+asked again, so the test is whether the build knew it, not whether a reader has asked for it yet.
+
+Four boundaries the plan has to settle, none of which the recipe's own design answers by itself.
+
+* **Grain.** A relation per parameter family, or one discriminated config relation keyed
+  `(graph_name, ordinal)` the way `store_graph_schema_input` is. The recipe is the precedent and it
+  chose one discriminated relation over several, on the argument that the ordinal is the recipe's
+  spine and splitting would shatter the one ordering key. That argument is specific to an ordered
+  list of bindings and does not obviously carry to a set of unrelated scalar parameters, so the
+  question is open rather than settled by precedent. What the plan must not produce is a
+  key-value bag of `VARCHAR`s wearing a relation's clothes.
+* **Structured values.** `<lint>` and `<sessionState>` are not scalars. Whether the transcription
+  holds a typed decomposition or a rendered form is decided per parameter and stated, since a
+  rendered form is a string a later reader has to re-parse, which is the shape this item exists to
+  remove for source names.
+* **Absent versus empty.** "Configured nothing" and "not asked" are different facts and a nullable
+  column conflates them. The recipe met this and answered it with the `kind` discriminator; the
+  general case needs its own answer, and a parameter carrying a mojo default needs to say whether
+  the default or the absence is what it records.
+* **Decode location.** Unchanged from the recipe's rule: the plexus-bound beans stay plugin-side,
+  core assumes no Maven vocabulary, and a non-Maven entry point is a second decoder into the same
+  typed value rather than a second capture path. The wider the family, the more this rule is
+  load-bearing, since it is what keeps `maven_` from being the honest prefix for these rows.
+
+What the family does *not* change: the store-first rejection, the read doctrine, and the honest
+statement of what transcription buys. On the Maven path there is no parse to skip, because Maven
+parses the pom and injects the parameters before any mojo runs. The reader served is the one with
+no build to run at all.
 
 ## Deliberately out of scope
 
-- **Transcribing configuration with no reader** — *withdrawn; see "The extent cut is wrong" below.*
-  `<lint>`, `<sessionState>`, `<tenantColumn>`, output packages and directories stay untranscribed
-  **in this item**, because they are not what the scan and the replay read and this item is sized
-  to those two readers. They are no longer out of scope as a matter of principle, and the
-  first-reader argument is retired as the reason.
+- **Transcribing configuration with no reader** — *retired.* This exclusion, and the first-reader
+  argument behind it, is withdrawn; see "The extent cut is wrong" and "The rest of the family"
+  above. The parameters it excluded are now in scope.
 - **Folding the orphan scan onto the recipe component.** `SchemaProblemDiagnostic`'s walk
   answers the recipe's complement (schema-shaped files the recipe did not pick up) and could
   one day be a query over the recipe, but it has no fact-model payoff today; it stays a
