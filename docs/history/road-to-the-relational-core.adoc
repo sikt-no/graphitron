@@ -155,14 +155,81 @@ granularly or as a collapse whose input and output are both preserved.
 The busiest days of the entire project are in the last branch: 95 commits on 2026-04-23, 75 on the
 19th, 71 on the 15th.
 
-== The sealed-leaf model, April to May 2026
+== The month that set the rules, April 2026
+
+Almost every discipline the project still runs on was written down in the three weeks between the
+first sealed skeleton and the squash. The rules arrived before the architecture they would
+eventually break.
+
+On 2026-04-06 the work stopped pretending to be a refactor. The package rename from
+`no.sikt.graphitron.record` to `no.sikt.graphitron.rewrite` says why in its own message: the
+feature "was initially scoped around jOOQ record output but has grown into a full rewrite of the
+generation pipeline. The new name is honest about this scope." What is now a multi-year programme
+began as a plan to phase out a DTO layer.
+
+The following day the classification boundary became a rule. A commit stripped every `Table<?>`,
+`Field<?>` and `ForeignKey<?,?>` out of the taxonomy records, and the reference document recorded
+the constraint: the schema builder and the jOOQ catalog are the only permitted holders of raw jOOQ
+and graphql-java objects, and everything downstream works from plain strings, booleans and
+primitives. That is, nearly word for word, the classification-leak rule the architecture review
+still applies. In the same week, `default` arms were removed from sealed switches specifically so
+that a new variant would break the build rather than be silently absorbed.
+
+The rule that stated the whole programme came on 2026-04-11:
+
+[quote]
+____
+If a generator needs a piece of information that is not present in the taxonomy, the correct fix
+is to add a record component to the appropriate sealed type and extract the value in
+`GraphitronSchemaBuilder`, not to import or access jOOQ or graphql-java types in generator code.
+This constraint enforces a complete taxonomy: every fact the generators rely on must be explicitly
+declared.
+____
+
+That is the earliest architectural use of the word fact in the project, four months before the
+fact store, and the sentence is already the argument for it.
+
+Two days later the same idea acquired the name it still carries, in the message of the commit that
+replaced `SourcesRef` with `BatchKey`:
+
+[quote]
+____
+`SourcesRef.pkJavaTypes` was representation-thinking, it stored the types the developer happened
+to write, forcing generators to re-derive column information from the parent table's PK anyway.
+`BatchKey` is generation-thinking: key columns come directly from `parentPkColumns`, carrying the
+`ColumnRef` generators actually need to emit code.
+____
+
+Read that against the July measurement, which found the emit call graph "derived twice, once by
+the emitters that emit the calls, once by a hand-maintained switch that predicts them". It is the
+same complaint at a different scale. The whole later history is this one objection, forcing
+successively deeper answers: first move the value into the leaf, then move the decision into the
+model, then make the model a relation so nothing has to be re-derived at all.
+
+The workflow arrived in the same window. By the squash there is a `workflow.md` carrying the state
+machine this project still uses, Backlog through Spec, Ready, In Progress, In Review to Done, with
+the reviewer guards stated as a different party from whoever last changed the artifact, and the
+slug convention that names the work rather than the phase. It was not adopted later and applied to
+the rewrite; it was invented alongside it, which is why roughly 320 of the final stretch's 595
+commits are documentation. Every status transition is its own commit, so the plan file is the
+ledger.
+
+And the growth was watched from the start. The roadmap of the time already required that "each new
+sub-taxonomy proposal comes with a one-line note on what distinct information it carries that a
+sibling cannot", with an instruction to audit at milestone boundaries which sub-taxonomies could
+collapse. It did not help. The model went from thirty-five leaves at birth on 2026-04-01 to about
+fifty by 04-11 and sixty-two by the squash, and kept climbing until August. That is the useful
+lesson in the whole month: the leaf count was never a discipline problem, so no amount of
+governance was going to hold it. It was a representation problem, and it took until August to be
+answered as one.
+
+== The sealed-leaf model, May 2026
 
 The unit of knowledge was the sealed leaf. Every classifiable schema position resolved to exactly
 one variant of a sealed Java interface, and the model was the closed set of those variants plus
 the compiler-enforced exhaustive switches over them. Classification produced a leaf or a typed
 rejection; emission pattern-matched the leaf. The theory was settled in March and was not
-seriously questioned in this period, only extended: thirty-five leaves at the model's birth on
-2026-04-01, around forty by the end of April, and growing.
+seriously questioned in this period, only extended.
 
 It was right about a great deal, and most of it still holds. Decisions are made once, at the
 parse boundary. The compiler, not a convention, enforces that every consumer handles every case.
