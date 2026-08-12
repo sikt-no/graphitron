@@ -136,7 +136,7 @@ It is worth being explicit that this is the flexibility argument that motivated 
 mechanism under it. A projection can only carry what one build projected for one graph at the grain
 someone chose in advance. The store carries every graph at the grain the facts have.
 
-## Two cadences, and why the store is more available than the projection
+## What the store knows during a mid-edit session
 
 The candidates a graphitron directive completes against do not come from the SDL. Table and column
 names come from the jOOQ generated model; class names, method names and scalar constants come from
@@ -144,9 +144,40 @@ the classpath. Whether the schema file currently parses has no bearing on whethe
 table. Those facts are source-keyed in the store (`sql_`, `jvm_`), refreshed on the classpath
 cadence, and a query against them carries no dependency on the SDL at all.
 
-Only SDL-sourced facts lag the buffer: what types are declared, what a field classifies as, which
-types carry `@node`. Those ride the save cadence, through graphql-java, which is what capture
-walks.
+Nor is "the SDL" one thing with one validity state. A graph is many schema files. When an author
+opens a new one and types `extend type |`, that file is not valid SDL and will not be until the
+line is finished, but every *other* schema file is well formed, unchanged, and already captured.
+The completion wanted there is the set of type names declared in those other files, which is
+`graphql_type` and `graphql_type_declaration`, sitting in the store and correct. The invalid buffer
+is not an obstacle to answering; it is the question.
+
+So the honest split is three ways, by *which file* a fact came from rather than by source kind
+alone:
+
+* Catalog and classpath facts, untouched by schema editing at all.
+* SDL facts from files not being edited, captured at the last successful parse and still correct,
+  because those files have not changed since.
+* SDL facts from the buffer under the cursor, which are the only genuinely stale ones, and exactly
+  the ones tree-sitter reads live.
+
+There is no gap between those three. The store is authoritative for the whole workspace except the
+buffers being edited, and tree-sitter covers precisely those. That is the whole division, and it is
+why a broken file is a local condition rather than an outage.
+
+The current design does not have that granularity. Capture takes a whole `TypeDefinitionRegistry`,
+so one unparseable file means capture does not run, and `demoteSnapshot` marks the *entire*
+snapshot `Built.Previous`. Typing `extend type ` in a new empty file therefore makes the whole
+workspace's type knowledge read as stale to freshness-aware consumers, when the only thing nobody
+knows about is the empty file, which was never saved and which the store was never claiming to
+know. Validity is per file; the seal is per workspace.
+
+Worth noting that the store's relations already have the granularity the capture path lacks.
+`graphql_type_declaration` carries `source_name` and, in its own comment, "indexes the
+incremental-refresh unit ('which types does this file touch')", and `store_source` stamps each
+schema file separately. Per-file refresh is a shape the schema was designed for and the capture
+path has not yet taken; it is named in the follow-on entries rather than built here. What this item
+needs from it is only the part already true: capture's transaction leaves "the previous committed
+state" on a failed run, so the other files' rows are intact.
 
 `CompletionData` conflates the two. It carries `tables` and `externalReferences` (catalog and
 classpath) beside `types` and `nodeMetadata` (SDL), in one record swapped as a unit by
@@ -160,12 +191,15 @@ That pairing is the right behaviour reached by hand. Under source-keyed relation
 catalog candidates are not *retained* across a bad parse, they were never invalidated by it, because
 nothing about them was derived from the SDL. The store is therefore *more* available mid-edit than
 the projection it replaces, not less. An earlier draft of this item had that backwards, treating
-"the store reflects the last successful capture" as a limitation to work around; it is a limitation
-of the SDL half only.
+"the store reflects the last successful capture" as a limitation to work around. It is not a
+limitation of the store at all; it is a limitation of one buffer, and tree-sitter is already
+pointed at it.
 
-The consequence for the plan: the sealed resolution outcomes must not carry one availability answer
-for both halves. A catalog lookup that finds nothing found nothing; an SDL lookup that finds nothing
-may simply not have been saved yet. Those are different facts and the surface says which.
+The consequence for the plan: the sealed resolution outcomes must not give one availability answer
+for the whole workspace. A catalog lookup that finds nothing found nothing. An SDL lookup that finds
+nothing found nothing *unless* the coordinate belongs to a file currently dirty, which the LSP knows
+and the store cannot. Which file a fact would have come from is therefore part of the outcome, not
+an afterthought, and it is the axis a whole-snapshot seal collapses.
 
 ## What tree-sitter is for
 
@@ -383,3 +417,6 @@ missing, and the plan is reopened rather than the render changed.
   derivation lives in the store.
 * A round-outcome fact, retiring `demoteSnapshot` and the hand-maintained freshness state behind
   it.
+* Per-file SDL capture, so one unparseable buffer stops invalidating a whole graph's round.
+  `graphql_type_declaration` already indexes the refresh unit; the capture path takes a whole
+  registry.
