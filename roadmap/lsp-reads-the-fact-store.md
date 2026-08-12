@@ -116,20 +116,26 @@ round. That is read-consistency, and it is the invariant `Workspace` hand-rolls 
 build. It is worth having and it is only that. An H2 isolation default is not an enforcer: nothing
 in this build fails if it changes, so the Spec claims read-consistency from it and nothing else.
 
-**Freshness stays a typed workspace fact.** `LspSchemaSnapshot`'s `Built.Current` /
-`Built.Previous` gets no store equivalent, and the reason is structural rather than a matter of
-taste. Capture records the last *success*; `Built.Previous` is a fact about the last *attempt*.
-`Workspace.demoteSnapshot` is called from three `DevMojo` paths where a parse threw and capture
-therefore never ran and never wrote a row. No timestamp comparison at the read site recovers that
-distinction, and inventing one would be branching on a predicate over pre-resolved inputs rather
-than reading a resolved decision. If the seal is ever to move into the store, capture must first
-record the attempt outcome as a fact; that round-outcome row does not exist today and is not in
-this item. Until then the store answers *what* and the workspace keeps answering *how fresh*.
+**Freshness is provenance the store does not capture yet.** `LspSchemaSnapshot`'s `Built.Current` /
+`Built.Previous` gets no store equivalent in this item, and the reason is a missing fact rather
+than a boundary worth keeping. Capture records the last *success*; `Built.Previous` is a claim
+about the last *attempt*, and `Workspace.demoteSnapshot` fires from three `DevMojo` paths where a
+parse threw, so capture never ran and wrote nothing. No timestamp comparison at the read site
+recovers that, and inventing one would be branching on a predicate over pre-resolved inputs rather
+than reading a resolved decision.
+
+The honest reading is that "which round produced these rows, and did the latest attempt succeed" is
+provenance, and it is hand-maintained workspace state today only because nothing captures it. A
+round-outcome fact would retire `demoteSnapshot` and the volatile field behind it. That fact is not
+in this item because this item's readers do not need it, but it is the shape the seal should
+eventually take, not a thing the workspace is right to keep owning. Until then the workspace keeps
+answering *how fresh* and the store answers *what*, and the split is a gap on the record rather
+than a design.
 
 ## Capture widenings
 
-Widen capture where the store is genuinely missing a fact; do not widen it to keep a render
-byte-equal.
+Widen capture wherever the store is missing a fact a reader needs. A render that would otherwise
+have to change is evidence of exactly that, never a reason to change the render.
 
 * **`sql_constraint.jooq_name`, yes.** `JooqCatalog.fkJavaConstantName` resolves the `Keys`
   constant by reference identity over the generated class's fields. That is a reflective decode of
@@ -146,29 +152,44 @@ byte-equal.
   is a repeating group. Follow the grain, not `CompletionData`'s shape, or the store inherits the
   projection's denormalization. `classFqn` is load-bearing either way: it is the join key into
   `SourceWalker.Index`.
-* **A Java-type column on `sql_column`, no.** See the behaviour change below.
+* **The jOOQ binding type on `sql_column`, yes.** `ColumnFacts` calls itself "the
+  resolved-immutable superset of `ColumnEntry`" and is not one: both read the same live
+  `org.jooq.Field` inside the codegen scope, `ColumnEntry` taking `col.getType().getName()` (the
+  Java type jOOQ binds the column to) and `ColumnFacts` taking `col.getDataType().getTypeName()`
+  (the SQL type) and dropping the other. Capture writes `ColumnFacts`, so the binding type reaches
+  no relation. A column has both a SQL type and a binding type; they are orthogonal axes, not two
+  renderings of one fact, and the binding type is what determines the Java type flowing through
+  generated code, which is the more useful of the two to an author writing a binding. It is also
+  unrecoverable downstream: after the codegen loader closes there is no handle left to ask. Capture
+  it, and correct `ColumnFacts`'s javadoc, which currently claims a containment that does not hold.
 * **`jvm_class` filters.** The family is filtered to public, non-synthetic, top-level, outside the
   generated jOOQ package. Confirm `CompletionData.ExternalReference` agrees on all four rather
   than assuming; a disagreement is a finding either way.
 
-## One deliberate behaviour change
+## No behaviour changes
 
-`CompletionData.Column.graphqlType` is misnamed. It is `col.getType().getName()`, the Java class
-name (`java.lang.Integer`), and it is rendered verbatim in three places: twice in hover and once
-in `FieldCompletions`. `sql_column.sql_type` is the SQL type as jOOQ reports it.
+Nothing an author sees changes in either step. Where a render looks like it must change, the cause
+is a fact capture is missing, and the fix is to capture it. An earlier draft of this item proposed
+moving hover and `FieldCompletions` from the jOOQ binding type to the SQL type and calling it a
+named behaviour change; that was proposing to lose a fact rather than capture one, and the widening
+above retires it.
 
-This is why the migration unit is the read surface rather than the feature. Cut hover alone to
-`sql_type` and the same column renders `integer` in a hover and `java.lang.Integer` in a
-completion one keystroke later, in one editor session. Capture the Java type purely to keep the
-render equal and the store has gained a fact whose only justification is preserving a mislabeled
-name.
+`CompletionData.Column.graphqlType` is misnamed all the same. It is neither a GraphQL type nor the
+SQL type, and it is rendered verbatim in three places, twice in hover and once in
+`FieldCompletions`. The port renames it to what it holds; the value is unchanged, so no reader
+moves.
 
-So: move both readers together, to the SQL type, and record it as a named behaviour change rather
-than a parity residue. An author spelling `@field(name:)` against a column wants the SQL type. The
-same reasoning applies to `columnGraphqlType`, which today resolves a `@node(keyColumns:)` entry
-by scanning every table for a matching column name, keyed on nothing; the node type's resolved
-table is a fact the store supplies, so the store-backed version keys on `(node table, column)`.
-That is a keying correction, not a residue.
+The mislabeling is worth one more sentence, because it is the mechanism by which a fact goes
+missing. A name that does not say which axis a value is on is what lets a second projection take
+the other axis from the same handle and call itself a superset. Both `CompletionData` and
+`CatalogFacts` did exactly that, in opposite directions, and neither is wrong on its own; what was
+missing was a relation carrying both.
+
+One genuine correction is not a behaviour change but a keying fix. `columnGraphqlType` resolves a
+`@node(keyColumns:)` entry by scanning every table for a matching column name, keyed on nothing, so
+its answer depends on iteration order. The node type's resolved table is a fact the store supplies,
+so the store-backed version keys on `(node table, column)`. Where that changes an answer, today's
+answer was arbitrary.
 
 ## Tests
 
@@ -232,9 +253,8 @@ are honest.
 Step 1: shadow population diff green with residues named; graph scoping covered by a two-graph
 seeded store; `CatalogFacts` deleted, not merely bypassed.
 
-Step 2: shadow green; measured latency stated and no worse than the seam at p99; the SQL-type
-behaviour change landed for both readers together; any capture gap left open recorded with the arm
-still on the seam.
+Step 2: shadow green; measured latency stated and no worse than the seam at p99; every rendered
+surface unchanged; any capture gap left open recorded with the arm still on the seam.
 
 ## What this measures
 
@@ -254,14 +274,14 @@ existed.
 
 ## User documentation
 
-Exempt for step 1. Step 2 carries one user-visible change: column type renders as the SQL type
-rather than the Java class name, in hover and in field completions. That needs a line wherever
-those surfaces are described.
+Exempt. Neither step changes a rendered surface, adds a goal or directive, or moves a wire format.
+Should implementation turn up a render that cannot be preserved, that is the signal a fact is
+missing, and the plan is reopened rather than the render changed.
 
 ## Roadmap entries
 
 * The remaining LSP feature packages: completions, definition, inlay, diagnostics, code actions.
 * `DeclarationHovers` and the classification-backed arms, once more of the classification
   derivation lives in the store.
-* A round-outcome fact, if the freshness seal is ever to move into the store.
-</content>
+* A round-outcome fact, retiring `demoteSnapshot` and the hand-maintained freshness state behind
+  it.
