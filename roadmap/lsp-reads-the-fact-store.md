@@ -37,13 +37,17 @@ exist for MCP and codegen are not credited to the LSP. A result showing no simpl
 finding and gets reported as one.
 
 The work lands additive-then-cutover, the workflow's shape for structural pivots on widely-pinned
-types: substrate first with both surfaces live and nothing deleted, then features arm by arm, the
-cutover that deletes the projections last, so the acceptance holds at every intermediate commit.
-The abandon condition is pre-registered where it can still act: if the first two migrated arms do
-not come out simpler than their incumbents, or a migrated request is slower than the incumbent's
-linear scan on Sakila, the cutover does not happen and the finding is the report. Deleting a
-hand-written projection layer shrinks the line count whether or not the design is better, so the
-measurement is taken after the cutover, never at the additive peak.
+types: substrate first, then features arm by arm, the cutover that deletes the projections last,
+so the acceptance holds at every intermediate commit. The additive phase is the experiment's
+vessel, not scaffolding to hurry past: with both implementations live side by side, the hypothesis
+gets a paired test that neither endpoint can give. Each migrated capability has an incumbent arm
+and a fact-based arm answering the same requests, so lines, branch points and latency are compared
+per feature, like against like. Deleting a hand-written projection layer shrinks the module totals
+whether or not the design is better, so those totals are reported after the cutover as the
+outcome, but the paired comparison during coexistence is the test, and the cutover is gated on it:
+if the comparison does not favour the fact-based arms, or a migrated request is slower than the
+incumbent's linear scan on Sakila, the cutover does not happen, the incumbents stay, and the
+finding is the report.
 
 **This is not a port.** The incumbent is what is being judged, so there is no shadow-parity gate and
 no byte-equality on rendered output; pinning the new implementation to the old behaviour would
@@ -197,8 +201,9 @@ Four cases the corpus must carry, each being something the current design cannot
 * One file in two graphs: the request boundary surfaces the multi-graph membership arm, not the
   first row.
 
-Latency measured per request on the Sakila fixture and stated, against the abandon condition above.
-The incumbent is a linear scan, so this is a measurement, not a prediction. A hot path that is slow
+Latency measured per request on the Sakila fixture while both implementations coexist, the same
+requests answered by each side, and stated against the abandon condition above. The incumbent is a
+linear scan, so this is a measurement, not a prediction. A hot path that is slow
 as a view already has a sanctioned answer, materialize with the DDL comment owning why, as the
 reachability rows do; not an ad-hoc cache.
 
