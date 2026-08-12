@@ -1,7 +1,7 @@
 ---
 id: R638
 title: "The LSP is a fact-store client"
-status: Ready
+status: Spec
 bucket: architecture
 priority: 2
 theme: lsp
@@ -60,24 +60,34 @@ rendered view of the matrix rather than prose that rots.
 
 ## The division of labour
 
-**Tree-sitter answers where the cursor is**: buffer position to schema coordinate, over the live and
-possibly unparseable buffer. It produces no fact and writes nothing to the store. That is its whole
-job, and it is the only part that must tolerate broken syntax.
+**Tree-sitter extracts intent**: buffer position to schema coordinate, over the live and possibly
+unparseable buffer, and the reverse when a store position must land in a buffer that has drifted
+since capture. Positions in, positions out; it produces no fact, judges nothing, and writes nothing
+to the store. That is its whole job, and it is the only part that must tolerate broken syntax.
 
-**The store answers everything else**, for the whole workspace.
+**The store answers everything else**, for the whole workspace: completion lists, hover bodies,
+definition targets, hint values, diagnostic judgements. The incumbent already leans this way; a
+source survey found no tree-sitter syntax diagnostics and no workspace scan to retire (trees exist
+only for open buffers, and syntax validity ships via the `ValidationReport` replay). But it exceeds
+the line in three places this item pulls back: `IntraSchemaDefinitions` treats every open buffer's
+tree as authoritative over the projection, `WorkspaceFile` re-derives a declared/referenced type
+index from the tree on every keystroke to aim the diagnostic fan-out, and the recalculation queue
+re-runs full-tree validation per keystroke across every dependent open file.
+
+The gate between the two is the stamp, not the open-buffer set. A buffer whose content matches
+`store_source.stamp` is answered wholly from the store, open or not; only a buffer the store has
+not caught up with (unsaved, or saved with capture still pending or failed) holds live state the
+store lacks. The first iteration keeps even that shadow minimal, simple and correct over clever:
+the stale buffer's live tree supplies the coordinate under the cursor and re-anchors positions,
+never facts. A type declared only in an uncaptured buffer joins the answer set at its next capture;
+until then the currency seam answers `Indeterminate` rather than guessing. Widening the shadow so
+live declarations feed answers before capture is a later iteration, taken only if the paired
+measurement shows the wait hurts.
 
 A graph is many schema files, so validity is per file, not per workspace. An author typing
 `extend type |` in a new file has one invalid buffer and a workspace of well-formed captured ones;
 the completion wanted is what those other files declare. The invalid buffer is not an obstacle to
-answering, it is the question. Facts divide three ways by which file they came from:
-
-* Catalog and classpath facts (`sql_`, `jvm_`), untouched by schema editing.
-* SDL facts from files not being edited, correct because those files have not changed.
-* SDL facts from the buffer under the cursor, the only stale ones, and exactly what tree-sitter
-  reads live.
-
-There is no gap between them: the store is authoritative for everything except the buffers being
-edited, and tree-sitter covers precisely those.
+answering, it is the question: tree-sitter names the coordinate, the store supplies the list.
 
 ## What the store must provide
 
@@ -158,6 +168,11 @@ against what the LSP needs rather than assuming they agree.
 projection pass, most of `rewrite/catalog`, and `DevMojo.rebuildCatalog`'s keep-previous-and-demote
 workaround — catalog candidates are not retained across a bad parse, they were never invalidated by
 it.
+
+With them go the LSP's own tree-derived facts: `WorkspaceFile.refreshTypeIndex` and the
+declared/referenced type sets it re-derives per keystroke, whose one consumer is the cross-file
+diagnostic fan-out. "Which files touch this type" is a read over `graphql_type_declaration`, and
+the only file that relation cannot speak for is the one stale buffer.
 
 `CatalogFacts` has non-LSP readers that must move with it: `GraphitronMcpServer` (the
 `catalog.tables` and `catalog.describe` tools), `EdgeProducer`, `EdgesTool`, `ReverseEdgeIndex`,
@@ -256,7 +271,7 @@ around it.
 |---|---|---|
 | `Definitions` | Directive arg: `ClassName`, `MethodName`, `CatalogTable`, `CatalogColumn`, `CatalogFk` | `jvm_`/`sql_` + `SourceWalker` positions |
 | `Definitions` † | `ArgMapping`, `ScalarType`, `NodeType` return empty | — |
-| `IntraSchemaDefinitions` | Type reference to its declaring SDL site | open buffers first, then `graphql_type_declaration` |
+| `IntraSchemaDefinitions` | Type reference to its declaring SDL site | `graphql_type_declaration`; a stamp-mismatched declaring file re-anchors through its live tree |
 | `DeclarationDefinitions` | SDL declaration name to its bound Java | `jvm_class`, `jvm_record_component` + `SourceWalker` |
 
 **Inlay hints.** Three independent toggles, all default off (`InlayHintConfig`); two collectors.
@@ -288,14 +303,26 @@ again whenever a build swaps the snapshot; save reaches it through the rebuild, 
 | Unknown directive | Skipping the GraphQL spec built-ins |
 | `ValidationReport` replay | Build errors and warnings for URIs the report covers |
 
+First-iteration cadence: diagnostics ride the capture cadence, not the keystroke. Every source in
+the table reads as rows from the store, published per file when capture swaps; the per-keystroke
+recomputation and its cross-file fan-out retire with the type index that aimed them. A stale
+buffer shows the diagnostics of its last captured content, re-anchored through its live tree where
+the text has moved, refreshed at its next capture. That trades keystroke-live feedback in the one
+buffer being typed in for a single shape everywhere, and it still beats the incumbent, which
+silences the whole replay while the snapshot is demoted, so a newly broken schema shows nothing at
+all. Keystroke-live validation of the stale buffer is the same later iteration as the wider
+shadow, taken only on measured demand.
+
 Compile diagnostics (javac output against generated sources) sit on `Workspace` beside these but
 publish through the MCP diagnostics tool, not the LSP push; they move with the workspace state,
 not with this table.
 
 **Lifecycle and state.** `didOpen` / `didChange` (incremental) / `didClose` / `didSave`;
 `didChangeConfiguration` plus a `workspace/configuration` pull after `initialize` for the three inlay
-toggles; `didChangeWatchedFiles` is a no-op today. Per-file recalculation bookkeeping and the
-open-buffer set live in `Workspace` / `WorkspaceFile`.
+toggles; `didChangeWatchedFiles` is a no-op today. The open-buffer set stays in `Workspace`; the
+tree-derived type index (`refreshTypeIndex`'s declared/referenced sets) and the per-file
+recalculation bookkeeping it aims retire with the keystroke cadence (see the diagnostics
+paragraph above).
 
 ## Resolved questions
 
@@ -320,5 +347,5 @@ fact model; the reviewer confirms rather than decides.
 
 Provisional until the cutover lands; the Done-gate sweep greps for these. `CompletionData`,
 `CatalogFacts`, `LspSchemaSnapshot`, the `Built.Current` / `Built.Previous` freshness seal,
-`typeDefinitionLocations`, `CatalogBuilder`'s projection pass, and `DevMojo.rebuildCatalog`'s
-keep-previous-and-demote path.
+`typeDefinitionLocations`, `CatalogBuilder`'s projection pass, `DevMojo.rebuildCatalog`'s
+keep-previous-and-demote path, `refreshTypeIndex`, and `dependsOnDeclarations`.
