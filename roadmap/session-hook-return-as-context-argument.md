@@ -1,0 +1,18 @@
+---
+id: R640
+title: "Publish the session-hook return value as a typed contextArgument"
+status: Backlog
+bucket: architecture
+priority: 1
+theme: runtime-connection
+depends-on: [typed-claims-payload-udt-binding]
+created: 2026-08-12
+last-updated: 2026-08-12
+---
+
+# Publish the session-hook return value as a typed contextArgument
+
+The connect callable's OUT value is deliberately opaque and structurally unreachable from consumer code. It is typed `String`, registered as `Types.VARCHAR` and read with `getString` (`ConnectionRuntimeClassGenerator.java:1962`-`:1964`), stored on a private `handle` field of the generated `PinnedConnection` whose only reader is the disconnect binding and the settle re-fire (`:383`, `:461`, `:492`-`:493`), and never written into the `graphQLContext`. So a consumer whose connect routine resolves identity in the database, returning the institution, the entitlement set, the resolved principal, cannot see that resolution in Java: the only way `@service` code obtains such a value is for the *caller* to have supplied it, because contextArguments are exclusively caller-supplied at factory time and their Java type is reflected off the consumer's own `@service`/`@condition` parameter declaration (`ContextArgumentClassifier`). The consequence is duplicated derivation: the database resolves identity from the claims, and the service layer that wants the same facts must re-derive them from the raw claims in Java, with nothing binding the two derivations. This item introduces a second provenance for a contextArgument, runtime-mounted rather than caller-supplied, typed against a catalog UDT so the service parameter's declared type is the generated record and a mismatch is a compile error.
+
+Four design forks make this more than plumbing, and the fan-out one may bound the feature. (1) Provenance in the classifier: a contextArgument the runtime mounts must not appear as a factory parameter, so `ContextArgumentClassifier` gains a fork between caller-supplied and hook-supplied names, and the resolved type has to be checked against the UDT's generated record class rather than merely agreeing across sites. (2) Availability ordering: on the single-tenant path acquisition is eager in `beginExecuteOperation` (`pinned = runtime.acquire(claims)`), so the value exists before any fetcher runs and the ordinary `getContextArgument` read works; a fetcher reading it would otherwise need a "not yet mounted" state, which is exactly the runtime-throw diagnostic the typed-factory design exists to avoid. (3) The settle re-fire: without `<stateSurvivesTransactions>`, the pair re-fires after each top-level mutation settle and captures a *fresh* value, so a value published once into the `graphQLContext` goes stale mid-operation; either the publication is an indirection through the `PinnedConnection` or the re-fire re-publishes. (4) Multi-tenant fan-out: acquisition is lazy and per divined tenant, so an operation holds N connections and therefore N hook return values, and one contextArgument slot cannot represent per-tenant identity. Deciding what this means, that the feature is single-connection-only and rejected at build time when the schema fans out, or that the published shape is tenant-keyed, is the load-bearing scope call. Depends on R639 for the UDT resolution and binding machinery (`JooqCatalog` has no UDT resolution today); the return side additionally needs the OUT parameter registered as a structured type rather than `VARCHAR`, and must keep the existing opaque-`String` handle form working unchanged, since a RAS session id is not a record and has no reason to become one.
+
