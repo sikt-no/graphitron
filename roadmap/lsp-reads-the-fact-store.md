@@ -143,6 +143,90 @@ Three cases the corpus must carry, each being something the current design canno
 Latency measured per request on the Sakila fixture and stated. The incumbent is a linear scan, so
 this is a measurement, not a prediction.
 
+## Capability inventory
+
+The work list. Every capability the language server serves today, with what triggers it and where a
+fact-based implementation gets its answer. `†` marks a capability that returns nothing today, so it
+is a gap to close rather than a behaviour to reproduce.
+
+Five request capabilities are registered (`GraphitronLanguageServer.initialize`): hover, completion,
+definition, code action, inlay hint. Diagnostics are pushed. Document sync is incremental.
+
+**Completion.** `Completions.at` resolves the coordinate once, resolves its `Behavior`, and runs the
+providers registered for that arm in order, first non-empty wins.
+
+| Behavior arm | Provider | Fact source |
+|---|---|---|
+| `ClassNameBinding` | `ClassNameCompletions` | `jvm_class` |
+| `MethodNameBinding` | `ExternalFieldCompletions`, then `MethodCompletions` | `jvm_method`, `jvm_method_parameter` |
+| `CatalogTableBinding` | `TableCompletions` | `sql_table` |
+| `CatalogColumnBinding` | `FieldCompletions` | `sql_column`; enclosing table via classification |
+| `CatalogFkBinding` | `ReferenceCompletions` | `sql_constraint`, `sql_referential_constraint` (needs `jooq_name`) |
+| `ArgMappingBinding` | `ArgMappingCompletions` | `jvm_method_parameter` × `graphql_argument` |
+| `ScalarTypeBinding` | `ScalarTypeCompletions` | `jvm_scalar_type_field` |
+| `NodeTypeBinding` | `NodeTypeCompletions` | `graphitron_node` |
+| no coordinate, or no value match | `ArgNameCompletions` (fallback) | `graphql_directive_argument`, bundled vocabulary |
+
+**Hover.** `Hovers` dispatches on the same `Behavior` taxonomy, with three non-coordinate arms
+around it.
+
+| Trigger | Answers | Fact source |
+|---|---|---|
+| Directive name token | Directive description | `graphql_directive`, bundled vocabulary |
+| `ClassNameBinding` | Class FQN + Javadoc | `jvm_class` + `SourceWalker` |
+| `MethodNameBinding` | Signature + Javadoc | `jvm_method`, `jvm_method_parameter` + `SourceWalker` |
+| `CatalogTableBinding` | Comment, column and reference counts | `sql_table`, `sql_column`, `sql_constraint` |
+| `CatalogColumnBinding` | Type, nullability, comment | `sql_column` (needs binding type) |
+| `CatalogFkBinding` | FK direction and endpoints | `sql_referential_constraint` |
+| `NodeTypeBinding` | `typeId`, key columns and their types | `graphitron_node`, `graphitron_node_key_column` |
+| `ArgMappingBinding`, `ScalarTypeBinding` † | nothing | — |
+| Any coordinate, no richer arm | SDL docstring | bundled vocabulary |
+| User-declared directive arg | Arg docstring | `graphql_directive_argument` |
+| SDL declaration name (`hoverClassification` toggle) | `DeclarationHovers`: classification block + Javadoc | classification + `SourceWalker` |
+
+**Definition.** Three providers chained with `.or()`, keyed on disjoint syntax.
+
+| Provider | Trigger | Fact source |
+|---|---|---|
+| `Definitions` | Directive arg: `ClassName`, `MethodName`, `CatalogTable`, `CatalogColumn`, `CatalogFk` | `jvm_`/`sql_` + `SourceWalker` positions |
+| `Definitions` † | `ArgMapping`, `ScalarType`, `NodeType` return empty | — |
+| `DeclarationDefinitions` | SDL declaration name to its bound Java | `jvm_class`, `jvm_record_component` + `SourceWalker` |
+| `IntraSchemaDefinitions` | Type reference to its declaring SDL site | open buffers first, then `graphql_type_declaration` |
+
+**Inlay hints.** Three independent toggles, all default off (`InlayHintConfig`); two collectors.
+
+| Toggle | Collector | Fact source |
+|---|---|---|
+| `classification` | `collectClassificationHints` | classification |
+| `inferredDirectives` | `collectInferredDirectiveHints`, renderers for `@table`, `@field`, `@reference` | `graphitron_table`, `graphitron_field_binding`, `graphitron_field_reference*` |
+| `inferredDirectives` | `collectAbsentDirectiveHints` | same, absence arm |
+| `hoverClassification` | gates `DeclarationHovers` (see hover) | classification |
+
+**Code actions.** Two branches, deliberately not sharing a path.
+
+| Branch | Trigger | Fact source |
+|---|---|---|
+| `LintQuickFixes` | A fix-bearing lint finding in the report, `Built.Current` only | `lint_finding` + the rule's own `LintFix` |
+| `SdlActions` † | Detector re-scan per document; registry is empty today | — |
+
+Each `SdlActions` fix offers three scopes: per site, whole file, whole workspace.
+
+**Diagnostics.** Pushed on change and save, from five sources.
+
+| Source | What it reports |
+|---|---|
+| Coordinate validation | Dispatches all eight `Behavior` arms; unresolved values against the catalog and classpath |
+| Unknown args | Directive args not declared, bundled and user-declared paths separately |
+| Required args | Declared-required args absent |
+| Unknown directive | Skipping the GraphQL spec built-ins |
+| `ValidationReport` replay | Build errors and warnings for URIs the report covers |
+| Compile diagnostics | javac output against generated sources |
+
+**Lifecycle and state.** `didOpen` / `didChange` (incremental) / `didClose` / `didSave`;
+`didChangeConfiguration` plus a `workspace/configuration` pull after `initialize` for the three inlay
+toggles; `didChangeWatchedFiles` is a no-op today. Per-file recalculation bookkeeping and the
+open-buffer set live in `Workspace` / `WorkspaceFile`.
+
 ## Open questions for the reviewer
 
 * **Sequencing.** One item with phases, or a substrate item (per-file capture, handle, read surface,
