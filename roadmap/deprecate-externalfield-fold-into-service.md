@@ -70,6 +70,16 @@ names the contract they were aiming for, not a confusing rejection from the
 other contract's validator. `pickMethod` already rejects same-name overloads
 outright, which keeps the branch deterministic.
 
+**Cross-note, no dependency edge.**
+`roadmap/externalfield-parent-table-assignability.md` tightens the computed
+contract's parameter check from "assignable from `org.jooq.Table`" to
+"accepts the parent's generated table class", which is the check the parameter
+is documented to perform and today does not. Whichever item lands second
+inherits the other. The constraint for this item is that the new
+computed-contract reflection entry must thread the parent's live jOOQ table
+through to the parameter check; the argument exists on the entry point today
+but is unread, so a re-plumbing that drops it would silently reopen the gap.
+
 ## Design
 
 Dispatch on the reflected return type, decided inside `ServiceCatalog` and
