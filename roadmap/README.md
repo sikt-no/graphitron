@@ -18,8 +18,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R639` | Session identity is a Java method resolved at build time, not generated SQL | In Progress | 2026-08-13 <sub>created 2026-08-12</sub> | [plan](session-identity-method-hooks.md) |
 | `R638` | The LSP is a fact-store client | In Progress | 2026-08-13 <sub>created 2026-08-12</sub> | [plan](lsp-reads-the-fact-store.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
-| `R648` | Author-declared batch key for child @service on record-backed parents | Ready | 2026-08-13 | [plan](service-batch-key-author-declared.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
+| `R648` | Author-declared batch key for child @service on record-backed parents | In Progress | 2026-08-13 | [plan](service-batch-key-author-declared.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
@@ -331,7 +331,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### service
 
-- `R648` [**Author-declared batch key for child @service on record-backed parents**](service-batch-key-author-declared.md) — Ready, feature
+- `R648` [**Author-declared batch key for child @service on record-backed parents**](service-batch-key-author-declared.md) — In Progress, feature
 - `R402` [**Retire the ValueShape to synthetic CallSiteExtraction.InputBean round-trip in the bean-helper queue**](retire-bean-helper-queue-valueshape-roundtrip.md) — Backlog, structural
 - `R555` [**Deprecate @externalField: fold the computed-field shape into @service**](deprecate-externalfield-fold-into-service.md) — Ready, cleanup
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
