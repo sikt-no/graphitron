@@ -18,8 +18,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R639` | Session identity is a Java method resolved at build time, not generated SQL | In Progress | 2026-08-13 <sub>created 2026-08-12</sub> | [plan](session-identity-method-hooks.md) |
 | `R638` | The LSP is a fact-store client | In Progress | 2026-08-13 <sub>created 2026-08-12</sub> | [plan](lsp-reads-the-fact-store.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
+| `R650` | Support @asConnection on a root field returning a discriminated table interface | Spec | 2026-08-13 | [plan](root-connection-over-discriminated-interface.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
-| `R650` | Support @asConnection on a root field returning a discriminated table interface | In Progress | 2026-08-13 | [plan](root-connection-over-discriminated-interface.md) |
 | `R648` | Author-declared batch key for child @service on record-backed parents | In Review | 2026-08-13 | [plan](service-batch-key-author-declared.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
@@ -327,7 +327,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R658` [**Name the joined-table base->detail join on @discriminator, not on an inherited field @reference**](discriminator-names-the-base-detail-join.md) — Backlog, feature
 - `R487` [**Batched multi-table polymorphic child fields: support parent-holds-FK correlation**](batched-polymorphic-parent-holds-fk-correlation.md) — Backlog, architecture
 - `R382` [**Lower orderBy onto multitable-interface/union queries**](multitable-interface-query-orderby-lowering.md) — Backlog, bug
-- `R650` [**Support @asConnection on a root field returning a discriminated table interface**](root-connection-over-discriminated-interface.md) — In Progress, feature
+- `R650` [**Support @asConnection on a root field returning a discriminated table interface**](root-connection-over-discriminated-interface.md) — Spec, feature
 - `R651` [**Support @asConnection on a child field returning a single-table discriminated interface**](child-connection-over-discriminated-interface.md) — Backlog, feature, blocked by [root-connection-over-discriminated-interface](root-connection-over-discriminated-interface.md)
 - `R278` [**Polymorphic type classification: sealed union-type variants over ParticipantRef**](polymorphic-type-sealed-variants.md) — Backlog, structural-refactor
 - `R393` [**Disambiguate the base-to-detail (interface-to-implementer) join path via @reference**](joined-table-base-detail-fk-override.md) — Backlog, feature
