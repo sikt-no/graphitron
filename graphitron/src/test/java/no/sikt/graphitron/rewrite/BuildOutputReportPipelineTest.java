@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.lint.LintRule;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
+import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -60,7 +61,7 @@ class BuildOutputReportPipelineTest {
             """);
 
         var ctx = new RewriteContext(
-            List.of(new SchemaInput(schema.toString(), Optional.empty(), Optional.empty())),
+            List.of(new SchemaInput(SchemaSource.file(schema), Optional.empty(), Optional.empty())),
             tmp, "BuildOutputReportPipelineTest",
             tmp,
             DEFAULT_OUTPUT_PACKAGE,
@@ -105,7 +106,7 @@ class BuildOutputReportPipelineTest {
             """);
 
         var ctx = new RewriteContext(
-            List.of(new SchemaInput(schema.toString(), Optional.empty(), Optional.empty())),
+            List.of(new SchemaInput(SchemaSource.file(schema), Optional.empty(), Optional.empty())),
             tmp, "BuildOutputReportPipelineTest", tmp, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
 
         var report = new GraphQLRewriteGenerator(ctx).buildOutput().report();

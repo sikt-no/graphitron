@@ -6,6 +6,7 @@ import no.sikt.graphitron.rewrite.dependency.WatchedDependency;
 import no.sikt.graphitron.rewrite.lint.LintConfig;
 import no.sikt.graphitron.rewrite.lint.LintRule;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
+import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -44,7 +45,7 @@ class LintSuppressionPipelineTest {
     ) throws IOException {
         Files.writeString(schema, sdl);
         var ctx = new RewriteContext(
-            List.of(new SchemaInput(schema.toString(), Optional.empty(), Optional.empty())),
+            List.of(new SchemaInput(SchemaSource.file(schema), Optional.empty(), Optional.empty())),
             schema.getParent(), "LintSuppressionPipelineTest", schema.getParent(), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE
         ).withLintConfig(lintConfig).withDependencyVersions(versions);
         return new GraphQLRewriteGenerator(ctx).buildOutput().report();

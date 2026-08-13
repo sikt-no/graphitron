@@ -31,10 +31,6 @@ import java.util.Set;
  *                       {@code @scalarType(scalar: "graphql.scalars.ExtendedScalars.Date")}
  *                       falsifies that: it generates fine and reads as an unknown class in the
  *                       editor, because the two paths were reading different classpaths.
- * @param schemaFileExtensions file-name suffixes (with leading dot) that count as GraphQL
- *                       schema files. Drives the {@code <schemaInputs>} post-scan filter,
- *                       the {@code graphitron:dev} watcher's trigger filter, and the
- *                       {@code SchemaProblemDiagnostic} orphan scan. Never empty.
  * @param codegenLoader  classloader the reflection path uses to resolve consumer-declared
  *                       service / record / condition / jOOQ-catalog classes. The Mojo builds a
  *                       {@link java.net.URLClassLoader} over the project's compile classpath
@@ -78,16 +74,23 @@ import java.util.Set;
  *                       caller with no home to give, which gets the in-memory store that dies
  *                       with the run. Warm or cold changes what a load costs, never what it
  *                       records.
- * @param schemaRecipe   how this run's schema files were found: the resolved {@code <schemaInputs>}
- *                       bindings, the effective extension filter, and the build file they were
- *                       resolved from. Capture persists it beside the graph so a currency check
- *                       can re-expand the globs without building the module. Populated by the
- *                       build mojos; {@code null} for programmatic callers, whose graph then
- *                       records no recipe and is simply not replayable, which is honest.
+ * @param schemaRecipe   how this run's schema files were found: the resolved recipe entries, the
+ *                       effective extension filter, and the build file they were resolved from.
+ *                       Capture persists it beside the graph so a currency check can re-expand it
+ *                       without building the module. Never {@code null}: a build mojo decodes it
+ *                       from {@code <schemaInputs>}, and every convenience overload mints a literal
+ *                       recipe from the input list it was handed, so every run has a recipe to
+ *                       transcribe. It is also the one home of the effective extension filter, read
+ *                       through {@link #schemaFileExtensions()}, which is why that stopped being a
+ *                       second component with nothing binding the copies
+ * @param supergraph     which supergraph this graph declared itself a subgraph of, from the
+ *                       {@code <supergraph>} parameter. Grouping rather than federation: declaring
+ *                       it does not make a graph federated and is not policed against the SDL's
+ *                       opt-in. {@code null} is standalone, which is the default rather than a state
+ *                       an author spells
  */
 public record RewriteContext(
     List<SchemaInput> schemaInputs,
-    Set<String> schemaFileExtensions,
     Path basedir,
     String graphName,
     Path outputDirectory,
@@ -102,14 +105,14 @@ public record RewriteContext(
     String tenantColumn,
     DependencyVersions dependencyVersions,
     Path storeDirectory,
-    SchemaRecipe schemaRecipe
+    SchemaRecipe schemaRecipe,
+    String supergraph
 ) {
     /** Standard schema file extensions accepted out of the box. */
     public static final Set<String> DEFAULT_SCHEMA_FILE_EXTENSIONS = Set.of(".graphqls", ".graphql");
 
     public RewriteContext {
         Objects.requireNonNull(schemaInputs, "schemaInputs");
-        Objects.requireNonNull(schemaFileExtensions, "schemaFileExtensions");
         Objects.requireNonNull(basedir, "basedir");
         Objects.requireNonNull(graphName, "graphName");
         Objects.requireNonNull(outputDirectory, "outputDirectory");
@@ -118,25 +121,52 @@ public record RewriteContext(
         Objects.requireNonNull(jooqPackage, "jooqPackage");
         Objects.requireNonNull(classpathRoots, "classpathRoots");
         Objects.requireNonNull(codegenLoader, "codegenLoader");
-        if (schemaFileExtensions.isEmpty()) {
+        Objects.requireNonNull(schemaRecipe, "schemaRecipe");
+        if (schemaRecipe.extensions().isEmpty()) {
             throw new IllegalArgumentException("schemaFileExtensions must contain at least one entry");
         }
         if (graphName.isBlank()) {
             throw new IllegalArgumentException("graphName must be non-blank");
         }
         schemaInputs = List.copyOf(schemaInputs);
-        schemaFileExtensions = Set.copyOf(schemaFileExtensions);
         classpathRoots = List.copyOf(classpathRoots);
-        // The last seven components are null-tolerant: only the build mojos populate them (from
+        // The six null-tolerant components: only the build mojos populate them (from
         // <sessionState>, <lint>, <tenantColumn>, the Maven project's source roots, the resolved
-        // dependency graphs, the resolved store home, and the <schemaInputs> configuration);
-        // every other caller passes null and gets the single-tenant, no-suppression, no-hook,
-        // UNKNOWN-positions, no-version-facts, store-dies-with-the-run, no-recipe defaults.
+        // dependency graphs, the resolved store home, and <supergraph>); every other caller passes
+        // null and gets the single-tenant, no-suppression, no-hook, UNKNOWN-positions,
+        // no-version-facts, store-dies-with-the-run, standalone defaults.
         compileSourceRoots = compileSourceRoots == null ? List.of() : List.copyOf(compileSourceRoots);
         lintConfig = lintConfig == null ? LintConfig.empty() : lintConfig;
         sessionStateConfig = sessionStateConfig == null ? SessionStateConfig.none() : sessionStateConfig;
         tenantColumn = tenantColumn == null || tenantColumn.isBlank() ? null : tenantColumn.trim();
         dependencyVersions = dependencyVersions == null ? DependencyVersions.empty() : dependencyVersions;
+        supergraph = supergraph == null || supergraph.isBlank() ? null : supergraph.trim();
+    }
+
+    /**
+     * File-name suffixes (with leading dot) that count as GraphQL schema files. Drives the
+     * {@code <schemaInputs>} post-scan filter, the {@code graphitron:dev} watcher's trigger filter,
+     * and the {@code SchemaProblemDiagnostic} orphan scan. Never empty.
+     *
+     * <p>An accessor over {@link #schemaRecipe()} rather than a component of its own. It was both
+     * once, and the two copies had nothing binding them: the disagreement-at-the-producer this
+     * context's own recipe exists to abolish, one level up. The fact is asserted once and there is
+     * nothing left to hold in agreement.
+     */
+    public Set<String> schemaFileExtensions() {
+        return Set.copyOf(schemaRecipe.extensions());
+    }
+
+    /**
+     * A literal recipe over {@code inputs}: one entry per input, in order, carrying its attribution,
+     * with {@code extensions} as the effective filter. What the convenience overloads mint so their
+     * callers keep their signatures and their graph still transcribes a recipe; a recipe derived
+     * from the list cannot disagree with the list it was derived from.
+     */
+    private static SchemaRecipe literalRecipe(List<SchemaInput> inputs, Set<String> extensions) {
+        Objects.requireNonNull(inputs, "schemaInputs");
+        Objects.requireNonNull(extensions, "schemaFileExtensions");
+        return SchemaRecipe.literalOver(inputs, extensions);
     }
 
     /**
@@ -144,10 +174,10 @@ public record RewriteContext(
      * layer the {@code <lint>} suppression on afterwards.
      */
     public RewriteContext withLintConfig(LintConfig lintConfig) {
-        return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, graphName, outputDirectory,
+        return new RewriteContext(schemaInputs, basedir, graphName, outputDirectory,
             outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
             codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
-            dependencyVersions, storeDirectory, schemaRecipe);
+            dependencyVersions, storeDirectory, schemaRecipe, supergraph);
     }
 
     /**
@@ -155,10 +185,10 @@ public record RewriteContext(
      * can layer the {@code <sessionState>} configuration on afterwards.
      */
     public RewriteContext withSessionStateConfig(SessionStateConfig sessionStateConfig) {
-        return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, graphName, outputDirectory,
+        return new RewriteContext(schemaInputs, basedir, graphName, outputDirectory,
             outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
             codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
-            dependencyVersions, storeDirectory, schemaRecipe);
+            dependencyVersions, storeDirectory, schemaRecipe, supergraph);
     }
 
     /**
@@ -166,10 +196,10 @@ public record RewriteContext(
      * layer the {@code <tenantColumn>} declaration on afterwards.
      */
     public RewriteContext withTenantColumn(String tenantColumn) {
-        return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, graphName, outputDirectory,
+        return new RewriteContext(schemaInputs, basedir, graphName, outputDirectory,
             outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
             codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
-            dependencyVersions, storeDirectory, schemaRecipe);
+            dependencyVersions, storeDirectory, schemaRecipe, supergraph);
     }
 
     /**
@@ -177,15 +207,27 @@ public record RewriteContext(
      * can layer the resolved graphql-java / jOOQ version facts on afterwards.
      */
     public RewriteContext withDependencyVersions(DependencyVersions dependencyVersions) {
-        return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, graphName, outputDirectory,
+        return new RewriteContext(schemaInputs, basedir, graphName, outputDirectory,
             outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
             codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
-            dependencyVersions, storeDirectory, schemaRecipe);
+            dependencyVersions, storeDirectory, schemaRecipe, supergraph);
+    }
+
+    /**
+     * Returns a copy with {@code supergraph} replaced, so a caller can layer the
+     * {@code <supergraph>} declaration on afterwards.
+     */
+    public RewriteContext withSupergraph(String supergraph) {
+        return new RewriteContext(schemaInputs, basedir, graphName, outputDirectory,
+            outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
+            codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
+            dependencyVersions, storeDirectory, schemaRecipe, supergraph);
     }
 
     /**
      * Fifteen-arg overload: defaults {@code storeDirectory} to {@code null}, so the fact store is
-     * in-memory and dies with the run.
+     * in-memory and dies with the run, and mints a literal recipe over {@code schemaInputs} with
+     * {@code schemaFileExtensions} as its filter.
      */
     public RewriteContext(
         List<SchemaInput> schemaInputs,
@@ -204,10 +246,10 @@ public record RewriteContext(
         String tenantColumn,
         DependencyVersions dependencyVersions
     ) {
-        this(schemaInputs, schemaFileExtensions, basedir, graphName, outputDirectory, outputResourcesDirectory,
+        this(schemaInputs, basedir, graphName, outputDirectory, outputResourcesDirectory,
             outputPackage, jooqPackage, classpathRoots, codegenLoader,
             compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn, dependencyVersions,
-            null, null);
+            null, literalRecipe(schemaInputs, schemaFileExtensions), null);
     }
 
     /**
@@ -231,7 +273,7 @@ public record RewriteContext(
     ) {
         this(schemaInputs, schemaFileExtensions, basedir, graphName, outputDirectory, outputResourcesDirectory,
             outputPackage, jooqPackage, classpathRoots, codegenLoader,
-            compileSourceRoots, lintConfig, sessionStateConfig, null, null, null, null);
+            compileSourceRoots, lintConfig, sessionStateConfig, null, null);
     }
 
     /**

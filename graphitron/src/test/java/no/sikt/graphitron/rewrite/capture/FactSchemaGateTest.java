@@ -499,11 +499,14 @@ class FactSchemaGateTest {
         Path ownDir = java.nio.file.Files.createDirectories(tmp.resolve("own"));
         try (var store = GraphitronModelStore.open()) {
             FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity("sibling", siblingDir),
-                CapturedStore.registryOf(siblingDir, "type Query { actors: [String!]! }"));
+                FactCapture.SubjectConfig.none(),
+                CapturedStore.registryOf(siblingDir, "type Query { actors: [String!]! }"),
+                CapturedStore.attributionOf(siblingDir));
             var before = partitionSnapshot(store, "sibling");
 
             FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity("own", ownDir),
-                CapturedStore.registryOf(ownDir, FIXTURE));
+                FactCapture.SubjectConfig.none(), CapturedStore.registryOf(ownDir, FIXTURE),
+                CapturedStore.attributionOf(ownDir));
 
             assertThat(partitionSnapshot(store, "sibling"))
                 .as("the sibling's partition, after another graph's capture")

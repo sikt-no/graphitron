@@ -213,12 +213,15 @@ class PersistentStoreTest {
         Path directory = tmp.resolve("graphitron-model");
         Path original = Files.createDirectories(tmp.resolve("original"));
         FactCapture.run(directory, new FactCapture.GraphIdentity(GRAPH_NAME, original),
-            CapturedStore.registryOf(original, SDL), null, List.of(), new NodeDeclaration(null));
+            FactCapture.SubjectConfig.none(), CapturedStore.registryOf(original, SDL),
+            CapturedStore.attributionOf(original), null, List.of(), new NodeDeclaration(null));
         List<String> before = typeNames(directory);
 
         Path impostor = Files.createDirectories(tmp.resolve("impostor"));
         FactCapture.run(directory, new FactCapture.GraphIdentity(GRAPH_NAME, impostor),
-            CapturedStore.registryOf(impostor, "type Query { other: Int }"), null, List.of(),
+            FactCapture.SubjectConfig.none(),
+            CapturedStore.registryOf(impostor, "type Query { other: Int }"),
+            CapturedStore.attributionOf(impostor), null, List.of(),
             new NodeDeclaration(null));
 
         assertThat(typeNames(directory))
@@ -235,7 +238,8 @@ class PersistentStoreTest {
     @Test
     @DisplayName("no home means an in-memory capture, not a file")
     void noHomeMeansInMemory(@TempDir Path tmp) {
-        FactCapture.run(null, graph(tmp), CapturedStore.registryOf(tmp, SDL), null, List.of(),
+        FactCapture.run(null, graph(tmp), FactCapture.SubjectConfig.none(),
+            CapturedStore.registryOf(tmp, SDL), CapturedStore.attributionOf(tmp), null, List.of(),
             new NodeDeclaration(null));
         assertThat(Files.exists(tmp.resolve("graphitron-model")))
             .as("nothing was written for a caller with no home to give").isFalse();
@@ -246,7 +250,8 @@ class PersistentStoreTest {
     }
 
     private static void captureInto(Path directory, Path scratch) {
-        FactCapture.run(directory, graph(scratch), CapturedStore.registryOf(scratch, SDL), null,
+        FactCapture.run(directory, graph(scratch), FactCapture.SubjectConfig.none(),
+            CapturedStore.registryOf(scratch, SDL), CapturedStore.attributionOf(scratch), null,
             List.of(), new NodeDeclaration(null));
     }
 
@@ -260,7 +265,8 @@ class PersistentStoreTest {
     /** The same capture cold, so the warm expectation is a measurement rather than a magic number. */
     private static int typeCount(Path directory, Path scratch) {
         try (var cold = GraphitronModelStore.open()) {
-            FactCapture.capture(cold.dsl(), graph(scratch), CapturedStore.registryOf(scratch, SDL));
+            FactCapture.capture(cold.dsl(), graph(scratch), FactCapture.SubjectConfig.none(),
+                CapturedStore.registryOf(scratch, SDL), CapturedStore.attributionOf(scratch));
             return cold.dsl().fetchCount(GRAPHQL_TYPE);
         }
     }

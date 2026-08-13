@@ -4,6 +4,7 @@ import no.sikt.graphitron.rewrite.BuildWarning;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
+import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
@@ -48,7 +49,7 @@ class FixtureWarningsGateTest {
 
     private static List<BuildWarning> buildAllWarnings() {
         var ctx = new RewriteContext(
-            List.of(new SchemaInput(FIXTURE_SCHEMA.toString(), Optional.empty(), Optional.empty())),
+            List.of(new SchemaInput(SchemaSource.file(FIXTURE_SCHEMA), Optional.empty(), Optional.empty())),
             FIXTURE_SCHEMA.getParent(), "FixtureWarningsGateTest",
             FIXTURE_SCHEMA.getParent(),
             OUTPUT_PACKAGE,

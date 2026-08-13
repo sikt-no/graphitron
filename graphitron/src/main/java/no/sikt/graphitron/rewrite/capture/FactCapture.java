@@ -10,6 +10,8 @@ import no.sikt.graphitron.rewrite.derive.ClaimDomain;
 import no.sikt.graphitron.rewrite.derive.ClaimDomainRows;
 import no.sikt.graphitron.rewrite.derive.InputOccurrencePaths;
 import no.sikt.graphitron.rewrite.derive.ReachabilityRows;
+import no.sikt.graphitron.rewrite.compile.CompileFacts;
+import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
 import no.sikt.graphitron.rewrite.schema.input.SchemaRecipe;
 import org.jooq.DSLContext;
 import org.jooq.exception.DataAccessException;
@@ -19,11 +21,12 @@ import org.slf4j.LoggerFactory;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
-import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SCHEMA_EXTENSION;
-import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SCHEMA_INPUT;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SUPERGRAPH;
 
 /**
  * Entry point for the generator's capture loads: opens a fact store for the run and fills it from
@@ -55,12 +58,14 @@ public final class FactCapture {
     private FactCapture() {}
 
     /**
-     * The graph a capture run writes under: the partition every SDL row of the run carries, the
-     * base directory the graph's ownership is checked against, and the recipe capture remembers
-     * beside it ({@code null} for a caller with no resolved {@code <schemaInputs>} configuration,
-     * whose graph then records no recipe and is not replayable).
+     * The graph a capture run writes under, as a <em>coordinate</em> and nothing else: the partition
+     * every SDL row of the run carries, and the base directory the graph's ownership is checked
+     * against. Deliberately not also capture's subject, which is what {@link SubjectConfig} is:
+     * conflating the two is what put a nullable recipe on this record, and billed callers that hold
+     * no configuration at all ({@link CompileFacts} writes {@code javac_diagnostic} rows) for a
+     * component they could only ever synthesise.
      */
-    public record GraphIdentity(String name, Path baseDir, SchemaRecipe recipe) {
+    public record GraphIdentity(String name, Path baseDir) {
         public GraphIdentity {
             Objects.requireNonNull(name, "name");
             Objects.requireNonNull(baseDir, "baseDir");
@@ -69,9 +74,41 @@ public final class FactCapture {
             }
             baseDir = baseDir.toAbsolutePath().normalize();
         }
+    }
 
-        public GraphIdentity(String name, Path baseDir) {
-            this(name, baseDir, null);
+    /**
+     * The configuration capture transcribes <em>about</em> its subject graph, one typed value rather
+     * than a loose parameter per family member. Absence is explicit per component and structural:
+     * a component's emptiness means the run was not asked, and capture writes no row rather than a
+     * row carrying a synthesised value.
+     *
+     * <p>One value because the alternative accumulates: the recipe, the supergraph declaration and
+     * every family parameter after them would each arrive as a nullable positional argument on all
+     * five public entry points, which is the untyped default door {@link
+     * no.sikt.graphitron.rewrite.schema.input.SchemaSource} refuses, rebuilt at the seam narrowing
+     * {@link GraphIdentity} cleaned. The attribution map stays outside it, being derived from the
+     * run's inputs rather than declared by its author.
+     *
+     * @param recipe     how the run's schema files were found, transcribed so a currency check can
+     *                   re-expand it without building the module
+     * @param supergraph which supergraph this graph declared itself a subgraph of, from the
+     *                   {@code <supergraph>} parameter. Empty is standalone, which is the default
+     *                   rather than a state an author spells
+     */
+    public record SubjectConfig(Optional<SchemaRecipe> recipe, Optional<String> supergraph) {
+        public SubjectConfig {
+            Objects.requireNonNull(recipe, "recipe");
+            Objects.requireNonNull(supergraph, "supergraph");
+        }
+
+        /** A subject that declared nothing: no recipe to remember and no supergraph to group with. */
+        public static SubjectConfig none() {
+            return new SubjectConfig(Optional.empty(), Optional.empty());
+        }
+
+        /** A subject with a recipe and no supergraph declaration. */
+        public static SubjectConfig of(SchemaRecipe recipe) {
+            return new SubjectConfig(Optional.ofNullable(recipe), Optional.empty());
         }
     }
 
@@ -99,10 +136,11 @@ public final class FactCapture {
      * failure means this graph's warm start is out for good until the underlying bug is fixed, and
      * that is not something the debug level below may leave unread.
      */
-    public static void run(Path storeDirectory, GraphIdentity graph, TypeDefinitionRegistry registry,
+    public static void run(Path storeDirectory, GraphIdentity graph, SubjectConfig config,
+                           TypeDefinitionRegistry registry, Map<String, SchemaInput> attribution,
                            JooqCatalog jooq, List<CompletionData.ExternalReference> extensions,
                            NodeDeclaration nodes) {
-        runInternal(storeDirectory, graph, registry, jooq, extensions, nodes, null);
+        runInternal(storeDirectory, graph, config, registry, attribution, jooq, extensions, nodes, null);
     }
 
     /**
@@ -117,33 +155,38 @@ public final class FactCapture {
      * so a cache demotion changes cost and never verdicts.
      */
     public static AuthoredClaimConflicts.Detection runWithDetections(Path storeDirectory, GraphIdentity graph,
-                                                          TypeDefinitionRegistry registry, JooqCatalog jooq,
+                                                          SubjectConfig config,
+                                                          TypeDefinitionRegistry registry,
+                                                          Map<String, SchemaInput> attribution,
+                                                          JooqCatalog jooq,
                                                           List<CompletionData.ExternalReference> extensions,
                                                           NodeDeclaration nodes, ClaimDomain domain) {
         Objects.requireNonNull(domain, "domain");
-        return runInternal(storeDirectory, graph, registry, jooq, extensions, nodes, domain);
+        return runInternal(storeDirectory, graph, config, registry, attribution, jooq, extensions, nodes, domain);
     }
 
     private static AuthoredClaimConflicts.Detection runInternal(Path storeDirectory, GraphIdentity graph,
-                                                     TypeDefinitionRegistry registry, JooqCatalog jooq,
+                                                     SubjectConfig config,
+                                                     TypeDefinitionRegistry registry,
+                                                     Map<String, SchemaInput> attribution, JooqCatalog jooq,
                                                      List<CompletionData.ExternalReference> extensions,
                                                      NodeDeclaration nodes, ClaimDomain domain) {
         if (storeDirectory != null) {
             try (GraphitronModelStore store = GraphitronModelStore.openAt(storeDirectory)) {
                 if (store.location().isEmpty()) {
                     // openAt already fell back to an in-memory store; use it as-is.
-                    capture(store.dsl(), false, graph, registry, jooq, extensions, nodes);
+                    capture(store.dsl(), false, graph, config, registry, attribution, jooq, extensions, nodes);
                     return detect(store.dsl(), graph, domain);
                 }
                 if (!store.warm() || ownsGraph(store.dsl(), graph)) {
-                    if (captureWithRetry(store, graph, registry, jooq, extensions, nodes)) {
+                    if (captureWithRetry(store, graph, config, registry, attribution, jooq, extensions, nodes)) {
                         return detect(store.dsl(), graph, domain);
                     }
                 }
             }
         }
         try (GraphitronModelStore store = GraphitronModelStore.open()) {
-            capture(store.dsl(), false, graph, registry, jooq, extensions, nodes);
+            capture(store.dsl(), false, graph, config, registry, attribution, jooq, extensions, nodes);
             return detect(store.dsl(), graph, domain);
         }
     }
@@ -169,17 +212,18 @@ public final class FactCapture {
      * attempt lands; {@code false} tells the caller to fall back to an in-memory capture instead.
      */
     private static boolean captureWithRetry(GraphitronModelStore store, GraphIdentity graph,
-                                            TypeDefinitionRegistry registry, JooqCatalog jooq,
+                                            SubjectConfig config, TypeDefinitionRegistry registry,
+                                            Map<String, SchemaInput> attribution, JooqCatalog jooq,
                                             List<CompletionData.ExternalReference> extensions,
                                             NodeDeclaration nodes) {
         try {
-            capture(store.dsl(), store.warm(), graph, registry, jooq, extensions, nodes);
+            capture(store.dsl(), store.warm(), graph, config, registry, attribution, jooq, extensions, nodes);
             return true;
         } catch (DataAccessException first) {
             LOG.debug("shared fact store write failed; retrying once before recapturing in memory", first);
         }
         try {
-            capture(store.dsl(), store.warm(), graph, registry, jooq, extensions, nodes);
+            capture(store.dsl(), store.warm(), graph, config, registry, attribution, jooq, extensions, nodes);
             return true;
         } catch (DataAccessException second) {
             LOG.warn("shared fact store write for graph '{}' failed twice in a row; this looks like a "
@@ -203,10 +247,11 @@ public final class FactCapture {
      *              declared. A predicate built on a null catalog reduces it to {@code @node}
      *              presence, which is what a caller with no catalog in hand should get.
      */
-    public static void capture(DSLContext dsl, GraphIdentity graph, TypeDefinitionRegistry registry,
+    public static void capture(DSLContext dsl, GraphIdentity graph, SubjectConfig config,
+                               TypeDefinitionRegistry registry, Map<String, SchemaInput> attribution,
                                JooqCatalog jooq, List<CompletionData.ExternalReference> extensions,
                                NodeDeclaration nodes) {
-        capture(dsl, false, graph, registry, jooq, extensions, nodes);
+        capture(dsl, false, graph, config, registry, attribution, jooq, extensions, nodes);
     }
 
     /**
@@ -220,19 +265,23 @@ public final class FactCapture {
      *             and keeps the partitions whose source still hashes to what it recorded
      */
     public static void capture(DSLContext dsl, boolean warm, GraphIdentity graph,
-                               TypeDefinitionRegistry registry, JooqCatalog jooq,
+                               SubjectConfig config, TypeDefinitionRegistry registry,
+                               Map<String, SchemaInput> attribution, JooqCatalog jooq,
                                List<CompletionData.ExternalReference> extensions,
                                NodeDeclaration nodes) {
+        Objects.requireNonNull(config, "config");
+        Objects.requireNonNull(attribution, "attribution");
         dsl.transaction(tx -> {
             DSLContext txDsl = tx.dsl();
             var sink = new FactSink(txDsl, graph.name());
             var sources = new ClasspathSources();
-            writeGraph(txDsl, sources, graph);
+            writeGraph(txDsl, sources, graph, config);
             if (warm) {
                 StoreRefresh.prepare(sink, sources, extensions, graph.name());
             }
-            writeRecipe(sink, graph.recipe());
-            SdlFactCapture.capture(sink, registry, nodes, sources);
+            config.recipe().ifPresent(recipe -> StoredRecipe.write(sink, recipe));
+            config.supergraph().ifPresent(supergraph -> writeSupergraph(sink, supergraph));
+            SdlFactCapture.capture(sink, registry, nodes, sources, attribution);
             CatalogFactCapture.capture(sink, jooq, extensions, sources);
             sink.flush();
             // The capture-cadence derivation stratum: materialized derivations re-derive from
@@ -245,8 +294,9 @@ public final class FactCapture {
     }
 
     /** SDL-only capture, for callers with no catalog in hand. */
-    public static void capture(DSLContext dsl, GraphIdentity graph, TypeDefinitionRegistry registry) {
-        capture(dsl, graph, registry, null, List.of(), new NodeDeclaration(null));
+    public static void capture(DSLContext dsl, GraphIdentity graph, SubjectConfig config,
+                               TypeDefinitionRegistry registry, Map<String, SchemaInput> attribution) {
+        capture(dsl, graph, config, registry, attribution, null, List.of(), new NodeDeclaration(null));
     }
 
     /**
@@ -274,11 +324,12 @@ public final class FactCapture {
      * First write of the run on purpose: every SDL root's foreign key lands on this row, and a
      * concurrent same-graph writer blocks on it here instead of colliding later.
      */
-    private static void writeGraph(DSLContext dsl, ClasspathSources sources, GraphIdentity graph) {
+    private static void writeGraph(DSLContext dsl, ClasspathSources sources, GraphIdentity graph,
+                                   SubjectConfig config) {
         String buildFilePath = null;
         String buildFileStamp = null;
-        if (graph.recipe() != null && graph.recipe().buildFile() != null) {
-            Path buildFile = graph.recipe().buildFile();
+        Path buildFile = config.recipe().map(SchemaRecipe::buildFile).orElse(null);
+        if (buildFile != null) {
             buildFilePath = buildFile.toString();
             buildFileStamp = sources.stamp(buildFile);
         }
@@ -299,29 +350,15 @@ public final class FactCapture {
     }
 
     /**
-     * Transcribes the graph's SDL recipe, written fresh by every run from its resolved
-     * configuration; the warm path's graph-scoped clear has already emptied the previous run's
-     * rows. Buffered through the sink like any graph-keyed rows, so they carry the graph stamp.
+     * Registers the graph's declared supergraph membership, written only when a declaration is in
+     * hand: the row's presence is the fact, so a standalone graph and a run that was never asked
+     * both leave none. Removal needs no upsert care, the relation being graph-keyed and therefore
+     * ownership-scoped by {@link StoreRefresh}: a pom that drops the element leaves the warm clear's
+     * work standing and nothing rewrites it.
      */
-    private static void writeRecipe(FactSink sink, SchemaRecipe recipe) {
-        if (recipe == null) {
-            return;
-        }
-        int ordinal = 0;
-        for (SchemaRecipe.Binding binding : recipe.bindings()) {
-            var row = sink.dsl().newRecord(STORE_GRAPH_SCHEMA_INPUT);
-            row.setOrdinal(ordinal++);
-            row.setPattern(binding.pattern());
-            row.setTag(binding.tag().orElse(null));
-            row.setDescriptionNote(binding.descriptionNote().orElse(null));
-            sink.add(row);
-        }
-        int position = 0;
-        for (String extension : recipe.extensions()) {
-            var row = sink.dsl().newRecord(STORE_GRAPH_SCHEMA_EXTENSION);
-            row.setOrdinal(position++);
-            row.setExtension(extension);
-            sink.add(row);
-        }
+    private static void writeSupergraph(FactSink sink, String supergraph) {
+        var row = sink.dsl().newRecord(STORE_GRAPH_SUPERGRAPH);
+        row.setSupergraphName(supergraph);
+        sink.add(row);
     }
 }

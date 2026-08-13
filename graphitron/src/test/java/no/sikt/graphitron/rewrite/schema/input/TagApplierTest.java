@@ -28,7 +28,7 @@ class TagApplierTest {
             "tagged.graphqls", "type Foo { id: ID! }"
         ));
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("tagged.graphqls", Optional.of("enrollment"), Optional.empty())
+            new SchemaInput(SchemaSource.named("tagged.graphqls"), Optional.of("enrollment"), Optional.empty())
         ));
 
         TagApplier.apply(registry, inputs);
@@ -47,7 +47,7 @@ class TagApplierTest {
                 """
         ));
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("tagged.graphqls", Optional.of("auto"), Optional.empty())
+            new SchemaInput(SchemaSource.named("tagged.graphqls"), Optional.of("auto"), Optional.empty())
         ));
 
         TagApplier.apply(registry, inputs);
@@ -64,7 +64,7 @@ class TagApplierTest {
             "plain.graphqls", "type Foo { id: ID! }"
         ));
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("plain.graphqls", Optional.empty(), Optional.of("note"))
+            new SchemaInput(SchemaSource.named("plain.graphqls"), Optional.empty(), Optional.of("note"))
         ));
 
         TagApplier.apply(registry, inputs);
@@ -80,7 +80,7 @@ class TagApplierTest {
             "t.graphqls", "input FooInput { id: ID! }"
         ));
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("t.graphqls", Optional.of("x"), Optional.empty())
+            new SchemaInput(SchemaSource.named("t.graphqls"), Optional.of("x"), Optional.empty())
         ));
 
         TagApplier.apply(registry, inputs);
@@ -96,7 +96,7 @@ class TagApplierTest {
             "t.graphqls", "enum Color { RED GREEN }"
         ));
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("t.graphqls", Optional.of("x"), Optional.empty())
+            new SchemaInput(SchemaSource.named("t.graphqls"), Optional.of("x"), Optional.empty())
         ));
 
         TagApplier.apply(registry, inputs);
@@ -113,7 +113,7 @@ class TagApplierTest {
             "t.graphqls", "type Foo { item(id: ID!): String }"
         ));
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("t.graphqls", Optional.of("x"), Optional.empty())
+            new SchemaInput(SchemaSource.named("t.graphqls"), Optional.of("x"), Optional.empty())
         ));
 
         TagApplier.apply(registry, inputs);
@@ -134,7 +134,7 @@ class TagApplierTest {
                 """
         ));
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("t.graphqls", Optional.of("ab-tag"), Optional.empty())
+            new SchemaInput(SchemaSource.named("t.graphqls"), Optional.of("ab-tag"), Optional.empty())
         ));
 
         TagApplier.apply(registry, inputs);
@@ -149,7 +149,7 @@ class TagApplierTest {
             "t.graphqls", "interface Named { name: String }"
         ));
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("t.graphqls", Optional.of("iface-tag"), Optional.empty())
+            new SchemaInput(SchemaSource.named("t.graphqls"), Optional.of("iface-tag"), Optional.empty())
         ));
 
         TagApplier.apply(registry, inputs);
@@ -170,7 +170,7 @@ class TagApplierTest {
                 """
         ));
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("t.graphqls", Optional.of("x"), Optional.empty())
+            new SchemaInput(SchemaSource.named("t.graphqls"), Optional.of("x"), Optional.empty())
         ));
 
         TagApplier.apply(registry, inputs);
@@ -189,7 +189,7 @@ class TagApplierTest {
             "t.graphqls", "type Foo { id: ID! }"
         ));
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("t.graphqls", Optional.of("x"), Optional.empty())
+            new SchemaInput(SchemaSource.named("t.graphqls"), Optional.of("x"), Optional.empty())
         ));
         TagApplier.apply(registry, inputs);
 
@@ -208,7 +208,7 @@ class TagApplierTest {
         var original = registry.getDirectiveDefinition("tag").orElseThrow();
 
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("t.graphqls", Optional.of("x"), Optional.empty())
+            new SchemaInput(SchemaSource.named("t.graphqls"), Optional.of("x"), Optional.empty())
         ));
         TagApplier.apply(registry, inputs);
 
@@ -222,7 +222,7 @@ class TagApplierTest {
             "t.graphqls", "type Foo { id: ID! }"
         ));
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("t.graphqls", Optional.empty(), Optional.of("note only"))
+            new SchemaInput(SchemaSource.named("t.graphqls"), Optional.empty(), Optional.of("note only"))
         ));
 
         TagApplier.apply(registry, inputs);
@@ -241,8 +241,8 @@ class TagApplierTest {
             "ext.graphqls", "extend type Foo { bar: String }"
         ));
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("base.graphqls", Optional.empty(), Optional.empty()),
-            new SchemaInput("ext.graphqls", Optional.of("enrolment"), Optional.empty())
+            new SchemaInput(SchemaSource.named("base.graphqls"), Optional.empty(), Optional.empty()),
+            new SchemaInput(SchemaSource.named("ext.graphqls"), Optional.of("enrolment"), Optional.empty())
         ));
 
         TagApplier.apply(registry, inputs);
@@ -267,8 +267,8 @@ class TagApplierTest {
             "ext.graphqls", "extend interface Named { description: String }"
         ));
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("base.graphqls", Optional.empty(), Optional.empty()),
-            new SchemaInput("ext.graphqls", Optional.of("iface-ext"), Optional.empty())
+            new SchemaInput(SchemaSource.named("base.graphqls"), Optional.empty(), Optional.empty()),
+            new SchemaInput(SchemaSource.named("ext.graphqls"), Optional.of("iface-ext"), Optional.empty())
         ));
 
         TagApplier.apply(registry, inputs);
@@ -290,8 +290,8 @@ class TagApplierTest {
             "ext.graphqls", "extend input FooInput { name: String }"
         ));
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("base.graphqls", Optional.empty(), Optional.empty()),
-            new SchemaInput("ext.graphqls", Optional.of("input-ext"), Optional.empty())
+            new SchemaInput(SchemaSource.named("base.graphqls"), Optional.empty(), Optional.empty()),
+            new SchemaInput(SchemaSource.named("ext.graphqls"), Optional.of("input-ext"), Optional.empty())
         ));
 
         TagApplier.apply(registry, inputs);
@@ -313,8 +313,8 @@ class TagApplierTest {
             "ext.graphqls", "extend enum Color { GREEN BLUE }"
         ));
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("base.graphqls", Optional.empty(), Optional.empty()),
-            new SchemaInput("ext.graphqls", Optional.of("enum-ext"), Optional.empty())
+            new SchemaInput(SchemaSource.named("base.graphqls"), Optional.empty(), Optional.empty()),
+            new SchemaInput(SchemaSource.named("ext.graphqls"), Optional.of("enum-ext"), Optional.empty())
         ));
 
         TagApplier.apply(registry, inputs);
@@ -347,8 +347,8 @@ class TagApplierTest {
                 """
         ));
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("base.graphqls", Optional.empty(), Optional.empty()),
-            new SchemaInput("ext.graphqls", Optional.of("union-ext"), Optional.empty())
+            new SchemaInput(SchemaSource.named("base.graphqls"), Optional.empty(), Optional.empty()),
+            new SchemaInput(SchemaSource.named("ext.graphqls"), Optional.of("union-ext"), Optional.empty())
         ));
 
         TagApplier.apply(registry, inputs);
@@ -368,7 +368,7 @@ class TagApplierTest {
         ));
         String tricky = "naïve-\"quoted\"-\\backslash";
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("t.graphqls", Optional.of(tricky), Optional.empty())
+            new SchemaInput(SchemaSource.named("t.graphqls"), Optional.of(tricky), Optional.empty())
         ));
 
         TagApplier.apply(registry, inputs);

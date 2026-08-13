@@ -14,16 +14,16 @@ class SchemaInputAttributionTest {
 
     @Test
     void singleEntryWithTagAndNote() {
-        var entry = new SchemaInput("a.graphqls", Optional.of("enrollment"), Optional.of("An enrolment note."));
+        var entry = new SchemaInput(SchemaSource.named("a.graphqls"), Optional.of("enrollment"), Optional.of("An enrolment note."));
         var map = SchemaInputAttribution.build(List.of(entry));
         assertThat(map).containsExactly(entry("a.graphqls", entry));
     }
 
     @Test
     void threeDistinctEntriesPreserveInputOrder() {
-        var a = new SchemaInput("a.graphqls", Optional.of("x"), Optional.empty());
-        var b = new SchemaInput("b.graphqls", Optional.empty(), Optional.of("nb"));
-        var c = new SchemaInput("c.graphqls", Optional.of("y"), Optional.of("nc"));
+        var a = new SchemaInput(SchemaSource.named("a.graphqls"), Optional.of("x"), Optional.empty());
+        var b = new SchemaInput(SchemaSource.named("b.graphqls"), Optional.empty(), Optional.of("nb"));
+        var c = new SchemaInput(SchemaSource.named("c.graphqls"), Optional.of("y"), Optional.of("nc"));
         var map = SchemaInputAttribution.build(List.of(a, b, c));
         assertThat(map.keySet()).containsExactly("a.graphqls", "b.graphqls", "c.graphqls");
         assertThat(map).containsEntry("a.graphqls", a).containsEntry("b.graphqls", b).containsEntry("c.graphqls", c);
@@ -31,8 +31,8 @@ class SchemaInputAttributionTest {
 
     @Test
     void duplicateSourceNameThrowsWithBothEntriesInMessage() {
-        var first = new SchemaInput("dup.graphqls", Optional.of("alpha"), Optional.empty());
-        var second = new SchemaInput("dup.graphqls", Optional.of("beta"), Optional.of("n"));
+        var first = new SchemaInput(SchemaSource.named("dup.graphqls"), Optional.of("alpha"), Optional.empty());
+        var second = new SchemaInput(SchemaSource.named("dup.graphqls"), Optional.of("beta"), Optional.of("n"));
         assertThatExceptionOfType(SchemaInputException.class)
             .isThrownBy(() -> SchemaInputAttribution.build(List.of(first, second)))
             .withMessageContaining("dup.graphqls")
@@ -44,8 +44,8 @@ class SchemaInputAttributionTest {
 
     @Test
     void overlapErrorNamesPriorEntryFirst() {
-        var first = new SchemaInput("d.graphqls", Optional.of("alpha"), Optional.empty());
-        var second = new SchemaInput("d.graphqls", Optional.of("beta"), Optional.empty());
+        var first = new SchemaInput(SchemaSource.named("d.graphqls"), Optional.of("alpha"), Optional.empty());
+        var second = new SchemaInput(SchemaSource.named("d.graphqls"), Optional.of("beta"), Optional.empty());
         assertThatExceptionOfType(SchemaInputException.class)
             .isThrownBy(() -> SchemaInputAttribution.build(List.of(first, second)))
             .withMessageMatching("(?s).*#0.*alpha.*#1.*beta.*");

@@ -55,18 +55,21 @@ COMMENT ON COLUMN store_graph.last_captured IS 'when this graph''s own run last 
 CREATE TABLE store_graph_schema_input (
   graph_name       VARCHAR NOT NULL,
   ordinal          INT     NOT NULL,
-  pattern          VARCHAR NOT NULL,
+  kind             VARCHAR NOT NULL,
+  entry_value      VARCHAR NOT NULL,
   tag              VARCHAR,
   description_note VARCHAR,
   PRIMARY KEY (graph_name, ordinal),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  CHECK (kind IN ('pattern', 'file', 'named'))
 );
-COMMENT ON TABLE store_graph_schema_input IS 'The graph''s SDL recipe, one row per resolved <schemaInputs> binding: configuration the run held in hand, written fresh by every run, never a derivation over captured rows. It records what the read-set never can: how to find the graph''s schema files, including ones that do not exist yet, so a currency check can re-expand the globs over base_dir without building the module.';
+COMMENT ON TABLE store_graph_schema_input IS 'The graph''s SDL recipe, one row per resolved recipe entry: configuration the run held in hand, written fresh by every run, never a derivation over captured rows. It records what the read-set never can: how to find the graph''s schema files, including ones that do not exist yet, so a currency check can re-expand the globs over base_dir without building the module. One discriminated relation rather than one per kind, because the ordinal is the recipe''s spine and splitting the relations would shatter the one ordering key. A reader of another graph''s recipe rows is maintenance machinery and counts as such exactly while it writes no conclusions outside the store_ family; these rows never join the cross-graph consumer read surface, whose enumeration axis is store_graph and store_graph_supergraph and whose payload axis is the SDL-derived families only.';
 COMMENT ON COLUMN store_graph_schema_input.graph_name IS 'the owning graph''s partition, anchored by store_graph';
-COMMENT ON COLUMN store_graph_schema_input.ordinal IS 'binding position in the resolved configuration, document order';
-COMMENT ON COLUMN store_graph_schema_input.pattern IS 'the include pattern as configured, in the recipe''s one glob dialect (SchemaRecipe owns the expansion)';
-COMMENT ON COLUMN store_graph_schema_input.tag IS 'the binding''s tag, when configured; not optional fidelity, since the tag applier runs above the capture cut and a replay without it would mint different rows than the graph''s own build';
-COMMENT ON COLUMN store_graph_schema_input.description_note IS 'the binding''s description note, when configured; kept for the same replay-fidelity reason as tag';
+COMMENT ON COLUMN store_graph_schema_input.ordinal IS 'entry position in the resolved configuration, document order';
+COMMENT ON COLUMN store_graph_schema_input.kind IS 'a closed taxonomy of what entry_value holds: a glob pattern a build resolved, a literal file a programmatic caller handed over, or a literal bare label. The two literal kinds transcribe which door the entry''s source came through, so a replay recovers the arm from the row instead of re-asking the filesystem a question about a stored string';
+COMMENT ON COLUMN store_graph_schema_input.entry_value IS 'the entry as configured: an include pattern in the recipe''s one glob dialect (SchemaRecipe owns the expansion) when kind is pattern, and the source''s canonical rendering when it is file or named';
+COMMENT ON COLUMN store_graph_schema_input.tag IS 'the entry''s tag, when configured; not optional fidelity, since the tag applier runs above the capture cut and a replay without it would mint different rows than the graph''s own build';
+COMMENT ON COLUMN store_graph_schema_input.description_note IS 'the entry''s description note, when configured; kept for the same replay-fidelity reason as tag';
 
 CREATE TABLE store_graph_schema_extension (
   graph_name VARCHAR NOT NULL,
@@ -79,6 +82,16 @@ COMMENT ON TABLE store_graph_schema_extension IS 'The recipe''s effective schema
 COMMENT ON COLUMN store_graph_schema_extension.graph_name IS 'the owning graph''s partition, anchored by store_graph';
 COMMENT ON COLUMN store_graph_schema_extension.ordinal IS 'stable position in the resolved set, for faithful replay';
 COMMENT ON COLUMN store_graph_schema_extension.extension IS 'an accepted schema-file extension including the leading dot, as configured';
+
+CREATE TABLE store_graph_supergraph (
+  graph_name       VARCHAR NOT NULL,
+  supergraph_name  VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+COMMENT ON TABLE store_graph_supergraph IS 'Which supergraph a graph declared itself a subgraph of: the graph''s own declaration of its <supergraph> parameter, minted and cleared by the graph''s own run like every other graph-keyed row. What it asserts is grouping, not federation. Declaring membership does not make a graph federated and is not policed against the SDL''s opt-in, which graphitron_link already records as a predicate over the @link url; the grouping is deliberately usable before any federation SDL lands, since a subgraph under development may declare its home before its first @key is written. Only graphs with a declared supergraph are registered, so the row''s presence is the fact and a standalone graph has no row; a nullable column on the anchor would be the field every construction site may leave null, which this store spells structurally instead. Three absences collapse deliberately, because every reader''s safe answer is the same "not a peer": a graph whose author declared nothing, a programmatic run that was never asked, and a graph whose anchor a diagnostics preamble minted before capture ran. Deliberately not a store_supergraph entity relation: no single run would mint or may clear such a row, and StoreRefresh derives the ownership-scoped clear set from the presence of a graph_name column, so the supergraph exists here as a value graphs declare and never as an entity anything owns. Single-valued by the (graph_name) key; if federation practice''s multi-supergraph publication ever has to be admitted, the widening is the key growing to (graph_name, supergraph_name), which costs a store-stamp roll rather than a data migration. This relation and store_graph are the whole of the cross-graph consumer read surface''s enumeration axis; nothing else configuration-shaped joins it, and what a surface reads about a peer stays SDL-derived.';
+COMMENT ON COLUMN store_graph_supergraph.graph_name IS 'the declaring graph''s partition, anchored by store_graph; also the key, which is where the single-valued claim is enforced structurally';
+COMMENT ON COLUMN store_graph_supergraph.supergraph_name IS 'the declared supergraph''s name, as the <supergraph> parameter spelled it, with an empty element collapsed to absent by the decode rather than stored blank. Paired with graph_name it is the store''s rendering of the addressing federation already uses, which is why <graphName>''s own documentation speaks of the subgraph''s published name. A graph''s peers are the graphs this relation joins to over this column, a self-join between non-null values, so two standalone graphs never group by accident and two supergraphs in one workspace store coexist mutually invisible';
 
 CREATE TABLE store_source (
   source_name VARCHAR NOT NULL,

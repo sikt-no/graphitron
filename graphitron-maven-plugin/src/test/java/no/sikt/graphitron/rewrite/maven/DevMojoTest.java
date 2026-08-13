@@ -407,7 +407,7 @@ class DevMojoTest {
         // Both failure modes occur during schema load, before any jOOQ catalog work,
         // so the jooq package / output directory values are never exercised.
         return new RewriteContext(
-            List.of(SchemaInput.plain(schemaFile.toString())),
+            List.of(SchemaInput.file(schemaFile)),
             basedir, "DevMojoTest",
             basedir.resolve("target/generated"),
             "com.example.generated",

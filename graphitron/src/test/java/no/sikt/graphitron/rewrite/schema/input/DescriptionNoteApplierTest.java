@@ -29,7 +29,7 @@ class DescriptionNoteApplierTest {
                 """
         ));
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("t.graphqls", Optional.empty(), Optional.of("An enrolment note."))
+            new SchemaInput(SchemaSource.named("t.graphqls"), Optional.empty(), Optional.of("An enrolment note."))
         ));
 
         DescriptionNoteApplier.apply(registry, inputs);
@@ -45,7 +45,7 @@ class DescriptionNoteApplierTest {
             "t.graphqls", "type Foo { id: ID! }"
         ));
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("t.graphqls", Optional.empty(), Optional.of("A note."))
+            new SchemaInput(SchemaSource.named("t.graphqls"), Optional.empty(), Optional.of("A note."))
         ));
 
         DescriptionNoteApplier.apply(registry, inputs);
@@ -66,7 +66,7 @@ class DescriptionNoteApplierTest {
                 """
         ));
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("t.graphqls", Optional.of("tag-only"), Optional.empty())
+            new SchemaInput(SchemaSource.named("t.graphqls"), Optional.of("tag-only"), Optional.empty())
         ));
 
         DescriptionNoteApplier.apply(registry, inputs);
@@ -83,7 +83,7 @@ class DescriptionNoteApplierTest {
         ));
         String multiline = "Line one.\nLine two.\nLine three.";
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("t.graphqls", Optional.empty(), Optional.of(multiline))
+            new SchemaInput(SchemaSource.named("t.graphqls"), Optional.empty(), Optional.of(multiline))
         ));
 
         DescriptionNoteApplier.apply(registry, inputs);
@@ -100,7 +100,7 @@ class DescriptionNoteApplierTest {
         ));
         String tricky = "Use `foo()` and \"quoted\" values.";
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("t.graphqls", Optional.empty(), Optional.of(tricky))
+            new SchemaInput(SchemaSource.named("t.graphqls"), Optional.empty(), Optional.of(tricky))
         ));
 
         DescriptionNoteApplier.apply(registry, inputs);
@@ -119,7 +119,7 @@ class DescriptionNoteApplierTest {
                 """
         ));
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("t.graphqls", Optional.empty(), Optional.of("Part of cinema."))
+            new SchemaInput(SchemaSource.named("t.graphqls"), Optional.empty(), Optional.of("Part of cinema."))
         ));
 
         DescriptionNoteApplier.apply(registry, inputs);
@@ -137,7 +137,7 @@ class DescriptionNoteApplierTest {
                 """
         ));
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("t.graphqls", Optional.empty(), Optional.of("Common."))
+            new SchemaInput(SchemaSource.named("t.graphqls"), Optional.empty(), Optional.of("Common."))
         ));
 
         DescriptionNoteApplier.apply(registry, inputs);
@@ -155,7 +155,7 @@ class DescriptionNoteApplierTest {
                 """
         ));
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("t.graphqls", Optional.empty(), Optional.of("Visible light only."))
+            new SchemaInput(SchemaSource.named("t.graphqls"), Optional.empty(), Optional.of("Visible light only."))
         ));
 
         DescriptionNoteApplier.apply(registry, inputs);
@@ -173,7 +173,7 @@ class DescriptionNoteApplierTest {
                 """
         ));
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("t.graphqls", Optional.empty(), Optional.of("Cinema feature."))
+            new SchemaInput(SchemaSource.named("t.graphqls"), Optional.empty(), Optional.of("Cinema feature."))
         ));
 
         DescriptionNoteApplier.apply(registry, inputs);
@@ -193,7 +193,7 @@ class DescriptionNoteApplierTest {
                 """
         ));
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("t.graphqls", Optional.empty(), Optional.of("Widened."))
+            new SchemaInput(SchemaSource.named("t.graphqls"), Optional.empty(), Optional.of("Widened."))
         ));
 
         DescriptionNoteApplier.apply(registry, inputs);
@@ -215,7 +215,7 @@ class DescriptionNoteApplierTest {
                 """
         ));
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("t.graphqls", Optional.empty(), Optional.of("note"))
+            new SchemaInput(SchemaSource.named("t.graphqls"), Optional.empty(), Optional.of("note"))
         ));
 
         DescriptionNoteApplier.apply(registry, inputs);
@@ -246,8 +246,8 @@ class DescriptionNoteApplierTest {
             "ext.graphqls", "extend type Foo { bar: String }"
         ));
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("base.graphqls", Optional.empty(), Optional.empty()),
-            new SchemaInput("ext.graphqls", Optional.empty(), Optional.of("Enrolment extension."))
+            new SchemaInput(SchemaSource.named("base.graphqls"), Optional.empty(), Optional.empty()),
+            new SchemaInput(SchemaSource.named("ext.graphqls"), Optional.empty(), Optional.of("Enrolment extension."))
         ));
 
         DescriptionNoteApplier.apply(registry, inputs);
@@ -269,8 +269,8 @@ class DescriptionNoteApplierTest {
             "ext.graphqls", "extend interface Named { description: String }"
         ));
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("base.graphqls", Optional.empty(), Optional.empty()),
-            new SchemaInput("ext.graphqls", Optional.empty(), Optional.of("Interface extension note."))
+            new SchemaInput(SchemaSource.named("base.graphqls"), Optional.empty(), Optional.empty()),
+            new SchemaInput(SchemaSource.named("ext.graphqls"), Optional.empty(), Optional.of("Interface extension note."))
         ));
 
         DescriptionNoteApplier.apply(registry, inputs);
@@ -291,8 +291,8 @@ class DescriptionNoteApplierTest {
             "ext.graphqls", "extend input FooInput { name: String }"
         ));
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("base.graphqls", Optional.empty(), Optional.empty()),
-            new SchemaInput("ext.graphqls", Optional.empty(), Optional.of("Input extension note."))
+            new SchemaInput(SchemaSource.named("base.graphqls"), Optional.empty(), Optional.empty()),
+            new SchemaInput(SchemaSource.named("ext.graphqls"), Optional.empty(), Optional.of("Input extension note."))
         ));
 
         DescriptionNoteApplier.apply(registry, inputs);
@@ -313,8 +313,8 @@ class DescriptionNoteApplierTest {
             "ext.graphqls", "extend enum Color { GREEN BLUE }"
         ));
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("base.graphqls", Optional.empty(), Optional.empty()),
-            new SchemaInput("ext.graphqls", Optional.empty(), Optional.of("Enum extension note."))
+            new SchemaInput(SchemaSource.named("base.graphqls"), Optional.empty(), Optional.empty()),
+            new SchemaInput(SchemaSource.named("ext.graphqls"), Optional.empty(), Optional.of("Enum extension note."))
         ));
 
         DescriptionNoteApplier.apply(registry, inputs);
@@ -344,8 +344,8 @@ class DescriptionNoteApplierTest {
                 """
         ));
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("base.graphqls", Optional.empty(), Optional.empty()),
-            new SchemaInput("ext.graphqls", Optional.empty(), Optional.of("Union extension note."))
+            new SchemaInput(SchemaSource.named("base.graphqls"), Optional.empty(), Optional.empty()),
+            new SchemaInput(SchemaSource.named("ext.graphqls"), Optional.empty(), Optional.of("Union extension note."))
         ));
 
         DescriptionNoteApplier.apply(registry, inputs);
@@ -371,7 +371,7 @@ class DescriptionNoteApplierTest {
                 """
         ));
         var inputs = SchemaInputAttribution.build(List.of(
-            new SchemaInput("t.graphqls", Optional.empty(), Optional.of("   note   "))
+            new SchemaInput(SchemaSource.named("t.graphqls"), Optional.empty(), Optional.of("   note   "))
         ));
 
         DescriptionNoteApplier.apply(registry, inputs);

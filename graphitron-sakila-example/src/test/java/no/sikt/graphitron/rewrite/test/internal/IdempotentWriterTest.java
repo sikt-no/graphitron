@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.test.internal;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
+import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -37,7 +38,7 @@ class IdempotentWriterTest {
 
     private static RewriteContext contextFor(Path schemaFile, Path outputDir) {
         return new RewriteContext(
-            List.of(new SchemaInput(schemaFile.toString(), Optional.empty(), Optional.empty())),
+            List.of(new SchemaInput(SchemaSource.file(schemaFile), Optional.empty(), Optional.empty())),
             schemaFile.getParent(), "IdempotentWriterTest",
             outputDir,
             DEFAULT_OUTPUT_PACKAGE,

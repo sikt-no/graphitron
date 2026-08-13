@@ -7,6 +7,7 @@ import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
+import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -298,7 +299,7 @@ class CatalogBuilderSnapshotTest {
             scalar DateTime
             """);
 
-        var snapshot = CatalogBuilder.buildSnapshot(RewriteSchemaLoader.load(List.of(schemaFile.toString())));
+        var snapshot = CatalogBuilder.buildSnapshot(RewriteSchemaLoader.load(List.of(SchemaSource.file(schemaFile))));
         var locations = snapshot.typeDefinitionLocations();
 
         // User-authored object type: keyed by name, pointing at its declaring file at the

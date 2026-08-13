@@ -17,6 +17,7 @@ import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.PivotError;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
+import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import org.jooq.DSLContext;
@@ -267,8 +268,9 @@ class DiagnosticFactsTest {
             """;
         Path file = write(tmp, sdl);
         withStore(dsl -> {
-            FactCapture.capture(dsl, graph(),
-                RewriteSchemaLoader.load(List.of(file.toString())));
+            FactCapture.capture(dsl, graph(), FactCapture.SubjectConfig.none(),
+                RewriteSchemaLoader.load(List.of(SchemaSource.file(file))),
+                TestSchemaHelper.attribution(file));
             ClaimDomainRows.write(dsl, GRAPH, ClaimDomain.of(TestSchemaHelper.buildSchema(sdl)));
             var expected = AuthoredClaimConflicts.detect(dsl, GRAPH).violations();
             assertThat(expected).hasSize(1);

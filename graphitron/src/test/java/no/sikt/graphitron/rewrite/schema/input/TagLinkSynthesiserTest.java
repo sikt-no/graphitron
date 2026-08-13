@@ -17,7 +17,7 @@ class TagLinkSynthesiserTest {
 
     private static Map<String, SchemaInput> inputs(String source, boolean withTag) {
         return SchemaInputAttribution.build(List.of(new SchemaInput(
-                source,
+                SchemaSource.named(source),
                 withTag ? Optional.of("myTag") : Optional.empty(),
                 Optional.empty())));
     }
@@ -128,8 +128,8 @@ class TagLinkSynthesiserTest {
     void twoTaggedInputsNoLinkProducesOneSynthesisedExtension() {
         var registry = InMemoryRegistry.of(Map.of("a.graphqls", "type Foo { id: ID! }"));
         var bySource = SchemaInputAttribution.build(List.of(
-                new SchemaInput("a.graphqls", Optional.of("t1"), Optional.empty()),
-                new SchemaInput("b.graphqls", Optional.of("t2"), Optional.empty())));
+                new SchemaInput(SchemaSource.named("a.graphqls"), Optional.of("t1"), Optional.empty()),
+                new SchemaInput(SchemaSource.named("b.graphqls"), Optional.of("t2"), Optional.empty())));
 
         TagLinkSynthesiser.apply(registry, bySource);
 

@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite;
 import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLSchema;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
+import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -58,9 +59,9 @@ class TaggedInputsPipelineTest {
 
         var ctx = new RewriteContext(
             List.of(
-                new SchemaInput(enrolment.toString(), Optional.of("enrolment"), Optional.empty()),
-                new SchemaInput(cinema.toString(), Optional.empty(), Optional.of("Part of cinema feature.")),
-                new SchemaInput(shared.toString(), Optional.of("core"), Optional.of("Shared by every feature."))
+                new SchemaInput(SchemaSource.file(enrolment), Optional.of("enrolment"), Optional.empty()),
+                new SchemaInput(SchemaSource.file(cinema), Optional.empty(), Optional.of("Part of cinema feature.")),
+                new SchemaInput(SchemaSource.file(shared), Optional.of("core"), Optional.of("Shared by every feature."))
             ),
             tmp, "TaggedInputsPipelineTest",
             tmp,

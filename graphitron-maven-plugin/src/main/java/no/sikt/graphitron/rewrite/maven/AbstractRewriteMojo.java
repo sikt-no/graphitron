@@ -8,7 +8,9 @@ import no.sikt.graphitron.rewrite.dependency.DependencyVersions;
 import no.sikt.graphitron.rewrite.dependency.ObservedVersion;
 import no.sikt.graphitron.rewrite.dependency.WatchedDependency;
 import no.sikt.graphitron.rewrite.lint.LintConfig;
+import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
 import no.sikt.graphitron.rewrite.schema.input.SchemaRecipe;
+import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.session.SessionStateConfig;
 import no.sikt.graphitron.rewrite.ValidationFailedException;
 import no.sikt.graphitron.rewrite.maven.watch.WatchErrorFormatter;
@@ -102,6 +104,25 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      */
     @Parameter(defaultValue = "${project.artifactId}")
     String graphName;
+
+    /**
+     * Which supergraph this module's graph is a subgraph of, as a declared fact rather than one
+     * inferred from colocation or from federation SDL. Neither inference can answer it: two
+     * subgraphs of two different supergraphs carry indistinguishable federation SDL, and one
+     * checkout can hold two supergraphs plus standalone graphs while one supergraph can span
+     * checkouts. Transcribed to the fact store's {@code store_graph_supergraph} relation, which is
+     * what scopes "which graphs are this graph's business" for a reader ranging over a shared
+     * workspace store.
+     *
+     * <p>Grouping, not federation: declaring it neither makes the graph federated nor is policed
+     * against the SDL's {@code @link} opt-in, so a subgraph under development may declare its home
+     * before its first {@code @key} is written. Paired with {@link #graphName} it is the addressing
+     * federation already uses, so a parent pom shared by one supergraph's modules can declare the
+     * value once in {@code pluginManagement} and every subgraph module inherits it. Omit for a
+     * standalone graph; standalone is the default rather than a state an author spells.
+     */
+    @Parameter
+    String supergraph;
 
     /**
      * Where the fact store is kept between runs; the store's <em>home</em>, under which the store
@@ -204,14 +225,9 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
         }
 
         var extensions = effectiveSchemaFileExtensions();
-        var expansion = SchemaInputExpander.expand(schemaInputs, basedir, extensions);
-        for (var ep : expansion.emptyPatterns()) {
-            getLog().warn("<schemaInput pattern='" + ep.pattern() + "'> (entry #"
-                + ep.entryIndex() + ") matched no files; skipping");
-        }
+        var recipe = buildSchemaRecipe(extensions);
         return new RewriteContext(
-            expansion.inputs(),
-            extensions,
+            expandRecipe(recipe, basedir),
             basedir,
             effectiveGraphName(),
             outAbs,
@@ -226,8 +242,48 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             tenantColumn,
             resolveDependencyVersions(),
             resolveStoreDirectory(basedir),
-            buildSchemaRecipe(extensions)
+            recipe,
+            supergraph
         );
+    }
+
+    /**
+     * The one seam: the decoded recipe expanded into the {@link SchemaInput} list the context
+     * carries beside it, so the pair cannot disagree at the producer. Two pieces of code used to
+     * read the same {@code <schemaInputs>} beans and re-collapse the same empty strings, agreeing
+     * only because they were written to agree.
+     *
+     * <p>This is also where the core expansion's typed result becomes author-facing prose. The
+     * rendering is the mojo's dialect and stays here: a failure the freshness replay has to decide
+     * on cannot be a message composed for a human at the detection site.
+     */
+    List<SchemaInput> expandRecipe(SchemaRecipe recipe, Path basedir)
+            throws MojoExecutionException {
+        if (recipe.bindings().isEmpty()) {
+            // Nothing configured is not the same as configured patterns matching nothing: the
+            // aggregate-empty failure below is a statement about patterns that were spelled.
+            return List.of();
+        }
+        var expansion = recipe.expand(basedir);
+        return switch (expansion) {
+            case SchemaRecipe.Expansion.Resolved resolved -> {
+                for (var empty : resolved.emptyPatterns()) {
+                    getLog().warn("<schemaInput pattern='" + empty.pattern() + "'> (entry #"
+                        + empty.entryIndex() + ") matched no files; skipping");
+                }
+                yield resolved.matches().stream().map(SchemaRecipe.Expansion.Match::input).toList();
+            }
+            case SchemaRecipe.Expansion.NoMatches noMatches -> {
+                var sb = new StringBuilder("<schemaInputs> matched no files. Empty patterns:");
+                for (var empty : noMatches.emptyPatterns()) {
+                    sb.append("\n  entry #").append(empty.entryIndex()).append(": ").append(empty.pattern());
+                }
+                throw new MojoExecutionException(sb.toString());
+            }
+            case SchemaRecipe.Expansion.ScannerTrouble trouble -> throw new MojoExecutionException(
+                "<schemaInput pattern='" + trouble.pattern() + "'> scanner error (entry #"
+                    + trouble.entryIndex() + "): " + trouble.cause().getMessage(), trouble.cause());
+        };
     }
 
     /**
@@ -245,17 +301,17 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * Capture persists it beside the graph, which is what lets a currency check re-expand the
      * globs over the module's base directory without building the module.
      */
-    private SchemaRecipe buildSchemaRecipe(Set<String> extensions) {
+    SchemaRecipe buildSchemaRecipe(Set<String> extensions) {
         var bindings = new ArrayList<SchemaRecipe.Binding>();
         if (schemaInputs != null) {
             for (SchemaInputBinding binding : schemaInputs) {
                 bindings.add(new SchemaRecipe.Binding(
-                    binding.pattern,
+                    new SchemaRecipe.Entry.Pattern(binding.pattern),
                     Optional.ofNullable(binding.tag).filter(s -> !s.isEmpty()),
                     Optional.ofNullable(binding.descriptionNote).filter(s -> !s.isEmpty())));
             }
         }
-        var buildFile = project.getFile() != null ? project.getFile().toPath() : null;
+        var buildFile = project != null && project.getFile() != null ? project.getFile().toPath() : null;
         return new SchemaRecipe(buildFile, bindings, List.copyOf(extensions));
     }
 
@@ -956,6 +1012,22 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     }
 
     /**
+     * The run's schema files, for the diagnostic that lists what was loaded. An exhaustive switch
+     * over the source arms rather than a string projection: a label names no file, so it has nothing
+     * to contribute to a listing of files and nothing to compare against the orphan scan's walk.
+     */
+    private static Set<Path> loadedSchemaFiles(RewriteContext ctx) {
+        var files = new LinkedHashSet<Path>();
+        for (SchemaInput input : ctx.schemaInputs()) {
+            switch (input.source()) {
+                case SchemaSource.File file -> files.add(file.path());
+                case SchemaSource.Named ignored -> { }
+            }
+        }
+        return files;
+    }
+
+    /**
      * Builds the context and invokes the generator through a single error-handling path so
      * every goal surfaces {@link RuntimeException}s wrapped as {@link MojoExecutionException}.
      * Goals with work after a successful generator call (e.g. registering the generated roots
@@ -975,9 +1047,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             try {
                 call.invoke(new GraphQLRewriteGenerator(ctx));
             } catch (SchemaProblem e) {
-                var loaded = ctx.schemaInputs().stream()
-                    .map(si -> si.sourceName())
-                    .toList();
+                var loaded = loadedSchemaFiles(ctx);
                 // Wrap the SchemaProblem in a null-message intermediary so Maven's
                 // DefaultExceptionHandler does not append SchemaProblem.getMessage()
                 // ("errors=[...]") to our formatted diagnostic. The original

@@ -10,6 +10,7 @@ import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
+import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
@@ -244,10 +245,16 @@ class AuthoredClaimConflictsTest {
         Path siblingDir = tmp.resolve("sibling");
         Path ownDir = tmp.resolve("own");
         try (var store = GraphitronModelStore.open()) {
+            Path siblingFile = write(siblingDir, conflicted);
+            Path ownFile = write(ownDir, clean);
             FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity("sibling", siblingDir),
-                RewriteSchemaLoader.load(List.of(write(siblingDir, conflicted).toString())));
+                FactCapture.SubjectConfig.none(),
+                RewriteSchemaLoader.load(List.of(SchemaSource.file(siblingFile))),
+                TestSchemaHelper.attribution(siblingFile));
             FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity("own", ownDir),
-                RewriteSchemaLoader.load(List.of(write(ownDir, clean).toString())));
+                FactCapture.SubjectConfig.none(),
+                RewriteSchemaLoader.load(List.of(SchemaSource.file(ownFile))),
+                TestSchemaHelper.attribution(ownFile));
             var overWide = ClaimDomain.of(TestSchemaHelper.buildSchema(conflicted));
             ClaimDomainRows.write(store.dsl(), "own", overWide);
             ClaimDomainRows.write(store.dsl(), "sibling", overWide);
@@ -581,8 +588,10 @@ class AuthoredClaimConflictsTest {
     }
 
     private void capture(DSLContext dsl, String sdl) {
-        var registry = RewriteSchemaLoader.load(List.of(write(tmp, sdl).toString()));
-        FactCapture.capture(dsl, new FactCapture.GraphIdentity(GRAPH, tmp), registry);
+        var schemaFile = write(tmp, sdl);
+        var registry = RewriteSchemaLoader.load(List.of(SchemaSource.file(schemaFile)));
+        FactCapture.capture(dsl, new FactCapture.GraphIdentity(GRAPH, tmp),
+            FactCapture.SubjectConfig.none(), registry, TestSchemaHelper.attribution(schemaFile));
     }
 
     private static Path write(Path directory, String sdl) {

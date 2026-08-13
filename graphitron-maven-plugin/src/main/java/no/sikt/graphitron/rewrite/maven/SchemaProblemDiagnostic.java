@@ -2,11 +2,11 @@ package no.sikt.graphitron.rewrite.maven;
 
 import graphql.GraphQLError;
 import graphql.schema.idl.errors.SchemaProblem;
+import no.sikt.graphitron.rewrite.schema.input.SchemaRecipe;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
@@ -29,9 +29,14 @@ final class SchemaProblemDiagnostic {
 
     private SchemaProblemDiagnostic() {}
 
-    static String format(SchemaProblem problem, List<String> loadedSourceNames, Path basedir,
+    /**
+     * @param loadedAbs the schema files the run loaded, absolute and normalized. Taken as paths
+     *                  rather than as source-name strings: the sealed source carrier normalizes at
+     *                  mint, so the absolute-or-resolve branch this method used to run over an
+     *                  untyped string had nothing left to decide
+     */
+    static String format(SchemaProblem problem, Set<Path> loadedAbs, Path basedir,
             Set<String> schemaFileExtensions) {
-        var loadedAbs = normaliseLoaded(loadedSourceNames, basedir);
         var orphans = findOrphanSchemaFiles(loadedAbs, basedir, schemaFileExtensions);
 
         var sb = new StringBuilder();
@@ -86,15 +91,6 @@ final class SchemaProblemDiagnostic {
         return null;
     }
 
-    private static Set<Path> normaliseLoaded(List<String> sourceNames, Path basedir) {
-        var out = new LinkedHashSet<Path>();
-        for (String s : sourceNames) {
-            Path p = Path.of(s);
-            out.add(p.isAbsolute() ? p.normalize() : basedir.resolve(p).toAbsolutePath().normalize());
-        }
-        return out;
-    }
-
     private static List<Path> sortRelative(Set<Path> abs, Path basedir) {
         var sorted = new TreeSet<String>();
         for (Path p : abs) {
@@ -120,7 +116,7 @@ final class SchemaProblemDiagnostic {
         var orphans = new TreeSet<String>();
         try (Stream<Path> walk = Files.walk(scanRoot)) {
             walk.filter(Files::isRegularFile)
-                .filter(p -> matchesExtension(p.getFileName().toString(), schemaFileExtensions))
+                .filter(p -> SchemaRecipe.matchesExtension(p.getFileName().toString(), schemaFileExtensions))
                 .map(p -> p.toAbsolutePath().normalize())
                 .filter(p -> !p.startsWith(targetAbs))
                 .filter(p -> !loadedAbs.contains(p))
@@ -129,12 +125,5 @@ final class SchemaProblemDiagnostic {
             return List.of();
         }
         return orphans.stream().map(Path::of).toList();
-    }
-
-    private static boolean matchesExtension(String filename, Set<String> schemaFileExtensions) {
-        for (String ext : schemaFileExtensions) {
-            if (filename.endsWith(ext)) return true;
-        }
-        return false;
     }
 }

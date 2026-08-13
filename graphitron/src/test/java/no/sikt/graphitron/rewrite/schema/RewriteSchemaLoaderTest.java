@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.schema;
 
 import graphql.language.SourceLocation;
 import no.sikt.graphitron.rewrite.SchemaParseException;
+import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -40,7 +41,7 @@ class RewriteSchemaLoaderTest {
             }
             """);
 
-        var registry = RewriteSchemaLoader.load(List.of(schemaA.toString(), schemaB.toString()));
+        var registry = RewriteSchemaLoader.load(List.of(SchemaSource.file(schemaA), SchemaSource.file(schemaB)));
 
         assertThat(registry.getTypeOrNull("Foo")).isNotNull();
         assertThat(registry.getTypeOrNull("Bar")).isNotNull();
@@ -67,7 +68,7 @@ class RewriteSchemaLoaderTest {
             type Bar { id: ID! }
             """);
 
-        var registry = RewriteSchemaLoader.load(List.of(first.toString(), second.toString()));
+        var registry = RewriteSchemaLoader.load(List.of(SchemaSource.file(first), SchemaSource.file(second)));
 
         var bar = registry.getTypeOrNull("Bar");
         assertThat(bar).isNotNull();
@@ -95,7 +96,7 @@ class RewriteSchemaLoaderTest {
             """);
 
         Throwable thrown = catchThrowable(
-            () -> RewriteSchemaLoader.load(List.of(good.toString(), broken.toString())));
+            () -> RewriteSchemaLoader.load(List.of(SchemaSource.file(good), SchemaSource.file(broken))));
 
         assertThat(thrown).isInstanceOf(SchemaParseException.class);
         SchemaParseException ex = (SchemaParseException) thrown;
@@ -131,7 +132,7 @@ class RewriteSchemaLoaderTest {
         // author-correctable syntax error; it must stay a bare RuntimeException so the
         // dev loop keeps its diagnostic stack trace rather than the clean parse surface.
         String missing = "/nope/absolutely-does-not-exist.graphqls";
-        assertThatThrownBy(() -> RewriteSchemaLoader.load(List.of(missing)))
+        assertThatThrownBy(() -> RewriteSchemaLoader.load(List.of(SchemaSource.file(Path.of(missing)))))
             .isInstanceOf(RuntimeException.class)
             .isNotInstanceOf(SchemaParseException.class)
             .hasMessageContaining(missing);
@@ -148,7 +149,7 @@ class RewriteSchemaLoaderTest {
         // loader regresses we'd see an IOException from the filesystem; the assertion is
         // implicit in "no throw". Cheap and deterministic.
         for (int i = 0; i < 2000; i++) {
-            var registry = RewriteSchemaLoader.load(List.of(schema.toString()));
+            var registry = RewriteSchemaLoader.load(List.of(SchemaSource.file(schema)));
             assertThat(registry.getTypeOrNull("Foo")).isNotNull();
         }
     }

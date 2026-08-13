@@ -9,6 +9,8 @@ import no.sikt.graphitron.rewrite.diagnostics.BuildWarningFacts;
 import no.sikt.graphitron.rewrite.diagnostics.RejectionFacts;
 import no.sikt.graphitron.rewrite.lint.LintConfig;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
+import no.sikt.graphitron.rewrite.schema.input.SchemaRecipe;
+import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -55,12 +57,15 @@ final class StoreBackedBuild implements AutoCloseable {
             Files.writeString(schema, sdl);
             Path storeHome = tmp.resolve("store");
             Path out = tmp.resolve("out");
+            var inputs = List.of(
+                new SchemaInput(SchemaSource.file(schema), Optional.empty(), Optional.empty()));
             var ctx = new RewriteContext(
-                List.of(new SchemaInput(schema.toString(), Optional.empty(), Optional.empty())),
-                RewriteContext.DEFAULT_SCHEMA_FILE_EXTENSIONS,
+                inputs,
                 tmp, graphName, out, out.resolve("resources"), "fake.output", JOOQ_PACKAGE,
                 List.of(), Thread.currentThread().getContextClassLoader(), List.of(),
-                lintConfig, null, null, null, storeHome, null);
+                lintConfig, null, null, null, storeHome,
+                SchemaRecipe.literalOver(inputs, RewriteContext.DEFAULT_SCHEMA_FILE_EXTENSIONS),
+                null);
             var output = new GraphQLRewriteGenerator(ctx).buildOutput();
             var workspace = new Workspace();
             workspace.setBuildOutput(output.artifacts(), output.report());

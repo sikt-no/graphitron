@@ -8,6 +8,7 @@ import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.rewrite.generators.schema.SchemaSdlEmitter;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
+import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -94,7 +95,7 @@ class ConnectionFederationTagPipelineTest {
             }
             """);
         var ctx = new RewriteContext(
-            List.of(new SchemaInput(src.toString(), Optional.of("catalog"), Optional.empty())),
+            List.of(new SchemaInput(SchemaSource.file(src), Optional.of("catalog"), Optional.empty())),
             tmp, "ConnectionFederationTagPipelineTest", tmp, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
         var registry = new GraphQLRewriteGenerator(ctx).loadAttributedRegistry();
         return GraphitronSchemaBuilder.buildBundle(registry, ctx);

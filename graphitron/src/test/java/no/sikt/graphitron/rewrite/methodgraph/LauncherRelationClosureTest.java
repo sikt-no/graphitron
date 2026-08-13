@@ -118,7 +118,7 @@ class LauncherRelationClosureTest {
         Path schemaFile = workDir.resolve("schema.graphqls");
         Files.writeString(schemaFile, SCHEMA);
         RewriteContext ctx = new RewriteContext(
-            List.of(SchemaInput.plain(schemaFile.toString())),
+            List.of(SchemaInput.file(schemaFile)),
             workDir, "LauncherRelationClosureTest",
             workDir.resolve("generated-sources"),
             OUTPUT_PACKAGE,

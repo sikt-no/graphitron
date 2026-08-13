@@ -41,7 +41,7 @@ class SchemaParseExceptionPropagationTest {
             """);
 
         var ctx = new RewriteContext(
-            List.of(SchemaInput.plain(broken.toString())),
+            List.of(SchemaInput.file(broken)),
             tmp, "SchemaParseExceptionPropagationTest",
             tmp,
             DEFAULT_OUTPUT_PACKAGE,

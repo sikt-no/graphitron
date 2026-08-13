@@ -23,9 +23,12 @@ import graphql.language.TypeName;
 import graphql.language.UnionTypeDefinition;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.rewrite.NodeDeclaration;
+import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
+import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
+import no.sikt.graphitron.rewrite.schema.input.SchemaInputAttribution;
+import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
+import no.sikt.graphitron.rewrite.schema.input.TagLinkSynthesiser;
 
-import java.nio.file.Files;
-import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -115,20 +118,30 @@ public final class SdlFactCapture {
 
     private final ClasspathSources sources;
 
+    /**
+     * The run's inputs keyed on their canonical source name, so the stamp decision below reads the
+     * arm the producer decided instead of asking the filesystem what the producer already knew.
+     * Rebuilt from the run's input list at the capture site rather than ferried down from the load:
+     * {@link SchemaInputAttribution#build} is pure over that list, so the rebuilt map is the same
+     * map by construction.
+     */
+    private final Map<String, SchemaInput> attribution;
+
     private SdlFactCapture(FactSink sink, TypeDefinitionRegistry registry, NodeDeclaration nodes,
-                           ClasspathSources sources) {
+                           ClasspathSources sources, Map<String, SchemaInput> attribution) {
         this.sink = sink;
         this.registry = registry;
         this.decode = new GraphitronFactCapture(sink);
         this.nodes = nodes;
         this.macros = new MacroCapture(sink, registry, nodes, this);
         this.sources = sources;
+        this.attribution = attribution;
     }
 
     /** Runs the walk, buffering into {@code sink}; the caller flushes. */
     static void capture(FactSink sink, TypeDefinitionRegistry registry, NodeDeclaration nodes,
-                        ClasspathSources sources) {
-        new SdlFactCapture(sink, registry, nodes, sources).run();
+                        ClasspathSources sources, Map<String, SchemaInput> attribution) {
+        new SdlFactCapture(sink, registry, nodes, sources, attribution).run();
     }
 
     private void run() {
@@ -145,13 +158,14 @@ public final class SdlFactCapture {
      * lexically inside the site that declares it, so the sites cover the set, and a macro's
      * synthesized site inherits its carrier's file and is already among them.
      *
-     * <p>Stamped, for every source name that resolves to a regular file. The walk is handed source
-     * <em>names</em> by graphql-java rather than text, so stamping costs one file re-read per
-     * schema file at capture time, and that price was weighed against the reader it buys: a
-     * currency check that re-hashes a cold graph's schema files against the working tree without
-     * building its module. The residue stays unstamped exactly as the null-while-loading
-     * discipline allows: the bundled directives.graphqls is a resource name, and a programmatic
-     * caller may hand a bare name that resolves to no file.
+     * <p>Stamped, for every source the run's inputs declare as a file. The walk is handed source
+     * <em>names</em> by graphql-java rather than the {@link SchemaInput} that produced them, so the
+     * arm is recovered through {@link #stampTarget} and switched on exhaustively; stamping costs one
+     * file re-read per schema file at capture time, and that price was weighed against the reader it
+     * buys: a currency check that re-hashes a cold graph's schema files against the working tree
+     * without building its module. The residue stays unstamped exactly as the null-while-loading
+     * discipline allows: a programmatic caller's bare label has nothing to hash, and the two
+     * generator-injected names have no input behind them at all.
      *
      * <p>Runs last because it is a summary of the walk, and no SDL relation declares a foreign key
      * into it: a schema-level row can carry a null source name, and the fact-schema convention puts
@@ -180,18 +194,34 @@ public final class SdlFactCapture {
                 continue;
             }
             ClasspathSources.upsert(sink.dsl(), name, SCHEMA_FILE);
-            regularFile(name).ifPresent(sources::noteRegularFile);
+            stampTarget(name).ifPresent(sources::noteRegularFile);
         }
     }
 
-    /** The path behind a source name, when the name is a path and the path is a regular file. */
-    private static java.util.Optional<Path> regularFile(String name) {
-        try {
-            Path path = Path.of(name);
-            return Files.isRegularFile(path) ? java.util.Optional.of(path) : java.util.Optional.empty();
-        } catch (InvalidPathException e) {
-            return java.util.Optional.empty();
+    /**
+     * The file behind a source name, recovered from the run's inputs rather than probed for. A
+     * label has no file, and neither do the two source names the generator injects itself: the
+     * bundled {@link RewriteSchemaLoader#DIRECTIVES_SOURCE_NAME} and the {@code @link} extension
+     * {@link TagLinkSynthesiser#SYNTHESISED_SOURCE_NAME} stamps when a binding carries a tag. That
+     * pair is the whole miss set, and it is named here rather than absorbed, because a lookup that
+     * tolerated one unknown name would tolerate a genuine gap between the inputs and what the
+     * parser handed back.
+     */
+    private java.util.Optional<Path> stampTarget(String name) {
+        SchemaInput input = attribution.get(name);
+        if (input == null) {
+            if (RewriteSchemaLoader.DIRECTIVES_SOURCE_NAME.equals(name)
+                || TagLinkSynthesiser.SYNTHESISED_SOURCE_NAME.equals(name)) {
+                return java.util.Optional.empty();
+            }
+            throw new IllegalStateException("source '" + name + "' came back from the parser but no "
+                + "schema input declared it, and it is neither of the two names the generator injects "
+                + "itself. Capture cannot decide whether to stamp it.");
         }
+        return switch (input.source()) {
+            case SchemaSource.File file -> java.util.Optional.of(file.path());
+            case SchemaSource.Named ignored -> java.util.Optional.empty();
+        };
     }
 
     private static <T extends TypeDefinition<?>> void addExtensionSources(

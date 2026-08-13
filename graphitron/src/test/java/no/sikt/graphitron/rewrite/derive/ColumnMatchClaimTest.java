@@ -13,6 +13,7 @@ import no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedField;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableBackedType;
 import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
+import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
@@ -90,9 +91,11 @@ class ColumnMatchClaimTest {
             for (ClassifiedCorpus.Example example : ClassifiedCorpus.examples()) {
                 String full = ClassifiedDsl.PRELUDE + "\n" + example.sdl();
                 Path dir = Files.createDirectories(tmp.resolve(example.id()));
-                var registry = RewriteSchemaLoader.load(List.of(write(dir, full).toString()));
+                var schemaFile = write(dir, full);
+                var registry = RewriteSchemaLoader.load(List.of(SchemaSource.file(schemaFile)));
                 FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity(example.id(), dir),
-                    registry, jooq, List.of(), new NodeDeclaration(null));
+                    FactCapture.SubjectConfig.none(), registry,
+                    TestSchemaHelper.attribution(schemaFile), jooq, List.of(), new NodeDeclaration(null));
 
                 var schema = TestSchemaHelper.buildSchema(full);
 
@@ -435,8 +438,10 @@ class ColumnMatchClaimTest {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            var registry = RewriteSchemaLoader.load(List.of(write(tmp, sdl).toString()));
-            FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity(GRAPH, tmp), registry,
+            var schemaFile = write(tmp, sdl);
+            var registry = RewriteSchemaLoader.load(List.of(SchemaSource.file(schemaFile)));
+            FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity(GRAPH, tmp),
+                FactCapture.SubjectConfig.none(), registry, TestSchemaHelper.attribution(schemaFile),
                 jooq, List.of(), new NodeDeclaration(null));
             body.accept(store.dsl());
         }

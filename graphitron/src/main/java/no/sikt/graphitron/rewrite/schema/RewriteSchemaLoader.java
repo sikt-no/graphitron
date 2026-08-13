@@ -8,13 +8,14 @@ import graphql.parser.ParserOptions;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.rewrite.SchemaParseException;
+import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.Paths;
+import java.nio.file.Path;
 import java.util.Collection;
 
 /**
@@ -73,10 +74,17 @@ public final class RewriteSchemaLoader {
         }
     }
 
-    public static TypeDefinitionRegistry load(Collection<String> userSchemaPaths) {
+    /**
+     * Parses the bundled directives plus every source in {@code userSchemaSources}. The parameter
+     * is the file arm rather than a string collection because a label has nothing to open: a
+     * caller holding one has to decide what that means at its own boundary instead of discovering
+     * it as a parse-time surprise here.
+     */
+    public static TypeDefinitionRegistry load(Collection<SchemaSource.File> userSchemaSources) {
         var builder = MultiSourceReader.newMultiSourceReader();
         addDirectivesSource(builder);
-        userSchemaPaths.forEach(path -> builder.reader(terminated(openSource(path)), path));
+        userSchemaSources.forEach(source ->
+            builder.reader(terminated(openSource(source.path())), source.sourceName()));
         try (var multi = builder.trackData(true).build()) {
             var document = new Parser().parseDocument(
                 ParserEnvironment.newParserEnvironment()
@@ -182,15 +190,14 @@ public final class RewriteSchemaLoader {
         };
     }
 
-    private static Reader openSource(String path) {
-        var filePath = Paths.get(path);
+    private static Reader openSource(Path filePath) {
         if (!Files.exists(filePath)) {
-            throw new RuntimeException("Schema file not found: " + path);
+            throw new RuntimeException("Schema file not found: " + filePath);
         }
         try {
             return Files.newBufferedReader(filePath, StandardCharsets.UTF_8);
         } catch (IOException e) {
-            throw new RuntimeException("Schema file unreadable: " + path, e);
+            throw new RuntimeException("Schema file unreadable: " + filePath, e);
         }
     }
 }

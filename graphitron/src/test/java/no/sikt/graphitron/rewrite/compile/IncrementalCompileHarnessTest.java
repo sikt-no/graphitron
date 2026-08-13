@@ -310,7 +310,7 @@ class IncrementalCompileHarnessTest {
         Files.writeString(schemaFile, schemaText);
 
         RewriteContext ctx = new RewriteContext(
-            List.of(SchemaInput.plain(schemaFile.toString())),
+            List.of(SchemaInput.file(schemaFile)),
             workDir, "IncrementalCompileHarnessTest",
             workDir.resolve("generated-sources"),
             OUTPUT_PACKAGE,

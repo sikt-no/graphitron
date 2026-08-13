@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.test.internal;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
+import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -85,7 +86,7 @@ class GeneratorDeterminismTest {
 
     private static RewriteContext contextFor(Path outputDir) {
         return new RewriteContext(
-            List.of(new SchemaInput(FIXTURE_SCHEMA.toString(), Optional.empty(), Optional.empty())),
+            List.of(new SchemaInput(SchemaSource.file(FIXTURE_SCHEMA), Optional.empty(), Optional.empty())),
             FIXTURE_SCHEMA.getParent(), "GeneratorDeterminismTest",
             outputDir,
             OUTPUT_PACKAGE,

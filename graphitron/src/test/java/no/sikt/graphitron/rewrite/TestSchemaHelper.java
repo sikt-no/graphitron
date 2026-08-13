@@ -27,6 +27,20 @@ public final class TestSchemaHelper {
 
     private TestSchemaHelper() {}
 
+    /**
+     * The attribution map for a fixture that handed the loader exactly {@code files}, as capture's
+     * stamp lookup needs it: a source name the map does not resolve is a gap between the run's
+     * inputs and what the parser handed back, and capture refuses to guess at one. Every file is a
+     * {@code file} arm, because a source that reached a real parse necessarily is one.
+     */
+    public static java.util.Map<String, no.sikt.graphitron.rewrite.schema.input.SchemaInput>
+            attribution(java.nio.file.Path... files) {
+        return no.sikt.graphitron.rewrite.schema.input.SchemaInputAttribution.build(
+            java.util.Arrays.stream(files)
+                .map(no.sikt.graphitron.rewrite.schema.input.SchemaInput::file)
+                .toList());
+    }
+
     public static GraphitronSchema buildSchema(String schemaText) {
         return buildSchema(schemaText, TestConfiguration.testContext());
     }

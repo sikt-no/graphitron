@@ -23,7 +23,9 @@ import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
 import no.sikt.graphitron.rewrite.schema.federation.KeyNodeSynthesiser;
 import no.sikt.graphitron.rewrite.schema.input.DescriptionNoteApplier;
 import no.sikt.graphitron.rewrite.schema.input.FederationLinkApplier;
+import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInputAttribution;
+import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.schema.input.TagApplier;
 import no.sikt.graphitron.rewrite.schema.input.TagLinkSynthesiser;
 import no.sikt.graphitron.rewrite.generators.schema.ConstraintViolationsClassGenerator;
@@ -69,6 +71,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Stream;
@@ -294,7 +297,7 @@ public class GraphQLRewriteGenerator {
      */
     AttributedRegistry loadAttributedRegistry() {
         var bySource = SchemaInputAttribution.build(ctx.schemaInputs());
-        var registry = RewriteSchemaLoader.load(bySource.keySet());
+        var registry = RewriteSchemaLoader.load(loadableSources(ctx.schemaInputs()));
         TagLinkSynthesiser.apply(registry, bySource);
         var injectedNames = FederationLinkApplier.apply(registry);
         TagApplier.apply(registry, bySource);
@@ -312,6 +315,25 @@ public class GraphQLRewriteGenerator {
                 new NodeDeclaration(new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader())));
         }
         return new AttributedRegistry(registry, preSynthesis, injectedNames);
+    }
+
+    /**
+     * The run's inputs projected onto what the loader can open. The switch is checked for coverage
+     * rather than for absence: no context in the tree carries a label this far, so the named branch
+     * is a guard rather than a live path, and its value is that a new source kind cannot silently
+     * shorten the schema. A label reaching a pipeline run keeps the loader's own
+     * "Schema file not found", which is what it produced before the parameter narrowed.
+     */
+    private static List<SchemaSource.File> loadableSources(List<SchemaInput> inputs) {
+        var sources = new ArrayList<SchemaSource.File>(inputs.size());
+        for (SchemaInput input : inputs) {
+            switch (input.source()) {
+                case SchemaSource.File file -> sources.add(file);
+                case SchemaSource.Named named ->
+                    throw new RuntimeException("Schema file not found: " + named.label());
+            }
+        }
+        return sources;
     }
 
     /**
@@ -343,16 +365,27 @@ public class GraphQLRewriteGenerator {
                                                         List<CompletionData.ExternalReference> extensions) {
         return FactCapture.runWithDetections(ctx.storeDirectory(),
             graphIdentity(),
+            subjectConfig(),
             attributed.preSynthesisRegistry(),
+            SchemaInputAttribution.build(ctx.schemaInputs()),
             jooq,
             extensions,
             new NodeDeclaration(jooq),
             ClaimDomain.of(schema));
     }
 
-    /** The graph this run writes under, assembled from the context's identity fields. */
+    /** The coordinate this run writes under, assembled from the context's identity fields. */
     private FactCapture.GraphIdentity graphIdentity() {
-        return new FactCapture.GraphIdentity(ctx.graphName(), ctx.basedir(), ctx.schemaRecipe());
+        return new FactCapture.GraphIdentity(ctx.graphName(), ctx.basedir());
+    }
+
+    /**
+     * The configuration capture transcribes about this run's graph. Assembled here rather than
+     * carried on the coordinate: a caller with no configuration to declare has none to synthesise.
+     */
+    private FactCapture.SubjectConfig subjectConfig() {
+        return new FactCapture.SubjectConfig(
+            Optional.ofNullable(ctx.schemaRecipe()), Optional.ofNullable(ctx.supergraph()));
     }
 
     private IncrementalGeneration runPipeline(AttributedRegistry attributed, boolean buildCompileGraph) {

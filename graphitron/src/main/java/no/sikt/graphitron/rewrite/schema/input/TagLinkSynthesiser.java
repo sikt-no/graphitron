@@ -43,7 +43,13 @@ import java.util.stream.Stream;
  */
 public final class TagLinkSynthesiser {
 
-    static final String SYNTHESISED_SOURCE_NAME = "<graphitron-synthesised:tag-link>";
+    /**
+     * The source name stamped on the {@code extend schema @link(import: ["@tag"])} this class
+     * synthesises. Public because it is one of the two generator-injected source names no
+     * {@link SchemaInput} produced, so capture's stamp lookup has to name it to tolerate the miss
+     * instead of absorbing it in a filesystem probe.
+     */
+    public static final String SYNTHESISED_SOURCE_NAME = "<graphitron-synthesised:tag-link>";
     private static final String FEDERATION_SPEC_PREFIX = no.sikt.graphitron.rewrite.schema.federation.FederationSpec.SPEC_PREFIX;
     private static final String TAG_IMPORT_NAME = "@tag";
 

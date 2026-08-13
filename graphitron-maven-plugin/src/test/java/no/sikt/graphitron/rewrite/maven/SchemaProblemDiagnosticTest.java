@@ -22,7 +22,7 @@ class SchemaProblemDiagnosticTest {
 
         var msg = SchemaProblemDiagnostic.format(
             problem("A schema MUST have a 'query' operation defined"),
-            List.of(loaded.toString()),
+            java.util.Set.of(loaded.toAbsolutePath().normalize()),
             basedir,
             java.util.Set.of(".graphqls", ".graphql"));
 
@@ -37,7 +37,7 @@ class SchemaProblemDiagnosticTest {
     void format_missingQueryError_emitsQueryHint(@TempDir Path basedir) {
         var msg = SchemaProblemDiagnostic.format(
             problem("A schema MUST have a 'query' operation defined"),
-            List.of(),
+            java.util.Set.<Path>of(),
             basedir,
             java.util.Set.of(".graphqls", ".graphql"));
 
@@ -48,7 +48,7 @@ class SchemaProblemDiagnosticTest {
     void format_undeclaredDirectiveError_emitsFederationHint(@TempDir Path basedir) {
         var msg = SchemaProblemDiagnostic.format(
             problem("'Foo' [@10:1] tried to use an undeclared directive 'key'"),
-            List.of(),
+            java.util.Set.<Path>of(),
             basedir,
             java.util.Set.of(".graphqls", ".graphql"));
 
@@ -61,7 +61,7 @@ class SchemaProblemDiagnosticTest {
     void format_unknownErrorKind_omitsHintSection(@TempDir Path basedir) {
         var msg = SchemaProblemDiagnostic.format(
             problem("Some other graphql-java schema error"),
-            List.of(),
+            java.util.Set.<Path>of(),
             basedir,
             java.util.Set.of(".graphqls", ".graphql"));
 
@@ -78,7 +78,7 @@ class SchemaProblemDiagnosticTest {
 
         var msg = SchemaProblemDiagnostic.format(
             problem("A schema MUST have a 'query' operation defined"),
-            List.of(loaded.toString()),
+            java.util.Set.of(loaded.toAbsolutePath().normalize()),
             basedir,
             java.util.Set.of(".graphqls", ".graphql"));
 
@@ -92,7 +92,7 @@ class SchemaProblemDiagnosticTest {
     void format_emptyLoadedSet_reportsExplicitNone(@TempDir Path basedir) {
         var msg = SchemaProblemDiagnostic.format(
             problem("A schema MUST have a 'query' operation defined"),
-            List.of(),
+            java.util.Set.<Path>of(),
             basedir,
             java.util.Set.of(".graphqls", ".graphql"));
 

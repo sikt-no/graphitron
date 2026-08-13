@@ -7,6 +7,7 @@ import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.lint.LintConfig;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
+import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 import org.eclipse.lsp4j.Diagnostic;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -65,7 +66,7 @@ class LintSuppressionDiagnosticsParityTest {
         Path schema = tmp.resolve("schema.graphqls");
         Files.writeString(schema, SDL);
         var ctx = new RewriteContext(
-            List.of(new SchemaInput(schema.toString(), Optional.empty(), Optional.empty())),
+            List.of(new SchemaInput(SchemaSource.file(schema), Optional.empty(), Optional.empty())),
             tmp, "LintSuppressionDiagnosticsParityTest", tmp, "fake.output", JOOQ_PACKAGE
         ).withLintConfig(lintConfig);
 

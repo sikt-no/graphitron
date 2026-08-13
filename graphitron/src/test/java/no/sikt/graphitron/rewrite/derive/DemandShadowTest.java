@@ -10,6 +10,7 @@ import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedCorpus;
 import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedDsl;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
+import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
@@ -105,9 +106,11 @@ class DemandShadowTest {
                     full += "\ninterface Node { id: ID! }\n";
                 }
                 Path dir = Files.createDirectories(tmp.resolve(example.id()));
-                var registry = RewriteSchemaLoader.load(List.of(write(dir, full).toString()));
+                var schemaFile = write(dir, full);
+                var registry = RewriteSchemaLoader.load(List.of(SchemaSource.file(schemaFile)));
                 FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity(example.id(), dir),
-                    registry, jooq, List.of(), nodes);
+                    FactCapture.SubjectConfig.none(), registry,
+                    TestSchemaHelper.attribution(schemaFile), jooq, List.of(), nodes);
 
                 var bundle = TestSchemaHelper.buildBundle(full);
                 var legacy = ClaimDomain.of(bundle.model());
@@ -460,8 +463,10 @@ class DemandShadowTest {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            var registry = RewriteSchemaLoader.load(List.of(write(tmp, sdl).toString()));
-            FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity(GRAPH, tmp), registry,
+            var schemaFile = write(tmp, sdl);
+            var registry = RewriteSchemaLoader.load(List.of(SchemaSource.file(schemaFile)));
+            FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity(GRAPH, tmp),
+                FactCapture.SubjectConfig.none(), registry, TestSchemaHelper.attribution(schemaFile),
                 jooq, List.of(), TestSchemaHelper.nodeDeclaration());
             body.accept(store.dsl());
         }

@@ -16,20 +16,20 @@ class RewriteContextTest {
     @Test
     void schemaInputsList_isImmutable() {
         var mutable = new ArrayList<SchemaInput>();
-        mutable.add(SchemaInput.plain("/a"));
+        mutable.add(SchemaInput.named("/a"));
         var ctx = ctx(mutable);
 
-        assertThatThrownBy(() -> ctx.schemaInputs().add(SchemaInput.plain("/b")))
+        assertThatThrownBy(() -> ctx.schemaInputs().add(SchemaInput.named("/b")))
             .isInstanceOf(UnsupportedOperationException.class);
     }
 
     @Test
     void mutatingPassedList_doesNotAffectContext() {
         var mutable = new ArrayList<SchemaInput>();
-        mutable.add(SchemaInput.plain("/a"));
+        mutable.add(SchemaInput.named("/a"));
         var ctx = ctx(mutable);
 
-        mutable.add(SchemaInput.plain("/b"));
+        mutable.add(SchemaInput.named("/b"));
 
         assertThat(ctx.schemaInputs()).hasSize(1);
     }

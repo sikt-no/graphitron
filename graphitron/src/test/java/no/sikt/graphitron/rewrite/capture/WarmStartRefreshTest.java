@@ -89,7 +89,8 @@ class WarmStartRefreshTest {
 
         Map<String, Integer> cold;
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), graph(tmp), CapturedStore.registryOf(tmp, SDL), null,
+            FactCapture.capture(store.dsl(), graph(tmp), FactCapture.SubjectConfig.none(),
+                CapturedStore.registryOf(tmp, SDL), CapturedStore.attributionOf(tmp), null,
                 references, new NodeDeclaration(null));
             cold = census(store.dsl());
         }
@@ -175,7 +176,8 @@ class WarmStartRefreshTest {
         Path directory = tmp.resolve("graphitron-model");
         Path siblingDir = Files.createDirectories(tmp.resolve("sibling"));
         FactCapture.run(directory, new FactCapture.GraphIdentity("sibling", siblingDir),
-            CapturedStore.registryOf(siblingDir, SIBLING_SDL), null, List.of(),
+            FactCapture.SubjectConfig.none(), CapturedStore.registryOf(siblingDir, SIBLING_SDL),
+            CapturedStore.attributionOf(siblingDir), null, List.of(),
             new NodeDeclaration(null));
 
         capture(directory, tmp, List.of());
@@ -200,10 +202,11 @@ class WarmStartRefreshTest {
         Path directory = tmp.resolve("graphitron-model");
         Path siblingDir = Files.createDirectories(tmp.resolve("sibling"));
         var recipe = new SchemaRecipe(null,
-            List.of(new SchemaRecipe.Binding("schema/**", Optional.empty(), Optional.empty())),
+            List.of(SchemaRecipe.Binding.pattern("schema/**")),
             List.of(".graphqls"));
-        FactCapture.run(directory, new FactCapture.GraphIdentity("sibling", siblingDir, recipe),
-            CapturedStore.registryOf(siblingDir, SIBLING_SDL), null, List.of(),
+        FactCapture.run(directory, new FactCapture.GraphIdentity("sibling", siblingDir),
+            FactCapture.SubjectConfig.of(recipe), CapturedStore.registryOf(siblingDir, SIBLING_SDL),
+            CapturedStore.attributionOf(siblingDir), null, List.of(),
             new NodeDeclaration(null));
         Record siblingRow = graphRow(directory, "sibling");
 
@@ -213,7 +216,7 @@ class WarmStartRefreshTest {
             .as("the sibling's store_graph row after this graph's run")
             .isEqualTo(siblingRow);
         try (var store = GraphitronModelStore.openAt(directory)) {
-            assertThat(store.dsl().select(STORE_GRAPH_SCHEMA_INPUT.PATTERN)
+            assertThat(store.dsl().select(STORE_GRAPH_SCHEMA_INPUT.ENTRY_VALUE)
                 .from(STORE_GRAPH_SCHEMA_INPUT)
                 .where(STORE_GRAPH_SCHEMA_INPUT.GRAPH_NAME.eq("sibling"))
                 .fetch(0, String.class))
@@ -221,13 +224,15 @@ class WarmStartRefreshTest {
         }
 
         var revised = new SchemaRecipe(null,
-            List.of(new SchemaRecipe.Binding("sdl/**", Optional.of("v2"), Optional.empty())),
+            List.of(new SchemaRecipe.Binding(new SchemaRecipe.Entry.Pattern("sdl/**"),
+                Optional.of("v2"), Optional.empty())),
             List.of(".graphqls"));
-        FactCapture.run(directory, new FactCapture.GraphIdentity("sibling", siblingDir, revised),
-            CapturedStore.registryOf(siblingDir, SIBLING_SDL), null, List.of(),
+        FactCapture.run(directory, new FactCapture.GraphIdentity("sibling", siblingDir),
+            FactCapture.SubjectConfig.of(revised), CapturedStore.registryOf(siblingDir, SIBLING_SDL),
+            CapturedStore.attributionOf(siblingDir), null, List.of(),
             new NodeDeclaration(null));
         try (var store = GraphitronModelStore.openAt(directory)) {
-            assertThat(store.dsl().select(STORE_GRAPH_SCHEMA_INPUT.PATTERN)
+            assertThat(store.dsl().select(STORE_GRAPH_SCHEMA_INPUT.ENTRY_VALUE)
                 .from(STORE_GRAPH_SCHEMA_INPUT)
                 .where(STORE_GRAPH_SCHEMA_INPUT.GRAPH_NAME.eq("sibling"))
                 .fetch(0, String.class))
@@ -258,37 +263,30 @@ class WarmStartRefreshTest {
     void aRecipeReExpansionDiscoversAnAddedFile(@TempDir Path tmp) throws IOException {
         Path directory = tmp.resolve("graphitron-model");
         var recipe = new SchemaRecipe(null,
-            List.of(new SchemaRecipe.Binding("*.graphqls", Optional.empty(), Optional.empty())),
+            List.of(SchemaRecipe.Binding.pattern("*.graphqls")),
             List.of(".graphqls"));
-        FactCapture.run(directory, new FactCapture.GraphIdentity(GRAPH_NAME, tmp, recipe),
-            CapturedStore.registryOf(tmp, SDL), null, List.of(), new NodeDeclaration(null));
+        FactCapture.run(directory, new FactCapture.GraphIdentity(GRAPH_NAME, tmp),
+            FactCapture.SubjectConfig.of(recipe), CapturedStore.registryOf(tmp, SDL),
+            CapturedStore.attributionOf(tmp), null, List.of(), new NodeDeclaration(null));
 
-        // The remembered recipe, rebuilt from the graph's persisted rows alone: what a freshness
-        // reader with no build of the owning module has in hand. Then a pull lands a new file no
-        // recorded source ever named.
+        // The remembered recipe, decoded from the graph's persisted rows alone: what a freshness
+        // reader with no build of the owning module has in hand. Read through the production
+        // decoder, which is what stops this case from drifting from the writer. Then a pull lands a
+        // new file no recorded source ever named.
         SchemaRecipe remembered;
         try (var store = GraphitronModelStore.openAt(directory)) {
-            remembered = new SchemaRecipe(null,
-                store.dsl().select(STORE_GRAPH_SCHEMA_INPUT.PATTERN, STORE_GRAPH_SCHEMA_INPUT.TAG,
-                        STORE_GRAPH_SCHEMA_INPUT.DESCRIPTION_NOTE)
-                    .from(STORE_GRAPH_SCHEMA_INPUT)
-                    .where(STORE_GRAPH_SCHEMA_INPUT.GRAPH_NAME.eq(GRAPH_NAME))
-                    .orderBy(STORE_GRAPH_SCHEMA_INPUT.ORDINAL)
-                    .fetch(r -> new SchemaRecipe.Binding(r.value1(),
-                        Optional.ofNullable(r.value2()), Optional.ofNullable(r.value3()))),
-                store.dsl().select(STORE_GRAPH_SCHEMA_EXTENSION.EXTENSION)
-                    .from(STORE_GRAPH_SCHEMA_EXTENSION)
-                    .where(STORE_GRAPH_SCHEMA_EXTENSION.GRAPH_NAME.eq(GRAPH_NAME))
-                    .orderBy(STORE_GRAPH_SCHEMA_EXTENSION.ORDINAL)
-                    .fetch(0, String.class));
+            remembered = StoredRecipe.decode(store.dsl(), GRAPH_NAME).orElseThrow();
         }
         Files.writeString(tmp.resolve("added.graphqls"), "type Added { id: ID }");
 
-        assertThat(remembered.expand(tmp))
+        var expansion = remembered.expand(tmp);
+        assertThat(expansion).isInstanceOf(SchemaRecipe.Expansion.Resolved.class);
+        assertThat(((SchemaRecipe.Expansion.Resolved) expansion).matches())
             .as("the re-expansion finds the added file a check over recorded sources is blind to")
+            .extracting(m -> m.input().sourceName())
             .containsExactlyInAnyOrder(
-                tmp.resolve("fixture.graphqls").toAbsolutePath().normalize(),
-                tmp.resolve("added.graphqls").toAbsolutePath().normalize());
+                tmp.resolve("fixture.graphqls").toAbsolutePath().normalize().toString(),
+                tmp.resolve("added.graphqls").toAbsolutePath().normalize().toString());
     }
 
     /**
@@ -298,7 +296,8 @@ class WarmStartRefreshTest {
      * it visits that package. A warm refresh must not let the delete of one package's constraints
      * fire while a sibling package's stale referential rows still point at them. Calls
      * {@link FactCapture#capture(DSLContext, boolean, FactCapture.GraphIdentity,
-     * graphql.schema.idl.TypeDefinitionRegistry, JooqCatalog, List, NodeDeclaration) capture}
+     * FactCapture.SubjectConfig, graphql.schema.idl.TypeDefinitionRegistry, Map, JooqCatalog, List,
+     * NodeDeclaration) capture}
      * directly rather than through {@link FactCapture#run}, whose retry-then-fall-back masks a
      * deterministic failure behind a private in-memory store instead of surfacing it here.
      */
@@ -308,11 +307,13 @@ class WarmStartRefreshTest {
         var jooq = new JooqCatalog("no.sikt.graphitron.rewrite.multischemafixture",
             testContext().codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), false, graph(tmp), CapturedStore.registryOf(tmp, SDL),
+            FactCapture.capture(store.dsl(), false, graph(tmp), FactCapture.SubjectConfig.none(),
+                CapturedStore.registryOf(tmp, SDL), CapturedStore.attributionOf(tmp),
                 jooq, List.of(), new NodeDeclaration(null));
 
             assertThatCode(() -> FactCapture.capture(store.dsl(), true, graph(tmp),
-                CapturedStore.registryOf(tmp, SDL), jooq, List.of(), new NodeDeclaration(null)))
+                FactCapture.SubjectConfig.none(), CapturedStore.registryOf(tmp, SDL),
+                CapturedStore.attributionOf(tmp), jooq, List.of(), new NodeDeclaration(null)))
                 .as("a warm refresh over a catalog whose foreign keys cross package partitions")
                 .doesNotThrowAnyException();
 
@@ -333,7 +334,8 @@ class WarmStartRefreshTest {
 
     private static void capture(Path directory, Path scratch,
                                 List<CompletionData.ExternalReference> references) {
-        FactCapture.run(directory, graph(scratch), CapturedStore.registryOf(scratch, SDL), null,
+        FactCapture.run(directory, graph(scratch), FactCapture.SubjectConfig.none(),
+            CapturedStore.registryOf(scratch, SDL), CapturedStore.attributionOf(scratch), null,
             references, new NodeDeclaration(null));
     }
 

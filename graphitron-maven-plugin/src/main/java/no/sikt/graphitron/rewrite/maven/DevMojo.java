@@ -12,6 +12,7 @@ import no.sikt.graphitron.rewrite.ValidationFailedException;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
+import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.compile.CompileFacts;
 import no.sikt.graphitron.rewrite.compile.CompileOutcome;
 import no.sikt.graphitron.rewrite.diagnostics.BuildWarningFacts;
@@ -834,13 +835,22 @@ public class DevMojo extends AbstractRewriteMojo {
         };
     }
 
+    /**
+     * The directories the watcher watches: each loaded schema file's parent. Read off the source's
+     * file arm rather than reconstructed from its name, so nothing here re-derives path-ness from a
+     * string the producer already classified. A label has no directory to watch.
+     */
     private static Set<Path> resolveSchemaRoots(RewriteContext ctx) {
         Set<Path> roots = new LinkedHashSet<>();
         for (var input : ctx.schemaInputs()) {
-            Path file = Paths.get(input.sourceName());
-            Path parent = file.getParent();
-            if (parent != null) {
-                roots.add(parent);
+            switch (input.source()) {
+                case SchemaSource.File file -> {
+                    Path parent = file.path().getParent();
+                    if (parent != null) {
+                        roots.add(parent);
+                    }
+                }
+                case SchemaSource.Named ignored -> { }
             }
         }
         return roots;
