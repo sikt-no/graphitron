@@ -49,6 +49,24 @@ if the comparison does not favour the fact-based arms, or a migrated request is 
 incumbent's linear scan on Sakila, the cutover does not happen, the incumbents stay, and the
 finding is the report.
 
+The abandon path is stated here rather than decided in the moment. The substrate stays: per-file
+parsing, two-stage capture, the graph-scoped handle, the read connection and the capture widenings
+are wanted whichever way the comparison goes, and nothing about them is conditional on it. What goes
+is the fact-based feature arms, deleted rather than left standing beside the incumbents, because two
+live implementations of the same nine completion providers, eleven hover arms, four definition
+providers, four hint collectors and five diagnostic sources is precisely the surviving second model
+this item condemns elsewhere. The incumbents keep serving and the report is the deliverable.
+
+The verdict is per feature, matching the measurement. Completion getting substantially simpler while
+hover does not is the likeliest real outcome rather than a tie to be broken: each feature cuts over
+on its own comparison, and the item's finding is the set of them, not one verdict standing for all.
+
+That makes separability a constraint on the first substrate commit, not a concern at the end. Both
+arms answer the same request or there is no paired measurement; either arm deletes cleanly or
+neither endpoint is reachable; and the dispatch seam is per feature so a mixed result can cut one
+arm over while deleting another. That rules out interleaving the two behind a shared call path. An
+implementer who learns this at measurement time has already lost the option.
+
 **The reuse is of facts, not of code.** The seam between the language server and the store is a
 query and its rows, nothing else. The LSP states its data need, fetches exactly that, and reads the
 result as jOOQ's `Result` and `RecordN` tuples off the generated model; a hand-written type appears
@@ -74,6 +92,16 @@ matrix over `Behavior` alone would leave it ungated, which is the position decli
 shadow-parity gate was meant to avoid. The `†` gaps below stop being silently empty arms and become
 declared facts the test pins, and the inventory becomes a rendered view of the matrix rather than
 prose that rots.
+
+The mould only transfers if trigger is a sealed type, so producing one is substrate work rather than
+an afterthought at the enforcer. `everyGraphitronFieldLeafHasAKnownDispatchStatus` draws its entire
+universe from `getPermittedSubclasses()` over `GraphitronField`; asserted instead against a
+hand-listed trigger vocabulary, the "exhaustive partition" would be an unguarded inventory relocated
+from prose into a test file, which is the smell and not the cure. So the triggers become a sealed
+hierarchy of their own: `Behavior`'s eight arms are one family inside it, beside the inlay-hint
+toggles, the directive-name and declaration-name tokens, the fix-bearing lint finding and the
+detector re-scan. The clause above about each surface's dispatch being a compile-checked exhaustive
+switch already presupposes that subject; naming it makes it a deliverable instead of an assumption.
 
 ## The division of labour
 
@@ -417,13 +445,15 @@ Three questions an earlier draft left to the reviewer, since answered against th
 fact model; the reviewer confirms rather than decides.
 
 * **Sequencing** is additive-then-cutover with the abandon condition in "The experiment"; the
-  workflow's rule for structural pivots on widely-pinned types leaves no taste call here. Whether
-  the phases stay one item or split into a substrate item plus feature items is the Ready
-  reviewer's call; scope, gates and measurement are identical either way. A review pass argued for
-  the split, on the abandon condition rather than on size: the substrate (per-file currency, the
-  graph-scoped handle, the read connection, the three capture widenings) is wanted whether or not
-  the paired comparison favours the fact-based arms, so bundling it into an item whose stated
-  abandon outcome is "the incumbents stay" leaves that outcome ambiguous about what reverts.
+  workflow's rule for structural pivots on widely-pinned types leaves no taste call here. Settled as
+  one item. An earlier review pass argued for splitting substrate from experiment, on the abandon
+  condition rather than on size: the substrate is wanted whichever way the comparison goes, so
+  bundling it left "the incumbents stay" ambiguous about what reverts. The ambiguity was real and
+  the split was the more expensive cure. Stating the abandon path outright, which "The experiment"
+  now does, resolves it for a paragraph rather than a second item carrying a duplicate measurement
+  protocol, and the substrate reaches trunk early either way because every commit ships and the
+  acceptance holds at every intermediate commit. The coupling costs Done-gate bookkeeping, not
+  shipping.
 * **`SourceWalker`'s boundary** is shipped doctrine, cited in "What retires"; nothing to
   re-litigate.
 * **`CatalogFacts`' non-LSP readers** move alongside, in the sibling item
