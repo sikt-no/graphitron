@@ -1,7 +1,7 @@
 ---
 id: R612
 title: "The Maven and pom configuration fact family"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 3
 theme: classification-model
@@ -875,6 +875,44 @@ documents the glob semantics this item preserves), so the docs exemption covers 
 supergraph declaration does change the surface, and `<supergraph>` lands in
 `mojo-configuration.adoc` beside `<graphName>`, whose entry already speaks the subgraph
 vocabulary.
+
+## Implementation notes
+
+Landed as three commits. Names the plan left to the implementer: the sealed source carrier is
+`SchemaSource` (arms `File` / `Named`) beside `SchemaInput`, whose canonical constructor now takes it;
+the recipe entry seal is `SchemaRecipe.Entry` (`Pattern` / `Literal`); the expansion result is
+`SchemaRecipe.Expansion` (`Resolved` / `NoMatches` / `ScannerTrouble`), and the currency projection is
+`Expansion.Resolved.currencyRelevantMatches()`; capture's subject value is
+`FactCapture.SubjectConfig`, with the output coordinates as `FactCapture.OutputCoordinates`; the
+recipe's row encode and decode live together in `StoredRecipe`, and the rest of the family's writer is
+`ConfigurationFactCapture`.
+
+Three judgment calls a reviewer should weigh rather than take on trust.
+
+* **`<lint>` transcribes as two relations, not one discriminated one.** The structured-values bullet
+  says the two halves are "discriminated by which half it came from", and the relation name carries
+  that discriminator instead of a column, because the same bullet's ordinal rule gives the halves
+  different keys: `store_graph_lint_disabled_rule` keys on `(graph_name, rule_id)` and
+  `store_graph_lint_excluded_type` on `(graph_name, ordinal)`. One relation over both would need a
+  nullable ordinal, which the absent-versus-empty bullet forbids anywhere in the family.
+* **The validate-only sentinel is named in core.** Deciding "this run had no output coordinates"
+  requires reading the sentinel, so it is `RewriteContext.NO_OUTPUT_PACKAGE` and
+  `RewriteContext.declaredOutputCoordinates()` derives the absence from the components already there.
+  A derivation over one copy rather than a second copy, so nothing can disagree; the cost is that a
+  goal-shaped name now sits in core, which the containment rule tolerates (it is not Maven
+  vocabulary) but which is worth seeing.
+* **The stamp lookup throws on a source name no input declared.** The lookup's miss set is exactly
+  the two generator-injected names, and "a lookup that tolerates one name would not absorb it" only
+  bites if an unexpected name fails loudly. Every capture-tier fixture therefore passes a real
+  attribution map (`CapturedStore.attributionOf`, `TestSchemaHelper.attribution`), and a fixture that
+  hands the parser something its inputs did not declare now fails at capture rather than silently
+  skipping a stamp.
+
+Two follow-through notes. `AbstractRewriteMojo.buildSchemaRecipe` and `expandRecipe` are
+package-private so the three aggregate-empty rendering pins can drive the one seam `buildContext`
+runs; `buildSchemaRecipe` also gained a null-`project` guard, which the unit tier needs and no
+production path reaches. And `SchemaRecipe.matchesExtension` is the published predicate the plugin's
+orphan scan now calls, with the scanner-relative stripping done at the expansion's own call site.
 
 ## Retired vocabulary
 
