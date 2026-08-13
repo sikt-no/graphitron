@@ -282,9 +282,9 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### diagnostics
 
 - `R411` [**Wire-coercion cast guard for @condition and @externalField (R261 Slice 2)**](reject-wire-coercion-nonservice-sites.md) — Backlog, architecture
+- `R649` [**Coordinate-level rejections outrank parameter-binding rejections on record-backed-parent @service**](service-coordinate-rejection-precedence.md) — Backlog, bug
 - `R625` [**Honour coercing argMapping leaf extractions on routine bindings**](routine-coercing-arg-extractions.md) — Backlog, validation
 - `R601` [**The diagnostic stream unifies**](unified-diagnostic-stream.md) — Backlog, structural
-- `R649` [**Coordinate-level rejections outrank parameter-binding rejections on record-backed-parent @service**](service-coordinate-rejection-precedence.md) — Backlog, bug
 - `R602` [**Decide the INPUT_OBJECT locations of @record and @table: narrow or retired-location convention**](input-object-directive-locations.md) — Backlog, cleanup
 - `R236` [**BuildContext nested-input candidate-hint draws from path-origin table instead of @reference terminal table**](validator-reference-candidate-hint-terminal-table.md) — Backlog, bug
 - `R557` [**Completeness sweep for @splitQuery applications: every marker consumed, inert-by-construction, or rejected**](split-query-marker-sweep.md) — Backlog, validation

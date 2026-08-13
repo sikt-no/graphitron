@@ -3,7 +3,7 @@ id: R649
 title: "Coordinate-level rejections outrank parameter-binding rejections on record-backed-parent @service"
 status: Backlog
 bucket: bug
-priority: 4
+priority: 3
 theme: diagnostics
 depends-on: []
 created: 2026-08-13
@@ -25,5 +25,6 @@ R648 makes the record-backed-parent coordinate legal when the author declares a 
 ## Scope notes
 
 * Scoped to the precedence rule, not to any particular message. The replacement text for the record-backed-parent case belongs to R648, whose design determines what the right guidance is; writing it here would mean writing it twice.
-* Optional interim: while R648 is unstarted, reporting the existing deferred rejection instead of the argument mismatch is strictly better than today even though its current wording prescribes the wrong fix. Worth doing only if R648 is not imminent.
+* The interim (reporting the existing deferred rejection instead of the argument mismatch, better than today even though its wording prescribes the wrong fix) was worth doing only while R648 was unstarted. R648 is now in Spec, so drop it and do the real fix.
+* R648's Spec proposes the shape: split the service boundary into decode (reflect the method into a typed signature fact carrying per-parameter name, declared type, and the recognised `SourcesShape`), classify the coordinate over that fact, then bind parameters. That makes this item's precedence rule a reordering of pure steps rather than surgery inside `ServiceCatalog.reflectServiceMethod`'s parameter loop, and it lets R648 pass its coordinate answer as a value instead of a callback. Read that section before picking this up; the two items must not each install their own ordering at this seat, and this one owns it.
 * Check whether the same ordering masks coordinate-level rejections elsewhere in the resolver family before fixing it narrowly at one call site.
