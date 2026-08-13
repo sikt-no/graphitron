@@ -27,6 +27,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 /**
  * Builds a {@link TypeDefinitionRegistry} from a set of user-supplied schema file paths,
@@ -64,6 +65,13 @@ public final class RewriteSchemaLoader {
      */
     public static final String DIRECTIVES_SOURCE_NAME = DIRECTIVES_RESOURCE;
 
+    /** The lead graphql-java puts on its explained shapes, which our own attribution states. */
+    private static final String REDUNDANT_LEAD = "Invalid syntax encountered. ";
+
+    /** The coordinates graphql-java repeats at the end of a message, which our prefix carries. */
+    private static final Pattern TRAILING_COORDINATES =
+        Pattern.compile("\\s+at line \\d+ column \\d+$");
+
     private RewriteSchemaLoader() {}
 
     /**
@@ -100,7 +108,9 @@ public final class RewriteSchemaLoader {
      *
      * @param sourceName the source the loader was parsing, always known even when the parser
      *                   reported no location
-     * @param brief      the first-sentence reason, stripped of the redundant offending-token tail
+     * @param brief      the parser's reason as {@link #attributedMessage()} renders it, which is
+     *                   its own words minus what that message's prefix repeats (see
+     *                   {@link RewriteSchemaLoader#brief})
      * @param location   the offending site, or {@code null} where the parser reported none
      */
     public record SyntaxFailure(String sourceName, String brief, SourceLocation location,
@@ -108,8 +118,8 @@ public final class RewriteSchemaLoader {
 
         /**
          * The parser's message as it wrote it, which is what the store transcribes. {@link #brief}
-         * is a rendering built for the exception's one-liner and drops the explanatory clause on
-         * the parser's commonest message shape, so it is the wrong thing to persist: a row is a
+         * is shaped by the prefix {@link #attributedMessage()} puts in front of it, so persisting
+         * it would store a string trimmed against a sentence no row carries: a row is a
          * transcription, and a reader wanting less can render less.
          */
         public String verbatimMessage() {
@@ -182,7 +192,7 @@ public final class RewriteSchemaLoader {
                 definitions.addAll(parseSource(source.sourceName(), reader).getDefinitions());
             } catch (InvalidSyntaxException e) {
                 failures.add(new SyntaxFailure(
-                    source.sourceName(), firstSentence(e.getMessage()), e.getLocation(), e));
+                    source.sourceName(), brief(e), e.getLocation(), e));
             }
         }
         var registry = new TypeDefinitionRegistry();
@@ -296,16 +306,31 @@ public final class RewriteSchemaLoader {
     }
 
     /**
-     * Takes the first sentence of a graphql-java parser message. The upstream format is
-     * {@code "Invalid syntax encountered. <subclass-detail>. Offending token '<X>' at line N column M"}
-     * (see graphql-java's {@code InvalidSyntaxException.toMessage}); the subclass-detail and the
-     * trailing offending-token line/column are redundant once the file path and source-relative
-     * coordinates are in the message prefix.
+     * The parser's own words for {@link SyntaxFailure#attributedMessage()}, with the two parts that
+     * message's own prefix already states removed, and nothing else.
+     *
+     * <p>graphql-java writes several message shapes, and only some carry an explanation:
+     * {@code "Invalid syntax encountered. <explanation>. Offending token '<X>' at line N column M"}
+     * for the shapes with a dedicated subclass, {@code "Invalid syntax with offending token '<X>'
+     * at line N column M"} and an {@code ANTLR error} variant where the token is the whole content,
+     * and a parse-cancelled shape with no coordinates at all. That rules out removing the
+     * offending-token clause: it is a sentence of its own in the first shape but the grammatical
+     * object of the second, where cutting it leaves the fragment "Invalid syntax with", and it names
+     * the token the author has to fix. What every shape does duplicate is the coordinates, which the
+     * prefix states, and the contentless lead, which the prefix's own "Schema parse failed" states.
+     *
+     * <p>So the rule is subtractive, and each subtraction is guarded on an exact match: an
+     * unrecognised shape passes through whole. That direction matters. The reader of this string is
+     * an author whose dev loop just refused their buffer, and the failure mode of guessing wrong
+     * should be a line with a redundant clause, never a line with no explanation in it.
      */
-    private static String firstSentence(String message) {
+    private static String brief(InvalidSyntaxException e) {
+        String message = e.getMessage();
         if (message == null) return "";
-        int cut = message.indexOf(". ");
-        return cut > 0 ? message.substring(0, cut + 1) : message;
+        String reason = message.startsWith(REDUNDANT_LEAD)
+            ? message.substring(REDUNDANT_LEAD.length())
+            : message;
+        return e.getLocation() == null ? reason : TRAILING_COORDINATES.matcher(reason).replaceFirst("");
     }
 
     private static Reader openSource(Path filePath) {

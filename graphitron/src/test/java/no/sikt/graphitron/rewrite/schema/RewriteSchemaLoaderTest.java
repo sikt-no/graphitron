@@ -262,9 +262,40 @@ class RewriteSchemaLoaderTest {
             + " at line " + location.getLine() + " column " + location.getColumn()
             + ": " + ex.brief();
         assertThat(ex.getMessage()).isEqualTo(expected);
-        // Upstream's "Offending token 'X' at line N column M" tail is redundant once the
-        // file:line:column prefix is in place; we strip it.
-        assertThat(ex.getMessage()).doesNotContain("Offending token");
+
+        // What the one-liner has to earn: the parser's explanation reaches the reader. This is the
+        // whole point of the clause, and it is what a first-sentence cut silently destroyed. On
+        // graphql-java's explained shapes the explanation sits between the "Invalid syntax
+        // encountered." lead and the offending-token sentence, so taking the first sentence left
+        // four words that say nothing an author can act on, and the dev log's one clean line was a
+        // line with no content in it.
+        assertThat(ex.getMessage())
+            .as("the parser's own explanation, which is the only actionable part of the line")
+            .contains("There are extra tokens in the text that have not been consumed")
+            .contains("strayTokenHere")
+            .doesNotContain("Invalid syntax encountered");
+        // And the two coordinates are stated once, by our prefix, not twice.
+        assertThat(ex.getMessage().split("at line", -1))
+            .as("upstream's trailing coordinates are dropped, since the prefix carries them")
+            .hasSize(2);
+    }
+
+    @Test
+    void aShapeWithNoExplanationKeepsTheTokenThatIsItsWholeContent(@TempDir Path tmp) throws IOException {
+        // graphql-java writes more than one message shape, and they disagree about what the
+        // offending-token clause is for. On the shape above it is a trailing sentence after the
+        // explanation; here there is no explanation and the token is the grammatical object of the
+        // only sentence there is, so removing that clause would leave "Invalid syntax with" and
+        // removing the token would leave a refusal that names nothing. That asymmetry is why the
+        // trim subtracts only the coordinates and the lead, and never the token.
+        Path unterminated = tmp.resolve("unterminated.graphqls");
+        Files.writeString(unterminated, "type Foo {\n  id: ID!\n");
+
+        var parse = RewriteSchemaLoader.parsePerSource(List.of(SchemaSource.file(unterminated)));
+
+        assertThat(parse.failures()).hasSize(1);
+        assertThat(parse.failures().getFirst().brief())
+            .isEqualTo("Invalid syntax with offending token '<EOF>'");
     }
 
     @Test

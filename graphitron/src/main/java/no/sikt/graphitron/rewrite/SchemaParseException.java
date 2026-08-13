@@ -38,7 +38,11 @@ public class SchemaParseException extends RuntimeException {
         return location;
     }
 
-    /** The first-sentence reason, stripped of the redundant offending-token tail. */
+    /**
+     * Why the parser refused, in its own words, minus the coordinates and the contentless lead that
+     * {@link #getMessage()}'s prefix already states. Never a summary: an author reading one console
+     * line has this clause and nothing else to go on.
+     */
     public String brief() {
         return brief;
     }

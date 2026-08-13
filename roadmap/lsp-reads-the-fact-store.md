@@ -582,6 +582,17 @@ implementation, recorded here because the DDL now depends on it:
   this family's subject; the cost, accepted and written into the family's charter, is that
   `graphql_` now holds both a transcription and a judgement of the same artifact.
 
+Picked up along the way, since the increment was already in this code: the dev loop's parse-failure
+line was contentless. `SchemaParseException`'s reason clause took the first sentence of the parser's
+message, and on graphql-java's explained shapes the first sentence is the fixed lead `Invalid syntax
+encountered.`, with the explanation in the clause after it. So an author whose buffer the loop refused
+got four words that say nothing they can act on. The trim is subtractive now, removing the coordinates
+the message's own prefix states and that contentless lead, and keeping everything else including the
+offending token. It has to be subtractive rather than selective, because the shapes disagree about
+what the offending-token clause is: a trailing sentence on the explained shapes, the grammatical
+object of the only sentence on the bare ones. An unrecognised shape passes through whole, so guessing
+wrong costs a redundant clause rather than the explanation.
+
 One consequence for an existing relation: `graphql_duplicate_declaration`'s element-level kinds were
 unreachable only because capture was conditional on the document assembling. They are reachable now,
 and the relation's comment says so instead of claiming emptiness it no longer has.
