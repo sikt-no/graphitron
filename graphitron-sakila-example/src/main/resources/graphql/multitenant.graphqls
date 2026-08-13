@@ -16,6 +16,14 @@ type Film @table(name: "film") {
     # Inline nested projection: under a fanned root this multiset rides inside each tenant's own
     # statement, so the subtree inherits the tenant by construction.
     actors: [FilmActor!] @reference(path: [{key: "film_actor_film_id_fkey"}])
+    # The $session per-key proof: under fan-out this service call runs against each tenant's own
+    # pinned connection, and the bound identity parameter reads that connection's mounted handle,
+    # so two tenants in one operation observe two distinct handles.
+    mountedPrincipal: String @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.SessionIdentityService",
+        method: "sessionPrincipal",
+        argMapping: "identity: $session"
+    })
 }
 
 type Inventory @table(name: "inventory") {

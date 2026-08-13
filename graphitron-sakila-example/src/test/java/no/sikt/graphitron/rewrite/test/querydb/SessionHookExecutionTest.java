@@ -270,6 +270,49 @@ class SessionHookExecutionTest {
         assertThat(raw.isClosed()).as("release returns the connection (close) after unmount").isTrue();
     }
 
+    @Test
+    void sessionBoundServiceParameter_readsTheMountedHandleThroughTheEngine() throws Exception {
+        // The $session round trip through the real owned-connection engine: the emitted service
+        // call site reads the handle off the pinned connection's carrier entry, so the service
+        // observes the identity the mount itself resolved (principal plus its session number).
+        var runtime = no.sikt.graphitron.generated.Graphitron.runtime(
+            singleConnectionDataSource(probeConnection()), SQLDialect.POSTGRES);
+        var engine = runtime.newGraphQL(
+            no.sikt.graphitron.generated.Graphitron.buildSchema(b -> {})).build();
+
+        var result = engine.execute(no.sikt.graphitron.generated.Graphitron
+            .newOwnedExecutionInput("{\"sub\":\"alice\"}", "alice")
+            .query("{ sessionPrincipal }")
+            .build());
+
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        java.util.Map<String, Object> data = result.getData();
+        assertThat((String) data.get("sessionPrincipal"))
+            .as("the service saw the mount's own resolved identity")
+            .matches("alice#\\d+");
+    }
+
+    @Test
+    void claimsContextArgumentAtAServiceSite_unifiesWithTheMountPayloadSlot() throws Exception {
+        // The payload/contextArgument unification end to end: `claims` names both the mount's
+        // payload parameter and a @service contextArguments entry, the factory carries one slot,
+        // and the service receives exactly the value the mount was called with.
+        String claims = "{\"sub\":\"alice\"}";
+        var runtime = no.sikt.graphitron.generated.Graphitron.runtime(
+            singleConnectionDataSource(probeConnection()), SQLDialect.POSTGRES);
+        var engine = runtime.newGraphQL(
+            no.sikt.graphitron.generated.Graphitron.buildSchema(b -> {})).build();
+
+        var result = engine.execute(no.sikt.graphitron.generated.Graphitron
+            .newOwnedExecutionInput(claims, "alice")
+            .query("{ claimsEcho }")
+            .build());
+
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        java.util.Map<String, Object> data = result.getData();
+        assertThat(data.get("claimsEcho")).isEqualTo(claims);
+    }
+
     // ===== helpers =====
 
     private static Connection probeConnection() throws SQLException {

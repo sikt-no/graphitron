@@ -96,4 +96,68 @@ class GraphitronFacadeGeneratorPipelineTest {
             .containsExactly("java.lang.Long", "java.lang.String");
         assertThat(owned.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
     }
+
+    @Test
+    void ownedFactory_mountPayloadSlotSortsAlphabeticallyAmongDeclaredContextArguments() {
+        // A configured mount's payload parameter is an ordinary contextArgument slot: one
+        // population, sorted alphabetically by name, mount-derived and @service-declared alike
+        // ("claims" from the mount before "userId" from the directive). The call into the mount
+        // itself preserves the method's own declaration order instead; that half is pinned by
+        // SessionHookImplGeneratorTest.
+        String sdl = """
+            type Query {
+                rating: String @service(service: {
+                    className: "no.sikt.graphitron.rewrite.TestServiceStub",
+                    method: "getRatingByUser"
+                }, contextArguments: ["userId"])
+            }
+            """;
+        var schema = no.sikt.graphitron.rewrite.session.SessionHooksFixtures.withHooks(
+            TestSchemaHelper.buildSchema(sdl),
+            no.sikt.graphitron.rewrite.session.SessionHooksFixtures.handled(
+                no.sikt.graphitron.javapoet.ClassName.get(String.class),
+                no.sikt.graphitron.rewrite.session.SessionHooksFixtures.stringPayload("claims")));
+        var spec = GraphitronFacadeGenerator.generate(schema, "com.example").get(0);
+
+        MethodSpec owned = spec.methodSpecs().stream()
+            .filter(m -> m.name().equals("newOwnedExecutionInput"))
+            .findFirst()
+            .orElseThrow();
+        assertThat(owned.parameters()).extracting(p -> p.name())
+            .containsExactly("claims", "userId");
+        assertThat(owned.parameters()).extracting(p -> p.type().toString())
+            .containsExactly("java.lang.String", "java.lang.String");
+    }
+
+    @Test
+    void sessionBoundParameter_growsNoFactorySlot() {
+        // The $session binding is per-connection state read at the call site, never
+        // caller-supplied: the owned factory's parameter list carries the mount's payload only,
+        // no slot for the bound `identity` parameter. (That the emitted read goes through the
+        // resolved connection's configuration rather than graphQLContext is behavioral and
+        // execution-pinned, per the no-code-string-assertion rule.)
+        String sdl = """
+            type Query {
+                sessionPrincipal: String @service(service: {
+                    className: "no.sikt.graphitron.rewrite.TestServiceStub",
+                    method: "principalOf",
+                    argMapping: "identity: $session"
+                })
+            }
+            """;
+        var schema = no.sikt.graphitron.rewrite.session.SessionHooksFixtures.withHooks(
+            TestSchemaHelper.buildSchema(sdl),
+            no.sikt.graphitron.rewrite.session.SessionHooksFixtures.handled(
+                no.sikt.graphitron.javapoet.ClassName.get(String.class),
+                no.sikt.graphitron.rewrite.session.SessionHooksFixtures.stringPayload("claims")));
+        var spec = GraphitronFacadeGenerator.generate(schema, "com.example").get(0);
+
+        MethodSpec owned = spec.methodSpecs().stream()
+            .filter(m -> m.name().equals("newOwnedExecutionInput"))
+            .findFirst()
+            .orElseThrow();
+        assertThat(owned.parameters()).extracting(p -> p.name())
+            .as("the handle is bound at the consuming site, not supplied by the caller")
+            .containsExactly("claims");
+    }
 }

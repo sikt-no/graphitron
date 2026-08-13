@@ -21,4 +21,14 @@ public final class SessionIdentityService {
         }
         return identity.getPrincipal() + "#" + identity.getSessionNo();
     }
+
+    /**
+     * The payload/contextArgument unification witness: {@code claims} names the mount method's
+     * own payload parameter, so declaring it as a {@code contextArguments} entry at the
+     * {@code @service} site adds no factory slot; the caller supplies the value once and this
+     * method receives exactly what the mount was called with.
+     */
+    public static String mountedClaimsEcho(DSLContext dsl, String claims) {
+        return claims;
+    }
 }

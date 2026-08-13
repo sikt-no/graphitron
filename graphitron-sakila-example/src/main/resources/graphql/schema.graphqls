@@ -147,6 +147,13 @@ type Query {
         method: "sessionPrincipal",
         argMapping: "identity: $session"
     })
+    # Payload/contextArgument unification: `claims` is also the <sessionState> mount's payload
+    # parameter (same name, same type), so this declaration adds no factory slot; the caller
+    # supplies the value once and the service receives exactly what the mount was called with.
+    claimsEcho: String @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.SessionIdentityService",
+        method: "mountedClaimsEcho"
+    }, contextArguments: ["claims"])
     # Producer for FilmDetailsCarrier: returns the film records as a list, binding the carrier to
     # FilmRecord (JooqTableRecordType) by reflection. Drives the record-sourced BatchedTableField /
     # Lookup-keyed batched-read multi-parent DataLoader-batching tests.

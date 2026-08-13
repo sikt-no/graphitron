@@ -158,4 +158,86 @@ class ContextArgumentTypeAgreementTest {
                 ClassName.get(String.class),
                 ClassName.get(Long.class));
     }
+
+    /**
+     * The {@code <sessionState>} mount's payload parameters are classification roots: with no
+     * matching directive site anywhere, the payload name still resolves to a factory
+     * contextArgument slot, its one site being the mount itself.
+     */
+    @Test
+    void mountPayloadWithNoMatchingSite_becomesAContextArgumentRoot() {
+        var hooks = no.sikt.graphitron.rewrite.session.SessionHooksFixtures.handled(
+            ClassName.get("com.example", "Handle"),
+            no.sikt.graphitron.rewrite.session.SessionHooksFixtures.stringPayload("claims"));
+        var classification = ContextArgumentClassifier.classify(java.util.List.of(), hooks);
+
+        assertThat(classification.conflicts()).isEmpty();
+        var resolved = classification.resolved().get("claims");
+        assertThat(resolved).as("the mount payload is a root, not merely a participant").isNotNull();
+        assertThat(resolved.javaType()).isEqualTo(ClassName.get(String.class));
+        assertThat(resolved.sites()).hasSize(1);
+        assertThat(resolved.sites().get(0))
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.ConflictSite.Site.SessionMount.class);
+    }
+
+    /**
+     * A {@code @service} site declaring a contextArgument with the mount payload's name and
+     * type unifies into the one slot: same fact, supplied once by the caller.
+     */
+    @Test
+    void serviceSiteMatchingTheMountPayload_unifiesIntoOneSlot() {
+        String sdl = """
+            type Query {
+                rating: String @service(
+                    service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getRatingByUser"},
+                    contextArguments: ["userId"])
+            }
+            """;
+        var hooks = no.sikt.graphitron.rewrite.session.SessionHooksFixtures.handled(
+            ClassName.get("com.example", "Handle"),
+            no.sikt.graphitron.rewrite.session.SessionHooksFixtures.stringPayload("userId"));
+        var schema = TestSchemaHelper.buildSchema(sdl);
+        var classification = ContextArgumentClassifier.classify(schema.fields().values(), hooks);
+
+        assertThat(classification.conflicts()).isEmpty();
+        var resolved = classification.resolved().get("userId");
+        assertThat(resolved).isNotNull();
+        assertThat(resolved.javaType()).isEqualTo(ClassName.get(String.class));
+        assertThat(resolved.sites())
+            .as("one slot carrying both provenances: the mount root and the service site")
+            .hasSizeGreaterThanOrEqualTo(2);
+    }
+
+    /**
+     * The same name with a disagreeing type hits the existing {@code TypeConflict} arm, and the
+     * message coordinates name the mount as a site (the {@code <mount>}-prefixed class name),
+     * so the author sees both declarations to reconcile.
+     */
+    @Test
+    void serviceSiteDisagreeingWithTheMountPayloadType_conflictsNamingTheMountSite() {
+        String sdl = """
+            type Query {
+                rating: String @service(
+                    service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getRatingByUser"},
+                    contextArguments: ["userId"])
+            }
+            """;
+        var hooks = no.sikt.graphitron.rewrite.session.SessionHooksFixtures.handled(
+            ClassName.get("com.example", "Handle"),
+            no.sikt.graphitron.rewrite.session.SessionHooksFixtures.payload(
+                "userId", ClassName.get(Long.class)));
+        var schema = TestSchemaHelper.buildSchema(sdl);
+        var classification = ContextArgumentClassifier.classify(schema.fields().values(), hooks);
+
+        assertThat(classification.resolved()).doesNotContainKey("userId");
+        assertThat(classification.conflicts()).hasSize(1);
+        var conflict = (Rejection.AuthorError.TypeConflict) classification.conflicts().get(0);
+        assertThat(conflict.contextArgumentName()).isEqualTo("userId");
+        assertThat(conflict.sites())
+            .extracting(s -> s.declared())
+            .containsExactlyInAnyOrder(ClassName.get(String.class), ClassName.get(Long.class));
+        assertThat(conflict.sites())
+            .extracting(s -> s.site().className())
+            .anySatisfy(name -> assertThat(name).startsWith("<mount> "));
+    }
 }

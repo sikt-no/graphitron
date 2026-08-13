@@ -93,11 +93,15 @@ class TenantFanOutExecutionTest {
             t1.execute("insert into film values (11, 'T1 Beta', 901), (10, 'T1 Alpha', 901)");
             t1.execute("insert into inventory (film_id, store_id) values (10, 1), (10, 2)");
             t1.execute("insert into film_actor values (100, 10)");
+            // Disjoint per-tenant handle-sequence ranges, so a $session read's session number
+            // identifies which tenant's mount produced the handle it observed.
+            t1.execute("alter sequence session_handle_seq restart with 1000");
         }
         try (var t2 = DSL.using(tenantUrl("fanout_t2"), jdbcUser, jdbcPassword)) {
             t2.execute("insert into film values (20, 'T2 Gamma', 902)");
             t2.execute("insert into inventory (film_id, store_id) values (20, 7)");
             t2.execute("insert into film_actor values (200, 20)");
+            t2.execute("alter sequence session_handle_seq restart with 2000");
         }
         // The batched form's untenanted parents, in the default database's sakila language table.
         dsl.execute("delete from language where language_id in (901, 902)");
@@ -200,6 +204,36 @@ class TenantFanOutExecutionTest {
         assertThat(inventoryCountOf(films, "T1 Alpha")).isEqualTo(2);
         assertThat(inventoryCountOf(films, "T1 Beta")).isEqualTo(0);
         assertThat(inventoryCountOf(films, "T2 Gamma")).isEqualTo(1);
+    }
+
+    @Test
+    void sessionBoundServiceUnderFanOut_readsTwoDistinctHandlesInOneOperation() {
+        // The per-key assertion that distinguishes the carrier design from a single
+        // request-scoped slot: one operation, two tenants, and the $session-bound service
+        // parameter observes each tenant connection's own mounted handle. The tenants'
+        // handle sequences occupy disjoint ranges (restarted at 1000 and 2000 in setup), so
+        // the session number identifies which tenant's mount produced the observed handle.
+        var result = graphql.execute(Graphitron
+            .newOwnedExecutionInput(List.of(1, 2), "{\"sub\":\"fanout-user\"}")
+            .query("{ filmsEverywhere { title mountedPrincipal } }")
+            .build());
+
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        Map<String, Object> data = result.getData();
+        var films = (List<Map<String, Object>>) data.get("filmsEverywhere");
+        String t1First = (String) films.get(0).get("mountedPrincipal");
+        String t1Second = (String) films.get(1).get("mountedPrincipal");
+        String t2 = (String) films.get(2).get("mountedPrincipal");
+
+        assertThat(t1First)
+            .as("one pinned connection per tenant: tenant 1's rows share one handle")
+            .isEqualTo(t1Second);
+        assertThat(t1First).startsWith("fanout-user#");
+        assertThat(t2).startsWith("fanout-user#");
+        int t1SessionNo = Integer.parseInt(t1First.substring(t1First.indexOf('#') + 1));
+        int t2SessionNo = Integer.parseInt(t2.substring(t2.indexOf('#') + 1));
+        assertThat(t1SessionNo).as("handle minted by tenant 1's own mount").isBetween(1000, 1999);
+        assertThat(t2SessionNo).as("handle minted by tenant 2's own mount").isBetween(2000, 2999);
     }
 
     @Test

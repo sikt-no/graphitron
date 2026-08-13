@@ -57,6 +57,15 @@ class TestServiceStub {
     public static String getRatingByFnr(Long fnr) { throw new UnsupportedOperationException(); }
 
     /**
+     * Fixture: a {@code $session}-bound parameter ({@code argMapping: "identity: $session"}).
+     * The handle type is {@code String}, matching {@code SessionHooksFixtures}' handled arms,
+     * so the factory-shape tests can pin that the bound parameter grows no factory slot.
+     */
+    public static String principalOf(org.jooq.DSLContext dsl, String identity) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
      * Fixture: {@code @service} with one {@code Long userId} contextArgument; the
      * {@code userId} name shares with {@link #getRatingByUser} but the Java type is {@code Long},
      * not {@code String} — exercises the ContextArgumentClassifier's ServiceField harvest
