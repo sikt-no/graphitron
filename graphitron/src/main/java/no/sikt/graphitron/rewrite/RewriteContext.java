@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.dependency.DependencyVersions;
 import no.sikt.graphitron.rewrite.lint.LintConfig;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
@@ -111,6 +112,15 @@ public record RewriteContext(
     /** Standard schema file extensions accepted out of the box. */
     public static final Set<String> DEFAULT_SCHEMA_FILE_EXTENSIONS = Set.of(".graphqls", ".graphql");
 
+    /**
+     * The inert package a validate-only run carries in {@link #outputPackage} and
+     * {@link #jooqPackage}: those components are non-null by contract and a validate run has no
+     * output coordinates, so the build mojos substitute this. Named here rather than kept private to
+     * the mojo because {@link #declaredOutputCoordinates()} reads it, and reading the admission is
+     * how absence stays derived from the one copy instead of carried a second time.
+     */
+    public static final String NO_OUTPUT_PACKAGE = "validation.unused";
+
     public RewriteContext {
         Objects.requireNonNull(schemaInputs, "schemaInputs");
         Objects.requireNonNull(basedir, "basedir");
@@ -155,6 +165,20 @@ public record RewriteContext(
      */
     public Set<String> schemaFileExtensions() {
         return Set.copyOf(schemaRecipe.extensions());
+    }
+
+    /**
+     * Where this run writes, or empty when it has no output coordinates at all. A derivation over the
+     * components already here rather than a second copy of them, so the two cannot disagree: a run
+     * carrying {@link #NO_OUTPUT_PACKAGE} is a validate-only run saying so, and what a fact store
+     * transcribes from it is the absence rather than the sentinel.
+     */
+    public java.util.Optional<FactCapture.OutputCoordinates> declaredOutputCoordinates() {
+        if (NO_OUTPUT_PACKAGE.equals(outputPackage) || NO_OUTPUT_PACKAGE.equals(jooqPackage)) {
+            return java.util.Optional.empty();
+        }
+        return java.util.Optional.of(
+            new FactCapture.OutputCoordinates(outputPackage, jooqPackage, outputDirectory));
     }
 
     /**

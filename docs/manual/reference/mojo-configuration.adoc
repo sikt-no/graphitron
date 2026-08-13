@@ -61,6 +61,21 @@ The following parameters apply to every goal:
   Set it when two modules would otherwise claim one name, or when the graph has a published
   subgraph name of its own.
 
+| `supergraph`
+| `String`
+| (none)
+| Which supergraph this module's graph is a subgraph of. A declared fact, because neither available
+  inference answers it: two subgraphs of two different supergraphs carry indistinguishable
+  federation SDL, and one checkout can hold two supergraphs plus standalone graphs while one
+  supergraph can span checkouts. Paired with `graphName` it is the addressing federation already
+  uses, so a parent pom shared by one supergraph's modules can declare the value once in
+  `pluginManagement` and every subgraph module inherits it.
+
+  Grouping, not federation: declaring it neither makes the graph federated nor is checked against
+  the SDL's `@link` opt-in, so a subgraph under development may declare its home before its first
+  `@key` is written. Omit for a standalone graph; standalone is the default rather than a state you
+  spell.
+
 | `storeDirectory`
 | `File` (path)
 | a per-user cache directory

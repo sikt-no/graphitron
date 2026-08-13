@@ -93,6 +93,118 @@ COMMENT ON TABLE store_graph_supergraph IS 'Which supergraph a graph declared it
 COMMENT ON COLUMN store_graph_supergraph.graph_name IS 'the declaring graph''s partition, anchored by store_graph; also the key, which is where the single-valued claim is enforced structurally';
 COMMENT ON COLUMN store_graph_supergraph.supergraph_name IS 'the declared supergraph''s name, as the <supergraph> parameter spelled it, with an empty element collapsed to absent by the decode rather than stored blank. Paired with graph_name it is the store''s rendering of the addressing federation already uses, which is why <graphName>''s own documentation speaks of the subgraph''s published name. A graph''s peers are the graphs this relation joins to over this column, a self-join between non-null values, so two standalone graphs never group by accident and two supergraphs in one workspace store coexist mutually invisible';
 
+-- The rest of the configuration family. Every parameter the build supplied is transcribed, because a
+-- run that has exited cannot be asked again and the reader served is the one with no build to run at
+-- all: a sibling module's configuration, a non-Maven entry point, a maintenance surface answering
+-- questions about a cold graph. On the Maven path there is no parse to skip, Maven having injected
+-- the parameters before any mojo ran, so that is deliberately not the claim.
+--
+-- Four rules shape the rows, and none of them is decided per parameter. Grain: relations group by
+-- joint presence and joint meaning, with named typed columns and never a (parameter, value) pair,
+-- which is the line between a relation and a key-value bag wearing a relation's clothes. Structured
+-- values decompose to typed columns rather than rendering to a string a later reader has to re-parse.
+-- A sealed parameter's relations follow the seal, discriminating the arm, so a reader cannot spell a
+-- combination the value type's constructor refuses. And absence is structural throughout: what the
+-- run effectively used is transcribed, a parameter with no default has no default to record so its
+-- absence is the missing row, and no nullable column conflates "configured nothing" with "not asked".
+-- Whether an author typed a value is a pom fact rather than a run fact and stays recoverable from
+-- the file store_graph.build_file_stamp already stamps, so no authored flag carries it.
+
+CREATE TABLE store_graph_output (
+  graph_name       VARCHAR NOT NULL,
+  output_package   VARCHAR NOT NULL,
+  jooq_package     VARCHAR NOT NULL,
+  output_directory VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+COMMENT ON TABLE store_graph_output IS 'Where a generating run wrote: the three output coordinates travelling together, because they are present together on any generating run and jointly answer one question. A validate-only run has no row rather than a row carrying the inert package sentinel the validate goal substitutes to satisfy the context''s non-null contract: that sentinel is the run''s own admission that it had no output coordinates, and transcribing it would mint the derived fact that can disagree.';
+COMMENT ON COLUMN store_graph_output.graph_name IS 'the owning graph''s partition, anchored by store_graph';
+COMMENT ON COLUMN store_graph_output.output_package IS 'the root Java package generation wrote under, from <outputPackage>';
+COMMENT ON COLUMN store_graph_output.jooq_package IS 'the root Java package of the consumer''s jOOQ-generated catalog, from <jooqPackage>; what every @table and @field was resolved against';
+COMMENT ON COLUMN store_graph_output.output_directory IS 'the directory generation wrote sources into, absolute and normalized, from <outputDirectory> resolved against the base directory';
+
+CREATE TABLE store_graph_tenant_column (
+  graph_name  VARCHAR NOT NULL,
+  column_name VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+COMMENT ON TABLE store_graph_tenant_column IS 'The database-per-tenant column declaration, from <tenantColumn>. Single-valued, optional and run-owned, so its own graph-keyed relation whose row presence is the fact; a single-tenant build has no row. Deliberately not a column beside store_graph''s base_dir and last_captured, even though it is single-valued and run-owned too: it is generation payload rather than a fact about how the partition groups or where it lives, and beside the anchor it would be the first brick of the key-value bag.';
+COMMENT ON COLUMN store_graph_tenant_column.graph_name IS 'the declaring graph''s partition, anchored by store_graph';
+COMMENT ON COLUMN store_graph_tenant_column.column_name IS 'the column name as configured; matched against catalog columns the way column lookups match, Java name first then SQL name, both case-insensitively';
+
+CREATE TABLE store_graph_lint_disabled_rule (
+  graph_name VARCHAR NOT NULL,
+  rule_id    VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, rule_id),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+COMMENT ON TABLE store_graph_lint_disabled_rule IS 'The <lint><disabledRules> half, one row per silenced rule id. Decomposed rather than rendered: a rendered block would be a string a later reader has to re-parse, which is the shape the recipe''s source names exist to remove, and permitting a rendered form per parameter would reintroduce the untyped default door. The two <lint> halves are a genuine conjunction (LintConfig is a plain record of both) but they are not the same shape, which is why they are two relations rather than one discriminated one: this half is a Set and takes no ordinal, its sibling is a List and takes one, and forcing them together would need a nullable ordinal.';
+COMMENT ON COLUMN store_graph_lint_disabled_rule.graph_name IS 'the owning graph''s partition, anchored by store_graph';
+COMMENT ON COLUMN store_graph_lint_disabled_rule.rule_id IS 'the disabled rule''s id as configured; the value is the key, there being no position to record. An ordinal here would record the JVM''s iteration order over a Set and call it a position';
+
+CREATE TABLE store_graph_lint_excluded_type (
+  graph_name   VARCHAR NOT NULL,
+  ordinal      INT     NOT NULL,
+  type_pattern VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, ordinal),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+COMMENT ON TABLE store_graph_lint_excluded_type IS 'The <lint><excludedTypes> half, one row per type-name glob excluded from the SDL lint engine. Ordinal-keyed because the configured value is a List and its order is the author''s, which is the grain rule''s "an ordinal only where the source is genuinely ordered".';
+COMMENT ON COLUMN store_graph_lint_excluded_type.graph_name IS 'the owning graph''s partition, anchored by store_graph';
+COMMENT ON COLUMN store_graph_lint_excluded_type.ordinal IS 'position in the configured list, document order';
+COMMENT ON COLUMN store_graph_lint_excluded_type.type_pattern IS 'the type-name glob as configured';
+
+CREATE TABLE store_graph_session_state (
+  graph_name VARCHAR NOT NULL,
+  arm        VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  CHECK (arm IN ('function_hooks', 'variables'))
+);
+COMMENT ON TABLE store_graph_session_state IS 'Which form of <sessionState> the run configured. The parameter looks like a block of optional sub-elements and is not one: SessionStateConfig is a sealed alternation whose reconciler throws when both forms are configured at once, so a relation laying hook columns beside variable rows would admit a state the value type rejects. The arm is carried as a discriminator instead, and the primary key on graph_name alone is what makes "at most one form per graph" structural rather than a convention the writer keeps. The no-configuration arm is the missing row, which is where the family''s general absence rule does apply.';
+COMMENT ON COLUMN store_graph_session_state.graph_name IS 'the configuring graph''s partition, anchored by store_graph';
+COMMENT ON COLUMN store_graph_session_state.arm IS 'a closed taxonomy over the configured form: consumer-authored database callables, or the Postgres session-variable sugar that generates both hook halves from one resolved variable set';
+
+CREATE TABLE store_graph_session_variable (
+  graph_name    VARCHAR NOT NULL,
+  ordinal       INT     NOT NULL,
+  variable_name VARCHAR NOT NULL,
+  claim         VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, ordinal),
+  FOREIGN KEY (graph_name) REFERENCES store_graph_session_state (graph_name)
+);
+COMMENT ON TABLE store_graph_session_variable IS 'The <variables> arm''s payload, one row per <variable>. Ordinal-keyed, the configured value being an ordered list. Rows exist only under the variables arm, which the foreign key to store_graph_session_state anchors.';
+COMMENT ON COLUMN store_graph_session_variable.graph_name IS 'the configuring graph''s partition, anchored by store_graph_session_state';
+COMMENT ON COLUMN store_graph_session_variable.ordinal IS 'position in the configured list, document order';
+COMMENT ON COLUMN store_graph_session_variable.variable_name IS 'the session variable''s name, as configured';
+COMMENT ON COLUMN store_graph_session_variable.claim IS 'the claim whose value the variable is mounted from, as configured';
+
+CREATE TABLE store_graph_session_hook (
+  graph_name   VARCHAR NOT NULL,
+  connect_call VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph_session_state (graph_name)
+);
+COMMENT ON TABLE store_graph_session_hook IS 'The function-hook arm''s payload: the consumer-authored callable that mounts identity. Rows exist only under the function-hook arm, which the foreign key to store_graph_session_state anchors.';
+COMMENT ON COLUMN store_graph_session_hook.graph_name IS 'the configuring graph''s partition, anchored by store_graph_session_state';
+COMMENT ON COLUMN store_graph_session_hook.connect_call IS 'the mounting callable, from <connect><call>';
+
+CREATE TABLE store_graph_session_disconnect (
+  graph_name                  VARCHAR NOT NULL,
+  disconnect_call             VARCHAR NOT NULL,
+  out_handle                  BOOLEAN NOT NULL,
+  state_survives_transactions BOOLEAN NOT NULL,
+  PRIMARY KEY (graph_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph_session_hook (graph_name)
+);
+COMMENT ON TABLE store_graph_session_disconnect IS 'The paired-disconnect arm of the function-hook form''s own nested alternation, which gets the same treatment as its parent rather than a nullable call column beside it. A row means a balanced mount/unmount pair; no row means the declared unmount-free opt-out, the author saying mounted identity provably never unmounts. That last distinction is why "absent versus empty" cannot dispose of this one as a missing row on the parent: an empty <disconnect/> element is a declared opt-out and a different fact from a <disconnect> nobody wrote, and the value type admits no third state, so the unmount arm is total and the row''s presence carries it without ambiguity.';
+COMMENT ON COLUMN store_graph_session_disconnect.graph_name IS 'the configuring graph''s partition, anchored by store_graph_session_hook';
+COMMENT ON COLUMN store_graph_session_disconnect.disconnect_call IS 'the unmounting callable, from <disconnect><call>';
+COMMENT ON COLUMN store_graph_session_disconnect.out_handle IS 'whether the mounting callable produces an OUT handle this unmount binds. Lives on this relation rather than beside connect_call because "handle produced but not bound" is unrepresentable in the value type, and a column on the parent would represent it';
+COMMENT ON COLUMN store_graph_session_disconnect.state_survives_transactions IS 'the declared survival opt-in, from <stateSurvivesTransactions>: the consumer confirming that mounted state survives transaction commit and rollback, so acquisition-scoped mounting suffices. Its home is this relation and no other, since only a balanced pair can assert or decline it, which is exactly what the reconciler enforces by throwing when the element is set without hooks';
+
 CREATE TABLE store_source (
   source_name VARCHAR NOT NULL,
   source_kind VARCHAR NOT NULL,

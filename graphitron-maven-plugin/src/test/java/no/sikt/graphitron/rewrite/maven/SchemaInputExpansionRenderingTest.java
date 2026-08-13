@@ -16,10 +16,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * The mojo-side half of what the dissolved {@code SchemaInputExpander} used to own: the
- * {@code <schemaInputs>} bean decode, and the rendering of the core expansion's typed result as
- * author-facing prose. The walk itself, its extension filter and its per-entry observations moved to
- * {@code SchemaRecipeExpansionTest} beside the dialect.
+ * The mojo-side half of the {@code <schemaInputs>} seam: the bean decode
+ * ({@link AbstractRewriteMojo#buildSchemaRecipe}), and the rendering of the core expansion's typed
+ * result as author-facing prose ({@link AbstractRewriteMojo#expandRecipe}). The walk itself, its
+ * extension filter and its per-entry observations are core and covered beside the dialect they
+ * belong to.
  *
  * <p>The three throwing cases all hold the <em>aggregate</em>-empty arm and differ by the path that
  * empties the set rather than by the message; ported as anything but three aggregate-empty pins, the

@@ -385,7 +385,12 @@ public class GraphQLRewriteGenerator {
      */
     private FactCapture.SubjectConfig subjectConfig() {
         return new FactCapture.SubjectConfig(
-            Optional.ofNullable(ctx.schemaRecipe()), Optional.ofNullable(ctx.supergraph()));
+            Optional.ofNullable(ctx.schemaRecipe()),
+            Optional.ofNullable(ctx.supergraph()),
+            ctx.declaredOutputCoordinates(),
+            Optional.ofNullable(ctx.tenantColumn()),
+            ctx.lintConfig(),
+            ctx.sessionStateConfig());
     }
 
     private IncrementalGeneration runPipeline(AttributedRegistry attributed, boolean buildCompileGraph) {

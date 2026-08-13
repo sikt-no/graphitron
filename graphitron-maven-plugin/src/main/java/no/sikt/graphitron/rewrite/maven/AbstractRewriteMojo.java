@@ -55,7 +55,7 @@ import java.util.stream.Stream;
 public abstract class AbstractRewriteMojo extends AbstractMojo {
 
     /** Sentinel used for validate-only invocations that do not emit code. */
-    private static final String VALIDATE_ONLY_PACKAGE = "validation.unused";
+    private static final String VALIDATE_ONLY_PACKAGE = RewriteContext.NO_OUTPUT_PACKAGE;
 
     @Parameter(defaultValue = "${project}", readonly = true)
     MavenProject project;

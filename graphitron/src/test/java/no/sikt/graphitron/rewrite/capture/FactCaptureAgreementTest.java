@@ -53,6 +53,16 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_DIRECTIVE_SYNTHESI
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_SITE;
 import static no.sikt.graphitron.model.Tables.JAVAC_DIAGNOSTIC;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_DISABLED_RULE;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_EXCLUDED_TYPE;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_OUTPUT;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SCHEMA_INPUT;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_DISCONNECT;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_HOOK;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_STATE;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_VARIABLE;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SUPERGRAPH;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_TENANT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
@@ -173,7 +183,11 @@ class FactCaptureAgreementTest {
             "jvm_method_parameter", "jvm_record_component",
             "jvm_scalar_type_field", "store_source", "store_stamp",
             "store_graph", "store_graph_schema_input", "store_graph_schema_extension",
-            "store_graph_supergraph", "store_graph_source")) {
+            "store_graph_supergraph", "store_graph_output", "store_graph_tenant_column",
+            "store_graph_lint_disabled_rule", "store_graph_lint_excluded_type",
+            "store_graph_session_state", "store_graph_session_variable",
+            "store_graph_session_hook", "store_graph_session_disconnect",
+            "store_graph_source")) {
             registrations.put(relation, Arm.EQUALITY);
         }
         registrations.put("graphql_directive_site", Arm.DERIVED);
@@ -1444,6 +1458,233 @@ class FactCaptureAgreementTest {
             counts.merge(String.join("|", siteKind, String.valueOf(type), String.valueOf(member),
                 String.valueOf(argument), directive.getName()), 1, Integer::sum);
         }
+    }
+
+    /**
+     * The recipe's equality anchor, and the item's own enforcer: the run's recipe rows, decoded back
+     * by the production decoder and re-expanded, reproduce the run's own
+     * {@link no.sikt.graphitron.rewrite.RewriteContext#schemaInputs} exactly. Both sides run the one
+     * expansion, so what the equality pins is transcription fidelity plus glob determinism rather
+     * than two independent expansions, which is exactly the residue a single expansion path leaves to
+     * verify.
+     *
+     * <p>Non-vacuity is a requirement on the case rather than a property of the shape: a literal
+     * entry re-expands by identity, so a fixture of literals alone would satisfy the equality while
+     * testing nothing. The fixture carries a pattern entry and the case asserts that it does before
+     * it asserts the round trip, so a later edit that trims the fixture to literals fails here instead
+     * of hollowing the anchor out silently.
+     */
+    @Test
+    @DisplayName("a run's recipe rows decode and re-expand to the run's own schema inputs")
+    void theRecipeRoundTripsThroughItsRows(@TempDir Path tmp) throws java.io.IOException {
+        // Under a subdirectory the capture fixture's own file does not fall into, so the file set the
+        // pattern ranges over is exactly what this case wrote.
+        Path sdl = java.nio.file.Files.createDirectories(tmp.resolve("sdl"));
+        java.nio.file.Files.writeString(sdl.resolve("globbed.graphqls"), "type Query { ping: String }");
+        java.nio.file.Files.writeString(sdl.resolve("extra.graphqls"), "type Extra { id: ID }");
+        var recipe = new no.sikt.graphitron.rewrite.schema.input.SchemaRecipe(null,
+            List.of(no.sikt.graphitron.rewrite.schema.input.SchemaRecipe.Binding.pattern("sdl/*.graphqls")),
+            List.of(".graphqls"));
+        assertThat(recipe.bindings())
+            .as("the fixture carries a pattern entry, without which the round trip is identity and "
+                + "pins nothing")
+            .anyMatch(b -> b.entry() instanceof
+                no.sikt.graphitron.rewrite.schema.input.SchemaRecipe.Entry.Pattern);
+
+        assertRecipeRoundTrips(tmp, recipe);
+    }
+
+    /**
+     * The same anchor over a programmatic run's literal rows, beside the pattern case rather than
+     * instead of it, and pinning something narrower stated honestly: literal re-expansion is
+     * identity, so this half verifies row encode/decode fidelity (the empty-tag collapse, the kind
+     * dispatch) rather than a second independent derivation.
+     */
+    @Test
+    @DisplayName("a programmatic run's literal recipe rows round-trip to its own input list")
+    void aLiteralRecipeRoundTripsThroughItsRows(@TempDir Path tmp) throws java.io.IOException {
+        Path file = tmp.resolve("literal.graphqls");
+        java.nio.file.Files.writeString(file, "type Query { ping: String }");
+        var inputs = List.of(
+            new no.sikt.graphitron.rewrite.schema.input.SchemaInput(
+                no.sikt.graphitron.rewrite.schema.input.SchemaSource.file(file),
+                java.util.Optional.of("t"), java.util.Optional.empty()),
+            no.sikt.graphitron.rewrite.schema.input.SchemaInput.named("a-bare-label"));
+
+        assertRecipeRoundTrips(tmp, no.sikt.graphitron.rewrite.schema.input.SchemaRecipe
+            .literalOver(inputs, List.of(".graphqls")));
+    }
+
+    /**
+     * Captures {@code recipe} under a graph and compares the context's own input list against that
+     * list round-tripped through the rows. The tier has no mojo, so the fixture mints the recipe
+     * directly and derives the inputs from its expansion, the same pairing the build mojo makes.
+     */
+    private static void assertRecipeRoundTrips(
+            Path tmp, no.sikt.graphitron.rewrite.schema.input.SchemaRecipe recipe) {
+        var expansion = recipe.expand(tmp);
+        assertThat(expansion).isInstanceOf(
+            no.sikt.graphitron.rewrite.schema.input.SchemaRecipe.Expansion.Resolved.class);
+        var inputs = ((no.sikt.graphitron.rewrite.schema.input.SchemaRecipe.Expansion.Resolved) expansion)
+            .matches().stream()
+            .map(no.sikt.graphitron.rewrite.schema.input.SchemaRecipe.Expansion.Match::input)
+            .toList();
+
+        try (var store = GraphitronModelStore.open()) {
+            FactCapture.capture(store.dsl(), graph(tmp), FactCapture.SubjectConfig.of(recipe),
+                CapturedStore.registryOf(tmp, "type Query { ping: String }"),
+                CapturedStore.attributionOf(tmp));
+
+            var remembered = StoredRecipe.decode(store.dsl(), "FactCaptureAgreementTest")
+                .orElseThrow(() -> new AssertionError("the run's own graph has no anchor row"));
+            var replayed = remembered.expand(tmp);
+            assertThat(replayed).isInstanceOf(
+                no.sikt.graphitron.rewrite.schema.input.SchemaRecipe.Expansion.Resolved.class);
+            assertThat(((no.sikt.graphitron.rewrite.schema.input.SchemaRecipe.Expansion.Resolved) replayed)
+                .matches().stream()
+                .map(no.sikt.graphitron.rewrite.schema.input.SchemaRecipe.Expansion.Match::input)
+                .toList())
+                .as("the run's schema inputs, against the same value round-tripped through its rows")
+                .isEqualTo(inputs);
+            assertThat(remembered.extensions())
+                .as("the effective extension filter round-trips with the entries")
+                .isEqualTo(recipe.extensions());
+        }
+    }
+
+    /**
+     * The configuration family's equality anchor: every parameter the run held is readable back out
+     * of the rows as the run's own value, and every parameter it did not hold left no row. The
+     * absences are half the claim, because a nullable column or a synthesised default would satisfy
+     * a presence-only check while minting the derived fact that can disagree.
+     */
+    @Test
+    @DisplayName("the configuration family equals the run's own resolved configuration")
+    void theConfigurationFamilyEqualsTheRunsConfiguration(@TempDir Path tmp) {
+        var output = new FactCapture.OutputCoordinates("com.example.out", "com.example.jooq",
+            tmp.resolve("target/generated-sources"));
+        var lint = new no.sikt.graphitron.rewrite.lint.LintConfig(
+            Set.of("rule-a"), List.of("Legacy*", "Deprecated*"));
+        var session = new no.sikt.graphitron.rewrite.session.SessionStateConfig.FunctionHooks(
+            "app.mount",
+            new no.sikt.graphitron.rewrite.session.SessionStateConfig.Unmount.PairedDisconnect(
+                "app.unmount", true, true));
+        var config = new FactCapture.SubjectConfig(java.util.Optional.empty(),
+            java.util.Optional.of("checkout-supergraph"), java.util.Optional.of(output),
+            java.util.Optional.of("tenant_id"), lint, session);
+
+        try (var store = GraphitronModelStore.open()) {
+            FactCapture.capture(store.dsl(), graph(tmp), config,
+                CapturedStore.registryOf(tmp, "type Query { ping: String }"),
+                CapturedStore.attributionOf(tmp));
+            var dsl = store.dsl();
+
+            assertThat(dsl.select(STORE_GRAPH_SUPERGRAPH.SUPERGRAPH_NAME).from(STORE_GRAPH_SUPERGRAPH)
+                .fetch(0, String.class)).containsExactly("checkout-supergraph");
+            assertThat(dsl.selectFrom(STORE_GRAPH_OUTPUT).fetchSingle())
+                .extracting(r -> r.getOutputPackage(), r -> r.getJooqPackage(), r -> r.getOutputDirectory())
+                .containsExactly("com.example.out", "com.example.jooq",
+                    output.outputDirectory().toString());
+            assertThat(dsl.select(STORE_GRAPH_TENANT_COLUMN.COLUMN_NAME).from(STORE_GRAPH_TENANT_COLUMN)
+                .fetch(0, String.class)).containsExactly("tenant_id");
+            assertThat(dsl.select(STORE_GRAPH_LINT_DISABLED_RULE.RULE_ID)
+                .from(STORE_GRAPH_LINT_DISABLED_RULE).fetch(0, String.class))
+                .containsExactlyInAnyOrderElementsOf(lint.disabledRuleIds());
+            assertThat(dsl.select(STORE_GRAPH_LINT_EXCLUDED_TYPE.TYPE_PATTERN)
+                .from(STORE_GRAPH_LINT_EXCLUDED_TYPE)
+                .orderBy(STORE_GRAPH_LINT_EXCLUDED_TYPE.ORDINAL).fetch(0, String.class))
+                .as("the list half keeps the author's order; the set half has none to keep")
+                .isEqualTo(lint.excludedTypePatterns());
+            assertThat(dsl.select(STORE_GRAPH_SESSION_STATE.ARM).from(STORE_GRAPH_SESSION_STATE)
+                .fetch(0, String.class)).containsExactly("function_hooks");
+            assertThat(dsl.select(STORE_GRAPH_SESSION_HOOK.CONNECT_CALL).from(STORE_GRAPH_SESSION_HOOK)
+                .fetch(0, String.class)).containsExactly("app.mount");
+            assertThat(dsl.selectFrom(STORE_GRAPH_SESSION_DISCONNECT).fetchSingle())
+                .extracting(r -> r.getDisconnectCall(), r -> r.getOutHandle(),
+                    r -> r.getStateSurvivesTransactions())
+                .containsExactly("app.unmount", true, true);
+            assertThat(dsl.fetchCount(STORE_GRAPH_SESSION_VARIABLE))
+                .as("the variables arm's payload, under the function-hook arm").isZero();
+            assertThat(dsl.fetchCount(STORE_GRAPH_SCHEMA_INPUT))
+                .as("a subject with no recipe writes no recipe rows rather than an empty one").isZero();
+        }
+    }
+
+    /**
+     * The family's absences, stated as absences. Every optional parameter the run did not hold leaves
+     * no row, and the two arms that are alternations leave the arm's own relation empty rather than a
+     * row carrying a synthesised value.
+     */
+    @Test
+    @DisplayName("a run that declared nothing writes no configuration rows at all")
+    void aRunThatDeclaredNothingWritesNoConfigurationRows(@TempDir Path tmp) {
+        try (var store = GraphitronModelStore.open()) {
+            FactCapture.capture(store.dsl(), graph(tmp), FactCapture.SubjectConfig.none(),
+                CapturedStore.registryOf(tmp, "type Query { ping: String }"),
+                CapturedStore.attributionOf(tmp));
+            var dsl = store.dsl();
+
+            assertThat(dsl.fetchCount(STORE_GRAPH_SUPERGRAPH))
+                .as("no declaration means standalone, and standalone means no row").isZero();
+            assertThat(dsl.fetchCount(STORE_GRAPH_OUTPUT))
+                .as("a run with no output coordinates writes none, not the package sentinel").isZero();
+            assertThat(dsl.fetchCount(STORE_GRAPH_TENANT_COLUMN)).isZero();
+            assertThat(dsl.fetchCount(STORE_GRAPH_LINT_DISABLED_RULE)).isZero();
+            assertThat(dsl.fetchCount(STORE_GRAPH_LINT_EXCLUDED_TYPE)).isZero();
+            assertThat(dsl.fetchCount(STORE_GRAPH_SESSION_STATE))
+                .as("the no-configuration arm is the missing row").isZero();
+        }
+    }
+
+    /**
+     * The variables arm, and the nested unmount alternation's other half. Two facts the flat layout
+     * this relation set replaced would have lost: the variables arm carries ordinal-keyed rows and no
+     * hook row at all, and an unmount-free hook is a hook row with no disconnect row, which is a
+     * declared opt-out rather than a disconnect nobody wrote.
+     */
+    @Test
+    @DisplayName("the session-state arms transcribe as arms, unmount-free included")
+    void theSessionStateArmsTranscribeAsArms(@TempDir Path tmp) {
+        var variables = new no.sikt.graphitron.rewrite.session.SessionStateConfig.Variables(List.of(
+            new no.sikt.graphitron.rewrite.session.SessionStateConfig.Variable("app.user_id", "sub"),
+            new no.sikt.graphitron.rewrite.session.SessionStateConfig.Variable("app.tenant", "tid")));
+        try (var store = GraphitronModelStore.open()) {
+            FactCapture.capture(store.dsl(), graph(tmp), withSessionState(variables),
+                CapturedStore.registryOf(tmp, "type Query { ping: String }"),
+                CapturedStore.attributionOf(tmp));
+            var dsl = store.dsl();
+
+            assertThat(dsl.select(STORE_GRAPH_SESSION_STATE.ARM).from(STORE_GRAPH_SESSION_STATE)
+                .fetch(0, String.class)).containsExactly("variables");
+            assertThat(dsl.select(STORE_GRAPH_SESSION_VARIABLE.VARIABLE_NAME,
+                    STORE_GRAPH_SESSION_VARIABLE.CLAIM).from(STORE_GRAPH_SESSION_VARIABLE)
+                .orderBy(STORE_GRAPH_SESSION_VARIABLE.ORDINAL).fetch())
+                .extracting(r -> r.value1() + "=" + r.value2())
+                .containsExactly("app.user_id=sub", "app.tenant=tid");
+            assertThat(dsl.fetchCount(STORE_GRAPH_SESSION_HOOK))
+                .as("the function-hook arm's payload, under the variables arm").isZero();
+        }
+
+        var unmountFree = new no.sikt.graphitron.rewrite.session.SessionStateConfig.FunctionHooks(
+            "app.mount",
+            no.sikt.graphitron.rewrite.session.SessionStateConfig.Unmount.UnmountFree.INSTANCE);
+        try (var store = GraphitronModelStore.open()) {
+            FactCapture.capture(store.dsl(), graph(tmp), withSessionState(unmountFree),
+                CapturedStore.registryOf(tmp, "type Query { ping: String }"),
+                CapturedStore.attributionOf(tmp));
+
+            assertThat(store.dsl().fetchCount(STORE_GRAPH_SESSION_HOOK)).isOne();
+            assertThat(store.dsl().fetchCount(STORE_GRAPH_SESSION_DISCONNECT))
+                .as("the declared unmount-free opt-out is the disconnect relation's missing row")
+                .isZero();
+        }
+    }
+
+    private static FactCapture.SubjectConfig withSessionState(
+            no.sikt.graphitron.rewrite.session.SessionStateConfig sessionState) {
+        return new FactCapture.SubjectConfig(java.util.Optional.empty(), java.util.Optional.empty(),
+            java.util.Optional.empty(), java.util.Optional.empty(),
+            no.sikt.graphitron.rewrite.lint.LintConfig.empty(), sessionState);
     }
 
     /**

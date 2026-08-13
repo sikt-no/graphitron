@@ -9,6 +9,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
 
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SUPERGRAPH;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_DIRECTIVE;
@@ -522,6 +523,85 @@ class FactSchemaGateTest {
                     .isSubsetOf("sibling", "own");
             }
         }
+    }
+
+    /**
+     * The supergraph declaration's enforcer, extending the fusion fixture above because the claim it
+     * pins is about several graphs in one store. Three graphs, two declaring one supergraph and one
+     * declaring nothing: the membership rows round-trip through capture, the peer question asked at
+     * the SQL level (a self-join over {@code supergraph_name}) returns exactly the declared sibling
+     * for each of the two and nothing for the third, and the presence semantics are pinned where the
+     * join holds them, a graph without a row grouping with nothing.
+     *
+     * <p>The presence semantics are pinned at the SQL level rather than through a view on purpose: no
+     * view lands ahead of its reader, and the peer surface's projection is that reader item's design
+     * space. What this case owes it is that the join it will be built on already behaves.
+     */
+    @Test
+    @DisplayName("declared supergraph membership scopes the peer set, and absence groups with nothing")
+    void supergraphMembershipScopesThePeerSet(@TempDir Path tmp) throws java.io.IOException {
+        Path aDir = java.nio.file.Files.createDirectories(tmp.resolve("a"));
+        Path bDir = java.nio.file.Files.createDirectories(tmp.resolve("b"));
+        Path loneDir = java.nio.file.Files.createDirectories(tmp.resolve("lone"));
+        try (var store = GraphitronModelStore.open()) {
+            captureUnder(store, "a", aDir, "checkout-supergraph");
+            captureUnder(store, "b", bDir, "checkout-supergraph");
+            captureUnder(store, "lone", loneDir, null);
+
+            assertThat(store.dsl().select(STORE_GRAPH_SUPERGRAPH.GRAPH_NAME,
+                    STORE_GRAPH_SUPERGRAPH.SUPERGRAPH_NAME)
+                .from(STORE_GRAPH_SUPERGRAPH).orderBy(STORE_GRAPH_SUPERGRAPH.GRAPH_NAME).fetch())
+                .as("only graphs with a declared supergraph are registered")
+                .extracting(r -> r.value1() + "->" + r.value2())
+                .containsExactly("a->checkout-supergraph", "b->checkout-supergraph");
+
+            assertThat(peersOf(store, "a")).containsExactly("b");
+            assertThat(peersOf(store, "b")).containsExactly("a");
+            assertThat(peersOf(store, "lone"))
+                .as("a graph with no row has no row to join, so it groups with nothing and two "
+                    + "standalone graphs never group by accident")
+                .isEmpty();
+
+            // The write path's two directions. A diagnostics preamble after capture leaves the
+            // declaration standing, so a compile-facts run can neither erase nor invent membership...
+            new no.sikt.graphitron.rewrite.diagnostics.BuildWarningFacts(
+                store.dsl(), new FactCapture.GraphIdentity("a", aDir)).write(java.util.List.of());
+            assertThat(peersOf(store, "a"))
+                .as("a diagnostics preamble never touches the relation").containsExactly("b");
+
+            // ...and a warm recapture without the declaration leaves none, removal propagating
+            // through the ownership-scoped clear with no both-arms upsert subtlety to get wrong.
+            FactCapture.capture(store.dsl(), true, new FactCapture.GraphIdentity("a", aDir),
+                FactCapture.SubjectConfig.none(), CapturedStore.registryOf(aDir, FIXTURE),
+                CapturedStore.attributionOf(aDir), null, java.util.List.of(),
+                new no.sikt.graphitron.rewrite.NodeDeclaration(null));
+            assertThat(store.dsl().select(STORE_GRAPH_SUPERGRAPH.GRAPH_NAME)
+                .from(STORE_GRAPH_SUPERGRAPH).fetch(0, String.class))
+                .as("a pom that drops the element leaves no row on the next capture")
+                .containsExactly("b");
+        }
+    }
+
+    private static void captureUnder(GraphitronModelStore store, String graphName, Path dir,
+                                     String supergraph) {
+        var config = new FactCapture.SubjectConfig(java.util.Optional.empty(),
+            java.util.Optional.ofNullable(supergraph), java.util.Optional.empty(),
+            java.util.Optional.empty(), no.sikt.graphitron.rewrite.lint.LintConfig.empty(),
+            no.sikt.graphitron.rewrite.session.SessionStateConfig.none());
+        FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity(graphName, dir), config,
+            CapturedStore.registryOf(dir, FIXTURE), CapturedStore.attributionOf(dir));
+    }
+
+    /** The peer set as the store spells it: a self-join over supergraph_name between non-null values. */
+    private static java.util.List<String> peersOf(GraphitronModelStore store, String graphName) {
+        var mine = STORE_GRAPH_SUPERGRAPH.as("mine");
+        var theirs = STORE_GRAPH_SUPERGRAPH.as("theirs");
+        return store.dsl().select(theirs.GRAPH_NAME)
+            .from(mine).join(theirs).on(theirs.SUPERGRAPH_NAME.eq(mine.SUPERGRAPH_NAME))
+            .where(mine.GRAPH_NAME.eq(graphName))
+            .and(theirs.GRAPH_NAME.ne(mine.GRAPH_NAME))
+            .orderBy(theirs.GRAPH_NAME)
+            .fetch(0, String.class);
     }
 
     /** Every graph-keyed relation's rows for {@code graphName}, rendered stably for comparison. */

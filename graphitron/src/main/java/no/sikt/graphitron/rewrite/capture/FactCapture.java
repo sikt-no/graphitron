@@ -11,8 +11,10 @@ import no.sikt.graphitron.rewrite.derive.ClaimDomainRows;
 import no.sikt.graphitron.rewrite.derive.InputOccurrencePaths;
 import no.sikt.graphitron.rewrite.derive.ReachabilityRows;
 import no.sikt.graphitron.rewrite.compile.CompileFacts;
+import no.sikt.graphitron.rewrite.lint.LintConfig;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
 import no.sikt.graphitron.rewrite.schema.input.SchemaRecipe;
+import no.sikt.graphitron.rewrite.session.SessionStateConfig;
 import org.jooq.DSLContext;
 import org.jooq.exception.DataAccessException;
 import org.slf4j.Logger;
@@ -26,7 +28,6 @@ import java.util.Objects;
 import java.util.Optional;
 
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
-import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SUPERGRAPH;
 
 /**
  * Entry point for the generator's capture loads: opens a fact store for the run and fills it from
@@ -94,21 +95,55 @@ public final class FactCapture {
      * @param supergraph which supergraph this graph declared itself a subgraph of, from the
      *                   {@code <supergraph>} parameter. Empty is standalone, which is the default
      *                   rather than a state an author spells
+     * @param output     where a generating run wrote, from {@code <outputPackage>},
+     *                   {@code <jooqPackage>} and {@code <outputDirectory>}. Empty for a run with no
+     *                   output coordinates at all, which is a validate-only run: the package sentinel
+     *                   such a run carries is its own admission of that, and transcribing the
+     *                   sentinel would mint the derived fact that can disagree
+     * @param tenantColumn the database-per-tenant column declaration, from {@code <tenantColumn>};
+     *                   empty on a single-tenant build
+     * @param lint       the {@code <lint>} suppression, decomposed rather than rendered.
+     *                   {@link LintConfig#empty()} carries the no-suppression case, which writes no
+     *                   rows, so absence needs no second spelling
+     * @param sessionState the {@code <sessionState>} form. Sealed, and
+     *                   {@link SessionStateConfig#none()} is the no-configuration arm, so this
+     *                   component is never absent and the arm carries what absence would have
      */
-    public record SubjectConfig(Optional<SchemaRecipe> recipe, Optional<String> supergraph) {
+    public record SubjectConfig(Optional<SchemaRecipe> recipe, Optional<String> supergraph,
+                                Optional<OutputCoordinates> output, Optional<String> tenantColumn,
+                                LintConfig lint, SessionStateConfig sessionState) {
         public SubjectConfig {
             Objects.requireNonNull(recipe, "recipe");
             Objects.requireNonNull(supergraph, "supergraph");
+            Objects.requireNonNull(output, "output");
+            Objects.requireNonNull(tenantColumn, "tenantColumn");
+            Objects.requireNonNull(lint, "lint");
+            Objects.requireNonNull(sessionState, "sessionState");
         }
 
-        /** A subject that declared nothing: no recipe to remember and no supergraph to group with. */
+        /** A subject that declared nothing at all. */
         public static SubjectConfig none() {
-            return new SubjectConfig(Optional.empty(), Optional.empty());
+            return new SubjectConfig(Optional.empty(), Optional.empty(), Optional.empty(),
+                Optional.empty(), LintConfig.empty(), SessionStateConfig.none());
         }
 
-        /** A subject with a recipe and no supergraph declaration. */
+        /** A subject whose only declaration is its recipe. */
         public static SubjectConfig of(SchemaRecipe recipe) {
-            return new SubjectConfig(Optional.ofNullable(recipe), Optional.empty());
+            return new SubjectConfig(Optional.ofNullable(recipe), Optional.empty(), Optional.empty(),
+                Optional.empty(), LintConfig.empty(), SessionStateConfig.none());
+        }
+    }
+
+    /**
+     * Where a generating run wrote. One value because the three travel together: they are present
+     * together on any generating run and jointly answer one question, which is the family's grain
+     * rule ("joint presence and joint meaning") rather than three loose components.
+     */
+    public record OutputCoordinates(String outputPackage, String jooqPackage, Path outputDirectory) {
+        public OutputCoordinates {
+            Objects.requireNonNull(outputPackage, "outputPackage");
+            Objects.requireNonNull(jooqPackage, "jooqPackage");
+            Objects.requireNonNull(outputDirectory, "outputDirectory");
         }
     }
 
@@ -279,8 +314,7 @@ public final class FactCapture {
             if (warm) {
                 StoreRefresh.prepare(sink, sources, extensions, graph.name());
             }
-            config.recipe().ifPresent(recipe -> StoredRecipe.write(sink, recipe));
-            config.supergraph().ifPresent(supergraph -> writeSupergraph(sink, supergraph));
+            ConfigurationFactCapture.capture(sink, config);
             SdlFactCapture.capture(sink, registry, nodes, sources, attribution);
             CatalogFactCapture.capture(sink, jooq, extensions, sources);
             sink.flush();
@@ -349,16 +383,4 @@ public final class FactCapture {
             .execute();
     }
 
-    /**
-     * Registers the graph's declared supergraph membership, written only when a declaration is in
-     * hand: the row's presence is the fact, so a standalone graph and a run that was never asked
-     * both leave none. Removal needs no upsert care, the relation being graph-keyed and therefore
-     * ownership-scoped by {@link StoreRefresh}: a pom that drops the element leaves the warm clear's
-     * work standing and nothing rewrites it.
-     */
-    private static void writeSupergraph(FactSink sink, String supergraph) {
-        var row = sink.dsl().newRecord(STORE_GRAPH_SUPERGRAPH);
-        row.setSupergraphName(supergraph);
-        sink.add(row);
-    }
 }
