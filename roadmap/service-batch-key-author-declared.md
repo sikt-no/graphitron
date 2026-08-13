@@ -1,7 +1,7 @@
 ---
 id: R648
 title: "Author-declared batch key for child @service on record-backed parents"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 3
 theme: service
