@@ -52,8 +52,9 @@ point are there two live answers to one request.
 
 The baselines stay on the record as an outcome rather than a gate: `graphitron-lsp` is **9,119**
 main lines and the `rewrite/catalog` seam is **3,232** of the package's 4,008, with `SourceWalker`
-and `ClasspathScanner` netted out because they survive the cutover: `SourceWalker` stays (see "What
-retires") and `ClasspathScanner` is codegen's. Report both at the end, plus the SQL added. If
+and `ClasspathScanner` netted out because their lines move rather than delete: both end up
+capture-side readers (`ClasspathScanner` already is one; `SourceWalker` relocates in this item, see
+"What retires"). Report both at the end, plus the SQL added. If
 the totals come out worse than expected that is worth knowing and saying; it is not a trigger for
 anything, because there is no longer an incumbent to fall back to.
 
@@ -106,12 +107,24 @@ the only part that sees unsaved content at all.
 
 **The store answers everything else**, for the whole workspace: completion lists, hover bodies,
 definition targets, hint values, diagnostic judgements. The incumbent already leans this way; a
-source survey found no tree-sitter syntax diagnostics and no workspace scan to retire (trees exist
-only for open buffers, and syntax validity ships via the `ValidationReport` replay). But it exceeds
+source survey found no tree-sitter syntax diagnostics and no tree-sitter workspace scan to retire
+(trees exist only for open buffers, and syntax validity ships via the `ValidationReport` replay).
+But it exceeds
 the line in three places this item pulls back: `IntraSchemaDefinitions` treats every open buffer's
 tree as authoritative over the projection, `WorkspaceFile` re-derives a declared/referenced type
 index from the tree on every keystroke to aim the diagnostic fan-out, and the recalculation queue
 re-runs full-tree validation per keystroke across every dependent open file.
+
+The same line binds the other direction: the LSP never walks. Its inputs are the live buffer and
+the store, and its only signal toward the writer is that a schema file was saved. Today it walks
+Java source roots itself: `Workspace.refreshSourceIndex` builds the `SourceWalker.Index` that hover
+Javadoc and goto-definition join at request time, and that `graphitron-mcp` borrows through
+`workspace.sourceIndex()`, a second fact source with its own cadence inside the one module this
+item is emptying. That walk moves store-side; the java-source family below carries what it
+produced. No new signal is needed for `.java` files, and none should route through the LSP (a
+`.java` changed by a build or a rebase never touches an editor): the dev session already owns the
+watcher (`DevMojo.startSourceWatcher`), and what changes is its sink, from `Workspace.setSourceIndex`
+to capture.
 
 There is no gate between the two, because there is no state in which the store cannot answer. Two-
 stage capture writes on every outcome, so tree-sitter's job is the same whatever the buffer holds:
@@ -227,6 +240,37 @@ comment with the catalog description taking precedence, a column's type and null
 name and type when the backing is a record or POJO. Each fetching what it renders is the point of
 re-sourcing, not a looseness to be tidied back into one query.
 
+**A java-source family, on the source cadence.** Hover's Javadoc and definition's positions come
+from parsed `.java` sources, and here they are rows like everything else: a `java_` family written
+by `SourceWalker` as a capture-side reader, prefixed for the vocabulary its rows are written in
+(source-form declarations keyed by arity are Java's, not the JVM's). It is its own population with
+its own natural key (file, declaring FQN, member, declaration ordinal), joined by name to
+`jvm_class` and `jvm_method` on one side and to the captured table-class and `Keys` FQNs on the
+other; never columns on `jvm_class`, and never FK'd to it. Two facts force that shape. `jvm_class`
+excludes the generated jOOQ package while the jOOQ half of goto-definition jumps into exactly those
+classes, so a family hung off `jvm_class` silently drops `@table`, `@field(name:)` and
+`@reference(key:)` definition; the FQN capture widening below is that join's key. And `jvm_method`
+keys on `descriptor` where a source parse yields arity, so the source rows cannot take its key.
+The join is outer on both sides and no view may assert agreement between the two populations: a
+source row and its `jvm_` twin can legitimately disagree between cadences, the same skew that exists
+today between the LSP index and the catalog, made visible instead of ambient. The family is
+source-keyed, not graph-keyed, like `store_source` itself; that is the one stated exception to the
+graph-scoped handle, and graph scoping happens on the `jvm_`/`sql_` side of the join through
+`store_graph_source`.
+
+Refresh is per file, one transaction per source in the `StoreRefresh` retain-or-rewrite mould, with
+the content-hash bookkeeping on the family's own file relation rather than one `store_source` row
+per `.java` file, so `store_source`'s taxonomy stays closed and the freshness scan stays
+proportional to what changed. The cadence gets an enforcer, not a stated intent:
+`SourceCadenceHoverAndDefinitionTest` and `CatalogRefreshTest` repoint rather than retire, asserting
+that a `.java` edit moves the store row with no generator round; without that pin the family drifts
+onto the round cadence, which is exactly the staleness the old doctrine feared. Headless LSP-only
+use has no source watcher, so the family sits empty and absence is an answer, which is the status
+quo: `refreshSourceIndex` was only ever called from the dev session and tests. The family registers
+a new agreement-arm shape in `FactCaptureAgreementTest`, source-partitioned where the existing
+oracle-lifecycle anchors are graph-partitioned, and `FactSchemaGateTest`'s transcription-twin rule
+needs an answer for a family whose oracle is a source parse.
+
 ## Capture widenings
 
 Three facts read off a live handle inside the codegen scope, so unrecoverable downstream.
@@ -241,10 +285,12 @@ Three facts read off a live handle inside the codegen scope, so unrecoverable do
   `CatalogBuilder`'s `jooqPackage() + ".Keys"` guess.
 * **The generated class FQNs**, at the concept's grain: the table class FQN is per table, the `Keys`
   FQN is per `(source_name, table_schema)` and is a repeating group on `CompletionData.Reference`
-  today.
+  today. Under the java-source family these FQNs are the join key that lands definition in
+  generated sources, load-bearing rather than a completion nicety.
 
-Confirm `jvm_class`'s filters (public, non-synthetic, top-level, outside the generated package)
-against what the LSP needs rather than assuming they agree.
+`jvm_class`'s filters (public, non-synthetic, top-level, outside the generated package) are a
+design input here, not a confirmation: the generated-package exclusion is why the java-source
+family joins through the captured FQNs rather than through `jvm_class` for the jOOQ half.
 
 ## What retires
 
@@ -274,13 +320,29 @@ work, not optional; the projection cannot delete while they read it. `TenantScop
 `NodeRef` cite it only in javadoc, so they repoint rather than migrate; the `{@link}` gate keeps
 them from being forgotten.
 
-`SourceWalker` stays, and the boundary is shipped doctrine rather than this item's argument: the
-fact model's cadence rule (location is a fact about an entity, joined rather than stored;
-`docs/architecture/explanation/fact-model.adoc`) and the `jvm_class` DDL comment both design source
-positions and Javadoc out of the store so a `.java` edit is seen without a generator rebuild.
-Capturing it would turn absent provenance into stale provenance. The SDL positions the store does
-carry are the same rule's sanctioned side: SDL is what capture reads, so those positions are on the
-capture cadence already.
+`SourceWalker` moves rather than stays. An earlier pass kept it LSP-side as shipped doctrine, and
+that reading does not survive an audit of what keeping it costs: `SourceWalker.Decl` carries a
+`CompletionData.SourceLocation`, so the projection this item deletes stays alive inside its own
+replacement; `graphitron-mcp` reads the index through `workspace.sourceIndex()`, so `Workspace`
+survives as a shim feeding another module, the cross-consumer private model "One model, many views"
+names; and `SourceWalker.Index` hand-rolls the resolved/ambiguous/not-found tri-state
+(`ambiguousMethods` as a side-set, first-declaration-wins merges) that "Sealed resolution outcomes"
+retires everywhere else. So the walker becomes a capture-side reader beside `ClasspathScanner`,
+relocating from `rewrite/catalog` to the capture package, and the LSP never calls walk:
+`refreshSourceIndex` and the LSP-owned index retire, and the MCP Javadoc joins repoint to store
+queries in the sibling item.
+
+The doctrine rewrites honestly rather than quietly. The cadence rule's own closing sentence
+licenses the move: "joined, not stored" is the law for positions that move on a cadence the fact
+does not, never a ban on positions that share the fact's own cadence, and the java-source family's
+cadence is the source's own. Two paragraphs of `fact-model.adoc` change, not one: the location
+paragraph, and the co-sourced-description sentence, because Javadoc becomes the paradigm
+counter-case (a different walk on a different cadence from the bytecode scan, so its own relation,
+never a column on `jvm_class`). The `jvm_class` DDL comment restates the division instead of
+deleting: what the classfile declares lives there; positions and Javadoc live in the java-source
+family on the source cadence, joined by name. The SDL positions the store already carries were
+always the same rule's sanctioned side: SDL is what capture reads, so those positions were on the
+capture cadence from the start.
 
 The retirement also takes named exemplars out of the principle docs, and the sweep must repoint
 them, not just delete: `CatalogBuilder.projectFieldClassification` is the transitional exemplar
@@ -302,13 +364,16 @@ reserved for states one capture call cannot reach, with
 `ColumnMatchClaimTest.siblingGraphsResolveThroughTheirOwnMembership` the precedent for exactly that
 (two graphs in one store). The crawlers are tested where they are.
 
-Four cases the corpus must carry, each being something the current design cannot express:
+Five cases the corpus must carry. The first four are things the current design cannot express; the
+fifth is the property the old doctrine protected, kept and pinned at the store layer:
 
 * A dirty buffer beside well-formed siblings: `extend type |` completes against the other files.
 * A type assembled from several files, resolving to all its declaration sites.
 * Two graphs in one store, neither seeing the other's tables.
 * One file in two graphs: the request boundary surfaces the multi-graph membership arm, not the
   first row.
+* A `.java` edit and save beside an untouched schema: hover Javadoc and the definition target move
+  with no generator round. The repointed cadence tests pin the same fact at the store layer.
 
 Latency is measured per request on the Sakila fixture, against the new implementation alone. Not a
 comparison, since there is nothing left to compare against and the direction is not in doubt: the
@@ -332,6 +397,12 @@ the first thing the substrate work settles. Which view, not how many queries: fo
 four different things off one view is a fine outcome, and collapsing them because they share a
 source would be the same error as sharing a type because they share a subject.
 
+The bundled directive vocabulary is not a second source either, though the incumbent treats it as
+one: capture parses the bundled `directives.graphqls` like any schema file and its definitions are
+rows (`SdlFactCapture`'s own contract: an application's directive name always resolves to a row),
+so the directive-name and docstring rows below read `graphql_directive` and
+`graphql_directive_argument` for bundled and user-declared alike.
+
 Five request capabilities are registered (`GraphitronLanguageServer.initialize`): hover, completion,
 definition, code action, inlay hint. Diagnostics are pushed. Document sync is incremental.
 
@@ -353,33 +424,33 @@ first; the fall-through is behaviour, not accident, so collapsing the two keeps 
 | `ArgMappingBinding` | `ArgMappingCompletions` | `jvm_method_parameter` × `graphql_argument` |
 | `ScalarTypeBinding` | `ScalarTypeCompletions` | `jvm_scalar_type_field` |
 | `NodeTypeBinding` | `NodeTypeCompletions` | `graphitron_node` |
-| no coordinate, or no value match | `ArgNameCompletions` (fallback) | `graphql_directive_argument`, bundled vocabulary |
+| no coordinate, or no value match | `ArgNameCompletions` (fallback) | `graphql_directive_argument` |
 
 **Hover.** `Hovers` dispatches on the same `Behavior` taxonomy, with three non-coordinate arms
 around it.
 
 | Trigger | Answers | Fact source |
 |---|---|---|
-| Directive name token | Directive description | `graphql_directive`, bundled vocabulary |
-| `ClassNameBinding` | Class FQN + Javadoc | `jvm_class` + `SourceWalker` |
-| `MethodNameBinding` | Signature + Javadoc | `jvm_method`, `jvm_method_parameter` + `SourceWalker` |
+| Directive name token | Directive description | `graphql_directive` |
+| `ClassNameBinding` | Class FQN + Javadoc | `jvm_class`; Javadoc via the `java_` source family |
+| `MethodNameBinding` | Signature + Javadoc | `jvm_method`, `jvm_method_parameter`; Javadoc via the `java_` source family |
 | `CatalogTableBinding` | Comment, column and reference counts | `sql_table`, `sql_column`, `sql_constraint` |
 | `CatalogColumnBinding` | Column type, nullability, comment; member name and type when the backing is a record or POJO | `sql_column` (needs binding type); `jvm_record_component`, `jvm_method` for the member arms |
 | `CatalogFkBinding` | FK direction and endpoints | `sql_referential_constraint` |
 | `NodeTypeBinding` | `typeId`, key columns and their types | `graphitron_node`, `graphitron_node_key_column` |
 | `ArgMappingBinding`, `ScalarTypeBinding` † | nothing | — |
-| Any coordinate, no richer arm | SDL docstring | bundled vocabulary |
+| Any coordinate, no richer arm | SDL docstring | `graphql_directive`, `graphql_directive_argument` |
 | User-declared directive arg | Arg docstring | `graphql_directive_argument` |
-| SDL declaration name (`hoverClassification` toggle) | `DeclarationHovers`: classification block + Javadoc | classification + `SourceWalker` |
+| SDL declaration name (`hoverClassification` toggle) | `DeclarationHovers`: classification block + Javadoc | classification + the `java_` source family |
 
 **Definition.** Three providers chained with `.or()` in this order, keyed on disjoint syntax.
 
 | Provider | Trigger | Fact source |
 |---|---|---|
-| `Definitions` | Directive arg: `ClassName`, `MethodName`, `CatalogTable`, `CatalogColumn`, `CatalogFk` | `jvm_`/`sql_` + `SourceWalker` positions |
+| `Definitions` | Directive arg: `ClassName`, `MethodName`, `CatalogTable`, `CatalogColumn`, `CatalogFk` | `jvm_`/`sql_` joined to the `java_` source family's positions |
 | `Definitions` † | `ArgMapping`, `ScalarType`, `NodeType` return empty | — |
 | `IntraSchemaDefinitions` | Type reference to its declaring SDL site | `graphql_type_declaration`; a declaring file that has moved since capture re-anchors through its live tree |
-| `DeclarationDefinitions` | SDL declaration name to its bound Java | `jvm_class`, `jvm_record_component` + `SourceWalker` |
+| `DeclarationDefinitions` | SDL declaration name to its bound Java | `jvm_class`, `jvm_record_component` + the `java_` source family |
 
 **Inlay hints.** Three independent toggles, all default off (`InlayHintConfig`); two collectors.
 
@@ -432,7 +503,8 @@ reader left and retires with the rest of the workspace bookkeeping.
 toggles; `didChangeWatchedFiles` is a no-op today. The open-buffer set stays in `Workspace`; the
 tree-derived type index (`refreshTypeIndex`'s declared/referenced sets) and the per-file
 recalculation bookkeeping it aims retire with the keystroke cadence (see the diagnostics
-paragraph above).
+paragraph above), and the source index (`refreshSourceIndex`, `sourceIndex`) retires with the
+java-source family: the LSP walks nothing.
 
 ## Resolved questions
 
@@ -448,8 +520,13 @@ fact model; the reviewer confirms rather than decides.
   store-side substrate land first because every capability dispatches through them, and the
   capability order after that is the implementer's, subject only to the acceptance holding at each
   commit.
-* **`SourceWalker`'s boundary** is shipped doctrine, cited in "What retires"; nothing to
-  re-litigate.
+* **`SourceWalker`'s boundary** reversed on review. An earlier pass resolved it as shipped
+  doctrine and kept the walk LSP-side; the standing line is now that the new LSP never calls walk,
+  its inputs being the live buffer and the store and its only outbound signal a save. The
+  doctrine's own text licenses the move (see "What retires"): the walker becomes a capture-side
+  reader, the java-source family carries its output on the source cadence, and the doctrine
+  paragraphs rewrite with the preserved principle named, facts refresh on the cadence of their
+  source.
 * **`CatalogFacts`' non-LSP readers** move alongside, in the sibling item
   `catalog-facts-readers-move-to-the-store.md`, for two reasons: the MCP
   catalog tools have their own acceptance surface (tool output, paging) that has nothing to do with
@@ -464,4 +541,5 @@ Provisional until the cutover lands; the Done-gate sweep greps for these. `Compl
 `CatalogFacts`, `LspSchemaSnapshot`, the `Built.Current` / `Built.Previous` freshness seal,
 `typeDefinitionLocations`, `CatalogBuilder`'s projection pass, `DevMojo`'s keep-previous-and-demote
 path (`demoteSnapshot`, `markAllForRecalculation`), `refreshTypeIndex`, `declaredTypes` and
-`dependsOnDeclarations`.
+`dependsOnDeclarations`, `SourceWalker.Index` with its `ambiguousMethods` and `methodsByName`, and
+`Workspace`'s `sourceIndex` / `setSourceIndex` / `refreshSourceIndex`.
