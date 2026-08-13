@@ -1,7 +1,7 @@
 ---
 id: R649
 title: "Coordinate-level rejections outrank parameter-binding rejections on record-backed-parent @service"
-status: In Review
+status: Ready
 bucket: bug
 priority: 3
 theme: diagnostics
@@ -144,6 +144,33 @@ Pipeline pins, one fixture per precedence pair:
 
 No compilation or execution tier: no emitted code changes shape; classification outcomes and rejection routing are fully observable at the unit/pipeline tier.
 
+## Review pass 1: held at the In Review gate
+
+The phase split shipped at `a896327` and is sound. Reviewed against the build (`mvn install -Plocal-db`, BUILD SUCCESS, full pipeline), the diff, and the surrounding code. Everything below the one blocker is either landed or an accepted, recorded gap.
+
+**Landed and verified.** Decode / claim reduction / classify / bind sit exactly where this item's phase section put them; `ServiceSignature` carries no `java.lang.reflect.Method`, so the raw-reflection containment is structural. `ParentContext` and the `Regime` axis are as specified, with `regimeOf`'s exhaustive switch making a new coordinate a compile error. Every arm of the observable contract is implemented in the stated order, and both deliberate winner flips are pinned (`ServiceCoordinatePrecedenceTest.root_connectionReturnWithBatchParameter_reportsTheConnection`, `root_batchParameterWithWrongReturnType_reportsBatchAtRoot`). Message text is preserved verbatim at every hoisted arm, including which rejections wear the `service method could not be resolved` prefix and which do not, so severity and wording are unchanged as promised. The errors-lift hoist is safe: `FieldBuilder.liftToErrorsField` reads `ctx.schema`, `ctx.errors` and the binding maps and mutates nothing, so running it ahead of binding adds no side effect on paths that then reject. The four `FieldBuilder` arms turned into invariant throws are genuinely unreachable: classify rejects `RecordParent` × (`Result` | `Scalar`) unconditionally and defers every non-`Root` non-lifting `Polymorphic`, and `ErrorsLifted` is handled ahead of each switch. The declared retired vocabulary greps clean across main, test and `.adoc` (remaining `PkLessParent` hits are the surviving `SourcesOnPkLessParent` and `PkLessParentServiceSourcesRejectionTest`). No code-string assertions on generated method bodies. The R648 touch-up deliverable is done, and done honestly: it records the one fixture that could not be built (the Connection-returning record-parent child) with the reason, rather than quietly dropping it.
+
+**Blocker: the renamed method's citations outside its own file were not repointed.** `reflectServiceMethod` is deleted, but 16 sites still name it, 8 of them as `{@link}` and therefore now dangling. The Javadoc reference gate does not catch them, so the build stays green: `ServiceCatalog` is package-private and the gate runs at javadoc's default `protected` visibility, so those members are never resolved. That blind spot is what makes this worth fixing in this pass rather than leaving to a grep nobody will run.
+
+Dangling `{@link}` in main sources: `ArgBindingMap.java:23`, `InputBeanResolver.java:47`, `generators/TypeFetcherGenerator.java:1469`. In test sources: `TestServiceStub.java:586`, `TestInstanceServiceStub.java:9`, `TestInstanceServiceStubMultiArgCtor.java:8`, `TestInstanceServiceStubNoCtor.java:8`, `TestInstanceServiceStubUnbindableCtor.java:8`.
+
+Stale `{@code}` / comment prose: `model/ReflectionError.java:9`, `model/MethodRef.java:30`, `model/MethodRef.java:51`, `model/MethodRef.java:188`, `RecordBindingResolver.java:948`, `FieldBuilder.java:3953`, `TestServiceStub.java:19`, `TestFixtures.java:80`.
+
+Three of these do not merely name a dead symbol, they misattribute the responsibility this item moved, which is why the sweep is not cosmetic:
+
+* `TypeFetcherGenerator.java:1469` states that the strict return-type check is enforced by `reflectServiceMethod`. It is now `ServiceDirectiveResolver`'s classify phase. Repoint at the classify arm.
+* `InputBeanResolver.java:47` and `MethodRef.java:30` / `:51` / `:188` name `reflectServiceMethod` as the producer of `MethodRef.Service` and its `callShape`. That is `bindServiceMethod` now. `development-principles.adoc` treats exactly this consumer-to-producer `{@link}` as the way a linkage the type system cannot carry gets recorded, so a dangling one loses the record.
+* `RecordBindingResolver.java:948` mirrors `reflectServiceMethod`'s `methods.get(0)`; that logic is `pickMethod` under decode now.
+
+The item's own Implementation section set the standard here for `validateRootInvariants` ("the name is cited outside its own file … Repoint the message"), and that one was handled correctly in `ArgCallEmitter`. The same treatment is owed to the method this item renamed. Add `ServiceCatalog.reflectServiceMethod` to the retired-vocabulary list below so the next Done-gate sweep has the grep query.
+
+**Non-blocking, no rework owed.** Two observations for the implementer's judgement, neither a contract break:
+
+* The `RecordParent` classify arm's second trigger fires on `Result` *or* `Scalar` returns, and only the `Result` half is pinned (`recordParent_noBatchParameterWithRecordReturn_isStillRejected` uses a `FilmDetails` return). A `Scalar`-return sibling with no candidate would close the over-fire guard on the arm this item exists to hoist. Cheap to add in the rework pass.
+* `inferBindingsByType`'s new decoded overload drops the `org.jooq.Table` eligibility filter its reflection-based sibling keeps, because `DecodedParam` carries no is-a-Table flag. Harmless today (a `Table<?>` parameter on a `@service` method is rejected either way, only the message differs) and the `@condition` path that needs the filter still has it. Worth a line of comment or a flag rather than silence, since the two overloads now read as equivalent and are not.
+
+The catalog-side swap from `couldBeSourcesShape` to `classifySourcesType(...).isPresent()` on the condition path is behaviour-preserving; both recognise `List`/`Set` of `RowN`, `RecordN` or a `TableRecord` subclass.
+
 ## Retired vocabulary
 
 * `ServiceCatalog.PkLessParent` (and its javadoc's "The one coordinate shape an empty `parentPkColumns` does not describe")
@@ -152,6 +179,7 @@ No compilation or execution tier: no emitted code changes shape; classification 
 * "@service at the root does not support `List<Row>`/`List<Record>`/`List<Object>` batch parameters" (the dead `validateRootInvariants` arm's drifted text; the reachable batch-at-root message survives, single-sourced in the classify phase)
 * `ServiceDirectiveResolver.validateRootInvariants` (the method dissolves, and the name is cited outside its own file: `ArgCallEmitter.buildMethodBackedCallArgs`'s `ParamSource.Sources` invariant message, and the resolver's class-javadoc bullet "Root invariants (Connection wrapper rejection, `Sources` parameter rejection)")
 * `looksLikeSourcesShape` and `couldBeSourcesShape` (both re-spellings of `classifySourcesType`; collapsed into the per-parameter candidate role)
+* `ServiceCatalog.reflectServiceMethod` (the fused entry point; splits into `decodeServiceMethod`, `reduceClaims` and `bindServiceMethod`, and the name is cited across nine files outside its own, listed in the review section above)
 
 Deliberately not retired: `parentPkColumns` as bind's key-column input name and the concept "the batch key is the parent's PK"; both are R648's to retire with the semantic change. The record-parent deferral text ("must be lifted through the parent chain") is also R648's, and after this item it is finally reachable for the batch-shaped signature that motivated both items.
 
