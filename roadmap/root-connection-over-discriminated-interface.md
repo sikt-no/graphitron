@@ -1,7 +1,7 @@
 ---
 id: R650
 title: "Support @asConnection on a root field returning a discriminated table interface"
-status: Ready
+status: Spec
 bucket: feature
 priority: 3
 theme: interface-union
@@ -11,6 +11,32 @@ last-updated: 2026-08-13
 ---
 
 # Support @asConnection on a root field returning a discriminated table interface
+
+## Reopened: the plan below answers the fan-out question the wrong way round
+
+Signed off Spec to Ready and reopened in the same session. Every claim in the body was checked
+against source and holds; that turned out to be necessary and not sufficient. The plan keeps the
+participant cross-table `@reference` join inside the paginating statement and adds a build-time
+cardinality invariant so `.limit()` over it is safe. The codebase's standing answer to the same
+question points elsewhere: the plain table child rejects inline `@asConnection` outright and names
+the remedy, "@asConnection on inline (non-`@splitQuery`) TableField is not supported; add
+`@splitQuery` for batched connection semantics". Pagination rides a split query, not a join welded
+into the paginating statement.
+
+`@discriminate` is an opt-in to subtyping where one base row is one entity, so the base table is a
+stable ordering and pagination surface by construction. The joined-detail join is part of that
+pattern and is already proven single-valued. The participant cross-table `@reference` is not part of
+the pattern; it is ordinary navigation this arm happens to emit as a gated LEFT JOIN. Framing its
+cardinality as an invariant to enforce, rather than as a join that does not belong there, would also
+make the discriminated root strictly more permissive than the plain child on the same authoring
+surface, which the child sibling already names as unprincipled.
+
+This item and `roadmap/child-connection-over-discriminated-interface.md` are to be merged and
+respecified together over the split-query route, on top of
+`roadmap/split-query-on-discriminated-interface-child.md` (the arm reads no delivery marker today).
+The body below is retained as verified research, not as a plan: the mechanism descriptions, the
+`DiscriminatedTableFragments` seam analysis, the `pageRequest` contract and the "what needs no work"
+evidence all survive a change of route. The fan-out resolution and the implementation list do not.
 
 ## Problem
 
@@ -158,19 +184,20 @@ Two things the landed fact also buys, worth noting but not worth widening scope 
 multiply rows"), which becomes readable off the model; and the `LauncherCommand` backstop stays
 restatable, per below.
 
-**Reviewer decision, settled at sign-off: the cross-table invariant lands inside this item, as its
-own commit, ordered before the emission commit.** The question was whether to split it out. It is
-independently valuable (it fixes today's list-shape duplication and single-shape runtime failure)
-and it is a build-acceptance change: a schema carrying a reverse-orientation non-unique cross-table
-hop builds today and would newly fail, on every shape rather than only the paginated one. Landing
-the fact on `On.ColumnPairs` is also a wider blast radius than a local catalog check would be. Both
-are arguments for a separate item, and neither survives the decisive one: without the invariant this
-item ships something silently wrong, so a dependency hop buys only latency for the same acceptance
-change. The widened acceptance is a fix and not a regression, because the uniqueness form rejects
-exactly the schemas already broken today; the reactor's own fixtures stay green, as
-`referenceOnDetailOnlyColumn_staysValid` is the reachable reverse-orientation case and its FK columns
-are the detail's composite primary key. Land the invariant first so the emission commit rests on an
-enforced floor rather than assuming one.
+**Superseded by the reopen above. Do not implement this section as written.** It asked whether the
+cross-table invariant should be its own item and answered "keep it here, as its own commit". That
+answers the wrong question. The invariant is sound and the analysis above holds, but it defends a
+join that the split-query doctrine says should not share the paginating statement in the first
+place. If the redesign moves participant cross-table fields out of that statement, the fact on
+`On.ColumnPairs`, the enforcement in `extractCrossTableFields` and the non-local edit across every
+construction site all leave with it.
+
+Two precision defects to carry forward if any form of the invariant survives. The predicate is
+stated as target-side columns *equal to* some entry of `catalog.candidateKeys(targetTable)`;
+containment is the correct form, since target-side `(a, b)` over a target with `UNIQUE(a)` is
+single-valued but fails equality. And "rejects exactly the schemas that are already silently broken
+and no others" overstates: `candidateKeys` reads `getPrimaryKey()` plus `getKeys()`, so uniqueness
+backed by a bare unique index rather than a constraint is invisible and would be rejected wrongly.
 
 **Why not the two-stage shape.** `MultiTablePolymorphicEmitter.buildStage1ConnectionBlock` paginates
 over a `UNION ALL` derived table of `(typename, pk, sort)` because the multi-table interface has *no
