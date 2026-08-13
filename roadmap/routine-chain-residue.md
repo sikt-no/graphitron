@@ -17,7 +17,10 @@ Non-gating residue recorded during R435, none of it blocking the shipped surface
   (the `RoutineResolution.Chain` arm of `QueryTableField` pins the read surface empty and the
   deterministic-order rule exempts the arm explicitly), while a child routine list *requires*
   `@defaultOrder`. An `@defaultOrder` surface over the root chain's catalog terminus
-  reconciles the two positions.
+  reconciles the two positions. Field-reported since as a silent no-op (the root classifier
+  discards the directive with no diagnostic); see
+  `roadmap/routine-chain-order-directive-silent-noop.md` (R659), which carries the repro and
+  splits the diagnostic from the capability.
 * **Correlated value-arg `DataType` binding**: mixed (`Field`-overload) routine calls type
   argument-sourced values by their Java `paramType` read, not a two-arg
   `DSL.val(v, dataType)`; jOOQ's TVF codegen exposes no `Parameter` constants to reference.
