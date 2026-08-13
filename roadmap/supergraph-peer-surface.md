@@ -5,7 +5,7 @@ status: Backlog
 bucket: feature
 priority: 3
 theme: tooling
-depends-on: [maven-config-fact-family]
+depends-on: []
 created: 2026-08-12
 last-updated: 2026-08-12
 ---
