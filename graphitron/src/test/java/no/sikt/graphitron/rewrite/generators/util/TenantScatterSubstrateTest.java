@@ -2,8 +2,7 @@ package no.sikt.graphitron.rewrite.generators.util;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.session.SessionStateConfig;
-import no.sikt.graphitron.rewrite.session.SessionStateConfig.Variable;
+import no.sikt.graphitron.rewrite.session.SessionHooksFixtures;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.jooq.SQLDialect;
@@ -63,15 +62,15 @@ class TenantScatterSubstrateTest {
 
     @BeforeAll
     static void compile() {
-        var config = SessionStateConfig.from(null, null, List.of(new Variable("app.uid", "sub")));
+        var hooks = SessionHooksFixtures.recordingConnectionHooks();
         Map<String, TypeSpec> units = new LinkedHashMap<>();
-        for (TypeSpec spec : ConnectionRuntimeClassGenerator.generate(PACKAGE, config, ClassName.get(String.class))) {
+        for (TypeSpec spec : ConnectionRuntimeClassGenerator.generate(PACKAGE, hooks, ClassName.get(String.class))) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
         }
         for (TypeSpec spec : GraphitronTransactionProviderGenerator.generate(PACKAGE)) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
         }
-        for (TypeSpec spec : GraphitronConnectionInstrumentationGenerator.generate(PACKAGE, true)) {
+        for (TypeSpec spec : GraphitronConnectionInstrumentationGenerator.generate(PACKAGE, true, hooks)) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
         }
         harness = EmittedCodeHarness.compile(units);
@@ -406,8 +405,8 @@ class TenantScatterSubstrateTest {
     }
 
     private Object newTenantConnections(Object runtime) throws Throwable {
-        return tenantConnectionsClass.getConstructor(runtimeClass, String.class, commitPolicyClass)
-            .newInstance(runtime, "{}", commitPolicyCommit);
+        return tenantConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, String.class)
+            .newInstance(runtime, commitPolicyCommit, "{}");
     }
 
     private List<?> scatter(Object tc, Collection<String> keys, Function<Object, Object> perTenant) throws Throwable {

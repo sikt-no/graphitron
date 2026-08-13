@@ -57,10 +57,8 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_DISABLED_RULE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_EXCLUDED_TYPE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_OUTPUT;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SCHEMA_INPUT;
-import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_DISCONNECT;
-import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_HOOK;
-import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_STATE;
-import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_VARIABLE;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_MOUNT;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_UNMOUNT;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SUPERGRAPH;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_TENANT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
@@ -192,8 +190,7 @@ class FactCaptureAgreementTest {
             "store_graph", "store_graph_schema_input", "store_graph_schema_extension",
             "store_graph_supergraph", "store_graph_output", "store_graph_tenant_column",
             "store_graph_lint_disabled_rule", "store_graph_lint_excluded_type",
-            "store_graph_session_state", "store_graph_session_variable",
-            "store_graph_session_hook", "store_graph_session_disconnect",
+            "store_graph_session_mount", "store_graph_session_unmount",
             "store_graph_source")) {
             registrations.put(relation, Arm.EQUALITY);
         }
@@ -1856,10 +1853,8 @@ class FactCaptureAgreementTest {
             tmp.resolve("target/generated-sources"));
         var lint = new no.sikt.graphitron.rewrite.lint.LintConfig(
             Set.of("rule-a"), List.of("Legacy*", "Deprecated*"));
-        var session = new no.sikt.graphitron.rewrite.session.SessionStateConfig.FunctionHooks(
-            "app.mount",
-            new no.sikt.graphitron.rewrite.session.SessionStateConfig.Unmount.PairedDisconnect(
-                "app.unmount", true, true));
+        var session = no.sikt.graphitron.rewrite.session.SessionStateConfig.from(
+            "com.example.db.Routines#connect", "com.example.db.Routines#disconnect");
         var config = new FactCapture.SubjectConfig(java.util.Optional.empty(),
             java.util.Optional.of("checkout-supergraph"), java.util.Optional.of(output),
             java.util.Optional.of("tenant_id"), lint, session);
@@ -1886,16 +1881,12 @@ class FactCaptureAgreementTest {
                 .orderBy(STORE_GRAPH_LINT_EXCLUDED_TYPE.ORDINAL).fetch(0, String.class))
                 .as("the list half keeps the author's order; the set half has none to keep")
                 .isEqualTo(lint.excludedTypePatterns());
-            assertThat(dsl.select(STORE_GRAPH_SESSION_STATE.ARM).from(STORE_GRAPH_SESSION_STATE)
-                .fetch(0, String.class)).containsExactly("function_hooks");
-            assertThat(dsl.select(STORE_GRAPH_SESSION_HOOK.CONNECT_CALL).from(STORE_GRAPH_SESSION_HOOK)
-                .fetch(0, String.class)).containsExactly("app.mount");
-            assertThat(dsl.selectFrom(STORE_GRAPH_SESSION_DISCONNECT).fetchSingle())
-                .extracting(r -> r.getDisconnectCall(), r -> r.getOutHandle(),
-                    r -> r.getStateSurvivesTransactions())
-                .containsExactly("app.unmount", true, true);
-            assertThat(dsl.fetchCount(STORE_GRAPH_SESSION_VARIABLE))
-                .as("the variables arm's payload, under the function-hook arm").isZero();
+            assertThat(dsl.select(STORE_GRAPH_SESSION_MOUNT.MOUNT_METHOD).from(STORE_GRAPH_SESSION_MOUNT)
+                .fetch(0, String.class))
+                .as("only the authored string lands; the reflected signature is a model fact")
+                .containsExactly("com.example.db.Routines#connect");
+            assertThat(dsl.select(STORE_GRAPH_SESSION_UNMOUNT.UNMOUNT_METHOD).from(STORE_GRAPH_SESSION_UNMOUNT)
+                .fetch(0, String.class)).containsExactly("com.example.db.Routines#disconnect");
             assertThat(dsl.fetchCount(STORE_GRAPH_SCHEMA_INPUT))
                 .as("a subject with no recipe writes no recipe rows rather than an empty one").isZero();
         }
@@ -1922,51 +1913,32 @@ class FactCaptureAgreementTest {
             assertThat(dsl.fetchCount(STORE_GRAPH_TENANT_COLUMN)).isZero();
             assertThat(dsl.fetchCount(STORE_GRAPH_LINT_DISABLED_RULE)).isZero();
             assertThat(dsl.fetchCount(STORE_GRAPH_LINT_EXCLUDED_TYPE)).isZero();
-            assertThat(dsl.fetchCount(STORE_GRAPH_SESSION_STATE))
+            assertThat(dsl.fetchCount(STORE_GRAPH_SESSION_MOUNT))
                 .as("the no-configuration arm is the missing row").isZero();
+            assertThat(dsl.fetchCount(STORE_GRAPH_SESSION_UNMOUNT)).isZero();
         }
     }
 
     /**
-     * The variables arm, and the nested unmount alternation's other half. Two facts the flat layout
-     * this relation set replaced would have lost: the variables arm carries ordinal-keyed rows and no
-     * hook row at all, and an unmount-free hook is a hook row with no disconnect row, which is a
-     * declared opt-out rather than a disconnect nobody wrote.
+     * The mount-only configuration: row presence is the fact on both relations, so omitting
+     * {@code <unmount>} is a mount row with no unmount row, per the family's absence rule; no
+     * opt-out marker exists any more.
      */
     @Test
-    @DisplayName("the session-state arms transcribe as arms, unmount-free included")
-    void theSessionStateArmsTranscribeAsArms(@TempDir Path tmp) {
-        var variables = new no.sikt.graphitron.rewrite.session.SessionStateConfig.Variables(List.of(
-            new no.sikt.graphitron.rewrite.session.SessionStateConfig.Variable("app.user_id", "sub"),
-            new no.sikt.graphitron.rewrite.session.SessionStateConfig.Variable("app.tenant", "tid")));
+    @DisplayName("a mount-only configuration is a mount row with no unmount row")
+    void aMountOnlyConfigurationIsAMountRowWithNoUnmountRow(@TempDir Path tmp) {
+        var mountOnly = no.sikt.graphitron.rewrite.session.SessionStateConfig.from(
+            "com.example.KernelIdentity#mount", null);
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), graph(tmp), withSessionState(variables),
-                CapturedStore.registryOf(tmp, "type Query { ping: String }"),
-                CapturedStore.attributionOf(tmp));
-            var dsl = store.dsl();
-
-            assertThat(dsl.select(STORE_GRAPH_SESSION_STATE.ARM).from(STORE_GRAPH_SESSION_STATE)
-                .fetch(0, String.class)).containsExactly("variables");
-            assertThat(dsl.select(STORE_GRAPH_SESSION_VARIABLE.VARIABLE_NAME,
-                    STORE_GRAPH_SESSION_VARIABLE.CLAIM).from(STORE_GRAPH_SESSION_VARIABLE)
-                .orderBy(STORE_GRAPH_SESSION_VARIABLE.ORDINAL).fetch())
-                .extracting(r -> r.value1() + "=" + r.value2())
-                .containsExactly("app.user_id=sub", "app.tenant=tid");
-            assertThat(dsl.fetchCount(STORE_GRAPH_SESSION_HOOK))
-                .as("the function-hook arm's payload, under the variables arm").isZero();
-        }
-
-        var unmountFree = new no.sikt.graphitron.rewrite.session.SessionStateConfig.FunctionHooks(
-            "app.mount",
-            no.sikt.graphitron.rewrite.session.SessionStateConfig.Unmount.UnmountFree.INSTANCE);
-        try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), graph(tmp), withSessionState(unmountFree),
+            FactCapture.capture(store.dsl(), graph(tmp), withSessionState(mountOnly),
                 CapturedStore.registryOf(tmp, "type Query { ping: String }"),
                 CapturedStore.attributionOf(tmp));
 
-            assertThat(store.dsl().fetchCount(STORE_GRAPH_SESSION_HOOK)).isOne();
-            assertThat(store.dsl().fetchCount(STORE_GRAPH_SESSION_DISCONNECT))
-                .as("the declared unmount-free opt-out is the disconnect relation's missing row")
+            assertThat(store.dsl().select(STORE_GRAPH_SESSION_MOUNT.MOUNT_METHOD)
+                .from(STORE_GRAPH_SESSION_MOUNT).fetch(0, String.class))
+                .containsExactly("com.example.KernelIdentity#mount");
+            assertThat(store.dsl().fetchCount(STORE_GRAPH_SESSION_UNMOUNT))
+                .as("the supported mount-only configuration is the unmount relation's missing row")
                 .isZero();
         }
     }

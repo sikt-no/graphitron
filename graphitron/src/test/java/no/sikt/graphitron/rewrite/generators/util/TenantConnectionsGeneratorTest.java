@@ -1,8 +1,7 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.session.SessionStateConfig;
-import no.sikt.graphitron.rewrite.session.SessionStateConfig.Variable;
+import no.sikt.graphitron.rewrite.session.SessionHooksFixtures;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.jooq.SQLDialect;
@@ -33,7 +32,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * Because these are emitted, the honest way to assert their behaviour is to compile the real emitted
  * {@code TypeSpec}s and drive them over fake JDBC. The units are generated with the Postgres
  * {@code <variables>} sugar so a real {@code GraphitronSessionHook} runs at acquisition/release, letting
- * a fake {@code Connection} observe connect/disconnect as the {@code prepareStatement} calls the hook
+ * a fake {@code Connection} observe mount/unmount as the {@code prepareStatement} calls the fixture hook
  * makes; the fake tenant {@code DataSource}s are keyed so "the right source per key" and "one connection
  * per distinct key" read straight off the call log.
  */
@@ -53,15 +52,15 @@ class TenantConnectionsGeneratorTest {
 
     @BeforeAll
     static void compile() {
-        var config = SessionStateConfig.from(null, null, List.of(new Variable("app.uid", "sub")));
+        var hooks = SessionHooksFixtures.recordingConnectionHooks();
         Map<String, TypeSpec> units = new LinkedHashMap<>();
-        for (TypeSpec spec : ConnectionRuntimeClassGenerator.generate(PACKAGE, config)) {
+        for (TypeSpec spec : ConnectionRuntimeClassGenerator.generate(PACKAGE, hooks)) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
         }
         for (TypeSpec spec : GraphitronTransactionProviderGenerator.generate(PACKAGE)) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
         }
-        for (TypeSpec spec : GraphitronConnectionInstrumentationGenerator.generate(PACKAGE)) {
+        for (TypeSpec spec : GraphitronConnectionInstrumentationGenerator.generate(PACKAGE, false, hooks)) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
         }
         harness = EmittedCodeHarness.compile(units);
@@ -120,9 +119,13 @@ class TenantConnectionsGeneratorTest {
 
         events.clear();
         releaseAll(tc);
-        assertThat(events).containsExactly(
+        // The unified carrier's map is concurrent, so cross-key release order is unspecified;
+        // within one key the unmount always precedes the close.
+        assertThat(events).containsExactlyInAnyOrder(
             "disconnect:A", "close:A",
             "disconnect:B", "close:B");
+        assertThat(events.indexOf("disconnect:A")).isLessThan(events.indexOf("close:A"));
+        assertThat(events.indexOf("disconnect:B")).isLessThan(events.indexOf("close:B"));
     }
 
     @Test
@@ -142,7 +145,9 @@ class TenantConnectionsGeneratorTest {
 
         assertThat(events)
             .as("A returns to its pool, B is evicted (aborted); neither is orphaned by the other's outcome")
-            .containsExactly("disconnect:A", "close:A", "disconnect:B", "abort:B");
+            .containsExactlyInAnyOrder("disconnect:A", "close:A", "disconnect:B", "abort:B");
+        assertThat(events.indexOf("disconnect:A")).isLessThan(events.indexOf("close:A"));
+        assertThat(events.indexOf("disconnect:B")).isLessThan(events.indexOf("abort:B"));
     }
 
     // --- driving helpers -------------------------------------------------------------------------
@@ -154,8 +159,8 @@ class TenantConnectionsGeneratorTest {
     }
 
     private Object newTenantConnections(Object runtime, String claims) throws Throwable {
-        return tenantConnectionsClass.getConstructor(runtimeClass, String.class, commitPolicyClass)
-            .newInstance(runtime, claims, commitPolicyCommit);
+        return tenantConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, String.class)
+            .newInstance(runtime, commitPolicyCommit, claims);
     }
 
     private void acquireForTenant(Object runtime, Object key, String claims) throws Throwable {
@@ -199,8 +204,8 @@ class TenantConnectionsGeneratorTest {
     private Connection fakeConnection(String label, boolean failDisconnect) {
         return (Connection) Proxy.newProxyInstance(
             harness.classLoader(), new Class<?>[]{Connection.class}, (proxy, method, args) -> switch (method.getName()) {
-                // The <variables> hook runs prepareStatement for both connect and disconnect; the disconnect
-                // SQL is the one that clears to the empty string. Label the hook phase off the SQL.
+                // The RecordingHookFixture pair runs prepareStatement for both mount and unmount;
+                // the unmount SQL is the one that clears to the empty string. Label the phase off the SQL.
                 case "prepareStatement" -> {
                     boolean disconnect = ((String) args[0]).contains("'', false");
                     events.add((disconnect ? "disconnect:" : "connect:") + label);

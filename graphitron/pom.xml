@@ -98,6 +98,23 @@
             <artifactId>jakarta.validation-api</artifactId>
             <scope>test</scope>
         </dependency>
+        <!--
+            jOOQ's org.jooq.conf.Settings is a JAXB-generated class annotated with
+            @XmlElement / @XmlAccessorType, and jOOQ declares jakarta.xml.bind-api as
+            <optional>, so it is not on the classpath transitively. The emitted-code
+            harness tests drive the generated session-hook and runtime classes with real
+            Settings instances; without the API javac cannot resolve those annotation
+            methods and floods the test compile with "Cannot find annotation method
+            'defaultValue()'" warnings, which -Werror rejects. Test scope only; the same
+            fix graphitron-sakila-example carries at provided scope for its generated
+            sources.
+        -->
+        <dependency>
+            <groupId>jakarta.xml.bind</groupId>
+            <artifactId>jakarta.xml.bind-api</artifactId>
+            <version>4.0.2</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

@@ -9,7 +9,6 @@ import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.QueryField;
-import no.sikt.graphitron.rewrite.session.SessionStateConfig;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -75,7 +74,7 @@ class FetcherEdgeRelationTest {
         var bundle = TestSchemaHelper.buildBundle(SDL);
         model = bundle.model();
         plan = EmitPlan.produce(model, bundle.federationLink(), bundle.usesOneOf(),
-            SessionStateConfig.none(), DEFAULT_OUTPUT_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE);
     }
 
     /**

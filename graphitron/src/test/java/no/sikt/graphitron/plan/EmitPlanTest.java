@@ -5,7 +5,7 @@ import no.sikt.graphitron.command.GlobalUnitKind;
 import no.sikt.graphitron.command.UnitRef;
 import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.rewrite.session.SessionStateConfig;
+import no.sikt.graphitron.rewrite.session.SessionHooksFixtures;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
@@ -40,7 +40,7 @@ class EmitPlanTest {
 
     @Test
     void plainSchema_producesTheUnconditionalKindsPlusDevExecutor() {
-        var plan = producePlain(SessionStateConfig.none());
+        var plan = producePlain();
 
         var expected = EnumSet.copyOf(UNCONDITIONAL);
         expected.add(GlobalUnitKind.DEV_EXECUTOR);
@@ -51,7 +51,7 @@ class EmitPlanTest {
 
     @Test
     void everyCommittedUnitIsAnchoredAtTheOutputPackage() {
-        var plan = producePlain(SessionStateConfig.none());
+        var plan = producePlain();
         assertThat(plan.globals())
             .allSatisfy(command -> assertThat(command.units())
                 .allSatisfy(unit -> assertThat(unit.packageName())
@@ -60,19 +60,23 @@ class EmitPlanTest {
     }
 
     @Test
-    void connectionRuntime_commitsTheFixedFourWithoutSessionState() {
-        var plan = producePlain(SessionStateConfig.none());
+    void connectionRuntime_commitsTheFixedThreeWithoutSessionState() {
+        // The NotConfigured arm plans no hook unit at all: no SessionHook interface exists any
+        // more, and nothing is emitted for the no-configuration case.
+        var plan = producePlain();
         assertThat(unitNames(plan, GlobalUnitKind.CONNECTION_RUNTIME))
-            .containsExactly("SessionHook", "PinnedConnection", "GraphitronRuntime", "TenantConnections");
+            .containsExactly("PinnedConnection", "GraphitronRuntime", "TenantConnections");
     }
 
     @Test
-    void connectionRuntime_commitsTheHookImplementationWhenSessionStateIsConfigured() {
-        var variables = new SessionStateConfig.Variables(
-            List.of(new SessionStateConfig.Variable("app.user", "sub")));
-        var plan = producePlain(variables);
+    void connectionRuntime_commitsTheHookClassWhenSessionHooksAreResolved() {
+        GraphitronSchemaBuilder.Bundle bundle = TestSchemaHelper.buildBundle(PLAIN_SDL);
+        var model = SessionHooksFixtures.withHooks(bundle.model(),
+            SessionHooksFixtures.handleLess(SessionHooksFixtures.stringPayload("claims")));
+        var plan = EmitPlan.produce(model, bundle.federationLink(), bundle.usesOneOf(),
+            DEFAULT_OUTPUT_PACKAGE);
         assertThat(unitNames(plan, GlobalUnitKind.CONNECTION_RUNTIME))
-            .containsExactly("SessionHook", "PinnedConnection", "GraphitronRuntime", "TenantConnections",
+            .containsExactly("PinnedConnection", "GraphitronRuntime", "TenantConnections",
                 "GraphitronSessionHook");
     }
 
@@ -80,22 +84,22 @@ class EmitPlanTest {
     void oneOfRow_requiresBothFederationAndOneOfUse() {
         var model = TestSchemaHelper.buildBundle(PLAIN_SDL).model();
 
-        var both = EmitPlan.produce(model, true, true, SessionStateConfig.none(), DEFAULT_OUTPUT_PACKAGE);
+        var both = EmitPlan.produce(model, true, true, DEFAULT_OUTPUT_PACKAGE);
         assertThat(kinds(both)).contains(GlobalUnitKind.ONE_OF_DIRECTIVE_SDL);
         assertThat(unitNames(both, GlobalUnitKind.ONE_OF_DIRECTIVE_SDL)).containsExactly("OneOfDirectiveSdl");
 
-        var federationOnly = EmitPlan.produce(model, true, false, SessionStateConfig.none(), DEFAULT_OUTPUT_PACKAGE);
+        var federationOnly = EmitPlan.produce(model, true, false, DEFAULT_OUTPUT_PACKAGE);
         assertThat(kinds(federationOnly)).doesNotContain(GlobalUnitKind.ONE_OF_DIRECTIVE_SDL);
 
         // The non-federation printer already prints the definition, so @oneOf alone commits nothing.
-        var oneOfOnly = EmitPlan.produce(model, false, true, SessionStateConfig.none(), DEFAULT_OUTPUT_PACKAGE);
+        var oneOfOnly = EmitPlan.produce(model, false, true, DEFAULT_OUTPUT_PACKAGE);
         assertThat(kinds(oneOfOnly)).doesNotContain(GlobalUnitKind.ONE_OF_DIRECTIVE_SDL);
     }
 
     @Test
     void devExecutorRow_isAbsentUnderFederation() {
         var model = TestSchemaHelper.buildBundle(PLAIN_SDL).model();
-        var federated = EmitPlan.produce(model, true, false, SessionStateConfig.none(), DEFAULT_OUTPUT_PACKAGE);
+        var federated = EmitPlan.produce(model, true, false, DEFAULT_OUTPUT_PACKAGE);
         assertThat(kinds(federated)).doesNotContain(GlobalUnitKind.DEV_EXECUTOR);
     }
 
@@ -108,11 +112,11 @@ class EmitPlanTest {
             type Query { film: Film }
             """);
         var plan = EmitPlan.produce(withNode.model(), withNode.federationLink(), withNode.usesOneOf(),
-            SessionStateConfig.none(), DEFAULT_OUTPUT_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE);
         assertThat(kinds(plan)).contains(GlobalUnitKind.QUERY_NODE_FETCHER);
         assertThat(unitNames(plan, GlobalUnitKind.QUERY_NODE_FETCHER)).containsExactly("QueryNodeFetcher");
 
-        assertThat(kinds(producePlain(SessionStateConfig.none())))
+        assertThat(kinds(producePlain()))
             .doesNotContain(GlobalUnitKind.QUERY_NODE_FETCHER);
     }
 
@@ -132,7 +136,7 @@ class EmitPlanTest {
             type Query { film: Film }
             """);
         var plan = EmitPlan.produce(withNode.model(), withNode.federationLink(), withNode.usesOneOf(),
-            SessionStateConfig.none(), DEFAULT_OUTPUT_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE);
 
         var dispatch = plan.globals().stream()
             .filter(command -> command.kind() == GlobalUnitKind.ENTITY_FETCHER_DISPATCH)
@@ -152,10 +156,10 @@ class EmitPlanTest {
             """).usesOneOf()).isTrue();
     }
 
-    private static EmitPlan producePlain(SessionStateConfig sessionState) {
+    private static EmitPlan producePlain() {
         GraphitronSchemaBuilder.Bundle bundle = TestSchemaHelper.buildBundle(PLAIN_SDL);
         return EmitPlan.produce(bundle.model(), bundle.federationLink(), bundle.usesOneOf(),
-            sessionState, DEFAULT_OUTPUT_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE);
     }
 
     private static Set<GlobalUnitKind> kinds(EmitPlan plan) {

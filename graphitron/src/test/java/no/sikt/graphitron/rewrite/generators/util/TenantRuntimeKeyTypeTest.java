@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite.generators.util;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.session.SessionStateConfig;
+import no.sikt.graphitron.rewrite.session.SessionHooks;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
@@ -32,7 +32,7 @@ class TenantRuntimeKeyTypeTest {
     @Test
     void configuredTenantColumnTypesEveryTenantKeyedSurface() {
         var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionStateConfig.none(), ClassName.get(Integer.class));
+            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class));
 
         var runtime = render(units, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
         assertThat(runtime)
@@ -49,7 +49,7 @@ class TenantRuntimeKeyTypeTest {
     @Test
     void multiTenantCarrierShipsTheRoutingStatics() {
         var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionStateConfig.none(), ClassName.get(Integer.class));
+            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class));
 
         var carrier = render(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
         assertThat(carrier)
@@ -73,7 +73,7 @@ class TenantRuntimeKeyTypeTest {
     @Test
     void singleTenantCarrierOmitsTheRoutingStatics() {
         var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionStateConfig.none());
+            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE);
 
         var carrier = render(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
         assertThat(carrier)
@@ -89,7 +89,7 @@ class TenantRuntimeKeyTypeTest {
     @Test
     void multiTenantRuntimeShipsTheFanOutConfigurationSurface() {
         var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionStateConfig.none(), ClassName.get(Integer.class));
+            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class));
 
         var runtime = render(units, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
         assertThat(runtime)
@@ -110,7 +110,7 @@ class TenantRuntimeKeyTypeTest {
     @Test
     void multiTenantCarrierShipsTheScatterSurface() {
         var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionStateConfig.none(), ClassName.get(Integer.class));
+            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class));
 
         var carrier = render(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
         assertThat(carrier)
@@ -139,7 +139,7 @@ class TenantRuntimeKeyTypeTest {
     @Test
     void multiTenantCarrierShipsTheFanOutHelpers() {
         var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionStateConfig.none(), ClassName.get(Integer.class));
+            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class));
 
         var carrier = render(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
         assertThat(carrier)
@@ -171,7 +171,7 @@ class TenantRuntimeKeyTypeTest {
     @Test
     void singleTenantOmitsTheFanOutSubstrate() {
         var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionStateConfig.none());
+            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE);
 
         var runtime = render(units, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
         assertThat(runtime)
@@ -194,7 +194,7 @@ class TenantRuntimeKeyTypeTest {
     @Test
     void singleTenantKeepsTheErasedObjectShape() {
         var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionStateConfig.none());
+            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE);
 
         var runtime = render(units, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
         assertThat(runtime)

@@ -1,45 +1,56 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
+import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.session.SessionStateConfig;
-import no.sikt.graphitron.rewrite.session.SessionStateConfig.FunctionHooks;
-import no.sikt.graphitron.rewrite.session.SessionStateConfig.RawHook;
-import no.sikt.graphitron.rewrite.session.SessionStateConfig.Variable;
+import no.sikt.graphitron.rewrite.session.SessionHooks;
+import no.sikt.graphitron.rewrite.session.SessionHooksFixtures;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
-import java.sql.CallableStatement;
 import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+
+import org.jooq.SQLDialect;
+import org.jooq.conf.Settings;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Unit-tier coverage of the concrete {@code GraphitronSessionHook} that
- * {@link ConnectionRuntimeClassGenerator} emits from a configured {@code <sessionState>}.
- * The hook is emitted, never shipped, so the only honest assertion of its JDBC call shapes is to
- * compile the real emitted {@code TypeSpec} and drive it: {@link EmittedCodeHarness} compiles it, and
- * every assertion reads the call log recorded by a fake {@code Connection} whose
- * {@code prepareCall}/{@code prepareStatement} hand back recording {@code CallableStatement}/
- * {@code PreparedStatement} proxies, never the emitted source text.
+ * Unit-tier coverage of the emitted {@code GraphitronSessionHook}: one final class with static
+ * {@code mount}/{@code unmount} methods calling the consumer's resolved methods directly. The
+ * class is emitted, never shipped, so the honest assertion is to compile the real emitted
+ * {@code TypeSpec} against a fixture consumer class ({@link HookInvocationFixture}) and drive it;
+ * every assertion reads the fixture's recorded invocations, never emitted source text.
+ *
+ * <p>What this pins: the payload spreads into the consumer method in the mount's own declaration
+ * order; the seam parameter lands wherever the consumer declared it (no positional convention);
+ * a {@code Configuration}-seam method receives a provider-free {@code Configuration} carrying
+ * the resolved source's dialect and settings; a {@code Connection}-seam method receives the
+ * pinned connection itself; the unmount binds the handle exactly when its signature takes one;
+ * and a mount-only configuration emits no {@code unmount} at all.
  */
 @UnitTier
 class SessionHookImplGeneratorTest {
 
     private static final String PACKAGE = "com.example";
     private static final String SCHEMA_PACKAGE = PACKAGE + ".schema";
+    private static final String FIXTURE = HookInvocationFixture.class.getName();
 
     private EmittedCodeHarness harness;
-    private final List<String> events = new ArrayList<>();
+
+    @BeforeEach
+    void reset() {
+        HookInvocationFixture.reset();
+    }
 
     @AfterEach
     void close() {
@@ -49,191 +60,148 @@ class SessionHookImplGeneratorTest {
     }
 
     @Test
-    void functionHook_withHandle_capturesOutHandleAndBindsItOnDisconnect() throws Throwable {
-        Object hook = hookFor(SessionStateConfig.from(
-            new RawHook("Pk_Ras.Connect", true), new RawHook("Pk_Ras.Disconnect", true), List.of()));
+    void mount_spreadsThePayloadInDeclarationOrder_andReturnsTheHandle() throws Throwable {
+        var hooks = new SessionHooks.Handled(
+            SessionHooksFixtures.hookRef(FIXTURE, "mount", ClassName.get(String.class),
+                SessionHooksFixtures.configurationSeam(),
+                SessionHooksFixtures.stringPayload("tenant"),
+                SessionHooksFixtures.payload("count", ClassName.get(Integer.class))),
+            ClassName.get(String.class),
+            Optional.of(SessionHooksFixtures.hookRef(FIXTURE, "unmount", TypeName.VOID,
+                SessionHooksFixtures.configurationSeam(),
+                SessionHooksFixtures.handleParam(ClassName.get(String.class)))));
+        Class<?> hookClass = compileHook(hooks);
 
-        Object handle = connect(hook, "claims-payload");
-        assertThat(handle).isEqualTo("RAS-42");
-        assertThat(events).containsExactly(
-            "prepareCall:{ call Pk_Ras.Connect(?, ?) }",
-            "setString:1:claims-payload",
-            "registerOutParameter:2:VARCHAR",
-            "execute",
-            "getString:2",
-            "close");
+        Object handle = hookClass.getMethod("mount",
+                Connection.class, SQLDialect.class, Settings.class, String.class, Integer.class)
+            .invoke(null, fakeConnection(), SQLDialect.POSTGRES, new Settings(), "t1", 7);
 
-        events.clear();
-        disconnect(hook, "RAS-42");
-        assertThat(events).containsExactly(
-            "prepareCall:{ call Pk_Ras.Disconnect(?) }",
-            "setString:1:RAS-42",
-            "execute",
-            "close");
+        assertThat(handle).isEqualTo("H:t1");
+        assertThat(HookInvocationFixture.EVENTS).containsExactly("mount:t1:7");
+
+        hookClass.getMethod("unmount", Connection.class, SQLDialect.class, Settings.class, String.class)
+            .invoke(null, fakeConnection(), SQLDialect.POSTGRES, new Settings(), "H:t1");
+        assertThat(HookInvocationFixture.EVENTS).containsExactly("mount:t1:7", "unmount:H:t1");
     }
 
     @Test
-    void functionHook_noHandle_passesOnlyClaimsAndReturnsNull() throws Throwable {
-        Object hook = hookFor(SessionStateConfig.from(
-            new RawHook("Pk.Connect", false), new RawHook("Pk.Disconnect", false), List.of()));
+    void configurationSeam_receivesAProviderFreeConfigurationCarryingTheSourcesDialectAndSettings()
+            throws Throwable {
+        var hooks = new SessionHooks.Handled(
+            SessionHooksFixtures.hookRef(FIXTURE, "mount", ClassName.get(String.class),
+                SessionHooksFixtures.configurationSeam(),
+                SessionHooksFixtures.stringPayload("tenant"),
+                SessionHooksFixtures.payload("count", ClassName.get(Integer.class))),
+            ClassName.get(String.class), Optional.empty());
+        Class<?> hookClass = compileHook(hooks);
 
-        Object handle = connect(hook, "claims-payload");
-        assertThat(handle).isNull();
-        assertThat(events).containsExactly(
-            "prepareCall:{ call Pk.Connect(?) }",
-            "setString:1:claims-payload",
-            "execute",
-            "close");
+        var settings = new Settings().withRenderSchema(false);
+        hookClass.getMethod("mount",
+                Connection.class, SQLDialect.class, Settings.class, String.class, Integer.class)
+            .invoke(null, fakeConnection(), SQLDialect.POSTGRES, settings, "t1", 7);
 
-        events.clear();
-        disconnect(hook, null);
-        assertThat(events).containsExactly(
-            "prepareCall:{ call Pk.Disconnect() }",
-            "execute",
-            "close");
+        var cfg = HookInvocationFixture.lastConfiguration;
+        assertThat(cfg.dialect()).isEqualTo(SQLDialect.POSTGRES);
+        assertThat(cfg.settings().isRenderSchema())
+            .as("the resolved source's own Settings reach the consumer's mount")
+            .isFalse();
+        assertThat(cfg.transactionProvider().getClass().getName())
+            .as("provider-free: the transaction-demarcation seam structurally cannot ride the hook's Configuration")
+            .startsWith("org.jooq");
     }
 
     @Test
-    void functionHook_unmountFree_disconnectIsNoOp() throws Throwable {
-        Object hook = hookFor(SessionStateConfig.from(
-            new RawHook("Pk.SetContext", false), new RawHook(null, false), List.of()));
+    void seamParameter_landsWhereTheConsumerDeclaredIt() throws Throwable {
+        var hooks = new SessionHooks.Handled(
+            SessionHooksFixtures.hookRef(FIXTURE, "mountSeamInMiddle", ClassName.get(String.class),
+                SessionHooksFixtures.stringPayload("first"),
+                SessionHooksFixtures.configurationSeam(),
+                SessionHooksFixtures.stringPayload("second")),
+            ClassName.get(String.class), Optional.empty());
+        Class<?> hookClass = compileHook(hooks);
 
-        connect(hook, "claims-payload");
-        assertThat(events).containsExactly(
-            "prepareCall:{ call Pk.SetContext(?) }",
-            "setString:1:claims-payload",
-            "execute",
-            "close");
+        Object handle = hookClass.getMethod("mount",
+                Connection.class, SQLDialect.class, Settings.class, String.class, String.class)
+            .invoke(null, fakeConnection(), SQLDialect.POSTGRES, new Settings(), "a", "b");
 
-        events.clear();
-        disconnect(hook, null);
-        // The explicit unmount-free opt-out issues no SQL at all.
-        assertThat(events).isEmpty();
+        assertThat(handle).isEqualTo("H:ab");
+        assertThat(HookInvocationFixture.EVENTS).containsExactly("mountSeamInMiddle:a:b");
     }
 
     @Test
-    void variablesSugar_connectSetsFromClaimsInOneRoundTrip_disconnectClearsSameVariables() throws Throwable {
-        Object hook = hookFor(SessionStateConfig.from(null, null,
-            List.of(new Variable("app.user_id", "sub"), new Variable("app.tenant", "tenant"))));
+    void connectionSeam_receivesThePinnedConnectionItself_andHandleIgnoringUnmountTakesNoHandle()
+            throws Throwable {
+        var hooks = new SessionHooks.Handled(
+            SessionHooksFixtures.hookRef(FIXTURE, "mountConnection", ClassName.get(String.class),
+                SessionHooksFixtures.connectionSeam(),
+                SessionHooksFixtures.stringPayload("claims")),
+            ClassName.get(String.class),
+            Optional.of(SessionHooksFixtures.hookRef(FIXTURE, "unmountHandleIgnoring", TypeName.VOID,
+                SessionHooksFixtures.connectionSeam())));
+        Class<?> hookClass = compileHook(hooks);
 
-        Object handle = connect(hook, "claims-payload");
-        assertThat(handle).as("the <variables> sugar carries no handle").isNull();
-        assertThat(events).containsExactly(
-            "prepareStatement:select set_config('app.user_id', c ->> 'sub', false), "
-                + "set_config('app.tenant', c ->> 'tenant', false) from (select cast(? as jsonb) as c) claims",
-            "setString:1:claims-payload",
-            "execute",
-            "close");
+        Connection connection = fakeConnection();
+        hookClass.getMethod("mount", Connection.class, SQLDialect.class, Settings.class, String.class)
+            .invoke(null, connection, SQLDialect.POSTGRES, new Settings(), "c1");
+        assertThat(HookInvocationFixture.lastConnection).isSameAs(connection);
 
-        events.clear();
-        disconnect(hook, null);
-        // Disconnect clears exactly the two variables connect set, to the empty string, no parameters.
-        assertThat(events).containsExactly(
-            "prepareStatement:select set_config('app.user_id', '', false), set_config('app.tenant', '', false)",
-            "execute",
-            "close");
+        // A handle-ignoring unmount is legal beside a handle-returning mount: the emitted
+        // unmount takes only the seam inputs, no handle parameter.
+        var unmount = hookClass.getMethod("unmount", Connection.class, SQLDialect.class, Settings.class);
+        unmount.invoke(null, connection, SQLDialect.POSTGRES, new Settings());
+        assertThat(HookInvocationFixture.EVENTS).containsExactly("mountConnection:c1", "unmountHandleIgnoring");
     }
 
-    // --- driving helpers -------------------------------------------------------------------------
+    @Test
+    void mountOnly_emitsNoUnmountAtAll() throws Throwable {
+        var hooks = new SessionHooks.HandleLess(
+            SessionHooksFixtures.hookRef(FIXTURE, "mountVoid", TypeName.VOID,
+                SessionHooksFixtures.configurationSeam()),
+            Optional.empty());
+        Class<?> hookClass = compileHook(hooks);
 
-    private Object hookFor(SessionStateConfig config) {
+        assertThat(methodsNamed(hookClass, "unmount"))
+            .as("mount-only: nothing is emitted for the absent <unmount>, stronger than a no-op")
+            .isEmpty();
+
+        var mount = hookClass.getMethod("mount", Connection.class, SQLDialect.class, Settings.class);
+        assertThat(mount.getReturnType()).isEqualTo(void.class);
+        mount.invoke(null, fakeConnection(), SQLDialect.POSTGRES, new Settings());
+        assertThat(HookInvocationFixture.EVENTS).containsExactly("mountVoid");
+    }
+
+    // --- harness helpers ---------------------------------------------------------------------
+
+    private Class<?> compileHook(SessionHooks hooks) {
         Map<String, TypeSpec> units = new LinkedHashMap<>();
-        for (TypeSpec spec : ConnectionRuntimeClassGenerator.generate(PACKAGE, config)) {
+        for (TypeSpec spec : ConnectionRuntimeClassGenerator.generate(PACKAGE, hooks)) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
         }
         for (TypeSpec spec : GraphitronTransactionProviderGenerator.generate(PACKAGE)) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
         }
-        for (TypeSpec spec : GraphitronConnectionInstrumentationGenerator.generate(PACKAGE)) {
+        for (TypeSpec spec : GraphitronConnectionInstrumentationGenerator.generate(PACKAGE, false, hooks)) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
         }
         harness = EmittedCodeHarness.compile(units);
-        try {
-            return harness.load(SCHEMA_PACKAGE + ".GraphitronSessionHook").getDeclaredConstructor().newInstance();
-        } catch (ReflectiveOperationException e) {
-            throw new RuntimeException(e);
-        }
+        return harness.load(SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.SESSION_HOOK_IMPL_CLASS_NAME);
     }
 
-    private Object connect(Object hook, String claims) throws Throwable {
-        try {
-            return hook.getClass().getMethod("connect", Connection.class, String.class)
-                .invoke(hook, fakeConnection(), claims);
-        } catch (InvocationTargetException e) {
-            throw e.getCause();
-        }
+    private static List<Method> methodsNamed(Class<?> cls, String name) {
+        return java.util.Arrays.stream(cls.getDeclaredMethods())
+            .filter(m -> m.getName().equals(name))
+            .toList();
     }
 
-    private void disconnect(Object hook, String handle) throws Throwable {
-        try {
-            hook.getClass().getMethod("disconnect", Connection.class, String.class)
-                .invoke(hook, fakeConnection(), handle);
-        } catch (InvocationTargetException e) {
-            throw e.getCause();
-        }
-    }
-
-    // --- recording fakes -------------------------------------------------------------------------
-
-    private Connection fakeConnection() {
+    private static Connection fakeConnection() {
         return (Connection) Proxy.newProxyInstance(
-            harness.classLoader(), new Class<?>[]{Connection.class}, (proxy, method, args) -> switch (method.getName()) {
-                case "prepareCall" -> {
-                    events.add("prepareCall:" + args[0]);
-                    yield fakeCallableStatement();
-                }
-                case "prepareStatement" -> {
-                    events.add("prepareStatement:" + args[0]);
-                    yield fakePreparedStatement();
-                }
-                default -> objectMethodOrDefault(proxy, method, args, "fakeConnection");
+            SessionHookImplGeneratorTest.class.getClassLoader(), new Class<?>[]{Connection.class},
+            (proxy, method, args) -> switch (method.getName()) {
+                case "hashCode" -> System.identityHashCode(proxy);
+                case "equals" -> proxy == (args == null ? null : args[0]);
+                case "toString" -> "fakeConnection";
+                default -> null;
             });
     }
 
-    private CallableStatement fakeCallableStatement() {
-        return (CallableStatement) Proxy.newProxyInstance(
-            harness.classLoader(), new Class<?>[]{CallableStatement.class}, (proxy, method, args) -> switch (method.getName()) {
-                case "setString" -> { events.add("setString:" + args[0] + ":" + args[1]); yield null; }
-                case "registerOutParameter" -> { events.add("registerOutParameter:" + args[0] + ":VARCHAR"); yield null; }
-                case "execute" -> { events.add("execute"); yield false; }
-                case "getString" -> { events.add("getString:" + args[0]); yield "RAS-42"; }
-                case "close" -> { events.add("close"); yield null; }
-                default -> objectMethodOrDefault(proxy, method, args, "fakeCallableStatement");
-            });
-    }
-
-    private PreparedStatement fakePreparedStatement() {
-        return (PreparedStatement) Proxy.newProxyInstance(
-            harness.classLoader(), new Class<?>[]{PreparedStatement.class}, (proxy, method, args) -> switch (method.getName()) {
-                case "setString" -> { events.add("setString:" + args[0] + ":" + args[1]); yield null; }
-                case "execute" -> { events.add("execute"); yield false; }
-                case "close" -> { events.add("close"); yield null; }
-                default -> objectMethodOrDefault(proxy, method, args, "fakePreparedStatement");
-            });
-    }
-
-    private static Object objectMethodOrDefault(Object proxy, Method method, Object[] args, String label) {
-        return switch (method.getName()) {
-            case "hashCode" -> System.identityHashCode(proxy);
-            case "equals" -> proxy == (args == null ? null : args[0]);
-            case "toString" -> label;
-            default -> defaultValue(method.getReturnType());
-        };
-    }
-
-    private static Object defaultValue(Class<?> type) {
-        if (!type.isPrimitive()) {
-            return null;
-        }
-        if (type == boolean.class) {
-            return false;
-        }
-        if (type == void.class) {
-            return null;
-        }
-        if (type == char.class) {
-            return '\0';
-        }
-        return 0;
-    }
 }

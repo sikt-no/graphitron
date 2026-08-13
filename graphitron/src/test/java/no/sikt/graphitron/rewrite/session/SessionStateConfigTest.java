@@ -1,171 +1,113 @@
 package no.sikt.graphitron.rewrite.session;
 
-import no.sikt.graphitron.rewrite.session.SessionStateConfig.FunctionHooks;
-import no.sikt.graphitron.rewrite.session.SessionStateConfig.None;
-import no.sikt.graphitron.rewrite.session.SessionStateConfig.RawHook;
-import no.sikt.graphitron.rewrite.session.SessionStateConfig.Unmount;
-import no.sikt.graphitron.rewrite.session.SessionStateConfig.Variable;
-import no.sikt.graphitron.rewrite.session.SessionStateConfig.Variables;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
-import java.util.List;
+import java.util.Arrays;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 
 /**
- * Unit-tier coverage of {@link SessionStateConfig#from}, the build-time reconciliation and rejection
- * of the {@code <sessionState>} shape. Config-shape defects are a {@code pom.xml} concern with no SDL
- * coordinate, so they are validated here (throwing {@link IllegalArgumentException} the Maven seam
- * turns into a build failure) rather than routed through the SDL validator. These are the
- * validator-tier assertions on the pairing rejections.
+ * Unit-tier coverage of the authored {@code <sessionState>} reconciliation: the method-hook arm
+ * with and without {@code <unmount>}, the surviving unmount-without-mount rejection, and the
+ * {@code fqcn#method} shape rejections. All config-shape defects are {@code pom.xml} concerns
+ * with no SDL coordinate, so {@link SessionStateConfig#from} throws
+ * {@link IllegalArgumentException} and the Maven seam turns it into a build failure. Failures of
+ * the referenced methods themselves are reflection facts, covered by the resolution tests, not
+ * here.
  */
 @UnitTier
 class SessionStateConfigTest {
 
     @Test
-    void noBlock_isNone() {
-        assertThat(SessionStateConfig.from(null, null, List.of())).isInstanceOf(None.class);
-        assertThat(SessionStateConfig.none()).isInstanceOf(None.class);
+    void absentBlock_isNone() {
+        assertThat(SessionStateConfig.from(null, null)).isEqualTo(SessionStateConfig.none());
     }
 
     @Test
-    void variablesOnly_isVariables() {
-        var config = SessionStateConfig.from(null, null, List.of(new Variable("app.user_id", "sub")));
-        assertThat(config).isInstanceOfSatisfying(Variables.class, v ->
-            assertThat(v.variables()).containsExactly(new Variable("app.user_id", "sub")));
-    }
-
-    @Test
-    void bothForms_rejected() {
-        assertThatThrownBy(() -> SessionStateConfig.from(
-            new RawHook("Pk.Connect", false), new RawHook("Pk.Disconnect", false),
-            List.of(new Variable("app.user_id", "sub"))))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("both <variables> and <connect>/<disconnect>");
-    }
-
-    @Test
-    void functionForm_pairedNoHandle() {
-        var config = SessionStateConfig.from(new RawHook("Pk.Connect", false), new RawHook("Pk.Disconnect", false), List.of());
-        assertThat(config).isInstanceOfSatisfying(FunctionHooks.class, fh -> {
-            assertThat(fh.connectCall()).isEqualTo("Pk.Connect");
-            assertThat(fh.unmount()).isEqualTo(new Unmount.PairedDisconnect("Pk.Disconnect", false));
+    void mountAlone_isTheSupportedMountOnlyConfiguration() {
+        // Omitting <unmount> is mount-only, with no opt-out ceremony and no rejection: the next
+        // request's mount overwrites wholesale.
+        var config = SessionStateConfig.from("com.example.db.Routines#connect", null);
+        assertThat(config).isInstanceOfSatisfying(SessionStateConfig.MethodHooks.class, hooks -> {
+            assertThat(hooks.mount().className()).isEqualTo("com.example.db.Routines");
+            assertThat(hooks.mount().methodName()).isEqualTo("connect");
+            assertThat(hooks.unmount()).isEmpty();
         });
     }
 
     @Test
-    void functionForm_pairedWithHandle() {
-        var config = SessionStateConfig.from(new RawHook("Pk_Ras.Connect", true), new RawHook("Pk_Ras.Disconnect", true), List.of());
-        assertThat(config).isInstanceOfSatisfying(FunctionHooks.class, fh ->
-            assertThat(fh.unmount()).isEqualTo(new Unmount.PairedDisconnect("Pk_Ras.Disconnect", true)));
-    }
-
-    @Test
-    void handleOnConnectOnly_rejected() {
-        assertThatThrownBy(() -> SessionStateConfig.from(
-            new RawHook("Pk.Connect", true), new RawHook("Pk.Disconnect", false), List.of()))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("handle must be declared on both");
-    }
-
-    @Test
-    void handleOnDisconnectOnly_rejected() {
-        assertThatThrownBy(() -> SessionStateConfig.from(
-            new RawHook("Pk.Connect", false), new RawHook("Pk.Disconnect", true), List.of()))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("handle must be declared on both");
-    }
-
-    @Test
-    void connectWithoutDisconnect_rejected() {
-        assertThatThrownBy(() -> SessionStateConfig.from(new RawHook("Pk.Connect", false), null, List.of()))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("<connect> but no <disconnect>");
-    }
-
-    @Test
-    void disconnectWithoutConnect_rejected() {
-        assertThatThrownBy(() -> SessionStateConfig.from(null, new RawHook("Pk.Disconnect", false), List.of()))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("<disconnect> but no <connect>");
-    }
-
-    @Test
-    void emptyDisconnect_isUnmountFreeOptOut() {
-        // <disconnect/> present but with no call attribute: the explicit unmount-free marker.
-        var config = SessionStateConfig.from(new RawHook("Pk.SetContext", false), new RawHook(null, false), List.of());
-        assertThat(config).isInstanceOfSatisfying(FunctionHooks.class, fh -> {
-            assertThat(fh.connectCall()).isEqualTo("Pk.SetContext");
-            assertThat(fh.unmount()).isInstanceOf(Unmount.UnmountFree.class);
+    void mountAndUnmount_carryBothReferencesVerbatim() {
+        var config = SessionStateConfig.from(
+            "com.example.KernelIdentity#mount", "com.example.KernelIdentity#unmount");
+        assertThat(config).isInstanceOfSatisfying(SessionStateConfig.MethodHooks.class, hooks -> {
+            assertThat(hooks.mount().raw()).isEqualTo("com.example.KernelIdentity#mount");
+            assertThat(hooks.unmount()).map(SessionStateConfig.HookRef::raw)
+                .isEqualTo(Optional.of("com.example.KernelIdentity#unmount"));
         });
     }
 
     @Test
-    void unmountFreeButConnectProducesHandle_rejected() {
-        assertThatThrownBy(() -> SessionStateConfig.from(new RawHook("Pk.Connect", true), new RawHook(null, false), List.of()))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("produces a handle, but the empty <disconnect/>");
+    void referencesAreTrimmed() {
+        var config = SessionStateConfig.from("  com.example.Hooks#mount  ", null);
+        assertThat(((SessionStateConfig.MethodHooks) config).mount().raw())
+            .isEqualTo("com.example.Hooks#mount");
     }
 
     @Test
-    void connectWithBlankCall_rejected() {
-        assertThatThrownBy(() -> SessionStateConfig.from(new RawHook("  ", false), new RawHook("Pk.Disconnect", false), List.of()))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("<connect> requires a non-blank <call>");
+    void unmountWithoutMount_isRejected() {
+        // Unmounting what nothing mounted is a defect in either direction of reading it.
+        assertThatIllegalArgumentException()
+            .isThrownBy(() -> SessionStateConfig.from(null, "com.example.Hooks#unmount"))
+            .withMessageContaining("<unmount>")
+            .withMessageContaining("no <mount>");
     }
 
     @Test
-    void stateSurvivesTransactions_declaredOnPairedForm_confirmsSurvival() {
-        var confirmed = SessionStateConfig.from(
-            new RawHook("Pk.Connect", false), new RawHook("Pk.Disconnect", false), List.of(), true);
-        assertThat(confirmed).isInstanceOfSatisfying(FunctionHooks.class, fh ->
-            assertThat(fh.unmount()).isEqualTo(new Unmount.PairedDisconnect("Pk.Disconnect", false, true)));
-
-        // Absent (the 3-arg overload) and explicit false both mean unconfirmed: the re-fire fallback.
-        var absent = SessionStateConfig.from(
-            new RawHook("Pk.Connect", false), new RawHook("Pk.Disconnect", false), List.of());
-        assertThat(absent).isInstanceOfSatisfying(FunctionHooks.class, fh ->
-            assertThat(fh.unmount()).isEqualTo(new Unmount.PairedDisconnect("Pk.Disconnect", false, false)));
-        var declined = SessionStateConfig.from(
-            new RawHook("Pk.Connect", false), new RawHook("Pk.Disconnect", false), List.of(), false);
-        assertThat(declined).isInstanceOfSatisfying(FunctionHooks.class, fh ->
-            assertThat(fh.unmount()).isEqualTo(new Unmount.PairedDisconnect("Pk.Disconnect", false, false)));
+    void malformedReferences_areRejectedNamingTheElement() {
+        assertThatIllegalArgumentException()
+            .isThrownBy(() -> SessionStateConfig.from("com.example.Hooks", null))
+            .withMessageContaining("<mount>")
+            .withMessageContaining("fqcn#method");
+        assertThatIllegalArgumentException()
+            .isThrownBy(() -> SessionStateConfig.from("#mount", null))
+            .withMessageContaining("<mount>");
+        assertThatIllegalArgumentException()
+            .isThrownBy(() -> SessionStateConfig.from("com.example.Hooks#", null))
+            .withMessageContaining("<mount>");
+        assertThatIllegalArgumentException()
+            .isThrownBy(() -> SessionStateConfig.from("a#b#c", null))
+            .withMessageContaining("<mount>");
+        assertThatIllegalArgumentException()
+            .isThrownBy(() -> SessionStateConfig.from("com.example.Hooks#mount", "unmount"))
+            .withMessageContaining("<unmount>")
+            .withMessageContaining("fqcn#method");
     }
 
     @Test
-    void stateSurvivesTransactions_withVariablesSugar_rejected() {
-        assertThatThrownBy(() -> SessionStateConfig.from(
-            null, null, List.of(new Variable("app.user_id", "sub")), true))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("survives transaction settles structurally");
+    void blankElements_areDefectsNeverSilentlyAbsent() {
+        assertThatIllegalArgumentException()
+            .isThrownBy(() -> SessionStateConfig.from("  ", null))
+            .withMessageContaining("<mount>");
+        assertThatIllegalArgumentException()
+            .isThrownBy(() -> SessionStateConfig.from("com.example.Hooks#mount", " "))
+            .withMessageContaining("<unmount>");
     }
 
     @Test
-    void stateSurvivesTransactions_withNoHooks_rejected() {
-        assertThatThrownBy(() -> SessionStateConfig.from(null, null, List.of(), true))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("no hooks whose state it could describe");
-    }
-
-    @Test
-    void stateSurvivesTransactions_withUnmountFreeOptOut_rejected() {
-        // Survival is a fact about a balanced pair; the unmount-free form has no pair to re-fire, so
-        // the declaration (either value) describes nothing and fails loud.
-        assertThatThrownBy(() -> SessionStateConfig.from(
-            new RawHook("Pk.SetContext", false), new RawHook(null, false), List.of(), true))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("requires a paired <disconnect");
-    }
-
-    @Test
-    void variable_blankNameOrClaim_rejected() {
-        assertThatThrownBy(() -> new Variable("", "sub"))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("name");
-        assertThatThrownBy(() -> new Variable("app.user_id", " "))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("claim");
+    void theConfigIsTwoArmsAndTwoStrings_nothingElseIsAcceptedAnyMore() {
+        // Pins the deletions structurally: the sealed alternation carries exactly None and the
+        // method-hook arm (no FunctionHooks, no Variables, no Unmount hierarchy), and the one
+        // reconciler takes exactly the two authored strings, so <variables>, <handle> and
+        // <stateSurvivesTransactions> have no seam left to be accepted through.
+        assertThat(SessionStateConfig.class.getPermittedSubclasses())
+            .extracting(Class::getSimpleName)
+            .containsExactlyInAnyOrder("None", "MethodHooks");
+        assertThat(Arrays.stream(SessionStateConfig.class.getDeclaredMethods())
+            .filter(m -> m.getName().equals("from")))
+            .allSatisfy(m -> assertThat(m.getParameterTypes())
+                .containsExactly(String.class, String.class));
     }
 }

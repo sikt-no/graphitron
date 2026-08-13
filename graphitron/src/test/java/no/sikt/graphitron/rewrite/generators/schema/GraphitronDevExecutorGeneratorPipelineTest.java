@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite.generators.schema;
 
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.rewrite.session.SessionStateConfig;
+import no.sikt.graphitron.rewrite.session.SessionHooks;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
@@ -46,7 +46,7 @@ class GraphitronDevExecutorGeneratorPipelineTest {
             """;
         var schema = TestSchemaHelper.buildSchema(sdl);
         var result = GraphitronDevExecutorGenerator.generate(
-            schema, "com.example", SessionStateConfig.none(), false);
+            schema, "com.example", SessionHooks.NotConfigured.INSTANCE, false);
         assertThat(result).hasSize(1);
 
         MethodSpec execute = result.get(0).methodSpecs().stream()

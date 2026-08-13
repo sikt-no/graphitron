@@ -5,7 +5,6 @@ import no.sikt.graphitron.plan.EmitPlan;
 import no.sikt.graphitron.plan.GeneratedUnits;
 import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.rewrite.session.SessionStateConfig;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -71,7 +70,7 @@ class PlanCompileGraphTest {
     static void projectGraph() {
         GraphitronSchemaBuilder.Bundle bundle = TestSchemaHelper.buildBundle(SDL);
         EmitPlan plan = EmitPlan.produce(bundle.model(), bundle.federationLink(), bundle.usesOneOf(),
-            SessionStateConfig.none(), PKG);
+            PKG);
         graph = PlanCompileGraph.fromPlan(plan, bundle.model());
     }
 

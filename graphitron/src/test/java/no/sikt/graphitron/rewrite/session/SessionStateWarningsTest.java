@@ -2,28 +2,28 @@ package no.sikt.graphitron.rewrite.session;
 
 import no.sikt.graphitron.rewrite.BuildWarning;
 import no.sikt.graphitron.rewrite.lint.LintRule;
-import no.sikt.graphitron.rewrite.session.SessionStateConfig.RawHook;
-import no.sikt.graphitron.rewrite.session.SessionStateConfig.Variable;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
-
-import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Unit-tier coverage of the two codegen-config advisories about the owned-connection runtime's
- * identity posture. The decision is a pure function of the resolved {@link SessionStateConfig} and
- * whether the schema uses {@code @service}, so it is asserted directly here rather than through a
- * pipeline run; {@code GraphQLRewriteGenerator.withLintFindings} only supplies the two inputs.
+ * Unit-tier coverage of the one codegen-config advisory about the owned-connection runtime's
+ * identity posture. The decision is a pure function of the authored {@link SessionStateConfig},
+ * so it is asserted directly here rather than through a pipeline run;
+ * {@code GraphQLRewriteGenerator} only supplies the inputs.
+ *
+ * <p>Exactly one rule survives: {@code no-session-state}. The retired
+ * {@code session-state-convention-fence} graded a fence level graphitron could see only while it
+ * generated the GUC set itself; against a reflected method reference the build cannot tell a
+ * definer-rights routine call from a plain {@code set_config}, so a configured mount raises
+ * nothing and the integrity gradient lives in the security guide.
  */
 @UnitTier
 class SessionStateWarningsTest {
 
-    private static final SessionStateConfig VARIABLES =
-        SessionStateConfig.from(null, null, List.of(new Variable("app.user_id", "sub")));
-    private static final SessionStateConfig FUNCTION_HOOKS =
-        SessionStateConfig.from(new RawHook("Pk.Connect", false), new RawHook("Pk.Disconnect", false), List.of());
+    private static final SessionStateConfig METHOD_HOOKS =
+        SessionStateConfig.from("com.example.db.Routines#connect", "com.example.db.Routines#disconnect");
 
     @Test
     void noSessionState_warnsUnsecured_regardlessOfService() {
@@ -41,25 +41,26 @@ class SessionStateWarningsTest {
     }
 
     @Test
-    void variablesSugarWithService_warnsConventionFence() {
-        assertThat(SessionStateWarnings.forConfig(VARIABLES, true))
+    void noSessionState_messageTeachesTheMountShapes() {
+        // Being the single build-time signal about identity, the message names the three mount
+        // shapes a consumer chooses between and points at the security guide, instead of only
+        // saying to configure something.
+        assertThat(SessionStateWarnings.forConfig(SessionStateConfig.none(), false))
             .singleElement()
-            .isInstanceOfSatisfying(BuildWarning.LintFinding.class, lf -> {
-                assertThat(lf.rule()).isEqualTo(LintRule.SESSION_STATE_CONVENTION_FENCE);
-                assertThat(lf.message()).contains("convention fence").contains("@service");
-            });
+            .isInstanceOfSatisfying(BuildWarning.LintFinding.class, lf -> assertThat(lf.message())
+                .contains("<mount>")
+                .contains("definer-rights routine")
+                .contains("token verified in-database")
+                .contains("session variable set by convention")
+                .contains("security guide"));
     }
 
     @Test
-    void variablesSugarWithoutService_isSilent() {
-        // The convention fence only bites when consumer code (@service) runs on the pinned connection.
-        assertThat(SessionStateWarnings.forConfig(VARIABLES, false)).isEmpty();
-    }
-
-    @Test
-    void functionHooks_areSilent_regardlessOfService() {
-        // The function-hook form is the tamper-resistant path; no advisory either way.
-        assertThat(SessionStateWarnings.forConfig(FUNCTION_HOOKS, true)).isEmpty();
-        assertThat(SessionStateWarnings.forConfig(FUNCTION_HOOKS, false)).isEmpty();
+    void configuredMethodHooks_raiseNothing_evenWithServiceFields() {
+        // Graphitron cannot see the fence level of a reflected mount, so a schema with @service
+        // fields and a configured mount raises nothing rather than asserting an exposure it
+        // cannot ground.
+        assertThat(SessionStateWarnings.forConfig(METHOD_HOOKS, true)).isEmpty();
+        assertThat(SessionStateWarnings.forConfig(METHOD_HOOKS, false)).isEmpty();
     }
 }
