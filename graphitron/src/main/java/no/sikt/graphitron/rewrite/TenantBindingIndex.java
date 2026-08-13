@@ -291,6 +291,14 @@ public record TenantBindingIndex(
                     ? TenantBinding.Untenanted.INSTANCE
                     : TenantBinding.NodeIdBound.INSTANCE;
             }
+            // A $session-bound method call reads per-connection state (the handle its
+            // connection's mount returned), so which connection serves it is semantics, not
+            // plumbing: under a tenant context the call runs on the inherited tenant's
+            // connection and observes that tenant's handle. Decided ahead of the reach-derived
+            // Untenanted arm, whose "touches no tables" reading is about SQL only.
+            if (bindsSessionHandle(out) && tenantContextOf(coord.getTypeName())) {
+                return new TenantBinding.Inherited(coord.getTypeName());
+            }
             if (!anyTenant) {
                 return TenantBinding.Untenanted.INSTANCE;
             }
@@ -506,6 +514,32 @@ public record TenantBindingIndex(
             fannedAncestorInProgress.remove(typeName);
             fannedAncestorMemo.put(typeName, result);
             return result;
+        }
+
+        /**
+         * Whether the field's method call binds the {@code $session} handle: a
+         * {@link no.sikt.graphitron.rewrite.model.MethodBackedField} parameter sourced
+         * {@link no.sikt.graphitron.rewrite.model.ParamSource.SessionHandle}, or a
+         * {@link no.sikt.graphitron.rewrite.model.ServiceField} carrier entry of
+         * {@link no.sikt.graphitron.rewrite.model.MappingEntry.FromSessionHandle}. The same
+         * two producers {@code GraphitronSchemaValidator.validateSessionHandleBindings} walks.
+         */
+        private static boolean bindsSessionHandle(OutputField out) {
+            if (out instanceof no.sikt.graphitron.rewrite.model.MethodBackedField mbf) {
+                return mbf.method().params().stream().anyMatch(p ->
+                    p.source() instanceof no.sikt.graphitron.rewrite.model.ParamSource.SessionHandle);
+            }
+            if (out instanceof no.sikt.graphitron.rewrite.model.ServiceField sf) {
+                var carrier = sf.serviceMethodCall();
+                var entries = new java.util.ArrayList<no.sikt.graphitron.rewrite.model.MappingEntry>(
+                    carrier.methodArgs());
+                if (carrier instanceof no.sikt.graphitron.rewrite.model.ServiceMethodCall.Instance inst) {
+                    entries.addAll(inst.ctorArgs());
+                }
+                return entries.stream().anyMatch(e ->
+                    e instanceof no.sikt.graphitron.rewrite.model.MappingEntry.FromSessionHandle);
+            }
+            return false;
         }
 
         /**

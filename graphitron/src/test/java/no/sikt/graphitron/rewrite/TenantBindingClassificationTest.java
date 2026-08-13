@@ -76,6 +76,49 @@ class TenantBindingClassificationTest {
     }
 
     @Test
+    void sessionBoundServiceChildUnderTenantContext_yieldsInherited() {
+        // A $session-bound service call reads per-connection state (the mounted handle), so
+        // although its own SQL reach is empty, it classifies Inherited under a tenant context:
+        // the call must run on the inherited tenant's connection to observe that tenant's
+        // handle, not the default source's.
+        var schema = build("""
+            type Film @table(name: "film") {
+                title: String
+                mountedPrincipal: String @service(service: {
+                    className: "no.sikt.graphitron.rewrite.TestServiceStub",
+                    method: "principalOf",
+                    argMapping: "identity: $session"
+                })
+            }
+            type Query {
+                films(filmId: Int @field(name: "film_id")): [Film!]!
+            }
+            """);
+
+        var binding = schema.tenantBindingOf("Film", "mountedPrincipal");
+        assertThat(binding).isInstanceOf(TenantBinding.Inherited.class);
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void sessionBoundServiceAtAnUntenantedRoot_staysUntenanted() {
+        // The complement: with no tenant context to inherit, the $session binding changes
+        // nothing; the call runs on the default source and reads its handle.
+        var schema = build("""
+            type Query {
+                sessionPrincipal: String @service(service: {
+                    className: "no.sikt.graphitron.rewrite.TestServiceStub",
+                    method: "principalOf",
+                    argMapping: "identity: $session"
+                })
+            }
+            """);
+
+        assertThat(schema.tenantBindingOf("Query", "sessionPrincipal"))
+            .isEqualTo(TenantBinding.Untenanted.INSTANCE);
+    }
+
+    @Test
     void globalTableFieldYieldsUntenanted() {
         var schema = build("""
             type Language @table(name: "language") { name: String }

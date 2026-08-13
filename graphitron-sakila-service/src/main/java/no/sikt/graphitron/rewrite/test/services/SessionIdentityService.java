@@ -1,7 +1,12 @@
 package no.sikt.graphitron.rewrite.test.services;
 
+import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
 import no.sikt.graphitron.rewrite.test.jooq.udt.records.SessionHandleRecord;
 import org.jooq.DSLContext;
+
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * The {@code $session} sigil's consuming side: a service method whose {@code identity}
@@ -30,5 +35,18 @@ public final class SessionIdentityService {
      */
     public static String mountedClaimsEcho(DSLContext dsl, String claims) {
         return claims;
+    }
+
+    /**
+     * The per-key {@code $session} witness for the multi-tenant fixture: a batched child
+     * service on the tenant-scoped {@code Film} type, so under fan-out each tenant's batch
+     * runs on that tenant's own pinned connection and {@code identity} is the handle that
+     * connection's mount returned. Every film in one batch reports the same handle; films from
+     * different tenants report different ones.
+     */
+    public static Map<FilmRecord, String> mountedPrincipal(
+            Set<FilmRecord> films, DSLContext dsl, SessionHandleRecord identity) {
+        String principal = sessionPrincipal(dsl, identity);
+        return films.stream().collect(Collectors.toMap(film -> film, film -> principal));
     }
 }
