@@ -45,50 +45,86 @@ helper's sole parameter type must accept an argument statically typed as the par
 jOOQ table class*, and the class the check compares against must be the same one the `$project`
 signature is rendered from, not a re-derived name.
 
-That resolves the direction question the problem statement left open. Assignability, not equality,
-and in this direction:
+That resolves the direction question the problem statement left open: assignability, not equality,
+and in the direction that keeps a helper widened to `Table<?>` working.
 
-**Layer 1 (erased).** `p.getType().isAssignableFrom(parentTableClass)`. Admits the concrete
-generated table class, `org.jooq.impl.TableImpl`, and `org.jooq.Table`; rejects a different
-generated table class. A helper widened to `Table<?>` keeps working, which is the behaviour the
-problem statement asks to preserve.
+The enforcer is deliberately not a literal `isAssignableFrom` call, because assignability needs a
+live `Class<?>` for the parent and the model side already carries the two facts that answer the
+question. Both layers are value comparisons on `TableRef`:
 
-**Layer 2 (parameterised).** When the parameter's generic type is `X<R>` with `R` a concrete
-`Class`, require `R == parentTable.getRecordType()`. `Table<FilmRecord>` and
+**Layer 1 (table identity).** The negation of the invariant is "the parameter is typed on a
+*different* catalog table", which the catalog answers by class identity:
+`ctx.catalog.findTableByClass(p.getType())` is empty for `org.jooq.Table`, `TableImpl`, and any
+non-catalog class (all of which accept the parent, so admit), and present exactly when the
+parameter names a generated table, in which case that entry must denote the parent's table.
+`findTableByClass`'s javadoc states the exactness ("class identity maps to exactly one catalog
+entry across the whole schema set … wildcard types and non-table classes are caller
+responsibility"), and the same-table comparison goes through `TableRef.denotesSameTableAs`, which
+names itself the model-side identity home for this question and says not to grow a third
+mechanism. That also gets the multi-schema case right for free: two same-named `Widget` tables in
+different schemas are distinct `tableClass` values.
+
+**Layer 2 (record type).** When the parameter's generic type is `X<R>` with `R` a concrete `Class`,
+require `ClassName.get(R).equals(parentTable.recordClass())`. `TableRef` already carries
+`recordClass` (`TableEntry.recordClass()` is `ClassName.get(table.getRecordType())`, populated by
+`toTableRef`), so this needs no reflection on the parent at all. `Table<FilmRecord>` and
 `TableImpl<FilmRecord>` pass on a `film` parent; `Table<ActorRecord>` and `Table<Record>` are
-rejected, which again is exactly what javac does at the emitted call (a generated `Film`
-implements `Table<FilmRecord>` and nothing else). Wildcards (`Table<?>`), type variables
-(`<R extends Record> Field<X> h(Table<R> t)`), and raw `Table` skip layer 2 rather than failing
-it, so the widened forms stay admitted.
+rejected, which is again exactly what javac does at the emitted call, since a generated `Film`
+implements `Table<FilmRecord>` and nothing else.
 
-The two layers are one invariant at two erasure levels, and both produce the same generated-code
-javac failure when violated. The existing `org.jooq.Table.class.isAssignableFrom(p.getType())`
-check stays in front of them as the "is this a table at all" gate with its own message.
+The two layers are one invariant at two erasure levels and both produce the same generated-code
+javac failure when violated. They are ordered, and layer 1 carries the non-generic case alone: a
+parameter typed plainly `Film` has no `ParameterizedType` for layer 2 to inspect. The existing
+`org.jooq.Table.class.isAssignableFrom(p.getType())` check stays in front of both as the "is this
+a table at all" gate with its own message.
+
+## Where the enforcer is looser than the invariant
+
+Every gap fails *open*: the check admits, and javac at the `graphitron-sakila-example` compile is
+the backstop. None of them can produce a false rejection, which is the asymmetry to preserve.
+
+* A parameter typed on a generated table class from a codegen output the catalog does not hold (a
+  foreign tables jar on the plugin classpath) is invisible to `findTableByClass` and is admitted.
+* A hand-written `abstract class MyBase<R> extends TableImpl<R>` used as the parameter type is
+  admitted, which is correct: it genuinely accepts the parent table.
+* Layer 2 skips wildcards (`Table<?>`), raw `Table`, and type variables. That includes a
+  concretely-bounded variable (`<R extends ActorRecord> Field<X> h(Table<R> t)`), which javac
+  rejects at the emitted call while this check admits it. Accepted: closing it means bound
+  analysis, for a signature nobody writes by accident.
 
 ## Implementation
 
-`ServiceCatalog.reflectExternalField`: replace the unread `ClassName parentTableClass` argument
-with the live `org.jooq.Table<?> parentTable`. The live table is what makes the check exact: it
-carries both `getClass()` (the class the `$project` signature is rendered from) and
-`getRecordType()` (layer 2), with no name round-trip and no second `Class.forName` whose loader
-could disagree with the catalog's. After the existing `Table`-subtype check, add layers 1 and 2,
-each returning `Rejection.structural(...)`. Keep the argument nullable, javadoc'd: `null` skips
-both new layers and leaves the erased `Table<?>` gate as the floor.
+`ServiceCatalog.reflectExternalField`: widen the unread `ClassName parentTableClass` argument to
+the parent's `TableRef` and read it. `TableRef` carries both facts the layers need (`tableClass`
+for identity via `denotesSameTableAs`, `recordClass` for layer 2), so nothing has to be resolved,
+loaded, or re-derived: no live jOOQ handle crosses a class boundary, no `Class.forName`, no
+lookup that can miss, and therefore no skip-the-check branch to get wrong. Add layers 1 and 2
+after the existing `Table`-subtype check, each returning `Rejection.structural(...)`. Layer 1's
+catalog side is `ctx.catalog.findTableByClass(p.getType())`, which `ServiceCatalog` can reach
+directly (it already holds `ctx`), minting the comparison ref with
+`entry.toTableRef(entry.table().getName())`.
 
-`ExternalFieldDirectiveResolver.resolve`: resolve the live table with
-`ctx.catalog.findTable(parentTable.tableName()).asEntry().map(JooqCatalog.TableEntry::table)` and
-pass it. Re-resolving by the ref's own SQL name is established practice at this exact call site:
-the alias-collision check immediately above already does `ctx.catalog.findColumn(parentTable.tableName(), name)`.
-Pass `null` when the lookup comes back empty. Justification for degrading rather than rejecting: a
-`TableRef` exists only because the catalog resolved that table, so an empty lookup means the
-catalog moved under the build (the `-Plocal-db` catalog-jar clobber), and a helper-signature
-rejection would misdiagnose an infrastructure failure as an author error.
+`ExternalFieldDirectiveResolver.resolve`: pass `parentTable` instead of `parentTable.tableClass()`.
+That is the whole caller-side change, and it keeps the resolver free of `org.jooq` imports.
 
-Javadoc at both ends is currently ahead of the code and becomes true rather than needing a
-rewrite: `reflectExternalField`'s contract paragraph ("one parameter assignable from the parent's
-jOOQ `Table<?>` class") and `resolve`'s claim that the parent ref's "Java class name gates the
-`reflectExternalField` parent-table-class invariant". Both stay; the argument-type change means
-the contract sentence should name the live table instead of the class name.
+Two constraints this shape is protecting, both worth stating because the obvious implementations
+break them:
+
+* **The raw-handle containment boundary.** Live `org.jooq` objects stay behind `JooqCatalog`;
+  `ServiceCatalog` deliberately never holds a `Table` instance (it fully-qualifies
+  `org.jooq.Table.class` at each use), and `ExternalFieldDirectiveResolver` is a pure
+  `TableRef` to `Resolved` projector with no jOOQ imports at all. Threading a live `Table<?>`
+  through either of them to read `getClass()` / `getRecordType()` would export the handle to
+  answer a question the model refs already answer.
+* **No third same-table mechanism.** `TableRef.denotesSameTableAs` is the documented model-side
+  identity home and says so in its javadoc. Comparing raw `Class` objects, or `ClassName`s by
+  hand, past the capture boundary is the third mechanism it forbids.
+
+Javadoc at both ends is currently ahead of the code and becomes true rather than needing a rewrite:
+`reflectExternalField`'s contract paragraph ("one parameter assignable from the parent's jOOQ
+`Table<?>` class") and `resolve`'s claim that the parent ref "gates the `reflectExternalField`
+parent-table-class invariant". Both stay; the contract paragraph gains the enforcement shape and a
+pointer to the fail-open residuals above.
 
 Message shape, mirroring its siblings in the same method:
 
@@ -142,10 +178,21 @@ two-parents-one-helper case the problem statement describes.
   `Field<String> actorRecordTable(Table<ActorRecord> table)` is rejected from the `Film` parent
   (layer 2 reject). Two rows.
 
-No new pipeline, compile, or execution coverage. The item removes emissions rather than adding
-any, the rejection's located-diagnostic plumbing (`UnclassifiedField` to the validator surface) is
-shared with the existing `@externalField` rejections and already covered, and the widened forms
-differ from the concrete form only at classify time.
+Compilation tier, one fixture. The classifier rows above assert that a widened helper *classifies*,
+which is not the claim that matters: the claim is that a widened helper still emits a `$project`
+body that compiles, and the `graphitron-sakila-example` compile is the named backstop for exactly
+that class of claim. Add a `Table<?>`-parameterised helper to the existing `FilmExtensions` (whose
+`@table(name: "film")` parent is already wired, so no new SDL type) plus the one `@externalField`
+field pointing at it. A widened helper cannot use typed column accessors, so the body should be
+something a bare `Table<?>` can produce; that limitation is itself the reason the widened form is
+rare, and worth a sentence in the how-to. Note for the implementer: neighbouring fields in that
+schema carry `# R<n> fixture:` comments, a convention that predates the current javadoc rule.
+Describe the new fixture's purpose without an item id.
+
+No new pipeline or execution coverage. The item removes emissions rather than adding any, the
+rejection's located-diagnostic plumbing (`UnclassifiedField` to the validator surface) is shared
+with the existing `@externalField` rejections and already covered, and once the widened form
+compiles there is nothing about its runtime that differs from the concrete form.
 
 ## User documentation
 
