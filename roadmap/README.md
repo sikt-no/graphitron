@@ -15,7 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R617` | Lookup misses drop rows instead of holding their position | Ready | 2026-08-10 <sub>created 2026-08-09</sub> | [plan](lookup-positional-contract-unimplemented.md) |
-| `R639` | Session identity is a Java method resolved at build time, not generated SQL | In Progress | 2026-08-13 <sub>created 2026-08-12</sub> | [plan](session-identity-method-hooks.md) |
+| `R639` | Session identity is a Java method resolved at build time, not generated SQL | In Review | 2026-08-13 <sub>created 2026-08-12</sub> | [plan](session-identity-method-hooks.md) |
 | `R638` | The LSP is a fact-store client | In Progress | 2026-08-13 <sub>created 2026-08-12</sub> | [plan](lsp-reads-the-fact-store.md) |
 | `R661` | Batch the discriminated table interface child through a DataLoader | Spec | 2026-08-13 | [plan](batched-discriminated-interface-child.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
@@ -389,7 +389,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### runtime-connection
 
-- `R639` [**Session identity is a Java method resolved at build time, not generated SQL**](session-identity-method-hooks.md) — In Progress, architecture
+- `R639` [**Session identity is a Java method resolved at build time, not generated SQL**](session-identity-method-hooks.md) — In Review, architecture
 - `R664` [**A growth-proof staged builder over the generated ExecutionInput factory**](execution-input-staged-builder.md) — Backlog, dx
 - `R469` [**Enable @defer/incremental delivery on the owned-connection path**](defer-under-owned-connections.md) — Backlog, architecture
 - `R468` [**Oracle/RAS execution-tier coverage for session identity hooks**](oracle-ras-session-hook-execution-coverage.md) — Backlog, architecture
