@@ -6,7 +6,7 @@ import org.jooq.DSLContext;
 /**
  * Instance-method service stub: mirrors the legacy generator's per-call
  * {@code new ServiceName(ctx)} pattern. Used to exercise
- * {@link ServiceCatalog#reflectServiceMethod}'s instance-method classification path
+ * {@link ServiceCatalog#decodeServiceMethod}'s instance-method classification path
  * (the holder must expose a public {@code (DSLContext)} constructor) and the emitter's
  * {@code new ServiceClass(dsl).method(...)} call shape.
  *

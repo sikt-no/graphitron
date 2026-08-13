@@ -945,7 +945,7 @@ final class RecordBindingResolver {
                 if (!m.getName().equals(methodName)) continue;
                 if (found != null) {
                     // Overloaded: ambiguous; existing reflection takes the first match per
-                    // ServiceCatalog.reflectServiceMethod's `methods.get(0)`. Mirror that.
+                    // ServiceCatalog.pickMethod's `methods.get(0)`. Mirror that.
                     return found;
                 }
                 found = m;

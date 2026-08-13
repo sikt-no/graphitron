@@ -5,12 +5,15 @@ import java.util.stream.Collectors;
 
 /**
  * Sealed sub-family of {@link Rejection.AuthorError} for the <em>reflection-intrinsic</em>
- * failures shared across {@code ServiceCatalog}'s three reflect helpers
- * ({@code reflectServiceMethod}, {@code reflectTableMethod}, {@code reflectExternalField}). These
- * failures are not {@code @service}-specific: a class that cannot be loaded, a method whose return
- * type does not match the field's declared type, a class compiled without {@code -parameters}, or
- * an overloaded method name are all properties of the reflected Java method regardless of which
- * directive references it. Per the spec's shared-vs-service partition, these arms live in their own
+ * failures shared across the paths that reflect a developer method: the {@code @service} phases
+ * ({@code ServiceCatalog.decodeServiceMethod} and {@code bindServiceMethod}, with
+ * {@link ReturnTypeMismatch} raised a phase above them by
+ * {@code ServiceDirectiveResolver}'s classify step), {@code ServiceCatalog.reflectTableMethod},
+ * and {@code reflectExternalField}. These failures are not {@code @service}-specific: a class that
+ * cannot be loaded, a method whose return type does not match the field's declared type, a class
+ * compiled without {@code -parameters}, or an overloaded method name are all properties of the
+ * reflected Java method regardless of which directive references it. Per the spec's
+ * shared-vs-service partition, these arms live in their own
  * sub-seal under {@code graphitron.reflect.} rather than forcing
  * {@link ServiceMethodCallError} to carry a reflection failure.
  *

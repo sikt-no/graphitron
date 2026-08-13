@@ -77,7 +77,7 @@ public final class TestFixtures {
      * Convenience overload for static-{@code @service} fixtures: builds a {@link MethodRef.Service}
      * with a {@link MethodRef.CallShape.Static} arm whose {@code needsDslLocal} is derived from the
      * params (any param whose source is {@link ParamSource.DslContext} flips it on, matching
-     * what {@code ServiceCatalog.reflectServiceMethod} does at classify time).
+     * what {@code ServiceCatalog.bindServiceMethod} does at classify time).
      */
     public static MethodRef.Service staticServiceMethodRef(String className, String methodName, TypeName returnType,
                                                             List<MethodRef.Param> params) {

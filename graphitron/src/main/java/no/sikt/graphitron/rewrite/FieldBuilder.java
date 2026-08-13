@@ -3950,7 +3950,7 @@ class FieldBuilder {
      * <p>The strict-return check runs only when the field resolves to a class-backed
      * payload ({@code ResultReturnType} with a non-null {@code fqClassName}); other return
      * shapes (table-bound, pojo-result, scalar) are screened upstream by
-     * {@code ServiceCatalog.reflectServiceMethod} and {@code ServiceDirectiveResolver}.
+     * {@code ServiceCatalog}'s decode and bind phases and {@code ServiceDirectiveResolver}.
      */
     private GraphitronField buildServiceField(
             ReturnTypeRef returnType, no.sikt.graphitron.rewrite.model.MethodRef method,

@@ -44,7 +44,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.argString;
  * Resolves the {@link CallSiteExtraction.InputBean} arm: a {@code @service} method parameter whose
  * Java type is a consumer-authored class mirroring an SDL {@code input} type, instantiated at the
  * fetcher boundary so the service body never sees a {@code Map}. Post-processes a resolved
- * {@link MethodRef.Service} produced by {@link ServiceCatalog#reflectServiceMethod}.
+ * {@link MethodRef.Service} produced by {@link ServiceCatalog#bindServiceMethod}.
  *
  * <p>Walks the method's parameters and rewrites the {@code CallSiteExtraction.Direct} arms that
  * the catalog could not classify in isolation (no SDL access at reflection time) into a richer

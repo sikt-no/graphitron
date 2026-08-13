@@ -16,8 +16,8 @@ import org.jooq.Result;
  * the field's resolved return type (parameter-classification tests, return-type
  * mismatch negative cases). Methods returning specific jOOQ record classes
  * ({@link FilmRecord}, {@link LanguageRecord}, etc.) exercise the strict
- * service-return-type validation in {@code ServiceCatalog.reflectServiceMethod}
- * against {@code FieldBuilder.computeExpectedServiceReturnType}: a {@code @service}
+ * service-return-type validation in {@code ServiceDirectiveResolver}'s classify phase
+ * against its {@code computeExpectedServiceReturnType}: a {@code @service}
  * field whose resolved return type is {@code @table}-bound (or a record-backed type
  * with a backing class) requires the developer's method to declare a matching
  * parameterized return type.
@@ -583,7 +583,7 @@ class TestServiceStub {
 
     /**
      * Declares {@code throws java.sql.SQLException}. Used by classifier tests verifying that
-     * {@link ServiceCatalog#reflectServiceMethod} captures declared exceptions onto
+     * {@link ServiceCatalog#decodeServiceMethod} captures declared exceptions onto
      * {@link MethodRef.Basic#declaredExceptions()} and that the §4 match check rejects the
      * field when no covering {@code @error} handler is present on its channel.
      */

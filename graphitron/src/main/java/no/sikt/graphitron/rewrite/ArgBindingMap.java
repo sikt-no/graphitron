@@ -20,7 +20,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Pre-resolved binding map used by {@link ServiceCatalog#reflectServiceMethod} and
+ * Pre-resolved binding map used by {@link ServiceCatalog#reduceClaims} and
  * {@link ServiceCatalog#reflectTableMethod} to bind reflected method parameters to their
  * GraphQL counterparts.
  *

@@ -5,9 +5,7 @@ status: Ready
 bucket: feature
 priority: 3
 theme: service
-depends-on: [service-coordinate-rejection-precedence]
-deferred: true
-notes: "blocked on the precedence item's phase split; see the coordinate section"
+depends-on: []
 created: 2026-08-13
 last-updated: 2026-08-13
 ---

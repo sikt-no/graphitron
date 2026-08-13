@@ -1466,9 +1466,9 @@ public class TypeFetcherGenerator {
      *
      * <p>Return type is the specific {@code Result<<RecordClass>>} for List cardinality or
      * the specific {@code <RecordClass>} for Single. Type-strictness is enforced at classifier
-     * time: {@link no.sikt.graphitron.rewrite.ServiceCatalog#reflectServiceMethod} rejects methods whose
-     * declared parameterized return type doesn't match the expected record class for the
-     * field's {@code @table}-bound return type.
+     * time: the strict return-type comparison in {@code ServiceDirectiveResolver}'s classify
+     * phase rejects methods whose declared parameterized return type doesn't match the expected
+     * record class for the field's {@code @table}-bound return type.
      */
     private static MethodSpec buildQueryServiceTableFetcher(TypeFetcherEmissionContext ctx, QueryField.QueryServiceTableField qstf,
                                                              String outputPackage) {

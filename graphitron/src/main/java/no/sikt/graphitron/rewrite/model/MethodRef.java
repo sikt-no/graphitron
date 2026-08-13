@@ -27,7 +27,7 @@ import java.util.List;
  * <p>Sealed permits map each variant to its producer set and emit shape:
  * <ul>
  *   <li>{@link Service}: {@code @service} methods, the only variant whose call shape can vary
- *       ({@link Service#callShape()}). Producer: {@code ServiceCatalog.reflectServiceMethod}.</li>
+ *       ({@link Service#callShape()}). Producer: {@code ServiceCatalog.bindServiceMethod}.</li>
  *   <li>{@link StaticOnly}: static-by-construction method references on the {@code @condition} /
  *       {@code @externalField} paths. Producers: {@code ServiceCatalog.reflectTableMethod},
  *       {@code reflectExternalField}, and {@link no.sikt.graphitron.rewrite.EnumMappingResolver}
@@ -48,7 +48,7 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
      * (i.e. {@link java.lang.reflect.Method#getExceptionTypes()}). Empty when the method has no
      * {@code throws} clause or when this {@link MethodRef} variant doesn't reflect a Java method
      * (e.g. {@code @condition} expressions). Populated by the catalog at reflection time
-     * ({@code ServiceCatalog.reflectServiceMethod} / {@code reflectTableMethod}); consumed by
+     * ({@code ServiceCatalog.bindServiceMethod} / {@code reflectTableMethod}); consumed by
      * {@code FieldBuilder.checkDeclaredCheckedExceptions} so a developer method that throws a
      * checked exception with no covering {@code @error} handler is rejected at classify time
      * rather than silently flowing through {@code ErrorRouter.redact} at runtime.
@@ -185,7 +185,7 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
      * extension point) would be a compile error at every consumer rather than a silent fall-through.
      *
      * <p>{@link Static#needsDslLocal()} is pre-resolved at classify time inside
-     * {@code ServiceCatalog.reflectServiceMethod} (the disjunction "any param has
+     * {@code ServiceCatalog.bindServiceMethod} (the disjunction "any param has
      * {@link ParamSource.DslContext}" is computed once at the parse boundary). The
      * {@link InstanceWithDslHolder} arm carries the holder constructor's resolved parameter
      * sources ({@link InstanceWithDslHolder#ctorParams()}); whether a {@code dsl} local is needed
