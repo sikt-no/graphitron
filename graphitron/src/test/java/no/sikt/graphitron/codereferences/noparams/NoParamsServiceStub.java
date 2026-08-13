@@ -19,4 +19,14 @@ public final class NoParamsServiceStub {
             java.util.Set<org.jooq.Row1<Integer>> keys) {
         throw new UnsupportedOperationException();
     }
+
+    /**
+     * A {@code <mount>}-shaped method whose payload parameter has no compiled name: the
+     * session-hook resolver requires real names on payload parameters (they become factory
+     * contextArgument slots), so pointing {@code <mount>} here pins the
+     * {@code ParameterNamesMissing} rejection.
+     */
+    public static void mountNameless(org.jooq.Configuration cfg, String claims) {
+        throw new UnsupportedOperationException();
+    }
 }
