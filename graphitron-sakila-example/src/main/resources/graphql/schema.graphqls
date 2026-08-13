@@ -1571,6 +1571,15 @@ type Film implements Node & Searchable @table(name: "film") @node {
         className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions",
         method: "isEnglish"
     })
+    # Widened-parameter @externalField fixture: FilmExtensions.titleByName takes Table<?>
+    # rather than the generated Film. The parameter check accepts a supertype of the parent's
+    # table class, and this field is the compilation-tier witness that it should: the generated
+    # Film.$project() passes its concretely-typed `table` into the widened slot, so this module's
+    # release-17 compile of generated sources is what proves the emitted call is well-typed.
+    titleByName: String        @externalField(reference: {
+        className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions",
+        method: "titleByName"
+    })
     # Durability-test fixture: a @service-backed leaf that always throws.
     # Queries that select this field force a mid-traversal field error, which the
     # SingleRecordCarrierDmlTest uses to prove the two-step DML emit's durability

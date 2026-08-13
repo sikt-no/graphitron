@@ -628,13 +628,39 @@ class ServiceCatalog {
      * shape so the generated {@code $project()} body compiles cleanly when projecting against
      * a {@code List<Field<?>>}.
      *
+     * <p>The assignability half is javac's own rule at the emitted call site: the helper is
+     * rendered as {@code <Helper>.<method>(table)} inside a {@code $project} unit whose
+     * {@code table} parameter is typed from {@link TableRef#tableClass()}, so a helper typed on
+     * another table fails a consumer's build with no line back to the SDL. Two ordered layers
+     * enforce it as value comparisons on {@code parentTable}, both behind the
+     * {@code Table}-subtype gate above:
+     *
+     * <ol>
+     *   <li><b>Table identity.</b> When the parameter class is itself a catalog table
+     *       ({@link JooqCatalog#findTableByClass}), it must denote the parent's table
+     *       ({@link TableRef#denotesSameTableAs}). {@code org.jooq.Table}, {@code TableImpl},
+     *       and hand-written table supertypes are not catalog entries, so they admit. This
+     *       layer carries the non-generic case ({@code h(Film t)}) alone.</li>
+     *   <li><b>Record type.</b> When the parameter's generic type is {@code X<R>} with {@code R}
+     *       a concrete class, {@code R} must be the parent's {@link TableRef#recordClass()}.
+     *       {@code Table<FilmRecord>} passes on a {@code film} parent; {@code Table<ActorRecord>}
+     *       and {@code Table<Record>} do not, matching what javac accepts for a generated
+     *       {@code Film}, which implements {@code Table<FilmRecord>} and nothing else.</li>
+     * </ol>
+     *
+     * <p>Both layers fail open, with the {@code graphitron-sakila-example} compile as the
+     * backstop: a parameter typed on a generated table outside this catalog is invisible to
+     * {@code findTableByClass}, and layer 2 skips wildcards, raw {@code Table}, and type
+     * variables (including a concretely-bounded one, which javac rejects and this admits).
+     * Neither can produce a false rejection.
+     *
      * <p>Both {@code className} and {@code methodName} are required: the {@code @externalField}
      * arm in {@link FieldBuilder} surfaces a targeted "missing className" error before this call
      * and defaults {@code methodName} to the GraphQL field name when the directive omits
      * {@code method:}.
      */
     ServiceReflectionResult reflectExternalField(String className, String methodName,
-            ClassName parentTableClass) {
+            TableRef parentTable) {
         try {
             Class<?> cls = Class.forName(className, false, ctx.codegenLoader());
             MethodPick pick = pickMethod(cls, className, methodName);
@@ -660,6 +686,10 @@ class ServiceCatalog {
                     Rejection.structural("method '" + methodName + "' in class '" + className
                     + "' parameter must be a jOOQ Table<?> subtype — got '"
                     + p.getType().getSimpleName() + "'"));
+            }
+            Rejection parentTableMismatch = checkExternalFieldParentTable(p, parentTable, className, methodName);
+            if (parentTableMismatch != null) {
+                return new ServiceReflectionResult(null, parentTableMismatch);
             }
             if (!org.jooq.Field.class.equals(javaMethod.getReturnType())) {
                 return new ServiceReflectionResult(null,
@@ -688,6 +718,60 @@ class ServiceCatalog {
         } catch (ClassNotFoundException e) {
             return new ServiceReflectionResult(null, new ReflectionError.ClassNotLoaded(className));
         }
+    }
+
+    /**
+     * The two assignability layers of {@link #reflectExternalField}'s parameter contract,
+     * documented on that method. Returns the rejection for the first layer the sole parameter
+     * fails, or null when both admit. Runs behind the {@code Table}-subtype gate, so
+     * {@code p.getType()} is always a {@code Table} here.
+     *
+     * <p>Neither layer resolves, loads, or re-derives anything: {@code parentTable} already
+     * carries both facts ({@code tableClass} via {@link TableRef#denotesSameTableAs},
+     * {@code recordClass} directly), so no live jOOQ handle for the parent has to reach this
+     * class. The catalog side of layer 1 is class-keyed on the reflected parameter type, which
+     * is a live {@code Class} the reflection already holds.
+     */
+    private Rejection checkExternalFieldParentTable(java.lang.reflect.Parameter p,
+            TableRef parentTable, String className, String methodName) {
+        if (parentTable == null) {
+            return null;
+        }
+        // Layer 1: a parameter typed on a *generated* table must be typed on the parent's.
+        // Non-catalog classes (org.jooq.Table, TableImpl, a hand-written table base) are not
+        // entries and admit, which is correct — they accept the parent table.
+        var declaredEntry = ctx.catalog.findTableByClass(p.getType());
+        if (declaredEntry.isPresent()) {
+            var entry = declaredEntry.get();
+            TableRef declared = entry.toTableRef(entry.table().getName());
+            if (!declared.denotesSameTableAs(parentTable)) {
+                return Rejection.structural("method '" + methodName + "' in class '" + className
+                    + "' takes parameter type '" + p.getType().getSimpleName()
+                    + "', which does not accept the parent table '" + parentTable.tableName()
+                    + "' (jOOQ class '" + parentTable.tableClass() + "'); type the parameter as"
+                    + " the parent's table class or widen it to org.jooq.Table<?>");
+            }
+            return null;
+        }
+        // Layer 2: `X<R>` with a concrete `R` must name the parent's record class. Wildcards,
+        // raw `Table`, and type variables carry no concrete `R` and are skipped.
+        if (parentTable.recordClass() == null
+                || !(p.getParameterizedType() instanceof java.lang.reflect.ParameterizedType pt)) {
+            return null;
+        }
+        var typeArgs = pt.getActualTypeArguments();
+        if (typeArgs.length != 1 || !(typeArgs[0] instanceof Class<?> recordArg)) {
+            return null;
+        }
+        if (!ClassName.get(recordArg).equals(parentTable.recordClass())) {
+            return Rejection.structural("method '" + methodName + "' in class '" + className
+                + "' takes parameter type '" + p.getType().getSimpleName() + "<"
+                + recordArg.getSimpleName() + ">', which does not accept the parent table '"
+                + parentTable.tableName() + "' (jOOQ record class '" + parentTable.recordClass()
+                + "'); parameterise the parameter with the parent's record class or widen it to"
+                + " org.jooq.Table<?>");
+        }
+        return null;
     }
 
     /**

@@ -31,6 +31,8 @@ public final class FilmExtensions {
 Three things matter:
 
 * *The sole parameter is the parent table's jOOQ class.* The rewrite passes the aliased parent table the field's fetcher is selecting from. Resolve column references through `table.LANGUAGE_ID` (the alias-bearing accessor) rather than the static `Film.FILM.LANGUAGE_ID` handle, the alias keeps the expression anchored in the caller's `FROM` and lets jOOQ render the projected column against the correct alias.
++
+The parameter is checked against the parent at build time, so *one helper cannot serve two `@table` parents on different tables*. A method typed `(Film table)` referenced from a type backed by `actor` is rejected with the parent table named, instead of failing javac inside your generated sources. Two ways out: write one helper per table, or widen the parameter to `org.jooq.Table<?>` and address columns by name (`table.field("language_id", Integer.class)`), which is what the widened form costs you. Widening to a supertype is always accepted, because a supertype still accepts the parent table.
 * *The return type's `T` matches the GraphQL scalar.* The rewrite trusts the declared return type at the reflection site; the GraphQL field's runtime type must be readable from the projected `T`. A `Field<Boolean>` for a `Boolean` field, a `Field<String>` for a `String`, and so on, with the lift forms below for class-backed (record-typed) fields.
 * *The method runs at code-generation time, not at request time.* The `Field<T>` you return is inlined into the SQL once and reused for every fetcher invocation. Don't capture per-request state in the method; reach for xref:handle-services.adoc[`@service`] when the value depends on the request.
 
@@ -147,6 +149,7 @@ The wrapper types in the two lift forms above are class-backed: the `@externalFi
 == Constraints
 
 * The parent type must be `@table`-bound. The static method's sole formal parameter is the parent table's jOOQ class; without that anchor, reflection has no shape to bind.
+* The sole parameter must be the parent table's own jOOQ class or a supertype of it (`org.jooq.Table<?>`). A helper typed on a different table is rejected at build time with the parent table named, so a single helper cannot be shared across two `@table` parents on different tables; write one per table, or widen the parameter and address columns by name.
 * The GraphQL field name must not collide with a real SQL column on the parent table. The wiring side resolves the field by name via `DSL.field("<name>")` against the result `Record`; a collision shadows the actual column. Rename the field or use xref:../reference/directives/field.adoc[`@field(name: ...)`] to disambiguate.
 * `className:` is required on the reference. A bare `@externalField` (no `reference:`, or a reference with no `className:`) surfaces with the diagnostic `external field reference could not be resolved -- missing className`.
 * `method:` is optional. When omitted, the rewrite uses the GraphQL field name as the static-method name. Set `method:` only when the two diverge.

@@ -2047,6 +2047,78 @@ class GraphitronSchemaBuilderTest {
                 assertThat(field).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
                 assertThat(((no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) field).reason())
                     .contains("argMapping is not supported on @externalField");
+            }),
+
+        PARENT_TABLE_MISMATCH(
+            "@externalField helper typed on another table → UnclassifiedField (AUTHOR_ERROR)",
+            """
+            type Actor @table(name: "actor") {
+                computedRating: String @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "rating"})
+            }
+            type Query { actor: Actor }
+            """,
+            schema -> {
+                // `rating(Film)` reached from an `actor` parent is the two-parents-one-helper case:
+                // without the check, $project(…, Actor table, …) emits `rating(table)` and javac
+                // fails inside generated sources with no line back to this SDL.
+                var field = schema.field("Actor", "computedRating");
+                assertThat(field).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
+                var unc = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) field;
+                assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.rewrite.RejectionKind.AUTHOR_ERROR);
+                assertThat(unc.reason())
+                    .contains("parameter type 'Film'")
+                    .contains("does not accept the parent table 'actor'")
+                    .contains("no.sikt.graphitron.rewrite.test.jooq.tables.Actor")
+                    .contains("widen it to org.jooq.Table<?>");
+            }),
+
+        PARENT_TABLE_WIDENED(
+            "@externalField helper widened to Table<?> → ComputedField (table-identity layer admits)",
+            """
+            type Film @table(name: "film") {
+                computedRating: String @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "anyTable"})
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var field = schema.field("Film", "computedRating");
+                assertThat(field).isInstanceOf(ComputedField.class);
+                assertThat(((ComputedField) field).method().methodName()).isEqualTo("anyTable");
+            }),
+
+        PARENT_TABLE_PARAMETERISED_MATCH(
+            "@externalField helper typed Table<FilmRecord> on a film parent → ComputedField",
+            """
+            type Film @table(name: "film") {
+                computedRating: String @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "filmRecordTable"})
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var field = schema.field("Film", "computedRating");
+                assertThat(field).isInstanceOf(ComputedField.class);
+                assertThat(((ComputedField) field).method().methodName()).isEqualTo("filmRecordTable");
+            }),
+
+        PARENT_TABLE_PARAMETERISED_MISMATCH(
+            "@externalField helper typed Table<ActorRecord> on a film parent → UnclassifiedField (AUTHOR_ERROR)",
+            """
+            type Film @table(name: "film") {
+                computedRating: String @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "actorRecordTable"})
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                // Erasure hides this from the table-identity layer: `Table` is not a catalog
+                // entry, so only the record-type comparison sees the divergence.
+                var field = schema.field("Film", "computedRating");
+                assertThat(field).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
+                var unc = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) field;
+                assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.rewrite.RejectionKind.AUTHOR_ERROR);
+                assertThat(unc.reason())
+                    .contains("parameter type 'Table<ActorRecord>'")
+                    .contains("does not accept the parent table 'film'")
+                    .contains("no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord");
             });
 
         final String sdl;

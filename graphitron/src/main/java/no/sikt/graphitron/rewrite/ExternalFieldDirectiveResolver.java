@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
 import graphql.schema.GraphQLFieldDefinition;
-import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
@@ -49,7 +48,9 @@ final class ExternalFieldDirectiveResolver {
     /**
      * Resolves {@code @externalField} on {@code fieldDef}. {@code parentTable} is the parent
      * type's resolved {@link TableRef}: its SQL name gates the alias-collision check, and its
-     * Java class name gates the {@code reflectExternalField} parent-table-class invariant.
+     * table and record class names gate the {@link ServiceCatalog#reflectExternalField}
+     * parent-table-class invariant. The whole ref is passed rather than a projection of it, so
+     * that check stays a value comparison and no live jOOQ handle crosses into this resolver.
      */
     Resolved resolve(GraphQLFieldDefinition fieldDef, TableRef parentTable) {
         String name = fieldDef.getName();
@@ -78,8 +79,7 @@ final class ExternalFieldDirectiveResolver {
         // field name. The static-method-name-equals-field-name convention is the common case;
         // requiring `method:` only when it diverges removes ceremony from the schema.
         String resolvedMethodName = extRef.methodName() != null ? extRef.methodName() : name;
-        ClassName parentTableClass = parentTable.tableClass();
-        var extResult = svc.reflectExternalField(extClassName, resolvedMethodName, parentTableClass);
+        var extResult = svc.reflectExternalField(extClassName, resolvedMethodName, parentTable);
         if (extResult.failed()) {
             return new Resolved.Rejected(extResult.rejection().prefixedWith("external field reference could not be resolved — "));
         }

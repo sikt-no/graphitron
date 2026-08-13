@@ -42,8 +42,10 @@ The two contracts are structurally disjoint in `ServiceCatalog`:
   argument-bound (`ParamSource.Arg` via name or `argMapping`), context-bound
   (`contextArguments`), or `List`/`Set` batch-key containers
   (`SourceKey.Wrap`). It has no `Table<?>`-parameter arm.
-- `reflectExternalField` requires `public static`, exactly one parameter
-  assignable from `org.jooq.Table`, and a return type of exactly
+- `reflectExternalField` requires `public static`, exactly one parameter that
+  accepts the parent's generated table class (a `Table` subtype, checked
+  against the parent's `TableRef` on both table identity and record type),
+  and a return type of exactly
   parameterised `org.jooq.Field`. `@service` has no arm that accepts a
   `Field<X>` return, but absence of an arm is not rejection: the service
   path reads the reflected return type only at root (the strict
@@ -70,15 +72,17 @@ names the contract they were aiming for, not a confusing rejection from the
 other contract's validator. `pickMethod` already rejects same-name overloads
 outright, which keeps the branch deterministic.
 
-**Cross-note, no dependency edge.**
-`roadmap/externalfield-parent-table-assignability.md` tightens the computed
-contract's parameter check from "assignable from `org.jooq.Table`" to
-"accepts the parent's generated table class", which is the check the parameter
-is documented to perform and today does not. Whichever item lands second
-inherits the other. The constraint for this item is that the new
-computed-contract reflection entry must thread the parent's live jOOQ table
-through to the parameter check; the argument exists on the entry point today
-but is unread, so a re-plumbing that drops it would silently reopen the gap.
+**Cross-note, no dependency edge. Landed.**
+`roadmap/externalfield-parent-table-assignability.md` has shipped: the
+computed contract's parameter check is now "accepts the parent's generated
+table class", enforced as two value comparisons against the parent's
+`TableRef` (table identity via `denotesSameTableAs`, then the parameterised
+record type against `recordClass`). The constraint for this item is that the
+new computed-contract reflection entry must keep threading the parent's
+`TableRef` through to that check. It is a real argument now rather than the
+unread one it used to be, so dropping it fails to compile rather than
+silently reopening the gap; do not narrow it back to a `ClassName` or a live
+jOOQ `Table`, which the check deliberately does not need.
 
 ## Design
 

@@ -83,6 +83,7 @@ type FilmCardWrapper {
 == Constraints
 
 * The parent type must be `@table`-bound. The static method's sole formal parameter is the parent table's jOOQ class; without that anchor, reflection has no shape to bind.
+* The sole parameter must be the parent table's own jOOQ class, or a supertype of it (`org.jooq.Table<?>`, `TableImpl<R>`, a hand-written table base). A helper typed on a *different* table is rejected at build time with the parent table named, because the generated `$project()` passes the parent's concretely-typed table into that slot and javac would otherwise fail inside a consumer's generated sources. One helper therefore cannot serve two `@table` parents on different tables; see xref:../../how-to/computed-fields.adoc[the how-to] for the two ways out.
 * The GraphQL field name must not collide with a real SQL column on the parent table. The wiring side resolves the field by name via `DSL.field("<name>")` against the result `Record`, a collision shadows the actual column. Rename the field or use xref:field.adoc[`@field(name: ...)`] to disambiguate.
 * `className:` is required on the reference. A bare `@externalField` (no `reference:`, or a reference with no `className:`) surfaces as `external field reference could not be resolved — missing className`.
 * `method:` is optional. When omitted, the rewrite uses the GraphQL field name as the static-method name. Set `method:` only when the two diverge.
